@@ -22,7 +22,29 @@ mkdir -p "$IMPL_DIR"  # timeout: 3000
 CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
 ```
 
-`CODEX_AVAILABLE=false`: use `change` field to route to internal agent; never blanket-skip all items.
+**Concurrency guard — mutex + HEAD fingerprint** (Phase 2 holds worktrees open for the slowest specialist's whole runtime — minutes — so an external write to the branch, or a second resolve run, is far likelier to land mid-flight than under the old per-item design). The lock path is deterministic (recompute anytime from the git-common-dir + branch); the base SHA is a point-in-time value, so persist it to a tmpfile — shell vars don't survive between Step 8's separate bash calls:
+
+```bash
+_GITDIR=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")  # timeout: 3000
+_BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo "detached")  # timeout: 3000
+RESOLVE_LOCK="$_GITDIR/oss-resolve-${_BRANCH}.lock"  # shared across worktrees (git-common-dir)
+if [ -f "$RESOLVE_LOCK" ]; then
+    if [ -n "$(find "$RESOLVE_LOCK" -mmin +30 2>/dev/null)" ]; then
+        echo "⚠ stale resolve lock (>30 min) — prior run almost certainly dead; overriding: $RESOLVE_LOCK"
+        rm -f "$RESOLVE_LOCK"
+    else
+        echo "⛔ another oss:resolve is active on branch '$_BRANCH' (lock: $RESOLVE_LOCK) — aborting."
+        echo "  Wait for it to finish, or remove the lock if you know that run died."
+        exit 1
+    fi
+fi
+echo "$$ $(date -u +%FT%TZ)" > "$RESOLVE_LOCK"  # timeout: 3000
+git rev-parse HEAD > "${TMPDIR:-/tmp}/resolve-base-sha" 2>/dev/null || true  # HEAD fingerprint  # timeout: 3000
+```
+
+The lock is released in Phase 3's cleanup block (and the 30-min staleness override reclaims it if a run crashes before then).
+
+`change` → `IMPL_AGENT` routing table — drives Phase 2 specialist grouping **unconditionally** (not gated behind `CODEX_AVAILABLE`; Codex only ever handles items via the C1 medium-effort shortcut below, never as a Phase 2 specialist group). Keep in sync with `_shared/review-section-taxonomy.md`'s resolve `change` column:
 
 | `change` value | `IMPL_AGENT` |
 | --- | --- |
@@ -30,10 +52,12 @@ CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
 | `test` | `foundry:qa-specialist` |
 | `docs` | `foundry:doc-scribe` |
 | `style` | `foundry:linting-expert` |
+| `perf` | `foundry:perf-optimizer` |
+| `architecture` | `foundry:solution-architect` |
 
-Complex items (effort `xhigh`, multi-file) with `CODEX_AVAILABLE=false` → skip with `⚠ codex not found — skipping item #<id> (xhigh effort). Install: /plugin marketplace add openai/codex-plugin-cc`.
+`CODEX_AVAILABLE=false`: C1 (medium-effort Codex shortcut, below) is skipped entirely — medium-effort items fall through to Phase 1+2 like any other item, routed by this same table. `xhigh`-effort, multi-file items still skip, unchanged from before (`⚠ codex not found — skipping item #<id> (xhigh effort). Install: /plugin marketplace add openai/codex-plugin-cc`) — too much surface for a single specialist without Codex's broader context; never blanket-skip anything below `xhigh`.
 
-`--agent <name>` overrides this routing table unconditionally.
+`--agent <name>` overrides this routing table unconditionally — every Phase 2 group uses `<name>` regardless of `change`.
 
 > **Conflict gate**: verify all Step 5a conflict tasks `completed` before any action item. Still `pending`/`in_progress` → stop, surface list, wait. Items on unresolved conflicts compound diff.
 
@@ -51,11 +75,7 @@ Process items in `SELECTED_ITEMS` (from Step 3e) in priority order (`[req]` firs
 
 **Caps** — soft cap 10, hard cap 20 items per dispatch. When `SELECTED_ITEMS` > 10 (`$(echo "$SELECTED_ITEMS" | wc -w)` > 10): invoke `AskUserQuestion` — (a) Apply first 10 now, re-run for remainder · (b) Apply all `[req]` only · (c) Proceed with all up to 20 (slow, context risk). Never silently start loop with >10 items; never exceed 20 in one dispatch (context budget boundary).
 
-**≥4 selected items — batched dispatch** (token lever: cuts spawn count ~3×, per-item rigor unchanged): group items by file affinity (items touching same file or same concern class → one batch; max 5 per batch; unrelated items → solo batch). Per batch:
-- **One combined challenge call** to `DOMAIN_CHALLENGER` (route by the batch's dominant domain; mixed-domain batch → `foundry:challenger`) covering ALL batch items — prompt lists each item's `<id>`, `full_comment_text`, `<file:line>`; agent writes full analysis to `$IMPL_DIR/challenge-batch-<ids>.md`; returns per-item verdict array: `{"items":[{"id":N,"evidence":"VALID"|"REJECT","evidence_rationale":"…","suggestion":"VALID"|"REJECT","suggestion_rationale":"…","alternative":"…|null"}]}`. Same per-item parsing/CHALLENGE_LOG rules as Phase 1 — verdict granularity is NOT relaxed; rejected items drop from the batch.
-- **One impl agent per batch** for surviving items (route by batch `change` majority per the routing table; effort = highest `ITEM_EFFORT` in batch): prompt lists per-item feedback + per-item `ITEM_CALLERS`; agent writes `$IMPL_DIR/impl-batch-<ids>.md`; returns `{"status":"done"|"partial","items_done":[ids],"items_skipped":[{"id":N,"reason":"…"}],"files_changed":N}`. Stage/commit per `COMMIT_MODE` using each item's own id for attribution (`stage_item_changes.py <id>` per item).
-- Print compact progress `[N/total] batch #<ids> — <files>`. Skip per-item stash/unstash — one clean-state check per batch instead.
-- C1 Codex-first routing still applies BEFORE batching: `medium`-effort items go to Codex individually as usual; only items falling through to Phase 1+2 are batched.
+**Parallel specialist-worktree dispatch** (replaces sequential/one-item-at-a-time execution — real wall-clock lever, not just spawn-count reduction): C1 Codex-first routing (below) still runs first, sequentially, per item — fast individual calls, no batching benefit to chase there. Everything falling through C1 splits into three passes: **Phase 1** challenge (read-only, parallel by domain), **Phase 2** implementation (one isolated `git worktree` per specialist, parallel), **Phase 3** merge-back (sequential, orchestrator-owned cherry-pick in original priority order). See Phase 1/2/3 below.
 
 **Per action item** — loop over `SELECTED_ITEMS` in priority order. Per item, read full details from `$IMPL_DIR/action-items.jsonl` (written by Step 3b pr-intelligence subagent) — this is the authoritative source for `full_comment_text`, `file`, `line`, `change`, `severity`, `author`:
 
@@ -63,7 +83,7 @@ Process items in `SELECTED_ITEMS` (from Step 3e) in priority order (`[req]` firs
 ITEM_DATA=$(jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl")  # timeout: 5000
 ```
 
-Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for stash label and commit scope, `.change`/`.severity` for effort classification and agent routing.
+Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for commit scope and blast-radius lookup, `.change`/`.severity` for effort classification and agent routing.
 
 **Pre-loop blast-radius scan** — run once in main orchestrator before loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `scan-query` is a no-op.
 
@@ -131,7 +151,7 @@ Parse JSON:
 
 When `CODEX_AVAILABLE=false` OR `ITEM_EFFORT!=medium`: skip Codex routing; use Phase 1+2 directly.
 
-### Phase 1: Challenge (skip when `--no-challenge`)
+### Phase 1: Challenge — parallel by domain (skip when `--no-challenge`)
 
 Route by domain to foreground challenge agent:
 
@@ -144,104 +164,155 @@ Route by domain to foreground challenge agent:
 
 Set `DOMAIN_CHALLENGER` from routing table: architecture/API/coupling/default → `foundry:challenger`; code logic/correctness/edge-cases → `foundry:sw-engineer`; test coverage/assertions/regressions → `foundry:qa-specialist`. Use agent-resolution.md fallback if foundry absent.
 
-**Combined evidence + suggestion challenge** (B1 — single agent call, saves one opus spawn per item):
+Group items by `DOMAIN_CHALLENGER`, preserving each item's original priority-order position within its group (stable partition — needed later so Phase 3's merge plan also respects each specialist's internal commit order). One combined challenge call per domain group, covering ALL that group's items:
 
 ```text
-Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Two-part challenge for this review item.
-Part 1 — does the stated problem actually exist in the code as described?
+Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Two-part challenge for these review items.
+Part 1 — for each, does the stated problem actually exist in the code as described?
 Part 2 — if problem exists, is the suggested fix the right approach?
-Read the referenced file at <file:line>. Max 3 tool calls.
-Write full analysis to $IMPL_DIR/challenge-<id>.md using the Write tool.
+Read each referenced file at <file:line>. Max 3 tool calls per item.
+Items:
+<id>: <full_comment_text> (<file>:<line>)
+...
+Write full analysis to $IMPL_DIR/challenge-domain-<domain>.md using the Write tool.
 Return ONLY compact JSON as your FINAL message (nothing after it):
-{\"evidence\":\"VALID\"|\"REJECT\",\"evidence_rationale\":\"<one sentence>\",\"suggestion\":\"VALID\"|\"REJECT\",\"suggestion_rationale\":\"<one sentence>\",\"alternative\":\"<brief alternative or null>\"}")
+{\"items\":[{\"id\":N,\"evidence\":\"VALID\"|\"REJECT\",\"evidence_rationale\":\"<one sentence>\",\"suggestion\":\"VALID\"|\"REJECT\",\"suggestion_rationale\":\"<one sentence>\",\"alternative\":\"<brief alternative or null>\"}]}")
 ```
 
-Parse compact JSON from agent final message:
-- `evidence=REJECT` → print `⊘ #<id> evidence rejected: <evidence_rationale>`; set type `[challenged:reject]`; append to `CHALLENGE_LOG`; skip to next item
-- `evidence=VALID` + `suggestion=VALID` → `SUGGESTION_VERDICT=VALID`; use original suggestion for implementation
-- `evidence=VALID` + `suggestion=REJECT` → `SUGGESTION_VERDICT=REJECT`; self-resolve using `alternative` as guidance
+**Fire every domain group's `Agent()` call in the same response turn** — read-only (no working-tree writes), safe to run concurrently regardless of file overlap between domains.
 
-Append to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>`.
-
-### Phase 2: Implementation
+**Structural prep — fire in this same turn, concurrently with the challenge agents** (the codemap queries below are read-only and depend only on item *files*, known from Step 3b — not on any challenge verdict — so they run under the challenge agents' latency shadow, adding ~0 wall-clock; grouping in Phase 2 then finds its maps already warm). Keyed off all `SELECTED_ITEMS` (not yet-unknown `SURVIVING_ITEMS`) — a few queries for items challenge later drops are cheap and hidden under the agent latency; Phase 2 filters to survivors. Resolve each file to its canonical module name + build the whole-repo centrality map (`resolve_centrality.py`), then capture each module's **forward imports** (`deps`, fan-*out*, naturally small — never the 20-cap that truncates reverse `rdeps`):
 
 ```bash
-# clean state before each item (substitute <id> with item.id); STASHED=false when agent
-# makes no changes — no pop needed
-STASHED=false
-if [ -n "$(git status --porcelain)" ]; then
-    echo "⚠ dirty tree before item #<id> — stashing"
-    git stash push -m "resolve-pre-item-<id>" && STASHED=true  # timeout: 3000
+CODEMAP_MAPS="$IMPL_DIR/codemap-maps.json"; : > "$CODEMAP_MAPS"
+DEPS_MAP="$IMPL_DIR/codemap-deps.jsonl"; : > "$DEPS_MAP"
+if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
+    _FILES=$(for _id in $SELECTED_ITEMS; do
+        jq -r "select(.id == $_id) | .file // empty" "$IMPL_DIR/action-items.jsonl"
+    done | paste -sd, -)  # timeout: 5000
+    scan-query central --top 100000 2>/dev/null \
+        | python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_centrality.py" --files "$_FILES" > "$CODEMAP_MAPS" 2>/dev/null \
+        || : > "$CODEMAP_MAPS"
+    if [ -s "$CODEMAP_MAPS" ]; then
+        for _m in $(python -c 'import json,sys; print(" ".join(sorted({v for v in json.load(open(sys.argv[1]))["file_module"].values() if v})))' "$CODEMAP_MAPS"); do
+            scan-query deps "$_m" 2>/dev/null \
+                | python -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({d["module"]: d.get("direct_imports", [])}))' >> "$DEPS_MAP"  # timeout: 5000
+        done
+    fi
 fi
-git diff HEAD --stat  # timeout: 3000
 ```
 
-Mark item's task in_progress:
+Parse each group's per-item verdict array — same granularity as a single-item challenge, never relaxed by grouping:
+- `evidence=REJECT` → print `⊘ #<id> evidence rejected: <evidence_rationale>`; set type `[challenged:reject]`; append to `CHALLENGE_LOG`; drop from `SURVIVING_ITEMS`
+- `evidence=VALID` + `suggestion=VALID` → `SUGGESTION_VERDICT[id]=VALID`; use original suggestion for implementation
+- `evidence=VALID` + `suggestion=REJECT` → `SUGGESTION_VERDICT[id]=REJECT`; self-resolve using `alternative` as guidance
+
+Append every item's verdict to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>`. Items with `evidence=VALID` form `SURVIVING_ITEMS`.
+
+### Phase 2: Implementation — parallel, one worktree per specialist
+
+The codemap maps (`$IMPL_DIR/codemap-maps.json` — `file_module` + `centrality`; `$IMPL_DIR/codemap-deps.jsonl` — per-module `direct_imports`) were built in Phase 1's Structural prep, concurrently with the challenge agents, so both tiebreaks below read them with no fresh query. They cover all `SELECTED_ITEMS`; filter to survivors as needed.
+
+Group `SURVIVING_ITEMS` by `IMPL_AGENT` (routing table at top of this file; `--agent` override applies to every group uniformly). Preserve original priority-order position within each group (stable partition, same reason as Phase 1).
+
+**File-ownership tiebreak** (kills Phase 3 cherry-pick conflicts at the root, instead of only resolving them after the fact): before capping group size, check whether any `.file` is claimed by items in more than one group. Rank specialists least → most foundational/invasive — a change from a higher-ranked specialist is more likely to reshape the file, so lower-ranked items should defer to it rather than risk a conflicting concurrent edit:
+
+`foundry:linting-expert < foundry:doc-scribe < foundry:qa-specialist < foundry:perf-optimizer < foundry:sw-engineer < foundry:solution-architect`
+
+(`foundry:challenger` never appears here — Phase 1 only, read-only, holds no file ownership.) For each contested file, reassign **every** item touching it to the single highest-ranked group in the contest — the item's original `IMPL_AGENT` routing is overridden by ownership, not by its own `change` value. Print `→ #<id> reassigned <from> → <to> (file overlap: <path>)` per reassignment so it's auditable.
+
+**Import-coupling merge** (soft — catches the *semantic* conflict the file-path tiebreak is blind to): file overlap only co-locates items editing the **same** file. Two items in **different** files still collide when one imports the other — item A renames a symbol in `pkg.auth`, item B edits `pkg.middleware` which imports it; both land, cherry-pick textually clean, code broken. Structural prep already captured the links: items A and B are **import-coupled** when one's module is in the other's `direct_imports` — B's module ∈ A's imports (or vice versa), reading `$IMPL_DIR/codemap-deps.jsonl` keyed by the module names in `codemap-maps.json`'s `file_module`. This uses forward `deps` (fan-out, bounded) rather than reverse `rdeps`, so recall is **not** truncated by the 20-caller display cap. After the file-overlap pass, for each import-coupled pair still split across two groups, reassign the lower-ranked item's group to the higher-ranked one (same specialist ranking above) so both land in one worktree and the specialist keeps them consistent. Print `→ #<id> reassigned <from> → <to> (import coupling: <mod> ↔ <mod>)`. This merge is **soft**, unlike file overlap: it yields to the 5-item cap below — if honoring it would push a group past 5, leave the pair split and rely on Phase 3's conflict fallback plus the blast-radius context already handed to each agent. Empty `codemap-deps.jsonl` (no scan-query / query failure) → no-op; file-overlap grouping stands.
+
+Re-derive group membership after all reassignments (file overlap + import coupling), **then** cap 5 items/group — same context ceiling the old file-affinity batching used; a specialist with more than 5 items splits into `ceil(N/5)` groups, **keeping every file's items together in the same sub-group** (never split one file's items across two sub-groups — would reintroduce the exact conflict this tiebreak exists to prevent). Each resulting sub-group is one worktree with its own `group` tag (reused in Phase 3's merge plan).
+
+Per group, mark its items' tasks in_progress, then dispatch with worktree isolation so concurrent specialists never race on a shared working tree (no stash dance needed — dirty state in one worktree can't collide with another):
 
 ```text
-TaskUpdate(task_id=<item.task_id>, status="in_progress")
-```
-
-Build prompt from challenge outcome, then dispatch implementation agent:
-
-```bash
-if [ "$SUGGESTION_VERDICT" = "REJECT" ]; then
-    IMPL_PROMPT="Evidence confirmed but suggested fix rejected. Fix the underlying issue using best judgment. Original feedback: <full_comment_text>. Rejected approach: <suggestion_rationale>. Suggested alternative: <alternative>."
-else
-    IMPL_PROMPT="Apply this review feedback exactly as suggested. Feedback from @<author>: <full_comment_text>"
-fi
-
-# file-handoff: agent writes full context to file; orchestrator reads compact JSON only
-Agent(subagent_type="$IMPL_AGENT", prompt="Effort level: $ITEM_EFFORT. $IMPL_PROMPT
-$([ -n "$ITEM_CALLERS" ] && printf "Blast-radius context — modules that call into the code you are changing; preserve their public contracts:\n%s" "$ITEM_CALLERS")
-Write your findings (approach taken, files changed) to $IMPL_DIR/impl-<id>.md using the Write tool.
+Agent(subagent_type="<specialist>", isolation="worktree", prompt="Effort level: <highest ITEM_EFFORT in group>.
+Implement these action items one at a time. For each, apply the fix using best judgment
+(if suggestion was rejected in challenge, fix the underlying issue instead — see rationale/alternative below),
+then commit it individually before moving to the next item:
+python \"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py\" --build --summary \"<short summary>\" \\
+    --item-id \"<id>\" --author \"<author>\" --pr \"<PR_NUMBER>\" --comment \"<full_comment_text>\" \\
+    --challenge \"evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>\" \\
+    --files <files-changed-by-this-item>
+Items:
+<id>: <IMPL_PROMPT for this item> — blast-radius callers: <ITEM_CALLERS for this item, if any>
+...
+Write findings (approach taken, files changed per item) to $IMPL_DIR/impl-worktree-<group_tag>.md using the Write tool.
 Return ONLY compact JSON as your FINAL message (nothing after it):
-{\"status\":\"done\"|\"skipped\",\"reason\":\"<if skipped, else null>\",\"files_changed\":N}")
-
-# parse compact JSON; read impl-<id>.md only if full context needed
-git diff HEAD --stat  # timeout: 3000
+{\"commits\":[{\"item_id\":N,\"sha\":\"<sha>\"}],\"skipped\":[{\"item_id\":N,\"reason\":\"<why no commit>\"}]}")
 ```
 
-Code changed → pop stash BEFORE committing (and clear `STASHED` so the EXIT trap is a no-op), then stage and commit per `COMMIT_MODE`:
+**Fire all specialist groups in the same response turn** — this is the actual wall-clock win: N specialists implementing and committing concurrently, each isolated in its own worktree/branch.
+
+> **Health monitoring**: parallel foreground dispatch — same rule as any multi-agent fan-out (CLAUDE.md §6). No response from a group within ~15 min → surface partial results from the groups that did return; mark the stalled group ⏱, proceed to merge-back with whatever landed; its unresolved items stay `in_progress` and get reported alongside other pending work.
+
+Parse each group's JSON: `commits` entries feed Phase 3's merge plan; `skipped` entries record `skipped — <reason>` (no empty commit, no cherry-pick attempt).
+
+### Phase 3: Merge-back — sequential, orchestrator-owned
+
+**HEAD fingerprint check** — the worktrees branched from `resolve-base-sha`; verify the PR branch hasn't moved under us while Phase 2 ran. A moved base means an external write (human push, or a run that slipped the mutex) landed during Phase 2 — cherry-picks still apply (they replay each diff onto the current tip), but overlapping edits now surface as conflicts, so surface the drift rather than stack silently:
 
 ```bash
-if [ "$STASHED" = "true" ]; then
-    git stash pop || { echo "⚠ stash pop conflict — resolve conflicts in $(git stash list | head -1) before item #<id>"; exit 1; }  # timeout: 3000
-    STASHED=false
+_BASE_SHA=$(cat "${TMPDIR:-/tmp}/resolve-base-sha" 2>/dev/null || echo "")  # timeout: 3000
+_NOW_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")  # timeout: 3000
+if [ -n "$_BASE_SHA" ] && [ "$_NOW_SHA" != "$_BASE_SHA" ]; then
+    echo "⚠ base HEAD moved during Phase 2: ${_BASE_SHA:0:8} → ${_NOW_SHA:0:8} (external write)."
+    echo "  Cherry-picks apply onto the new base; any overlapping edit surfaces as a conflict → routed to Step 5a below."
+fi
+```
+
+Build the cherry-pick plan in **original `SELECTED_ITEMS` priority order**, interleaved across specialist groups by item id — NOT grouped by specialist, so the base order matches severity ranking regardless of which group finished first. This global sort is safe because Phase 1/2 grouping preserved each specialist's internal relative order (stable partition) — sorting by original priority never reorders two items from the same specialist relative to each other. Each entry also carries its worktree `group` tag (from Phase 2) and its `module` — the **canonical codemap name** for the item's `.file`, read from `file_module` in `$IMPL_DIR/codemap-maps.json` (built in Structural prep), blank when unresolved. Never hand-derive it with a sed transform: codemap names a package `__init__.py` after the package (`pkg`, not `pkg.__init__`), so a sed guess silently mismatches the centrality keys and scores 0.
+
+**Centrality ordering** (lands the most foundational change first, so contract-defining commits precede their dependents): the `{module: rdep_count}` centrality map was already built once in Structural prep (`$IMPL_DIR/codemap-maps.json`, from a single authoritative `scan-query central` pass — not the 20-capped `BLAST_RADIUS_CONTEXT`, which saturates). Extract it to a file so the merge step can reorder **whole worktree groups** most-central-first. Safe precisely because the file-ownership tiebreak guarantees distinct groups touch disjoint files — reordering whole chains can't add a textual conflict, and commit order **within** a chain is never touched (chains may build on themselves). Missing maps (no `scan-query` / query failure) → flag omitted, plan applies in priority order unchanged.
+
+```bash
+CENTRALITY_FILE=""
+if [ -s "$IMPL_DIR/codemap-maps.json" ]; then
+    CENTRALITY_FILE=$(mktemp)  # timeout: 3000
+    python -c 'import json, sys; json.dump(json.load(open(sys.argv[1]))["centrality"], open(sys.argv[2], "w"))' \
+        "$IMPL_DIR/codemap-maps.json" "$CENTRALITY_FILE"  # timeout: 5000
+    [ -s "$CENTRALITY_FILE" ] || CENTRALITY_FILE=""
 fi
 
-python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/stage_item_changes.py" "<id>"  # timeout: 5000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/merge_specialist_batch.py" \
+    --plan "$PLAN_FILE" --commit-mode "$COMMIT_MODE" \
+    ${CENTRALITY_FILE:+--centrality-file "$CENTRALITY_FILE"}  # timeout: 30000
 ```
 
-**`COMMIT_MODE=each`** — commit immediately after each item. `commit_action_item.py --build` assembles the canonical per-item message (subject + `[resolve #<id>]` attribution block + co-author trailers) — pass `--codex` only when `IMPL_AGENT = codex:codex-rescue`:
+`PLAN_FILE` = JSON array of `{"item_id", "sha", "group", "module"}` in priority order (assembled from every Phase 2 group's `commits`). With `--centrality-file` the script reorders whole groups most-central-first (`order_plan`) before cherry-picking each in turn:
 
-```bash
-python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" --build \
-    --summary "<imperative short summary of the change>" \
-    --item-id "<item_id>" \
-    --author "<author>" \
-    --pr "<PR_NUMBER>" \
-    --comment "<full_comment_text>" \
-    --challenge "evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>" \
-    $([ "$IMPL_AGENT" = "codex:codex-rescue" ] && echo "--codex") \
-    --files <files-changed-by-this-item>  # timeout: 10000
-```
+- **`COMMIT_MODE=each`** — commit lands as-is (own `[resolve #<id>]` attribution message, carried over from the worktree commit); no reset.
+- **`COMMIT_MODE=grouped` / `all` / `stage`** — commit lands then is immediately soft-reset (`git reset --soft HEAD~1`), leaving the diff staged, uncommitted — same state the post-loop sections below already expect.
 
-**`COMMIT_MODE=all`** — stage only here; commit once after all items (see end of loop section).
+**Clean run** (`conflict: null`) → every item's commit is on the PR branch (or staged, per mode above).
 
-**`COMMIT_MODE=stage`** — stage only; no commit now or later. ⚠ Cannot cleanly restore original branch — changes stay staged on PR branch.
+**Conflict** → two specialists touched overlapping code; the script stops mid-cherry-pick on the reported item (`CHERRY_PICK_HEAD` present) and returns the still-unapplied `remaining` entries. Route to `conflict-resolution.md`'s task-creation pattern (Step 5a), substituting `CHERRY_PICK_HEAD` for `MERGE_HEAD` in the state check; after resolving, `git cherry-pick --continue`, then re-invoke `merge_specialist_batch.py` with only the `remaining` entries.
 
-No code changed → record agent's reason; do NOT create empty commit. Record per-item: `committed <SHA>` or `staged` or `skipped — <reason>`.
-
-Mark item's task per COMMIT_MODE — do NOT fire `completed` here for `all`/`grouped` (commit hasn't happened yet; a post-loop commit failure would leave false-completed tasks):
+Mark item's task per `COMMIT_MODE`, right after its own cherry-pick lands — not when its specialist group returns (a group finishing early doesn't mean its items are safely on the PR branch yet):
 
 ```text
-# each → completed now (committed this iteration)
-# stage → completed now (staged = terminal; no "staged" task status)
-# all/grouped → leave in_progress; post-loop commit block flips after commit
+# each / stage → completed now (commit landed, or staged = terminal; no "staged" task status)
+# all / grouped → leave in_progress; post-loop commit block below flips after the real commit
 if COMMIT_MODE == "each" or COMMIT_MODE == "stage":
     TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
+
+No commit for an item (it was in Phase 2's `skipped` list) → record the agent's reason; do NOT create an empty commit or add it to `PLAN_FILE`.
+
+Cleanup — remove each specialist worktree once all its commits are cherry-picked, then release the resolve mutex (recompute the deterministic lock path — the entry-block shell var is gone by this separate bash call):
+
+```bash
+for _wt in "${SPECIALIST_WORKTREES[@]}"; do
+    git worktree remove "$_wt" --force 2>/dev/null || true  # timeout: 5000
+done
+_GITDIR=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")  # timeout: 3000
+_BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo "detached")  # timeout: 3000
+rm -f "$_GITDIR/oss-resolve-${_BRANCH}.lock" "${TMPDIR:-/tmp}/resolve-base-sha"  # timeout: 3000
+```
+
+> If Phase 3 stops on a conflict (routed to Step 5a) the lock is **not** released here — intentional: the run is still live. It clears on the retry's cleanup, or via the 30-min staleness override if the session is abandoned.
 
 **After loop — `COMMIT_MODE=grouped` only**: collect topic labels, group items, commit each group.
 
@@ -310,3 +381,19 @@ After the commit succeeds, flip all staged items to completed (deferred from per
 for each item in SELECTED_ITEMS where status != "skipped":
     TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
+
+## Step 8 — design scope & residual limitations
+
+Worktree isolation + the two grouping tiebreaks + centrality ordering *reduce* Phase 3 conflicts; they don't eliminate them. Phase 3's cherry-pick conflict path (Step 5a) is the catch-all for whatever slips through.
+
+**Deliberate design choices (not limitations):**
+
+- **Python-scoped semantic grouping** — codemap indexes `.py` (by design — the plugin's stated scope). Same-file *textual* conflict on `.yaml`/`.toml`/`.github/*.yml`/`.md` is still caught: the file-ownership tiebreak is path-based, not codemap-based, so it works for any language. Only the *semantic* layers (import-coupling, centrality) are Python-scoped; non-Python items simply skip them (no coupling merge, centrality 0 → ordered last). Config/CI PRs keep full textual safety.
+- **Depth-1 coupling** — coupling merges only directly-importing pairs, not transitive A→B→C. Deliberate: every coupling-merge trades parallelism for conflict-safety; a direct import is a high break-risk (good trade), a transitive one is a rare break at the *same* parallelism cost (bad trade) — and a central module's transitive closure would collapse the whole batch into one group, defeating the parallelism the redesign exists for. Direct-only is the optimum, not a shortfall.
+- **Import centrality, not call centrality** — ordering weight is module `rdep_count` (import graph), matching the module-granularity of the grouping. `fn-central` (call graph) is finer than the unit being ordered, so it wouldn't change whole-group order.
+
+**Residual limitations (true gaps, all backstopped by Step 5a):**
+
+- **Centrality ≠ semantic-break cure** — most-central-first ordering cuts conflict *cascade* and yields saner intermediate trees, but a dependent commit already contains its call to the old contract; landing order can't un-break it. The actual mitigation for semantic breakage is the per-agent blast-radius context (each specialist is told its callers); centrality is only ordering.
+- **Stale index** — coupling + centrality read whatever codemap index exists. Currency is gated at skill entry (SKILL.md Gate B refreshes a stale index before Step 8), so mid-run staleness is the only exposure, and it only skews grouping slightly (all heuristic, never dangerous). `central` auto-build exceeding the 15 s budget → maps empty → plan falls back to priority order.
+- **Mutex is advisory** — the branch lock stops a *second oss:resolve*, not a human `git push` or an unrelated tool writing the tree; that class is detected after the fact by the Phase 3 HEAD-fingerprint warning + Step 5a, not prevented.

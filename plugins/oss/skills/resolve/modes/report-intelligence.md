@@ -29,9 +29,10 @@ _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared" 2>/dev/null || echo "")  
 cat "$_OSS_SHARED/review-section-taxonomy.md"  # timeout: 5000
 ```
 
-Taxonomy (loaded above) — use **Grep pattern** row for header matching (contains-match; headers may carry `⚠ LOW CONFIDENCE — ` prefix), **Severity → Resolve Type** table for `type` assignment, **LOW Grouping Rule** for composite rows, and **Owner agent** column for `author` field. Skip sections where Grep key is `— skip`.
+Taxonomy (loaded above) — use **Grep pattern** row for header matching (contains-match; headers may carry `⚠ LOW CONFIDENCE — ` prefix), **Severity → Resolve Type** table for `type` assignment, **LOW Grouping Rule** for composite rows, **Owner agent** column for `author` field, and **resolve `change`** column for `change` field. Skip sections where Grep key is `— skip`.
 
 - `author`: Owner agent column from taxonomy
+- `change`: resolve `change` column from taxonomy — drives Step 8 Phase 2 specialist routing; do NOT default every report item to `code`, the taxonomy row already names the right value per section
 - `file`/`line`: extract from `file:line` notation; blank if absent or grouped composite
 - `full_comment_text`: full finding bullet (or concatenated bullets for composites)
 - All items get `[report]` prefix on `type` (e.g., `[report][req]`, `[report][suggest]`)

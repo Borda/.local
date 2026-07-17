@@ -5,20 +5,22 @@
 Canonical section headers, grep keys, agent ownership, and resolve triage type.
 Both `review` (consolidator) and `resolve` (parser) load this file — edit here only.
 
-| Section header | Grep key | Owner agent | resolve `type` (MEDIUM) |
-| --- | --- | --- | --- |
-| `### [blocking] Critical` | `Critical` / `[blocking]` | any | `[req]` |
-| `### Architecture & Quality` | `Architecture` | `foundry:sw-engineer` | `[req]` (code-related) |
-| `### Test Coverage Gaps` | `Test Coverage` | `foundry:qa-specialist` | `[suggest]` |
-| `### Performance Concerns` | `Performance` | `foundry:perf-optimizer` | `[req]` (code-related) |
-| `### Documentation Gaps` | `Documentation` | `foundry:doc-scribe` | `[suggest]` |
-| `### Static Analysis` | `Static Analysis` | `foundry:linting-expert` | `[suggest]` |
-| `### API Design (if applicable)` | `API Design` | `foundry:solution-architect` | `[req]` (code-related) |
-| `### Codex Co-Review` | `Codex Co-Review` | `codex` | `[suggest]` |
-| `### OSS Checks` | (skip) | — | — |
-| `### Issue Root Cause Alignment` | (skip) | — | — |
-| `### Recommended Next Steps` | (skip) | — | — |
-| `### Review Confidence` | (skip) | — | — |
+| Section header | Grep key | Owner agent | resolve `type` (MEDIUM) | resolve `change` |
+| --- | --- | --- | --- | --- |
+| `### [blocking] Critical` | `Critical` / `[blocking]` | any | `[req]` | `code` (domain not distinguishable at this header — falls back to the general implementer) |
+| `### Architecture & Quality` | `Architecture` | `foundry:sw-engineer` | `[req]` (code-related) | `code` |
+| `### Test Coverage Gaps` | `Test Coverage` | `foundry:qa-specialist` | `[suggest]` | `test` |
+| `### Performance Concerns` | `Performance` | `foundry:perf-optimizer` | `[req]` (code-related) | `perf` |
+| `### Documentation Gaps` | `Documentation` | `foundry:doc-scribe` | `[suggest]` | `docs` |
+| `### Static Analysis` | `Static Analysis` | `foundry:linting-expert` | `[suggest]` | `style` |
+| `### API Design (if applicable)` | `API Design` | `foundry:solution-architect` | `[req]` (code-related) | `architecture` |
+| `### Codex Co-Review` | `Codex Co-Review` | `codex` | `[suggest]` | `code` |
+| `### OSS Checks` | (skip) | — | — | — |
+| `### Issue Root Cause Alignment` | (skip) | — | — | — |
+| `### Recommended Next Steps` | (skip) | — | — | — |
+| `### Review Confidence` | (skip) | — | — | — |
+
+`resolve change` feeds oss:resolve's Phase 2 specialist routing (`action-item-dispatch.md`) — keep in sync with that file's `change` → `IMPL_AGENT` table whenever either changes.
 
 ## Severity → Resolve Type
 
