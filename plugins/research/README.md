@@ -516,7 +516,7 @@ ______________________________________________________________________
 
 ### `/research:kaggle` — Kaggle competition notebook
 
-Generates Kaggle competition notebook as Jupytext `# %%` Python script (compatible with VS Code Jupyter, JupyterLab, `jupytext --to notebook`). Distills competition context from Kaggle API or URL, asks for missing facts via grounding protocol, generates structured notebook via `foundry:sw-engineer`.
+Generates Kaggle competition notebook as Jupytext `# %%` Python script (compatible with VS Code Jupyter, JupyterLab, `jupytext --to notebook`). Distills competition context from Kaggle API or URL, asks for missing facts via grounding protocol, generates structured notebook via `foundry:sw-engineer`. Tuned to win — leakage-safe CV, metric-aligned modeling — as much as to teach: small single-purpose cells, each carrying a why.
 
 **Invocation**:
 
@@ -543,10 +543,16 @@ Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + Dat
 - All bash commands as `! cmd` — never `subprocess`, never `get_ipython().system()`
 - PyTorch Lightning (`pl`) + `torchmetrics` for all DNN training, even simple baselines
 - `timm.create_model(...)` for image classification; SMP for segmentation; XGBoost for tabular
+- Small, single-purpose cells — one load/transform/plot/check/train call per cell, never bundled
+- Every cell carries a why — inline comment or preceding markdown sentence names the specific reason (metric, leakage risk, memory limit), never restates the code
+- Long comments (multi-line, paragraph-length) never sit inside a code cell — extracted to a markdown cell; mid-cell → split into code → markdown → code
+- Section markdown is extensive, structured (tables/lists/blockquotes, not dense prose), and reads like a lecture — every plot framed by a "what to expect" cell before and a "finding + implication" cell after
 - Commented-out hyperparameter alternatives for every tunable value
 - `del` + `gc.collect()` + `time.sleep(9)` for GPU memory management
 
 **Grounding protocol**: all competition-specific facts (input modality, eval metric, submission format) must come from fetched URL, user answer, or past notebook. Skill asks via `AskUserQuestion` for ungroundable required facts — never hallucinates competition details.
+
+**Bare-`#` heading-spacer check**: Step 4 verify mechanically greps the generated file for bare `#`/`##`/... lines used as spacers inside markdown cells (renders as an empty heading + oversized margin in Jupyter/Kaggle, not whitespace) and auto-fixes them to true blank lines — prose-only compliance with the style rule proved insufficient in practice.
 
 **Competitor context**: `resources/competitors/` contains `.ipynb` or `.py` files → skill reads each, summarises approach (model choice, preprocessing, augmentation strategy) before profiling problem. Findings inform detection method + domain-specific preprocessing.
 
@@ -839,7 +845,7 @@ Plugin part of Borda-AI-Rig project. Skills + agents in `plugins/research/` in r
 
 Skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) = canonical source of truth — README must stay in sync. Any skill behavior change (flags, NOT-for scope, trigger conditions) requires update here.
 
-Version bumps per project policy: new capability → minor bump; fixes, wording, refactors → patch bump. Current version: `0.10.6`.
+Version bumps per project policy: new capability → minor bump; fixes, wording, refactors → patch bump.
 
 **Mode-dispatch layout**: large conditional sections externalised under `skills/<skill>/modes/*.md`, loaded on demand. Run's hypothesis pipeline, team, report modes under `skills/run/modes/`. ML-concepts reference for `research:scientist` under `agents/scientist/ml-concepts.md` — loaded only for ML-domain tasks.
 

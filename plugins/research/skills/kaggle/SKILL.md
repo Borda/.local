@@ -1,6 +1,6 @@
 ---
 name: kaggle
-description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following the user's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells. Writes output to .experiments/kaggle/<name>.py."
+description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following the user's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells, small single-purpose cells each carrying a why. Tuned to win (leakage-safe CV, metric-aligned modeling) as much as to teach. Writes output to .experiments/kaggle/<name>.py."
 argument-hint: "<competition-name> [<url-or-description>] [--type classification|regression|segmentation|detection|tabular] [--eda-only] [--inference-only] [--offline-setup] [--resume <existing.py>] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, WebSearch, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 disable-model-invocation: true
@@ -11,10 +11,17 @@ effort: high
 
 Generate Kaggle competition notebook script, Jupytext `# %%` format.
 
+Two goals, equal weight — neither traded for other:
+- **Win** — leaderboard-competitive: leakage-safe CV, metric-aligned loss/model choice, tuning/ensembling when it moves the score, not style theater
+- **Teach** — read top to bottom like a university/seminar lecture on solving this competition: reader new to it follows the full reasoning chain, every decision motivated, nothing left as unexplained code
+
 Follows user's ML research style distilled from past notebooks:
 - **PTL always for DNN training** (PyTorch Lightning + torchmetrics) — even simple baselines
 - **Tool agnostic** — best-fit library for problem; PTL when training loop needed
 - **Stages with lenses** — each major stage: quick sanity check cell (show one batch, print shapes, verify submission format)
+- **Small, single-purpose cells** — one action per cell (load, one transform, one plot, one check); never bundle setup + run + verify to save cell count
+- **Every cell earns its place** — one-line why (comment or markdown sentence) before/in each cell: the specific reason this step happens now — never a restatement of what the code does
+- **Section markdown is extensive and structured** — full explanation of what/why/how-it-advances-the-goal per section, formatted as tables/lists/blockquotes over dense prose paragraphs; markdown before a plot sets up the question, markdown after states the finding and its implication — plot and prose flow as one beat, never an orphaned chart
 - **`# !` bash over subprocess** — package installs, `nvidia-smi`, `ls -lh`, `# ! head submission.csv`
 - **EDA is visual** — distribution plots, sample grids, dimension scatters before any model
 - **Inference included** — model save pattern + separate load-and-infer cells
@@ -273,6 +280,7 @@ After agent completes:
 1. Read first 30 lines of generated file to verify `# %%` structure
 2. Count cell markers: `grep -c "^# %%" .experiments/kaggle/<name>.py`
 3. Resolve the current row from `composition.md`; verify every listed section is present and no unlisted section was generated
+4. Mechanically check for bare `#` heading-spacer lines (style-rules.md rule 13) — prose compliance alone proved insufficient in practice; auto-fix rather than trust the generating pass
 
 ```bash
 # Re-derive OUTFILE from flags persisted in Step 1 (bash state lost between steps)
@@ -285,6 +293,23 @@ echo "=== Composition ==="; echo "$MODE"
 echo "=== Cell count ==="; grep -c "^# %%" "$OUTFILE"  # timeout: 5000
 echo "=== Sections ===";   grep "^# %% \[markdown\]" "$OUTFILE"  # timeout: 5000
 echo "=== File size ===";  wc -l "$OUTFILE"  # timeout: 5000
+
+echo "=== Bare '#' heading-spacer check (rule 13) ==="
+BARE_HASH_COUNT=$(grep -cE '^#+[[:space:]]*$' "$OUTFILE" 2>/dev/null || echo 0)
+echo "Found: $BARE_HASH_COUNT"
+if [ "$BARE_HASH_COUNT" -gt 0 ]; then
+    grep -nE '^#+[[:space:]]*$' "$OUTFILE"  # timeout: 5000
+    python3 -c "
+import re
+path = '$OUTFILE'
+with open(path) as f:
+    text = f.read()
+fixed = re.sub(r'(?m)^#+[ \t]*$', '', text)
+with open(path, 'w') as f:
+    f.write(fixed)
+"  # timeout: 5000
+    echo "Auto-fixed: $BARE_HASH_COUNT bare '#' spacer line(s) converted to true blank lines"
+fi
 ```
 
 Print to terminal:
@@ -293,6 +318,7 @@ Print to terminal:
 - Problem type + recommended model
 - Cell count and section list
 - Missing required sections flagged with `⚠`
+- Bare `#` heading-spacer count found/auto-fixed (`0` when clean)
 
 Invoke `AskUserQuestion` as follow-up gate:
 - (a) Open in editor — `! code $OUTFILE`
