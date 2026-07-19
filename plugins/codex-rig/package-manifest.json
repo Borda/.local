@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "plugin": "codex-rig",
+  "version": "0.1.0+codex.20260718082612",
+  "release_profile": "plugin-only",
+  "features": {"manager": false, "hooks": false, "mcp": false, "generated_shims": false},
+  "skills": [{"id": "analyse", "path": "skills/analyse/SKILL.md"}],
+  "roles": [
+    {
+      "id": "challenger",
+      "path": "roles/challenger/ROLE.md",
+      "sha256": "803657d2996be24e36408304af3978ef3128442e064d085f35043769dbe8f9c6",
+      "runtime": {
+        "model": "gpt-5.6-terra",
+        "model_reasoning_effort": "high",
+        "approval_policy": "on-request",
+        "sandbox_mode": "read-only"
+      }
+    }
+  ],
+  "bootstrap": {
+    "protocol": 1,
+    "helper": "scripts/verify_role_link.py",
+    "sha256": "693548b5bd9fcdd5665938cda87b29278a19fdde07b097b59404f5a4c3c5cf17"
+  },
+  "files": [
+    {"path": ".codex-plugin/plugin.json", "sha256": "70160bfdf26904cafbc567c337fc7a266287b2a4565036c04cd655ae9d383748", "mode": "0644"},
+    {"path": "LICENSE", "sha256": "acd1e6ed0de415230fdc1b11de6ac0ffe9fbc982dfe4cc41b632c8961f059c06", "mode": "0644"},
+    {"path": "NOTICE", "sha256": "b171c72b05b5df5a81a5eb53ea9abc4bd1599eb14766a99827320a7012148f6e", "mode": "0644"},
+    {"path": "roles/challenger/ROLE.md", "sha256": "803657d2996be24e36408304af3978ef3128442e064d085f35043769dbe8f9c6", "mode": "0644"},
+    {"path": "scripts/verify_role_link.py", "sha256": "693548b5bd9fcdd5665938cda87b29278a19fdde07b097b59404f5a4c3c5cf17", "mode": "0644"},
+    {"path": "shared/collect-diff.sh", "sha256": "1a85bc10e525ddb003da8e5490c27dbaecb4b499c34795878d79b0031e292fcc", "mode": "0755"},
+    {"path": "shared/collect-pr.sh", "sha256": "71a6ec69c4fc3d241f5864d4e366af7e1aa64365f4e02f93639015438b56b950", "mode": "0755"},
+    {"path": "shared/commit-response-template.md", "sha256": "1506547730fff9a6c022971cb8c8bafbbf7643017465b3ec319c7bfd5e8fe36e", "mode": "0644"},
+    {"path": "shared/find-review-report.py", "sha256": "72f71679bd0ee8c8d930184f922cb47cfd658dc10ac6de42b5fbf6b2890eb89e", "mode": "0755"},
+    {"path": "shared/helper-cli-contract.md", "sha256": "128fc4a377a4f667cacf9ac5e8c28bd8caa18f35b2942ed55d6120e29b68a6fd", "mode": "0644"},
+    {"path": "shared/native-skill-contract.md", "sha256": "8182c467f812250797aad3fa285a601e899f3de56395c04ed6108eb5e1afc920", "mode": "0644"},
+    {"path": "shared/quality-gates.md", "sha256": "56a30359f183122a480d9e3218e104943577a348bc39e9b354955c0ff2065227", "mode": "0644"},
+    {"path": "shared/run-gates.sh", "sha256": "c4571fb56b6f6ff5d752fc1012938f4a677b69e4a713d1dd16823dc78e558ded", "mode": "0755"},
+    {"path": "shared/select-git-remote.py", "sha256": "f885e4251e3b2eed6315dd0a024d39669fd2b01689a78f681c3f9b32564d001e", "mode": "0755"},
+    {"path": "shared/severity-map.md", "sha256": "fa7100a51076d74b111ec22f0ddbf746202839ed20bb649eb7d89053e6f709d2", "mode": "0644"},
+    {"path": "shared/specialist-orchestration.md", "sha256": "e2758546ba7a98f691a687fd74ef54743efe236826efdbd0ab6992e63a2583d4", "mode": "0644"},
+    {"path": "shared/validate-artifacts.py", "sha256": "82b12cbd7690f42ba211926beca632d81e570ad0ce107aad809bc2dc662a448f", "mode": "0755"},
+    {"path": "shared/write-result.py", "sha256": "94f9f5253a600b8cf02899ff1a1840d4e59d868623097f808a88fb514b945b3c", "mode": "0755"},
+    {"path": "skills/analyse/SKILL.md", "sha256": "39b529035fb9457604162b9261bd2c5e853ddda337a5eb2303a4480b04a6be01", "mode": "0644"},
+    {"path": "skills/analyse/result-template.json", "sha256": "c50e29b97531a237ee77b067aa01351419aee6a272feea3e2335e300bf790b4a", "mode": "0644"},
+    {"path": "tests/test_installed_cache_scaffold.py", "sha256": "b7e1b32bd82fd866e01bab5061ec19ed2e70d0bfdfaad986a14daea786415a44", "mode": "0644"},
+    {"path": "tests/test_package_contract.py", "sha256": "15c2d98caca6e399253ea03c9352cf059272ba63a9d3083ba616f157d4b3e1b6", "mode": "0644"}
+  ],
+  "excluded": ["__pycache__", ".pytest_cache", ".coverage", ".mcp.json", "hooks"]
+}
