@@ -1,8 +1,8 @@
-# Codex Rig 0.2
+# Codex Rig 0.2.1
 
-Codex plugin from [Borda/AI-Rig](https://github.com/Borda/AI-Rig). Ships 14 workflow skills and 15 canonical specialist role cards. Apache-2.0 licensed.
+Codex plugin from [Borda/AI-Rig](https://github.com/Borda/AI-Rig). Ships 13 workflow skills, 15 canonical specialist role cards, and one experimental agent-shim manager skill. Apache-2.0 licensed.
 
-Plugin contains no MCP server and no native bundled agent registrations. Skills use built-in agents when suitable, or inject role cards into blank agents as fallback. Optional thin shims expose all 15 roles through Codex user-agent configuration.
+Plugin contains no MCP server and no native bundled agent registrations. Its supported parallel route injects an exact role card into a blank runtime agent; inline role execution remains the serial fallback. Persistent named-agent routing is platform-blocked until Codex exposes a verifiable custom-agent selector.
 
 ## Requirements
 
@@ -16,11 +16,11 @@ Local, unpushed changes are not installable from GitHub. No official marketplace
 ## Install from GitHub
 
 ```bash
-codex plugin marketplace add Borda/AI-Rig --ref main
+codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.1
 codex plugin add codex-rig@borda-ai-rig
 ```
 
-Start a fresh Codex session after installation. This loads plugin skills, role cards, and current hook configuration.
+Start a fresh Codex session after installation. This loads plugin skills and current hook configuration; workflows and shims consume bundled role cards on demand.
 
 ## Optional SessionStart diagnostic
 
@@ -28,7 +28,9 @@ Start a fresh Codex session after installation. This loads plugin skills, role c
 
 Review the hook command before trusting it. Enable it only when wanted. Declining hook trust leaves this diagnostic inactive; skills remain usable.
 
-## Agent shims
+## Experimental agent shims
+
+The manager diagnoses prior development installations and safely removes authenticated standalone TOML files. New installation is platform-blocked because current collaboration tooling does not expose a verifiable custom-agent selector. Do not infer selection from a matching task name, child path, or file name. Blank-agent role-card injection can still run independent work in parallel but does not guarantee the card's requested model, reasoning effort, sandbox, approval policy, or nesting profile.
 
 Invoke exactly one action:
 
@@ -41,14 +43,16 @@ $codex-rig:agent-shims remove
 
 - `doctor`: read-only runtime, active-package, manifest, helper, role-card, and filesystem checks.
 - `status`: read-only installed-roster, lifecycle-state, target, and recovery summary.
-- `install`: plan full 15-role roster creation or relink. No partial-roster mode.
+- `install`: report the platform block without creating or relinking files.
 - `remove`: plan removal of intact, authenticated Codex Rig shims. No prefix-based cleanup.
 
-`install` and `remove` print exact target root, operations, and SHA-256 approval digest. Review displayed plan. Type that exact digest only after explicit approval. Wrong or missing digest causes cancellation without authorized writes.
+Prior lifecycle files use authenticated names such as `codex-rig-linting-expert.toml`. `remove` prints the exact target root, operations, and SHA-256 approval digest. Review the displayed plan. Type that exact digest only after explicit approval. Wrong or missing digest causes cancellation without authorized writes.
 
 Interrupted recognized transactions use a separate recovery digest. Approved recovery rolls back partial mutation or finalizes durable committed state. Repeat original action after recovery.
 
-Start a fresh Codex session after every successful shim install, update, or removal.
+Use `remove` to recover prior interrupted transactions; blocked `install` never enters recovery or mutation planning.
+
+Start a fresh Codex session after successful shim removal.
 
 ## Update or reinstall
 
@@ -57,14 +61,7 @@ codex plugin marketplace upgrade borda-ai-rig
 codex plugin add codex-rig@borda-ai-rig
 ```
 
-Then:
-
-1. Start fresh Codex session.
-2. Run `$codex-rig:agent-shims doctor`.
-3. Run `$codex-rig:agent-shims install` and approve exact new plan.
-4. Start another fresh session.
-
-Plugin reinstall does not update external user-agent files automatically. Existing thin shims still bind recorded package identity; rerunning `install` safely converges intact managed shims to active compatible package.
+Then start a fresh Codex session. Plugin reinstall does not update external user-agent files automatically. Use the manager's authenticated `remove` action to clean prior development shims; new installation remains platform-blocked.
 
 ## Uninstall
 
@@ -76,7 +73,7 @@ Remove shims while plugin manager still exists:
 
 Removing plugin first deliberately leaves thin shim files behind. Those shims break because role cards and verifier live in removed plugin cache. They are not auto-deleted.
 
-Recovery: reinstall `codex-rig@borda-ai-rig`, start fresh session, run `doctor`, then run approved `remove` or `install`. Compatible historical state can authenticate guarded migration. Verification failure remains blocked; no force cleanup is provided.
+Recovery: reinstall `codex-rig@borda-ai-rig`, start fresh session, run `doctor`, then run approved `remove`. Compatible historical state can authenticate guarded cleanup. Verification failure remains blocked; no force cleanup is provided.
 
 ## Lifecycle safety limits
 
@@ -87,3 +84,4 @@ Recovery: reinstall `codex-rig@borda-ai-rig`, start fresh session, run `doctor`,
 - Manager owns only authenticated Codex Rig shim roster and state under current user's Codex home. It does not clean unrelated agents.
 - Thin shims require active compatible plugin cache. Offline cached use may work; update, reinstall, and active-package validation depend on Codex CLI state.
 - Hook trust, plugin install, shim install, and shim removal are separate lifecycle decisions.
+- A successful shim transaction proves file ownership and link integrity, not runtime profile selection.

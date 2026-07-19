@@ -1,4 +1,4 @@
-"""Acceptance checks for the complete shim-enabled Codex Rig release."""
+"""Acceptance checks for the complete role-card-injected Codex Rig release."""
 
 from __future__ import annotations
 
@@ -192,21 +192,22 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
     """Keep shim-manager and hook metadata aligned while MCP remains absent."""
     manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
     plugin = load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")
-    assert plugin["description"].startswith("Fourteen portable Codex workflows")
+    assert plugin["description"].startswith("Thirteen portable Codex workflows")
     assert plugin["interface"]["capabilities"] == [
-        "14 workflow skills",
+        "13 workflow skills and 1 experimental agent-shim manager",
         "15 specialist role cards",
-        "Optional guarded thin agent shims",
+        "Parallel blank-agent role injection",
+        "Authenticated cleanup for prior agent shims",
         "Optional SessionStart health diagnostic",
         "Built-in and inline role fallback",
         "Quality gates",
     ]
-    assert manifest["release_profile"] == "shim-enabled"
+    assert manifest["release_profile"] == "role-card-injected"
     assert manifest["features"] == {
         "manager": True,
         "hooks": True,
         "mcp": False,
-        "generated_shims": True,
+        "generated_shims": False,
     }
     assert "hooks" not in plugin
     assert "mcpServers" not in plugin
@@ -250,11 +251,12 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
     """Keep the user-visible lifecycle and deliberate thin-link limits explicit."""
     guide = normalized_text(PLUGIN_ROOT / "README.md").lower()
     for required in (
-        "codex plugin marketplace add borda/ai-rig --ref main",
+        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.1",
         "codex plugin add codex-rig@borda-ai-rig",
         "optional sessionstart diagnostic",
         "type that exact digest only after explicit approval",
         "plugin reinstall does not update external user-agent files automatically",
+        "new installation is platform-blocked",
         "removing plugin first deliberately leaves thin shim files behind",
         "foreign or marker-only `codex-rig-*.toml` files are never adopted, overwritten, or removed",
         "no native bundled agent registrations",
@@ -266,10 +268,9 @@ def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:
     """Prevent fallback routing from losing order, fidelity limits, or audit evidence."""
     policy = normalized_text(PLUGIN_ROOT / "shared" / "specialist-orchestration.md")
     route_markers = (
-        "1. A currently available `codex-rig-<role-id>` custom agent",
-        "2. A runtime-provided blank/default subagent",
-        "3. An inline pass in the parent context",
-        "4. `unavailable` when the runtime cannot provide any safe route",
+        "1. A runtime-provided blank/default subagent",
+        "2. An inline pass in the parent context",
+        "3. `unavailable` when the runtime cannot provide any safe route",
     )
     positions = [policy.index(marker) for marker in route_markers]
     assert positions == sorted(positions)
@@ -287,8 +288,10 @@ def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:
         "material fidelity limits",
     ):
         assert field in policy
-    assert "Fallback only for route absence, rejection, or failed bootstrap" in policy
+    assert "Fallback only for route absence or rejection" in policy
     assert "Never retry another route because the specialist disagreed" in policy
+    assert "`task_name` is provenance only" in policy
+    assert "Persistent named shims are platform-blocked for routing" in policy
 
 
 def test_public_payload_has_no_private_release_references() -> None:

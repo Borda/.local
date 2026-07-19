@@ -2,7 +2,7 @@
   "bootstrap": {
     "helper": "scripts/verify_role_link.py",
     "protocol": 1,
-    "sha256": "99df4cdd057b2e39b8250572bf79109637e8a9321bb82eb6c7ac2f9795e0704a"
+    "sha256": "57a0c30768470aeac2be9de9e350c35060c5afd4fbd1bafbcc58d35866cb23ca"
   },
   "excluded": [
     "__pycache__",
@@ -13,7 +13,7 @@
     "skills/agent-shims"
   ],
   "features": {
-    "generated_shims": true,
+    "generated_shims": false,
     "hooks": true,
     "manager": true,
     "mcp": false
@@ -22,7 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "aaf82f1ad7bbd3dbe6ae93dc88ef4e28d75ef3764c167cfac82c5d873392ffc2"
+      "sha256": "6a0ead2afac5c40c0f7307679c79c85d21b4b5df76479bc596b6bf2653173426"
+    },
+    {
+      "mode": "0644",
+      "path": "CHANGELOG.md",
+      "sha256": "01a4a6e57d542e9f69ee15b003d66e5df3d57e41812964555354406b852d150b"
     },
     {
       "mode": "0644",
@@ -37,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "cf7cedd276c57b8e331bd821e7a3418c2781c2f1bc7181cdc481b79c10d3ec71"
+      "sha256": "830e327cb704d30d213fbd6949d582fc147b578967b77fcd429b8fd2e4aefa14"
     },
     {
       "mode": "0644",
@@ -252,27 +257,27 @@
     {
       "mode": "0755",
       "path": "scripts/build_package.py",
-      "sha256": "37dc9ee9f80f4f34bce5cdf2386217c40a0c4c7493b6031d1d254a6a6f296943"
+      "sha256": "0a3e489fa48c691ad7d08248a9063a2e191930b69b13fcd0efc27a2ce596f22a"
     },
     {
       "mode": "0644",
       "path": "scripts/generate_roles.py",
-      "sha256": "db331f999abc5acf2a60e2544f7f013b96e857ef362fdd18e14c0d5e496beabf"
+      "sha256": "5c48f5c11012ef59ca73a34504deafb0eb666b790b91025c01cd3cad4fe26cc1"
     },
     {
       "mode": "0644",
       "path": "scripts/manage_role_agents.py",
-      "sha256": "f5d470162be567eb1de184cb81ee6f5566c81cb80d1ca0ca874b2f242fc94c80"
+      "sha256": "30ece0797892582852b55e41c9f22573b010bbc582756a20611ef9b67d492d98"
     },
     {
       "mode": "0755",
       "path": "scripts/validate_package.py",
-      "sha256": "856c4aabc77194cbf89232e050d35c80d03b76c951e3e32e157a887b844ff2f9"
+      "sha256": "74cc150e24c85f913d6be684d073e457e742aa9aa33da22e225eac0b2e2e050c"
     },
     {
       "mode": "0644",
       "path": "scripts/verify_role_link.py",
-      "sha256": "99df4cdd057b2e39b8250572bf79109637e8a9321bb82eb6c7ac2f9795e0704a"
+      "sha256": "57a0c30768470aeac2be9de9e350c35060c5afd4fbd1bafbcc58d35866cb23ca"
     },
     {
       "mode": "0755",
@@ -327,7 +332,7 @@
     {
       "mode": "0644",
       "path": "shared/specialist-orchestration.md",
-      "sha256": "eac9fd61ff0a9689dd524214bd2e8f064d02908a772698263c9a5ffa10bfc620"
+      "sha256": "4d73b36e77bad37e0f0b75f74ca0ab6f08516a94652f75fe96ba2bf43656a4ca"
     },
     {
       "mode": "0755",
@@ -342,12 +347,12 @@
     {
       "mode": "0644",
       "path": "skills/agent-shims/SKILL.md",
-      "sha256": "1bb6b714152102c9556696d97d1913407298b43bcf73b7db994bbddb9184961b"
+      "sha256": "8dda67d4a3ec690a74fe1c2dcfa073d4ccafea9249fc7121dd519726fbf24f27"
     },
     {
       "mode": "0644",
       "path": "skills/agent-shims/agents/openai.yaml",
-      "sha256": "70f28ab592a2c9e58d96df4bb1968b1b57204d26316edfe991c2f2fa78ea3ffc"
+      "sha256": "a5a8f989099c6393a13573f3e1fbb077970b1c0773a661517d7c8a5856c7b95e"
     },
     {
       "mode": "0644",
@@ -517,7 +522,7 @@
     {
       "mode": "0644",
       "path": "skills/sync/SKILL.md",
-      "sha256": "399e258945ba66e829bd44039bb46c04f8bad883715e4a9359f0b782be82df5b"
+      "sha256": "f68ca2291ef2b157ea7ca85e508e74bfacc0c0a05aa90f331c3c1b14847863a9"
     },
     {
       "mode": "0644",
@@ -577,17 +582,17 @@
     {
       "mode": "0644",
       "path": "tests/test_installed_cache_scaffold.py",
-      "sha256": "d4262e3eb0e4b2eea3a82a6387c4897bd9b4d1d3020af19de75b7dc4db12bd64"
+      "sha256": "dac50b2b188dbe3296e9d0c383d6828009379446a2e6399ed2c2f9d1554a05bc"
     },
     {
       "mode": "0644",
       "path": "tests/test_manage_role_agents.py",
-      "sha256": "e4a37b0e312a3637d8b8cf5106fb0595f0b4c687e90a30650a8a328351184347"
+      "sha256": "a2681449fea68413b0359504c69813d2ffe26214f709e94d4f2ea4a09cdf2df4"
     },
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "12e72111223fda11028dbcc82832891e0f8c8f576f2a71c31a867025722918ed"
+      "sha256": "3767c5f8e518af5780c6f1546e437e9bd3fdc9782f9caed4b32dded2d92ac59f"
     },
     {
       "mode": "0644",
@@ -597,11 +602,11 @@
   ],
   "generator": {
     "path": "scripts/generate_roles.py",
-    "sha256": "db331f999abc5acf2a60e2544f7f013b96e857ef362fdd18e14c0d5e496beabf",
+    "sha256": "5c48f5c11012ef59ca73a34504deafb0eb666b790b91025c01cd3cad4fe26cc1",
     "version": 1
   },
   "plugin": "codex-rig",
-  "release_profile": "shim-enabled",
+  "release_profile": "role-card-injected",
   "roles": [
     {
       "id": "challenger",
@@ -828,5 +833,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.2.0+codex.20260719085017"
+  "version": "0.2.1"
 }

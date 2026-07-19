@@ -1,4 +1,4 @@
 interface:
   display_name: "Agent Shims"
-  short_description: "Diagnose, install, or remove Codex Rig role shims"
+  short_description: "Diagnose or remove prior Codex Rig role shims"
   default_prompt: "Use $agent-shims with exactly one action: doctor, status, install, or remove."

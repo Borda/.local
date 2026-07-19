@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Codex Rig shim-enabled package contract and payload closure."""
+"""Validate the Codex Rig role-card-injected package contract and payload closure."""
 
 from __future__ import annotations
 
@@ -67,10 +67,10 @@ def validate_semantics() -> None:
     role_ids = {item["id"] for item in manifest.get("roles", [])}
     if skill_ids != EXPECTED_SKILLS or role_ids != EXPECTED_ROLES:
         raise ValueError("public roster mismatch")
-    if manifest.get("version") != plugin.get("version") or manifest.get("release_profile") != "shim-enabled":
+    if manifest.get("version") != plugin.get("version") or manifest.get("release_profile") != "role-card-injected":
         raise ValueError("plugin identity mismatch")
-    if manifest.get("features") != {"manager": True, "hooks": True, "mcp": False, "generated_shims": True}:
-        raise ValueError("shim-enabled feature boundary mismatch")
+    if manifest.get("features") != {"manager": True, "hooks": True, "mcp": False, "generated_shims": False}:
+        raise ValueError("role-card-injected feature boundary mismatch")
     if (
         not (PACKAGE_ROOT / "hooks" / "hooks.json").is_file()
         or not (PACKAGE_ROOT / "hooks" / "session_start.py").is_file()

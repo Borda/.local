@@ -26,12 +26,12 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_scaffold_is_strict_plugin_only_release() -> None:
-    """Prevent scaffold metadata from advertising future manager behavior."""
+def test_scaffold_has_stable_role_card_release_identity() -> None:
+    """Prevent installed-cache identity and declared boundaries from drifting."""
     manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
 
     assert manifest["name"] == "codex-rig"
-    assert manifest["version"].split("+", maxsplit=1)[0] == "0.2.0"
+    assert manifest["version"] == "0.2.1"
     assert manifest["author"]["name"] == "Jiri Borovec"
     assert "hooks" not in manifest
     assert "mcpServers" not in manifest

@@ -1013,6 +1013,20 @@ def main(argv: list[str] | None = None) -> int:
     home_value = os.environ.get("CODEX_HOME")
     codex_home = Path(home_value) if home_value else Path.home() / ".codex"
     plugin_root = Path(__file__).resolve().parents[1]
+    # Only remove may recover prior transactions while new named-agent activation is unsupported.
+    if arguments.action == "install":
+        print(
+            json.dumps(
+                {
+                    "action": "install",
+                    "classification": "platform-blocked",
+                    "detail": "active Codex collaboration has no explicit custom-agent selector",
+                    "writes": 0,
+                },
+                sort_keys=True,
+            )
+        )
+        return 5
     if arguments.action in {"install", "remove"}:
         try:
             recovery = plan_recovery(

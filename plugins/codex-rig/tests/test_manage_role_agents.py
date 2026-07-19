@@ -205,6 +205,37 @@ def test_public_grammar_rejects_invalid_or_unwired_mutation_actions(
     assert snapshot(tmp_path) == before
 
 
+def test_install_is_platform_blocked_before_plan_or_approval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Refuse unsupported shim selection without planning, approval, or writes."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_platform_blocked")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    monkeypatch.setenv("CODEX_HOME", str(home))
+
+    def unexpected_call(*_args: object, **_kwargs: object) -> None:
+        """Fail if install reaches mutation planning or interactive approval."""
+        pytest.fail("platform-blocked install continued into mutation flow")
+
+    monkeypatch.setattr(module, "plan_mutation", unexpected_call)
+    monkeypatch.setattr(module, "plan_recovery", unexpected_call)
+    monkeypatch.setattr("builtins.input", unexpected_call)
+    before = snapshot(tmp_path)
+
+    assert module.main(["install"]) == 5
+
+    assert json.loads(capsys.readouterr().out) == {
+        "action": "install",
+        "classification": "platform-blocked",
+        "detail": "active Codex collaboration has no explicit custom-agent selector",
+        "writes": 0,
+    }
+    assert snapshot(tmp_path) == before
+
+
 def test_doctor_refuses_symlinked_home_alias(tmp_path: Path) -> None:
     """Block unresolved home aliases instead of silently changing authority."""
     module = load_module(MANAGER_PATH, "codex_rig_manager_alias")

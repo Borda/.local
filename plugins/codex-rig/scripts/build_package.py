@@ -119,7 +119,7 @@ def file_record(path: Path) -> dict[str, str]:
 
 
 def build_manifest() -> dict[str, Any]:
-    """Build the complete shim-enabled package identity manifest."""
+    """Build the complete role-card-injected package identity manifest."""
     plugin = load_json(PLUGIN_MANIFEST_PATH)
     if plugin.get("name") != "codex-rig" or not isinstance(plugin.get("version"), str):
         raise ValueError("plugin manifest identity is invalid")
@@ -164,8 +164,8 @@ def build_manifest() -> dict[str, Any]:
         "schema": 1,
         "plugin": "codex-rig",
         "version": plugin["version"],
-        "release_profile": "shim-enabled",
-        "features": {"manager": True, "hooks": True, "mcp": False, "generated_shims": True},
+        "release_profile": "role-card-injected",
+        "features": {"manager": True, "hooks": True, "mcp": False, "generated_shims": False},
         "skills": skills,
         "roles": roles,
         "bootstrap": {

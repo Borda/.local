@@ -9,9 +9,9 @@ Inspect and refresh the public-GitHub Codex Rig plugin through supported Codex C
 an installed cache, edit Codex configuration by hand, or treat cached package directories as mutable source trees.
 
 Sync never mutates external agent files. Before plugin removal, run `agent-shims remove` while the manager is still
-available. After refresh or reinstall, run `agent-shims doctor`, then an approved `agent-shims install` to relink
-intact managed shims to the newly active cache. Report unknown or modified `codex-rig-*.toml` files without removing,
-adopting, or repairing them.
+available. After refresh or reinstall, run `agent-shims doctor` to report prior shim residue; new installation and
+relinking remain platform-blocked. Report unknown or modified `codex-rig-*.toml` files without removing, adopting, or
+repairing them.
 
 ## Input Schema
 

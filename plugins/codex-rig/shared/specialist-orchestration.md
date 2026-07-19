@@ -61,23 +61,30 @@ the behavioral authority. Plugin-only installs do not create custom-agent files.
 Before routing, classify each requested model, sandbox, approval, and nesting setting as `mandatory` or `preferred`
 from the task's actual risk. Use this route order:
 
-1. A currently available `codex-rig-<role-id>` custom agent only when its linked bootstrap returns an `ok` envelope
-   for the exact current card.
-2. A runtime-provided blank/default subagent with the exact role card injected before the narrow context pack.
-3. An inline pass in the parent context with the exact role card applied and independence reported as false.
-4. `unavailable` when the runtime cannot provide any safe route or cannot prove a mandatory profile setting.
+1. A runtime-provided blank/default subagent with the complete exact role-card bytes injected before the narrow
+   context pack.
+2. An inline pass in the parent context with the exact role card applied and independence reported as false.
+3. `unavailable` when the runtime cannot provide any safe route or cannot prove a mandatory profile setting.
 
-Fallback only for route absence, rejection, or failed bootstrap before substantive role work. Never retry another
+Fallback only for route absence or rejection before substantive role work. Never retry another
 route because the specialist disagreed, returned a finding, or failed an acceptance gate. Built-in injection may
 retain parallel independence but cannot claim the role card's model, sandbox, approval, or nesting profile unless
 the runtime independently proves each setting. Preferred settings that are unproved are recorded as requested-only
 and lower fidelity; mandatory settings that are unproved stop at `unavailable`. Inline fallback is serial and
 non-independent.
 
+For injection, the parent reads and hashes the canonical card, then places its full text before the narrow task
+context. Passing only a role ID or path, or asking the child to search for the card, is not injection. A sanitized
+`task_name` is provenance only; it neither selects a custom profile nor proves agent activation.
+
+Persistent named shims are platform-blocked for routing until Codex exposes a verifiable custom-agent selector and
+a fresh-session probe proves the child consumed the selected TOML. Their lifecycle manager remains available for
+diagnosis and authenticated cleanup of prior development installations.
+
 For every routed pass record: `role_id`, role-card SHA-256, route, attempted routes, fallback reason, actual model and
 reasoning effort when observable, requested and observed sandbox/approval controls, independence, nesting depth, and
-material fidelity limits. A failed linked bootstrap records `codex-rig-role-unavailable` and does not expose or infer
-role behavior from a stale custom-agent file.
+material fidelity limits. Also record the observed `agent_role` when available; a null value cannot support a custom
+profile claim.
 
 Write human-readable context packs in Caveman Ultra. Preserve exact evidence, questions, output contract, stop rule, risks, and ownership. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
 
