@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "plugin": "codex-rig",
-  "version": "0.1.0+codex.20260718091111",
+  "version": "0.1.0+codex.20260718130627",
   "release_profile": "plugin-only",
   "features": {
     "manager": false,
@@ -233,12 +233,17 @@
   "bootstrap": {
     "protocol": 1,
     "helper": "scripts/verify_role_link.py",
-    "sha256": "693548b5bd9fcdd5665938cda87b29278a19fdde07b097b59404f5a4c3c5cf17"
+    "sha256": "ee4f7ed74a721378f6b3378f643ea9b7392a310bbddcb5caa5713b3aaf029e5e"
+  },
+  "generator": {
+    "version": 1,
+    "path": "scripts/generate_roles.py",
+    "sha256": "330f4ea17e1be976e82b9bed53d835e17fc2628869d2f4495280519ea0ed61ec"
   },
   "files": [
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "f663ea6261a8ae6e991b2fbd04e4d8b4d01c8fe9e1638b74aaab80bbbe0a5066",
+      "sha256": "95e752d4d1eb0b8bc9a5b92a9e680f299ddcd9a383ad20dc8df2f87fa59d65b5",
       "mode": "0644"
     },
     {
@@ -412,9 +417,49 @@
       "mode": "0644"
     },
     {
+      "path": "scripts/_agent_shim_approval.py",
+      "sha256": "6d119741dd863f184cf19bc4a1153d291c11d68a80cf054d99c1bcab2447e2fe",
+      "mode": "0644"
+    },
+    {
+      "path": "scripts/_agent_shim_journal.py",
+      "sha256": "eeb1ca88c61fd2bb6bf950c8e46e299c53aac981a4e79d3bbf1c782bd2c07ae8",
+      "mode": "0644"
+    },
+    {
+      "path": "scripts/_agent_shim_lifecycle.py",
+      "sha256": "8801d81440817e2dab0a73bf2fbf207e063d8adb9aff2bd831cd39758fe698fd",
+      "mode": "0644"
+    },
+    {
+      "path": "scripts/_agent_shim_observe.py",
+      "sha256": "1a54111a93c47757bc5cdf7dc49e29c767f6a7c2ad525880c5ed717a6689155f",
+      "mode": "0644"
+    },
+    {
+      "path": "scripts/_agent_shim_plan.py",
+      "sha256": "85abd7db5ddef0a206339a1875534be71df0370d8ea1c5112bfb86d64a7effa4",
+      "mode": "0644"
+    },
+    {
+      "path": "scripts/_agent_shim_posix.py",
+      "sha256": "228e923d3adec45c3449f9819d80b521b49000caa1fc3b9746f4e06c4cb120e6",
+      "mode": "0644"
+    },
+    {
+      "path": "scripts/_agent_shim_transaction.py",
+      "sha256": "c080d339df4d48a519e901d12f264871e2fcc9d74e9c84679473871282dca6cd",
+      "mode": "0644"
+    },
+    {
       "path": "scripts/build_package.py",
-      "sha256": "7ad1d6340e2bdaeab4742e2e6c525c74156fd0469935f8975ea9e96eee2d0246",
+      "sha256": "24a7f90d29c64c431935c3e81e9d2ace79b46aafa3d0499328068ca0556b6d2f",
       "mode": "0755"
+    },
+    {
+      "path": "scripts/generate_roles.py",
+      "sha256": "330f4ea17e1be976e82b9bed53d835e17fc2628869d2f4495280519ea0ed61ec",
+      "mode": "0644"
     },
     {
       "path": "scripts/validate_package.py",
@@ -423,7 +468,7 @@
     },
     {
       "path": "scripts/verify_role_link.py",
-      "sha256": "693548b5bd9fcdd5665938cda87b29278a19fdde07b097b59404f5a4c3c5cf17",
+      "sha256": "ee4f7ed74a721378f6b3378f643ea9b7392a310bbddcb5caa5713b3aaf029e5e",
       "mode": "0644"
     },
     {
@@ -667,13 +712,53 @@
       "mode": "0644"
     },
     {
+      "path": "tests/test_agent_shim_approval.py",
+      "sha256": "88d29e603d94c907a9035942f21268211d162ace73acf78dcad9c3d46d41ed1d",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_agent_shim_journal.py",
+      "sha256": "8d7caf9b9f76cef6e5eaed5380ba885560bca49d2ac56e24790fa624563fccdc",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_agent_shim_lifecycle_read.py",
+      "sha256": "5899b57f16cb6023fa54a3424ae9d478f8b363334d6d9ab9a299c009ee404d08",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_agent_shim_observe.py",
+      "sha256": "0937513929b95af87070af6aaf5815d815e67bdae05293aa36e2bccf597c4268",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_agent_shim_plan.py",
+      "sha256": "ffddc64894dfe689f421c721b76cb8c08a934f9ee459366925b3ce3a474af6b1",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_agent_shim_posix.py",
+      "sha256": "f29c85253143fa488b211e6911abf64a80141ab1fb5733e8f27ecc19eb352acc",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_agent_shim_transaction.py",
+      "sha256": "9a68f76c251f56419bbf40bc9b6d0a4b93d7bf51ed392233b23658d137a13578",
+      "mode": "0644"
+    },
+    {
       "path": "tests/test_build_package.py",
-      "sha256": "e69e81502edbc9c23c49765f2108fba01a9eef0461fab493c6de7334150bbb47",
+      "sha256": "0fdf9742d294c085c958d3577151862af295380d7db5dfda103c52a608cec7d7",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_generate_roles.py",
+      "sha256": "d88488b7d451326eae9773f21ccdd48e73f26a179f5cac7511e3b9e82bd53768",
       "mode": "0644"
     },
     {
       "path": "tests/test_installed_cache_scaffold.py",
-      "sha256": "16cc39abc91226482fee9dc9989341ee767523e93750223828b0294f7eaa29d9",
+      "sha256": "e9f889b0772ea98c25e636306e1153cb36d41db019aa64629ea102737bb8e714",
       "mode": "0644"
     },
     {

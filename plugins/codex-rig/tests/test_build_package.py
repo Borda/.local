@@ -59,6 +59,25 @@ def test_generation_is_deterministic_and_current() -> None:
     assert b"/home/" not in first
 
 
+def test_manifest_binds_the_pure_role_generator() -> None:
+    """Prevent installed managers from importing unbound generator bytes."""
+    builder = load_builder()
+    manifest = builder.build_manifest()
+    generator = PLUGIN_ROOT / "scripts" / "generate_roles.py"
+
+    assert manifest["generator"] == {
+        "version": 1,
+        "path": "scripts/generate_roles.py",
+        "sha256": builder.sha256(generator.read_bytes()),
+    }
+    record = next(item for item in manifest["files"] if item["path"] == "scripts/generate_roles.py")
+    assert record == {
+        "path": "scripts/generate_roles.py",
+        "sha256": manifest["generator"]["sha256"],
+        "mode": "0644",
+    }
+
+
 def test_generation_checks_source_independent_installed_copy(tmp_path: Path) -> None:
     """Prove manifest validation does not require the repository source tree."""
     installed = copied_plugin(tmp_path)

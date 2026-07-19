@@ -27,7 +27,6 @@ def sha256(path: Path) -> str:
 def test_scaffold_is_strict_plugin_only_release() -> None:
     """Prevent scaffold metadata from advertising future manager behavior."""
     manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    marketplace = json.loads((REPO_ROOT / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
 
     assert manifest["name"] == "codex-rig"
     assert manifest["version"].split("+", maxsplit=1)[0] == "0.1.0"
@@ -39,6 +38,15 @@ def test_scaffold_is_strict_plugin_only_release() -> None:
     assert {"codex-rig:develop", "codex-rig:code-review", "codex-rig:research"} == {
         prompt.split()[2] for prompt in manifest["interface"]["defaultPrompt"]
     }
+
+
+def test_repository_marketplace_contract() -> None:
+    """Validate repository catalog metadata only when its source root exists."""
+    marketplace_path = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
+    if not marketplace_path.exists():
+        pytest.skip("repository marketplace is intentionally outside installed plugin cache")
+    marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
+
     assert marketplace["name"] == "borda-ai-rig"
     assert marketplace["plugins"][0]["source"]["path"] == "./plugins/codex-rig"
 
@@ -215,6 +223,22 @@ def test_verifier_emits_exact_installed_card_bytes(tmp_path: Path) -> None:
         "status": "ok",
     }
     assert emitted_card == card
+
+
+@pytest.mark.parametrize("hooks", [False, True], ids=["without-hook", "with-hook"])
+def test_verifier_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> None:
+    """Keep linked bootstrap valid for both declared manager package variants."""
+    home, installed_root, codex_binary = installed_fixture(tmp_path)
+    manifest_path = installed_root / "package-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["release_profile"] = "plugin-only+manager"
+    manifest["features"] = {"manager": True, "hooks": hooks, "mcp": False, "generated_shims": True}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = run_verifier(home, installed_root, codex_binary)
+
+    assert result.returncode == 0, result.stdout
+    assert CARD_SEPARATOR in result.stdout
 
 
 def test_verifier_rejects_plugin_manifest_content_not_bound_by_package_manifest(tmp_path: Path) -> None:

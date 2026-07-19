@@ -264,6 +264,25 @@ def indexed_files(manifest: dict[str, object]) -> dict[str, dict[str, object]]:
     return index
 
 
+def has_compatible_profile(manifest: dict[str, object]) -> bool:
+    """Accept only declared plugin-only or manager-enabled feature tuples."""
+    features = manifest.get("features")
+    if not isinstance(features, dict) or set(features) != {"manager", "hooks", "mcp", "generated_shims"}:
+        return False
+    identity = (
+        manifest.get("release_profile"),
+        features.get("manager"),
+        features.get("hooks"),
+        features.get("mcp"),
+        features.get("generated_shims"),
+    )
+    return identity in {
+        ("plugin-only", False, False, False, False),
+        ("plugin-only+manager", True, False, False, True),
+        ("plugin-only+manager", True, True, False, True),
+    }
+
+
 def load_verified_role(args: argparse.Namespace) -> tuple[bytes, str]:
     """Validate one identity chain and return its exact role bytes and digest."""
     role_id = validate_role_id(args.role)
@@ -292,7 +311,7 @@ def load_verified_role(args: argparse.Namespace) -> tuple[bytes, str]:
         plugin_record = files.get(".codex-plugin/plugin.json", {})
         if (
             manifest.get("plugin") != PLUGIN_NAME
-            or manifest.get("release_profile") != "plugin-only"
+            or not has_compatible_profile(manifest)
             or not isinstance(plugin_manifest, dict)
             or plugin_manifest.get("name") != PLUGIN_NAME
             or plugin_manifest.get("version") != version

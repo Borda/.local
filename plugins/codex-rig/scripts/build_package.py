@@ -156,6 +156,9 @@ def build_manifest() -> dict[str, Any]:
     helper = PACKAGE_ROOT / "scripts" / "verify_role_link.py"
     if not helper.is_file():
         raise ValueError("missing linked-role verifier")
+    generator = PACKAGE_ROOT / "scripts" / "generate_roles.py"
+    if not generator.is_file():
+        raise ValueError("missing thin-role generator")
     return {
         "schema": 1,
         "plugin": "codex-rig",
@@ -168,6 +171,11 @@ def build_manifest() -> dict[str, Any]:
             "protocol": 1,
             "helper": "scripts/verify_role_link.py",
             "sha256": sha256(helper.read_bytes()),
+        },
+        "generator": {
+            "version": 1,
+            "path": "scripts/generate_roles.py",
+            "sha256": sha256(generator.read_bytes()),
         },
         "files": [file_record(path) for path in payload_files],
         "excluded": ["__pycache__", ".pytest_cache", ".coverage", ".mcp.json", "hooks", "skills/agent-shims"],
