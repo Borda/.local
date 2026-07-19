@@ -29,7 +29,7 @@ def test_scaffold_is_strict_plugin_only_release() -> None:
     manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
 
     assert manifest["name"] == "codex-rig"
-    assert manifest["version"].split("+", maxsplit=1)[0] == "0.1.0"
+    assert manifest["version"].split("+", maxsplit=1)[0] == "0.2.0"
     assert manifest["author"]["name"] == "Jiri Borovec"
     assert "hooks" not in manifest
     assert "mcpServers" not in manifest
@@ -231,7 +231,7 @@ def test_verifier_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> 
     home, installed_root, codex_binary = installed_fixture(tmp_path)
     manifest_path = installed_root / "package-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["release_profile"] = "plugin-only+manager"
+    manifest["release_profile"] = "shim-enabled"
     manifest["features"] = {"manager": True, "hooks": hooks, "mcp": False, "generated_shims": True}
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 

@@ -1,0 +1,18 @@
+{
+  "description": "Optional read-only Codex Rig shim health diagnostic.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/hooks/session_start.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking Codex Rig shim health"
+          }
+        ]
+      }
+    ]
+  }
+}

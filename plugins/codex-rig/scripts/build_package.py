@@ -17,6 +17,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = PACKAGE_ROOT / "package-manifest.json"
 PLUGIN_MANIFEST_PATH = PACKAGE_ROOT / ".codex-plugin" / "plugin.json"
 WORKFLOW_SKILLS = (
+    "agent-shims",
     "analyse",
     "audit",
     "calibrate",
@@ -118,7 +119,7 @@ def file_record(path: Path) -> dict[str, str]:
 
 
 def build_manifest() -> dict[str, Any]:
-    """Build the complete plugin-only package identity manifest."""
+    """Build the complete shim-enabled package identity manifest."""
     plugin = load_json(PLUGIN_MANIFEST_PATH)
     if plugin.get("name") != "codex-rig" or not isinstance(plugin.get("version"), str):
         raise ValueError("plugin manifest identity is invalid")
@@ -163,8 +164,8 @@ def build_manifest() -> dict[str, Any]:
         "schema": 1,
         "plugin": "codex-rig",
         "version": plugin["version"],
-        "release_profile": "plugin-only",
-        "features": {"manager": False, "hooks": False, "mcp": False, "generated_shims": False},
+        "release_profile": "shim-enabled",
+        "features": {"manager": True, "hooks": True, "mcp": False, "generated_shims": True},
         "skills": skills,
         "roles": roles,
         "bootstrap": {

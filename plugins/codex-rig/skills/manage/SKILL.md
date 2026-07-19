@@ -9,8 +9,8 @@ Guarded Codex config management for agents, skills, rules, and local config.
 
 The installed plugin tree is immutable input. Resolve requested targets against the consuming project or an explicit
 user-approved external scope; never edit this skill's plugin cache, packaged role cards, shared helpers, runtime
-assets, or package manifests. Optional Codex Rig agent links are managed only by the separately released
-`agent-shims` workflow, not by this skill.
+assets, or package manifests. Codex Rig agent links are managed only by the bundled `agent-shims` workflow, not by
+this general-purpose skill.
 
 ## Input Schema
 

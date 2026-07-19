@@ -760,10 +760,10 @@ def _durable_recovery_entries_exact(
     if journal.before_state.exists:
         assert journal.before_state.sha256 is not None and journal.before_state.mode is not None
         expected_root["state.before.json"] = (journal.before_state.sha256, journal.before_state.mode, (1,))
-    recovering = journal.journal_state == "RECOVERY_REQUIRED"
+    crash_window = journal.journal_state in {"MUTATING", "RECOVERY_REQUIRED"}
     state_was_published = journal.journal_state in {"STATE_COMMITTED", "COMMITTED"}
     state_after_links = (
-        (1, 2) if recovering else (2,) if state_was_published or "state.publish.json" in entries else (1,)
+        (1, 2) if crash_window else (2,) if state_was_published or "state.publish.json" in entries else (1,)
     )
     if journal.after_state.exists:
         assert journal.after_state.sha256 is not None and journal.after_state.mode is not None
@@ -825,17 +825,17 @@ def _durable_recovery_entries_exact(
             expected_children["after"][operation.after_image.removeprefix("after/")] = (
                 operation.after_hash,
                 operation.after_mode,
-                (1, 2) if recovering and not rolled_back else (2,) if published else (1,),
+                (1, 2) if crash_window and not rolled_back else (2,) if published else (1,),
             )
         detached = operation.progress in {"DETACHED", "PUBLISHED", "VERIFIED"} and not rolled_back
-        if operation.quarantine_name is not None and (detached or recovering):
+        if operation.quarantine_name is not None and (detached or crash_window):
             assert operation.before_hash is not None and operation.before_mode is not None
             expected_children["quarantine"][operation.quarantine_name.removeprefix("quarantine/")] = (
                 operation.before_hash,
                 operation.before_mode,
                 (1,),
             )
-    optional_quarantine = frozenset(expected_children["quarantine"]) if recovering else frozenset()
+    optional_quarantine = frozenset(expected_children["quarantine"]) if crash_window else frozenset()
     return all(
         _recovery_child_exact(
             directory_fd,

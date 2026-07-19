@@ -865,16 +865,17 @@ def test_prepared_transaction_binds_state_publish_inode(tmp_path: Path, same_ino
     assert result.recovery == ("journal" if same_inode else "blocked-unknown")
 
 
-def test_recovery_accepts_one_unjournaled_create_publication(tmp_path: Path) -> None:
+@pytest.mark.parametrize("journal_state", ["MUTATING", "RECOVERY_REQUIRED"])
+def test_recovery_accepts_one_unjournaled_create_publication(tmp_path: Path, journal_state: str) -> None:
     """Recognize a published exact target when recovery authority lags one step."""
-    module = load_module(OBSERVER_PATH, "codex_rig_observe_recovery_create_window")
+    module = load_module(OBSERVER_PATH, f"codex_rig_observe_recovery_create_window_{journal_state}")
     codex_home, plugin_root, target_root, state_root = make_roots(tmp_path)
     transaction = state_root / "transactions" / INSTALL_ID
     transaction.mkdir(parents=True, mode=0o700)
     transaction.chmod(0o700)
     (state_root / "transactions").chmod(0o700)
     value = prepared_transaction(transaction)
-    value["journal_state"] = "RECOVERY_REQUIRED"
+    value["journal_state"] = journal_state
     write_private(transaction / "journal.json", canonical(value))
     os.link(
         transaction / "after" / "challenger.toml",

@@ -1,4 +1,4 @@
-"""Acceptance checks for the complete plugin-only Codex Rig release."""
+"""Acceptance checks for the complete shim-enabled Codex Rig release."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_SKILLS = (
+    "agent-shims",
     "analyse",
     "audit",
     "calibrate",
@@ -120,6 +121,9 @@ def test_skill_dependencies_are_cache_local_and_manifested() -> None:
     for skill_id in EXPECTED_SKILLS:
         skill_path = PLUGIN_ROOT / "skills" / skill_id / "SKILL.md"
         text = skill_path.read_text(encoding="utf-8")
+        if skill_id == "agent-shims":
+            assert "../../scripts/manage_role_agents.py" in text
+            continue
         assert "../_shared/" not in text
         assert "../../shared/" in text
 
@@ -184,27 +188,27 @@ def test_role_roster_frontmatter_and_runtime_records_are_exact() -> None:
     assert manifest["roles"] == expected_records
 
 
-def test_release_profile_contains_no_future_lifecycle_payload() -> None:
-    """Prevent plugin-only metadata or files from enabling future lifecycle features."""
+def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
+    """Keep shim-manager and hook metadata aligned while MCP remains absent."""
     manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
     plugin = load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")
-    assert manifest["release_profile"] == "plugin-only"
+    assert manifest["release_profile"] == "shim-enabled"
     assert manifest["features"] == {
-        "manager": False,
-        "hooks": False,
+        "manager": True,
+        "hooks": True,
         "mcp": False,
-        "generated_shims": False,
+        "generated_shims": True,
     }
     assert "hooks" not in plugin
     assert "mcpServers" not in plugin
 
-    forbidden_roots = {"hooks", "manager", "mcp", "shims"}
+    forbidden_roots = {"manager", "mcp", "shims"}
     for relative in package_files():
         path = Path(relative)
         assert path.parts[0] not in forbidden_roots
         assert relative != ".mcp.json"
         assert not (path.name.startswith("codex-rig-") and path.suffix == ".toml")
-    assert not (PLUGIN_ROOT / "skills" / "agent-shims").exists()
+    assert (PLUGIN_ROOT / "skills" / "agent-shims" / "SKILL.md").is_file()
 
 
 def test_manage_and_sync_preserve_installed_plugin_state() -> None:
@@ -214,20 +218,21 @@ def test_manage_and_sync_preserve_installed_plugin_state() -> None:
         "installed plugin tree is immutable input",
         "never edit this skill's plugin cache",
         "reject any target whose canonical path is inside the same installed plugin root",
-        "separately released `agent-shims` workflow",
+        "bundled `agent-shims` workflow",
     ):
         assert required in manage
 
     sync = normalized_text(PLUGIN_ROOT / "skills" / "sync" / "SKILL.md").lower()
     for required in (
         "never copy files into an installed cache",
-        "plugin-only releases own no external agent files",
-        "leave every existing `codex-rig-*.toml` untouched",
+        "sync never mutates external agent files",
+        "before plugin removal, run `agent-shims remove`",
+        "after refresh or reinstall, run `agent-shims doctor`",
         "codex plugin marketplace list --json",
         "codex plugin list --marketplace borda-ai-rig --json",
         "codex plugin marketplace upgrade borda-ai-rig",
         "codex plugin add codex-rig@borda-ai-rig",
-        "plugin-only sync never deletes or overwrites a match",
+        "preservation of unknown external agent files",
     ):
         assert required in sync
 

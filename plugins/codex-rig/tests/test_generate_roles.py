@@ -368,7 +368,7 @@ def test_generation_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -
     plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
     manifest_path = plugin_root / "package-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["release_profile"] = "plugin-only+manager"
+    manifest["release_profile"] = "shim-enabled"
     manifest["features"] = {"manager": True, "hooks": hooks, "mcp": False, "generated_shims": True}
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 

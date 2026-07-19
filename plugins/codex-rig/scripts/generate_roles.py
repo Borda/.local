@@ -298,6 +298,8 @@ def _load_manifest(root_fd: int) -> tuple[dict[str, Any], bytes, dict[str, dict[
         ("plugin-only", False, False, False, False),
         ("plugin-only+manager", True, False, False, True),
         ("plugin-only+manager", True, True, False, True),
+        ("shim-enabled", True, False, False, True),
+        ("shim-enabled", True, True, False, True),
     }
     if (
         not isinstance(features, dict)

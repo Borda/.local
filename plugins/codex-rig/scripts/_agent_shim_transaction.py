@@ -352,6 +352,7 @@ def apply_transaction(
         )
         _checkpoint(checkpoint, "state:published")
         current = _advance(handles.transaction_fd, current, journal_state="STATE_COMMITTED")
+        _checkpoint(checkpoint, "journal:state-committed")
         return _advance(handles.transaction_fd, current, journal_state="COMMITTED")
     except BaseException as error:
         if isinstance(error, _ForwardError):
@@ -364,6 +365,35 @@ def apply_transaction(
                 journal=rollback_error.journal,
             ) from rollback_error
         raise TransactionError("transaction failed and was rolled back", journal=recovered) from error
+
+
+def mark_transaction_prepared(journal: Journal, transaction_fd: int) -> Journal:
+    """Publish the sole PREPARING-to-PREPARED transition after exact staging."""
+    journal = validate_journal(journal_value(journal))
+    if journal.journal_state != "PREPARING":
+        _fail("preparing journal required", journal)
+    return _advance(transaction_fd, journal, journal_state="PREPARED")
+
+
+def finalize_state_committed(journal: Journal, handles: TransactionDirectories) -> Journal:
+    """Finalize an exact after-image whose durable state commit already completed."""
+    journal = validate_journal(journal_value(journal))
+    if journal.journal_state != "STATE_COMMITTED":
+        _fail("state-committed journal required", journal)
+    for operation in journal.operations:
+        _require_target(handles.target_fd, operation)
+    after = journal.after_state
+    if not after.exists or after.sha256 is None:
+        _fail("state-committed journal lacks after state", journal)
+    _, state = read_regular_at(
+        handles.state_fd,
+        "state.json",
+        expected_mode=PRIVATE_FILE_MODE,
+        expected_links=2,
+    )
+    if state.sha256 != after.sha256:
+        _fail("committed state evidence mismatch", journal)
+    return _advance(handles.transaction_fd, journal, journal_state="COMMITTED")
 
 
 def cleanup_transaction(journal: Journal, handles: TransactionDirectories) -> tuple[str, ...]:

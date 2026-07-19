@@ -265,7 +265,7 @@ def indexed_files(manifest: dict[str, object]) -> dict[str, dict[str, object]]:
 
 
 def has_compatible_profile(manifest: dict[str, object]) -> bool:
-    """Accept only declared plugin-only or manager-enabled feature tuples."""
+    """Accept only declared plugin-only or shim-enabled feature tuples."""
     features = manifest.get("features")
     if not isinstance(features, dict) or set(features) != {"manager", "hooks", "mcp", "generated_shims"}:
         return False
@@ -280,6 +280,8 @@ def has_compatible_profile(manifest: dict[str, object]) -> bool:
         ("plugin-only", False, False, False, False),
         ("plugin-only+manager", True, False, False, True),
         ("plugin-only+manager", True, True, False, True),
+        ("shim-enabled", True, False, False, True),
+        ("shim-enabled", True, True, False, True),
     }
 
 

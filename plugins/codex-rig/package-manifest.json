@@ -1,15 +1,19 @@
 {
   "schema": 1,
   "plugin": "codex-rig",
-  "version": "0.1.0+codex.20260718130627",
-  "release_profile": "plugin-only",
+  "version": "0.2.0+codex.20260718221820",
+  "release_profile": "shim-enabled",
   "features": {
-    "manager": false,
-    "hooks": false,
+    "manager": true,
+    "hooks": true,
     "mcp": false,
-    "generated_shims": false
+    "generated_shims": true
   },
   "skills": [
+    {
+      "id": "agent-shims",
+      "path": "skills/agent-shims/SKILL.md"
+    },
     {
       "id": "analyse",
       "path": "skills/analyse/SKILL.md"
@@ -233,17 +237,17 @@
   "bootstrap": {
     "protocol": 1,
     "helper": "scripts/verify_role_link.py",
-    "sha256": "ee4f7ed74a721378f6b3378f643ea9b7392a310bbddcb5caa5713b3aaf029e5e"
+    "sha256": "99df4cdd057b2e39b8250572bf79109637e8a9321bb82eb6c7ac2f9795e0704a"
   },
   "generator": {
     "version": 1,
     "path": "scripts/generate_roles.py",
-    "sha256": "330f4ea17e1be976e82b9bed53d835e17fc2628869d2f4495280519ea0ed61ec"
+    "sha256": "db331f999abc5acf2a60e2544f7f013b96e857ef362fdd18e14c0d5e496beabf"
   },
   "files": [
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "95e752d4d1eb0b8bc9a5b92a9e680f299ddcd9a383ad20dc8df2f87fa59d65b5",
+      "sha256": "9d00f1351b665f4ee4b4d040a42383afa0397894a60d7bd9b614cf5846d8d0f3",
       "mode": "0644"
     },
     {
@@ -255,6 +259,16 @@
       "path": "NOTICE",
       "sha256": "b171c72b05b5df5a81a5eb53ea9abc4bd1599eb14766a99827320a7012148f6e",
       "mode": "0644"
+    },
+    {
+      "path": "hooks/hooks.json",
+      "sha256": "78131b886e982fd2dc61a172dbedd9964e491fa3d5f481c81961ddc6891f1f80",
+      "mode": "0644"
+    },
+    {
+      "path": "hooks/session_start.py",
+      "sha256": "238083abb5de00b9588c6ba572125bb64a5e3d625b739f2593e08145fac5d119",
+      "mode": "0755"
     },
     {
       "path": "roles/challenger/ROLE.md",
@@ -433,7 +447,7 @@
     },
     {
       "path": "scripts/_agent_shim_observe.py",
-      "sha256": "1a54111a93c47757bc5cdf7dc49e29c767f6a7c2ad525880c5ed717a6689155f",
+      "sha256": "f71e2d601d61478d978e61959e99540566a4d9de7bf0a27fe3cf34b7fe8f558b",
       "mode": "0644"
     },
     {
@@ -448,32 +462,32 @@
     },
     {
       "path": "scripts/_agent_shim_transaction.py",
-      "sha256": "c080d339df4d48a519e901d12f264871e2fcc9d74e9c84679473871282dca6cd",
+      "sha256": "6befb3c6a15df6559de1a4114a760014c3093e70f29f99151e82e49fbeafacae",
       "mode": "0644"
     },
     {
       "path": "scripts/build_package.py",
-      "sha256": "24a7f90d29c64c431935c3e81e9d2ace79b46aafa3d0499328068ca0556b6d2f",
+      "sha256": "dbb840cdc3afcbc199f8258a8ffc2f3b52b637a68c178efeac9ed19ce6d74ca2",
       "mode": "0755"
     },
     {
       "path": "scripts/generate_roles.py",
-      "sha256": "330f4ea17e1be976e82b9bed53d835e17fc2628869d2f4495280519ea0ed61ec",
+      "sha256": "db331f999abc5acf2a60e2544f7f013b96e857ef362fdd18e14c0d5e496beabf",
       "mode": "0644"
     },
     {
       "path": "scripts/manage_role_agents.py",
-      "sha256": "d0311b37691ce66f5edc171aa7d278844c8d257f15eaf12bafff96f3d8b28bf7",
+      "sha256": "e6336e286134e156623475449493c7c81aa823f39d41d897e397388f54e8405c",
       "mode": "0644"
     },
     {
       "path": "scripts/validate_package.py",
-      "sha256": "86377c36d909f8442cbf257afe633ffd4c6373719b578ec41796ea1787f3c8d7",
+      "sha256": "856c4aabc77194cbf89232e050d35c80d03b76c951e3e32e157a887b844ff2f9",
       "mode": "0755"
     },
     {
       "path": "scripts/verify_role_link.py",
-      "sha256": "ee4f7ed74a721378f6b3378f643ea9b7392a310bbddcb5caa5713b3aaf029e5e",
+      "sha256": "99df4cdd057b2e39b8250572bf79109637e8a9321bb82eb6c7ac2f9795e0704a",
       "mode": "0644"
     },
     {
@@ -540,6 +554,16 @@
       "path": "shared/write-result.py",
       "sha256": "94f9f5253a600b8cf02899ff1a1840d4e59d868623097f808a88fb514b945b3c",
       "mode": "0755"
+    },
+    {
+      "path": "skills/agent-shims/SKILL.md",
+      "sha256": "1bb6b714152102c9556696d97d1913407298b43bcf73b7db994bbddb9184961b",
+      "mode": "0644"
+    },
+    {
+      "path": "skills/agent-shims/agents/openai.yaml",
+      "sha256": "70f28ab592a2c9e58d96df4bb1968b1b57204d26316edfe991c2f2fa78ea3ffc",
+      "mode": "0644"
     },
     {
       "path": "skills/analyse/SKILL.md",
@@ -668,7 +692,7 @@
     },
     {
       "path": "skills/manage/SKILL.md",
-      "sha256": "b0cb375279116d759cc876fb1abf1e476cae0b2b694193455634e60ad6eff121",
+      "sha256": "9441099d97f15881152588a3b9c6e7b6993c382630bb1676c376ef4a1cd710c9",
       "mode": "0644"
     },
     {
@@ -708,7 +732,7 @@
     },
     {
       "path": "skills/sync/SKILL.md",
-      "sha256": "e264a5879bb8850443a39ad6c2b2f3ea0029f77729e9ad652a2d37aea051eee0",
+      "sha256": "399e258945ba66e829bd44039bb46c04f8bad883715e4a9359f0b782be82df5b",
       "mode": "0644"
     },
     {
@@ -733,7 +757,7 @@
     },
     {
       "path": "tests/test_agent_shim_observe.py",
-      "sha256": "0937513929b95af87070af6aaf5815d815e67bdae05293aa36e2bccf597c4268",
+      "sha256": "407b2cd6f7687be87609eb7cdcd666b10cfa89369e2e16050c0dcc004932fb42",
       "mode": "0644"
     },
     {
@@ -758,22 +782,27 @@
     },
     {
       "path": "tests/test_generate_roles.py",
-      "sha256": "d88488b7d451326eae9773f21ccdd48e73f26a179f5cac7511e3b9e82bd53768",
+      "sha256": "1411ac413f8cf2f6dbe094525091da1d8fe915fbb922256e2d541b4e16e8d6ec",
       "mode": "0644"
     },
     {
       "path": "tests/test_installed_cache_scaffold.py",
-      "sha256": "e9f889b0772ea98c25e636306e1153cb36d41db019aa64629ea102737bb8e714",
+      "sha256": "97d8c0c1ceacbe7a7d9d00c68656a6994a8ee40cea6997cb85b31acafb19b3e2",
       "mode": "0644"
     },
     {
       "path": "tests/test_manage_role_agents.py",
-      "sha256": "a2c315eb123b924494367222f354424cafd119434a2c09999645253e97f3fedb",
+      "sha256": "0ab00926d73aea63c6ee0b74184f7a7cf2ab3a2497423e3a813553b65a321845",
       "mode": "0644"
     },
     {
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "0201538ec43b839bbf515ca59cc58a901867d80fd1c0563f60f796fa3f3a37f5",
+      "sha256": "e6490a206d47b50b7bc435254f5106ffd34aacd89498d33f2a909fd00d8ff37b",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_session_start_hook.py",
+      "sha256": "d4407c76b275c2e0ad022c38f6eb9d0357643d1ecfc15b25a947b339857a9725",
       "mode": "0644"
     }
   ],

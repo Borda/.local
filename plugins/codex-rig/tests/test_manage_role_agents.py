@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -17,6 +20,10 @@ GENERATOR_PATH = SCRIPTS / "generate_roles.py"
 LIFECYCLE_PATH = SCRIPTS / "_agent_shim_lifecycle.py"
 JOURNAL_PATH = SCRIPTS / "_agent_shim_journal.py"
 OBSERVER_PATH = SCRIPTS / "_agent_shim_observe.py"
+PLAN_PATH = SCRIPTS / "_agent_shim_plan.py"
+APPROVAL_PATH = SCRIPTS / "_agent_shim_approval.py"
+POSIX_PATH = SCRIPTS / "_agent_shim_posix.py"
+TRANSACTION_PATH = SCRIPTS / "_agent_shim_transaction.py"
 MANAGER_PATH = SCRIPTS / "manage_role_agents.py"
 
 
@@ -37,7 +44,13 @@ def load_module(path: Path, name: str) -> ModuleType:
     if path == MANAGER_PATH:
         for dependency, module_name in (
             (GENERATOR_PATH, "generate_roles"),
+            (LIFECYCLE_PATH, "_agent_shim_lifecycle"),
+            (JOURNAL_PATH, "_agent_shim_journal"),
             (OBSERVER_PATH, "_agent_shim_observe"),
+            (PLAN_PATH, "_agent_shim_plan"),
+            (APPROVAL_PATH, "_agent_shim_approval"),
+            (POSIX_PATH, "_agent_shim_posix"),
+            (TRANSACTION_PATH, "_agent_shim_transaction"),
         ):
             if module_name not in sys.modules:
                 load_module(dependency, module_name)
@@ -173,3 +186,264 @@ def test_doctor_refuses_symlinked_home_alias(tmp_path: Path) -> None:
             codex_binary=executable(tmp_path),
             check_active_package=False,
         )
+
+
+def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) -> None:
+    """Apply and remove the whole roster while repeated actions produce no writes."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_mutation")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    codex = executable(tmp_path)
+    install_id = "123e4567-e89b-42d3-a456-426614174001"
+    before_plan = snapshot(tmp_path)
+    install = module.plan_mutation(
+        action="install",
+        codex_home=home,
+        plugin_root=PLUGIN_ROOT,
+        codex_binary=codex,
+        require_active_package=False,
+        install_id=install_id,
+        transaction_nonce="123e4567-e89b-42d3-a456-426614174002",
+    )
+    assert install.approval is not None
+    assert snapshot(tmp_path) == before_plan
+
+    committed = module.apply_mutation(install, install.approval.digest)
+
+    assert committed.journal_state == "COMMITTED"
+    targets = sorted((home / "agents").glob("codex-rig-*.toml"))
+    assert len(targets) == 15
+    installed = snapshot(home)
+    repeated = module.plan_mutation(
+        action="install",
+        codex_home=home,
+        plugin_root=PLUGIN_ROOT,
+        codex_binary=codex,
+        require_active_package=False,
+        transaction_nonce="123e4567-e89b-42d3-a456-426614174003",
+    )
+    assert repeated.approval is None
+    assert module.apply_mutation(repeated, "") is None
+    assert snapshot(home) == installed
+
+    removal = module.plan_mutation(
+        action="remove",
+        codex_home=home,
+        plugin_root=PLUGIN_ROOT,
+        codex_binary=codex,
+        require_active_package=False,
+        transaction_nonce="123e4567-e89b-42d3-a456-426614174004",
+    )
+    assert removal.approval is not None
+    removed = module.apply_mutation(removal, removal.approval.digest)
+
+    assert removed.journal_state == "COMMITTED"
+    assert list((home / "agents").glob("codex-rig-*.toml")) == []
+    state = (home / "codex-rig" / "shims" / "state.json").read_text()
+    assert '"transaction_status":"removed"' in state
+
+
+def test_wrong_approval_digest_causes_zero_writes(tmp_path: Path) -> None:
+    """Refuse mutation authority before creating the coordination lock or roots."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_wrong_approval")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    plan = module.plan_mutation(
+        action="install",
+        codex_home=home,
+        plugin_root=PLUGIN_ROOT,
+        codex_binary=executable(tmp_path),
+        require_active_package=False,
+        install_id="123e4567-e89b-42d3-a456-426614174001",
+        transaction_nonce="123e4567-e89b-42d3-a456-426614174005",
+    )
+    before = snapshot(tmp_path)
+
+    with pytest.raises(ValueError, match="approval digest mismatch"):
+        module.apply_mutation(plan, "f" * 64)
+
+    assert snapshot(tmp_path) == before
+
+
+def test_under_lock_drift_preserves_concurrent_foreign_target(tmp_path: Path) -> None:
+    """Stop before transaction creation when target evidence changes after approval."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_drift")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    plan = module.plan_mutation(
+        action="install",
+        codex_home=home,
+        plugin_root=PLUGIN_ROOT,
+        codex_binary=executable(tmp_path),
+        require_active_package=False,
+        install_id="123e4567-e89b-42d3-a456-426614174001",
+        transaction_nonce="123e4567-e89b-42d3-a456-426614174006",
+    )
+    agents = home / "agents"
+    agents.mkdir(mode=0o700)
+    foreign = agents / "codex-rig-challenger.toml"
+    foreign.write_bytes(b"foreign\n")
+    foreign.chmod(0o600)
+
+    with pytest.raises(ValueError, match="under-lock filesystem observation changed|candidate changed"):
+        module.apply_mutation(plan, plan.approval.digest)
+
+    assert foreign.read_bytes() == b"foreign\n"
+    assert not (home / "codex-rig").exists()
+
+
+def test_active_package_probe_uses_disposable_home_copy(tmp_path: Path) -> None:
+    """Prove the Codex CLI cannot create temp state in the real diagnostic home."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_active_sandbox")
+    manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text())
+    version = manifest["version"]
+    home = tmp_path / "home"
+    plugin = home / "plugins" / "cache" / "borda-ai-rig" / "codex-rig" / version
+    plugin.parent.mkdir(parents=True, mode=0o700)
+    shutil.copytree(PLUGIN_ROOT, plugin)
+    (home / "config.toml").write_text(
+        '[marketplaces.borda-ai-rig]\nsource_type = "local"\nsource = "/fixture"\n\n'
+        '[plugins."codex-rig@borda-ai-rig"]\nenabled = true\n'
+    )
+    (home / "config.toml").chmod(0o600)
+    payload = json.dumps(
+        {
+            "installed": [
+                {
+                    "pluginId": "codex-rig@borda-ai-rig",
+                    "name": "codex-rig",
+                    "marketplaceName": "borda-ai-rig",
+                    "installed": True,
+                    "enabled": True,
+                    "version": version,
+                }
+            ]
+        },
+        separators=(",", ":"),
+    )
+    codex = tmp_path / "codex"
+    codex.write_text(f"#!/bin/sh\nprintf '%s' '{payload}'\n")
+    codex.chmod(0o700)
+    before = snapshot(home)
+
+    result = module.diagnose(
+        action="doctor",
+        codex_home=home,
+        plugin_root=plugin,
+        codex_binary=codex,
+        check_active_package=True,
+    )
+
+    assert result.classification == "healthy"
+    assert result.checks["active_package"].status == "pass"
+    assert snapshot(home) == before
+
+
+def test_killed_process_requires_approved_rollback_then_can_resume(tmp_path: Path) -> None:
+    """Recover an unjournaled publication after process death and converge later."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_process_kill")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    codex = executable(tmp_path)
+    child = f"""
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, {str(SCRIPTS)!r})
+import manage_role_agents as manager
+plan = manager.plan_mutation(
+    action="install",
+    codex_home=Path({str(home)!r}),
+    plugin_root=Path({str(PLUGIN_ROOT)!r}),
+    codex_binary=Path({str(codex)!r}),
+    require_active_package=False,
+    install_id="123e4567-e89b-42d3-a456-426614174001",
+    transaction_nonce="123e4567-e89b-42d3-a456-426614174007",
+)
+def kill(boundary):
+    if boundary == "challenger:published":
+        os._exit(97)
+manager.apply_mutation(plan, plan.approval.digest, checkpoint=kill)
+"""
+
+    killed = subprocess.run([sys.executable, "-c", child], check=False, timeout=30)
+
+    assert killed.returncode == 97
+    recovery = module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT)
+    assert recovery is not None
+    assert recovery.journal.journal_state == "MUTATING"
+    terminal = module.apply_recovery(recovery, recovery.digest)
+    assert terminal.journal_state == "ROLLED_BACK"
+    assert list((home / "agents").glob("codex-rig-*.toml")) == []
+    assert module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT) is None
+
+    resumed = module.plan_mutation(
+        action="install",
+        codex_home=home,
+        plugin_root=PLUGIN_ROOT,
+        codex_binary=codex,
+        require_active_package=False,
+        install_id="123e4567-e89b-42d3-a456-426614174001",
+        transaction_nonce="123e4567-e89b-42d3-a456-426614174008",
+    )
+    committed = module.apply_mutation(resumed, resumed.approval.digest)
+    assert committed.journal_state == "COMMITTED"
+    assert len(list((home / "agents").glob("codex-rig-*.toml"))) == 15
+
+
+def test_killed_state_commit_is_approved_and_finalized(tmp_path: Path) -> None:
+    """Finalize exact installed state when process death follows its durable commit."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_finalize_kill")
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    codex = executable(tmp_path)
+    child = f"""
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, {str(SCRIPTS)!r})
+import manage_role_agents as manager
+plan = manager.plan_mutation(
+    action="install",
+    codex_home=Path({str(home)!r}),
+    plugin_root=Path({str(PLUGIN_ROOT)!r}),
+    codex_binary=Path({str(codex)!r}),
+    require_active_package=False,
+    install_id="123e4567-e89b-42d3-a456-426614174001",
+    transaction_nonce="123e4567-e89b-42d3-a456-426614174009",
+)
+def kill(boundary):
+    if boundary == "journal:state-committed":
+        os._exit(98)
+manager.apply_mutation(plan, plan.approval.digest, checkpoint=kill)
+"""
+
+    killed = subprocess.run([sys.executable, "-c", child], check=False, timeout=30)
+
+    assert killed.returncode == 98
+    recovery = module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT)
+    assert recovery.journal.journal_state == "STATE_COMMITTED"
+    terminal = module.apply_recovery(recovery, recovery.digest)
+    assert terminal.journal_state == "COMMITTED"
+    assert len(list((home / "agents").glob("codex-rig-*.toml"))) == 15
+    assert '"transaction_status":"current"' in (home / "codex-rig" / "shims" / "state.json").read_text()
+
+
+def test_partial_initial_journal_cleanup_requires_exact_approval(tmp_path: Path) -> None:
+    """Clean the sole pre-authority artifact without parsing or target writes."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_preparing_cleanup")
+    home = tmp_path / "home"
+    transaction = home / "codex-rig" / "shims" / "transactions" / "123e4567-e89b-42d3-a456-426614174010"
+    transaction.mkdir(parents=True, mode=0o700)
+    for path in (home, home / "codex-rig", home / "codex-rig" / "shims", transaction.parent, transaction):
+        path.chmod(0o700)
+    initial = transaction / "journal.initial.json"
+    initial.write_bytes(b'{"partial"')
+    initial.chmod(0o600)
+
+    recovery = module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT)
+
+    assert recovery.journal is None
+    assert module.apply_recovery(recovery, recovery.digest) is None
+    assert not transaction.exists()
+    assert not (home / "agents").exists()

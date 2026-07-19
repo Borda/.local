@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Codex Rig plugin-only package contract and payload closure."""
+"""Validate the Codex Rig shim-enabled package contract and payload closure."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Any
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = PACKAGE_ROOT / "scripts" / "build_package.py"
 EXPECTED_SKILLS = {
+    "agent-shims",
     "analyse",
     "audit",
     "calibrate",
@@ -66,17 +67,17 @@ def validate_semantics() -> None:
     role_ids = {item["id"] for item in manifest.get("roles", [])}
     if skill_ids != EXPECTED_SKILLS or role_ids != EXPECTED_ROLES:
         raise ValueError("public roster mismatch")
-    if manifest.get("version") != plugin.get("version") or manifest.get("release_profile") != "plugin-only":
+    if manifest.get("version") != plugin.get("version") or manifest.get("release_profile") != "shim-enabled":
         raise ValueError("plugin identity mismatch")
-    if manifest.get("features") != {"manager": False, "hooks": False, "mcp": False, "generated_shims": False}:
-        raise ValueError("plugin-only feature boundary mismatch")
-    forbidden = (
-        PACKAGE_ROOT / "skills" / "agent-shims",
-        PACKAGE_ROOT / "hooks",
-        PACKAGE_ROOT / ".mcp.json",
-    )
-    if any(path.exists() for path in forbidden):
-        raise ValueError("future lifecycle payload present in plugin-only package")
+    if manifest.get("features") != {"manager": True, "hooks": True, "mcp": False, "generated_shims": True}:
+        raise ValueError("shim-enabled feature boundary mismatch")
+    if (
+        not (PACKAGE_ROOT / "hooks" / "hooks.json").is_file()
+        or not (PACKAGE_ROOT / "hooks" / "session_start.py").is_file()
+    ):
+        raise ValueError("declared hook payload is incomplete")
+    if (PACKAGE_ROOT / ".mcp.json").exists():
+        raise ValueError("undeclared MCP payload present")
     if any((PACKAGE_ROOT / "skills" / name).exists() for name in ("review", "resolve")):
         raise ValueError("retired skill present")
 

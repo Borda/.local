@@ -1,6 +1,6 @@
 ---
 name: sync
-description: Dry-run-first Codex Rig installation drift and update workflow. Use to inspect the active plugin cache, refresh its GitHub marketplace, or reinstall the current plugin without managing external agent files.
+description: Dry-run-first Codex Rig installation drift and update workflow. Use to inspect the active plugin cache, refresh its GitHub marketplace, or reinstall the current plugin while coordinating separately managed agent shims.
 ---
 
 # Sync
@@ -8,9 +8,10 @@ description: Dry-run-first Codex Rig installation drift and update workflow. Use
 Inspect and refresh the public-GitHub Codex Rig plugin through supported Codex CLI operations. Never copy files into
 an installed cache, edit Codex configuration by hand, or treat cached package directories as mutable source trees.
 
-Plugin-only releases own no external agent files. Refresh and reinstall therefore leave every existing
-`codex-rig-*.toml` untouched. Report such files as possible leftovers; do not remove, adopt, or repair them. The
-separate `agent-shims` lifecycle workflow is the only future owner allowed to mutate verified generated links.
+Sync never mutates external agent files. Before plugin removal, run `agent-shims remove` while the manager is still
+available. After refresh or reinstall, run `agent-shims doctor`, then an approved `agent-shims install` to relink
+intact managed shims to the newly active cache. Report unknown or modified `codex-rig-*.toml` files without removing,
+adopting, or repairing them.
 
 ## Input Schema
 
@@ -107,8 +108,8 @@ and after-state identity.
 ## Calibration Hooks
 
 Behavioral coverage includes dry-run default, missing approval, unavailable JSON output, duplicate active selections,
-same-version byte drift, source-unavailable cache validation, failed marketplace refresh, and preservation of unknown
-external agent files.
+same-version byte drift, source-unavailable cache validation, failed marketplace refresh, stale thin links, and
+preservation of unknown external agent files.
 
 ## Output Contract
 
