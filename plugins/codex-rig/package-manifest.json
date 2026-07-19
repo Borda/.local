@@ -462,6 +462,11 @@
       "mode": "0644"
     },
     {
+      "path": "scripts/manage_role_agents.py",
+      "sha256": "d0311b37691ce66f5edc171aa7d278844c8d257f15eaf12bafff96f3d8b28bf7",
+      "mode": "0644"
+    },
+    {
       "path": "scripts/validate_package.py",
       "sha256": "86377c36d909f8442cbf257afe633ffd4c6373719b578ec41796ea1787f3c8d7",
       "mode": "0755"
@@ -759,6 +764,11 @@
     {
       "path": "tests/test_installed_cache_scaffold.py",
       "sha256": "e9f889b0772ea98c25e636306e1153cb36d41db019aa64629ea102737bb8e714",
+      "mode": "0644"
+    },
+    {
+      "path": "tests/test_manage_role_agents.py",
+      "sha256": "a2c315eb123b924494367222f354424cafd119434a2c09999645253e97f3fedb",
       "mode": "0644"
     },
     {
