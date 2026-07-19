@@ -48,14 +48,14 @@ Inspect in parallel where available:
 
 Write a source-backed table in `profile.md`:
 
-| Fact                            | Value | Source                                                                |
-| ------------------------------- | ----- | --------------------------------------------------------------------- |
-| problem type                    |       | user, fetched URL, local file, or explicit inference from another row |
-| input modality                  |       |                                                                       |
-| target/output format            |       |                                                                       |
-| evaluation metric and direction |       |                                                                       |
-| data schema and paths           |       |                                                                       |
-| submission schema               |       |                                                                       |
+| Fact | Value | Source |
+| --- | --- | --- |
+| problem type | — | user, fetched URL, local file, or explicit inference from another row |
+| input modality | — | — |
+| target/output format | — | — |
+| evaluation metric and direction | — | — |
+| data schema and paths | — | — |
+| submission schema | — | — |
 
 Never invent competition-specific columns, paths, labels, metrics, or submission formats. Ask for missing input modality, metric, and submission format before generation. If the user elects to continue without them, use conspicuous placeholders and list every placeholder as an unresolved limit.
 
@@ -63,14 +63,14 @@ Never invent competition-specific columns, paths, labels, metrics, or submission
 
 Choose the simplest justified model family:
 
-| Profile                         | Preferred starting point                                            |
-| ------------------------------- | ------------------------------------------------------------------- |
-| image classification/regression | `timm` backbone; PyTorch Lightning for neural training              |
-| 2D segmentation                 | `segmentation_models_pytorch`; MONAI for 3D                         |
-| detection                       | `torchvision.models.detection` or a verified installed detector API |
-| tabular                         | scikit-learn pipeline or XGBoost; Lightning only for neural models  |
-| time series                     | feature baseline plus XGBoost, or a Lightning sequence model        |
-| point cloud                     | verified MONAI/PyTorch3D-compatible path with Lightning             |
+| Profile | Preferred starting point |
+| --- | --- |
+| image classification/regression | `timm` backbone; PyTorch Lightning for neural training |
+| 2D segmentation | `segmentation_models_pytorch`; MONAI for 3D |
+| detection | `torchvision.models.detection` or a verified installed detector API |
+| tabular | scikit-learn pipeline or XGBoost; Lightning only for neural models |
+| time series | feature baseline plus XGBoost, or a Lightning sequence model |
+| point cloud | verified MONAI/PyTorch3D-compatible path with Lightning |
 
 Use PyTorch Lightning whenever a neural training loop is needed. Pure scikit-learn or XGBoost pipelines do not need Lightning. Record the selected model, alternatives rejected, metric direction, and package/API evidence in `profile.md`. Verify current third-party APIs from installed package metadata or current primary documentation; do not rely on reference snippets when versions differ.
 

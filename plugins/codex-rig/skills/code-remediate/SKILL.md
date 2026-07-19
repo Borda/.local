@@ -31,6 +31,8 @@ OUT_DIR=".reports/codex/code-remediate/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block that sets `OUT_DIR`, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Normalize Shorthand Input And Copy Findings Source
 
 Shorthand rules:
@@ -46,6 +48,7 @@ Shorthand rules:
 For `latest-matching-review-report`, inspect `find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/code-review`, assign printed path to `FINDINGS_SOURCE`.
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 cp "$FINDINGS_SOURCE" "$OUT_DIR/findings-input.txt"
 ```
 
@@ -62,6 +65,7 @@ For `mode=pr`, required before `action-items.md`, `resolution-scope.md`, or repo
 Required local context commands:
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 BASE_REMOTE_REF="$(
     sed -n 's/^[[:space:]]*"remote_ref"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
     "$OUT_DIR/pr/target-branch.json" |
@@ -210,6 +214,7 @@ For an omitted `remediation_scope`, record the pending state before prompting: `
 Print the complete document to the terminal before any scope prompt or edits:
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 cat "$OUT_DIR/resolution-scope.md"
 printf '\nFull report: %s\n' "$OUT_DIR/action-items.md"
 ```

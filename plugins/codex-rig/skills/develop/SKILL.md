@@ -30,9 +30,12 @@ OUT_DIR=".reports/codex/develop/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Record baseline diff and branch
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 git rev-parse --abbrev-ref HEAD >"$OUT_DIR/branch.txt"
 ```
 
@@ -83,7 +86,7 @@ Apply `../../shared/specialist-orchestration.md`. Stay single-agent for narrow i
 Before spawning or substituting specialists, write `"$OUT_DIR/specialist-plan.md"` with one row per planned pass:
 
 | role | trigger | context pack | expected output | mode |
-| ---- | ------- | ------------ | --------------- | ---- |
+| --- | --- | --- | --- | --- |
 
 Required orchestration patterns:
 

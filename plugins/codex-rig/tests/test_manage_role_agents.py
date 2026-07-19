@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -12,6 +13,9 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="agent-shim lifecycle requires POSIX primitives")
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +119,37 @@ def test_doctor_validates_package_without_writing_user_state(tmp_path: Path) -> 
     assert result.state == "absent"
     assert result.targets == "absent"
     assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("action", ["doctor", "status"])
+def test_direct_diagnostic_does_not_write_installed_plugin_bytecode(tmp_path: Path, action: str) -> None:
+    """Keep standard manager invocation read-only across the installed plugin tree."""
+    plugin_root = tmp_path / "installed-plugin"
+    shutil.copytree(PLUGIN_ROOT, plugin_root, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    executable(tmp_path)
+    environment = os.environ.copy()
+    environment.pop("PYTHONDONTWRITEBYTECODE", None)
+    environment["CODEX_HOME"] = str(home)
+    environment["PATH"] = f"{tmp_path}{os.pathsep}{environment.get('PATH', '')}"
+    before = snapshot(plugin_root)
+
+    completed = subprocess.run(
+        [sys.executable, str(plugin_root / "scripts" / "manage_role_agents.py"), action],
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=environment,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr.decode()
+    result = json.loads(completed.stdout)
+    assert result["action"] == action
+    assert result["classification"] == "degraded"
+    assert snapshot(plugin_root) == before
 
 
 def test_status_reports_corrupt_state_as_blocked_without_mutation(tmp_path: Path) -> None:

@@ -94,8 +94,7 @@ OSS, develop, and research skills always use their plugin prefix (`/oss:review`,
 > codex plugin add codex-rig@borda-ai-rig
 > ```
 >
-> This installs 14 skills and 15 role cards. Thin user-agent shims are optional and require a separate exact-approval
-> `agent-shims install`; see [`plugins/codex-rig/README.md`](plugins/codex-rig/README.md).
+> This installs 14 skills and 15 role cards. Thin user-agent shims are optional and require a separate exact-approval `agent-shims install`; see [`plugins/codex-rig/README.md`](plugins/codex-rig/README.md).
 
 → See [Token Savings (RTK)](#-token-savings-rtk) for RTK install details.
 
@@ -297,9 +296,7 @@ codex plugin marketplace add Borda/AI-Rig --ref main
 codex plugin add codex-rig@borda-ai-rig
 ```
 
-Start a fresh session. The plugin works with skills and role-card fallback alone. Optional thin linked agent shims are
-managed separately through `agent-shims`; read the [Codex Rig lifecycle guide](plugins/codex-rig/README.md) before
-installing them.
+Start a fresh session. The plugin works with skills and role-card fallback alone. Optional thin linked agent shims are managed separately through `agent-shims`; read the [Codex Rig lifecycle guide](plugins/codex-rig/README.md) before installing them.
 
 ### Full repository config
 

@@ -1,21 +1,11 @@
 {
-  "name": "codex-rig",
-  "version": "0.2.0+codex.20260718223537",
-  "description": "Fourteen portable Codex workflows with fifteen canonical specialist role cards.",
   "author": {
     "name": "Jiri Borovec",
     "url": "https://github.com/Borda/AI-Rig"
   },
+  "description": "Fourteen portable Codex workflows with fifteen canonical specialist role cards.",
   "homepage": "https://github.com/Borda/AI-Rig",
-  "repository": "https://github.com/Borda/AI-Rig",
-  "license": "Apache-2.0",
-  "skills": "./skills/",
   "interface": {
-    "displayName": "Codex Rig",
-    "shortDescription": "Portable workflows, role cards, and agent shims",
-    "longDescription": "Run fourteen reusable Codex workflows with canonical role cards, optional thin agent shims, and built-in or inline fallback routing.",
-    "developerName": "Borda",
-    "category": "Productivity",
     "capabilities": [
       "14 workflow skills",
       "15 specialist role cards",
@@ -24,10 +14,20 @@
       "Built-in and inline role fallback",
       "Quality gates"
     ],
+    "category": "Productivity",
     "defaultPrompt": [
       "Use the codex-rig:develop skill to implement and verify the requested change.",
       "Use the codex-rig:code-review skill to review the current diff.",
       "Use the codex-rig:research skill to collect primary evidence and recommendations."
-    ]
-  }
+    ],
+    "developerName": "Borda",
+    "displayName": "Codex Rig",
+    "longDescription": "Run fourteen reusable Codex workflows with canonical role cards, optional thin agent shims, and built-in or inline fallback routing.",
+    "shortDescription": "Portable workflows, role cards, and agent shims"
+  },
+  "license": "Apache-2.0",
+  "name": "codex-rig",
+  "repository": "https://github.com/Borda/AI-Rig",
+  "skills": "./skills/",
+  "version": "0.2.0+codex.20260719085017"
 }

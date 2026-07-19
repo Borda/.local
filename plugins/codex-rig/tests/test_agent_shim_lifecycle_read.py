@@ -116,13 +116,20 @@ def test_strict_json_converts_bounded_huge_integer_failure() -> None:
         module.parse_json_object(payload, maximum=len(payload))
 
 
-def test_strict_json_converts_bounded_deep_recursion_failure() -> None:
-    """Keep interpreter recursion limits inside the lifecycle error contract."""
+def test_strict_json_converts_decoder_recursion_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep decoder recursion failures inside the lifecycle error contract."""
     module = load_module(LIFECYCLE_PATH, "codex_rig_lifecycle_deep_json")
-    payload = b'{"value":' + b"[" * 2000 + b"0" + b"]" * 2000 + b"}"
 
-    with pytest.raises(module.LifecycleDataError):
-        module.parse_json_object(payload, maximum=len(payload))
+    def raise_recursion(*args: object, **kwargs: object) -> object:
+        """Model decoder recursion failure without interpreter-specific depth assumptions."""
+        raise RecursionError("fixture recursion limit")
+
+    monkeypatch.setattr(module.json, "loads", raise_recursion)
+
+    with pytest.raises(module.LifecycleDataError) as caught:
+        module.parse_json_object(b"{}", maximum=2)
+
+    assert isinstance(caught.value.__cause__, RecursionError)
 
 
 def test_marker_parser_accepts_current_and_historical_role_ids() -> None:

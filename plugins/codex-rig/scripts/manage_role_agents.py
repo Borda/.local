@@ -18,41 +18,47 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Callable, NoReturn
 
-from _agent_shim_approval import ApprovalPlan, RuntimeBinding, build_convergence_approval
-from _agent_shim_journal import Journal, parse_journal, validate_journal
-from _agent_shim_lifecycle import parse_state
-from _agent_shim_observe import FilesystemObservation, observe_filesystem
-from _agent_shim_plan import CandidatePlan, build_candidate
-from _agent_shim_posix import (
-    DirectoryIdentity,
-    acquire_coordination_lock,
-    create_directory_at,
-    create_private_path,
-    directory_identity,
-    open_directory_at,
-    read_regular_at,
-    remove_transaction_entries_at,
-    unlink_verified_at,
-    write_exclusive_at,
-    write_initial_journal,
-)
-from _agent_shim_transaction import (
-    TransactionDirectories,
-    TransactionError,
-    apply_transaction,
-    cleanup_transaction,
-    finalize_state_committed,
-    mark_transaction_prepared,
-    rollback_transaction,
-)
-from generate_roles import GeneratedRoster, load_generated_roster, roster_identity_hash
-
+# Direct manager commands must not mutate the installed plugin cache with import bytecode.
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True
 
 MINIMUM_PYTHON = (3, 10)
 DIAGNOSTIC_INSTALL_ID = "123e4567-e89b-42d3-a456-426614174000"
 SUPPORTED_PLATFORMS = ("darwin", "linux")
 MARKETPLACE = "borda-ai-rig"
 PLUGIN_NAME = "codex-rig"
+
+# Unsupported hosts must reach the stable refusal protocol without importing
+# lifecycle modules whose POSIX primitives are intentionally unavailable there.
+if sys.platform.startswith(SUPPORTED_PLATFORMS):
+    from _agent_shim_approval import ApprovalPlan, RuntimeBinding, build_convergence_approval
+    from _agent_shim_journal import Journal, parse_journal, validate_journal
+    from _agent_shim_lifecycle import parse_state
+    from _agent_shim_observe import FilesystemObservation, observe_filesystem
+    from _agent_shim_plan import CandidatePlan, build_candidate
+    from _agent_shim_posix import (
+        DirectoryIdentity,
+        acquire_coordination_lock,
+        create_directory_at,
+        create_private_path,
+        directory_identity,
+        open_directory_at,
+        read_regular_at,
+        remove_transaction_entries_at,
+        unlink_verified_at,
+        write_exclusive_at,
+        write_initial_journal,
+    )
+    from _agent_shim_transaction import (
+        TransactionDirectories,
+        TransactionError,
+        apply_transaction,
+        cleanup_transaction,
+        finalize_state_committed,
+        mark_transaction_prepared,
+        rollback_transaction,
+    )
+    from generate_roles import GeneratedRoster, load_generated_roster, roster_identity_hash
 
 
 class ManagerArgumentParser(argparse.ArgumentParser):
@@ -990,6 +996,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except SystemExit as error:
         return int(error.code)
+    if not sys.platform.startswith(SUPPORTED_PLATFORMS):
+        print(
+            json.dumps(
+                {
+                    "action": arguments.action,
+                    "classification": "blocked",
+                    "detail": f"platform {sys.platform}; native Windows and unknown POSIX hosts are unsupported",
+                    "platform": sys.platform,
+                    "writes": 0,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0 if arguments.action in {"doctor", "status"} else 5
     home_value = os.environ.get("CODEX_HOME")
     codex_home = Path(home_value) if home_value else Path.home() / ".codex"
     plugin_root = Path(__file__).resolve().parents[1]

@@ -1,281 +1,189 @@
 {
-  "schema": 1,
-  "product": "codex-rig",
-  "release": "0.2.0",
-  "scope": {
-    "name": "user",
-    "target_root": "<CODEX_HOME>/agents",
-    "state_root": "<CODEX_HOME>/codex-rig/shims",
-    "coordination_lock": "<CODEX_HOME>/.codex-rig-shims.lock",
-    "source_of_codex_home": "CODEX_HOME when set, otherwise the platform Codex home",
-    "supported": "doctor-proven Python 3.10+ POSIX local filesystem",
-    "unsupported": [
-      "project scope",
-      "native Windows",
-      "network or distributed filesystems",
-      "unresolved filesystem aliases",
-      "automatic scope migration",
-      "same-user malicious state or marker forgery",
-      "universal power-loss atomicity"
-    ]
-  },
-  "public_actions": {
-    "arguments": "exactly one positional action and no extras",
-    "actions": ["doctor", "status", "install", "remove"],
-    "read_only": ["doctor", "status"],
-    "whole_roster_mutations": ["install", "remove"],
-    "approval": "install and remove require explicit approval of the exact canonical plan digest",
-    "fresh_session_after_mutation": true,
-    "forbidden": [
-      "subset mutation",
-      "force",
-      "adoption",
-      "overwrite unowned",
-      "noninteractive approval bypass"
-    ]
-  },
-  "exit_codes": {
-    "0": "success or already converged",
-    "2": "usage error",
-    "3": "user cancelled before mutation",
-    "4": "drift, conflict, or blocked or partial removal",
-    "5": "environment or active-plugin prerequisite blocked",
-    "6": "corrupt, future, inconsistent, or untrusted state",
-    "7": "internal failure or failed recovery"
-  },
-  "roles": [
-    {"id": "challenger", "target": "codex-rig-challenger.toml"},
-    {"id": "cicd-steward", "target": "codex-rig-cicd-steward.toml"},
-    {"id": "curator", "target": "codex-rig-curator.toml"},
-    {"id": "data-steward", "target": "codex-rig-data-steward.toml"},
-    {"id": "delegation-lead", "target": "codex-rig-delegation-lead.toml"},
-    {"id": "doc-scribe", "target": "codex-rig-doc-scribe.toml"},
-    {"id": "linting-expert", "target": "codex-rig-linting-expert.toml"},
-    {"id": "oss-shepherd", "target": "codex-rig-oss-shepherd.toml"},
-    {"id": "qa-specialist", "target": "codex-rig-qa-specialist.toml"},
-    {"id": "scientist", "target": "codex-rig-scientist.toml"},
-    {"id": "security-auditor", "target": "codex-rig-security-auditor.toml"},
-    {"id": "solution-architect", "target": "codex-rig-solution-architect.toml"},
-    {"id": "squeezer", "target": "codex-rig-squeezer.toml"},
-    {"id": "sw-engineer", "target": "codex-rig-sw-engineer.toml"},
-    {"id": "web-explorer", "target": "codex-rig-web-explorer.toml"}
-  ],
-  "doctor": {
-    "classifications": ["healthy", "degraded", "blocked"],
-    "always_live": true,
-    "writes": false,
-    "read_only_install_checks": [
-      "one contained installed plugin root with matching plugin and package manifests",
-      "matching manager, generator, verifier, role-card, and package hashes",
-      "Python 3.10 or newer with POSIX filesystem primitives",
-      "canonical existing user Codex home with bound device, inode, owner, group, and mode and no group or other write permission",
-      "existing target and state roots are regular local directories or their exact parents are safely classifiable",
-      "case, alias, containment, no-follow, filesystem type, executable identity, and primitive-availability checks",
-      "exact custom-agent target convention",
-      "current enabled plugin and version from a read-only Codex runtime oracle",
-      "existing state and all targets safely classifiable without adoption",
-      "no incompatible schema, roster, version, or recovery-required transaction"
-    ],
-    "approved_apply_probes": [
-      "create or verify private target and state roots after digest approval and lock acquisition",
-      "require target and state roots on the same device",
-      "probe case behavior, hard-link no-clobber, file and directory fsync, and atomic state replacement only inside a nonce-bound private probe directory under the state root",
-      "remove every recognized probe file and fsync its parent before transaction preparation"
-    ],
-    "classification_rule": "healthy means every read-only check passed and write-dependent probes are explicitly pending approved apply; degraded or blocked never authorizes target mutation",
-    "install_rule": "every read-only check must pass before approval; approved apply probes must pass under lock before journal, state, or target mutation",
-    "probe_failure_rule": "exit environment blocked after exact probe cleanup; retain only the fixed coordination lock and safely created empty roots; cleanup uncertainty preserves the authenticated probe receipt and private probe directory, creates no transaction journal, state, or shim, and becomes probe-recovery-required",
-    "remove_rule": "intact owned shims may be removed when local teardown prerequisites pass even if unrelated routing checks are degraded",
-    "recovery_rule": "an existing recognized journal or authenticated probe receipt blocks normal convergence but permits an artifact-bound recovery plan through install or remove"
-  },
-  "marker": {
-    "line": 1,
-    "encoding": "UTF-8 without BOM",
-    "newline": "LF",
-    "maximum_bytes": 1024,
-    "grammar": "# codex-rig-shim schema=1 plugin=codex-rig install_id=<uuid> role_id=<role> package_hash=sha256:<hex> role_hash=sha256:<hex> bootstrap=1 generator=1",
-    "required_fields": [
-      "schema",
-      "plugin",
-      "install_id",
-      "role_id",
-      "package_hash",
-      "role_hash",
-      "bootstrap",
-      "generator"
-    ],
-    "rejections": [
-      "not first line",
-      "duplicate marker",
-      "missing or extra field",
-      "unknown or future schema",
-      "invalid UUID, role, digest, protocol, or generator",
-      "control character, BOM, CRLF, invalid UTF-8, or overlong line"
-    ],
-    "ownership_rule": "marker and filename never prove ownership without matching valid state and full-file hash"
-  },
-  "state": {
-    "schema": 1,
-    "file": "state.json",
-    "encoding": "UTF-8 canonical JSON without trailing data; duplicate keys and non-finite numbers rejected",
-    "maximum_bytes": 1048576,
-    "mode": "0600",
-    "directory_mode": "0700",
-    "extra_fields": "rejected at every object level",
-    "required_fields": [
-      "schema",
-      "plugin",
-      "scope",
-      "install_id",
-      "plugin_version",
-      "package_hash",
-      "codex_home_identity",
-      "plugin_root_identity",
-      "state_root_identity",
-      "target_root_identity",
-      "roster_hash",
-      "bootstrap",
-      "generator_version",
-      "roles",
-      "transaction_status"
-    ],
-    "field_schema": {
-      "schema": "integer exactly 1",
-      "plugin": "string exactly codex-rig",
-      "scope": "string exactly user",
-      "install_id": "lowercase RFC 4122 UUID string",
-      "plugin_version": "non-empty SemVer string",
-      "package_hash": "64-character lowercase SHA-256 string",
-      "generator_version": "integer exactly 1",
-      "roles": "array of one through 128 entries sorted by role_id with no duplicates",
-      "transaction_status": "string current or removed"
-    },
-    "root_identity_fields": ["canonical_path", "device", "inode", "owner", "group", "mode"],
-    "root_identity_schema": {
-      "canonical_path": "absolute canonical UTF-8 path string",
-      "device": "nonnegative JSON integer",
-      "inode": "nonnegative JSON integer",
-      "owner": "nonnegative JSON integer",
-      "group": "nonnegative JSON integer",
-      "mode": "four-character lowercase octal permission string"
-    },
-    "bootstrap_fields": ["protocol", "helper_path", "helper_hash"],
-    "bootstrap_schema": {
-      "protocol": "integer exactly 1",
-      "helper_path": "package-relative string exactly scripts/verify_role_link.py",
-      "helper_hash": "64-character lowercase SHA-256 string"
-    },
-    "role_fields": [
-      "role_id",
-      "target_name",
-      "card_path",
-      "role_hash",
-      "file_hash"
-    ],
-    "role_schema": {
-      "role_id": "lowercase role string matching [a-z][a-z0-9-]{0,63}",
-      "target_name": "derived basename exactly codex-rig-<role_id>.toml",
-      "card_path": "package-relative string exactly roles/<role>/ROLE.md",
-      "role_hash": "64-character lowercase SHA-256 string",
-      "file_hash": "64-character lowercase SHA-256 string"
-    },
-    "transaction_statuses": ["current", "removed"],
-    "compatibility_refusals": [
-      "future or unknown schema",
-      "downgrade",
-      "same precedence with different package content except an explicitly ordered local +codex development rebuild",
-      "incompatible or oversized historical roster",
-      "missing, corrupt, duplicate, or inconsistent role entry",
-      "path, root identity, helper, card, marker, or hash disagreement"
-    ],
-    "ownership_reconstruction": false,
-    "removed_tombstone_rebind": "a valid removed tombstone may bind a changed target-root identity only through an explicitly approved rebind-removed-root plan when every allowlisted target is absent; unrelated agent files are preserved",
-    "state_root_rebind": false,
-    "forward_migration": "a strictly newer active package or an explicitly ordered local +codex development rebuild may authenticate the persisted package, cache-root, and historical roster as before-image authority while the active package defines the after-image; downgrade and published same-precedence content replacement refuse"
-  },
-  "bounded_inputs": {
-    "shim_bytes": 262144,
-    "role_card_bytes": 2097152,
-    "helper_bytes": 2097152,
-    "state_bytes": 1048576,
-    "journal_bytes": 4194304,
-    "path_bytes": 4096,
-    "cli_stdout_bytes": 65536,
-    "cli_stderr_bytes": 65536,
-    "state_roles": 128,
-    "operation_roles": 256,
-    "target_directory_entries": 4096,
-    "recovery_directory_entries": 256
-  },
-  "target_classification": [
-    {
-      "state": "absent target and no ownership record",
-      "install": "atomic no-clobber create after whole-roster preflight",
-      "remove": "already absent; reconcile only from valid state"
-    },
-    {
-      "state": "regular target without matching ownership state",
-      "install": "preserve and block whole roster",
-      "remove": "preserve and refuse ownership claim"
-    },
-    {
-      "state": "owned target with full file hash matching state",
-      "install": "no-op when current, otherwise transactional update",
-      "remove": "transactional whole-roster removal"
-    },
-    {
-      "state": "valid current state with one or more owned targets absent and every present owned target exact",
-      "install": "transactionally repair missing owned targets after whole-roster approval",
-      "remove": "transactionally remove exact present owned targets and commit a removed tombstone"
-    },
-    {
-      "state": "owned marker but full file hash differs",
-      "install": "preserve and block whole roster",
-      "remove": "preserve and report modified"
-    },
-    {
-      "state": "missing, corrupt, future, or inconsistent state",
-      "install": "preserve and refuse automatic update",
-      "remove": "preserve and refuse automatic removal"
-    },
-    {
-      "state": "valid removed tombstone with every allowlisted target absent",
-      "install": "no-op root identity or explicitly approved rebind-removed-root, then whole-roster create",
-      "remove": "zero-write converged success"
-    },
-    {
-      "state": "valid removed tombstone with any allowlisted target present",
-      "install": "preserve and block whole roster",
-      "remove": "preserve and refuse ownership claim"
-    },
-    {
-      "state": "symlink, non-regular, escaped, aliased, or case-colliding target",
-      "install": "preserve and block whole roster",
-      "remove": "preserve and block whole roster"
-    }
-  ],
   "approval_plan": {
-    "schema": 1,
-    "encoding": "json.dumps with ensure_ascii=true, allow_nan=false, sort_keys=true, separators comma and colon, UTF-8 bytes, and no trailing newline",
-    "digest": "SHA-256 over the complete canonical plan bytes",
-    "canonical_test_vector": {
-      "value": {"schema": 1, "action": "install", "mode": "converge"},
-      "utf8": "{\"action\":\"install\",\"mode\":\"converge\",\"schema\":1}",
-      "sha256": "2895f391eb0c21709f5d63568fef79ff05f927ac5c2942f7fd204e7e9bae2e04"
+    "absent_value": "before_exists or after_exists is false and its corresponding hash and mode are JSON null",
+    "action_intent_rule": {
+      "install": [
+        "noop",
+        "create",
+        "update",
+        "repair-missing",
+        "retire"
+      ],
+      "recovery": "uses the artifact-bound operation intents and does not add a convergence operation",
+      "remove": [
+        "noop",
+        "remove"
+      ]
     },
+    "apply_rule": "open the approved Codex home, perform only the approved fixed-lock transition, acquire and validate that lock, reopen roots, reuse the approved identifiers, preserve the approved coordination_lock_intent, refresh every non-lock filesystem and runtime observation, recompute canonical operations, and mutate only when complete canonical plan bytes and digest equal the approval",
+    "canonical_test_vector": {
+      "sha256": "2895f391eb0c21709f5d63568fef79ff05f927ac5c2942f7fd204e7e9bae2e04",
+      "utf8": "{\"action\":\"install\",\"mode\":\"converge\",\"schema\":1}",
+      "value": {
+        "action": "install",
+        "mode": "converge",
+        "schema": 1
+      }
+    },
+    "coordination_lock_intent_rule": "the read-only plan selects one value from the observed fixed path; apply may perform that exact open-or-exclusive-create transition, then holds and validates the resulting file while byte-equality revalidation refreshes every non-lock observation and preserves the approved lock intent; any unsafe or changed existing lock blocks",
+    "coordination_lock_intent_values": [
+      "open-existing",
+      "create-if-absent"
+    ],
+    "coordination_lock_observation_fields": [
+      "kind",
+      "canonical_path",
+      "device",
+      "inode",
+      "owner",
+      "group",
+      "mode",
+      "link_count",
+      "size"
+    ],
+    "coordination_lock_observation_schema": {
+      "canonical_path": "absolute canonical path exactly <CODEX_HOME>/.codex-rig-shims.lock",
+      "device": "nonnegative JSON integer for regular, otherwise JSON null",
+      "group": "nonnegative JSON integer for regular, otherwise JSON null",
+      "inode": "nonnegative JSON integer for regular, otherwise JSON null",
+      "kind": "string exactly absent or regular",
+      "link_count": "integer exactly 1 for regular, otherwise JSON null",
+      "mode": "string exactly 0600 for regular, otherwise JSON null",
+      "owner": "nonnegative JSON integer for regular, otherwise JSON null",
+      "size": "integer exactly 0 for regular, otherwise JSON null"
+    },
+    "digest": "SHA-256 over the complete canonical plan bytes",
+    "encoding": "json.dumps with ensure_ascii=true, allow_nan=false, sort_keys=true, separators comma and colon, UTF-8 bytes, and no trailing newline",
     "extra_fields": "rejected at every object level",
+    "generated_identifiers": "plan creates install_id when no valid state exists and one transaction_nonce exactly once; apply receives both as immutable approved inputs and never regenerates them",
     "hash_preimages": {
-      "package_hash": "exact package-manifest.json bytes",
       "bootstrap_hash": "exact scripts/verify_role_link.py bytes",
-      "role_hash": "exact ROLE.md bytes",
       "file_hash": "exact complete generated shim bytes including final LF",
+      "package_hash": "exact package-manifest.json bytes",
+      "role_hash": "exact ROLE.md bytes",
       "roster_hash": "canonical JSON array sorted by role_id; each exact object contains role_id, target_name, card_path, and role_hash"
     },
-    "generated_identifiers": "plan creates install_id when no valid state exists and one transaction_nonce exactly once; apply receives both as immutable approved inputs and never regenerates them",
+    "intent_values": [
+      "noop",
+      "create",
+      "update",
+      "repair-missing",
+      "retire",
+      "remove"
+    ],
+    "journal_observation_fields": [
+      "exists",
+      "transaction_id",
+      "journal_hash",
+      "journal_state"
+    ],
+    "journal_observation_schema": {
+      "exists": "JSON boolean",
+      "journal_hash": "64-character lowercase SHA-256 string when exists=true, otherwise JSON null",
+      "journal_state": "exact journal state string when exists=true, otherwise JSON null",
+      "transaction_id": "lowercase RFC 4122 UUID string when exists=true, otherwise JSON null"
+    },
+    "modes": [
+      "converge",
+      "recovery"
+    ],
+    "operation_fields": [
+      "role_id",
+      "target_name",
+      "before_card_path",
+      "before_role_hash",
+      "after_card_path",
+      "after_role_hash",
+      "before_exists",
+      "before_hash",
+      "before_mode",
+      "after_exists",
+      "after_hash",
+      "after_mode",
+      "intent"
+    ],
+    "operation_intent_consistency": {
+      "create": "install convergence only; before is absent with null hash and mode, after is present with the exact generated file hash and mode 0600, and no valid current ownership record names the absent target",
+      "noop": "before and after are both absent with null hashes and modes, or both present with identical hashes and modes; no filesystem publication, detachment, removal, or state change is attributed to this operation",
+      "remove": "remove convergence only; before is present with the exact valid-state file hash and observed mode, after is absent with null hash and mode, and the complete roster commits a removed tombstone",
+      "repair-missing": "install convergence only; valid current state names the role, before is absent with null hash and mode, and after is present with the exact generated file hash and mode 0600",
+      "retire": "install convergence only; authenticated prior state names a role absent from the active roster, before is present with the exact valid-state file hash and observed mode, and after is absent with null hash and mode",
+      "update": "install convergence only; before is present with the exact valid-state file hash and observed mode, after is present with the exact generated file hash and mode 0600, and before_hash differs from after_hash"
+    },
     "operation_order": "one through 256 unique operations for the active and authenticated persisted role union, sorted lexicographically by role_id",
-    "intent_values": ["noop", "create", "update", "repair-missing", "retire", "remove"],
-    "target_root_intent_values": ["unchanged", "create", "rebind-removed-root"],
-    "absent_value": "before_exists or after_exists is false and its corresponding hash and mode are JSON null",
+    "operation_schema": {
+      "after_card_path": "package-relative string exactly roles/<role_id>/ROLE.md for an active install role, otherwise JSON null",
+      "after_exists": "JSON boolean",
+      "after_hash": "64-character lowercase SHA-256 string when after_exists=true, otherwise JSON null",
+      "after_mode": "four-character lowercase octal permission string when after_exists=true, otherwise JSON null",
+      "after_role_hash": "64-character lowercase SHA-256 string for an active install role, otherwise JSON null",
+      "before_card_path": "package-relative string exactly roles/<role_id>/ROLE.md for a persisted role, otherwise JSON null",
+      "before_exists": "JSON boolean",
+      "before_hash": "64-character lowercase SHA-256 string when before_exists=true, otherwise JSON null",
+      "before_mode": "four-character lowercase octal permission string when before_exists=true, otherwise JSON null",
+      "before_role_hash": "64-character lowercase SHA-256 string for a persisted role, otherwise JSON null",
+      "intent": "one exact intent_values string consistent with before and after presence and hashes",
+      "role_id": "lowercase role string matching [a-z][a-z0-9-]{0,63}",
+      "target_name": "derived basename exactly codex-rig-<role_id>.toml"
+    },
+    "recovery_disposition_rule": "converge mode requires JSON null; a transaction containing only journal.initial.json and no authoritative journal, or a valid PREPARING journal plus only its exact allowlisted preparation names, permits clean-preparing because target and state mutation is forbidden before PREPARED; journal recovery at PREPARED or later requires rollback unless the committed state file and every complete target equal the journal after-image, in which case finalize-bookkeeping is required; authenticated probe-receipt recovery requires clean-probe; a contained empty transaction directory with an allowlisted UUID basename, mode 0700, current-user ownership, link count two, and no journal or child permits only clean-empty-retirement; an equivalently bound empty .probe-UUID directory permits only clean-empty-probe",
+    "recovery_disposition_values": [
+      null,
+      "rollback",
+      "finalize-bookkeeping",
+      "clean-preparing",
+      "clean-probe",
+      "clean-empty-retirement",
+      "clean-empty-probe"
+    ],
+    "recovery_entry_fields": [
+      "relative_path",
+      "kind",
+      "sha256",
+      "mode",
+      "link_count"
+    ],
+    "recovery_entry_schema": {
+      "kind": "string regular-file or directory",
+      "link_count": "nonnegative JSON integer",
+      "mode": "four-character lowercase octal permission string",
+      "relative_path": "contained recovery-object-relative UTF-8 path string",
+      "sha256": "64-character lowercase SHA-256 string for a readable regular file; JSON null only for a directory or the sole umask-reduced unreadable journal.initial.json preparing residue"
+    },
+    "recovery_observation_fields": [
+      "kind",
+      "relative_path",
+      "sha256",
+      "device",
+      "inode",
+      "owner",
+      "group",
+      "mode",
+      "link_count",
+      "entries"
+    ],
+    "recovery_observation_kinds": [
+      null,
+      "preparing-residue",
+      "journal",
+      "probe-receipt",
+      "empty-transaction",
+      "empty-probe"
+    ],
+    "recovery_observation_rule": "recovery mode binds one contained object under the opened state root and every current child; empty-directory observations require sha256 JSON null and entries=[]",
+    "recovery_observation_schema": {
+      "device": "nonnegative JSON integer in recovery mode, otherwise JSON null",
+      "entries": "sorted JSON array of exact relative names, kind, SHA-256 or null, mode, and link count in recovery mode; JSON null in converge mode",
+      "group": "nonnegative JSON integer in recovery mode, otherwise JSON null",
+      "inode": "nonnegative JSON integer in recovery mode, otherwise JSON null",
+      "kind": "one exact recovery_observation_kinds value",
+      "link_count": "nonnegative JSON integer in recovery mode, otherwise JSON null",
+      "mode": "four-character lowercase octal permission string in recovery mode, otherwise JSON null",
+      "owner": "nonnegative JSON integer in recovery mode, otherwise JSON null",
+      "relative_path": "contained state-root-relative UTF-8 path string in recovery mode, otherwise JSON null",
+      "sha256": "64-character lowercase SHA-256 string for a readable initial preparation residue, journal, or probe receipt; JSON null for an umask-reduced unreadable initial residue, empty directory, or converge mode"
+    },
+    "recovery_plan_rule": "a recognized recovery artifact changes mode to recovery; the plan binds its canonical recovery_observation, state, every target observation, and the exact recovery disposition; recovery completes alone and the user reruns the requested convergence action",
     "required_fields": [
       "schema",
       "action",
@@ -310,75 +218,7 @@
       "recovery_observation",
       "operations"
     ],
-    "top_level_field_schema": {
-      "schema": "JSON integer exactly 1",
-      "action": "string exactly install or remove",
-      "scope": "string exactly user",
-      "mode": "string exactly converge or recovery",
-      "target_root_intent": "string exactly unchanged, create, or rebind-removed-root",
-      "recovery_disposition": "JSON null in converge mode; otherwise one exact non-null recovery_disposition_values string",
-      "codex_home_observation": "object with exactly root_observation_fields and root_observation_schema",
-      "coordination_lock_intent": "string exactly open-existing or create-if-absent",
-      "coordination_lock_observation": "object with exactly coordination_lock_observation_fields and coordination_lock_observation_schema",
-      "target_root_observation": "object with exactly root_observation_fields and root_observation_schema",
-      "state_root_observation": "object with exactly root_observation_fields and root_observation_schema",
-      "canonical_target_root": "absolute normalized UTF-8 path exactly <CODEX_HOME>/agents",
-      "canonical_state_root": "absolute normalized UTF-8 path exactly <CODEX_HOME>/codex-rig/shims",
-      "canonical_plugin_root": "absolute canonical UTF-8 path of the one verified installed plugin root",
-      "plugin_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
-      "plugin_version": "non-empty SemVer string equal to the verified package and active-plugin versions",
-      "package_hash": "64-character lowercase SHA-256 over exact package-manifest.json bytes",
-      "bootstrap_protocol": "JSON integer exactly 1",
-      "bootstrap_path": "package-relative string exactly scripts/verify_role_link.py",
-      "bootstrap_hash": "64-character lowercase SHA-256 over exact verifier helper bytes",
-      "python_executable_path": "absolute canonical UTF-8 path to the held verified regular executable",
-      "python_executable_hash": "64-character lowercase SHA-256 over exact Python executable bytes",
-      "codex_binary_path": "absolute canonical UTF-8 path to the held verified regular executable",
-      "codex_binary_hash": "64-character lowercase SHA-256 over exact Codex executable bytes",
-      "generator_version": "JSON integer exactly 1",
-      "install_id": "canonical lowercase RFC 4122 UUID string",
-      "transaction_nonce": "canonical lowercase RFC 4122 UUID string generated once before approval",
-      "roster_hash": "64-character lowercase SHA-256 over the exact hash_preimages.roster_hash preimage",
-      "source_state": "JSON null for an initial install; otherwise an object with exactly source_state_fields and source_state_schema",
-      "journal_observation": "object with exactly journal_observation_fields and journal_observation_schema",
-      "recovery_observation": "object with exactly recovery_observation_fields and recovery_observation_schema",
-      "operations": "array of one through 256 objects with exactly operation_fields and operation_schema"
-    },
-    "source_state_fields": ["sha256", "transition", "plugin_version", "package_hash", "bootstrap", "generator_version", "roster_hash", "plugin_root_identity"],
-    "source_state_schema": {
-      "sha256": "64-character lowercase SHA-256 over the exact observed prior state bytes",
-      "transition": "string exactly same-package, development-rebuild, or forward-upgrade",
-      "plugin_version": "SemVer string from the authenticated prior state",
-      "package_hash": "64-character lowercase SHA-256 from the authenticated prior state",
-      "bootstrap": "object with exactly state.bootstrap_fields and state.bootstrap_schema from the authenticated prior state",
-      "generator_version": "JSON integer exactly 1 from the authenticated prior state",
-      "roster_hash": "64-character lowercase SHA-256 over the authenticated prior roster",
-      "plugin_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema from the authenticated prior state"
-    },
-    "top_level_cross_field_rules": {
-      "action_scope": "action is install or remove and scope is user; no other action or scope is representable",
-      "mode": "mode is converge exactly when recovery_observation.kind and recovery_disposition are JSON null; mode is recovery exactly when one recognized recovery observation and its required non-null disposition are bound",
-      "paths": "canonical target and state roots are exact descendants of the observed canonical Codex home; the plugin root and both executable paths equal the paths used for every bound hash and generated byte",
-      "identities": "plugin_root_identity equals the held canonical plugin root; each existing root observation equals its held device, inode, owner, group, and mode; an absent root binds its nearest existing ancestor and ordered suffix; an existing coordination lock binds the fixed-path device and inode that apply must acquire",
-      "package": "top-level plugin_version, package_hash, bootstrap protocol, bootstrap path, bootstrap hash, generator version, every after-role hash, and roster hash come from one verified active package identity; non-null source_state separately binds the authenticated prior package",
-      "executables": "Python and Codex paths are absolute canonical held regular executable files and each supplied hash equals the complete bytes read from that same descriptor",
-      "install_id": "a valid state supplies its unchanged install_id; absent state uses the one newly generated approved install_id; recovery uses the artifact-bound install_id",
-      "transaction_nonce": "one new nonce is generated exactly once for convergence or copied exactly from the recognized recovery artifact when recovery requires that transaction identity",
-      "operations": "operations use every role in the sorted active and authenticated persisted union exactly once; action, mode, state, target observations, generated bytes, and operation_intent_consistency determine every before and after field"
-    },
-    "operation_intent_consistency": {
-      "noop": "before and after are both absent with null hashes and modes, or both present with identical hashes and modes; no filesystem publication, detachment, removal, or state change is attributed to this operation",
-      "create": "install convergence only; before is absent with null hash and mode, after is present with the exact generated file hash and mode 0600, and no valid current ownership record names the absent target",
-      "update": "install convergence only; before is present with the exact valid-state file hash and observed mode, after is present with the exact generated file hash and mode 0600, and before_hash differs from after_hash",
-      "repair-missing": "install convergence only; valid current state names the role, before is absent with null hash and mode, and after is present with the exact generated file hash and mode 0600",
-      "retire": "install convergence only; authenticated prior state names a role absent from the active roster, before is present with the exact valid-state file hash and observed mode, and after is absent with null hash and mode",
-      "remove": "remove convergence only; before is present with the exact valid-state file hash and observed mode, after is absent with null hash and mode, and the complete roster commits a removed tombstone"
-    },
-    "action_intent_rule": {
-      "install": ["noop", "create", "update", "repair-missing", "retire"],
-      "remove": ["noop", "remove"],
-      "recovery": "uses the artifact-bound operation intents and does not add a convergence operation"
-    },
+    "root_absence_encoding": "exists=false; device, inode, owner, group, and mode are JSON null; canonical path, nearest existing ancestor path and identity, and every ordered missing suffix component remain bound",
     "root_observation_fields": [
       "exists",
       "canonical_path",
@@ -396,476 +236,410 @@
       "mode"
     ],
     "root_observation_schema": {
-      "exists": "JSON boolean",
       "canonical_path": "absolute normalized UTF-8 path string for the intended root",
-      "nearest_existing_ancestor_path": "absolute canonical UTF-8 path string",
-      "nearest_existing_ancestor_device": "nonnegative JSON integer",
-      "nearest_existing_ancestor_inode": "nonnegative JSON integer",
-      "nearest_existing_ancestor_owner": "nonnegative JSON integer",
-      "nearest_existing_ancestor_group": "nonnegative JSON integer",
-      "nearest_existing_ancestor_mode": "four-character lowercase octal permission string",
-      "missing_suffix_components": "JSON array of zero or more nonempty UTF-8 basename strings in creation order; dot, dot-dot, slash, NUL, and control characters rejected",
       "device": "nonnegative JSON integer when exists=true, otherwise JSON null",
-      "inode": "nonnegative JSON integer when exists=true, otherwise JSON null",
-      "owner": "nonnegative JSON integer when exists=true, otherwise JSON null",
+      "exists": "JSON boolean",
       "group": "nonnegative JSON integer when exists=true, otherwise JSON null",
-      "mode": "four-character lowercase octal permission string when exists=true, otherwise JSON null"
+      "inode": "nonnegative JSON integer when exists=true, otherwise JSON null",
+      "missing_suffix_components": "JSON array of zero or more nonempty UTF-8 basename strings in creation order; dot, dot-dot, slash, NUL, and control characters rejected",
+      "mode": "four-character lowercase octal permission string when exists=true, otherwise JSON null",
+      "nearest_existing_ancestor_device": "nonnegative JSON integer",
+      "nearest_existing_ancestor_group": "nonnegative JSON integer",
+      "nearest_existing_ancestor_inode": "nonnegative JSON integer",
+      "nearest_existing_ancestor_mode": "four-character lowercase octal permission string",
+      "nearest_existing_ancestor_owner": "nonnegative JSON integer",
+      "nearest_existing_ancestor_path": "absolute canonical UTF-8 path string",
+      "owner": "nonnegative JSON integer when exists=true, otherwise JSON null"
     },
-    "root_absence_encoding": "exists=false; device, inode, owner, group, and mode are JSON null; canonical path, nearest existing ancestor path and identity, and every ordered missing suffix component remain bound",
-    "coordination_lock_intent_values": ["open-existing", "create-if-absent"],
-    "coordination_lock_intent_rule": "the read-only plan selects one value from the observed fixed path; apply may perform that exact open-or-exclusive-create transition, then holds and validates the resulting file while byte-equality revalidation refreshes every non-lock observation and preserves the approved lock intent; any unsafe or changed existing lock blocks",
-    "coordination_lock_observation_fields": ["kind", "canonical_path", "device", "inode", "owner", "group", "mode", "link_count", "size"],
-    "coordination_lock_observation_schema": {
-      "kind": "string exactly absent or regular",
-      "canonical_path": "absolute canonical path exactly <CODEX_HOME>/.codex-rig-shims.lock",
-      "device": "nonnegative JSON integer for regular, otherwise JSON null",
-      "inode": "nonnegative JSON integer for regular, otherwise JSON null",
-      "owner": "nonnegative JSON integer for regular, otherwise JSON null",
-      "group": "nonnegative JSON integer for regular, otherwise JSON null",
-      "mode": "string exactly 0600 for regular, otherwise JSON null",
-      "link_count": "integer exactly 1 for regular, otherwise JSON null",
-      "size": "integer exactly 0 for regular, otherwise JSON null"
-    },
-    "modes": ["converge", "recovery"],
-    "recovery_disposition_values": [null, "rollback", "finalize-bookkeeping", "clean-preparing", "clean-probe", "clean-empty-retirement", "clean-empty-probe"],
-    "recovery_disposition_rule": "converge mode requires JSON null; a transaction containing only journal.initial.json and no authoritative journal, or a valid PREPARING journal plus only its exact allowlisted preparation names, permits clean-preparing because target and state mutation is forbidden before PREPARED; journal recovery at PREPARED or later requires rollback unless the committed state file and every complete target equal the journal after-image, in which case finalize-bookkeeping is required; authenticated probe-receipt recovery requires clean-probe; a contained empty transaction directory with an allowlisted UUID basename, mode 0700, current-user ownership, link count two, and no journal or child permits only clean-empty-retirement; an equivalently bound empty .probe-UUID directory permits only clean-empty-probe",
-    "journal_observation_fields": ["exists", "transaction_id", "journal_hash", "journal_state"],
-    "journal_observation_schema": {
-      "exists": "JSON boolean",
-      "transaction_id": "lowercase RFC 4122 UUID string when exists=true, otherwise JSON null",
-      "journal_hash": "64-character lowercase SHA-256 string when exists=true, otherwise JSON null",
-      "journal_state": "exact journal state string when exists=true, otherwise JSON null"
-    },
-    "recovery_observation_fields": [
-      "kind",
-      "relative_path",
+    "schema": 1,
+    "source_state_fields": [
       "sha256",
-      "device",
-      "inode",
-      "owner",
-      "group",
-      "mode",
-      "link_count",
-      "entries"
-    ],
-    "recovery_observation_kinds": [null, "preparing-residue", "journal", "probe-receipt", "empty-transaction", "empty-probe"],
-    "recovery_observation_schema": {
-      "kind": "one exact recovery_observation_kinds value",
-      "relative_path": "contained state-root-relative UTF-8 path string in recovery mode, otherwise JSON null",
-      "sha256": "64-character lowercase SHA-256 string for a readable initial preparation residue, journal, or probe receipt; JSON null for an umask-reduced unreadable initial residue, empty directory, or converge mode",
-      "device": "nonnegative JSON integer in recovery mode, otherwise JSON null",
-      "inode": "nonnegative JSON integer in recovery mode, otherwise JSON null",
-      "owner": "nonnegative JSON integer in recovery mode, otherwise JSON null",
-      "group": "nonnegative JSON integer in recovery mode, otherwise JSON null",
-      "mode": "four-character lowercase octal permission string in recovery mode, otherwise JSON null",
-      "link_count": "nonnegative JSON integer in recovery mode, otherwise JSON null",
-      "entries": "sorted JSON array of exact relative names, kind, SHA-256 or null, mode, and link count in recovery mode; JSON null in converge mode"
-    },
-    "recovery_entry_fields": ["relative_path", "kind", "sha256", "mode", "link_count"],
-    "recovery_entry_schema": {
-      "relative_path": "contained recovery-object-relative UTF-8 path string",
-      "kind": "string regular-file or directory",
-      "sha256": "64-character lowercase SHA-256 string for a readable regular file; JSON null only for a directory or the sole umask-reduced unreadable journal.initial.json preparing residue",
-      "mode": "four-character lowercase octal permission string",
-      "link_count": "nonnegative JSON integer"
-    },
-    "recovery_observation_rule": "recovery mode binds one contained object under the opened state root and every current child; empty-directory observations require sha256 JSON null and entries=[]",
-    "operation_fields": [
-      "role_id",
-      "target_name",
-      "before_card_path",
-      "before_role_hash",
-      "after_card_path",
-      "after_role_hash",
-      "before_exists",
-      "before_hash",
-      "before_mode",
-      "after_exists",
-      "after_hash",
-      "after_mode",
-      "intent"
-    ],
-    "operation_schema": {
-      "role_id": "lowercase role string matching [a-z][a-z0-9-]{0,63}",
-      "target_name": "derived basename exactly codex-rig-<role_id>.toml",
-      "before_card_path": "package-relative string exactly roles/<role_id>/ROLE.md for a persisted role, otherwise JSON null",
-      "before_role_hash": "64-character lowercase SHA-256 string for a persisted role, otherwise JSON null",
-      "after_card_path": "package-relative string exactly roles/<role_id>/ROLE.md for an active install role, otherwise JSON null",
-      "after_role_hash": "64-character lowercase SHA-256 string for an active install role, otherwise JSON null",
-      "before_exists": "JSON boolean",
-      "before_hash": "64-character lowercase SHA-256 string when before_exists=true, otherwise JSON null",
-      "before_mode": "four-character lowercase octal permission string when before_exists=true, otherwise JSON null",
-      "after_exists": "JSON boolean",
-      "after_hash": "64-character lowercase SHA-256 string when after_exists=true, otherwise JSON null",
-      "after_mode": "four-character lowercase octal permission string when after_exists=true, otherwise JSON null",
-      "intent": "one exact intent_values string consistent with before and after presence and hashes"
-    },
-    "apply_rule": "open the approved Codex home, perform only the approved fixed-lock transition, acquire and validate that lock, reopen roots, reuse the approved identifiers, preserve the approved coordination_lock_intent, refresh every non-lock filesystem and runtime observation, recompute canonical operations, and mutate only when complete canonical plan bytes and digest equal the approval",
-    "recovery_plan_rule": "a recognized recovery artifact changes mode to recovery; the plan binds its canonical recovery_observation, state, every target observation, and the exact recovery disposition; recovery completes alone and the user reruns the requested convergence action"
-  },
-  "transaction": {
-    "lock": "one persistent 0600 coordination file at <CODEX_HOME>/.codex-rig-shims.lock opened without following symlinks and held by nonblocking POSIX advisory lock; kernel release only",
-    "lock_validation": "the coordination path must be one contained regular file owned by the current effective user with mode 0600 and link count one; a symlink, non-regular file, wrong owner, permissive mode, alias, or changed device or inode blocks without replacement",
-    "preliminary_write_rule": "after approval but before digest revalidation, apply may create or verify only the fixed coordination lock; stale approval exits without target, state-root, journal, or shim writes",
-    "root_creation_rule": "after lock and digest equality, create missing target and state path components directory-relative, establish mode 0700, immediately open each component with no-follow directory flags, verify identity and ownership, fsync each parent, and require target and state roots to share one device; on Python/Linux without no-follow descriptor-relative chmod, permission repair of the just-created name occurs only under the held current-user private parent before the immediate no-follow open, within the declared same-UID tampering exclusion",
-    "root_retention_rule": "never remove the user agents directory; safely created empty state directories and the fixed lock may remain after an approved probe failure or crash and never imply installed state",
-    "transaction_directory_mode": "0700",
-    "journal_mode": "0600",
-    "journal_path": "transactions/<transaction_id>/journal.json under the canonical state root",
-    "journal_encoding": "the same canonical JSON encoding as the approval plan",
-    "journal_schema": 1,
-    "journal_extra_fields": "rejected at every object level",
-    "journal_required_fields": [
-      "schema",
-      "transaction_id",
-      "transaction_nonce",
-      "install_id",
-      "action",
-      "approved_plan_digest",
+      "transition",
+      "plugin_version",
       "package_hash",
+      "bootstrap",
+      "generator_version",
       "roster_hash",
-      "codex_home_identity",
-      "target_root_identity",
-      "state_root_identity",
-      "before_state",
-      "after_state",
-      "rollback_state_progress",
-      "journal_state",
-      "operations"
+      "plugin_root_identity"
     ],
-    "journal_identity_schema": {
-      "transaction_id": "the exact transaction_nonce string; no second identifier is generated or derived",
-      "transaction_nonce": "the exact immutable approved lowercase RFC 4122 UUID string",
-      "install_id": "the exact approved lowercase RFC 4122 UUID string",
-      "action": "string install or remove",
-      "approved_plan_digest": "64-character lowercase SHA-256 string",
-      "package_hash": "64-character lowercase SHA-256 string",
-      "roster_hash": "64-character lowercase SHA-256 string"
+    "source_state_schema": {
+      "bootstrap": "object with exactly state.bootstrap_fields and state.bootstrap_schema from the authenticated prior state",
+      "generator_version": "JSON integer exactly 1 from the authenticated prior state",
+      "package_hash": "64-character lowercase SHA-256 from the authenticated prior state",
+      "plugin_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema from the authenticated prior state",
+      "plugin_version": "SemVer string from the authenticated prior state",
+      "roster_hash": "64-character lowercase SHA-256 over the authenticated prior roster",
+      "sha256": "64-character lowercase SHA-256 over the exact observed prior state bytes",
+      "transition": "string exactly same-package, development-rebuild, or forward-upgrade"
     },
-    "journal_rollback_state_progress_schema": "one exact rollback_state_progress_values string; PENDING outside rollback and monotonic to RESTORED only after the exact before-state is durable",
-    "journal_state_snapshot_fields": ["exists", "relative_path", "sha256", "mode"],
-    "journal_state_snapshot_schema": {
-      "exists": "JSON boolean",
-      "relative_path": "contained transaction-relative UTF-8 path string when exists=true, otherwise JSON null",
-      "sha256": "64-character lowercase SHA-256 string when exists=true, otherwise JSON null",
-      "mode": "four-character lowercase octal permission string when exists=true, otherwise JSON null"
-    },
-    "journal_state_absence": "exists=false; relative_path, sha256, and mode are JSON null",
-    "journal_operation_fields": [
-      "role_id",
-      "intent",
-      "target_name",
-      "before_exists",
-      "before_hash",
-      "before_mode",
-      "after_exists",
-      "after_hash",
-      "after_mode",
-      "before_image",
-      "after_image",
-      "quarantine_name",
-      "progress",
-      "rollback_progress"
+    "target_root_intent_values": [
+      "unchanged",
+      "create",
+      "rebind-removed-root"
     ],
-    "journal_operation_order": "one through 256 unique operations sorted lexicographically by strict role_id",
-    "journal_operation_progress": ["PLANNED", "DETACHED", "PUBLISHED", "VERIFIED"],
-    "journal_operation_schema": {
-      "role_id": "lowercase role string matching [a-z][a-z0-9-]{0,63}",
-      "intent": "one exact approval intent_values string",
-      "target_name": "derived basename exactly codex-rig-<role_id>.toml",
-      "before_exists": "JSON boolean",
-      "before_hash": "64-character lowercase SHA-256 string when before_exists=true, otherwise JSON null",
-      "before_mode": "four-character lowercase octal string when before_exists=true, otherwise JSON null",
-      "after_exists": "JSON boolean",
-      "after_hash": "64-character lowercase SHA-256 string when after_exists=true, otherwise JSON null",
-      "after_mode": "four-character lowercase octal string when after_exists=true, otherwise JSON null",
-      "before_image": "contained transaction-relative allowlisted path string when used, otherwise JSON null",
-      "after_image": "contained transaction-relative allowlisted path string when used, otherwise JSON null",
-      "quarantine_name": "contained transaction-relative allowlisted path string when used, otherwise JSON null",
-      "progress": "one exact journal_operation_progress string consistent with the operation intent and durable artifacts",
-      "rollback_progress": "one exact journal_operation_rollback_progress string; NOT_STARTED before recovery and monotonic to TARGET_RESTORED only after the exact target before observation is durable"
+    "top_level_cross_field_rules": {
+      "action_scope": "action is install or remove and scope is user; no other action or scope is representable",
+      "executables": "Python and Codex paths are absolute canonical held regular executable files and each supplied hash equals the complete bytes read from that same descriptor",
+      "identities": "plugin_root_identity equals the held canonical plugin root; each existing root observation equals its held device, inode, owner, group, and mode; an absent root binds its nearest existing ancestor and ordered suffix; an existing coordination lock binds the fixed-path device and inode that apply must acquire",
+      "install_id": "a valid state supplies its unchanged install_id; absent state uses the one newly generated approved install_id; recovery uses the artifact-bound install_id",
+      "mode": "mode is converge exactly when recovery_observation.kind and recovery_disposition are JSON null; mode is recovery exactly when one recognized recovery observation and its required non-null disposition are bound",
+      "operations": "operations use every role in the sorted active and authenticated persisted union exactly once; action, mode, state, target observations, generated bytes, and operation_intent_consistency determine every before and after field",
+      "package": "top-level plugin_version, package_hash, bootstrap protocol, bootstrap path, bootstrap hash, generator version, every after-role hash, and roster hash come from one verified active package identity; non-null source_state separately binds the authenticated prior package",
+      "paths": "canonical target and state roots are exact descendants of the observed canonical Codex home; the plugin root and both executable paths equal the paths used for every bound hash and generated byte",
+      "transaction_nonce": "one new nonce is generated exactly once for convergence or copied exactly from the recognized recovery artifact when recovery requires that transaction identity"
     },
-    "journal_noop_progress": "a noop operation is written as VERIFIED in the initial PREPARING journal and has null before_image, after_image, and quarantine_name artifacts",
-    "journal_artifact_names": {
-      "before_state": "state.before.json",
-      "after_state": "state.after.json",
-      "before_image": "before/<role_id>.toml or JSON null when absent",
-      "after_image": "after/<role_id>.toml or JSON null when absent",
-      "quarantine_name": "quarantine/<role_id>.toml or JSON null when no detach is required"
-    },
-    "journal_states": ["PREPARING", "PREPARED", "MUTATING", "STATE_COMMITTED", "COMMITTED", "RECOVERY_REQUIRED", "ROLLED_BACK"],
-    "journal_state_successors": {
-      "PREPARING": ["PREPARED", "RECOVERY_REQUIRED"],
-      "PREPARED": ["MUTATING", "RECOVERY_REQUIRED"],
-      "MUTATING": ["MUTATING", "STATE_COMMITTED", "RECOVERY_REQUIRED"],
-      "STATE_COMMITTED": ["COMMITTED", "RECOVERY_REQUIRED"],
-      "COMMITTED": [],
-      "RECOVERY_REQUIRED": ["RECOVERY_REQUIRED", "ROLLED_BACK"],
-      "ROLLED_BACK": []
-    },
-    "journal_successor_rule": "a successor preserves schema, transaction, install, action, approved digest, package, roster, root identities, before state, after state, operation order, operation intent, and artifact names; it changes only along one listed journal state, operation progress, operation rollback progress, or rollback state progress successor and never decreases durable progress",
-    "journal_operation_progress_successors": {
-      "noop": {"VERIFIED": []},
-      "create": {"PLANNED": ["PUBLISHED"], "PUBLISHED": ["VERIFIED"], "VERIFIED": []},
-      "repair-missing": {"PLANNED": ["PUBLISHED"], "PUBLISHED": ["VERIFIED"], "VERIFIED": []},
-      "update": {
-        "PLANNED": ["DETACHED"],
-        "DETACHED": ["PUBLISHED"],
-        "PUBLISHED": ["VERIFIED"],
-        "VERIFIED": []
-      },
-      "remove": {"PLANNED": ["DETACHED"], "DETACHED": ["VERIFIED"], "VERIFIED": []},
-      "retire": {"PLANNED": ["DETACHED"], "DETACHED": ["VERIFIED"], "VERIFIED": []}
-    },
-    "journal_operation_crash_observations": {
-      "noop": {"VERIFIED": ["the exact unchanged before and after observation"]},
-      "create": {
-        "PLANNED": ["target absent", "target equals exact after image"],
-        "PUBLISHED": ["target equals exact after image"],
-        "VERIFIED": ["target equals exact after image"]
-      },
-      "repair-missing": {
-        "PLANNED": ["target absent", "target equals exact after image"],
-        "PUBLISHED": ["target equals exact after image"],
-        "VERIFIED": ["target equals exact after image"]
-      },
-      "update": {
-        "PLANNED": [
-          "target equals exact before image and quarantine absent",
-          "target absent and quarantine equals exact before image"
-        ],
-        "DETACHED": [
-          "target absent and quarantine equals exact before image",
-          "target equals exact after image and quarantine equals exact before image"
-        ],
-        "PUBLISHED": ["target equals exact after image and quarantine equals exact before image"],
-        "VERIFIED": ["target equals exact after image and quarantine equals exact before image"]
-      },
-      "remove": {
-        "PLANNED": [
-          "target equals exact before image and quarantine absent",
-          "target absent and quarantine equals exact before image"
-        ],
-        "DETACHED": ["target absent and quarantine equals exact before image"],
-        "VERIFIED": ["target absent and quarantine equals exact before image"]
-      },
-      "retire": {
-        "PLANNED": [
-          "target equals exact before image and quarantine absent",
-          "target absent and quarantine equals exact before image"
-        ],
-        "DETACHED": ["target absent and quarantine equals exact before image"],
-        "VERIFIED": ["target absent and quarantine equals exact before image"]
-      }
-    },
-    "crash_observation_rule": "journal progress is a durable lower bound because a crash may occur after a target or quarantine mutation is durable but before its successor journal is durable; only the listed current-or-next physical observations are recognized, and every mismatch or observation farther ahead preserves evidence and requires failed recovery",
-    "journal_operation_rollback_progress": ["NOT_STARTED", "TARGET_RESTORED"],
-    "journal_operation_rollback_progress_successors": {
-      "NOT_STARTED": ["TARGET_RESTORED"],
-      "TARGET_RESTORED": []
-    },
-    "rollback_progress_crash_rule": "rollback progress is a durable lower bound: NOT_STARTED accepts the exact current mutation observation or exact restored before observation, and TARGET_RESTORED requires the exact restored before observation while every listed operation artifact remains available; an exact restored observation one transition ahead may persist the missed successor, while any other observation preserves evidence and fails recovery",
-    "rollback_state_progress_values": ["PENDING", "RESTORED"],
-    "rollback_state_progress_successors": {"PENDING": ["RESTORED"], "RESTORED": []},
-    "rollback_state_progress_crash_rule": "PENDING accepts the exact artifact-bound current state observation or the exact restored before-state observation; when the before-state is already durable, recovery verifies it and persists the missed RESTORED successor; RESTORED requires the exact durable before-state; every other observation preserves all evidence and fails recovery",
-    "rollback_state_progress_rule": "every prepared journal starts PENDING; after every operation is TARGET_RESTORED, restore the exact authenticated before-state or exact prior absence, fsync the state root, persist RESTORED, verify the complete before roster and state while preserving every recovery artifact, and only then persist journal state ROLLED_BACK",
-    "phases": [
-      "read-only whole-roster preflight",
-      "explicit digest approval",
-      "open or create the fixed coordination file and acquire its nonblocking advisory lock",
-      "directory-handle no-follow revalidation with immutable approved identifiers and byte-for-byte plan equality",
-      "create or verify roots and run nonce-bound private filesystem probes",
-      "read exact before-images and generate desired bytes in memory without named transaction artifacts",
-      "fsynced PREPARING journal publication through journal.initial.json and journal.json",
-      "write and verify every journal-listed artifact, then fsync PREPARED",
-      "set and fsync MUTATING before canonical role-order no-clobber create or detach-and-verify update or remove",
-      "persist and fsync each operation progress transition",
-      "exact roster verification",
-      "atomic fsynced committed state publication",
-      "set and fsync STATE_COMMITTED after the state file and its parent are durable",
-      "fsynced COMMITTED journal",
-      "individual cleanup of recognized ephemeral files"
+    "top_level_field_schema": {
+      "action": "string exactly install or remove",
+      "bootstrap_hash": "64-character lowercase SHA-256 over exact verifier helper bytes",
+      "bootstrap_path": "package-relative string exactly scripts/verify_role_link.py",
+      "bootstrap_protocol": "JSON integer exactly 1",
+      "canonical_plugin_root": "absolute canonical UTF-8 path of the one verified installed plugin root",
+      "canonical_state_root": "absolute normalized UTF-8 path exactly <CODEX_HOME>/codex-rig/shims",
+      "canonical_target_root": "absolute normalized UTF-8 path exactly <CODEX_HOME>/agents",
+      "codex_binary_hash": "64-character lowercase SHA-256 over exact Codex executable bytes",
+      "codex_binary_path": "absolute canonical UTF-8 path to the held verified regular executable",
+      "codex_home_observation": "object with exactly root_observation_fields and root_observation_schema",
+      "coordination_lock_intent": "string exactly open-existing or create-if-absent",
+      "coordination_lock_observation": "object with exactly coordination_lock_observation_fields and coordination_lock_observation_schema",
+      "generator_version": "JSON integer exactly 1",
+      "install_id": "canonical lowercase RFC 4122 UUID string",
+      "journal_observation": "object with exactly journal_observation_fields and journal_observation_schema",
+      "mode": "string exactly converge or recovery",
+      "operations": "array of one through 256 objects with exactly operation_fields and operation_schema",
+      "package_hash": "64-character lowercase SHA-256 over exact package-manifest.json bytes",
+      "plugin_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
+      "plugin_version": "non-empty SemVer string equal to the verified package and active-plugin versions",
+      "python_executable_hash": "64-character lowercase SHA-256 over exact Python executable bytes",
+      "python_executable_path": "absolute canonical UTF-8 path to the held verified regular executable",
+      "recovery_disposition": "JSON null in converge mode; otherwise one exact non-null recovery_disposition_values string",
+      "recovery_observation": "object with exactly recovery_observation_fields and recovery_observation_schema",
+      "roster_hash": "64-character lowercase SHA-256 over the exact hash_preimages.roster_hash preimage",
+      "schema": "JSON integer exactly 1",
+      "scope": "string exactly user",
+      "source_state": "JSON null for an initial install; otherwise an object with exactly source_state_fields and source_state_schema",
+      "state_root_observation": "object with exactly root_observation_fields and root_observation_schema",
+      "target_root_intent": "string exactly unchanged, create, or rebind-removed-root",
+      "target_root_observation": "object with exactly root_observation_fields and root_observation_schema",
+      "transaction_nonce": "canonical lowercase RFC 4122 UUID string generated once before approval"
+    }
+  },
+  "bounded_inputs": {
+    "cli_stderr_bytes": 65536,
+    "cli_stdout_bytes": 65536,
+    "helper_bytes": 2097152,
+    "journal_bytes": 4194304,
+    "operation_roles": 256,
+    "path_bytes": 4096,
+    "recovery_directory_entries": 256,
+    "role_card_bytes": 2097152,
+    "shim_bytes": 262144,
+    "state_bytes": 1048576,
+    "state_roles": 128,
+    "target_directory_entries": 4096
+  },
+  "doctor": {
+    "always_live": true,
+    "approved_apply_probes": [
+      "create or verify private target and state roots after digest approval and lock acquisition",
+      "require target and state roots on the same device",
+      "probe case behavior, hard-link no-clobber, file and directory fsync, and atomic state replacement only inside a nonce-bound private probe directory under the state root",
+      "remove every recognized probe file and fsync its parent before transaction preparation"
     ],
-    "create_primitive": "same-filesystem hard-link publication that fails when the target exists",
-    "update_remove_primitive": "same-filesystem detach to unique quarantine, verify approved hash, then publish or retain deletion",
-    "detach_mismatch_rule": "when detached quarantine bytes do not match the approved before hash, restore those exact detached bytes to an absent target with no-clobber hard-link publication, preserve the duplicate quarantine link as recovery evidence, and enter recovery-required; if the target is occupied or restoration cannot be proven durable, preserve quarantine evidence and enter recovery-required; never publish the journal before-image over this observation",
-    "initial_journal_primitive": "write exact canonical PREPARING bytes to journal.initial.json with exclusive create and mode 0600, fsync it, publish journal.json as a same-inode no-clobber hard link, fsync the transaction directory, verify journal.json, remove only the same-inode journal.initial.json link, and fsync again; no state or target mutation is allowed before journal.json is durable",
-    "initial_journal_crash_rule": "without journal.json, a private transaction containing only a current-user regular single-link journal.initial.json bounded by the journal size is an explicitly approved clean-preparing recovery even when the initial file is partial or its mode is the umask-reduced subset of 0600; with journal.json, it must be a valid PREPARING journal and any journal.initial.json must be the same inode and exact bytes or recovery blocks while preserving both",
-    "preparing_cleanup_rule": "a valid PREPARING journal authorizes clean-preparing for only journal.initial.json, journal.next.json, state.before.json, state.after.json, state.publish.json, and exact operation-derived before, after, and quarantine names under the private transaction; each present entry must be a current-user regular file or expected private directory, but a regular file may be partial, missing, or have an umask-reduced subset of mode 0600; cleanup removes only those bound names individually, then the valid PREPARING journal, then the empty transaction directory, and never reads, writes, or removes a target or state file",
-    "state_publish_artifact": "state.publish.json is a same-inode hard link to exact state.after.json inside the private transaction directory; it is created only after every target is VERIFIED and is consumed as the source of atomic state replacement",
-    "state_primitive": "atomically replace only manager-owned state.json under the held lock by renaming exact transaction-local state.publish.json across same-filesystem held directories, then fsync the state root; a crash before replace leaves the journal-bound publish link, while a crash after replace consumes that link and leaves the exact after state",
-    "journal_update_primitive": "write complete canonical successor bytes to exact journal.next.json with exclusive create and mode 0600, fsync that file, atomically replace only the manager-owned journal.json in the same opened transaction directory, and fsync the directory; an existing, aliased, non-regular, or unowned journal.next.json stops recovery without overwrite",
-    "journal_temp_recovery": "journal.json remains the authority after a crash before atomic replacement; a contained regular single-link journal.next.json owned by the effective user may be removed only after journal.json is valid and its current phase is an allowed predecessor of the complete canonical successor, otherwise preserve both and exit failed recovery",
-    "probe_directory": "<state_root>/.probe-<transaction_nonce> created with mode 0700 after complete plan equality and removed only by exact nonce-bound name after every recognized child has been verified and individually removed",
-    "probe_artifacts": ["source", "published", "replacement", "fsync-file", "fsync-directory"],
-    "probe_receipt": "exact canonical probe.json is exclusively created mode 0600 and fsynced before other probe artifacts; it binds schema, approved plan digest, transaction nonce, Codex-home identity, target-root identity, state-root identity, exact probe artifact names, hashes, modes, and progress; valid residue is recoverable only through an approved clean-probe recovery plan",
-    "probe_receipt_required_fields": [
+    "classification_rule": "healthy means every read-only check passed and write-dependent probes are explicitly pending approved apply; degraded or blocked never authorizes target mutation",
+    "classifications": [
+      "healthy",
+      "degraded",
+      "blocked"
+    ],
+    "install_rule": "every read-only check must pass before approval; approved apply probes must pass under lock before journal, state, or target mutation",
+    "probe_failure_rule": "exit environment blocked after exact probe cleanup; retain only the fixed coordination lock and safely created empty roots; cleanup uncertainty preserves the authenticated probe receipt and private probe directory, creates no transaction journal, state, or shim, and becomes probe-recovery-required",
+    "read_only_install_checks": [
+      "one contained installed plugin root with matching plugin and package manifests",
+      "matching manager, generator, verifier, role-card, and package hashes",
+      "Python 3.10 or newer with POSIX filesystem primitives",
+      "canonical existing user Codex home with bound device, inode, owner, group, and mode and no group or other write permission",
+      "existing target and state roots are regular local directories or their exact parents are safely classifiable",
+      "case, alias, containment, no-follow, filesystem type, executable identity, and primitive-availability checks",
+      "exact custom-agent target convention",
+      "current enabled plugin and version from a read-only Codex runtime oracle",
+      "existing state and all targets safely classifiable without adoption",
+      "no incompatible schema, roster, version, or recovery-required transaction"
+    ],
+    "recovery_rule": "an existing recognized journal or authenticated probe receipt blocks normal convergence but permits an artifact-bound recovery plan through install or remove",
+    "remove_rule": "intact owned shims may be removed when local teardown prerequisites pass even if unrelated routing checks are degraded",
+    "writes": false
+  },
+  "exit_codes": {
+    "0": "success or already converged",
+    "2": "usage error",
+    "3": "user cancelled before mutation",
+    "4": "drift, conflict, or blocked or partial removal",
+    "5": "environment or active-plugin prerequisite blocked",
+    "6": "corrupt, future, inconsistent, or untrusted state",
+    "7": "internal failure or failed recovery"
+  },
+  "marker": {
+    "encoding": "UTF-8 without BOM",
+    "grammar": "# codex-rig-shim schema=1 plugin=codex-rig install_id=<uuid> role_id=<role> package_hash=sha256:<hex> role_hash=sha256:<hex> bootstrap=1 generator=1",
+    "line": 1,
+    "maximum_bytes": 1024,
+    "newline": "LF",
+    "ownership_rule": "marker and filename never prove ownership without matching valid state and full-file hash",
+    "rejections": [
+      "not first line",
+      "duplicate marker",
+      "missing or extra field",
+      "unknown or future schema",
+      "invalid UUID, role, digest, protocol, or generator",
+      "control character, BOM, CRLF, invalid UTF-8, or overlong line"
+    ],
+    "required_fields": [
       "schema",
-      "approved_plan_digest",
-      "transaction_nonce",
-      "codex_home_identity",
-      "target_root_identity",
-      "state_root_identity",
-      "artifacts",
-      "progress"
-    ],
-    "probe_receipt_extra_fields": "rejected at the receipt, root-identity, and artifact-entry object levels",
-    "probe_receipt_identity_schema": {
-      "schema": "integer exactly 1",
-      "approved_plan_digest": "64-character lowercase SHA-256 string",
-      "transaction_nonce": "exact approved lowercase RFC 4122 UUID string",
-      "codex_home_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
-      "target_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
-      "state_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
-      "artifacts": "array of exactly five entries in probe_artifacts order with no duplicates",
-      "progress": "one exact probe_receipt_progress string"
+      "plugin",
+      "install_id",
+      "role_id",
+      "package_hash",
+      "role_hash",
+      "bootstrap",
+      "generator"
+    ]
+  },
+  "pristine_exit_outcomes": {
+    "doctor": {
+      "exit_code": 0,
+      "precondition": "no lifecycle state, allowlisted target, or recovery residue exists and every live read-only prerequisite passes",
+      "result": "healthy with approved-apply probes pending",
+      "writes": false
     },
-    "probe_receipt_artifact_fields": ["name", "relative_path", "kind", "expected_hash", "mode", "progress"],
-    "probe_receipt_artifact_schema": {
-      "name": "one exact probe_artifacts string",
-      "relative_path": "single contained basename exactly equal to name",
-      "kind": "string regular-file or directory matching probe_artifact_kinds",
-      "expected_hash": "64-character lowercase SHA-256 string for a regular file, otherwise JSON null",
-      "mode": "four-character lowercase octal permission string",
-      "progress": "one exact probe_artifact_progress string"
+    "remove": {
+      "exit_code": 0,
+      "precondition": "no lifecycle state, allowlisted target, or recovery residue exists",
+      "result": "already absent and converged without approval",
+      "writes": false
     },
-    "probe_artifact_kinds": {
-      "source": "regular-file",
-      "published": "regular-file",
-      "replacement": "regular-file",
-      "fsync-file": "regular-file",
-      "fsync-directory": "directory"
-    },
-    "probe_receipt_progress": ["PREPARED", "RUNNING", "CLEANING", "CLEANUP_REQUIRED"],
-    "probe_artifact_progress": ["PLANNED", "PUBLISHED", "VERIFIED", "REMOVED"],
-    "probe_receipt_update_primitive": "write canonical successor bytes to exact probe.next.json with exclusive create and mode 0600, fsync, atomically replace only probe.json in the opened probe directory, and fsync that directory; recovery validates or preserves any probe.next.json exactly like journal.next.json",
-    "probe_cleanup_progress_rule": "in approved clean-probe, process only in probe_artifacts order after every earlier entry is REMOVED: PLANNED plus absent is expected and persists REMOVED; PLANNED, PUBLISHED, or VERIFIED plus an exact present expected-kind, expected-hash, expected-mode artifact removes it, fsyncs the probe directory, then persists REMOVED; PUBLISHED or VERIFIED plus absent represents a completed unlink and persists the missed REMOVED transition; REMOVED requires absence; every later entry must remain exact, and any unknown, mismatched, or out-of-order entry preserves all residue and fails recovery",
-    "probe_retirement": "clean-probe removes each exact receipt-listed artifact, fsyncs progress through atomic receipt replacement, removes the exact valid probe.json last, then removes the empty probe directory and fsyncs the state root; a crash after receipt removal leaves at most an approved clean-empty-probe directory",
-    "forbidden_primitives": [
-      "recursive delete",
-      "replace of an unowned target",
-      "glob-selected mutation target",
-      "stale-lock takeover",
-      "forward-resume recovery"
+    "status": {
+      "exit_code": 0,
+      "precondition": "no lifecycle state, allowlisted target, or recovery residue exists",
+      "result": "absent and converged",
+      "writes": false
+    }
+  },
+  "product": "codex-rig",
+  "public_actions": {
+    "actions": [
+      "doctor",
+      "status",
+      "install",
+      "remove"
     ],
-    "transaction_retirement_order": [
-      "remove remaining exact journal-listed artifact files including state.publish.json when present",
-      "remove valid journal.next.json if present",
-      "remove every empty allowlisted transaction subdirectory while valid COMMITTED journal.json remains",
-      "remove exact valid COMMITTED journal.json",
-      "remove the now-empty transaction directory"
+    "approval": "install and remove require explicit approval of the exact canonical plan digest",
+    "arguments": "exactly one positional action and no extras",
+    "forbidden": [
+      "subset mutation",
+      "force",
+      "adoption",
+      "overwrite unowned",
+      "noninteractive approval bypass"
     ],
-    "transaction_retirement": "after COMMITTED, reverify exact durable state and targets, execute transaction_retirement_order with every affected parent fsynced, and never remove journal.json while any child entry remains; a crash before journal removal is recovered by finalize-bookkeeping, while a crash after journal removal leaves only the approved empty transaction directory",
-    "rollback_retirement_order": [
-      "require journal state ROLLED_BACK, rollback state progress RESTORED, every operation TARGET_RESTORED, the exact durable before-state, and no unknown transaction entry",
-      "remove each remaining exact authenticated operation and state snapshot artifact plus state.publish.json in canonical recorded order, accepting prior absence only under this same terminal journal",
-      "remove valid journal.next.json if present",
-      "remove every empty allowlisted transaction subdirectory while valid ROLLED_BACK journal.json remains",
-      "remove exact valid ROLLED_BACK journal.json",
-      "remove the now-empty transaction directory"
+    "fresh_session_after_mutation": true,
+    "read_only": [
+      "doctor",
+      "status"
     ],
-    "rollback_retirement": "after ROLLED_BACK, execute rollback_retirement_order in canonical recorded order with every affected parent fsynced and never remove journal.json while any child entry remains; each artifact is either exact and removed durably or already absent under the same terminal journal, so a crash before journal removal resumes at the first remaining artifact, while a crash after journal removal leaves only the approved empty transaction directory",
-    "recognized_ephemeral_rule": "cleanup accepts only exact journal-listed relative artifact names under the opened transaction directory, regular-file identity, and matching recorded hash; prior absence of a listed artifact is accepted only with an exact valid COMMITTED journal and exact durable after-state or exact valid ROLLED_BACK journal and exact durable before-state during canonical retirement; state.publish.json is the fixed same-inode exception bound to state.after.json for both commit and rollback retirement; PREPARING uses the narrower preparing_cleanup_rule; RECOVERY_REQUIRED retains every recovery artifact; exact valid COMMITTED or ROLLED_BACK journal.json is the other fixed-name exception during its corresponding retirement; unknown files or directories stop cleanup and preserve evidence"
+    "whole_roster_mutations": [
+      "install",
+      "remove"
+    ]
   },
   "recovery": {
-    "policy": "rollback incomplete transactions, clean authenticated pre-journal probes, or finalize bookkeeping for an exact durable after-image; never forward-resume mutation",
-    "status_behavior": "report recovery-required without mutation",
-    "entry": "install or remove with a recognized initial preparation residue, journal, authenticated probe receipt, exact empty-retirement residue, or exact empty-probe residue emits a recovery-mode approval plan instead of a convergence plan; no additional public action is added",
     "approval_binding": "every recovery binds the canonical recovery_observation; journal recovery additionally binds journal bytes and hash, transaction and install IDs, journal state, before and after state hashes, every operation artifact hash and progress value, and current root and target observations; probe recovery binds the exact receipt bytes and hash, nonce, root identities, artifact names and hashes, and clean-probe disposition",
-    "mutation_behavior": "after explicit recovery approval, clean-preparing applies only the preparing_cleanup_rule because no target or state mutation was permitted before PREPARED; an exact durable after-state file plus exact complete after-image may finish journal bookkeeping only; every other recognized incomplete journal state rolls back exact before-images, durably advances each operation to TARGET_RESTORED without deleting recovery artifacts, restores the exact before-state, advances rollback state progress to RESTORED, verifies the complete before roster, and persists ROLLED_BACK before canonical resumable retirement; clean-probe removes only receipt-listed private probe artifacts, then the exact receipt, then the empty probe directory; clean-empty-retirement and clean-empty-probe remove only the still-empty approved directory after exact identity revalidation",
-    "post_recovery": "recovery completes or remains recovery-required without continuing the requested convergence action; a completed rollback retires only under rollback_retirement, and the user reruns install or remove",
+    "approval_completion_rule": "an approved recovery performs only the bound rollback, bookkeeping finalization, probe cleanup, or empty directory retirement; it returns after that recovery outcome and never continues the originally requested install or remove convergence",
     "concurrent_target_rule": "never clobber a concurrently created target; preserve evidence and remain recovery-required",
-    "unknown_state_rule": "preserve transaction evidence and exit internal failure",
+    "entry": "install or remove with a recognized initial preparation residue, journal, authenticated probe receipt, exact empty-retirement residue, or exact empty-probe residue emits a recovery-mode approval plan instead of a convergence plan; no additional public action is added",
+    "idempotent": true,
+    "mutation_behavior": "after explicit recovery approval, clean-preparing applies only the preparing_cleanup_rule because no target or state mutation was permitted before PREPARED; an exact durable after-state file plus exact complete after-image may finish journal bookkeeping only; every other recognized incomplete journal state rolls back exact before-images, durably advances each operation to TARGET_RESTORED without deleting recovery artifacts, restores the exact before-state, advances rollback state progress to RESTORED, verifies the complete before roster, and persists ROLLED_BACK before canonical resumable retirement; clean-probe removes only receipt-listed private probe artifacts, then the exact receipt, then the empty probe directory; clean-empty-retirement and clean-empty-probe remove only the still-empty approved directory after exact identity revalidation",
+    "policy": "rollback incomplete transactions, clean authenticated pre-journal probes, or finalize bookkeeping for an exact durable after-image; never forward-resume mutation",
+    "post_recovery": "recovery completes or remains recovery-required without continuing the requested convergence action; a completed rollback retires only under rollback_retirement, and the user reruns install or remove",
     "rollback_decision_matrix": [
       {
+        "after": "absent or exact after image",
+        "before": "absent",
+        "decision": "before state is already restored; perform no target mutation",
         "priority": 1,
-        "target": "absent",
-        "before": "absent",
-        "after": "absent or exact after image",
         "quarantine": "absent",
-        "decision": "before state is already restored; perform no target mutation"
+        "target": "absent"
       },
       {
+        "after": "absent or exact after image",
+        "before": "exact before image",
+        "decision": "publish the exact quarantine before image to the still-absent target with no-clobber semantics, verify and fsync it, and preserve the quarantine link and every listed recovery artifact until ROLLED_BACK",
         "priority": 2,
-        "target": "absent",
-        "before": "exact before image",
-        "after": "absent or exact after image",
         "quarantine": "exact before image",
-        "decision": "publish the exact quarantine before image to the still-absent target with no-clobber semantics, verify and fsync it, and preserve the quarantine link and every listed recovery artifact until ROLLED_BACK"
+        "target": "absent"
       },
       {
+        "after": "absent or exact after image",
+        "before": "exact before image",
+        "decision": "before state is already restored; preserve the target, the exact duplicate quarantine, and every listed recovery artifact unchanged until ROLLED_BACK",
         "priority": 3,
-        "target": "exact before image",
-        "before": "exact before image",
-        "after": "absent or exact after image",
         "quarantine": "absent or exact before image",
-        "decision": "before state is already restored; preserve the target, the exact duplicate quarantine, and every listed recovery artifact unchanged until ROLLED_BACK"
+        "target": "exact before image"
       },
       {
-        "priority": 4,
-        "target": "exact after image",
+        "after": "exact after image",
         "before": "absent",
-        "after": "exact after image",
+        "decision": "remove only the verified exact after image durably to restore target absence",
+        "priority": 4,
         "quarantine": "absent",
-        "decision": "remove only the verified exact after image durably to restore target absence"
+        "target": "exact after image"
       },
       {
+        "after": "exact after image",
+        "before": "exact before image",
+        "decision": "detach and verify only the exact after target, publish the exact quarantine before image with no-clobber semantics, verify and fsync the restored target, and preserve the quarantine link and every listed recovery artifact until ROLLED_BACK",
         "priority": 5,
-        "target": "exact after image",
-        "before": "exact before image",
-        "after": "exact after image",
         "quarantine": "exact before image",
-        "decision": "detach and verify only the exact after target, publish the exact quarantine before image with no-clobber semantics, verify and fsync the restored target, and preserve the quarantine link and every listed recovery artifact until ROLLED_BACK"
+        "target": "exact after image"
       },
       {
-        "priority": 6,
-        "target": "absent",
-        "before": "exact before image",
         "after": "absent or exact after image",
+        "before": "exact before image",
+        "decision": "restore only from the exact authenticated journal before-image with no-clobber semantics; missing or mismatched before-image evidence preserves all evidence and fails recovery",
+        "priority": 6,
         "quarantine": "absent",
-        "decision": "restore only from the exact authenticated journal before-image with no-clobber semantics; missing or mismatched before-image evidence preserves all evidence and fails recovery"
+        "target": "absent"
       },
       {
-        "priority": 7,
-        "target": "any observation not matched by an earlier exact row",
-        "before": "any",
         "after": "any",
+        "before": "any",
+        "decision": "preserve the target and every recovery artifact unchanged and remain recovery-required",
+        "priority": 7,
         "quarantine": "any observation not matched by an earlier exact row",
-        "decision": "preserve the target and every recovery artifact unchanged and remain recovery-required"
+        "target": "any observation not matched by an earlier exact row"
       }
     ],
     "rollback_matrix_selection_rule": "evaluate rows by ascending unique priority; exact rows 1 through 6 are mutually exclusive; the final catch-all is selected only when no exact row matches; exactly one row is effective for every complete observation",
     "rollback_order_rule": "evaluate every role in canonical role order from held descriptors, select exactly one effective matrix row for every role before any mutation, stop when any role selects the preservation catch-all, and never use namespace, marker, or a later package as substitute ownership evidence",
     "rollback_terminal_rule": "after every role is durably TARGET_RESTORED and every recovery artifact remains available, restore and verify the exact authenticated before-state, persist rollback state progress RESTORED, persist journal state ROLLED_BACK, then execute only canonical resumable rollback_retirement; any failure before ROLLED_BACK preserves the journal and all recovery evidence in RECOVERY_REQUIRED",
-    "approval_completion_rule": "an approved recovery performs only the bound rollback, bookkeeping finalization, probe cleanup, or empty directory retirement; it returns after that recovery outcome and never continues the originally requested install or remove convergence",
-    "idempotent": true
+    "status_behavior": "report recovery-required without mutation",
+    "unknown_state_rule": "preserve transaction evidence and exit internal failure"
   },
-  "pristine_exit_outcomes": {
-    "doctor": {
-      "precondition": "no lifecycle state, allowlisted target, or recovery residue exists and every live read-only prerequisite passes",
-      "result": "healthy with approved-apply probes pending",
-      "exit_code": 0,
-      "writes": false
+  "release": "0.2.0",
+  "roles": [
+    {
+      "id": "challenger",
+      "target": "codex-rig-challenger.toml"
     },
-    "status": {
-      "precondition": "no lifecycle state, allowlisted target, or recovery residue exists",
-      "result": "absent and converged",
-      "exit_code": 0,
-      "writes": false
+    {
+      "id": "cicd-steward",
+      "target": "codex-rig-cicd-steward.toml"
     },
-    "remove": {
-      "precondition": "no lifecycle state, allowlisted target, or recovery residue exists",
-      "result": "already absent and converged without approval",
-      "exit_code": 0,
-      "writes": false
+    {
+      "id": "curator",
+      "target": "codex-rig-curator.toml"
+    },
+    {
+      "id": "data-steward",
+      "target": "codex-rig-data-steward.toml"
+    },
+    {
+      "id": "delegation-lead",
+      "target": "codex-rig-delegation-lead.toml"
+    },
+    {
+      "id": "doc-scribe",
+      "target": "codex-rig-doc-scribe.toml"
+    },
+    {
+      "id": "linting-expert",
+      "target": "codex-rig-linting-expert.toml"
+    },
+    {
+      "id": "oss-shepherd",
+      "target": "codex-rig-oss-shepherd.toml"
+    },
+    {
+      "id": "qa-specialist",
+      "target": "codex-rig-qa-specialist.toml"
+    },
+    {
+      "id": "scientist",
+      "target": "codex-rig-scientist.toml"
+    },
+    {
+      "id": "security-auditor",
+      "target": "codex-rig-security-auditor.toml"
+    },
+    {
+      "id": "solution-architect",
+      "target": "codex-rig-solution-architect.toml"
+    },
+    {
+      "id": "squeezer",
+      "target": "codex-rig-squeezer.toml"
+    },
+    {
+      "id": "sw-engineer",
+      "target": "codex-rig-sw-engineer.toml"
+    },
+    {
+      "id": "web-explorer",
+      "target": "codex-rig-web-explorer.toml"
     }
+  ],
+  "runtime_evidence_owners": {
+    "active plugin and cache selection": "live doctor and disposable Codex install probes",
+    "bootstrap before substantive role work": "adversarial named-agent runtime traces",
+    "custom model, sandbox, approval, and nesting fidelity": "observed child runtime traces",
+    "macOS and Linux filesystem behavior": "platform lifecycle test matrix",
+    "session activation after mutation": "fresh-session discovery probes"
+  },
+  "safe_removal_predicates": [
+    "target name is derived from the exact canonical role allowlist",
+    "target is a contained regular file reached without following symlinks",
+    "valid state matches plugin, scope, install ID, package, roots, bootstrap, role, card, and full file hash",
+    "line-one marker matches the same valid state",
+    "complete current file hash matches the state file hash",
+    "under-lock observation matches the approved plan"
+  ],
+  "schema": 1,
+  "scope": {
+    "coordination_lock": "<CODEX_HOME>/.codex-rig-shims.lock",
+    "name": "user",
+    "source_of_codex_home": "CODEX_HOME when set, otherwise the platform Codex home",
+    "state_root": "<CODEX_HOME>/codex-rig/shims",
+    "supported": "doctor-proven Python 3.10+ POSIX local filesystem",
+    "target_root": "<CODEX_HOME>/agents",
+    "unsupported": [
+      "project scope",
+      "native Windows",
+      "network or distributed filesystems",
+      "unresolved filesystem aliases",
+      "automatic scope migration",
+      "same-user malicious state or marker forgery",
+      "universal power-loss atomicity"
+    ]
   },
   "shim_format": {
+    "dynamic_fields": {
+      "description": "Thin linked Codex Rig <role_id> role; unavailable unless the current installed plugin verifies.",
+      "model_effort_approval_sandbox": "exact canonical role-card frontmatter values",
+      "name": "codex-rig-<role_id>",
+      "toml_escaped_verifier_argv_json": "take the compact verifier argv JSON text, replace each backslash with two backslashes and then each double quote with backslash-double-quote before interpolation into the TOML multiline basic string; parsing TOML must reproduce the exact original JSON text",
+      "verifier_argv_json": "compact ensure_ascii=true JSON array of the absolute Python executable and fixed verifier arguments; no shell string is generated"
+    },
     "encoding": "UTF-8 without BOM",
-    "newline": "LF with one final LF",
-    "mode": "0600",
+    "file_hash": "SHA-256 over the exact complete generated bytes",
+    "forbidden_content": [
+      "canonical role-card body",
+      "substantive behavioral fallback",
+      "copied verifier or card bytes",
+      "source repository path",
+      "unbound executable or cache lookup"
+    ],
     "maximum_bytes": 262144,
-    "toml_scalar_encoding": "json.dumps with ensure_ascii=true for every one-line string; newline and control characters are rejected before encoding",
+    "mode": "0600",
+    "newline": "LF with one final LF",
     "template_lines": [
       "{marker}",
       "name = {encoded_name}",
@@ -884,31 +658,7 @@
       "If execution is unavailable, exits nonzero, or returns malformed or unavailable output, use no other tool and do no task work. Return one compact JSON object with protocol=1, role_id={role_id}, status=codex-rig-role-unavailable, the allowlisted reason, and next_action=reinstall-or-relink, then stop.",
       "Never search for another cache, helper, role card, or fallback role body.\"\"\""
     ],
-    "dynamic_fields": {
-      "name": "codex-rig-<role_id>",
-      "description": "Thin linked Codex Rig <role_id> role; unavailable unless the current installed plugin verifies.",
-      "model_effort_approval_sandbox": "exact canonical role-card frontmatter values",
-      "verifier_argv_json": "compact ensure_ascii=true JSON array of the absolute Python executable and fixed verifier arguments; no shell string is generated",
-      "toml_escaped_verifier_argv_json": "take the compact verifier argv JSON text, replace each backslash with two backslashes and then each double quote with backslash-double-quote before interpolation into the TOML multiline basic string; parsing TOML must reproduce the exact original JSON text"
-    },
-    "verifier_argv": [
-      "<absolute-python-executable>",
-      "<absolute-plugin-root>/scripts/verify_role_link.py",
-      "--plugin-root",
-      "<absolute-plugin-root>",
-      "--role",
-      "<role_id>",
-      "--role-sha256",
-      "<role_hash>",
-      "--manifest-sha256",
-      "<package_hash>",
-      "--helper-sha256",
-      "<bootstrap_hash>",
-      "--codex-binary",
-      "<absolute-codex-binary>",
-      "--codex-sha256",
-      "<codex_binary_hash>"
-    ],
+    "toml_scalar_encoding": "json.dumps with ensure_ascii=true for every one-line string; newline and control characters are rejected before encoding",
     "unavailable_reason_values": [
       "invalid-arguments",
       "plugin-root-mismatch",
@@ -935,18 +685,168 @@
       "invalid-digest",
       "verification-error"
     ],
-    "forbidden_content": [
-      "canonical role-card body",
-      "substantive behavioral fallback",
-      "copied verifier or card bytes",
-      "source repository path",
-      "unbound executable or cache lookup"
-    ],
-    "file_hash": "SHA-256 over the exact complete generated bytes"
+    "verifier_argv": [
+      "<absolute-python-executable>",
+      "<absolute-plugin-root>/scripts/verify_role_link.py",
+      "--plugin-root",
+      "<absolute-plugin-root>",
+      "--role",
+      "<role_id>",
+      "--role-sha256",
+      "<role_hash>",
+      "--manifest-sha256",
+      "<package_hash>",
+      "--helper-sha256",
+      "<bootstrap_hash>",
+      "--codex-binary",
+      "<absolute-codex-binary>",
+      "--codex-sha256",
+      "<codex_binary_hash>"
+    ]
   },
+  "state": {
+    "bootstrap_fields": [
+      "protocol",
+      "helper_path",
+      "helper_hash"
+    ],
+    "bootstrap_schema": {
+      "helper_hash": "64-character lowercase SHA-256 string",
+      "helper_path": "package-relative string exactly scripts/verify_role_link.py",
+      "protocol": "integer exactly 1"
+    },
+    "compatibility_refusals": [
+      "future or unknown schema",
+      "downgrade",
+      "same precedence with different package content except an explicitly ordered local +codex development rebuild",
+      "incompatible or oversized historical roster",
+      "missing, corrupt, duplicate, or inconsistent role entry",
+      "path, root identity, helper, card, marker, or hash disagreement"
+    ],
+    "directory_mode": "0700",
+    "encoding": "UTF-8 canonical JSON without trailing data; duplicate keys and non-finite numbers rejected",
+    "extra_fields": "rejected at every object level",
+    "field_schema": {
+      "generator_version": "integer exactly 1",
+      "install_id": "lowercase RFC 4122 UUID string",
+      "package_hash": "64-character lowercase SHA-256 string",
+      "plugin": "string exactly codex-rig",
+      "plugin_version": "non-empty SemVer string",
+      "roles": "array of one through 128 entries sorted by role_id with no duplicates",
+      "schema": "integer exactly 1",
+      "scope": "string exactly user",
+      "transaction_status": "string current or removed"
+    },
+    "file": "state.json",
+    "forward_migration": "a strictly newer active package or an explicitly ordered local +codex development rebuild may authenticate the persisted package, cache-root, and historical roster as before-image authority while the active package defines the after-image; downgrade and published same-precedence content replacement refuse",
+    "maximum_bytes": 1048576,
+    "mode": "0600",
+    "ownership_reconstruction": false,
+    "removed_tombstone_rebind": "a valid removed tombstone may bind a changed target-root identity only through an explicitly approved rebind-removed-root plan when every allowlisted target is absent; unrelated agent files are preserved",
+    "required_fields": [
+      "schema",
+      "plugin",
+      "scope",
+      "install_id",
+      "plugin_version",
+      "package_hash",
+      "codex_home_identity",
+      "plugin_root_identity",
+      "state_root_identity",
+      "target_root_identity",
+      "roster_hash",
+      "bootstrap",
+      "generator_version",
+      "roles",
+      "transaction_status"
+    ],
+    "role_fields": [
+      "role_id",
+      "target_name",
+      "card_path",
+      "role_hash",
+      "file_hash"
+    ],
+    "role_schema": {
+      "card_path": "package-relative string exactly roles/<role>/ROLE.md",
+      "file_hash": "64-character lowercase SHA-256 string",
+      "role_hash": "64-character lowercase SHA-256 string",
+      "role_id": "lowercase role string matching [a-z][a-z0-9-]{0,63}",
+      "target_name": "derived basename exactly codex-rig-<role_id>.toml"
+    },
+    "root_identity_fields": [
+      "canonical_path",
+      "device",
+      "inode",
+      "owner",
+      "group",
+      "mode"
+    ],
+    "root_identity_schema": {
+      "canonical_path": "absolute canonical UTF-8 path string",
+      "device": "nonnegative JSON integer",
+      "group": "nonnegative JSON integer",
+      "inode": "nonnegative JSON integer",
+      "mode": "four-character lowercase octal permission string",
+      "owner": "nonnegative JSON integer"
+    },
+    "schema": 1,
+    "state_root_rebind": false,
+    "transaction_statuses": [
+      "current",
+      "removed"
+    ]
+  },
+  "target_classification": [
+    {
+      "install": "atomic no-clobber create after whole-roster preflight",
+      "remove": "already absent; reconcile only from valid state",
+      "state": "absent target and no ownership record"
+    },
+    {
+      "install": "preserve and block whole roster",
+      "remove": "preserve and refuse ownership claim",
+      "state": "regular target without matching ownership state"
+    },
+    {
+      "install": "no-op when current, otherwise transactional update",
+      "remove": "transactional whole-roster removal",
+      "state": "owned target with full file hash matching state"
+    },
+    {
+      "install": "transactionally repair missing owned targets after whole-roster approval",
+      "remove": "transactionally remove exact present owned targets and commit a removed tombstone",
+      "state": "valid current state with one or more owned targets absent and every present owned target exact"
+    },
+    {
+      "install": "preserve and block whole roster",
+      "remove": "preserve and report modified",
+      "state": "owned marker but full file hash differs"
+    },
+    {
+      "install": "preserve and refuse automatic update",
+      "remove": "preserve and refuse automatic removal",
+      "state": "missing, corrupt, future, or inconsistent state"
+    },
+    {
+      "install": "no-op root identity or explicitly approved rebind-removed-root, then whole-roster create",
+      "remove": "zero-write converged success",
+      "state": "valid removed tombstone with every allowlisted target absent"
+    },
+    {
+      "install": "preserve and block whole roster",
+      "remove": "preserve and refuse ownership claim",
+      "state": "valid removed tombstone with any allowlisted target present"
+    },
+    {
+      "install": "preserve and block whole roster",
+      "remove": "preserve and block whole roster",
+      "state": "symlink, non-regular, escaped, aliased, or case-colliding target"
+    }
+  ],
   "thin_link": {
-    "copies_role_body": false,
-    "copies_helper_or_card_outside_cache": false,
+    "behavioral_limit": "Codex does not natively enforce bootstrap-before-work for standalone custom agents",
+    "broken_after_plugin_removal": true,
     "contains": [
       "documented custom-agent configuration",
       "one canonical ownership marker",
@@ -955,19 +855,415 @@
       "instruction to verify and load the current canonical role card before substantive work",
       "bounded unavailable-response contract"
     ],
-    "broken_after_plugin_removal": true,
-    "stale_after_plugin_version_or_cache_change": true,
-    "behavioral_limit": "Codex does not natively enforce bootstrap-before-work for standalone custom agents",
-    "release_gate": "representative unavailable-link traces must show only verifier use and the bounded unavailable response with no substantive role work"
+    "copies_helper_or_card_outside_cache": false,
+    "copies_role_body": false,
+    "release_gate": "representative unavailable-link traces must show only verifier use and the bounded unavailable response with no substantive role work",
+    "stale_after_plugin_version_or_cache_change": true
   },
-  "safe_removal_predicates": [
-    "target name is derived from the exact canonical role allowlist",
-    "target is a contained regular file reached without following symlinks",
-    "valid state matches plugin, scope, install ID, package, roots, bootstrap, role, card, and full file hash",
-    "line-one marker matches the same valid state",
-    "complete current file hash matches the state file hash",
-    "under-lock observation matches the approved plan"
-  ],
+  "transaction": {
+    "crash_observation_rule": "journal progress is a durable lower bound because a crash may occur after a target or quarantine mutation is durable but before its successor journal is durable; only the listed current-or-next physical observations are recognized, and every mismatch or observation farther ahead preserves evidence and requires failed recovery",
+    "create_primitive": "same-filesystem hard-link publication that fails when the target exists",
+    "detach_mismatch_rule": "when detached quarantine bytes do not match the approved before hash, restore those exact detached bytes to an absent target with no-clobber hard-link publication, preserve the duplicate quarantine link as recovery evidence, and enter recovery-required; if the target is occupied or restoration cannot be proven durable, preserve quarantine evidence and enter recovery-required; never publish the journal before-image over this observation",
+    "forbidden_primitives": [
+      "recursive delete",
+      "replace of an unowned target",
+      "glob-selected mutation target",
+      "stale-lock takeover",
+      "forward-resume recovery"
+    ],
+    "initial_journal_crash_rule": "without journal.json, a private transaction containing only a current-user regular single-link journal.initial.json bounded by the journal size is an explicitly approved clean-preparing recovery even when the initial file is partial or its mode is the umask-reduced subset of 0600; with journal.json, it must be a valid PREPARING journal and any journal.initial.json must be the same inode and exact bytes or recovery blocks while preserving both",
+    "initial_journal_primitive": "write exact canonical PREPARING bytes to journal.initial.json with exclusive create and mode 0600, fsync it, publish journal.json as a same-inode no-clobber hard link, fsync the transaction directory, verify journal.json, remove only the same-inode journal.initial.json link, and fsync again; no state or target mutation is allowed before journal.json is durable",
+    "journal_artifact_names": {
+      "after_image": "after/<role_id>.toml or JSON null when absent",
+      "after_state": "state.after.json",
+      "before_image": "before/<role_id>.toml or JSON null when absent",
+      "before_state": "state.before.json",
+      "quarantine_name": "quarantine/<role_id>.toml or JSON null when no detach is required"
+    },
+    "journal_encoding": "the same canonical JSON encoding as the approval plan",
+    "journal_extra_fields": "rejected at every object level",
+    "journal_identity_schema": {
+      "action": "string install or remove",
+      "approved_plan_digest": "64-character lowercase SHA-256 string",
+      "install_id": "the exact approved lowercase RFC 4122 UUID string",
+      "package_hash": "64-character lowercase SHA-256 string",
+      "roster_hash": "64-character lowercase SHA-256 string",
+      "transaction_id": "the exact transaction_nonce string; no second identifier is generated or derived",
+      "transaction_nonce": "the exact immutable approved lowercase RFC 4122 UUID string"
+    },
+    "journal_mode": "0600",
+    "journal_noop_progress": "a noop operation is written as VERIFIED in the initial PREPARING journal and has null before_image, after_image, and quarantine_name artifacts",
+    "journal_operation_crash_observations": {
+      "create": {
+        "PLANNED": [
+          "target absent",
+          "target equals exact after image"
+        ],
+        "PUBLISHED": [
+          "target equals exact after image"
+        ],
+        "VERIFIED": [
+          "target equals exact after image"
+        ]
+      },
+      "noop": {
+        "VERIFIED": [
+          "the exact unchanged before and after observation"
+        ]
+      },
+      "remove": {
+        "DETACHED": [
+          "target absent and quarantine equals exact before image"
+        ],
+        "PLANNED": [
+          "target equals exact before image and quarantine absent",
+          "target absent and quarantine equals exact before image"
+        ],
+        "VERIFIED": [
+          "target absent and quarantine equals exact before image"
+        ]
+      },
+      "repair-missing": {
+        "PLANNED": [
+          "target absent",
+          "target equals exact after image"
+        ],
+        "PUBLISHED": [
+          "target equals exact after image"
+        ],
+        "VERIFIED": [
+          "target equals exact after image"
+        ]
+      },
+      "retire": {
+        "DETACHED": [
+          "target absent and quarantine equals exact before image"
+        ],
+        "PLANNED": [
+          "target equals exact before image and quarantine absent",
+          "target absent and quarantine equals exact before image"
+        ],
+        "VERIFIED": [
+          "target absent and quarantine equals exact before image"
+        ]
+      },
+      "update": {
+        "DETACHED": [
+          "target absent and quarantine equals exact before image",
+          "target equals exact after image and quarantine equals exact before image"
+        ],
+        "PLANNED": [
+          "target equals exact before image and quarantine absent",
+          "target absent and quarantine equals exact before image"
+        ],
+        "PUBLISHED": [
+          "target equals exact after image and quarantine equals exact before image"
+        ],
+        "VERIFIED": [
+          "target equals exact after image and quarantine equals exact before image"
+        ]
+      }
+    },
+    "journal_operation_fields": [
+      "role_id",
+      "intent",
+      "target_name",
+      "before_exists",
+      "before_hash",
+      "before_mode",
+      "after_exists",
+      "after_hash",
+      "after_mode",
+      "before_image",
+      "after_image",
+      "quarantine_name",
+      "progress",
+      "rollback_progress"
+    ],
+    "journal_operation_order": "one through 256 unique operations sorted lexicographically by strict role_id",
+    "journal_operation_progress": [
+      "PLANNED",
+      "DETACHED",
+      "PUBLISHED",
+      "VERIFIED"
+    ],
+    "journal_operation_progress_successors": {
+      "create": {
+        "PLANNED": [
+          "PUBLISHED"
+        ],
+        "PUBLISHED": [
+          "VERIFIED"
+        ],
+        "VERIFIED": []
+      },
+      "noop": {
+        "VERIFIED": []
+      },
+      "remove": {
+        "DETACHED": [
+          "VERIFIED"
+        ],
+        "PLANNED": [
+          "DETACHED"
+        ],
+        "VERIFIED": []
+      },
+      "repair-missing": {
+        "PLANNED": [
+          "PUBLISHED"
+        ],
+        "PUBLISHED": [
+          "VERIFIED"
+        ],
+        "VERIFIED": []
+      },
+      "retire": {
+        "DETACHED": [
+          "VERIFIED"
+        ],
+        "PLANNED": [
+          "DETACHED"
+        ],
+        "VERIFIED": []
+      },
+      "update": {
+        "DETACHED": [
+          "PUBLISHED"
+        ],
+        "PLANNED": [
+          "DETACHED"
+        ],
+        "PUBLISHED": [
+          "VERIFIED"
+        ],
+        "VERIFIED": []
+      }
+    },
+    "journal_operation_rollback_progress": [
+      "NOT_STARTED",
+      "TARGET_RESTORED"
+    ],
+    "journal_operation_rollback_progress_successors": {
+      "NOT_STARTED": [
+        "TARGET_RESTORED"
+      ],
+      "TARGET_RESTORED": []
+    },
+    "journal_operation_schema": {
+      "after_exists": "JSON boolean",
+      "after_hash": "64-character lowercase SHA-256 string when after_exists=true, otherwise JSON null",
+      "after_image": "contained transaction-relative allowlisted path string when used, otherwise JSON null",
+      "after_mode": "four-character lowercase octal string when after_exists=true, otherwise JSON null",
+      "before_exists": "JSON boolean",
+      "before_hash": "64-character lowercase SHA-256 string when before_exists=true, otherwise JSON null",
+      "before_image": "contained transaction-relative allowlisted path string when used, otherwise JSON null",
+      "before_mode": "four-character lowercase octal string when before_exists=true, otherwise JSON null",
+      "intent": "one exact approval intent_values string",
+      "progress": "one exact journal_operation_progress string consistent with the operation intent and durable artifacts",
+      "quarantine_name": "contained transaction-relative allowlisted path string when used, otherwise JSON null",
+      "role_id": "lowercase role string matching [a-z][a-z0-9-]{0,63}",
+      "rollback_progress": "one exact journal_operation_rollback_progress string; NOT_STARTED before recovery and monotonic to TARGET_RESTORED only after the exact target before observation is durable",
+      "target_name": "derived basename exactly codex-rig-<role_id>.toml"
+    },
+    "journal_path": "transactions/<transaction_id>/journal.json under the canonical state root",
+    "journal_required_fields": [
+      "schema",
+      "transaction_id",
+      "transaction_nonce",
+      "install_id",
+      "action",
+      "approved_plan_digest",
+      "package_hash",
+      "roster_hash",
+      "codex_home_identity",
+      "target_root_identity",
+      "state_root_identity",
+      "before_state",
+      "after_state",
+      "rollback_state_progress",
+      "journal_state",
+      "operations"
+    ],
+    "journal_rollback_state_progress_schema": "one exact rollback_state_progress_values string; PENDING outside rollback and monotonic to RESTORED only after the exact before-state is durable",
+    "journal_schema": 1,
+    "journal_state_absence": "exists=false; relative_path, sha256, and mode are JSON null",
+    "journal_state_snapshot_fields": [
+      "exists",
+      "relative_path",
+      "sha256",
+      "mode"
+    ],
+    "journal_state_snapshot_schema": {
+      "exists": "JSON boolean",
+      "mode": "four-character lowercase octal permission string when exists=true, otherwise JSON null",
+      "relative_path": "contained transaction-relative UTF-8 path string when exists=true, otherwise JSON null",
+      "sha256": "64-character lowercase SHA-256 string when exists=true, otherwise JSON null"
+    },
+    "journal_state_successors": {
+      "COMMITTED": [],
+      "MUTATING": [
+        "MUTATING",
+        "STATE_COMMITTED",
+        "RECOVERY_REQUIRED"
+      ],
+      "PREPARED": [
+        "MUTATING",
+        "RECOVERY_REQUIRED"
+      ],
+      "PREPARING": [
+        "PREPARED",
+        "RECOVERY_REQUIRED"
+      ],
+      "RECOVERY_REQUIRED": [
+        "RECOVERY_REQUIRED",
+        "ROLLED_BACK"
+      ],
+      "ROLLED_BACK": [],
+      "STATE_COMMITTED": [
+        "COMMITTED",
+        "RECOVERY_REQUIRED"
+      ]
+    },
+    "journal_states": [
+      "PREPARING",
+      "PREPARED",
+      "MUTATING",
+      "STATE_COMMITTED",
+      "COMMITTED",
+      "RECOVERY_REQUIRED",
+      "ROLLED_BACK"
+    ],
+    "journal_successor_rule": "a successor preserves schema, transaction, install, action, approved digest, package, roster, root identities, before state, after state, operation order, operation intent, and artifact names; it changes only along one listed journal state, operation progress, operation rollback progress, or rollback state progress successor and never decreases durable progress",
+    "journal_temp_recovery": "journal.json remains the authority after a crash before atomic replacement; a contained regular single-link journal.next.json owned by the effective user may be removed only after journal.json is valid and its current phase is an allowed predecessor of the complete canonical successor, otherwise preserve both and exit failed recovery",
+    "journal_update_primitive": "write complete canonical successor bytes to exact journal.next.json with exclusive create and mode 0600, fsync that file, atomically replace only the manager-owned journal.json in the same opened transaction directory, and fsync the directory; an existing, aliased, non-regular, or unowned journal.next.json stops recovery without overwrite",
+    "lock": "one persistent 0600 coordination file at <CODEX_HOME>/.codex-rig-shims.lock opened without following symlinks and held by nonblocking POSIX advisory lock; kernel release only",
+    "lock_validation": "the coordination path must be one contained regular file owned by the current effective user with mode 0600 and link count one; a symlink, non-regular file, wrong owner, permissive mode, alias, or changed device or inode blocks without replacement",
+    "phases": [
+      "read-only whole-roster preflight",
+      "explicit digest approval",
+      "open or create the fixed coordination file and acquire its nonblocking advisory lock",
+      "directory-handle no-follow revalidation with immutable approved identifiers and byte-for-byte plan equality",
+      "create or verify roots and run nonce-bound private filesystem probes",
+      "read exact before-images and generate desired bytes in memory without named transaction artifacts",
+      "fsynced PREPARING journal publication through journal.initial.json and journal.json",
+      "write and verify every journal-listed artifact, then fsync PREPARED",
+      "set and fsync MUTATING before canonical role-order no-clobber create or detach-and-verify update or remove",
+      "persist and fsync each operation progress transition",
+      "exact roster verification",
+      "atomic fsynced committed state publication",
+      "set and fsync STATE_COMMITTED after the state file and its parent are durable",
+      "fsynced COMMITTED journal",
+      "individual cleanup of recognized ephemeral files"
+    ],
+    "preliminary_write_rule": "after approval but before digest revalidation, apply may create or verify only the fixed coordination lock; stale approval exits without target, state-root, journal, or shim writes",
+    "preparing_cleanup_rule": "a valid PREPARING journal authorizes clean-preparing for only journal.initial.json, journal.next.json, state.before.json, state.after.json, state.publish.json, and exact operation-derived before, after, and quarantine names under the private transaction; each present entry must be a current-user regular file or expected private directory, but a regular file may be partial, missing, or have an umask-reduced subset of mode 0600; cleanup removes only those bound names individually, then the valid PREPARING journal, then the empty transaction directory, and never reads, writes, or removes a target or state file",
+    "probe_artifact_kinds": {
+      "fsync-directory": "directory",
+      "fsync-file": "regular-file",
+      "published": "regular-file",
+      "replacement": "regular-file",
+      "source": "regular-file"
+    },
+    "probe_artifact_progress": [
+      "PLANNED",
+      "PUBLISHED",
+      "VERIFIED",
+      "REMOVED"
+    ],
+    "probe_artifacts": [
+      "source",
+      "published",
+      "replacement",
+      "fsync-file",
+      "fsync-directory"
+    ],
+    "probe_cleanup_progress_rule": "in approved clean-probe, process only in probe_artifacts order after every earlier entry is REMOVED: PLANNED plus absent is expected and persists REMOVED; PLANNED, PUBLISHED, or VERIFIED plus an exact present expected-kind, expected-hash, expected-mode artifact removes it, fsyncs the probe directory, then persists REMOVED; PUBLISHED or VERIFIED plus absent represents a completed unlink and persists the missed REMOVED transition; REMOVED requires absence; every later entry must remain exact, and any unknown, mismatched, or out-of-order entry preserves all residue and fails recovery",
+    "probe_directory": "<state_root>/.probe-<transaction_nonce> created with mode 0700 after complete plan equality and removed only by exact nonce-bound name after every recognized child has been verified and individually removed",
+    "probe_receipt": "exact canonical probe.json is exclusively created mode 0600 and fsynced before other probe artifacts; it binds schema, approved plan digest, transaction nonce, Codex-home identity, target-root identity, state-root identity, exact probe artifact names, hashes, modes, and progress; valid residue is recoverable only through an approved clean-probe recovery plan",
+    "probe_receipt_artifact_fields": [
+      "name",
+      "relative_path",
+      "kind",
+      "expected_hash",
+      "mode",
+      "progress"
+    ],
+    "probe_receipt_artifact_schema": {
+      "expected_hash": "64-character lowercase SHA-256 string for a regular file, otherwise JSON null",
+      "kind": "string regular-file or directory matching probe_artifact_kinds",
+      "mode": "four-character lowercase octal permission string",
+      "name": "one exact probe_artifacts string",
+      "progress": "one exact probe_artifact_progress string",
+      "relative_path": "single contained basename exactly equal to name"
+    },
+    "probe_receipt_extra_fields": "rejected at the receipt, root-identity, and artifact-entry object levels",
+    "probe_receipt_identity_schema": {
+      "approved_plan_digest": "64-character lowercase SHA-256 string",
+      "artifacts": "array of exactly five entries in probe_artifacts order with no duplicates",
+      "codex_home_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
+      "progress": "one exact probe_receipt_progress string",
+      "schema": "integer exactly 1",
+      "state_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
+      "target_root_identity": "object with exactly state.root_identity_fields and state.root_identity_schema",
+      "transaction_nonce": "exact approved lowercase RFC 4122 UUID string"
+    },
+    "probe_receipt_progress": [
+      "PREPARED",
+      "RUNNING",
+      "CLEANING",
+      "CLEANUP_REQUIRED"
+    ],
+    "probe_receipt_required_fields": [
+      "schema",
+      "approved_plan_digest",
+      "transaction_nonce",
+      "codex_home_identity",
+      "target_root_identity",
+      "state_root_identity",
+      "artifacts",
+      "progress"
+    ],
+    "probe_receipt_update_primitive": "write canonical successor bytes to exact probe.next.json with exclusive create and mode 0600, fsync, atomically replace only probe.json in the opened probe directory, and fsync that directory; recovery validates or preserves any probe.next.json exactly like journal.next.json",
+    "probe_retirement": "clean-probe removes each exact receipt-listed artifact, fsyncs progress through atomic receipt replacement, removes the exact valid probe.json last, then removes the empty probe directory and fsyncs the state root; a crash after receipt removal leaves at most an approved clean-empty-probe directory",
+    "recognized_ephemeral_rule": "cleanup accepts only exact journal-listed relative artifact names under the opened transaction directory, regular-file identity, and matching recorded hash; prior absence of a listed artifact is accepted only with an exact valid COMMITTED journal and exact durable after-state or exact valid ROLLED_BACK journal and exact durable before-state during canonical retirement; state.publish.json is the fixed same-inode exception bound to state.after.json for both commit and rollback retirement; PREPARING uses the narrower preparing_cleanup_rule; RECOVERY_REQUIRED retains every recovery artifact; exact valid COMMITTED or ROLLED_BACK journal.json is the other fixed-name exception during its corresponding retirement; unknown files or directories stop cleanup and preserve evidence",
+    "rollback_progress_crash_rule": "rollback progress is a durable lower bound: NOT_STARTED accepts the exact current mutation observation or exact restored before observation, and TARGET_RESTORED requires the exact restored before observation while every listed operation artifact remains available; an exact restored observation one transition ahead may persist the missed successor, while any other observation preserves evidence and fails recovery",
+    "rollback_retirement": "after ROLLED_BACK, execute rollback_retirement_order in canonical recorded order with every affected parent fsynced and never remove journal.json while any child entry remains; each artifact is either exact and removed durably or already absent under the same terminal journal, so a crash before journal removal resumes at the first remaining artifact, while a crash after journal removal leaves only the approved empty transaction directory",
+    "rollback_retirement_order": [
+      "require journal state ROLLED_BACK, rollback state progress RESTORED, every operation TARGET_RESTORED, the exact durable before-state, and no unknown transaction entry",
+      "remove each remaining exact authenticated operation and state snapshot artifact plus state.publish.json in canonical recorded order, accepting prior absence only under this same terminal journal",
+      "remove valid journal.next.json if present",
+      "remove every empty allowlisted transaction subdirectory while valid ROLLED_BACK journal.json remains",
+      "remove exact valid ROLLED_BACK journal.json",
+      "remove the now-empty transaction directory"
+    ],
+    "rollback_state_progress_crash_rule": "PENDING accepts the exact artifact-bound current state observation or the exact restored before-state observation; when the before-state is already durable, recovery verifies it and persists the missed RESTORED successor; RESTORED requires the exact durable before-state; every other observation preserves all evidence and fails recovery",
+    "rollback_state_progress_rule": "every prepared journal starts PENDING; after every operation is TARGET_RESTORED, restore the exact authenticated before-state or exact prior absence, fsync the state root, persist RESTORED, verify the complete before roster and state while preserving every recovery artifact, and only then persist journal state ROLLED_BACK",
+    "rollback_state_progress_successors": {
+      "PENDING": [
+        "RESTORED"
+      ],
+      "RESTORED": []
+    },
+    "rollback_state_progress_values": [
+      "PENDING",
+      "RESTORED"
+    ],
+    "root_creation_rule": "after lock and digest equality, create missing target and state path components directory-relative, establish mode 0700, immediately open each component with no-follow directory flags, verify identity and ownership, fsync each parent, and require target and state roots to share one device; on Python/Linux without no-follow descriptor-relative chmod, permission repair of the just-created name occurs only under the held current-user private parent before the immediate no-follow open, within the declared same-UID tampering exclusion",
+    "root_retention_rule": "never remove the user agents directory; safely created empty state directories and the fixed lock may remain after an approved probe failure or crash and never imply installed state",
+    "state_primitive": "atomically replace only manager-owned state.json under the held lock by renaming exact transaction-local state.publish.json across same-filesystem held directories, then fsync the state root; a crash before replace leaves the journal-bound publish link, while a crash after replace consumes that link and leaves the exact after state",
+    "state_publish_artifact": "state.publish.json is a same-inode hard link to exact state.after.json inside the private transaction directory; it is created only after every target is VERIFIED and is consumed as the source of atomic state replacement",
+    "transaction_directory_mode": "0700",
+    "transaction_retirement": "after COMMITTED, reverify exact durable state and targets, execute transaction_retirement_order with every affected parent fsynced, and never remove journal.json while any child entry remains; a crash before journal removal is recovered by finalize-bookkeeping, while a crash after journal removal leaves only the approved empty transaction directory",
+    "transaction_retirement_order": [
+      "remove remaining exact journal-listed artifact files including state.publish.json when present",
+      "remove valid journal.next.json if present",
+      "remove every empty allowlisted transaction subdirectory while valid COMMITTED journal.json remains",
+      "remove exact valid COMMITTED journal.json",
+      "remove the now-empty transaction directory"
+    ],
+    "update_remove_primitive": "same-filesystem detach to unique quarantine, verify approved hash, then publish or retain deletion"
+  },
   "zero_write_invariants": [
     "doctor and status issue no mutating filesystem operation and do not change content, ownership, permissions, link identity, modification time, or change time; access time is excluded because read effects follow host mount policy",
     "usage errors and cancelled approval do not write",
@@ -976,12 +1272,5 @@
     "approved apply probe failure with successful cleanup leaves no probe, journal, state file, or target shim; cleanup uncertainty may leave only an authenticated private probe receipt and recognized probe artifacts for approved clean-probe recovery, plus the fixed lock and safely created roots",
     "foreign, modified, unsafe, ambiguous, or incompatible target blocks before journal creation",
     "repeated current install and repeated complete remove converge without writes"
-  ],
-  "runtime_evidence_owners": {
-    "active plugin and cache selection": "live doctor and disposable Codex install probes",
-    "bootstrap before substantive role work": "adversarial named-agent runtime traces",
-    "custom model, sandbox, approval, and nesting fidelity": "observed child runtime traces",
-    "macOS and Linux filesystem behavior": "platform lifecycle test matrix",
-    "session activation after mutation": "fresh-session discovery probes"
-  }
+  ]
 }

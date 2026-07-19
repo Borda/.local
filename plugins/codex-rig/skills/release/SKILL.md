@@ -28,6 +28,8 @@ OUT_DIR=".reports/codex/release/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Determine mode, range, and target version
 
 - `notes`: draft release notes from git range.
@@ -40,6 +42,7 @@ Unknown mode/ambiguous range => fail before release docs.
 ### 03: Collect release evidence
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 RELEASE_RANGE="${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null)..HEAD}"
 git log --oneline "$RELEASE_RANGE" >"$OUT_DIR/commits.txt" 2>/dev/null || true
 ```

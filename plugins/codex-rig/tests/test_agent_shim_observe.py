@@ -14,6 +14,8 @@ from types import ModuleType
 import pytest
 
 
+WINDOWS_POSIX_SKIP_REASON = "requires POSIX filesystem modes, links, and executable semantics"
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason=WINDOWS_POSIX_SKIP_REASON)
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = PLUGIN_ROOT / "scripts"
 GENERATOR_PATH = SCRIPTS / "generate_roles.py"

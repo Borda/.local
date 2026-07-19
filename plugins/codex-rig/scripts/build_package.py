@@ -185,7 +185,7 @@ def build_manifest() -> dict[str, Any]:
 
 def encode_manifest(manifest: dict[str, Any]) -> bytes:
     """Encode a stable human-readable manifest."""
-    return (json.dumps(manifest, indent=2, ensure_ascii=True) + "\n").encode("utf-8")
+    return (json.dumps(manifest, indent=2, ensure_ascii=True, sort_keys=True) + "\n").encode("utf-8")
 
 
 def parse_args() -> argparse.Namespace:

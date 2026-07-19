@@ -3,15 +3,15 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
         "hooks": [
           {
-            "type": "command",
             "command": "python3 \"$PLUGIN_ROOT/hooks/session_start.py\"",
+            "statusMessage": "Checking Codex Rig shim health",
             "timeout": 30,
-            "statusMessage": "Checking Codex Rig shim health"
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "startup|resume"
       }
     ]
   }

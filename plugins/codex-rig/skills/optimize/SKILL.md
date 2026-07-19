@@ -35,6 +35,8 @@ OUT_DIR=".reports/codex/optimize/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block that sets `OUT_DIR`, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Validate metric and guard commands
 
 Require:
@@ -49,6 +51,7 @@ Require:
 Dry-run both before edit:
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 ${METRIC_CMD} >"$OUT_DIR/metric-baseline.txt" 2>&1
 ${GUARD_CMD} >"$OUT_DIR/guard-baseline.txt" 2>&1
 ```
@@ -76,6 +79,7 @@ No fan-out for one small measured change with stable metric/guard. Never let spe
 Initialize machine-readable iteration log:
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 : >"$OUT_DIR/experiments.jsonl"
 ```
 
@@ -86,6 +90,7 @@ One independent hypothesis per iteration. Do not optimize unmeasured paths. Befo
 ### 05: Re-measure
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 ${METRIC_CMD} >"$OUT_DIR/metric-after.txt" 2>&1
 ${GUARD_CMD} >"$OUT_DIR/guard-after.txt" 2>&1
 ```

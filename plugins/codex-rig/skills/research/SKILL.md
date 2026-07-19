@@ -30,6 +30,8 @@ OUT_DIR=".reports/codex/research/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Define research question, mode, and constraints
 
 Modes:
@@ -94,6 +96,7 @@ Inspect `collect-diff.sh --help`; collect `working-tree` scope into `$OUT_DIR/ba
 ### 07: Run review gate
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
 ```
 

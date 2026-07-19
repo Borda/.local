@@ -29,6 +29,8 @@ OUT_DIR=".reports/codex/audit/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Normalize scope and collect inventory
 
 Scopes:
@@ -39,6 +41,7 @@ Scopes:
 - `all`: all above.
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
 ```
 
@@ -69,12 +72,14 @@ Follow `../../shared/helper-cli-contract.md` and `run-gates.sh --help`. Default:
 ### 05: Detect drift and broken references
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 rg -n "config_file|skills/|quality-gates|run-gates.sh|write-result.py" .codex >"$OUT_DIR/reference-scan.txt"
 ```
 
 ### 06: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 rg -n "\[agents\.|description =" .codex/config.toml >"$OUT_DIR/spawn-sections.txt"
 rg -n "TRIGGER when|SKIP when|NOT for" .codex/agents >"$OUT_DIR/spawn-policy-sections.txt"
 ```
@@ -100,6 +105,7 @@ Each configured agent has:
 ### 08: Review agent-roster consistency
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 rg -n "^(name|description|developer_instructions)" .codex/agents >"$OUT_DIR/agent-roster-scan.txt"
 ```
 

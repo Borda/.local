@@ -33,6 +33,8 @@ OUT_DIR=".reports/codex/manage/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Parse intent and target
 
 Intents:
@@ -48,6 +50,7 @@ Unknown intent => fail before edit.
 ### 03: Resolve owned files and blast radius
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
 rg -n "$TARGET" .codex AGENTS.md >"$OUT_DIR/references.txt" 2>/dev/null || true
 ```

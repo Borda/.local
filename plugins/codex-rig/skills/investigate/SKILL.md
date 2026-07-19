@@ -28,6 +28,8 @@ OUT_DIR=".reports/codex/investigate/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Capture symptom and reproduction context
 
 Write `$OUT_DIR/symptom.md` with:
@@ -41,6 +43,7 @@ Write `$OUT_DIR/symptom.md` with:
 ### 03: Gather signals before forming hypotheses
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 git log --oneline -10 >"$OUT_DIR/recent-commits.txt" 2>/dev/null || true
 python --version >"$OUT_DIR/python-version.txt" 2>&1 || true
 ```

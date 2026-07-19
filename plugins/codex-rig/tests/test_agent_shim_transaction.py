@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -373,3 +374,72 @@ def test_each_forward_mutation_boundary_rolls_back_exactly(
     else:
         assert target.read_bytes() == b"previous challenger shim\n"
         assert state.read_bytes() == b'{"transaction_status":"previous"}'
+
+
+@pytest.mark.parametrize(
+    ("intent", "boundary"),
+    [
+        ("create", "challenger:published"),
+        ("create", "challenger:verified"),
+        ("create", "state:published"),
+        ("update", "challenger:detached"),
+        ("update", "challenger:published"),
+        ("update", "challenger:verified"),
+        ("update", "state:published"),
+        ("remove", "challenger:detached"),
+        ("remove", "challenger:verified"),
+        ("remove", "state:published"),
+    ],
+    ids=lambda value: value,
+)
+def test_process_death_at_each_forward_boundary_recovers_exactly(
+    transaction_fixture: tuple[object, ...], intent: str, boundary: str
+) -> None:
+    """Prove durable recovery after uncatchable process death at every forward boundary."""
+    module, _, handles, roots = transaction_fixture
+    if intent != "create":
+        after_payload = b"replacement challenger shim\n" if intent == "update" else None
+        prepare_owned_transaction(roots, intent=intent, after_payload=after_payload)
+    child = f"""
+import os
+import sys
+sys.path.insert(0, {str(TRANSACTION_PATH.parent)!r})
+import _agent_shim_journal as journal_module
+import _agent_shim_transaction as transaction_module
+root = {str(roots["transaction"])!r}
+fds = {{
+    "transaction": os.open(root, os.O_RDONLY | os.O_DIRECTORY),
+    "target": os.open({str(roots["target"])!r}, os.O_RDONLY | os.O_DIRECTORY),
+    "state": os.open({str(roots["state"])!r}, os.O_RDONLY | os.O_DIRECTORY),
+    "before": os.open(root + "/before", os.O_RDONLY | os.O_DIRECTORY),
+    "after": os.open(root + "/after", os.O_RDONLY | os.O_DIRECTORY),
+    "quarantine": os.open(root + "/quarantine", os.O_RDONLY | os.O_DIRECTORY),
+}}
+handles = transaction_module.TransactionDirectories(
+    fds["transaction"], fds["target"], fds["state"],
+    fds["before"], fds["after"], fds["quarantine"],
+)
+journal = journal_module.parse_journal(open(root + "/journal.json", "rb").read())
+def kill(name):
+    if name == {boundary!r}:
+        os._exit(99)
+transaction_module.apply_transaction(journal, handles, checkpoint=kill)
+"""
+
+    killed = subprocess.run([sys.executable, "-c", child], check=False, timeout=30)
+
+    assert killed.returncode == 99
+    journal_module = sys.modules["_agent_shim_journal"]
+    journal = journal_module.parse_journal((roots["transaction"] / "journal.json").read_bytes())
+    terminal = module.rollback_transaction(journal, handles)
+    assert terminal.journal_state == "ROLLED_BACK"
+    target = roots["target"] / "codex-rig-challenger.toml"
+    state = roots["state"] / "state.json"
+    if intent == "create":
+        assert not target.exists()
+        assert not state.exists()
+    else:
+        assert target.read_bytes() == b"previous challenger shim\n"
+        assert state.read_bytes() == b'{"transaction_status":"previous"}'
+    module.cleanup_transaction(terminal, handles)
+    assert list(roots["transaction"].iterdir()) == []

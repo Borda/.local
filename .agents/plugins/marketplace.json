@@ -1,20 +1,20 @@
 {
-  "name": "borda-ai-rig",
   "interface": {
     "displayName": "Borda's AI-Rig"
   },
+  "name": "borda-ai-rig",
   "plugins": [
     {
+      "category": "Productivity",
       "name": "codex-rig",
-      "source": {
-        "source": "local",
-        "path": "./plugins/codex-rig"
-      },
       "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
       },
-      "category": "Productivity"
+      "source": {
+        "path": "./plugins/codex-rig",
+        "source": "local"
+      }
     }
   ]
 }

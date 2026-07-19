@@ -32,6 +32,8 @@ OUT_DIR=".reports/codex/analyse/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
+In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+
 ### 02: Normalize the analysis mode
 
 - `local`: code, local diff/reports, pasted text.
@@ -89,6 +91,7 @@ Required sections in `$OUT_DIR/analysis.md`:
 ### 07: Run the self-review check
 
 ```bash
+OUT_DIR="<run-directory-created-in-step-01>"
 git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
 ```
 

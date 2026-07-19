@@ -19,6 +19,8 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     import tomli as tomllib
 
 
+WINDOWS_POSIX_SKIP_REASON = "requires POSIX filesystem modes, links, and executable semantics"
+POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason=WINDOWS_POSIX_SKIP_REASON)
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_SCRIPT = PLUGIN_ROOT / "scripts" / "generate_roles.py"
 ROLE_IDS = (
@@ -149,6 +151,7 @@ Never search for another cache, helper, role card, or fallback role body."""
     return text.encode()
 
 
+@POSIX_ONLY
 def test_generation_is_exact_deterministic_and_round_trips_argv(tmp_path: Path) -> None:
     """Freeze all role bytes and preserve difficult paths through TOML and JSON."""
     plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
@@ -208,6 +211,7 @@ def test_generation_is_exact_deterministic_and_round_trips_argv(tmp_path: Path) 
         assert b"## Trigger and skip boundaries" not in payload
 
 
+@POSIX_ONLY
 def test_generated_roster_exposes_immutable_manager_identities(tmp_path: Path) -> None:
     """Prevent the lifecycle manager from independently reconstructing package metadata."""
     plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
@@ -246,6 +250,7 @@ def test_generated_roster_exposes_immutable_manager_identities(tmp_path: Path) -
         ("plugin-extra-field", "plugin manifest fields mismatch"),
     ],
 )
+@POSIX_ONLY
 def test_generated_roster_rejects_inconsistent_plugin_identity(
     tmp_path: Path,
     mutation: str,
@@ -288,6 +293,7 @@ def test_generated_roster_rejects_inconsistent_plugin_identity(
     ],
     ids=["uuid", "hash", "relative-path", "control-path"],
 )
+@POSIX_ONLY
 def test_generation_rejects_bad_identity_inputs(
     tmp_path: Path,
     install_id: str,
@@ -310,6 +316,7 @@ def test_generation_rejects_bad_identity_inputs(
         )
 
 
+@POSIX_ONLY
 def test_generation_rejects_role_bytes_not_bound_by_manifest(tmp_path: Path) -> None:
     """Prevent modified or linked role cards from entering generated shims."""
     module = load_generator()
@@ -321,6 +328,7 @@ def test_generation_rejects_role_bytes_not_bound_by_manifest(tmp_path: Path) -> 
         generate(module, plugin_root, python_binary, codex_binary)
 
 
+@POSIX_ONLY
 def test_generation_rejects_symlinked_package_input(tmp_path: Path) -> None:
     """Prevent aliased package files from being treated as installed bytes."""
     module = load_generator()
@@ -333,6 +341,7 @@ def test_generation_rejects_symlinked_package_input(tmp_path: Path) -> None:
         generate(module, plugin_root, python_binary, codex_binary)
 
 
+@POSIX_ONLY
 def test_generation_rejects_unresolved_parent_alias(tmp_path: Path) -> None:
     """Prevent unresolved dot-dot aliases from entering verifier arguments."""
     module = load_generator()
@@ -343,6 +352,7 @@ def test_generation_rejects_unresolved_parent_alias(tmp_path: Path) -> None:
         generate(module, aliased_root, python_binary, codex_binary)
 
 
+@POSIX_ONLY
 def test_generation_is_read_only_for_installed_inputs(tmp_path: Path) -> None:
     """Prevent the pure generator from changing its package or executable inputs."""
     plugin_root, python_binary, codex_binary = installed_inputs(tmp_path)
@@ -362,6 +372,7 @@ def test_generation_is_read_only_for_installed_inputs(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("hooks", [False, True], ids=["without-hook", "with-hook"])
+@POSIX_ONLY
 def test_generation_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> None:
     """Keep the pure renderer usable by the declared manager release."""
     module = load_generator()

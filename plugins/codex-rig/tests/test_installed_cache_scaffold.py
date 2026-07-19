@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 
 
+WINDOWS_POSIX_SKIP_REASON = "requires POSIX filesystem modes, links, and executable semantics"
+POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason=WINDOWS_POSIX_SKIP_REASON)
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PLUGIN_ROOT.parents[1]
 CARD_SEPARATOR = b"--- codex-rig-role-card ---\n"
@@ -86,6 +88,7 @@ def test_representative_skill_and_role_are_cache_portable() -> None:
     }
 
 
+@POSIX_ONLY
 def test_package_manifest_covers_regular_payloads_and_modes() -> None:
     """Prevent duplicate, linked, unverified, or mode-drifted package files."""
     manifest = json.loads((PLUGIN_ROOT / "package-manifest.json").read_text(encoding="utf-8"))
@@ -205,6 +208,7 @@ def failure_payload(result: subprocess.CompletedProcess[bytes]) -> dict[str, obj
     return payload
 
 
+@POSIX_ONLY
 def test_verifier_emits_exact_installed_card_bytes(tmp_path: Path) -> None:
     """Prove the active cache copy emits its verified bytes without source fallback."""
     home, installed_root, codex_binary = installed_fixture(tmp_path)
@@ -226,6 +230,7 @@ def test_verifier_emits_exact_installed_card_bytes(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("hooks", [False, True], ids=["without-hook", "with-hook"])
+@POSIX_ONLY
 def test_verifier_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> None:
     """Keep linked bootstrap valid for both declared manager package variants."""
     home, installed_root, codex_binary = installed_fixture(tmp_path)
@@ -241,6 +246,7 @@ def test_verifier_accepts_exact_manager_profile(tmp_path: Path, hooks: bool) -> 
     assert CARD_SEPARATOR in result.stdout
 
 
+@POSIX_ONLY
 def test_verifier_rejects_plugin_manifest_content_not_bound_by_package_manifest(tmp_path: Path) -> None:
     """Prevent same-version plugin metadata tampering from emitting a role card."""
     home, installed_root, codex_binary = installed_fixture(tmp_path)
@@ -256,6 +262,7 @@ def test_verifier_rejects_plugin_manifest_content_not_bound_by_package_manifest(
 
 
 @pytest.mark.parametrize("schema", [None, 2], ids=["missing", "future"])
+@POSIX_ONLY
 def test_verifier_rejects_unsupported_package_schema(tmp_path: Path, schema: int | None) -> None:
     """Prevent missing or future package schemas from entering the trust chain."""
     home, installed_root, codex_binary = installed_fixture(tmp_path)
@@ -273,6 +280,7 @@ def test_verifier_rejects_unsupported_package_schema(tmp_path: Path, schema: int
     assert CARD_SEPARATOR not in result.stdout
 
 
+@POSIX_ONLY
 def test_verifier_bounds_invalid_role_envelope(tmp_path: Path) -> None:
     """Prevent malformed role arguments from expanding or injecting diagnostics."""
     home, installed_root, codex_binary = installed_fixture(tmp_path)
@@ -295,6 +303,7 @@ def test_verifier_bounds_invalid_role_envelope(tmp_path: Path) -> None:
     assert len(result.stdout) < 160
 
 
+@POSIX_ONLY
 def test_verifier_stops_oversized_oracle_output(tmp_path: Path) -> None:
     """Prevent an oversized runtime response from being buffered or trusted."""
     home, installed_root, codex_binary = installed_fixture(tmp_path)
@@ -320,6 +329,7 @@ def test_verifier_stops_oversized_oracle_output(tmp_path: Path) -> None:
     ],
     ids=["disabled", "removed", "missing-card", "retained-old-cache", "role-hash", "helper-hash", "manifest-hash"],
 )
+@POSIX_ONLY
 def test_verifier_rejects_negative_link_states(
     tmp_path: Path, fixture_options: dict[str, bool], overrides: dict[str, str], reason: str
 ) -> None:
@@ -331,6 +341,7 @@ def test_verifier_rejects_negative_link_states(
     assert b"Treat every important claim" not in result.stdout
 
 
+@POSIX_ONLY
 def test_verifier_ignores_hostile_path_lookup(tmp_path: Path) -> None:
     """Prevent inherited PATH from substituting the active-package oracle."""
     home, installed_root, codex_binary = installed_fixture(tmp_path)
@@ -355,4 +366,4 @@ def test_committed_runtime_payload_has_no_private_machine_paths() -> None:
         payload = path.read_bytes()
         assert b"/Users/" not in payload
         assert b"/home/" not in payload
-        assert b"BEGIN PRIVATE KEY" not in payload
+        assert b"BEGIN " + b"PRIVATE KEY" not in payload

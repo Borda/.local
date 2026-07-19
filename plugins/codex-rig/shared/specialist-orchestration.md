@@ -124,19 +124,19 @@ Claim "specialist fan-out" only with separate outputs/runtime provenance. Record
 
 ## Recommended Specialist Axes
 
-| Axis                 | Agent                | Use When                                                    |
-| -------------------- | -------------------- | ----------------------------------------------------------- |
-| implementation       | `sw-engineer`        | feature, fix, refactor, API implementation                  |
-| tests and regression | `qa-specialist`      | acceptance checks, edge cases, failure/pass evidence        |
-| architecture/API     | `solution-architect` | public API, migration, cross-subsystem coupling             |
-| docs and migration   | `doc-scribe`         | public docs, examples, changelog, docstrings                |
-| security             | `security-auditor`   | auth, secrets, permissions, deserialization, supply chain   |
-| CI/tooling           | `cicd-steward`       | workflows, release automation, flaky CI                     |
-| lint/types           | `linting-expert`     | ruff, mypy, pre-commit, suppression policy                  |
-| data/ML pipeline     | `data-steward`       | datasets, leakage, reproducibility, tensor boundaries       |
-| performance          | `squeezer`           | profiling, memory, throughput, GPU sync                     |
-| release/OSS          | `oss-shepherd`       | SemVer, deprecations, maintainer readiness                  |
-| research/method      | `scientist`          | papers, metrics, ablations, experiment design               |
-| external docs        | `web-explorer`       | volatile API/docs/changelog evidence                        |
-| config hygiene       | `curator`            | skill/agent drift, calibration, instruction overlap         |
-| challenge            | `challenger`         | adversarial check for risky plans or no-finding conclusions |
+| Axis | Agent | Use When |
+| --- | --- | --- |
+| implementation | `sw-engineer` | feature, fix, refactor, API implementation |
+| tests and regression | `qa-specialist` | acceptance checks, edge cases, failure/pass evidence |
+| architecture/API | `solution-architect` | public API, migration, cross-subsystem coupling |
+| docs and migration | `doc-scribe` | public docs, examples, changelog, docstrings |
+| security | `security-auditor` | auth, secrets, permissions, deserialization, supply chain |
+| CI/tooling | `cicd-steward` | workflows, release automation, flaky CI |
+| lint/types | `linting-expert` | ruff, mypy, pre-commit, suppression policy |
+| data/ML pipeline | `data-steward` | datasets, leakage, reproducibility, tensor boundaries |
+| performance | `squeezer` | profiling, memory, throughput, GPU sync |
+| release/OSS | `oss-shepherd` | SemVer, deprecations, maintainer readiness |
+| research/method | `scientist` | papers, metrics, ablations, experiment design |
+| external docs | `web-explorer` | volatile API/docs/changelog evidence |
+| config hygiene | `curator` | skill/agent drift, calibration, instruction overlap |
+| challenge | `challenger` | adversarial check for risky plans or no-finding conclusions |
