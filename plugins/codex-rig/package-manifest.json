@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "plugin": "codex-rig",
-  "version": "0.2.0+codex.20260718221820",
+  "version": "0.2.0+codex.20260718223537",
   "release_profile": "shim-enabled",
   "features": {
     "manager": true,
@@ -247,7 +247,7 @@
   "files": [
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "9d00f1351b665f4ee4b4d040a42383afa0397894a60d7bd9b614cf5846d8d0f3",
+      "sha256": "9a59a733492cef5f4f67e208de8b12c3a792365894aaf5f55f21ab5c0c449b25",
       "mode": "0644"
     },
     {
@@ -258,6 +258,11 @@
     {
       "path": "NOTICE",
       "sha256": "b171c72b05b5df5a81a5eb53ea9abc4bd1599eb14766a99827320a7012148f6e",
+      "mode": "0644"
+    },
+    {
+      "path": "README.md",
+      "sha256": "f82b92dcdee844e2156cb5a764cd799e1f08868c49941a4f90946baa48166fef",
       "mode": "0644"
     },
     {
@@ -797,7 +802,7 @@
     },
     {
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "e6490a206d47b50b7bc435254f5106ffd34aacd89498d33f2a909fd00d8ff37b",
+      "sha256": "12e72111223fda11028dbcc82832891e0f8c8f576f2a71c31a867025722918ed",
       "mode": "0644"
     },
     {

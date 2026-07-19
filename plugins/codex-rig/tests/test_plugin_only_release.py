@@ -192,6 +192,15 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
     """Keep shim-manager and hook metadata aligned while MCP remains absent."""
     manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
     plugin = load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")
+    assert plugin["description"].startswith("Fourteen portable Codex workflows")
+    assert plugin["interface"]["capabilities"] == [
+        "14 workflow skills",
+        "15 specialist role cards",
+        "Optional guarded thin agent shims",
+        "Optional SessionStart health diagnostic",
+        "Built-in and inline role fallback",
+        "Quality gates",
+    ]
     assert manifest["release_profile"] == "shim-enabled"
     assert manifest["features"] == {
         "manager": True,
@@ -235,6 +244,22 @@ def test_manage_and_sync_preserve_installed_plugin_state() -> None:
         "preservation of unknown external agent files",
     ):
         assert required in sync
+
+
+def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None:
+    """Keep the user-visible lifecycle and deliberate thin-link limits explicit."""
+    guide = normalized_text(PLUGIN_ROOT / "README.md").lower()
+    for required in (
+        "codex plugin marketplace add borda/ai-rig --ref main",
+        "codex plugin add codex-rig@borda-ai-rig",
+        "optional sessionstart diagnostic",
+        "type that exact digest only after explicit approval",
+        "plugin reinstall does not update external user-agent files automatically",
+        "removing plugin first deliberately leaves thin shim files behind",
+        "foreign or marker-only `codex-rig-*.toml` files are never adopted, overwritten, or removed",
+        "no native bundled agent registrations",
+    ):
+        assert required in guide
 
 
 def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:

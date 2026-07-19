@@ -1,7 +1,7 @@
 {
   "name": "codex-rig",
-  "version": "0.2.0+codex.20260718221820",
-  "description": "Thirteen portable Codex workflows with fifteen canonical specialist role cards.",
+  "version": "0.2.0+codex.20260718223537",
+  "description": "Fourteen portable Codex workflows with fifteen canonical specialist role cards.",
   "author": {
     "name": "Jiri Borovec",
     "url": "https://github.com/Borda/AI-Rig"
@@ -12,13 +12,15 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Rig",
-    "shortDescription": "Portable workflows and specialist role cards",
-    "longDescription": "Run thirteen reusable Codex workflows with canonical role cards and built-in or inline fallback routing.",
+    "shortDescription": "Portable workflows, role cards, and agent shims",
+    "longDescription": "Run fourteen reusable Codex workflows with canonical role cards, optional thin agent shims, and built-in or inline fallback routing.",
     "developerName": "Borda",
     "category": "Productivity",
     "capabilities": [
-      "13 workflow skills",
+      "14 workflow skills",
       "15 specialist role cards",
+      "Optional guarded thin agent shims",
+      "Optional SessionStart health diagnostic",
       "Built-in and inline role fallback",
       "Quality gates"
     ],

@@ -86,16 +86,16 @@ OSS, develop, and research skills always use their plugin prefix (`/oss:review`,
 
 > [!IMPORTANT]
 >
-> **Codex CLI** — optional companion; requires a local clone (`.codex/` config is not a plugin):
+> **Codex CLI** — install the native Codex plugin directly from GitHub:
 >
 > ```bash
-> git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
 > npm install -g @openai/codex
-> cd Borda-AI-Rig
-> codex 'run sync with mode=check, source=project, targets=skills,agents,config,calibration,docs,shared'
+> codex plugin marketplace add Borda/AI-Rig --ref main
+> codex plugin add codex-rig@borda-ai-rig
 > ```
 >
-> Review the dry-run report, then rerun `sync` with `mode=apply` and explicitly approve the selected home writes and any first-time bootstrap.
+> This installs 14 skills and 15 role cards. Thin user-agent shims are optional and require a separate exact-approval
+> `agent-shims install`; see [`plugins/codex-rig/README.md`](plugins/codex-rig/README.md).
 
 → See [Token Savings (RTK)](#-token-savings-rtk) for RTK install details.
 
@@ -289,10 +289,24 @@ Both `--reply` flags produce a two-part shepherd output: an overall PR comment (
 
 Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.6-terra`, with 15 specialist agents and a codex-native skill backbone (`code-review/develop/code-remediate/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`). Symptom-first failures route through `investigate` before implementation. A Luna-based `delegation-lead` splits broad work into disjoint context packs, routes each stream to the lowest-cost capable Luna/Terra/Sol role, and enforces a handover gate before parent acceptance.
 
-### Install
+### Plugin install
 
 ```bash
 npm install -g @openai/codex
+codex plugin marketplace add Borda/AI-Rig --ref main
+codex plugin add codex-rig@borda-ai-rig
+```
+
+Start a fresh session. The plugin works with skills and role-card fallback alone. Optional thin linked agent shims are
+managed separately through `agent-shims`; read the [Codex Rig lifecycle guide](plugins/codex-rig/README.md) before
+installing them.
+
+### Full repository config
+
+The repository `.codex/` tree remains the source for contributors who want the complete editable native configuration:
+
+```bash
+git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
 cd Borda-AI-Rig
 codex 'run sync with mode=check, source=project, targets=skills,agents,config,calibration,docs,shared'
 ```
