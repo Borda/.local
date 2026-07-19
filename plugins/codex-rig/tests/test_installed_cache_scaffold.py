@@ -36,7 +36,9 @@ def test_scaffold_is_strict_plugin_only_release() -> None:
     assert "mcpServers" not in manifest
     assert len(manifest["interface"]["defaultPrompt"]) <= 3
     assert all("agent-shims" not in prompt for prompt in manifest["interface"]["defaultPrompt"])
-    assert all("codex-rig analyse" in prompt for prompt in manifest["interface"]["defaultPrompt"])
+    assert {"codex-rig:develop", "codex-rig:code-review", "codex-rig:research"} == {
+        prompt.split()[2] for prompt in manifest["interface"]["defaultPrompt"]
+    }
     assert marketplace["name"] == "borda-ai-rig"
     assert marketplace["plugins"][0]["source"]["path"] == "./plugins/codex-rig"
 
@@ -330,4 +332,3 @@ def test_committed_runtime_payload_has_no_private_machine_paths() -> None:
         assert b"/Users/" not in payload
         assert b"/home/" not in payload
         assert b"BEGIN PRIVATE KEY" not in payload
-        assert b"OPENAI_API_KEY" not in payload

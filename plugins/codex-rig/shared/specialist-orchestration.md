@@ -7,7 +7,7 @@ Use specialists for quality/latency only when independent narrow-context axes ex
 - Improve review, implementation, investigation, release through independent judgment.
 - Reduce elapsed time with runtime-supported parallel disjoint evidence/verification.
 - Give each specialist only needed files, diffs, logs, questions.
-- Route bounded workstream to lowest-cost capable registered specialist.
+- Route each bounded workstream to the lowest-cost capable canonical role.
 - Parent owns final scope, conflicts, user conclusions.
 
 ## When To Orchestrate
@@ -28,9 +28,11 @@ Stay single-agent when:
 
 ## Delegation Lead And Model Routing
 
-Use `delegation-lead` for 2+ separable workstreams when delegation beats context/consolidation cost. Config allows depth 2 nested specialists; leader returns one consolidated handover, never final ownership.
+Use `delegation-lead` for 2+ separable workstreams when delegation beats context/consolidation cost. Request nested
+specialists only when the active runtime proves the required depth; otherwise keep delegation at the parent. The lead
+returns one consolidated handover, never final ownership.
 
-Choose lowest-cost capable registered role:
+Choose the lowest-cost capable canonical role:
 
 - Luna: delegation coordination, documentation, CI/CD stewardship, web evidence, OSS triage, and static analysis.
 - Terra: implementation, tests, runtime behavior, data/ML, performance, research method, curation, adversarial challenge, and final executable verification.
@@ -50,6 +52,32 @@ Before spawning/simulating pass, write/describe context pack:
 - `Stop rule`: stop rather than widen scope.
 
 Do not default to full repo/PR thread/report. Specialist may request more; parent decides relevance.
+
+## Portable Role Routing
+
+Resolve the requested role card at `../roles/<role-id>/ROLE.md` relative to this policy. Treat those exact bytes as
+the behavioral authority. Plugin-only installs do not create custom-agent files.
+
+Before routing, classify each requested model, sandbox, approval, and nesting setting as `mandatory` or `preferred`
+from the task's actual risk. Use this route order:
+
+1. A currently available `codex-rig-<role-id>` custom agent only when its linked bootstrap returns an `ok` envelope
+   for the exact current card.
+2. A runtime-provided blank/default subagent with the exact role card injected before the narrow context pack.
+3. An inline pass in the parent context with the exact role card applied and independence reported as false.
+4. `unavailable` when the runtime cannot provide any safe route or cannot prove a mandatory profile setting.
+
+Fallback only for route absence, rejection, or failed bootstrap before substantive role work. Never retry another
+route because the specialist disagreed, returned a finding, or failed an acceptance gate. Built-in injection may
+retain parallel independence but cannot claim the role card's model, sandbox, approval, or nesting profile unless
+the runtime independently proves each setting. Preferred settings that are unproved are recorded as requested-only
+and lower fidelity; mandatory settings that are unproved stop at `unavailable`. Inline fallback is serial and
+non-independent.
+
+For every routed pass record: `role_id`, role-card SHA-256, route, attempted routes, fallback reason, actual model and
+reasoning effort when observable, requested and observed sandbox/approval controls, independence, nesting depth, and
+material fidelity limits. A failed linked bootstrap records `codex-rig-role-unavailable` and does not expose or infer
+role behavior from a stale custom-agent file.
 
 Write human-readable context packs in Caveman Ultra. Preserve exact evidence, questions, output contract, stop rule, risks, and ownership. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
 
@@ -81,7 +109,9 @@ Reject/re-scope handovers lacking evidence, crossing ownership, hiding failures,
 
 ## Substitution Rules
 
-Use native subagents when policy allows and parallelism/independence helps. If unavailable, label in-main substitute. Substitution lowers independence/confidence, especially `BROAD`, `HIGH_RISK`, release, security, no-finding.
+Use runtime-provided subagents when policy allows and parallelism or independence helps, following the portable route
+order above. If no safe subagent route exists, label an in-main substitute. Substitution lowers independence and
+confidence, especially for broad, high-risk, release, security, or no-finding conclusions.
 
 Claim "specialist fan-out" only with separate outputs/runtime provenance. Record only triggered axes as `spawned`/`substituted`; keep non-triggers in compact routing artifact.
 

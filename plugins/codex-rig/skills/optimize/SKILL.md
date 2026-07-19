@@ -1,0 +1,170 @@
+---
+name: optimize
+description: Minimal codex-native optimization loop. Use for metric-driven improvements with guardrails and measurable gates.
+---
+
+# Optimize
+
+Metric-driven optimization with explicit guards, rollback criteria, experiment log.
+
+## Input Schema
+
+```json
+{
+  "goal": "required measurable improvement objective",
+  "mode": "single|campaign",
+  "metric_cmd": "required command that emits or validates the target metric",
+  "metric_direction": "higher|lower",
+  "guard_cmd": "required command that must continue to pass",
+  "max_iterations": "optional integer, default 1",
+  "min_delta": "optional practical significance threshold",
+  "scope_files": [
+    "paths the optimization may edit"
+  ],
+  "done_when": "metric improves without guard regression"
+}
+```
+
+## Workflow
+
+### 01: Create run directory
+
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/optimize/$TS"
+mkdir -p "$OUT_DIR"
+```
+
+### 02: Validate metric and guard commands
+
+Require:
+
+- Repeatable `metric_cmd` producing comparable value or pass/fail.
+- Known `metric_direction`.
+- `guard_cmd` fails on unacceptable regressions.
+- Bounded `scope_files`.
+- Explicit, bounded `max_iterations` for `campaign`.
+- Protect files/scripts used by `metric_cmd`/`guard_cmd` unless user explicitly scopes them and accepts measurement-integrity risk.
+
+Dry-run both before edit:
+
+```bash
+${METRIC_CMD} >"$OUT_DIR/metric-baseline.txt" 2>&1
+${GUARD_CMD} >"$OUT_DIR/guard-baseline.txt" 2>&1
+```
+
+### 03: Record baseline and hypothesis
+
+Write `$OUT_DIR/hypothesis.md`:
+
+- metric to improve
+- expected mechanism
+- files allowed to change
+- guard risk
+- rollback condition
+
+For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code, apply `../../shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-optimization-plan.md"` with narrow context packs for:
+
+- `squeezer`: profiling mechanism, bottleneck hypothesis, measurement plan.
+- `qa-specialist`: guard coverage and regression risk.
+- `data-steward`: data pipeline or reproducibility impact.
+- `scientist`: metric validity, ablation design, statistical noise.
+- `challenger`: overfitting to the metric or weakening guard checks.
+
+No fan-out for one small measured change with stable metric/guard. Never let specialist change metric/guard scripts unless explicitly in `scope_files` and measurement-integrity risk recorded.
+
+Initialize machine-readable iteration log:
+
+```bash
+: >"$OUT_DIR/experiments.jsonl"
+```
+
+### 04: Apply one minimal optimization change per iteration
+
+One independent hypothesis per iteration. Do not optimize unmeasured paths. Before each, write `$OUT_DIR/iteration-<n>-before.patch` with scoped-file diff. If iteration fails and only its patch is present, revert with `git apply -R` against iteration diff; otherwise fail run when clean reversal cannot be proven. Never use `git reset --hard`.
+
+### 05: Re-measure
+
+```bash
+${METRIC_CMD} >"$OUT_DIR/metric-after.txt" 2>&1
+${GUARD_CMD} >"$OUT_DIR/guard-after.txt" 2>&1
+```
+
+### 06: Compare baseline and after results in `$OUT_DIR/comparison.md`
+
+Required fields:
+
+- baseline value
+- after value
+- delta
+- guard status
+- confidence
+- noise caveats
+
+Append one JSON object/iteration to `$OUT_DIR/experiments.jsonl`:
+
+```json
+{
+  "iteration": 1,
+  "hypothesis": "one-line mechanism",
+  "metric_before": 0.0,
+  "metric_after": 0.0,
+  "delta": 0.0,
+  "guard": "pass|fail",
+  "decision": "kept|reverted|inconclusive|failed",
+  "rollback_evidence": "path or reason"
+}
+```
+
+### 07: Decide keep/revert
+
+- Keep only with intended metric movement and passing guards.
+- With `min_delta`, keep only if delta meets/exceeds practical-significance threshold.
+- Revert or fail on guard regression.
+- For noisy measurement, repeat or mark inconclusive.
+- In `campaign`, stop at first kept result unless user asked continued exploration; otherwise continue only while `max_iterations` remains and each rejected iteration has rollback evidence.
+
+### 08: Run shared quality gates
+
+Inspect `run-gates.sh --help`. Tests runs configured test or guard command; give real commands or explicit reasons for other gates.
+
+### 09: Write and validate the mandatory result artifact
+
+Follow `../../shared/helper-cli-contract.md` and authoritative help. Write `OPTIMIZE_METADATA`, validate as `optimize`, promote only validated candidate.
+
+## Fail-Fast Rules
+
+1. Missing metric or guard command => fail.
+2. Baseline cannot be captured => fail.
+3. Scope is unbounded => fail.
+4. Guard regression after change => fail unless reverted.
+5. Metric/guard script changed without explicit scope and measurement-integrity note => fail.
+6. Campaign iteration rejected without rollback evidence or unresolved-risk note => fail.
+7. Claimed improvement below `min_delta` without explicit inconclusive status => fail.
+8. Result artifact validator failure => fail.
+9. Result artifact missing => fail.
+
+## Quality Gates
+
+Required:
+
+- `tests`: guard command or impacted tests.
+- `review`: metric comparison, rollback decision, relevant campaign ledger, `git diff --check`.
+- `artifact`: shared validator confirms comparison, experiments JSONL, gate logs, result JSON shape.
+
+Recommended:
+
+- `lint`, `format`, `types`: run for any code edits.
+
+## Calibration Hooks
+
+On metric/guard-policy change, update calibration:
+
+- behavioral cases: baseline missing, guard regression, noisy metric overclaim, campaign rollback evidence, below-threshold improvement, artifact validator bypass
+- benchmark patterns: `optimize`
+
+## Output Contract
+
+Use shared gate schema from `../../shared/quality-gates.md`.
+
+Minimum artifact payload template: `result-template.json`.

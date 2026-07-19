@@ -1,0 +1,35 @@
+{
+  "artifact_path": ".reports/codex/kaggle/<timestamp>/result.json",
+  "checks_failed": [],
+  "checks_run": [
+    "lint",
+    "format",
+    "types",
+    "tests",
+    "review"
+  ],
+  "confidence": 0.0,
+  "findings": {
+    "critical": 0,
+    "high": 0,
+    "low": 0,
+    "medium": 0
+  },
+  "metadata": {
+    "confidence_gap_closures": [],
+    "confidence_gaps": [],
+    "confidence_recovery": {
+      "evidence": [],
+      "final_confidence": 0.0,
+      "initial_confidence": 0.0,
+      "recovery_actions": [],
+      "remaining_limits": [],
+      "status": "not-acceptable-failed"
+    },
+    "grounded_sources": [],
+    "mode": "full|eda-only|inference-only",
+    "output_path": ".experiments/kaggle/<competition>.py",
+    "unresolved_placeholders": []
+  },
+  "status": "pass|fail|timeout"
+}

@@ -1,0 +1,112 @@
+{
+  "routes": {
+    "luna-support-high": [
+      {
+        "case_id": "doc-scribe-unverified-example",
+        "evidence_scope": "tool-use",
+        "fixture_files": {
+          "README.md": "# Double\n\n```pycon\n>>> from calc import double\n>>> double(2)\n5\n```\n",
+          "calc.py": "def double(value: int) -> int:\n    return value * 2\n"
+        },
+        "gate_command": "python3 -m doctest README.md",
+        "role": "doc-scribe",
+        "task_prompt": "Correct the executable README example without changing calc.py, run the relevant doctest, and report the applicable finding IDs.",
+        "task_type": "documentation"
+      },
+      {
+        "case_id": "linting-expert-suppression-hygiene",
+        "role": "linting-expert",
+        "task_type": "static-analysis"
+      },
+      {
+        "case_id": "oss-shepherd-release-readiness",
+        "role": "oss-shepherd",
+        "task_type": "oss-triage"
+      },
+      {
+        "case_id": "web-explorer-secondary-source-only",
+        "role": "web-explorer",
+        "task_type": "external-research"
+      },
+      {
+        "case_id": "curator-agent-contract",
+        "role": "curator",
+        "task_type": "configuration-curation"
+      },
+      {
+        "case_id": "delegation-lead-ungated-model-routing",
+        "role": "delegation-lead",
+        "task_type": "delegation-coordination"
+      }
+    ],
+    "sol-critical-high": [
+      {
+        "case_id": "security-credential-handling",
+        "evidence_scope": "tool-use",
+        "fixture_files": {
+          "loader.py": "import pickle\nfrom pathlib import Path\n\ndef load_payload(path: Path) -> dict[str, object]:\n    with path.open('rb') as handle:\n        return pickle.load(handle)\n",
+          "test_audit.py": "import json\nimport unittest\nfrom pathlib import Path\n\nclass AuditTest(unittest.TestCase):\n    def test_security_report_is_evidence_backed(self):\n        report = json.loads(Path('audit.json').read_text(encoding='utf-8'))\n        self.assertIs(report['unsafe_external_deserialization'], True)\n        self.assertEqual(report['recommended_format'], 'json')\n        self.assertIn('loader.py', report['evidence'])\n        self.assertIn('pickle', report['evidence'])\n\nif __name__ == '__main__':\n    unittest.main()\n"
+        },
+        "gate_command": "python3 -m unittest -q",
+        "role": "security-auditor",
+        "task_prompt": "Inspect loader.py without changing it, write audit.json with an evidence-backed unsafe-deserialization decision and JSON recommendation, run the audit test, and report the applicable finding IDs.",
+        "task_type": "security"
+      },
+      {
+        "case_id": "challenger-security-assumption",
+        "role": "challenger",
+        "task_type": "adversarial-security"
+      },
+      {
+        "case_id": "code-review-security-path",
+        "role": "security-auditor",
+        "task_type": "security-review"
+      },
+      {
+        "case_id": "challenger-migration-risk",
+        "role": "challenger",
+        "task_type": "adversarial-migration"
+      },
+      {
+        "case_id": "challenger-no-findings",
+        "role": "challenger",
+        "task_type": "adversarial-no-finding"
+      }
+    ],
+    "terra-general-high": [
+      {
+        "case_id": "sw-engineer-acceptance-evidence",
+        "evidence_scope": "tool-use",
+        "fixture_files": {
+          "calculator.py": "def safe_divide(numerator: float, denominator: float) -> float:\n    return numerator / denominator\n",
+          "test_calculator.py": "import unittest\nfrom calculator import safe_divide\n\nclass CalculatorTest(unittest.TestCase):\n    def test_regular_division(self):\n        self.assertEqual(safe_divide(6.0, 3.0), 2.0)\n\n    def test_zero_denominator_has_contract_error(self):\n        with self.assertRaisesRegex(ValueError, 'denominator'):\n            safe_divide(1.0, 0.0)\n\nif __name__ == '__main__':\n    unittest.main()\n"
+        },
+        "gate_command": "python3 -m unittest -q",
+        "role": "sw-engineer",
+        "task_prompt": "Implement the documented zero-denominator ValueError contract with a concise purpose docstring, preserve regular division, run tests, and report the applicable finding IDs.",
+        "task_type": "implementation"
+      },
+      {
+        "case_id": "qa-empty-inputs",
+        "role": "qa-specialist",
+        "task_type": "qa"
+      },
+      {
+        "case_id": "architecture-api-migration",
+        "role": "solution-architect",
+        "task_type": "architecture"
+      },
+      {
+        "case_id": "data-split-reproducibility",
+        "role": "data-steward",
+        "task_type": "data"
+      },
+      {
+        "case_id": "scientist-unfalsifiable-claim",
+        "role": "scientist",
+        "task_type": "ml-research"
+      }
+    ]
+  },
+  "schema_version": 1
+}

@@ -1,7 +1,7 @@
 {
   "name": "codex-rig",
-  "version": "0.1.0+codex.20260718082612",
-  "description": "Portable Codex workflows with canonical specialist role cards.",
+  "version": "0.1.0+codex.20260718091111",
+  "description": "Thirteen portable Codex workflows with fifteen canonical specialist role cards.",
   "author": {
     "name": "Jiri Borovec",
     "url": "https://github.com/Borda/AI-Rig"
@@ -13,17 +13,19 @@
   "interface": {
     "displayName": "Codex Rig",
     "shortDescription": "Portable workflows and specialist role cards",
-    "longDescription": "Run reusable Codex workflows with canonical role cards and explicit fallback routing.",
+    "longDescription": "Run thirteen reusable Codex workflows with canonical role cards and built-in or inline fallback routing.",
     "developerName": "Borda",
     "category": "Productivity",
     "capabilities": [
-      "Skills",
-      "Analysis",
-      "Specialist role card",
+      "13 workflow skills",
+      "15 specialist role cards",
+      "Built-in and inline role fallback",
       "Quality gates"
     ],
     "defaultPrompt": [
-      "Use codex-rig analyse on the current problem."
+      "Use the codex-rig:develop skill to implement and verify the requested change.",
+      "Use the codex-rig:code-review skill to review the current diff.",
+      "Use the codex-rig:research skill to collect primary evidence and recommendations."
     ]
   }
 }
