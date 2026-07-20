@@ -685,6 +685,10 @@ cat "$_OSS_RESOLVE/templates/resolve-report.md"  # timeout: 5000
 
 Report template (loaded above) — use for section structure.
 
+**Print the final report — including the full Action Items resolution table — inline to terminal.**
+
+> **Output-Routing exemption (canonical)**: the Step 11 final report is a read-in-context, acted-on-immediately resolution summary the user must see to confirm every item and how it resolved. Always print the full Action Items table inline to terminal regardless of row count — this is the whole point of the report. Global Output Routing (*5+ findings → `.temp/output-*.md`, summary only*) does **not** apply; never divert this table to a file in place of showing it. Writing a durable copy to `.reports/resolve/` in addition is fine, but the inline terminal print is mandatory and never replaced by a prose summary.
+
 **Action Items table** — one row per selected item, columns: `#` | `Type` | `Change` | `Status` | `Resolution` | `Commit`:
 
 - `Status`: ✓ implemented · ⊘ skipped · ✗ challenge-rejected
