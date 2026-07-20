@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Install AI-Rig plugins for Claude Code and/or Codex from the GitHub remote.
 # Remote installs use pushed state — commit and push before running; release tags are optional pins.
-# Run from the project root: bash sync.sh [claude] [codex] [--no-clean] [--codex-ref REF] [--no-codex-global-agents]
+# Run from the project root: bash sync.sh [claude] [codex] [clear] [--no-clean] [--codex-ref REF] [--no-codex-global-agents]
 #
 # Arguments (order-independent):
 #   claude   — sync Claude plugins + foundry:setup (default: both)
 #   codex    — install or update the Codex Rig plugin (default: both)
+#   clear    — teardown instead of install: uninstall this marketplace's Claude plugins
+#              + the Codex Rig plugin, and strip the managed block from $CODEX_HOME/AGENTS.md
+#              (a timestamped backup is kept). Honors claude/codex scoping (default: both sides).
+#              Leaves marketplace registrations and external plugins (caveman/ponytail/openai-codex) in place.
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
 #   --no-codex-global-agents — skip Codex Rig's managed block in $CODEX_HOME/AGENTS.md
@@ -17,6 +21,7 @@ set -e
 SYNC_CLAUDE=false
 SYNC_CODEX=false
 CLEAN=true
+CLEAR=false
 CODEX_REF=""
 INSTALL_CODEX_GLOBAL_AGENTS=true
 
@@ -24,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         claude)     SYNC_CLAUDE=true ;;
         codex)      SYNC_CODEX=true ;;
+        clear)      CLEAR=true ;;
         --no-clean) CLEAN=false ;;
         --codex-ref)
             shift
@@ -71,6 +77,32 @@ MARKETPLACE_REMOTE=$(git -C "$PROJECT_DIR" remote get-url origin 2>/dev/null | s
 CODEX_MARKETPLACE="borda-ai-rig"
 CODEX_MARKETPLACE_SOURCE="Borda/AI-Rig"
 CODEX_PLUGIN="codex-rig@${CODEX_MARKETPLACE}"
+
+if $CLEAR; then
+    if $SYNC_CLAUDE; then
+        echo "Clearing Claude marketplace plugins..."
+        for p in "${PLUGINS[@]}"; do
+            claude plugin uninstall "${p}@${MARKETPLACE}" 2>/dev/null && echo "  ✓ uninstalled ${p}" || echo "  – ${p} not installed, skipping"
+        done
+    fi
+    if $SYNC_CODEX; then
+        echo "Clearing Codex Rig..."
+        if command -v codex >/dev/null 2>&1; then
+            codex plugin remove "$CODEX_PLUGIN" 2>/dev/null && echo "  ✓ removed $CODEX_PLUGIN" || echo "  – $CODEX_PLUGIN not installed, skipping"
+        else
+            echo "  – codex CLI not found, skipping plugin removal"
+        fi
+        # strip the managed AGENTS.md block via the local script — no --source needed for --remove
+        REMOVE_SCRIPT="$PROJECT_DIR/plugins/codex-rig/scripts/install_global_agents.py"
+        if command -v python3 >/dev/null 2>&1 && [[ -f "$REMOVE_SCRIPT" ]]; then
+            python3 "$REMOVE_SCRIPT" --remove --codex-home "${CODEX_HOME:-$HOME/.codex}"
+        else
+            echo "  – cannot strip \$CODEX_HOME/AGENTS.md (python3 or script missing)"
+        fi
+    fi
+    echo "✓ Cleared (Standard: plugins uninstalled; marketplace registrations + external plugins left in place)"
+    exit 0
+fi
 
 print_claude_plugin_identity() {
     local plugin_id="$1"

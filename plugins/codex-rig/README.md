@@ -57,9 +57,13 @@ From an AI-Rig checkout:
 bash sync.sh                                      # full Claude + Codex restore
 bash sync.sh codex                                # Codex scope only
 bash sync.sh codex --no-codex-global-agents       # skip global guidance
+bash sync.sh clear                                # teardown: uninstall plugins + strip managed block
+bash sync.sh clear codex                          # teardown Codex scope only
 ```
 
 `bash sync.sh claude` changes only Claude scope. `--codex-ref REF` selects a Codex source revision; it does not change product scope.
+
+`bash sync.sh clear` reverses a sync instead of installing: it uninstalls this marketplace's Claude plugins and the Codex Rig plugin, then strips the managed block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`, keeping a timestamped backup and preserving user-owned content byte-for-byte. It honors `claude`/`codex` scoping and leaves marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
 Codex sync uses the template from the installed marketplace revision. A missing global file is created as one SHA-256-authenticated managed block. Existing user instructions are backed up and preserved byte-for-byte outside that block. An exact unmarked copy from an older sync is adopted without duplication. Later runs update only an unmodified managed block and otherwise fail without writing when markers are missing, duplicated, malformed, or manually changed.
 

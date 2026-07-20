@@ -36,6 +36,16 @@ def run_installer(
     )
 
 
+def run_remover(codex_home: Path) -> subprocess.CompletedProcess[str]:
+    """Run the packaged installer in --remove mode against one isolated Codex home."""
+    return subprocess.run(
+        [sys.executable, str(INSTALLER), "--remove", "--codex-home", str(codex_home)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def managed_body(payload: bytes) -> tuple[str, bytes]:
     """Return the recorded digest and exact body bytes from one managed block."""
     begin_prefix = BEGIN_PREFIX.encode("ascii")
@@ -220,6 +230,102 @@ def test_atomic_write_refuses_target_drift_before_replace(tmp_path: Path) -> Non
         namespace["atomic_write"](target, b"replacement\n", 0o600, expected)
 
     assert target.read_bytes() == b"concurrent edit\n"
+
+
+def test_remove_deletes_file_that_held_only_managed_block(tmp_path: Path) -> None:
+    """Prove teardown deletes an AGENTS.md that Codex Rig alone created."""
+    source = tmp_path / "template.md"
+    source.write_text("managed policy\n", encoding="utf-8")
+    codex_home = tmp_path / "codex-home"
+    assert run_installer(source, codex_home).returncode == 0
+    target = codex_home / "AGENTS.md"
+    original = target.read_bytes()
+
+    result = run_remover(codex_home)
+
+    assert result.returncode == 0, result.stderr
+    assert not target.exists()
+    assert "removed-file" in result.stdout
+    backups = list((codex_home / "backups" / "codex-rig").glob("*-AGENTS.md"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == original
+
+
+def test_remove_strips_block_and_preserves_user_content(tmp_path: Path) -> None:
+    """Prove teardown removes only the managed block, keeping user-owned guidance."""
+    source = tmp_path / "template.md"
+    source.write_text("managed policy\n", encoding="utf-8")
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    target = codex_home / "AGENTS.md"
+    user_content = "# User policy\n\nKeep this exactly.\n"
+    target.write_text(user_content, encoding="utf-8")
+    assert run_installer(source, codex_home).returncode == 0
+
+    result = run_remover(codex_home)
+
+    assert result.returncode == 0, result.stderr
+    assert target.read_text(encoding="utf-8") == user_content
+    assert BEGIN_PREFIX not in target.read_text(encoding="utf-8")
+    assert "removed-block" in result.stdout
+
+
+def test_remove_is_noop_when_no_managed_block_present(tmp_path: Path) -> None:
+    """Prove teardown leaves an unmanaged AGENTS.md untouched and reports absent."""
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    target = codex_home / "AGENTS.md"
+    target.write_text("# only user content\n", encoding="utf-8")
+    before = target.read_bytes()
+
+    result = run_remover(codex_home)
+
+    assert result.returncode == 0, result.stderr
+    assert target.read_bytes() == before
+    assert "absent" in result.stdout
+
+
+def test_remove_refuses_modified_managed_block(tmp_path: Path) -> None:
+    """Fail without writes when the managed block was tampered with before teardown."""
+    source = tmp_path / "template.md"
+    source.write_text("managed policy\n", encoding="utf-8")
+    codex_home = tmp_path / "codex-home"
+    assert run_installer(source, codex_home).returncode == 0
+    target = codex_home / "AGENTS.md"
+    target.write_text(
+        target.read_text(encoding="utf-8").replace("managed policy", "manually changed"), encoding="utf-8"
+    )
+    before = target.read_bytes()
+
+    result = run_remover(codex_home)
+
+    assert result.returncode == 4
+    assert target.read_bytes() == before
+    assert "refusing" in result.stderr.lower()
+
+
+def test_remove_requires_no_source_argument(tmp_path: Path) -> None:
+    """Prove --remove needs only --codex-home while install still requires --source."""
+    missing_source = subprocess.run(
+        [sys.executable, str(INSTALLER), "--codex-home", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert missing_source.returncode == 2
+    assert "--source is required unless --remove" in missing_source.stderr
+
+
+def test_sync_clear_teardown_wiring() -> None:
+    """Bind the clear teardown path (plugin uninstall + AGENTS.md strip) to installed sync bytes."""
+    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
+    script = sync_path.read_text(encoding="utf-8")
+    assert "clear)      CLEAR=true ;;" in script
+    assert "if $CLEAR; then" in script
+    assert 'claude plugin uninstall "${p}@${MARKETPLACE}"' in script
+    assert 'codex plugin remove "$CODEX_PLUGIN"' in script
+    assert '--remove --codex-home "${CODEX_HOME:-$HOME/.codex}"' in script
 
 
 def test_sync_global_agents_defaults_on_with_negative_opt_out() -> None:
