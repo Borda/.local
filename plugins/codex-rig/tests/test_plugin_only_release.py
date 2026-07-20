@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +75,37 @@ def load_json(path: Path) -> dict[str, object]:
 def normalized_text(path: Path) -> str:
     """Collapse Markdown wrapping while preserving semantic token order."""
     return " ".join(path.read_text(encoding="utf-8").split())
+
+
+def load_shared_artifact_validator() -> Any:
+    """Load the packaged artifact validator without relying on package imports."""
+    path = PLUGIN_ROOT / "shared" / "validate-artifacts.py"
+    spec = importlib.util.spec_from_file_location("codex_rig_shared_artifact_validator", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_merge_resolution(path: Path, **overrides: object) -> dict[str, object]:
+    """Write one complete merge-resolution fixture with explicit override fields."""
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "conflicts_detected": False,
+        "status": "not-needed",
+        "authorization": "not-required",
+        "base_remote_ref": "upstream/main",
+        "target_oid": "base-oid",
+        "pre_merge_head": "head-oid",
+        "post_merge_head": "head-oid",
+        "merge_commit": None,
+        "resolved_paths": [],
+        "unmerged_paths": [],
+        "evidence": ["merge-tree.txt"],
+    }
+    payload.update(overrides)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return payload
 
 
 def parse_frontmatter(path: Path) -> dict[str, str]:
@@ -266,6 +301,72 @@ def test_commit_contract_requires_exact_history_rewrite_authorization() -> None:
     cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
     history_case = next(case for case in cases if case["id"] == "manage-implicit-history-rewrite")
     assert history_case["expected_findings"] == ["history-rewrite-not-explicitly-authorized"]
+
+
+def test_code_remediate_accepts_only_completed_intent_first_merge_states(tmp_path: Path) -> None:
+    """Allow conflict-free evidence or one explicitly authorized completed merge."""
+    validator = load_shared_artifact_validator()
+    pr_dir = tmp_path / "pr"
+    pr_dir.mkdir()
+    path = pr_dir / "merge-resolution.json"
+    metadata = {
+        "merge_resolution": {
+            "artifact_path": str(path),
+            "authorization": "not-required",
+            "conflicts_detected": False,
+            "status": "not-needed",
+        }
+    }
+    target = {"local_head": "base-oid"}
+
+    write_merge_resolution(path)
+    validator._validate_code_remediate_merge_resolution(metadata, pr_dir, target)
+
+    write_merge_resolution(
+        path,
+        conflicts_detected=True,
+        status="completed",
+        authorization="user-confirmed",
+        post_merge_head="merge-oid",
+        merge_commit="merge-oid",
+        resolved_paths=["src/conflicted.py"],
+        evidence=["merge-prestage.md", "pytest.log"],
+    )
+    metadata["merge_resolution"] = {
+        "artifact_path": str(path),
+        "authorization": "user-confirmed",
+        "conflicts_detected": True,
+        "status": "completed",
+    }
+    validator._validate_code_remediate_merge_resolution(metadata, pr_dir, target)
+
+
+def test_code_remediate_rejects_conflicts_without_merge_authorization(tmp_path: Path) -> None:
+    """Prevent review remediation from bypassing target-merge authorization."""
+    validator = load_shared_artifact_validator()
+    pr_dir = tmp_path / "pr"
+    pr_dir.mkdir()
+    path = pr_dir / "merge-resolution.json"
+    write_merge_resolution(
+        path,
+        conflicts_detected=True,
+        status="completed",
+        authorization="not-required",
+        post_merge_head="merge-oid",
+        merge_commit="merge-oid",
+        resolved_paths=["src/conflicted.py"],
+    )
+    metadata = {
+        "merge_resolution": {
+            "artifact_path": str(path),
+            "authorization": "not-required",
+            "conflicts_detected": True,
+            "status": "completed",
+        }
+    }
+
+    with pytest.raises(SystemExit, match="target-merge-authorization-required"):
+        validator._validate_code_remediate_merge_resolution(metadata, pr_dir, {"local_head": "base-oid"})
 
 
 def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None:

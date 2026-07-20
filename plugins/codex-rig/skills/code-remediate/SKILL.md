@@ -58,7 +58,7 @@ Helper records `gh pr checkout` without `--force` in `$OUT_DIR/pr/local-checkout
 
 Findings intake: review report plus `$OUT_DIR/pr/comments.json`, `$OUT_DIR/pr/reviews.json`, `$OUT_DIR/pr/review-threads.json`, `$OUT_DIR/pr/unresolved-review-threads.json`. Review report is closure contract, not only code findings: before editing normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence-recovery remaining limits, and no-finding residual risks into report-origin action items. Use local checkout in `$OUT_DIR/pr/local-checkout.json` as authoritative source for code triage/edits. `$OUT_DIR/pr/target-branch.json` must prove base/target fetch before conflict/review-item resolution; `$OUT_DIR/pr/pr-head-fetch.json` records same-repo PR refresh or cross-repository skip rationale. Checkout artifacts include `force_policy`; if checkout fails or does not match PR head, record `forced-checkout-not-attempted` and stop before forced retry. If online collection, target refresh, or checkout fails, record failure; continue with supplied report only when user accepts stale online-review coverage and no code edits are required, else fail. Never inspect/edit PR code from `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots; raw-file snapshot rejection: snapshots are rejected.
 
-### 03: Pre-Stage PR Merge/Conflict Context
+### 03: Understand PR Intent, Then Resolve Merge Conflicts
 
 For `mode=pr`, required before `action-items.md`, `resolution-scope.md`, or report/PR-review code changes. Establish clean PR and latest target implementation before conflict markers make worktree noisy.
 
@@ -79,15 +79,26 @@ git diff --stat "$MERGE_BASE".."$BASE_REMOTE_REF" >"$OUT_DIR/pr/target-since-mer
 git merge-tree "$MERGE_BASE" HEAD "$BASE_REMOTE_REF" >"$OUT_DIR/pr/merge-tree.txt" 2>/dev/null || true
 ```
 
-Write `$OUT_DIR/merge-prestage.md` sections:
+Write `$OUT_DIR/merge-prestage.md` sections before attempting a merge:
 
 - `## PR And Target Refresh`: PR number/head, target branch, fetched target hash, local checkout hash, evidence paths.
 - `## Clean PR Implementation Context`: intended change, changed files, key invariants, clean-PR-implied tests/docs.
 - `## Target Branch Context`: relevant fetched-target details, especially likely collision files.
 - `## Conflict Risk`: mergeability, `merge-tree` signal, both-side changed files, conflicts present/likely/absent.
 - `## Resolution Strategy`: reconcile PR intent and target implementation for each conflict/likely collision before review/report findings.
+- `## Merge Execution`: conflict decision, authorization state, merge command/status, resolved paths, verification, and evidence path.
 
-If conflicts present/likely, first resolve collisions as PR integration. Primary context: clean PR, fetched target, `git show "$BASE_REMOTE_REF:path"`, nearby tests. Use conflict markers only after recording PR/target intent in `merge-prestage.md`. Limit collision resolution to preserving PR intent atop current target; do not combine review-comment fixes unless same line cannot otherwise cohere; record coupling in `$OUT_DIR/closure-log.md`.
+Write `$OUT_DIR/pr/merge-resolution.json` with `schema_version`, `conflicts_detected`, `status`, `authorization`, `base_remote_ref`, `target_oid`, `pre_merge_head`, `post_merge_head`, `merge_commit`, `resolved_paths`, `unmerged_paths`, and `evidence`. Use `status=not-needed` and `authorization=not-required` when fresh evidence proves no conflict. Do not merge the target merely to refresh a conflict-free PR.
+
+If conflicts are present or likely, resolve them as PR integration before normalizing or addressing any report/online-review item:
+
+1. Use the already-recorded clean PR purpose, invariants, target changes, and per-file resolution strategy as primary context. Inspect `git show "$BASE_REMOTE_REF:path"` and nearby tests where needed; conflict markers are secondary evidence only.
+2. A generic remediation request does not authorize a local merge commit. Show the target ref/OID, intended merge, collision files, resolution strategy, and overwrite/commit effect. Ask for explicit authorization to create the local target-merge commit. Record `authorization=explicit-input|user-confirmed`; if authorization is absent or the runtime cannot ask, stop with `target-merge-authorization-required` before review-item work.
+3. After authorization, run `git merge --no-commit --no-ff "$BASE_REMOTE_REF"`. Never rebase, force checkout, or rewrite history as a substitute.
+4. Resolve only merge collisions, preserving the recorded PR intent atop the fetched target implementation. Do not combine review-comment fixes unless the same lines cannot otherwise form a coherent merge; record unavoidable coupling in `$OUT_DIR/closure-log.md`.
+5. Verify `git diff --name-only --diff-filter=U` is empty, run the smallest collision-relevant tests, then create the authorized merge commit using `../../shared/commit-response-template.md` and the required `Co-authored-by: Codex <codex@openai.com>` trailer. Record the pre/post HEAD, merge commit, resolved paths, tests, and empty unmerged-path list in `merge-resolution.json` and `## Merge Execution`.
+
+Do not create `action-items.md`, `resolution-scope.md`, or edit for a report/online-review finding until `merge-resolution.json` is `not-needed` or `completed`, the worktree has no unmerged paths, and no merge is in progress. If merge resolution or its verification fails, stop; do not hide the conflict behind finding remediation.
 
 If checkout starts dirty, conflicted, or partially merged, fail or ask cleanup before editing. Never use an existing conflicted worktree as primary truth.
 
@@ -309,7 +320,7 @@ Record `CODE_REMEDIATE_METADATA.resolution_workplan`: `groups_total`, `parent_ow
 
 Fix selected scope in priority: `critical` -> `high` -> `medium` -> `low`.
 
-In `mode=pr`, complete `$OUT_DIR/merge-prestage.md` collision work before selected report/online-review findings. Then fix one selected valid group at a time; `$OUT_DIR/resolution-workplan.md` is execution ledger. Never edit unselected findings or selected item outside assigned group unless update workplan first with reason/affected closure evidence. After each group, record changed files/evidence in `$OUT_DIR/closure-log.md`.
+In `mode=pr`, complete target-merge conflict resolution and its authorized merge commit before selected report/online-review findings. Then fix one selected valid group at a time; `$OUT_DIR/resolution-workplan.md` is execution ledger. Never edit unselected findings or selected item outside assigned group unless update workplan first with reason/affected closure evidence. After each group, record changed files/evidence in `$OUT_DIR/closure-log.md`.
 
 ### 08: Challenge Closure Before Full Gates
 
@@ -358,7 +369,7 @@ Use closure classes: `local-code-or-doc`, `process-gate`, `independent-review`, 
 
 Follow `../../shared/helper-cli-contract.md` and authoritative help. Write `CODE_REMEDIATE_METADATA`, validate `code-remediate`, promote only validated candidate.
 
-`CODE_REMEDIATE_METADATA.mode` is normalized mode. `CODE_REMEDIATE_METADATA.confidence_recovery` includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REMEDIATE_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` plus evidence/rationale. `CODE_REMEDIATE_METADATA.resolution_scope` summarizes requested `remediation_scope`, `selection_source`, prompt presented, `selection_confirmed_by_user` pre-edit, selected indexes/severity groups, deferred indexes, omitted resolved-online count. `CODE_REMEDIATE_METADATA.resolution_workplan` summarizes `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, `workplan_path`. `CODE_REMEDIATE_METADATA.review_report_intake` summarizes `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, `report_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.final_resolution_table` summarizes ingested entries, final rows, omitted entries, selectable/non-selectable rows, required columns, triage/resolution status counts. `CODE_REMEDIATE_METADATA.out_of_scope_confirmation` summarizes `count`, `all_confirmed_by_user`, every out-of-scope item id/source/rationale/evidence path/confirmation. `CODE_REMEDIATE_METADATA.pr_relevance` summarizes `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, `connected_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.unresolved_summary` summarizes selected totals, unresolved closure-class counts, `all_local_actionable_items_closed`, `unresolved_reason_groups` with reason/count/owner/next action/evidence path. For `mode=pr`, include selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, `$OUT_DIR/merge-prestage.md`.
+`CODE_REMEDIATE_METADATA.mode` is normalized mode. `CODE_REMEDIATE_METADATA.confidence_recovery` includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REMEDIATE_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` plus evidence/rationale. `CODE_REMEDIATE_METADATA.resolution_scope` summarizes requested `remediation_scope`, `selection_source`, prompt presented, `selection_confirmed_by_user` pre-edit, selected indexes/severity groups, deferred indexes, omitted resolved-online count. `CODE_REMEDIATE_METADATA.resolution_workplan` summarizes `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, `workplan_path`. `CODE_REMEDIATE_METADATA.review_report_intake` summarizes `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, `report_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.final_resolution_table` summarizes ingested entries, final rows, omitted entries, selectable/non-selectable rows, required columns, triage/resolution status counts. `CODE_REMEDIATE_METADATA.out_of_scope_confirmation` summarizes `count`, `all_confirmed_by_user`, every out-of-scope item id/source/rationale/evidence path/confirmation. `CODE_REMEDIATE_METADATA.pr_relevance` summarizes `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, `connected_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.unresolved_summary` summarizes selected totals, unresolved closure-class counts, `all_local_actionable_items_closed`, `unresolved_reason_groups` with reason/count/owner/next action/evidence path. `CODE_REMEDIATE_METADATA.merge_resolution` summarizes the merge artifact path, conflict decision, status, and authorization. For `mode=pr`, include selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, `$OUT_DIR/pr/merge-resolution.json`, `$OUT_DIR/merge-prestage.md`.
 
 ### 12: Commit Attribution When Explicitly Requested
 
@@ -417,12 +428,15 @@ fixup, and equivalent history edits require an explicit request for that exact o
 41. A scope-selection control opens without an immediately preceding user-visible assistant message containing the unabridged scope context and `Full report` path; collapsed tool output does not count => fail: `scope-context-not-visible`.
 42. An explicitly requested remediation commit omits `Co-authored-by: Codex <codex@openai.com>` or the shared commit-response template => fail: `codex-coauthor-trailer-missing`.
 43. Existing history would be rewritten without an explicit request for that exact operation => fail: `history-rewrite-not-explicitly-authorized`.
+44. Target conflicts are present/likely but `merge-resolution.json` is absent or not `completed` before report/online-review work => fail: `target-merge-not-completed`.
+45. Target merge starts or commits without explicit authorization for that local merge commit => fail: `target-merge-authorization-required`.
+46. Report/online-review finding work starts while unmerged paths or an in-progress merge remain => fail: `merge-conflicts-unresolved-before-review-remediation`.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: complete action-item resolution table/row counts; review report failed-gate/follow-up intake; PR/diff relevance; indexed scope selection with prompt/confirmation; grouped workplan/specialist assignment; user-confirmed out-of-scope rationale; PR online-review triage; target refresh; merge/conflict prestage; relevant local checkout evidence; closure log; unresolved list with closure classes/next owner/attempted evidence/next action; `git diff --check`.
+- `review`: complete action-item resolution table/row counts; review report failed-gate/follow-up intake; PR/diff relevance; indexed scope selection with prompt/confirmation; grouped workplan/specialist assignment; user-confirmed out-of-scope rationale; PR online-review triage; target refresh; intent-first merge/conflict resolution; merge authorization/completion evidence; relevant local checkout evidence; closure log; unresolved list with closure classes/next owner/attempted evidence/next action; `git diff --check`.
 - `tests`: smallest checks proving fixed-finding closure.
 - `artifact`: shared validator confirms closure artifacts, gate logs, result JSON shape.
 
@@ -436,7 +450,7 @@ Conditional checks:
 Update calibration when resolution policy/output shape changes:
 
 - benchmark patterns: `code-remediate`
-- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted from all workplan groups, specialist-owned group missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, gate failure disclosure, artifact validator bypass, PR online review triage, PR target-branch refresh, PR merge/conflict prestage, PR local checkout before edits
+- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted from all workplan groups, specialist-owned group missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, gate failure disclosure, artifact validator bypass, PR online review triage, PR target-branch refresh, PR intent-first merge/conflict completion, PR local checkout before edits
 
 ## Output Contract
 

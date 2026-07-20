@@ -809,6 +809,79 @@ def _validate_code_remediate_pr_identity(
         raise SystemExit("code-remediate-pr-local-checkout-oid-mismatch")
 
 
+def _validate_code_remediate_merge_resolution(
+    metadata: dict[str, Any], pr_dir: Path, target_branch: dict[str, Any]
+) -> None:
+    """Require intent-first target-merge completion before PR finding remediation."""
+    path = pr_dir / "merge-resolution.json"
+    resolution = _load_json(path)
+    required = {
+        "schema_version",
+        "conflicts_detected",
+        "status",
+        "authorization",
+        "base_remote_ref",
+        "target_oid",
+        "pre_merge_head",
+        "post_merge_head",
+        "merge_commit",
+        "resolved_paths",
+        "unmerged_paths",
+        "evidence",
+    }
+    missing = sorted(required - resolution.keys())
+    if missing:
+        raise SystemExit("code-remediate-merge-resolution-missing:" + ",".join(missing))
+    if resolution.get("schema_version") != 1:
+        raise SystemExit("code-remediate-merge-resolution-schema-invalid")
+    if resolution.get("target_oid") != target_branch.get("local_head"):
+        raise SystemExit("code-remediate-merge-resolution-target-oid-mismatch")
+    if resolution.get("unmerged_paths") != []:
+        raise SystemExit("code-remediate-merge-conflicts-still-unresolved")
+    if not isinstance(resolution.get("evidence"), list) or not resolution["evidence"]:
+        raise SystemExit("code-remediate-merge-resolution-evidence-missing")
+
+    conflicts = resolution.get("conflicts_detected")
+    status = resolution.get("status")
+    authorization = resolution.get("authorization")
+    pre_head = resolution.get("pre_merge_head")
+    post_head = resolution.get("post_merge_head")
+    if conflicts is False:
+        if status != "not-needed" or authorization != "not-required":
+            raise SystemExit("code-remediate-conflict-free-merge-resolution-invalid")
+        if pre_head != post_head or resolution.get("merge_commit") not in (None, ""):
+            raise SystemExit("code-remediate-unneeded-target-merge-recorded")
+        if resolution.get("resolved_paths") != []:
+            raise SystemExit("code-remediate-conflict-free-resolved-paths-invalid")
+    elif conflicts is True:
+        if status != "completed":
+            raise SystemExit("code-remediate-target-merge-not-completed")
+        if authorization not in {"explicit-input", "user-confirmed"}:
+            raise SystemExit("code-remediate-target-merge-authorization-required")
+        if not isinstance(pre_head, str) or not isinstance(post_head, str) or pre_head == post_head:
+            raise SystemExit("code-remediate-target-merge-head-evidence-invalid")
+        if resolution.get("merge_commit") != post_head:
+            raise SystemExit("code-remediate-target-merge-commit-missing")
+        if not isinstance(resolution.get("resolved_paths"), list) or not resolution["resolved_paths"]:
+            raise SystemExit("code-remediate-target-merge-resolved-paths-missing")
+    else:
+        raise SystemExit("code-remediate-merge-conflict-decision-invalid")
+
+    summary = metadata.get("merge_resolution")
+    if not isinstance(summary, dict):
+        raise SystemExit("code-remediate-merge-resolution-metadata-missing")
+    summary_path = summary.get("artifact_path")
+    if not isinstance(summary_path, str) or Path(summary_path).resolve() != path.resolve():
+        raise SystemExit("code-remediate-merge-resolution-path-mismatch")
+    expected_summary = {
+        "authorization": authorization,
+        "conflicts_detected": conflicts,
+        "status": status,
+    }
+    if any(summary.get(key) != value for key, value in expected_summary.items()):
+        raise SystemExit("code-remediate-merge-resolution-metadata-mismatch")
+
+
 def validate(skill: str, out_dir: Path, result_path: Path) -> None:
     result = _load_json(result_path)
     _require_result_shape(result)
@@ -866,6 +939,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 "online-review-summary.json",
                 "merge-base.txt",
                 "merge-tree.txt",
+                "merge-resolution.json",
             ):
                 if not (pr_dir / filename).exists():
                     raise SystemExit(f"missing-code-remediate-pr-artifact:{filename}")
@@ -890,6 +964,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
             if checkout.get("head_matches_pr") is not True:
                 raise SystemExit("code-remediate-pr-local-checkout-head-mismatch")
             _validate_code_remediate_pr_identity(routing, remote_selection, target_branch, checkout)
+            _validate_code_remediate_merge_resolution(metadata, pr_dir, target_branch)
             if (pr_dir / "head-files").exists():
                 raise SystemExit("code-remediate-pr-raw-head-file-snapshots-forbidden")
             _require_file_sections(
@@ -900,6 +975,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                     "Target Branch Context",
                     "Conflict Risk",
                     "Resolution Strategy",
+                    "Merge Execution",
                 ],
             )
             action_text = (out_dir / "action-items.md").read_text(encoding="utf-8").lower()

@@ -573,10 +573,12 @@
         "target-branch-refresh-missing",
         "merge-prestage-missing",
         "conflict-markers-used-as-primary-context",
-        "review-findings-applied-before-conflict-context"
+        "review-findings-applied-before-conflict-context",
+        "target-merge-not-completed",
+        "merge-conflicts-unresolved-before-review-remediation"
       ],
       "id": "code-remediate-pr-merge-prestage",
-      "prompt": "Assess a PR code-remediation workflow that starts from a conflicted merge state and applies report findings before fetching the latest target branch, reading the clean PR implementation, and recording a merge conflict resolution strategy.",
+      "prompt": "Assess a PR code-remediation workflow that starts from a conflicted merge state and applies report findings before fetching the latest target branch, reading the clean PR implementation, recording a merge conflict resolution strategy, completing the authorized target merge, and proving that no unmerged paths remain.",
       "target": "code-remediate"
     },
     {
@@ -1017,5 +1019,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.12"
+  "version": "1.13"
 }
