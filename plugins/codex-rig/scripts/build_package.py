@@ -191,7 +191,9 @@ def encode_manifest(manifest: dict[str, Any]) -> bytes:
 def parse_args() -> argparse.Namespace:
     """Parse manifest generation arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail when package-manifest.json differs from generation")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check", action="store_true", help="fail when package-manifest.json differs from generation")
+    mode.add_argument("--update", action="store_true", help="write current hashes to package-manifest.json")
     return parser.parse_args()
 
 
@@ -199,9 +201,13 @@ def main() -> None:
     """Generate the manifest or check the committed bytes."""
     args = parse_args()
     expected = encode_manifest(build_manifest())
+    current = MANIFEST_PATH.read_bytes() if MANIFEST_PATH.is_file() else None
     if args.check:
-        if not MANIFEST_PATH.is_file() or MANIFEST_PATH.read_bytes() != expected:
+        if current != expected:
             raise SystemExit("package-manifest-out-of-date")
+        print("Package manifest is current.")
+        return
+    if current == expected:
         print("Package manifest is current.")
         return
     temporary = MANIFEST_PATH.with_suffix(".json.tmp")

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+
+- Add intent-first target-merge conflict resolution to PR remediation, with explicit merge-commit authorization and fail-closed completion evidence.
+- Add scoped `sync.sh clear` teardown for Claude and Codex plugins plus authenticated removal of the managed global-instructions block.
+- Keep package identity, release documentation, and acceptance checks synchronized with the plugin version.
+
 ## 0.2.2
 
 - Make Codex Rig the canonical source for workflows, role cards, lifecycle contracts, calibration, and public product documentation.

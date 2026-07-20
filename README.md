@@ -92,7 +92,7 @@ OSS, develop, and research skills always use their plugin prefix (`/oss:review`,
 > npm install -g @openai/codex
 > codex plugin marketplace add Borda/AI-Rig
 > # Optional reproducible release pin:
-> # codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2
+> # codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.3
 > codex plugin add codex-rig@borda-ai-rig
 > ```
 >

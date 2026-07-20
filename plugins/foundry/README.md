@@ -851,6 +851,7 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 | `test_check_codex.py`             | `check_codex.py`             | 17    | `installed_plugins.json` manifest parsing, codex key presence, malformed JSON                           |
 | `test_make_run_dir.py`            | `make_run_dir.py`            | 16    | Portability invariants (no `/tmp` literals, `stdout.reconfigure`, shebang), timestamp format            |
 | `test_check_spawn_prompt_vars.py` | `check_spawn_prompt_vars.py` | 16    | `$VAR` in markdown code blocks, caller-substituted-var whitelist, multi-file scan                       |
+| `test_trim_plugin_tables.py`      | `trim_plugin_tables.py`      | 15    | Cell padding normalization, separator-row alignment colons, fenced-code-block skip, multi-file CLI      |
 | `test_check_tag_symmetry.py`      | `check_tag_symmetry.py`      | 14    | Empty/whitespace XML blocks, unbalanced open/close tags, multi-file scan                                |
 | `test_resolve_skill_subdir.py`    | `resolve_skill_subdir.py`    | 11    | Tier-1/2/3 subdir resolution cascade, local-override flag, fallback ordering                            |
 | `test_resolve_memory_dir.py`      | `resolve_memory_dir.py`      | 10    | Path slugification, `PROJECT_ROOT` override, git fallback, missing-git fallback                         |

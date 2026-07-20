@@ -127,7 +127,7 @@ def package_files() -> set[str]:
         path.relative_to(PLUGIN_ROOT).as_posix()
         for path in PLUGIN_ROOT.rglob("*")
         if path.is_file()
-        and path.name != "package-manifest.json"
+        and path.name not in {".coverage", "package-manifest.json"}
         and "__pycache__" not in path.parts
         and ".pytest_cache" not in path.parts
     }
@@ -374,7 +374,7 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
     guide_path = PLUGIN_ROOT / "README.md"
     guide = normalized_text(guide_path).lower()
     for required in (
-        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.2",
+        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.3",
         "codex plugin add codex-rig@borda-ai-rig",
         "optional sessionstart diagnostic",
         "type that exact digest only after explicit approval",
@@ -388,7 +388,7 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
 
     install_lines = {line.strip() for line in guide_path.read_text(encoding="utf-8").splitlines()}
     assert "codex plugin marketplace add Borda/AI-Rig" in install_lines
-    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2" in install_lines
+    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.3" in install_lines
 
 
 def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None:

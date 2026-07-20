@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.2.2`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.2.3`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -30,7 +30,7 @@ No official marketplace is assumed. Local, unpushed changes are not installable 
 ```bash
 codex plugin marketplace add Borda/AI-Rig
 # Optional reproducible release pin:
-# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2
+# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.3
 codex plugin add codex-rig@borda-ai-rig
 ```
 
@@ -317,7 +317,7 @@ The installed cache is immutable input. Workflows never edit their own plugin ro
 From the repository root:
 
 ```bash
-python3 plugins/codex-rig/scripts/build_package.py
+python3 plugins/codex-rig/scripts/build_package.py --update
 python3 plugins/codex-rig/scripts/build_package.py --check
 python3 plugins/codex-rig/scripts/validate_package.py
 python3 -m pytest -q plugins/codex-rig

@@ -31,7 +31,7 @@ def test_scaffold_has_stable_role_card_release_identity() -> None:
     manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
 
     assert manifest["name"] == "codex-rig"
-    assert manifest["version"] == "0.2.2"
+    assert manifest["version"] == "0.2.3"
     assert manifest["author"]["name"] == "Jiri Borovec"
     assert "hooks" not in manifest
     assert "mcpServers" not in manifest
@@ -100,7 +100,9 @@ def test_package_manifest_covers_regular_payloads_and_modes() -> None:
     recorded = {item["path"]: (item["sha256"], int(item["mode"], 8)) for item in records}
     discovered: dict[str, tuple[str, int]] = {}
     for path in PLUGIN_ROOT.rglob("*"):
-        if path.name == "package-manifest.json" or "__pycache__" in path.parts or ".pytest_cache" in path.parts:
+        if path.name in {".coverage", "package-manifest.json"} or any(
+            part in {"__pycache__", ".pytest_cache"} for part in path.parts
+        ):
             continue
         assert not path.is_symlink()
         if path.is_file():
@@ -143,7 +145,11 @@ def installed_fixture(
     cache_version = "0.0.0-retained" if stale_cache else version
     home = tmp_path / "codex-home"
     installed_root = home / "plugins" / "cache" / "borda-ai-rig" / "codex-rig" / cache_version
-    shutil.copytree(PLUGIN_ROOT, installed_root, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+    shutil.copytree(
+        PLUGIN_ROOT,
+        installed_root,
+        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".coverage"),
+    )
     if missing_card:
         (installed_root / "roles" / "challenger" / "ROLE.md").unlink()
     codex_binary = tmp_path / "codex-runtime"

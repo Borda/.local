@@ -45,7 +45,11 @@ def run_builder(plugin_root: Path, *arguments: str) -> subprocess.CompletedProce
 def copied_plugin(tmp_path: Path) -> Path:
     """Copy only installed-package bytes into a source-independent fixture."""
     destination = tmp_path / "installed-plugin"
-    shutil.copytree(PLUGIN_ROOT, destination, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+    shutil.copytree(
+        PLUGIN_ROOT,
+        destination,
+        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".coverage"),
+    )
     assert not (tmp_path / ".codex").exists()
     return destination
 
@@ -104,6 +108,43 @@ def test_generation_checks_source_independent_installed_copy(tmp_path: Path) -> 
     assert result.stdout == "Package manifest is current.\n"
 
 
+def test_update_rewrites_stale_manifest(tmp_path: Path) -> None:
+    """Prevent the explicit update mode from leaving stale package hashes."""
+    installed = copied_plugin(tmp_path)
+    role = installed / "roles" / "challenger" / "ROLE.md"
+    role.write_text(role.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    stale = run_builder(installed, "--check")
+    updated = run_builder(installed, "--update")
+    current = run_builder(installed, "--check")
+
+    assert stale.returncode != 0
+    assert updated.returncode == 0, updated.stderr
+    assert updated.stdout == "Updated package manifest: package-manifest.json\n"
+    assert current.returncode == 0, current.stderr
+
+
+def test_update_is_idempotent_after_normalizing_stale_manifest(tmp_path: Path) -> None:
+    """Prevent platform normalization from causing repeated manifest rewrites."""
+    installed = copied_plugin(tmp_path)
+    manifest = installed / "package-manifest.json"
+    original = manifest.read_bytes()
+    stale = original.replace(b'"mode": "0644"', b'"mode": "0000"', 1)
+    assert stale != original
+    manifest.write_bytes(stale)
+
+    prepared = run_builder(installed, "--update")
+    assert prepared.returncode == 0, prepared.stderr
+    assert prepared.stdout == "Updated package manifest: package-manifest.json\n"
+    before = manifest.stat().st_mtime_ns
+
+    result = run_builder(installed, "--update")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Package manifest is current.\n"
+    assert manifest.stat().st_mtime_ns == before
+
+
 @pytest.mark.parametrize(
     ("mutator", "expected"),
     [
@@ -119,7 +160,7 @@ def test_generation_rejects_incomplete_public_roster(
     installed = copied_plugin(tmp_path)
     mutator(installed)
 
-    result = run_builder(installed)
+    result = run_builder(installed, "--update")
 
     assert result.returncode == 2
     assert expected in result.stderr
@@ -133,7 +174,7 @@ def test_generation_rejects_symlinked_payload(tmp_path: Path) -> None:
     target.unlink()
     target.symlink_to(installed / "roles" / "curator" / "ROLE.md")
 
-    result = run_builder(installed)
+    result = run_builder(installed, "--update")
 
     assert result.returncode == 2
     assert "symlink payload forbidden" in result.stderr
