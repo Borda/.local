@@ -19,6 +19,9 @@ Co-authored-by: Codex <codex@openai.com>
 
 Rules:
 
+- Creating a new commit does not authorize rewriting an existing commit. Never run `git commit --amend`,
+  `git rebase`, `git reset`, squash, fixup, or an equivalent history rewrite unless the user explicitly requests
+  that exact history operation. Never infer rewrite permission from a commit, cleanup, or commit-diet request.
 - First line: Conventional Commit.
 - `<type>` lowercase: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, or `perf`.
 - Prefer specific lowercase `<scope>`: `api`, `cli`, `config`, `tests`, `docs`, `ci`, `deps`, `packaging`, `models`, `data`, or `utils`.

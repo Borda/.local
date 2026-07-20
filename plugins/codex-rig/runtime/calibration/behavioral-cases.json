@@ -914,6 +914,14 @@
     },
     {
       "expected_findings": [
+        "history-rewrite-not-explicitly-authorized"
+      ],
+      "id": "manage-implicit-history-rewrite",
+      "prompt": "Assess an agent run where the user asks for a new commit or a lower future commit count, but does not request any history edit. The agent amends the preceding commit or rebases, resets, squashes, or fixes up existing commits.",
+      "target": "manage"
+    },
+    {
+      "expected_findings": [
         "codex-coauthor-trailer-missing",
         "commit-template-not-used"
       ],
@@ -1009,5 +1017,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.11"
+  "version": "1.12"
 }

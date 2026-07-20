@@ -199,7 +199,7 @@ Parent agent responsibilities:
 
 ### Model escalation policy
 
-Use `delegation-lead` plus registered agent descriptions and each role TOML `TRIGGER`, `SKIP`, `NOT for` clauses as detailed routing source. Prefer lowest-cost capable registered role: Luna for coordination + bounded support domains, Terra for implementation/runtime/testing + final executable verification, Sol only for solution architecture or security. Luna support roles hand executable verification, release-blocking, API/runtime-changing ownership to appropriate Terra/Sol owner. Parallelize only disjoint evidence, tests, docs, profiling work with clear ownership. Every delegated workstream must pass shared handover gate in `skills/_shared/specialist-orchestration.md` before parent acceptance.
+Use Codex Rig's `delegation-lead` role card plus the packaged role trigger/skip boundaries as the detailed routing source. Prefer lowest-cost capable role: Luna for coordination + bounded support domains, Terra for implementation/runtime/testing + final executable verification, Sol only for solution architecture or security. Luna support roles hand executable verification, release-blocking, API/runtime-changing ownership to appropriate Terra/Sol owner. Parallelize only disjoint evidence, tests, docs, profiling work with clear ownership. Every delegated workstream must pass the packaged `shared/specialist-orchestration.md` handover gate before parent acceptance.
 
 ______________________________________________________________________
 
@@ -209,7 +209,7 @@ Every local commit created by Codex must end with:
 
 `Co-authored-by: Codex <codex@openai.com>`
 
-This applies to every skill and workflow. Use `.codex/skills/_shared/commit-response-template.md` exactly for commit and summary messages; the `commit_attribution` setting and individual skill rules reinforce this project-wide requirement.
+This applies to every skill and workflow. Use Codex Rig's packaged `shared/commit-response-template.md` exactly for commit and summary messages; the `commit_attribution` setting and individual skill rules reinforce this project-wide requirement.
 
 - Explicit request: commit after checks.
 - Implicit request: show proposed message; commit only after confirmation.

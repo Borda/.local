@@ -51,8 +51,8 @@ Unknown intent => fail before edit.
 
 ```bash
 OUT_DIR="<run-directory-created-in-step-01>"
-find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
-rg -n "$TARGET" .codex AGENTS.md >"$OUT_DIR/references.txt" 2>/dev/null || true
+rg --files -g 'AGENTS.md' -g '.codex/**' -g '.agents/**' | sort >"$OUT_DIR/inventory.txt"
+rg -n "$TARGET" .codex .agents AGENTS.md >"$OUT_DIR/references.txt" 2>/dev/null || true
 ```
 
 Write `$OUT_DIR/ownership.md`: exact edited and intentionally untouched files.
@@ -69,11 +69,15 @@ Deletion safety required for `delete` and `rename`.
 - Permission changes: reason, use case, risk note.
 - Public behavior change: consider docs/routing/calibration.
 - Versioned calibration fixtures are committed-history markers: compare current value to `git show HEAD:<path>`; while uncommitted, advance at most one step from last committed value.
+- A new-commit request never authorizes rewriting an existing commit. Amend, rebase, reset, squash, fixup, and
+  equivalent history edits require an explicit request for that exact operation.
 - Home sync out of scope unless explicitly requested.
 
 ### 05: Apply the smallest reversible edit
 
-Keep generated structure in the consuming project's `.codex/` unless the user explicitly approves another root.
+Use Codex's native scope: `.agents/skills/` for repository skills, `AGENTS.md` for repository guidance, and
+`.codex/config.toml` for project runtime settings. Use custom agent-config paths only when the active Codex contract
+and user request require them.
 Never infer that the source repository is present from the installed cache layout.
 
 ### 06: Propagate references
@@ -102,6 +106,7 @@ Manage artifacts include `ownership.md`; follow `../../shared/helper-cli-contrac
 5. Result artifact missing => fail.
 6. Target resolves inside the installed plugin root => fail without editing.
 7. Target is a generated `codex-rig-*.toml` role link => fail and route to the dedicated lifecycle workflow.
+8. Existing history would be rewritten without an explicit request for that exact operation => fail.
 
 ## Quality Gates
 
@@ -117,16 +122,13 @@ Conditional:
 
 ## Calibration Hooks
 
-Behavior-changing management edits update or explicitly review:
-
-- `.codex/config.toml`
-- `.codex/calibration/benchmarks.json`
-- `.codex/calibration/behavioral-cases.json`
-- `.codex/skills/_shared/native-skill-contract.md`
+Behavior-changing management edits update or explicitly review the owning project's configuration, tests,
+documentation, routing, and calibration fixtures. Codex Rig source changes use `plugins/codex-rig/runtime/calibration/`
+and `plugins/codex-rig/shared/native-skill-contract.md`; an installed plugin cache remains immutable.
 
 For versioned calibration artifact changes, calculate version from last commit, not dirty worktree. If `HEAD` has `1.3`, all next-commit uncommitted edits stay `1.3` or `1.4`: one version step only; do not bump to `1.5`, `1.6`, etc. before a commit.
 
-Commit-output management also keeps `.codex/skills/_shared/commit-response-template.md` aligned with required message shape:
+Commit-output management also keeps the owning project's commit-response contract aligned with required message shape. In AI-Rig, the canonical packaged contract is `../../shared/commit-response-template.md`:
 
 ```text
 <type>(<scope>): <title>

@@ -57,7 +57,7 @@ Define narrowest reversible change, owners, acceptance. For 3+ steps/design trad
 
 - Existing code and tests for the target surface have been read.
 - Failure mode or new behavior is captured by a failing doctest, pytest, or explicit acceptance check.
-- Coding changes have a project coding-principles plan from `.codex/AGENTS.md`: simple/readable/reproducible structure first, short reusable units without low-value argument-remapping wrappers, guard clauses or early `return`/`yield`/`continue` for invalid or terminal cases, project docstring-style detection, concise purpose docstrings, and inline comments only for non-trivial implementation blocks.
+- Coding changes have a project coding-principles plan from the applicable `AGENTS.md` layers: simple/readable/reproducible structure first, short reusable units without low-value argument-remapping wrappers, guard clauses or early `return`/`yield`/`continue` for invalid or terminal cases, project docstring-style detection, concise purpose docstrings, and inline comments only for non-trivial implementation blocks.
 - `feature` mode has a feature demo contract before production edits:
   - simple public API: inline doctest or focused pytest that shows the intended call and result
   - multi-step behavior: minimal example or pytest exercising the user-visible workflow end to end
@@ -73,7 +73,7 @@ Define narrowest reversible change, owners, acceptance. For 3+ steps/design trad
 
 While implementing, keep the code understandable from the code itself:
 
-- Apply the consolidated project coding principles from `.codex/AGENTS.md`.
+- Apply the consolidated project coding principles from the applicable `AGENTS.md` layers.
 - Refactor long, dense, or deeply nested blocks into named helpers/classes before adding explanatory text.
 - Avoid tiny rarely used helpers that only remap arguments; keep the logic inline, use a local helper, or use `functools.partial` when only binding arguments.
 - Match the project's configured or established docstring style, and keep function/class purpose in docstrings rather than comments directly above definitions.
@@ -177,7 +177,7 @@ Required checks:
 Conditional checks:
 
 - `lint`/`format`/`types`: run project-configured commands when code or typed config changed.
-- `calibration`: run when `.codex/skills`, `.codex/agents`, `.codex/config.toml`, or calibration files changed.
+- `calibration`: run when workflow skills, role/agent routing, `.codex/config.toml`, or calibration fixtures changed; Codex Rig source uses `runtime/calibration/run.py --layout plugin`.
 
 ## Calibration Hooks
 

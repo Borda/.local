@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -247,11 +250,30 @@ def test_manage_and_sync_preserve_installed_plugin_state() -> None:
         assert required in sync
 
 
+def test_commit_contract_requires_exact_history_rewrite_authorization() -> None:
+    """Prevent ordinary commit requests from authorizing edits to existing history."""
+    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    for required in (
+        "creating a new commit does not authorize rewriting an existing commit",
+        "unless the user explicitly requests that exact history operation",
+        "never infer rewrite permission from a commit, cleanup, or commit-diet request",
+        "`git commit --amend`",
+        "`git rebase`",
+        "`git reset`",
+    ):
+        assert required in contract
+
+    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    history_case = next(case for case in cases if case["id"] == "manage-implicit-history-rewrite")
+    assert history_case["expected_findings"] == ["history-rewrite-not-explicitly-authorized"]
+
+
 def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None:
     """Keep the user-visible lifecycle and deliberate thin-link limits explicit."""
-    guide = normalized_text(PLUGIN_ROOT / "README.md").lower()
+    guide_path = PLUGIN_ROOT / "README.md"
+    guide = normalized_text(guide_path).lower()
     for required in (
-        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.1",
+        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.2",
         "codex plugin add codex-rig@borda-ai-rig",
         "optional sessionstart diagnostic",
         "type that exact digest only after explicit approval",
@@ -262,6 +284,153 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
         "no native bundled agent registrations",
     ):
         assert required in guide
+
+    install_lines = {line.strip() for line in guide_path.read_text(encoding="utf-8").splitlines()}
+    assert "codex plugin marketplace add Borda/AI-Rig" in install_lines
+    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2" in install_lines
+
+
+def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None:
+    """Prevent the maintainer sync entrypoint from recreating legacy home mirrors."""
+    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
+    if not sync_path.is_file():
+        return
+
+    raw_script = sync_path.read_text(encoding="utf-8")
+    script = " ".join(raw_script.split()).lower()
+    for required in (
+        "codex plugin marketplace upgrade",
+        "codex plugin marketplace add",
+        "codex plugin add",
+        "codex plugin list",
+        "legacy files copied by older sync versions are not deleted automatically",
+    ):
+        assert required in script
+    for forbidden in ("codex_src", 'rsync -a --no-perms "$codex_src', 'cp "$codex_src'):
+        assert forbidden not in script
+
+    executable_lines = {
+        line.strip() for line in raw_script.splitlines() if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert 'codex plugin marketplace add "$CODEX_MARKETPLACE_SOURCE"' in executable_lines
+    assert 'codex plugin marketplace add "$CODEX_MARKETPLACE_SOURCE" --ref "$CODEX_REF"' in executable_lines
+    assert "--codex-ref)" in raw_script
+    assert "marketplace source: ${CODEX_REF:-default branch}" in raw_script
+    assert "print_claude_plugin_identity" in raw_script
+
+
+def test_repository_sync_defaults_to_latest_and_accepts_explicit_ref(tmp_path: Path, posix_bash: str) -> None:
+    """Prove isolated Codex sync uses no ref by default and forwards an explicit pin."""
+    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
+    if not sync_path.is_file():
+        return
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_codex = fake_bin / "codex"
+    fake_codex.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+state = Path(os.environ["FAKE_CODEX_STATE"])
+root = Path(os.environ["FAKE_CODEX_ROOT"])
+with Path(os.environ["FAKE_CODEX_LOG"]).open("a", encoding="utf-8") as stream:
+    stream.write(" ".join(args) + "\\n")
+
+if args[:3] == ["plugin", "marketplace", "list"]:
+    marketplaces = [{"name": "borda-ai-rig", "root": str(root)}] if state.exists() else []
+    print(json.dumps({"marketplaces": marketplaces}))
+elif args[:3] == ["plugin", "marketplace", "add"]:
+    ref = args[args.index("--ref") + 1] if "--ref" in args else None
+    root.mkdir(parents=True, exist_ok=True)
+    (root / ".codex-marketplace-install.json").write_text(
+        json.dumps({"source_type": "git", "source": "Borda/AI-Rig", "ref_name": ref}),
+        encoding="utf-8",
+    )
+    state.touch()
+elif args[:2] == ["plugin", "add"]:
+    pass
+elif args[:2] == ["plugin", "list"]:
+    print(json.dumps({"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.2.2"}]}))
+else:
+    raise SystemExit(f"unexpected fake Codex call: {args}")
+""",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    fake_claude = fake_bin / "claude"
+    fake_claude.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+    fake_claude.chmod(0o755)
+
+    for case_name, cli_args, expected_add, expected_source, expect_global_agents in (
+        (
+            "latest",
+            ("codex",),
+            "plugin marketplace add Borda/AI-Rig",
+            "marketplace source: default branch",
+            True,
+        ),
+        (
+            "pinned",
+            ("codex", "--codex-ref", "codex-rig-v0.2.2"),
+            "plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2",
+            "marketplace source: codex-rig-v0.2.2",
+            True,
+        ),
+        (
+            "no-global-agents",
+            ("codex", "--no-codex-global-agents"),
+            "plugin marketplace add Borda/AI-Rig",
+            "marketplace source: default branch",
+            False,
+        ),
+    ):
+        case = tmp_path / case_name
+        case.mkdir()
+        log = case / "calls.log"
+        installed_plugin = case / "marketplace" / "plugins" / "codex-rig"
+        (installed_plugin / "assets").mkdir(parents=True)
+        (installed_plugin / "scripts").mkdir()
+        shutil.copy2(PLUGIN_ROOT / "assets" / "AGENTS.md", installed_plugin / "assets" / "AGENTS.md")
+        shutil.copy2(
+            PLUGIN_ROOT / "scripts" / "install_global_agents.py",
+            installed_plugin / "scripts" / "install_global_agents.py",
+        )
+        codex_home = case / "codex-home"
+        env = os.environ.copy()
+        env.update(
+            {
+                "CODEX_HOME": str(codex_home),
+                "FAKE_CODEX_LOG": str(log),
+                "FAKE_CODEX_ROOT": str(case / "marketplace"),
+                "FAKE_CODEX_STATE": str(case / "configured"),
+                "HOME": str(case / "home"),
+                "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+            }
+        )
+        result = subprocess.run(
+            [posix_bash, str(sync_path), *cli_args],
+            cwd=sync_path.parent,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        calls = log.read_text(encoding="utf-8").splitlines()
+        assert expected_add in calls
+        assert expected_source in result.stdout
+        assert "Codex Rig 0.2.2 installed" in result.stdout
+        assert (codex_home / "AGENTS.md").exists() is expect_global_agents
+        if expect_global_agents:
+            global_agents = (codex_home / "AGENTS.md").read_text(encoding="utf-8")
+            assert "<!-- codex-rig:global-agents begin sha256=" in global_agents
+            assert "# Global Agent Instructions" in global_agents
 
 
 def test_specialist_fallback_ladder_and_evidence_are_complete() -> None:

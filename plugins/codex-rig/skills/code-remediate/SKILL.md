@@ -369,6 +369,8 @@ Co-authored-by: Codex <codex@openai.com>
 ```
 
 Do not commit for a remediation summary alone or without the user's explicit authorization.
+Creating a new remediation commit never authorizes rewriting an existing commit. Amend, rebase, reset, squash,
+fixup, and equivalent history edits require an explicit request for that exact operation.
 
 ## Fail-fast Rules
 
@@ -414,6 +416,7 @@ Do not commit for a remediation summary alone or without the user's explicit aut
 40. The unabridged scope context is not immediately followed by a `Full report` link/path to `$OUT_DIR/action-items.md` => fail: `scope-report-link-missing`.
 41. A scope-selection control opens without an immediately preceding user-visible assistant message containing the unabridged scope context and `Full report` path; collapsed tool output does not count => fail: `scope-context-not-visible`.
 42. An explicitly requested remediation commit omits `Co-authored-by: Codex <codex@openai.com>` or the shared commit-response template => fail: `codex-coauthor-trailer-missing`.
+43. Existing history would be rewritten without an explicit request for that exact operation => fail: `history-rewrite-not-explicitly-authorized`.
 
 ## Quality Gates
 
@@ -426,7 +429,7 @@ Required checks:
 Conditional checks:
 
 - `lint`/`format`/`types`: run configured checks for changed code/config.
-- `calibration`: run when findings affect `.codex/skills`, `.codex/agents`, routing, or gate policy.
+- `calibration`: run the owning calibration when findings affect skills, role/agent routing, or gate policy; Codex Rig source uses `runtime/calibration/run.py --layout plugin`.
 
 ## Calibration Hooks
 

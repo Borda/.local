@@ -12,9 +12,9 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     import tomli as tomllib
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-CONTRACT_PATH = REPO_ROOT / ".codex" / "agent-shim-lifecycle.json"
-TEST_REQUIREMENTS_PATH = REPO_ROOT / ".codex" / "tests" / "requirements.txt"
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+CONTRACT_PATH = PLUGIN_ROOT / "runtime" / "agent-shim-lifecycle.json"
+TEST_REQUIREMENTS_PATH = PLUGIN_ROOT / "tests" / "requirements.txt"
 EXPECTED_ROLES = {
     "challenger",
     "cicd-steward",

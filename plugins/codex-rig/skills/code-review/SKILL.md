@@ -69,7 +69,7 @@ Review axes, in order:
 - API and behavior regressions.
 - Test coverage and edge-case gaps.
 - Error handling and logging.
-- Project coding principles: changed code follows `.codex/AGENTS.md` for simplicity, readability, reproducibility, short reusable units without low-value argument-remapping wrappers, guard clauses or early `return`/`yield`/`continue`, project docstring-style detection, concise purpose docstrings, and inline comments only for non-trivial implementation blocks.
+- Project coding principles: changed code follows the applicable `AGENTS.md` layers for simplicity, readability, reproducibility, short reusable units without low-value argument-remapping wrappers, guard clauses or early `return`/`yield`/`continue`, project docstring-style detection, concise purpose docstrings, and inline comments only for non-trivial implementation blocks.
 - Security, data, ML, CI/CD, or release risks signaled by T0.
 - Documentation or migration gaps caused by behavior/API changes.
 

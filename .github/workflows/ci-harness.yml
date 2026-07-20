@@ -4,12 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - ".codex/**"
+      - "plugins/codex-rig/**"
+      - ".codex/config.toml"
       - ".github/codex-harness.sh"
       - ".github/workflows/ci-harness.yml"
   pull_request:
     paths:
-      - ".codex/**"
+      - "plugins/codex-rig/**"
+      - ".codex/config.toml"
       - ".github/codex-harness.sh"
       - ".github/workflows/ci-harness.yml"
   workflow_dispatch:

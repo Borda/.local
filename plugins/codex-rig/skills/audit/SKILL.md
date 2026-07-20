@@ -11,7 +11,7 @@ Run linear configuration/workflow audit.
 
 ```json
 {
-  "scope": "config|skills|agents|all",
+  "scope": "config|skills|roles|all",
   "target": "optional path",
   "mode": "upgrade|adversarial",
   "skip_gate": false,
@@ -35,21 +35,24 @@ In each later Bash block, replace `<run-directory-created-in-step-01>` with the 
 
 Scopes:
 
-- `config`: `.codex/config.toml`, instructions, permission/routing.
-- `skills`: `.codex/skills/**` plus calibration coverage.
-- `agents`: `.codex/agents/*.toml` plus spawn/routing coverage.
-- `all`: all above.
+- `config`: project `.codex/config.toml`, `AGENTS.md` layers, permissions, and routing.
+- `skills`: repository/user-authored `.agents/skills/**` plus declared calibration coverage.
+- `roles`: role-routing instructions and an explicitly supplied plugin/package role-card root.
+- `all`: every applicable surface above. Missing optional local skills or roles is `not-configured`, not drift.
 
 ```bash
 OUT_DIR="<run-directory-created-in-step-01>"
-find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
+{
+  rg --files -g 'AGENTS.md' -g '.codex/config.toml' -g '.agents/skills/**' 2>/dev/null || true
+  if [[ -n "${TARGET:-}" && -e "$TARGET" ]]; then find "$TARGET" -maxdepth 4 -type f; fi
+} | sort -u >"$OUT_DIR/inventory.txt"
 ```
 
 ### 03: Build an audit ledger before running gates
 
 Write `$OUT_DIR/audit-ledger.md` with these sections:
 
-- `Inventory`: configured/present agents/skills.
+- `Inventory`: configured/present policy, skills, and role-routing surfaces.
 - `Broken References`: missing files, stale paths, unresolved shared resources.
 - `Runtime Leaks`: non-native runner fields/external runtime assumptions.
 - `Coverage`: calibration benchmark/behavior.
@@ -67,21 +70,24 @@ Stay single-agent for narrow `scope=config`, `scope=skills`, or `scope=agents` a
 
 ### 04: Run shared quality gates
 
-Follow `../../shared/helper-cli-contract.md` and `run-gates.sh --help`. Default: ruff lint/format `.codex`, explicit no-typed-target reason, calibration tests, clean diff review; project commands may replace.
+Follow `../../shared/helper-cli-contract.md` and `run-gates.sh --help`. Use project-configured lint, format, type, and test commands for the discovered surfaces, explicit reasons for inapplicable gates, and clean diff review.
 
 ### 05: Detect drift and broken references
 
 ```bash
 OUT_DIR="<run-directory-created-in-step-01>"
-rg -n "config_file|skills/|quality-gates|run-gates.sh|write-result.py" .codex >"$OUT_DIR/reference-scan.txt"
+rg -n "config_file|skills/|roles/|quality-gates|run-gates.sh|write-result.py" \
+  AGENTS.md .codex .agents "${TARGET:-}" >"$OUT_DIR/reference-scan.txt" 2>/dev/null || true
 ```
 
 ### 06: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
 
 ```bash
 OUT_DIR="<run-directory-created-in-step-01>"
-rg -n "\[agents\.|description =" .codex/config.toml >"$OUT_DIR/spawn-sections.txt"
-rg -n "TRIGGER when|SKIP when|NOT for" .codex/agents >"$OUT_DIR/spawn-policy-sections.txt"
+rg -n "delegat|specialist|spawn|role|\[agents\." AGENTS.md .codex/config.toml \
+  >"$OUT_DIR/spawn-sections.txt" 2>/dev/null || true
+rg -n "Trigger and skip boundaries|TRIGGER when|SKIP when|NOT for" "${TARGET:-AGENTS.md}" \
+  >"$OUT_DIR/spawn-policy-sections.txt" 2>/dev/null || true
 ```
 
 ### 07: Review native skill and agent contract consistency
@@ -95,18 +101,23 @@ Each configured skill has:
 - `Calibration Hooks`
 - `Output Contract`
 
-Each configured agent has:
+Each configured role or agent has:
 
 - `## Scope` or clear role boundary text
 - `## Evidence Standard`
 - `## Boundaries`
 - `## Output Contract` or explicit output format
 
-### 08: Review agent-roster consistency
+### 08: Review role-roster consistency when a role-card target is supplied
 
 ```bash
 OUT_DIR="<run-directory-created-in-step-01>"
-rg -n "^(name|description|developer_instructions)" .codex/agents >"$OUT_DIR/agent-roster-scan.txt"
+if [[ -n "${TARGET:-}" ]]; then
+  rg -n "^(role_id|name|model|description|developer_instructions)" "$TARGET" \
+    >"$OUT_DIR/role-roster-scan.txt" 2>/dev/null || true
+else
+  : >"$OUT_DIR/role-roster-scan.txt"
+fi
 ```
 
 Classify overlap as `keep`, `sharpen`, `merge-prune`:
@@ -123,14 +134,14 @@ Use shared lifecycle/authoritative help. Write `AUDIT_METADATA`, validate `audit
 
 ## Fail-fast Rules
 
-1. Missing `.codex` inventory => fail.
+1. Requested target missing or escaping the consuming project/approved external scope => fail.
 2. Shared gate script missing => fail.
 3. Critical-path broken config/skill reference => fail.
-4. Any configured agent lacks spawn coverage => fail.
+4. Any configured role/agent lacks routing coverage => fail.
 5. Unclear/overlapping spawn intent lacks collaboration-team guidance => fail.
 6. Agent overlap lacks keep/sharpen/merge-prune decision => fail.
-7. Configured entry lacks native skill/agent contract section => fail unless exception recorded.
-8. Non-native runtime assumptions in `.codex/skills/*/SKILL.md` or `.codex/agents/*.toml` => fail.
+7. Configured entry lacks its declared skill/role contract section => fail unless exception recorded.
+8. Non-native runtime assumptions in an audited skill or role card => fail.
 9. Result artifact missing => fail.
 
 ## Quality Gates
@@ -138,7 +149,7 @@ Use shared lifecycle/authoritative help. Write `AUDIT_METADATA`, validate `audit
 Required checks:
 
 - `review`: inventory, contract ledger, reference scan, overlap decisions, `git diff --check`.
-- `calibration`: run or justify skipping `.codex/calibration/run.py` with skill/agent behavior change.
+- `calibration`: run the owning project's declared calibration command when audited workflow behavior changes; for Codex Rig source, use `runtime/calibration/run.py --layout plugin`.
 
 Conditional checks:
 

@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "6a0ead2afac5c40c0f7307679c79c85d21b4b5df76479bc596b6bf2653173426"
+      "sha256": "40999f4a8698273a057e6cd7212c4a82423537ed2eb96238acdeceeb29bdd559"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "01a4a6e57d542e9f69ee15b003d66e5df3d57e41812964555354406b852d150b"
+      "sha256": "6880c27a4dcd9fd8c1465f1bf57c1c55d6c8ab4909c0e2f8f3bda18c5c993382"
     },
     {
       "mode": "0644",
@@ -42,7 +42,12 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "830e327cb704d30d213fbd6949d582fc147b578967b77fcd429b8fd2e4aefa14"
+      "sha256": "5b316a531660f0f379dd445f663c2951da3b74bbc109a28a9dbd33c3959adcde"
+    },
+    {
+      "mode": "0644",
+      "path": "assets/AGENTS.md",
+      "sha256": "8682dd64c0b5e5bf6eebfa8bda32e89a22748d09b96bc8e30f9d2b0855d11064"
     },
     {
       "mode": "0644",
@@ -136,23 +141,28 @@
     },
     {
       "mode": "0644",
+      "path": "runtime/agent-shim-lifecycle.json",
+      "sha256": "c11f89decf4a8b5a76de6dfac848ef1160c46389d693094c871bddb49f5ffc88"
+    },
+    {
+      "mode": "0644",
       "path": "runtime/calibration/accepted-route-evidence.json",
       "sha256": "53e5d17a9490a3b33e57fa57e69fd30a4c5423ab0547f43b1618f2569623dde9"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/behavioral-cases.json",
-      "sha256": "e09eebc0f03745cf43c9b2665afe9eaf841fc95a5f0dd5dafd81b1b95e99cbb2"
+      "sha256": "ccd7a59eed9f41c9a198bd2475d362cc674b8a8fd84aee63192f0db996d06e34"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/behavioral-observations.jsonl",
-      "sha256": "c6a36d2ea4ad2455538ef5cbe3b4c08c7aa0778155b26ff5f18edc1726d280ab"
+      "sha256": "068741574ada9131afd2c4c601d148af8b5d0a36a8a6c48578db4bc21a16d484"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/benchmarks.json",
-      "sha256": "2f802f3ed80e7fa48f963b45c7d7c9181916fb01e7c10d226b1658dc1332aca3"
+      "sha256": "84fd2ddb3cbb41c6a9b4e19ff2494e8bb0bb799a4821556fb4f3ae0fdd2c353a"
     },
     {
       "mode": "0644",
@@ -266,6 +276,11 @@
     },
     {
       "mode": "0644",
+      "path": "scripts/install_global_agents.py",
+      "sha256": "bd6a17d13f9cdd519675d4599d90590c5ab5c5857b0ed31ca912e25f1f6f0511"
+    },
+    {
+      "mode": "0644",
       "path": "scripts/manage_role_agents.py",
       "sha256": "30ece0797892582852b55e41c9f22573b010bbc582756a20611ef9b67d492d98"
     },
@@ -292,7 +307,7 @@
     {
       "mode": "0644",
       "path": "shared/commit-response-template.md",
-      "sha256": "1506547730fff9a6c022971cb8c8bafbbf7643017465b3ec319c7bfd5e8fe36e"
+      "sha256": "cd72f08f059f49822d55736017a4342431ac32d59c4958298b8aeea53afc70b5"
     },
     {
       "mode": "0755",
@@ -367,7 +382,7 @@
     {
       "mode": "0644",
       "path": "skills/audit/SKILL.md",
-      "sha256": "6bba6ddfe57337a50a278b0b7203f7edbeefbda735f83a01d0988986595f0f1f"
+      "sha256": "8e43fd240b01fa5d69ce5e2783843822a4cf874f5ce7c9d7e9b450eaa2ec6873"
     },
     {
       "mode": "0644",
@@ -387,7 +402,7 @@
     {
       "mode": "0644",
       "path": "skills/code-remediate/SKILL.md",
-      "sha256": "dfcfba708299f3c921f9c7d624d41747b5452f4291a12ba6f8f8ff1c8ea6e94c"
+      "sha256": "59a76e93c8efb888e0d646125aa0ecd3b867a81958bb873e92a8a16ba22a4d8e"
     },
     {
       "mode": "0644",
@@ -397,7 +412,7 @@
     {
       "mode": "0644",
       "path": "skills/code-review/SKILL.md",
-      "sha256": "63ef994559021ff7d2c075da1f7e728828bf4000906010506520b0b901ccd614"
+      "sha256": "4bb750f000fe733d7f8cfcb80cddc9029e0304484006deaabc3d192ee1f4cf7e"
     },
     {
       "mode": "0644",
@@ -412,7 +427,7 @@
     {
       "mode": "0644",
       "path": "skills/develop/SKILL.md",
-      "sha256": "8b77f8b32999051a0f0db41dcb2334b0a9a4efb89825b8f056676602c983267e"
+      "sha256": "8bc8e0d874dc35ae7d1e1969abea0a77c2d363b5c0205a0ed763797beb53a0ca"
     },
     {
       "mode": "0644",
@@ -482,7 +497,7 @@
     {
       "mode": "0644",
       "path": "skills/manage/SKILL.md",
-      "sha256": "5053918c911e6f1009a64f0d1fb7747bc4ead4b7c40d0d50856e1d78e3b9f406"
+      "sha256": "33beaea5513ffdea616de4d36371e4c790aa4338fd7fd9ae7c4267fa43172750"
     },
     {
       "mode": "0644",
@@ -522,12 +537,22 @@
     {
       "mode": "0644",
       "path": "skills/sync/SKILL.md",
-      "sha256": "f68ca2291ef2b157ea7ca85e508e74bfacc0c0a05aa90f331c3c1b14847863a9"
+      "sha256": "1e6330ce580d07dc0dcf04f1913ac2197367dc21efa3972164231ff282cf88f1"
     },
     {
       "mode": "0644",
       "path": "skills/sync/result-template.json",
       "sha256": "356b6ae27d9eaecf08a87565c4d798081817d3f8960b381c4256ae05f4253896"
+    },
+    {
+      "mode": "0644",
+      "path": "tests/conftest.py",
+      "sha256": "ec4a76dc1659ffb1158d496cf3fd83beb6bca2e7c992d10bd5af8866ff4a7686"
+    },
+    {
+      "mode": "0644",
+      "path": "tests/requirements.txt",
+      "sha256": "5f5bb139fc5c4c5a0a3988e2d2a360229d4f003149760098c8baec7b0c91b57f"
     },
     {
       "mode": "0644",
@@ -538,6 +563,11 @@
       "mode": "0644",
       "path": "tests/test_agent_shim_journal.py",
       "sha256": "8d7caf9b9f76cef6e5eaed5380ba885560bca49d2ac56e24790fa624563fccdc"
+    },
+    {
+      "mode": "0644",
+      "path": "tests/test_agent_shim_lifecycle_contract.py",
+      "sha256": "fe04abaf08c8c67600620bfadc39a32cb12435900bdb4c246f53602a1e9b1ed2"
     },
     {
       "mode": "0644",
@@ -581,8 +611,13 @@
     },
     {
       "mode": "0644",
+      "path": "tests/test_global_agents_installer.py",
+      "sha256": "ab5abdb542323927102d7a33d9e33be7ab13383f431307f6b2b4d6cbd8bde9c2"
+    },
+    {
+      "mode": "0644",
       "path": "tests/test_installed_cache_scaffold.py",
-      "sha256": "dac50b2b188dbe3296e9d0c383d6828009379446a2e6399ed2c2f9d1554a05bc"
+      "sha256": "c945685df7811f0086e25660aa71913cfaf0ef84b1efa3d5e69b8579f8fea41a"
     },
     {
       "mode": "0644",
@@ -592,7 +627,7 @@
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "3767c5f8e518af5780c6f1546e437e9bd3fdc9782f9caed4b32dded2d92ac59f"
+      "sha256": "992e6bdc7b6b39a91c28efb76cdb036e11765bfb83fef937e2e9b1b387861434"
     },
     {
       "mode": "0644",
@@ -833,5 +868,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.2.1"
+  "version": "0.2.2"
 }

@@ -5,8 +5,8 @@ usage() {
   cat <<'EOF'
 Usage: codex-harness.sh [--help]
 
-Run calibration in an isolated temporary HOME with network-capable and LLM
-commands blocked. Writes a compact summary and copies failure artifacts to
+Run packaged Codex Rig calibration in an isolated temporary HOME with
+network-capable and LLM commands blocked. Writes a compact summary and copies failure artifacts to
 .github/codex-harness-results or CODEX_HARNESS_RESULTS_DIR.
 
 Exit 0 means isolated calibration passed; nonzero means setup, calibration, or
@@ -46,6 +46,7 @@ trap cleanup EXIT
 
 mkdir -p "$TMP_BIN"
 mkdir -p "$RESULTS_DIR"
+mkdir -p "$TMP_HOME/.codex"
 
 write_blocker() {
   local name="$1"
@@ -106,8 +107,6 @@ esac
 EOF
 chmod +x "$TMP_BIN/git"
 
-cp -R "$ROOT/.codex" "$TMP_HOME/.codex"
-
 set +e
 CALIBRATION_OUTPUT="$(env -i \
   HOME="$TMP_HOME" \
@@ -116,7 +115,7 @@ CALIBRATION_OUTPUT="$(env -i \
   PATH="$TMP_BIN:$PATH" \
   CI="true" \
   CODEX_OFFLINE_HARNESS="1" \
-  "$ROOT/.codex/calibration/run.py" 2>&1)"
+  "$ROOT/plugins/codex-rig/runtime/calibration/run.py" --layout plugin --root "$ROOT" 2>&1)"
 CALIBRATION_EXIT=$?
 set -e
 

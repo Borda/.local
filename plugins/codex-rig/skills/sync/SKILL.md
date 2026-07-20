@@ -20,6 +20,7 @@ repairing them.
   "mode": "check|refresh",
   "marketplace": "borda-ai-rig",
   "plugin": "codex-rig@borda-ai-rig",
+  "ref": "optional Git ref; omitted follows the remote default branch",
   "done_when": "active selection and package identity are recorded; an approved refresh is reinstalled and rechecked"
 }
 ```
@@ -60,27 +61,35 @@ available and verified. Plugin-only sync never deletes or overwrites a match.
 
 ### 04: Stop after dry run unless refresh was explicitly approved
 
-Show the installed state, marketplace source, current version, package verification result, possible external-agent
-residue, proposed commands, network/cache effects, and rollback limit. Ask for approval before `refresh`. A check-only
-request, missing approval, ambiguous source, foreign marketplace, or unverified active package stops without mutation.
+Show the installed state, marketplace source, configured ref or default-branch tracking, resolved revision when the
+marketplace checkout exposes it, current version, package verification result, possible external-agent residue,
+proposed commands, network/cache effects, and rollback limit. Ask for approval before `refresh`. A check-only request,
+missing approval, ambiguous source, foreign marketplace, or unverified active package stops without mutation.
 
 ### 05: Refresh through the Codex CLI
 
 After approval, use only commands confirmed by authoritative help:
 
 ```bash
+codex plugin marketplace add Borda/AI-Rig
+# Optional reproducible release pin:
+# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2
 codex plugin marketplace upgrade borda-ai-rig
 codex plugin add codex-rig@borda-ai-rig
 ```
 
-Do not use `git clone`, edit marketplace configuration, delete old cache directories, or force an update. A failed
-refresh must preserve and report the prior installation state; never claim rollback unless the CLI evidence proves it.
+Omitting `--ref` follows the remote default branch. An explicit ref pins it. Do not silently change an existing
+marketplace between pinned and unpinned modes: report the mismatch and require legacy shim cleanup before deliberate
+marketplace removal and re-addition. Do not use `git clone`, edit marketplace configuration, delete old cache
+directories, or force an update. A failed refresh must preserve and report the prior installation state; never claim
+rollback unless the CLI evidence proves it.
 
 ### 06: Recheck exact active identity
 
 Repeat the read-only inspection and package validation. Pass only when exactly one enabled selection is reported and
-its manifest plus all recorded payload hashes agree. Record old/new version and package-manifest hashes. Same version
-with different package bytes is a cache-identity failure.
+its manifest plus all recorded payload hashes agree. Record requested/configured ref, resolved revision when
+available, old/new version, and package-manifest hashes. Same version with different package bytes is a cache-identity
+failure.
 
 ### 07: Write the validated artifact
 
