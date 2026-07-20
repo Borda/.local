@@ -1,10 +1,10 @@
 # 🏠 Borda's AI-Rig
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-orange)](https://claude.ai/code) [![Codex CLI](https://img.shields.io/badge/Codex_CLI-config-green)](https://github.com/openai/codex)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-orange)](https://claude.ai/code) [![Codex CLI](https://img.shields.io/badge/Codex_CLI-plugin-green)](https://github.com/openai/codex)
 
 Specialist-agent infrastructure for Python/ML OSS — the scaffolding that lets you maintain at scale without becoming a full-time reviewer.
 
-**16 specialist roles across Claude and Codex · 20+ Claude workflows · 12 Codex-native skills · 5 domain plugins** — opinionated [Claude Code](https://claude.ai/code) + [Codex CLI](https://github.com/openai/codex) configuration for Python/ML OSS maintainers, version-controlled and self-calibrating.
+**Five Claude Code plugins · one native Codex plugin · specialist roles across both runtimes** — opinionated [Claude Code](https://claude.ai/code) + [Codex CLI](https://github.com/openai/codex) infrastructure for Python/ML OSS maintainers, version-controlled and self-calibrating.
 
 <details>
 <summary><strong>Contents</strong></summary>
@@ -40,7 +40,7 @@ Things not possible with vanilla Claude Code:
 
 - **Metric-driven experiment loops that auto-rollback on regression.** `/research:run` proposes a change, applies it, measures the target metric, and automatically reverts if the metric regresses — then tries the next hypothesis. The loop runs unattended; you set the goal and the guard, and review the committed result.
 
-- **Agent and skill calibration that measures overconfidence and workflow leaks.** `/foundry:calibrate` and `.codex/calibration/run.py` score recall, precision, confidence accuracy, stale assumptions, missing gates, fake fan-out claims, and unsafe PR-remediation behavior. The offline Codex harness runs those checks in CI without contacting any LLM.
+- **Agent and skill calibration that measures overconfidence and workflow leaks.** `/foundry:calibrate` and `plugins/codex-rig/runtime/calibration/run.py` score recall, precision, confidence accuracy, stale assumptions, missing gates, fake fan-out claims, and unsafe PR-remediation behavior. The offline Codex harness runs those checks in CI without contacting any LLM.
 
 ### vs. vanilla Claude Code
 
@@ -90,7 +90,9 @@ OSS, develop, and research skills always use their plugin prefix (`/oss:review`,
 >
 > ```bash
 > npm install -g @openai/codex
-> codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.1
+> codex plugin marketplace add Borda/AI-Rig
+> # Optional reproducible release pin:
+> # codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2
 > codex plugin add codex-rig@borda-ai-rig
 > ```
 >
@@ -129,7 +131,7 @@ Each command chains agents in a defined topology — see [Common Workflow Sequen
 
 **With AI-Rig**: each part of the loop has a dedicated skill backed by a calibrated specialist agent. The agents know your conventions, enforce discipline at every gate, and feed corrections back into their own instructions. The feedback loop is closed.
 
-Managing AI coding workflows for Python/ML OSS is complex — you need domain-aware agents, not generic chat. This config packages 16 specialist roles across the Claude and Codex runtimes plus 20+ slash-command skill workflows across five focused plugins, in a version-controlled, continuously benchmarked setup optimized for:
+Managing AI coding workflows for Python/ML OSS is complex — you need domain-aware roles, not generic chat. AI-Rig packages five Claude Code plugins and Codex Rig as peer products, with version-controlled, continuously benchmarked workflows optimized for:
 
 - Python/ML OSS libraries requiring SemVer discipline and deprecation cycles
 - ML training and inference codebases needing GPU profiling and data pipeline validation
@@ -286,51 +288,46 @@ Both `--reply` flags produce a two-part shepherd output: an overall PR comment (
 
 ## 🤖 Codex CLI
 
-Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.6-terra`, with 15 specialist agents and a codex-native skill backbone (`code-review/develop/code-remediate/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`). Symptom-first failures route through `investigate` before implementation. A Luna-based `delegation-lead` splits broad work into disjoint context packs, routes each stream to the lowest-cost capable Luna/Terra/Sol role, and enforces a handover gate before parent acceptance.
+Codex Rig is a native plugin for [OpenAI Codex CLI](https://github.com/openai/codex). It installs 13 workflow skills, one lifecycle-manager skill, and 15 canonical role cards. Symptom-first failures route through `investigate` before implementation. A `delegation-lead` can split broad work into disjoint context packs and route each stream to an injected blank-agent role or transparent inline fallback before parent acceptance.
 
 ### Plugin install
 
 ```bash
 npm install -g @openai/codex
-codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.1
+codex plugin marketplace add Borda/AI-Rig
+# Optional reproducible release pin:
+# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2
 codex plugin add codex-rig@borda-ai-rig
 ```
 
 Start a fresh session. The plugin uses exact role-card injection for parallel blank agents and inline fallback. New thin-shim installation is platform-blocked; `agent-shims` remains available for diagnosis and authenticated cleanup of prior development shims.
 
-### Full repository config
+### Product boundary
 
-The repository `.codex/` tree remains the source for contributors who want the complete editable native configuration:
+`plugins/codex-rig/` is the installable source of truth for workflows, role cards, shared gates, calibration, hooks, lifecycle tooling, and an inert global-instructions template. Direct `codex plugin` installation leaves global and project instructions untouched. From this checkout, plain `bash sync.sh` performs the full Claude + Codex restore; `bash sync.sh codex` limits it to Codex. Both install or update one backup-protected block in `$CODEX_HOME/AGENTS.md` by default. Pass `--no-codex-global-agents` to skip it; `bash sync.sh claude` changes only Claude scope. Project `AGENTS.md` files and the installed plugin cache remain untouched. `--codex-ref REF` remains a Codex source selector.
 
-```bash
-git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
-cd Borda-AI-Rig
-codex 'run sync with mode=check, source=project, targets=skills,agents,config,calibration,docs,shared'
-```
-
-This repo's `.codex/` directory is the source of truth; `~/.codex/` is a downstream copy. Use the dry-run-first `sync` skill for bootstrap and updates so manifest-scoped config merges preserve home-only state and every approved overwrite is backed up. After reviewing the check report, rerun with `mode=apply` and explicitly approve the selected home writes.
+Use `$codex-rig:sync` for a dry-run installation report and approval-gated marketplace refresh. Older AI-Rig versions copied files into `~/.codex/`; because those files had no durable ownership marker, they require a separate backup and ownership review before manual cleanup.
 
 ### Usage
 
-Mirrored skills are prompt-based — not slash commands:
+Plugin skills are namespaced and can also be selected implicitly:
 
 ```bash
-codex                                                        # interactive — auto-selects agents
-codex "use the qa-specialist to review src/api/auth.py"      # address agent by name
-codex "full security audit of src/api/"                      # ask for deeper review in plain language
+codex                                                        # interactive — plugin skills can match the task
+codex '$codex-rig:investigate diagnose the failing test'     # explicit workflow
+codex '$codex-rig:code-review #123'                          # explicit PR review
 ```
 
 ```text
-run investigate on this branch and find root cause of failing CI
-run investigate before fixing this failing pytest; do not suggest a workaround unless it is explicitly temporary
-run code-remediate for the current working tree and fix high-severity findings
-$code-review #123
-$code-remediate #123 +review
+$codex-rig:investigate find the root cause of failing CI
+$codex-rig:develop implement the verified fix
+$codex-rig:code-review #123
+$codex-rig:code-remediate #123 +review
 ```
 
-`$code-review` and `$code-remediate` are in-session skill invocations. From a shell, quote them so `$code-review` is not treated as an environment variable: `codex '$code-review #123'`.
+From a shell, quote `$codex-rig:...` invocations so `$` is not treated as an environment variable.
 
-→ Deep reference — agents, specialist orchestration, PR code-review-to-remediation, calibration, RTK integration: [`.codex/README.md`](.codex/README.md)
+→ Deep reference — skills, role cards, orchestration, lifecycle, calibration, and lessons learned: [`plugins/codex-rig/README.md`](plugins/codex-rig/README.md)
 
 ## 🤝 Claude + Codex Integration
 
@@ -382,7 +379,7 @@ Without the plugin: pre-pass review is skipped gracefully (skills check with `cl
 
 ### Token Savings (RTK)
 
-[RTK](https://github.com/rtk-ai/rtk) is an optional CLI proxy that compresses Bash output (git, pytest, build tools) before it reaches Claude — 60–99% token savings with no workflow changes. A `PreToolUse` hook (`plugins/foundry/hooks/rtk-rewrite.js`) transparently rewrites supported commands across all Claude skills; Codex runs get the same treatment via `.codex/hooks/rtk-enforce.js`. The hook is a no-op when RTK is not installed, so the config stays portable.
+[RTK](https://github.com/rtk-ai/rtk) is an optional CLI proxy that compresses Bash output (git, pytest, build tools) before it reaches Claude — 60–99% token savings with no workflow changes. A `PreToolUse` hook (`plugins/foundry/hooks/rtk-rewrite.js`) transparently rewrites supported commands across Claude skills. Codex repository policy routes eligible commands through RTK explicitly because current Codex hooks cannot rewrite a command in place.
 
 → Install instructions: [rtk-ai/rtk](https://github.com/rtk-ai/rtk)
 
@@ -444,7 +441,8 @@ AI-Rig/
 │   ├── oss/                # OSS plugin: shepherd, cicd-steward + analyse/review/resolve/release (+ internal: gh-scraper, repo-warden)
 │   ├── develop/            # Develop plugin: feature/fix/refactor/plan/debug
 │   ├── research/           # Research plugin: scientist, data-steward + topic/plan/judge/run/sweep
-│   └── codemap/            # codemap plugin: structural index, blast-radius scores, import graph
+│   ├── codemap/            # Claude plugin: structural index, blast-radius scores, import graph
+│   └── codex-rig/          # Codex plugin: workflows, role cards, gates, calibration, lifecycle
 ├── .github/
 │   ├── codex-harness.sh    # offline Codex config harness for CI
 │   └── workflows/          # CI and docs workflows
@@ -459,13 +457,8 @@ AI-Rig/
 │   ├── rules/              # per-topic coding and config standards (symlinks → plugins/foundry/rules/)
 │   └── hooks/              # symlinks → plugins/foundry/hooks/
 ├── .mcp.json               # MCP server definitions
-├── .codex/                 # OpenAI Codex CLI source of truth
-│   ├── README.md           # full reference: agents, skills, Claude integration
-│   ├── AGENTS.md           # global instructions and subagent spawn rules
-│   ├── config.toml         # multi-agent config (gpt-5.6-terra baseline)
-│   ├── agents/             # per-agent model and instruction overrides
-│   ├── calibration/        # self-calibration harness + fixed task set
-│   └── skills/             # codex-native workflow skills
+├── .codex/
+│   └── config.toml         # project-local Codex runtime defaults
 ├── .pre-commit-config.yaml
 ├── .gitignore
 └── README.md
@@ -483,6 +476,9 @@ claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
 claude plugin install codemap@borda-ai-rig
+
+codex plugin marketplace upgrade borda-ai-rig
+codex plugin add codex-rig@borda-ai-rig
 ```
 
 Re-run `/foundry:setup` only if permissions, `enabledPlugins`, or `advisorModel` changed. Re-run `/foundry:setup` if you previously used the link mode — symlinks point to the old plugin cache after an upgrade.
@@ -503,6 +499,18 @@ claude plugin uninstall develop
 claude plugin uninstall research
 claude plugin uninstall codemap
 ```
+
+For Codex Rig, remove authenticated legacy shims before uninstalling the plugin:
+
+```text
+$codex-rig:agent-shims remove
+```
+
+```bash
+codex plugin remove codex-rig@borda-ai-rig
+```
+
+Start a fresh Codex session. Removing the plugin first can leave pre-release thin shims broken; reinstall Codex Rig to run authenticated cleanup.
 
 Settings added by `/foundry:setup` remain in `~/.claude/settings.json`; remove manually if desired. If `/foundry:setup` was run, symlinks in `~/.claude/agents/` and `~/.claude/skills/` also persist and will be broken after uninstall — remove with `rm ~/.claude/agents/<name>.md` and `rm -rf ~/.claude/skills/<name>` for each.
 

@@ -1,5 +1,7 @@
 # plugins/ — Plugin Authoring & Behavior Reference
 
+This document covers the five Claude Code plugins and their permission model. Codex Rig is a separate peer product with Codex-native packaging, lifecycle, and trust rules; see [`codex-rig/README.md`](codex-rig/README.md).
+
 Authoritative reference: critical behaviors, permission model, known limitations, user expectations across all 5 plugins. Read before editing plugin files or diagnosing unexpected behavior.
 
 > Plugin inventory, install instructions, versioning policy, cross-plugin dependency rules: see root `README.md` + `plugins/CLAUDE.md`. This file covers trust model, bin/ execution, operational guarantees only.

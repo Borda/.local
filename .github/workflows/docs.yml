@@ -31,12 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout (with symlinks)
+      - name: Checkout documentation sources
         uses: actions/checkout@v6
         with:
-          # Symlinks in docs/ point to plugins/*/README.md.
-          # Default checkout preserves symlinks on Linux — no extra flag needed,
-          # but stated here explicitly so the dependency is visible.
+          # Product pages include plugins/*/README.md through MkDocs snippets.
           persist-credentials: false
           # git-revision-date plugin requires full history
           fetch-depth: 0

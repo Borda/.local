@@ -9,14 +9,14 @@ _SCHEMA_JSON_LD = """\
         "@type": "Organization",
         "name": "AI-Rig by Borda",
         "url": "https://borda.github.io/AI-Rig/",
-        "description": "Five Claude Code plugins for Python/ML OSS development.",
+        "description": "Five Claude Code plugins and Codex Rig for Python/ML OSS development.",
         "sameAs": ["https://github.com/Borda/AI-Rig"]
       },
       {
         "@type": "WebSite",
         "name": "Borda's AI-Rig",
         "url": "https://borda.github.io/AI-Rig/",
-        "description": "Claude Code plugin suite for Python/ML OSS development",
+        "description": "Claude Code and OpenAI Codex plugin suite for Python/ML OSS development",
         "potentialAction": {
           "@type": "SearchAction",
           "target": {
@@ -31,7 +31,7 @@ _SCHEMA_JSON_LD = """\
         "name": "Borda's AI-Rig",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows",
-        "description": "Five Claude Code plugins — foundry, oss, develop, research, codemap — for Python/ML OSS development. Specialist agents, calibrated workflows, validate-first discipline.",
+        "description": "Five Claude Code plugins plus Codex Rig for Python/ML OSS development. Specialist roles, calibrated workflows, and validate-first discipline.",
         "url": "https://borda.github.io/AI-Rig/",
         "downloadUrl": "https://github.com/Borda/AI-Rig",
         "offers": {
@@ -82,6 +82,12 @@ _SCHEMA_JSON_LD = """\
             "name": "codemap",
             "description": "Python structural indexer: import graph, blast-radius metrics, function call graph.",
             "url": "https://borda.github.io/AI-Rig/codemap/"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "Codex Rig",
+            "description": "OpenAI Codex workflows, specialist role cards, portable routing, quality gates, and calibration.",
+            "url": "https://borda.github.io/AI-Rig/codex-rig/"
           }
         ]
       }

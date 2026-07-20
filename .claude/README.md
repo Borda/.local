@@ -1,6 +1,6 @@
 # 🤖 Claude Code — Deep Reference
 
-← [Back to root README](../README.md) · [Codex deep reference](../.codex/README.md)
+← [Back to root README](../README.md) · [Codex Rig deep reference](../plugins/codex-rig/README.md)
 
 Configuration for [Claude Code](https://claude.ai/code) (Anthropic's AI coding CLI). Covers agent relationships, skill orchestration flows, implementation architecture, operational internals. For high-level overview and workflow sequences, see root README.
 

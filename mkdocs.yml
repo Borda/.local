@@ -1,5 +1,5 @@
 site_name: Borda's AI-Rig
-site_description: Claude Code plugin suite for Python/ML OSS development
+site_description: Claude Code and OpenAI Codex plugin suite for Python/ML OSS development
 site_url: https://borda.github.io/AI-Rig/
 repo_url: https://github.com/Borda/AI-Rig
 repo_name: Borda/AI-Rig
@@ -81,3 +81,4 @@ nav:
   - Develop: develop.md
   - Research: research.md
   - Codemap: codemap.md
+  - Codex Rig: codex-rig.md

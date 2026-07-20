@@ -1,7 +1,7 @@
 # Borda's AI-Rig
 
-> Five Claude Code plugins for Python/ML OSS development:
-> specialist agents, calibrated workflows, validate-first discipline.
+> Five Claude Code plugins plus Codex Rig for Python/ML OSS development:
+> specialist roles, calibrated workflows, validate-first discipline.
 
 ## Documentation
 
@@ -11,6 +11,7 @@
 - [develop](https://borda.github.io/AI-Rig/develop/): Validate-first development — feature, fix, refactor, debug with mandatory test gates
 - [research](https://borda.github.io/AI-Rig/research/): Structured ML experiments — SOTA search, design review, automated improvement loop
 - [codemap](https://borda.github.io/AI-Rig/codemap/): Python structural indexer — import graph, blast-radius, function call graph
+- [Codex Rig](https://borda.github.io/AI-Rig/codex-rig/): Native Codex workflows — 15 role cards, portable parallel routing, quality gates, and calibration
 
 ## Optional
 
