@@ -33,7 +33,7 @@ ______________________________________________________________________
 
 ## 🔌 The products
 
-### 🏭 foundry — base infrastructure
+### 🏭 CC_foundry — base infrastructure
 
 foundry is the foundation the other plugins build on. It packages ten non-overlapping specialist agents — software engineer, QA specialist, performance optimizer, solution architect, doc scribe, linting expert, web explorer, curator, challenger, and creator — along with the lifecycle tools that keep them reliable over time. Without foundry, every other plugin falls back to a generic agent with a role-description prompt. With it, every dispatch lands on a calibrated specialist.
 
@@ -43,11 +43,11 @@ foundry is the foundation the other plugins build on. It packages ten non-overla
 - Measuring accuracy: `/foundry:calibrate` benchmarks recall versus stated confidence so you know exactly where agents fall short
 - Closing the self-improvement loop: `/foundry:distill` converts accumulated corrections into durable rule updates
 
-[Full documentation →](foundry.md)
+[Full documentation →](cc_foundry.md)
 
 ______________________________________________________________________
 
-### 🌱 oss — open-source maintainer workflows
+### 🌱 CC_oss — open-source maintainer workflows
 
 oss removes the context-switch tax of maintaining a public project. Four slash-command skills cover the recurring expensive parts of the maintainer loop — issue triage, PR review, resolving feedback, and releasing — backed by two specialist agents that own contributor communication and CI health.
 
@@ -57,11 +57,11 @@ oss removes the context-switch tax of maintaining a public project. Four slash-c
 - Closing review feedback completely: `/oss:resolve` reads live PR comments, deduplicates across sources, resolves conflicts semantically, and tags every fix so you can trace it
 - Shipping releases correctly: `oss:shepherd` enforces SemVer, writes the changelog, generates migration guides for breaking changes, and runs a readiness audit before any tag lands
 
-[Full documentation →](oss.md)
+[Full documentation →](cc_oss.md)
 
 ______________________________________________________________________
 
-### 🛠️ develop — validate-first implementation
+### 🛠️ CC_develop — validate-first implementation
 
 develop enforces a single discipline across the full implementation lifecycle: prove you understand the problem before you touch production code. Six structured workflows — plan, feature, fix, refactor, debug, review — each have explicit validation gates that prevent moving forward on shaky ground.
 
@@ -72,11 +72,11 @@ develop enforces a single discipline across the full implementation lifecycle: p
 - Refactoring without breakage: `/develop:refactor` audits coverage and locks in characterization tests before moving a single line
 - Fork workflows: pass `--upstream <owner/repo>` to `fix`, `debug`, or `feature` to fetch issue context from the original repo while your fix lands in the fork
 
-[Full documentation →](develop.md)
+[Full documentation →](cc_develop.md)
 
 ______________________________________________________________________
 
-### 🔬 research — structured ML improvement
+### 🔬 CC_research — structured ML improvement
 
 research turns the messy, iterative cycle of ML improvement into a structured pipeline. You start with evidence from the literature, write a machine-readable experiment spec, get a methodology review before spending any GPU time, and run an automated improvement loop that commits every change atomically and rolls back anything that regresses your target metric.
 
@@ -86,7 +86,7 @@ research turns the messy, iterative cycle of ML improvement into a structured pi
 - Catching flawed designs early: `/research:judge` reviews the experiment spec for methodology problems — in minutes, not after 20 GPU-hours
 - Automated improvement loops: `/research:run` proposes changes, commits them, measures the metric, and rolls back regressions without you watching
 
-[Full documentation →](research.md)
+[Full documentation →](cc_research.md)
 
 ______________________________________________________________________
 

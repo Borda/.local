@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "session": {
+    "slug": "brainstorm-tree-viewer",
+    "started_at": "2026-04-20T14:00:00Z",
+    "title": "Brainstorm Live Tree Viewer"
+  },
+  "session_status": "complete",
+  "tree": {
+    "children": [
+      {
+        "children": [],
+        "close_reason": null,
+        "core_idea": "One self-contained tree-viewer.html with embedded CSS and JS. No build step. Polls a JSON file path passed as URL param (?state=/path/to/tree.json). Renders the tree using nested <ul>/<li> with CSS indent. Branch detail panel is a <div> that slides in on click.",
+        "id": "b1",
+        "label": "Minimal single-file",
+        "merged_into_id": null,
+        "skill_lean": "Most deployable option. The Chrome file:// issue is a one-command solve (http.server). No infrastructure overhead justifies this approach for a session-time companion.",
+        "status": "open",
+        "tension": "Zero infra \u2014 open the file in any browser, it just works. No server, no npm install.",
+        "trades_away": "No animated SVG connectors. Chrome file:// origin blocks fetch() by default \u2014 requires python -m http.server as documented prerequisite."
+      },
+      {
+        "children": [],
+        "close_reason": "Out of scope \u2014 nested list sufficient; SVG complexity exceeds value for a read-only viewer at brainstorm session scale",
+        "core_idea": "Render the tree as an SVG diagram with proper nodes, curved connectors, color-coded by status. A tree-layout algorithm positions nodes automatically.",
+        "id": "b2",
+        "label": "SVG/Canvas tree layout",
+        "merged_into_id": null,
+        "skill_lean": "High visual payoff in theory, but brainstorm sessions rarely exceed 15 nodes. The math overhead is not justified by the readability gain at typical session scale.",
+        "status": "closed",
+        "tension": "At depth 3-4 with 15+ nodes, SVG trees are substantially more readable than nested lists.",
+        "trades_away": "150-200 lines of layout math. SVG text wrapping is painful with verbose branch names. Complexity wildly exceeds the read-only viewer use case."
+      },
+      {
+        "children": [],
+        "close_reason": null,
+        "core_idea": "Define the JSON state schema as the primary deliverable. Derive both the renderer and the agent write instructions from the schema. The schema is the contract; implementation follows.",
+        "id": "b3",
+        "label": "Schema-first design",
+        "merged_into_id": "b5",
+        "skill_lean": "Correct direction but incomplete on its own \u2014 the protocol (when to write, where to write) is inseparable from the schema. Merging with Branch 4 is the right call.",
+        "status": "merged",
+        "tension": "Schema-first thinking produces a stable interface that both sides (agent writer, browser reader) can implement independently.",
+        "trades_away": "Defers the question of when the agent writes and what triggers a write \u2014 timing belongs to the protocol, not the schema."
+      },
+      {
+        "children": [],
+        "close_reason": null,
+        "core_idea": "Design SKILL.md write-timing and launch protocol first; treat the browser HTML as a thin client that adapts to whatever the agent produces.",
+        "id": "b4",
+        "label": "Agent integration focus",
+        "merged_into_id": "b5",
+        "skill_lean": "Also correct but also incomplete. Schema and protocol are two sides of one contract. Merging with Branch 3 produces the right unified framing.",
+        "status": "merged",
+        "tension": "Agent-side design is the harder constraint \u2014 the browser can adapt, the agent cannot poll itself.",
+        "trades_away": "Schema shape left undefined until protocol is settled \u2014 risks renderer discovering breaking schema gaps late."
+      },
+      {
+        "children": [
+          {
+            "children": [],
+            "close_reason": "Nested JSON chosen \u2014 matches agent in-memory tree, no reconstruction needed in browser, full-rewrite cost negligible at session scale",
+            "core_idea": "Flat: each node carries a parent_id; browser reconstructs tree client-side. Nested: tree is recursive JSON objects, directly renderable without reconstruction.",
+            "id": "b5-1",
+            "label": "Schema shape \u2014 flat vs nested",
+            "merged_into_id": null,
+            "skill_lean": "Nested wins \u2014 matches the agent's in-memory tree, eliminates browser-side reconstruction logic, and the 'append-only' advantage of flat disappears when updates are full-overwrites anyway.",
+            "status": "closed",
+            "tension": "Flat is easier to append-only update (just push a node). Nested mirrors the agent's in-memory tree structure directly.",
+            "trades_away": "Nested requires full-rewrite on each update vs flat's append. At <50 nodes the rewrite cost is negligible."
+          },
+          {
+            "children": [],
+            "close_reason": "Per-operation chosen \u2014 save-only would make this a spec renderer, not a live session companion",
+            "core_idea": "Per-operation: agent writes JSON after every tree operation (deepen, close, merge, add, reopen). Save-only: agent writes JSON once at Step 4 when the markdown tree file is saved.",
+            "id": "b5-2",
+            "label": "Write timing \u2014 per-op vs save-only",
+            "merged_into_id": null,
+            "skill_lean": "Per-operation is the only design worth building. Save-only removes the entire value proposition of having a browser companion during a session.",
+            "status": "closed",
+            "tension": "Per-operation makes the viewer genuinely live \u2014 the browser updates as the tree grows. Save-only is simpler but degrades the viewer to a static spec reader.",
+            "trades_away": "Per-operation: a Write tool call in every branch of the tree ops loop. Save-only: simpler integration but defeats the live-companion purpose entirely."
+          },
+          {
+            "children": [
+              {
+                "children": [],
+                "close_reason": "Too ephemeral \u2014 lost on reboot, parallel session collision risk, no history",
+                "core_idea": "JSON at /tmp/brainstorm-active.json. Simple fixed path \u2014 no naming or slug management required. Always the same URL regardless of session.",
+                "id": "b5-3-1",
+                "label": "/tmp only",
+                "merged_into_id": null,
+                "skill_lean": "Tempting for its simplicity but fatally broken for parallel sessions. The collision issue alone disqualifies it.",
+                "status": "closed",
+                "tension": "Maximum simplicity. No session-scoped naming. One URL works for all sessions.",
+                "trades_away": "Lost on reboot. Parallel session collision \u2014 two concurrent brainstorm sessions overwrite each other's state. No session history after the tab is closed."
+              },
+              {
+                "children": [],
+                "close_reason": null,
+                "core_idea": "JSON at .plans/blueprint/brainstorm-<YYYYMMDD-HHMMSS>.json alongside the markdown tree file. Created at Step 1 with a session timestamp slug. Copied (not moved) to the topic slug at Step 4. Open browser tab keeps polling the original timestamp path \u2014 both files coexist after Step 4.",
+                "id": "b5-3-2",
+                "label": "Blueprint sidecar",
+                "merged_into_id": null,
+                "skill_lean": "Right design. The copy-not-move insight cleanly resolves the only real objection. Parallel sessions get unique paths for free via timestamps.",
+                "status": "resolved",
+                "tension": "Durable and discoverable. Timestamp slug solves parallel-session collision \u2014 each concurrent session writes to a unique path. Session history persists indefinitely as a durable record.",
+                "trades_away": "Slug name changes at Step 4 (timestamp \u2192 topic slug), so the printed URL at session start differs from the final file. Copy-not-move keeps the live polling tab stable \u2014 acceptable UX trade-off."
+              },
+              {
+                "children": [],
+                "close_reason": "Redundant with 5.3.2 blueprint sidecar \u2014 two-file management adds complexity with no benefit",
+                "core_idea": "Write to /tmp during the active session for low-latency reads, then copy to .plans/blueprint/ at Step 4 for durability.",
+                "id": "b5-3-3",
+                "label": "Dual-path \u2014 /tmp live + blueprint archive",
+                "merged_into_id": null,
+                "skill_lean": "Redundant. 5.3.2 already does everything this branch claims to add. Adding /tmp as an intermediate step introduces complexity for zero gain.",
+                "status": "closed",
+                "tension": "Combines the simplicity of /tmp with the durability of blueprint archive.",
+                "trades_away": "Two-file management with no actual benefit over 5.3.2. The blueprint sidecar already provides both live access and durability in one file."
+              }
+            ],
+            "close_reason": null,
+            "core_idea": "Three sub-questions: (1) where does the JSON file live during and after a session, (2) how does the browser get opened, (3) how does the agent signal session end. The 'where' question is answered by 5.3.2. The 'how opened' and 'session end' questions were deferred as open threads requiring a user-facing spec decision.",
+            "id": "b5-3",
+            "label": "Viewer lifecycle \u2014 launch, path, teardown",
+            "merged_into_id": null,
+            "skill_lean": "Blueprint sidecar (5.3.2) is the right design. The slug rename issue is solved cleanly by copy-not-move \u2014 both paths remain valid simultaneously.",
+            "status": "open",
+            "tension": "Durability vs simplicity. A fixed /tmp path is simple but ephemeral. A blueprint sidecar is durable but requires slug management at Step 4.",
+            "trades_away": "Blueprint sidecar: slug changes at Step 4 (timestamp slug \u2192 topic slug), so any open browser tab loses its polling target unless copy-not-move is used."
+          }
+        ],
+        "close_reason": null,
+        "core_idea": "Define the JSON state file schema and the SKILL.md write protocol as a single coherent contract. Schema specifies what fields exist; protocol specifies when the agent writes (after every tree operation) and where (blueprint sidecar). Both sides designed together so neither can diverge.",
+        "id": "b5",
+        "label": "Contract Design",
+        "merged_into_id": null,
+        "skill_lean": "Correct single design unit \u2014 emerged from merging Branches 3 and 4. Both endpoints defined together; no interface ambiguity.",
+        "status": "active",
+        "tension": "Schema without protocol = undead JSON nobody writes. Protocol without schema = undefined agent output. Designing them together is the only correct unit of work.",
+        "trades_away": "Defers renderer implementation details (Branch 1 specifics) until contract is locked. Slightly heavier upfront design work."
+      }
+    ],
+    "close_reason": null,
+    "core_idea": "Add a live browser-based tree viewer to the brainstorm skill. The agent writes a JSON state file during the session; the browser polls it and re-renders the tree automatically. Single HTML file lives in the brainstorm skill's scripts/ directory. Click any tree node to open a branch detail panel on the right side. Design constraints agreed in clarifying questions: file polling (not WebSocket/SSE), click-to-expand sidebar (not hover tooltip or always-visible panel), component lives inside plugins/cc_foundry/skills/brainstorm/scripts/.",
+    "id": "root",
+    "label": "Brainstorm Live Tree Viewer",
+    "merged_into_id": null,
+    "skill_lean": null,
+    "status": "open",
+    "tension": "ASCII tree output in the terminal becomes unreadable past depth 2 with 10+ nodes. A live browser companion solves this for active sessions and after-session review.",
+    "trades_away": null
+  },
+  "ui": {
+    "active_node_id": "b5-3-2",
+    "last_error": null
+  },
+  "updated_at": "2026-04-20T15:45:00Z"
+}

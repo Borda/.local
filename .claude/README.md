@@ -75,10 +75,10 @@ Re-run `/foundry:setup` after any plugin upgrade — rule symlinks point to vers
 
 ## 🔄 Distribution
 
-`plugins/foundry/` is **source of truth** for all foundry configuration. Claude Code plugin system natively exposes agents and skills; `/foundry:setup` symlinks rules and `TEAM_PROTOCOL.md` into `~/.claude/` so they load every session.
+`plugins/cc_foundry/` is **source of truth** for all foundry configuration. Claude Code plugin system natively exposes agents and skills; `/foundry:setup` symlinks rules and `TEAM_PROTOCOL.md` into `~/.claude/` so they load every session.
 
 ```text
-plugins/foundry/           ← source of truth
+plugins/cc_foundry/           ← source of truth
     rules/*.md             ←── symlinked ──→  ~/.claude/rules/*.md          (init: ln -sf)
     TEAM_PROTOCOL.md       ←── symlinked ──→  ~/.claude/TEAM_PROTOCOL.md    (init: ln -sf)
     agents/*.md            ← plugin system exposes as  foundry:<agent>

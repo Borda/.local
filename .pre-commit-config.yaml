@@ -133,28 +133,28 @@ repos:
       - id: check-tag-symmetry
         name: 🏷️ XML tag symmetry (agents/skills)
         language: system
-        entry: python3 plugins/foundry/bin/check_tag_symmetry.py
+        entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py
         files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
         types: [markdown]
 
       - id: check-orphaned-bin
         name: 🔗 orphaned bin/ scripts
         language: system
-        entry: python3 plugins/foundry/bin/check_orphaned_bin.py
+        entry: python3 plugins/cc_foundry/bin/check_orphaned_bin.py
         pass_filenames: false
         always_run: true
 
       - id: check-cli-flag-drift
         name: 🚩 SKILL.md flag drift vs argparse
         language: system
-        entry: python3 plugins/foundry/bin/check_cli_flag_drift.py
+        entry: python3 plugins/cc_foundry/bin/check_cli_flag_drift.py
         pass_filenames: false
         always_run: true
 
       - id: check-readme-drift
         name: 📄 README drift (version + bin/ refs)
         language: system
-        entry: python3 plugins/foundry/bin/check_readme_drift.py --scan-dir plugins
+        entry: python3 plugins/cc_foundry/bin/check_readme_drift.py --scan-dir plugins
         pass_filenames: false
         always_run: true
 
@@ -168,49 +168,49 @@ repos:
       - id: check-fence-symmetry
         name: 🚧 code fence symmetry
         language: system
-        entry: python3 plugins/foundry/bin/check_fence_symmetry.py
+        entry: python3 plugins/cc_foundry/bin/check_fence_symmetry.py
         files: ^plugins/.*\.md$
         types: [markdown]
 
       - id: check-routing-links
         name: 🧭 bin/ + computed-path reference integrity
         language: system
-        entry: python3 plugins/foundry/bin/check_routing_links.py
+        entry: python3 plugins/cc_foundry/bin/check_routing_links.py
         pass_filenames: false
         always_run: true
 
       - id: check-spawn-prompt-vars
         name: 🪧 unexpanded $VAR in spawn prompts
         language: system
-        entry: python3 plugins/foundry/bin/check_spawn_prompt_vars.py --scan-dir plugins
+        entry: python3 plugins/cc_foundry/bin/check_spawn_prompt_vars.py --scan-dir plugins
         pass_filenames: false
         always_run: true
 
       - id: check-mode-dispatch
         name: 🧵 mode dispatch integrity
         language: system
-        entry: python3 plugins/foundry/bin/check_mode_dispatch.py --scan-dir plugins
+        entry: python3 plugins/cc_foundry/bin/check_mode_dispatch.py --scan-dir plugins
         pass_filenames: false
         always_run: true
 
       - id: check-shared-drift
         name: 🔁 cross-plugin shared-file drift
         language: system
-        entry: python3 plugins/foundry/bin/propagate_shared.py
+        entry: python3 plugins/cc_foundry/bin/propagate_shared.py
         pass_filenames: false
         always_run: true
 
       - id: check-bash-persistence
         name: 🫙 shell var persistence across Bash blocks
         language: system
-        entry: python3 plugins/foundry/bin/check_bash_persistence.py --scan-dir plugins
+        entry: python3 plugins/cc_foundry/bin/check_bash_persistence.py --scan-dir plugins
         pass_filenames: false
         always_run: true
 
       - id: trim-plugin-tables
         name: ✂️ trim plugin table padding
         language: system
-        entry: python3 plugins/foundry/bin/trim_plugin_tables.py
+        entry: python3 plugins/cc_foundry/bin/trim_plugin_tables.py
         files: ^plugins/.*\.md$
         exclude: (?:^|/)README\.md$
         types: [markdown]

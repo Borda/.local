@@ -2,7 +2,7 @@
 
 MkDocs source for the [Borda's AI-Rig](https://borda.github.io/.local/) documentation site.
 
-Product pages (`foundry.md`, `oss.md`, `codex-rig.md`, etc.) are small snippet wrappers that include `plugins/*/README.md`. Edit the source READMEs for product content and the wrappers only for page metadata.
+Product pages (`cc_foundry.md`, `cc_oss.md`, `codex-rig.md`, etc.) are small snippet wrappers that include `plugins/*/README.md`. Edit the source READMEs for product content and the wrappers only for page metadata.
 
 ## Local build
 

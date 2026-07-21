@@ -6,7 +6,7 @@ const assert = require("node:assert");
 const fs = require("fs");
 const path = require("path");
 
-const HOOKS_DIR = path.join(__dirname, "..", "..", "plugins", "foundry", "hooks");
+const HOOKS_DIR = path.join(__dirname, "..", "..", "plugins", "cc_foundry", "hooks");
 const hooks = [
   "task-log.js",
   "commit-guard.js",

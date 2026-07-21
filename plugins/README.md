@@ -26,7 +26,7 @@ More trust boundaries to know:
 
 ### What is pre-approved (in `~/.claude/settings.json`)
 
-All entries merged from `plugins/foundry/.claude-plugin/permissions-allow.json` by `/foundry:setup`. Key entries for plugin execution:
+All entries merged from `plugins/cc_foundry/.claude-plugin/permissions-allow.json` by `/foundry:setup`. Key entries for plugin execution:
 
 | Entry                     | What it covers                                                   | Why                                                                                     |
 | ------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -68,8 +68,8 @@ Fallback exists so skills work from both installed cache and local dev tree, no 
 **Pattern A — Python scripts (`.py`) via subshell variable assignment:**
 
 ```bash
-_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000
-RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "skill" ".reports" 2>/dev/null)         # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "skill" ".reports" 2>/dev/null)         # timeout: 5000
 ```
 
 `VAR=$(...)` form = shell variable assignment — Claude Code permission matcher treats it as shell builtin construct. Inner script not separately matched against allow list. **Note**: observed behavior, not documented guarantee; Claude Code update could change it. ~48 call sites across all plugin SKILL.md files depend on this (see Known Limitations).
@@ -78,10 +78,10 @@ RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "
 
 ```bash
 # Side-effect call (writes a file, prints findings) — direct invocation
-python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_tag_symmetry.py" .claude/agents/*.md  # timeout: 10000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_tag_symmetry.py" .claude/agents/*.md  # timeout: 10000
 
 # Value-producing call — subshell
-MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # timeout: 5000
+MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # timeout: 5000
 ```
 
 `Bash(python:*)` in allow list — both forms run without prompts.
@@ -121,7 +121,7 @@ ______________________________________________________________________
 - **Faster via direct executable call** — one tested executable beats model reasoning through complex inline logic; extract to bin/ when alternative is model-interpreted inline bash.
 - **Reusability** — script used by 2+ skills or agents earns `Reuse +2` in extraction score, must stay executable; shared logic belongs in `bin/`, not duplicated inline across multiple `.md` files.
 
-See [bin/ Authoring Guide](foundry/skills/_shared/bin-authoring-guide.md) for full extraction gate, scoring, prose-over-code rules.
+See [bin/ Authoring Guide](cc_foundry/skills/_shared/bin-authoring-guide.md) for full extraction gate, scoring, prose-over-code rules.
 
 ______________________________________________________________________
 
@@ -156,10 +156,10 @@ ______________________________________________________________________
 
 ## Settings Sync
 
-`plugins/foundry/.claude-plugin/permissions-allow.json` = canonical allow list for all entries foundry needs. `/foundry:setup` merges into `~/.claude/settings.json` on install. Merge **additive** — entries never removed automatically. Remove entry from `permissions-allow.json` → manually remove from `~/.claude/settings.json` too.
+`plugins/cc_foundry/.claude-plugin/permissions-allow.json` = canonical allow list for all entries foundry needs. `/foundry:setup` merges into `~/.claude/settings.json` on install. Merge **additive** — entries never removed automatically. Remove entry from `permissions-allow.json` → manually remove from `~/.claude/settings.json` too.
 
 Adding new allow entry:
 
-1. Edit `plugins/foundry/.claude-plugin/permissions-allow.json`
+1. Edit `plugins/cc_foundry/.claude-plugin/permissions-allow.json`
 2. Run `/foundry:manage add perm "Bash(X:*)" "description" "use case"` OR manually update `~/.claude/settings.json` + `~/.claude/permissions-guide.md`
 3. Re-run `/foundry:setup` to sync symlinks and verify

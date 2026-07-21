@@ -76,9 +76,9 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Foundry: foundry.md
-  - OSS: oss.md
-  - Develop: develop.md
-  - Research: research.md
+  - CC_foundry: cc_foundry.md
+  - CC_oss: cc_oss.md
+  - CC_develop: cc_develop.md
+  - CC_research: cc_research.md
   - Codemap: codemap.md
   - Codex Rig: codex-rig.md

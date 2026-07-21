@@ -379,7 +379,7 @@ Without the plugin: pre-pass review is skipped gracefully (skills check with `cl
 
 ### Token Savings (RTK)
 
-[RTK](https://github.com/rtk-ai/rtk) is an optional CLI proxy that compresses Bash output (git, pytest, build tools) before it reaches Claude — 60–99% token savings with no workflow changes. A `PreToolUse` hook (`plugins/foundry/hooks/rtk-rewrite.js`) transparently rewrites supported commands across Claude skills. Codex repository policy routes eligible commands through RTK explicitly because current Codex hooks cannot rewrite a command in place.
+[RTK](https://github.com/rtk-ai/rtk) is an optional CLI proxy that compresses Bash output (git, pytest, build tools) before it reaches Claude — 60–99% token savings with no workflow changes. A `PreToolUse` hook (`plugins/cc_foundry/hooks/rtk-rewrite.js`) transparently rewrites supported commands across Claude skills. Codex repository policy routes eligible commands through RTK explicitly because current Codex hooks cannot rewrite a command in place.
 
 → Install instructions: [rtk-ai/rtk](https://github.com/rtk-ai/rtk)
 
@@ -448,14 +448,14 @@ AI-Rig/
 │   └── workflows/          # CI and docs workflows
 ├── .claude/                # Claude Code source of truth
 │   ├── README.md           # full reference: restore, skills, rules, hooks, architecture (real file)
-│   ├── CLAUDE.md           # workflow rules and core principles (symlink → plugins/foundry/)
-│   ├── TEAM_PROTOCOL.md    # AgentSpeak v2 inter-agent protocol (symlink → plugins/foundry/)
-│   ├── permissions-guide.md # allow-entry reference (symlink → plugins/foundry/)
+│   ├── CLAUDE.md           # workflow rules and core principles (symlink → plugins/cc_foundry/)
+│   ├── TEAM_PROTOCOL.md    # AgentSpeak v2 inter-agent protocol (symlink → plugins/cc_foundry/)
+│   ├── permissions-guide.md # allow-entry reference (symlink → plugins/cc_foundry/)
 │   ├── settings.json       # deny list + project preferences (real file)
-│   ├── agents/             # symlinks → plugins/foundry/agents/
-│   ├── skills/             # symlinks → plugins/foundry/skills/
-│   ├── rules/              # per-topic coding and config standards (symlinks → plugins/foundry/rules/)
-│   └── hooks/              # symlinks → plugins/foundry/hooks/
+│   ├── agents/             # symlinks → plugins/cc_foundry/agents/
+│   ├── skills/             # symlinks → plugins/cc_foundry/skills/
+│   ├── rules/              # per-topic coding and config standards (symlinks → plugins/cc_foundry/rules/)
+│   └── hooks/              # symlinks → plugins/cc_foundry/hooks/
 ├── .mcp.json               # MCP server definitions
 ├── .codex/
 │   └── config.toml         # project-local Codex runtime defaults
@@ -487,7 +487,7 @@ Re-run `/foundry:setup` only if permissions, `enabledPlugins`, or `advisorModel`
 
 ```bash
 git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
-claude --plugin-dir ./Borda-AI-Rig/plugins/foundry
+claude --plugin-dir ./Borda-AI-Rig/plugins/cc_foundry
 ```
 
 ### Uninstall

@@ -7,22 +7,22 @@
     {
       "description": "Production-grade Claude Code config: specialist agents, slash-command skills, and event-driven hooks for Python/ML OSS development",
       "name": "foundry",
-      "source": "./plugins/foundry"
+      "source": "./plugins/cc_foundry"
     },
     {
       "description": "OSS maintenance skills: analyse, resolve, review, release",
       "name": "oss",
-      "source": "./plugins/oss"
+      "source": "./plugins/cc_oss"
     },
     {
       "description": "Implementation workflow skills: feature, fix, refactor, plan, debug",
       "name": "develop",
-      "source": "./plugins/develop"
+      "source": "./plugins/cc_develop"
     },
     {
       "description": "ML/perf investigation skills: topic, plan, judge, run, sweep",
       "name": "research",
-      "source": "./plugins/research"
+      "source": "./plugins/cc_research"
     },
     {
       "description": "Codebase structural index \u2014 scan Python projects, query the import graph for blast-radius and coupling",

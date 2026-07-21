@@ -1,6 +1,6 @@
 """Pytest path fixture for Codex Rig executable modules.
 
-Mirrors ``plugins/develop/conftest.py``: adds directories containing executable
+Mirrors ``plugins/cc_develop/conftest.py``: adds directories containing executable
 modules to ``sys.path`` so ``--doctest-modules`` can resolve sibling imports.
 """
 

@@ -1,0 +1,262 @@
+<!-- Team mode include: loaded by research:run when --team flag is set -->
+
+<!-- Implements one mode extension: Team Mode (--team flag, Phases A–D) -->
+
+<!-- Triggered from Step R5 of Default Mode when --team is active -->
+
+## Team Mode (`--team`)
+
+**When to trigger**: goal spans multiple optimization axes (e.g., "improve training speed" = model architecture + data pipeline + compute efficiency), OR user passes `--team`.
+
+**Architecture**: two-phase pipeline — parallel hypothesis generation (read-only, no code changes) then sequential implementation on live codebase ordered minimal→largest change scope. No cross-axis conflicts: no worktrees, no cherry-picking; each implementation step sees cumulative state of all prior kept changes.
+
+**Team Mode directory layout**:
+
+- `<RUN_DIR>` (`.experiments/run-team-<timestamp>/`, from `make_run_dir "run-team"`) — hypothesis artifacts: `hypotheses-<axis-slug>.jsonl`, `hypothesis-analyst-<axis-slug>.md`, `team-queue.jsonl`, `team-results.jsonl`
+- `.experiments/state/<run-id>/` — standard iteration artifacts: `ideation-team-<M>.md`, `diary.md`, `experiments.jsonl`
+
+**Workflow:**
+
+### Phase A: Parallel Hypothesis Generation (read-only)
+
+1. Lead completes Steps R1–R4 (config, preconditions, baseline) solo.
+
+2. Lead identifies 2–3 distinct optimization axes from goal + codebase analysis. Example for "reduce training time": model architecture · data pipeline · compute efficiency.
+
+3. Lead creates run output directory:
+
+   ```bash
+   RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "run-team" ".experiments")  # timeout: 5000
+   ```
+
+   Store `RUN_DIR` as run-level variable — do not re-evaluate at later phases. All `<RUN_DIR>` refs in Phases B, C, D use same value.
+
+   Write `phase: "A"` to `state.json` immediately after creating `RUN_DIR` — enables Phase A resume:
+
+   ```json
+   {"team_mode": {"phase": "A", "run_dir": "<RUN_DIR>"}}
+   ```
+
+4. Spawn 2–3 hypothesis agents in parallel (reasoning agents at `opus` per CLAUDE.md §Agent Teams). **No worktrees** — read-only analysis only. Each agent gets one axis + matching specialist type (same `agent_strategy` mapping from SKILL.md constants).
+
+   Each hypothesis agent's spawn prompt:
+
+   ```markdown
+   Read ~/.claude/TEAM_PROTOCOL.md and use AgentSpeak v2.
+   You are a hypothesis analyst. Your axis: <axis description>.
+   Agent type: <agent type>.
+   READ-ONLY: do NOT modify source files. You may only write to your designated output files.
+
+   Analyze the codebase through the lens of your axis. Generate 3–5 concrete, implementable hypotheses.
+
+   Baseline metric: <metric_cmd key> = <baseline>. Direction: <higher|lower>.
+   Scope files: <scope_files>.
+   Run clarification: <clarification_prompt>  ← omit this line entirely if clarification_prompt is null
+   Program constraints: read <program_file> — especially ## Notes, ## Config.
+
+   For each hypothesis, produce a JSON object with ALL these fields:
+   - hypothesis: concrete description of the change
+   - rationale: why this should improve the metric
+   - confidence: float 0–1
+   - expected_delta: expected metric change (e.g. "+1–3% val_loss")
+   - priority: int (1 = highest within this axis)
+   - source: "team"
+   - axis: "<axis name>"
+   - agent_type: "<your agent type>"
+   - change_scope: "small" | "medium" | "large"
+   - feasible: true | false
+   - blocker: null | "<blocker description if feasible=false>"
+   - codebase_mapping: "<files, classes, or functions to change>"
+
+   change_scope guide:
+   - small: 1–2 files, localized change (parameter tweak, single-function edit)
+   - medium: 3–5 files, cross-cutting but bounded (module refactor, data path change)
+   - large: 6+ files or architectural restructuring
+
+   Write all hypotheses as JSONL (one JSON object per line) to `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`.
+   Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/hypothesis-analyst-<axis-slug>.md` using the Write tool.
+   Return ONLY: {"status":"done","axis":"<axis>","count":N,"file":"<jsonl path>","confidence":0.N}
+   Call TaskUpdate(in_progress) when starting; TaskUpdate(completed) when done.
+   ```
+
+**Synchronous spawn note**: hypothesis agents spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. After Agent() calls return, check each `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`; if missing or empty, that agent timed out — read any partial output, surface with ⏱ in Phase D report, never silently omit.
+
+5. Collect compact JSON envelopes from all hypothesis agents. Do not read `.md` analysis files into lead context — inputs to Phase B queue assembly only.
+
+   **`--researcher` / `--architect` interaction**: if R0 pre-phase ran before Team Mode, R0 hypotheses in `<RUN_DIR>/hypotheses.jsonl` included in Phase B queue assembly alongside axis hypotheses. R0 entries lacking `axis`/`agent_type`/`change_scope` backfilled: `axis: "cross-cutting"`, `agent_type` inferred from `source` field, `change_scope` inferred from `codebase_mapping` length (1–2 targets = small, 3–5 = medium, 6+ = large).
+
+### Phase B: Queue Assembly + User Gate
+
+1. Read all `<RUN_DIR>/hypotheses-*.jsonl` files (and `<RUN_DIR>/hypotheses.jsonl` if present from R0).
+
+2. Filter: exclude `feasible: false` (retain in file for audit). Move `confidence < 0.7` entries to queue end.
+
+3. Sort combined queue:
+
+   - Validate `change_scope` before sorting: must be one of `{small, medium, large}`; other value → warn (`⚠ Unknown change_scope '<value>' on hypothesis '<hypothesis>' — defaulting to medium`) and set to `medium`.
+   - Primary: `change_scope` ascending — `small` first, then `medium`, then `large`
+   - Secondary: `expected_delta` descending within scope tier (parse delta string to extract numeric midpoint, e.g., "+1–3%" → 2.0; unparsable → treat as 0, sort to end of scope tier)
+   - Tertiary (tiebreaker): `confidence` descending
+
+4. Assign sequential `queue_position` (1-indexed) in sorted order.
+
+5. Print queue as formatted table:
+
+   ```text
+   # · Hypothesis · Axis · Scope · Expected Delta · Conf. · Agent
+   1 · Cache embeddings in forward pass · data pipeline · small · +2-4% speed · 0.90 · perf-opt
+   2 · Fuse batch-norm + conv layers · model architecture · small · +1-2% speed · 0.85 · research:scientist
+   ... · ... · ... · ... · ... · ... · ...
+
+   Total: N hypotheses (N small, N medium, N large) across N axes
+   ```
+
+Before user gate, update `state.json` `team_mode.phase` to `"B"` — enables resume re-display of queue if interrupted:
+
+```json
+{"team_mode": {"phase": "B", "run_dir": "<RUN_DIR>"}}
+```
+
+6. Present user gate via `AskUserQuestion`:
+
+   ```text
+   Proceed with implementation?
+     (a) Run all N hypotheses in order shown
+     (b) Select specific hypotheses (enter numbers, e.g. "1,3,5-7")
+     (c) Abort
+   ```
+
+   - (a) proceeds with full queue
+   - (b) filters to selected entries, preserving sort order
+   - (c) stops; write partial report noting hypotheses generated but not tested
+
+7. Write final ordered queue to `<RUN_DIR>/team-queue.jsonl` (one JSON object per line, execution order). Add `team_mode` to `state.json`:
+
+   ```text
+   {
+     "team_mode": {
+       "axes": ["<axis-1>", "<axis-2>"],
+       "phase": "C",
+       "queue_file": "<RUN_DIR>/team-queue.jsonl",
+       "current_hypothesis": 0,
+       "total_hypotheses": N
+     }
+   }
+   ```
+
+### Phase C: Sequential Implementation + Guard
+
+For each hypothesis in `<RUN_DIR>/team-queue.jsonl` (sorted order, 1-indexed as M of N):
+
+1. **Print header**: `[→ Team Hyp M/N · axis: <axis> · scope: <change_scope> · "<hypothesis short>"]`
+
+2. **Spawn specialist agent** matching `agent_type` from hypothesis. **On real codebase** — no worktree. Spawn prompt follows R5 Phase 2 ideation template with hypothesis pre-specified:
+
+   ```markdown
+   Goal: <goal>
+   Run clarification: <clarification_prompt>  ← omit if null
+   Current metric: <metric_cmd key> = <current_value> (baseline: <baseline>, direction: <higher|lower>)
+   Scope files: <scope_files>
+   Program constraints: read <program_file>
+
+   Focus this iteration on implementing this hypothesis:
+   "<hypothesis text>"
+   Rationale: <rationale>
+   Expected change scope: <change_scope>
+   Target files: <codebase_mapping>
+
+   Propose and implement ONE atomic change. Write analysis to
+   `.experiments/state/<run-id>/ideation-team-<M>.md` using the Write tool.
+   Return ONLY: {"description":"...","files_modified":[...],"scripts":[],"confidence":0.N}
+   ```
+
+3. **Run R5 Phases 3–7a identically** (verify changed files → commit → run metric → run guard → keep/rework/rollback → write diary entry). Phase 8 writes to `experiments.jsonl` and `state.json` as in standard mode; Phase 9 progress checks apply as in standard mode (stuck detection, diminishing returns, context compaction). Phase C does not duplicate this logic — uses same per-phase steps with hypothesis-driven ideation output from step 2.
+
+4. **Log outcome** to `<RUN_DIR>/team-results.jsonl` (append, one line per hypothesis):
+
+   ```json
+   {
+     "queue_position": 1,
+     "hypothesis": "<text>",
+     "axis": "<axis>",
+     "agent_type": "<agent>",
+     "change_scope": "<scope>",
+     "metric_before": 0.0,
+     "metric_after": 0.0,
+     "delta_pct": 0.0,
+     "status": "kept|reverted|rework|no-op|hook-blocked|timeout",
+     "commit": "<sha or null>",
+     "timestamp": "<ISO>"
+   }
+   ```
+
+5. **If kept**: update running current metric value for next hypothesis. Each subsequent hypothesis sees cumulative state of all prior kept changes.
+
+6. Update `state.json` `team_mode.current_hypothesis` after each hypothesis (enables resume).
+
+7. `--codex`, `--colab`, `--journal` flags apply identically to standard R5.
+
+### Phase D: Consolidated Report
+
+After all hypotheses processed (or user stops early with Ctrl-C / user abort):
+
+1. Read `<RUN_DIR>/team-results.jsonl`.
+
+2. Write full report to `.reports/research/run-team-<branch>-<YYYY-MM-DD>.md`:
+
+   ```bash
+   mkdir -p .reports/research  # timeout: 3000
+   ```
+
+   ```markdown
+   ## Team Run: <goal>
+
+   **Run ID**: <run-id>
+   **Date**: <date>
+   **Axes**: <comma-separated list>
+   **Hypotheses tested**: <kept> kept · <reverted> reverted · <other> other (of <total>)
+   **Baseline**: <metric> = <baseline>
+   **Final**: <metric> = <final> (<total delta>%)
+
+   ### Per-Hypothesis Results
+
+   | #  | Hypothesis            | Axis    | Scope  | Δ%     | Status   | Commit |
+   |----|-----------------------|---------|--------|--------|----------|--------|
+   | 1  | Cache embeddings …    | data    | small  | +2.1%  | kept     | abc123 |
+
+   ### Per-Axis Summary
+
+   | Axis               | Tested | Kept | Best Δ% | Cumulative Δ% |
+   |--------------------|--------|------|---------|----------------|
+   | data pipeline      | 3      | 2    | +2.1%   | +2.9%          |
+
+   ### Summary
+   [2–3 sentences on what strategies worked, cross-axis interactions observed]
+
+   ### Recommended Follow-ups
+   - [next action if metric goal not fully reached]
+   ```
+
+3. Print compact terminal summary:
+
+   ```text
+   ---
+   Team Run — <goal>
+   Hypotheses tested: <total>  Kept: <kept>  Reverted: <reverted>
+   Axes:     <comma-separated list>
+   Baseline: <metric_key> = <baseline>
+   Final:    <metric_key> = <final> (<total delta>% improvement)
+   → saved to .reports/research/run-team-<branch>-<date>.md
+   ---
+   ```
+
+4. No teammates to shut down — hypothesis agents completed in Phase A; Phase C implementation agents are one-shot spawns.
+
+**CLAUDE.md §6**: Phase A health monitoring described above (after step 4). Phase C implementation agents = standard single-iteration spawns — same timeouts as R5.
+
+**Resume support**: `resume` mode reads `state.json.team_mode` to determine phase:
+
+- `phase: "A"` — re-run Phase A from scratch (read-only, cheap to repeat)
+- `phase: "B"` — re-display queue, re-prompt user gate
+- `phase: "C"` — resume from `current_hypothesis + 1` (completed entries already in `team-results.jsonl`)
+- `phase: "D"` — re-generate report
