@@ -107,7 +107,7 @@ reducing tool call count, elapsed time, and context consumption.
 ## Requirements
 
   - claude CLI on PATH (uses Claude Code subscription — no API key)
-  - pip install -r benchmarks/requirements.txt  (tiktoken pandas tabulate rich tqdm semble)
+  - pip install --group pyproject.toml:bench  (deps in pyproject [dependency-groups] bench)
   - uv add semble  (alternative: uv add semble>=0.1.0)
   - Pre-built codemap index (see step 1 above)
 

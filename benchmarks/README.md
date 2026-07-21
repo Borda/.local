@@ -34,7 +34,6 @@ Run **Query** first — validates the index before spending LLM tokens on agenti
 | `suites/tasks-readcrop.json`   | 6 read-crop tasks (RC-01–RC-06) — symbol-contract extraction; scored by keyword recall; headline metric is `tool_result_tokens` (codemap `symbol` extraction vs whole-file Read)                          |
 | `suites/tasks-fix-single.json` | 4 fix-single tasks (FS-01–FS-04) — single-file bug fix with archive/restore isolation; scored by diff keyword recall (`erec`)                                                                             |
 | `suites/tasks-fix-multi.json`  | 3 fix-multicaller tasks (FM-01–FM-03) — signature change + caller update across files; codemap `fn-rdeps` finds all callers before editing; scored by diff keyword recall (`erec`) + file recall (`rrec`) |
-| `requirements.txt`             | Python dependencies for all benchmarks                                                                                                                                                                    |
 | `results/`                     | JSON snapshots and markdown reports from past runs                                                                                                                                                        |
 
 </details>
@@ -92,8 +91,8 @@ Runs the same 16 import-graph tasks under four arms:
 ### Quick start
 
 ```bash
-# 1. Install deps
-pip install -r benchmarks/requirements.txt
+# 1. Install deps (source of truth: pyproject [dependency-groups] bench)
+pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 
 # 2. Build codemap index once (excluded from benchmark timing)
 python plugins/codemap/bin/scan-index --root /path/to/repo
@@ -216,8 +215,8 @@ Two arms run the same tasks:
 ### Quick start
 
 ```bash
-# 1. Install deps
-pip install -r benchmarks/requirements.txt
+# 1. Install deps (source of truth: pyproject [dependency-groups] bench)
+pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 
 # 2. Build index once
 python plugins/codemap/bin/scan-index --root ./<repo-dir>

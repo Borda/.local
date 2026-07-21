@@ -407,7 +407,7 @@ def path_to_module(path: str, repo_root: str) -> str | None:
         >>> path_to_module("/repo/README.md", "/repo") is None
         True
     """
-    rel = os.path.relpath(path, repo_root)
+    rel = os.path.relpath(path, repo_root).replace(os.sep, "/")
     if rel.startswith("src/"):
         rel = rel[4:]
     if not rel.endswith(".py"):
@@ -491,7 +491,7 @@ def cold_greps(repo_path: Path, *cmds: list[str]) -> int:
         Total number of commands executed (always ``len(cmds)``).
 
     Examples:
-        >>> cold_greps(Path("/tmp"), ["echo", "a"], ["echo", "b"])
+        >>> cold_greps(Path("."), ["echo", "a"], ["echo", "b"])
         2
     """
     counter = CallCounter()
@@ -795,7 +795,7 @@ def _file_base_package(file_path: Path, repo_root: Path) -> str:
         Dotted name of the directory containing the file (empty string when the
         file sits at the repository root or under a bare ``src/`` layout root).
     """
-    rel = os.path.relpath(str(file_path), str(repo_root))
+    rel = os.path.relpath(str(file_path), str(repo_root)).replace(os.sep, "/")
     if rel.startswith("src/"):
         rel = rel[4:]
     directory = os.path.dirname(rel)

@@ -40,7 +40,7 @@ Secondary:
 
   - claude CLI on PATH
   - Pre-built codemap index in .cache/codemap/<proj>.json or .cache/scan/<proj>.json
-  - pip install -r benchmarks/requirements.txt
+  - pip install --group pyproject.toml:bench
 """
 
 from __future__ import annotations
@@ -941,6 +941,11 @@ _CONTAMINATION_MARKERS: tuple[str, ...] = ("scan-query", "codemap/bin", ".cache/
 def _is_contaminating_access(text: str) -> bool:
     """Return True when *text* touches the codemap index or binary (review H-2).
 
+    Backslash path separators are normalised to forward slashes before matching, so a
+    Windows-style ``.cache\\codemap\\proj.json`` path — how a real Read ``file_path``
+    or Bash argument reports it on Windows — still matches the forward-slash
+    :data:`_CONTAMINATION_MARKERS`.
+
     Args:
         text: A full Bash command string or a Read ``file_path`` (untruncated).
 
@@ -953,7 +958,7 @@ def _is_contaminating_access(text: str) -> bool:
         >>> _is_contaminating_access("grep -rn Trainer src/")
         False
     """
-    return any(marker in text for marker in _CONTAMINATION_MARKERS)
+    return any(marker in text.replace("\\", "/") for marker in _CONTAMINATION_MARKERS)
 
 
 # Subcommands recognised by scan-query (mirrors the _CODEMAP_TOOLS help block).

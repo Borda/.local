@@ -49,7 +49,9 @@ out/
 
 # Benchmarks and logs
 benchmarks/results/
-pytorch-lightning-master/
+
+# Sandbox: external repos cloned for codemap debugging (never committed)
+.sandbox/
 
 # Documentation build artifacts
 site/

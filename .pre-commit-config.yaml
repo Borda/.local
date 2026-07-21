@@ -232,3 +232,17 @@ repos:
       - id: gitlint
         name: ✅ gitlint
         stages: [commit-msg]
+
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: v2.25.3
+    hooks:
+      - id: pyproject-fmt
+        name: 📐 pyproject-fmt
+        additional_dependencies:
+          - "tomli>=2.0.1"
+
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.25
+    hooks:
+      - id: validate-pyproject
+        name: 🔍 validate-pyproject

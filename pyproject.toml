@@ -1,29 +1,60 @@
-[tool.pytest.ini_options]
-testpaths = ["plugins"]
-addopts = [
-    "--import-mode=importlib",
-    "--color=yes",
-    "--doctest-modules",
-    "--cov=plugins/codemap/bin",
-    "--cov=plugins/cc_develop/bin",
-    "--cov=plugins/cc_foundry/bin",
-    "--cov=plugins/cc_oss/bin",
-    "--cov=plugins/cc_research/bin",
-    "--cov-report=term-missing",
-    "--cov-report=html:.reports/coverage",
+[project]
+name = "ai-rig"
+version = "0"
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
-filterwarnings = [
-    "ignore::coverage.exceptions.CoverageWarning",
+
+# Dev-only tooling (PEP 735). Not project dependencies. uv used in CI; locally use plain python/pytest.
+[dependency-groups]
+dev = [ "ruff", { include-group = "docs" }, { include-group = "test" } ]
+# Test tooling + benchmark runtime deps (benchmark tests import the run-codemap scripts).
+test = [ "pytest", "pytest-cov", "scipy", { include-group = "bench" } ]
+# MkDocs site build (source of truth; used by the docs workflow).
+docs = [
+  "mkdocs-callouts>=1.13",
+  "mkdocs-git-revision-date-localized-plugin>=1.2",
+  "mkdocs-material[imaging]>=9.5",
+  "pymdown-extensions>=10.21.2",
 ]
-markers = [
-    "integration: marks tests that require external binaries, network access, or large repo checkouts",
-]
+# Benchmark runtime deps (source of truth; run: uv sync --only-group bench).
+bench = [ "anthropic>=0.40", "fire>=0.6", "pandas>=2", "rich>=13", "semble>=0.1", "tabulate>=0.9", "tiktoken>=0.7" ]
+
+# No runtime dependencies — this repo ships Claude Code plugins, not a package.
+[tool.uv]
+package = false  # env anchor only; never build/install the root as a package
 
 [tool.ruff]
 line-length = 120
 extend-exclude = [
-    ".experiments/",  # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
+  ".experiments/", # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
 ]
+format = {}
 
-[tool.ruff.format]
-# inherits line-length from [tool.ruff]
+[tool.pytest]
+ini_options.testpaths = [ "benchmarks", "plugins" ]
+ini_options.norecursedirs = [ "*.egg", ".*", "build", "dist", "node_modules" ]
+ini_options.addopts = [
+  "--import-mode=importlib",
+  "--color=yes",
+  "--doctest-modules",
+  "--cov=plugins/codemap/bin",
+  "--cov=plugins/cc_develop/bin",
+  "--cov=plugins/cc_foundry/bin",
+  "--cov=plugins/cc_oss/bin",
+  "--cov=plugins/cc_research/bin",
+  "--cov-report=term-missing",
+  "--cov-report=html:.reports/coverage",
+]
+ini_options.markers = [
+  "integration: marks tests that require external binaries, network access, or large repo checkouts",
+]
+ini_options.filterwarnings = [
+  "ignore::coverage.exceptions.CoverageWarning",
+]

@@ -74,6 +74,8 @@ def scan_query_binary() -> Path:
     Returns:
         Absolute path to the scan-query executable.
     """
+    if sys.platform == "win32":
+        pytest.skip("scan-query is a POSIX shebang script; not directly executable on Windows")
     binary = REPO_ROOT / "plugins" / "codemap" / "bin" / "scan-query"
     if not binary.exists():
         pytest.skip(f"scan-query binary not found at {binary}")
@@ -87,6 +89,8 @@ def scan_index_binary() -> Path:
     Returns:
         Absolute path to the scan-index executable.
     """
+    if sys.platform == "win32":
+        pytest.skip("scan-index is a POSIX shebang script; not directly executable on Windows")
     binary = REPO_ROOT / "plugins" / "codemap" / "bin" / "scan-index"
     if not binary.exists():
         pytest.skip(f"scan-index binary not found at {binary}")

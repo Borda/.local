@@ -71,7 +71,8 @@ class TestDiGrTaskSchema:
     """Schema invariants for the new DI/GR tasks in tasks-bench.json."""
 
     @pytest.fixture(scope="class")
-    def tasks(self) -> list[dict]:
+    @staticmethod
+    def tasks() -> list[dict]:
         return json.loads(SUITE.read_text())["tasks"]
 
     def test_suite_is_valid_json_object(self) -> None:

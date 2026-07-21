@@ -155,6 +155,24 @@ def _session_marker(repo: Path) -> Path:
     return repo / ".cache" / "codemap" / "current-session"
 
 
+def _await_marker(marker: Path, timeout_s: float = 8.0) -> bool:
+    """Poll until *marker* appears or *timeout_s* elapses; return whether it appeared.
+
+    The stale-index refresh is a detached, fire-and-forget spawn, so the stub's marker
+    write races the assertion and must be awaited. The budget is generous because on
+    Windows the stub runs through a fresh ``python`` interpreter whose cold start (a
+    new, Defender-scanned ``CreateProcess``) can take several seconds under CI load —
+    far longer than the near-instant POSIX ``/bin/sh`` stub. Returns as soon as the
+    marker exists, so a fast platform pays only the real spawn latency, not the ceiling.
+    """
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if marker.exists():
+            return True
+        time.sleep(0.05)
+    return marker.exists()
+
+
 def _run_inject_with_event(
     repo: Path,
     idx_dir: Path,
@@ -301,12 +319,8 @@ class TestInjectPreambleRefreshLock:
         assert result.returncode == 0, result.stderr
         assert "stale" in result.stdout
         assert "refresh started" in result.stdout
-        # Detached child may lag; poll briefly for the spawn marker.
-        for _ in range(50):
-            if marker.exists():
-                break
-            time.sleep(0.02)
-        assert marker.exists(), "scan-index was not spawned for a stale index"
+        # Detached child may lag; await the spawn marker (Windows python cold-start is slow).
+        assert _await_marker(marker), "scan-index was not spawned for a stale index"
         assert _lock_file(tmpdir, proj).exists(), "lock file not written on spawn"
 
     def test_fresh_lock_blocks_second_spawn(self, tmp_path: Path) -> None:
@@ -344,11 +358,7 @@ class TestInjectPreambleRefreshLock:
 
         assert result.returncode == 0, result.stderr
         assert "refresh started" in result.stdout
-        for _ in range(50):
-            if marker.exists():
-                break
-            time.sleep(0.02)
-        assert marker.exists(), "a stale lock must be taken over and the scan spawned"
+        assert _await_marker(marker), "a stale lock must be taken over and the scan spawned"
 
     def test_corrupted_lock_treated_as_stale(self, tmp_path: Path) -> None:
         """CORRUPTED LOCK: a non-numeric lock is NaN-aged → treated as stale, taken over, one spawn.
@@ -367,11 +377,7 @@ class TestInjectPreambleRefreshLock:
 
         assert result.returncode == 0, result.stderr
         assert "refresh started" in result.stdout
-        for _ in range(50):
-            if marker.exists():
-                break
-            time.sleep(0.02)
-        assert marker.exists(), "a corrupted lock must be treated as stale and taken over"
+        assert _await_marker(marker), "a corrupted lock must be treated as stale and taken over"
 
     def test_missing_scan_bin_releases_lock_no_spawn(self, tmp_path: Path) -> None:
         """NO-SCANBIN LOCK RELEASE: no scan-index present → lock unlinked, no spawn (later retry)."""

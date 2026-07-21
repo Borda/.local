@@ -1177,10 +1177,13 @@ class TestContaminationDetection:
             ("less .cache/scan/x.json", True),
             ("python3 plugins/codemap/bin/scan-query symbol X", True),
             ("grep -rn Trainer src/", False),
+            # Windows backslash separators must still match the forward-slash markers.
+            (r"C:\repo\.cache\codemap\proj.json", True),
+            (r"type C:\repo\.cache\scan\proj.json", True),
         ],
     )
     def test_is_contaminating_access(self, script_run_bench: Any, text: str, expected: bool) -> None:
-        """Full-string index/binary access is detected; ordinary grep is not."""
+        """Full-string index/binary access is detected on POSIX and Windows paths; ordinary grep is not."""
         assert script_run_bench._is_contaminating_access(text) is expected
 
     def test_plain_arm_index_read_flags_contamination(self, script_run_bench: Any, tmp_path: Path) -> None:

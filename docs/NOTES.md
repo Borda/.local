@@ -7,7 +7,7 @@ Product pages (`cc_foundry.md`, `cc_oss.md`, `codex-rig.md`, etc.) are small sni
 ## Local build
 
 ```bash
-python -m pip install -r docs/requirements.txt
+python -m pip install --group pyproject.toml:docs   # or: uv sync --only-group docs
 python -m mkdocs build          # output → site/
 ```
 

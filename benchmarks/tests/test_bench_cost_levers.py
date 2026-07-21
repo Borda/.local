@@ -311,7 +311,8 @@ class TestDevSubsetInSuite:
     """The shipped tasks-bench.json declares a valid stratified dev subset."""
 
     @pytest.fixture(scope="class")
-    def tasks(self) -> list[dict]:
+    @staticmethod
+    def tasks() -> list[dict]:
         return json.loads(SUITE.read_text())["tasks"]
 
     def test_dev_subset_size(self, tasks: list[dict]) -> None:
@@ -595,7 +596,8 @@ class TestSelfConsistencyInSuite:
     """The shipped suite tags exactly the uncovered/xrefs CQ tasks."""
 
     @pytest.fixture(scope="class")
-    def tasks(self) -> list[dict]:
+    @staticmethod
+    def tasks() -> list[dict]:
         return json.loads(SUITE.read_text())["tasks"]
 
     def test_tagged_tasks_are_cq_uncovered_xrefs(self, tasks: list[dict]) -> None:
