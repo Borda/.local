@@ -83,7 +83,8 @@ After gate fires (Step 7): finding count > 10 or user picked option (a) "Fix aut
 **Gate failure fallback**: if sub-agent returns `blocked_findings: []` with `fixed > 0` and `failed == 0` but no `gate-<file>.md` files appear in `<RUN_DIR>`, surface: `⚠ GATE-SKIPPED — sub-agent did not perform adversarial gate; review fixes manually before merging.`
 
 ```bash
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/audit-fix-prompt.md"
 ```
 

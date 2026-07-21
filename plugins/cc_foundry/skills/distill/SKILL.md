@@ -46,14 +46,15 @@ cat "$_FS/task-hygiene.md"
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
-rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
-mkdir -p "${TMPDIR:-/tmp}/distill-state"
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/distill-state/keep-items"
+rm -f .temp/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
+mkdir -p "${TMPDIR:-/tmp}/distill-state-${CSID}"
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/distill-state-${CSID}/keep-items"
 EAGER=false
 [[ "$ARGUMENTS" == *"--eager"* ]] && EAGER=true
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--eager//g' | xargs)  # timeout: 3000
@@ -126,17 +127,18 @@ With `--eager` (lower thresholds):
 - Domain-specific threshold unchanged
 
 ```bash
-_KEEP=$(cat "${TMPDIR:-/tmp}/distill-state/keep-items" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_KEEP=$(cat "${TMPDIR:-/tmp}/distill-state-${CSID}/keep-items" 2>/dev/null || echo "")
 _PRESERVE="run-dir=n/a"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:distill · phase: gap-analysis (after work-pattern scan)"
     echo "- run-dir: n/a"
     echo "- preserve: $_PRESERVE"
     echo "- next: gap analysis (Step 3) → duplication check (Step 4) → report (Step 5)"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 3: Gap analysis
@@ -207,7 +209,7 @@ Anti-pattern checklist — reject candidate if any apply:
 ```
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Mode: Memory Pruning — only when `$ARGUMENTS == "prune"`
@@ -340,7 +342,7 @@ Pruned MEMORY.md — <date>
 End response with `## Confidence` block per CLAUDE.md output standards.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 **Otherwise** (`$EAGER == false`) — standard read-only advisory flow:
@@ -390,7 +392,7 @@ Pruned MEMORY.md — <date>
 End response with `## Confidence` block per CLAUDE.md output standards.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Mode: Memory Distillation — only when first token is `memory`

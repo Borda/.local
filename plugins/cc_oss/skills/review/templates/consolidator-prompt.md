@@ -22,6 +22,6 @@
 
 **Write to:** `<REPORT_DIR>/review-report.md` using Write tool.
 
-**Source Files footnote**: after the `## Confidence` block, append `## Source Files` section. Use `Glob(pattern="*.md", path="$RUN_DIR")` to list every handover file present — lets reviewers locate raw subagent outputs without knowing the run timestamp. `$RUN_DIR` is the consolidator's self-resolved run-dir (from the run-dir preamble: `cat "${TMPDIR:-/tmp}/oss-review-run-dir"`) — not orchestrator-substituted.
+**Source Files footnote**: after the `## Confidence` block, append `## Source Files` section. Use `Glob(pattern="*.md", path="$RUN_DIR")` to list every handover file present — lets reviewers locate raw subagent outputs without knowing the run timestamp. `$RUN_DIR` is the consolidator's self-resolved run-dir (from the run-dir preamble: `cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"`) — not orchestrator-substituted.
 
 **Return ONLY** one-liner summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=<REPORT_DIR>/review-report.md`

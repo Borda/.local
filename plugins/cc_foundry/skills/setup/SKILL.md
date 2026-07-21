@@ -99,13 +99,14 @@ fi
 Resolve validated install root via canonical resolver — registry lookup, cache-scan fallback (skips `.orphaned_at`, newest by semver), and both security gates (under cache dir + `plugin.json` name match) live in the script; do not re-implement inline:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_plugin_root.py" --plugin-name foundry 2>/dev/null)  # timeout: 15000
 case $? in
     0) ;;
     2) echo "! SECURITY: resolve_plugin_root.py rejected the candidate root — aborting setup"; exit 1 ;;
     *) PLUGIN_ROOT="" ;;  # not found; handled by empty-check below
 esac
-echo "$PLUGIN_ROOT" > "${TMPDIR:-/tmp}/setup-plugin-root"  # persist for later blocks (Check 41)
+echo "$PLUGIN_ROOT" > "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}"  # persist for later blocks (Check 41)
 ```
 
 If `$PLUGIN_ROOT` empty after both attempts, stop and report: "foundry plugin not found — install it first with: `claude plugin marketplace add Borda/AI-Rig && claude plugin install foundry@borda-ai-rig`"
@@ -115,10 +116,11 @@ Confirm `$PLUGIN_ROOT/hooks/statusline.js` exists. If not, stop and report.
 ## Step 2: Back up settings.json
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 SETUP_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
 [ -f ~/.claude/settings.json ] || printf '{}\n' > ~/.claude/settings.json  # create empty in-bash if absent — no Write-tool permission prompt (headless-safe)
 cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"  # timeout: 5000
-echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts"  # persist for restore in Step 9
+echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts-${CSID}"  # persist for restore in Step 9
 ```
 
 Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
@@ -141,8 +143,9 @@ Otherwise, use `AskUserQuestion`:
 On **(a)**: strip `hooks` key in-bash (no Write tool), continue:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _jq_result=$(jq 'del(.hooks)' ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed stripping hooks — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed stripping hooks — settings.json unchanged\n"; exit 1; }
 ```
 
 On **(b)**: warn "Double-firing risk: existing hooks block will fire alongside plugin-registered hooks." Continue.
@@ -152,7 +155,8 @@ On **(b)**: warn "Double-firing risk: existing hooks block will fire alongside p
 Check if statusLine already points to the **current** plugin's statusline.js (filename match alone is insufficient — a stale entry from an older plugin version survives upgrades and silently runs the previous hook). Verify both that the command contains `statusline.js` AND that the `$PLUGIN_ROOT` path (with its version segment) appears in the command string:
 
 ```bash
-PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root" 2>/dev/null)  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null)  # reload (Check 41)
 jq --arg root "$PLUGIN_ROOT" -e '
     (.statusLine.command // "") as $cmd
     | ($cmd | contains("statusline.js")) and ($cmd | contains($root))
@@ -164,10 +168,11 @@ If already set to the current `$PLUGIN_ROOT`: report "statusLine already set to 
 Writes `statusLine` key to `~/.claude/settings.json`:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _jq_result=$(jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
     '.statusLine = {"async":true,"command":$cmd,"type":"command"}' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
 ```
 
 Writeback happens in-bash above (`mv` — no Write-tool permission prompt, headless-safe). Report: `  statusLine: set to current plugin version`.
@@ -179,10 +184,11 @@ Merge `$PLUGIN_ROOT/.claude-plugin/permissions-allow.json` into `~/.claude/setti
 Writes merged `permissions.allow` array:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _jq_result=$(jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
     '.permissions.allow = ((.permissions.allow // []) + $perms[0] | unique)' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
 ```
 
 Writeback happens in-bash above (`mv`). Report: "Added N new permissions.allow entries (M already present)."
@@ -192,10 +198,11 @@ Check whether `$PLUGIN_ROOT/.claude-plugin/permissions-deny.json` exists. If so,
 Writes merged `permissions.deny` array:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _jq_result=$(jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
     '.permissions.deny = ((.permissions.deny // []) + $deny[0] | unique)' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
 ```
 
 Writeback happens in-bash above (`mv`). Report: "Added N new permissions.deny entries (M already present)."
@@ -211,7 +218,8 @@ Note: this step writes to `.claude/permissions-guide.md` relative to the current
 Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — only if destination absent (preserves project-local edits via `/manage`):
 
 ```bash
-PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root" 2>/dev/null)  # reload: fresh shell (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null)  # reload: fresh shell (Check 41)
 if [ ! -f ".claude/permissions-guide.md" ]; then  # timeout: 5000
     cp "$PLUGIN_ROOT/permissions-guide.md" ".claude/permissions-guide.md"
     printf "  copied: permissions-guide.md\n"
@@ -231,9 +239,10 @@ If already `true`: report "enabledPlugins already set — skipping." Otherwise:
 Writes `enabledPlugins["codex@openai-codex"]` key:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _jq_result=$(jq '.enabledPlugins["codex@openai-codex"] = true' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
 ```
 
 Writeback happens in-bash above (`mv`).
@@ -260,8 +269,9 @@ If already equal: report `  advisorModel already set to <value> — skipping.`
 Otherwise:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _jq_result=$(jq --arg m "$ADV" '.advisorModel = $m' ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed updating advisorModel — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed updating advisorModel — settings.json unchanged\n"; exit 1; }
 ```
 
 Writeback happens in-bash above (`mv` — no Write-tool permission prompt). Report `  advisorModel: set to <value>`.
@@ -274,7 +284,7 @@ After all writes, confirm file parses as valid JSON:
 jq empty ~/.claude/settings.json  # timeout: 5000
 ```
 
-If `jq` exits non-zero: restore from backup: `SETUP_BAK_TS=$(cat "${TMPDIR:-/tmp}/foundry-setup-bak-ts" 2>/dev/null || ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//'); cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json`, report error, stop. If valid: continue.
+If `jq` exits non-zero: restore from backup: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; SETUP_BAK_TS=$(cat "${TMPDIR:-/tmp}/foundry-setup-bak-ts-${CSID}" 2>/dev/null || ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//'); cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json`, report error, stop. If valid: continue.
 
 ## Step 10: Symlink rules and TEAM_PROTOCOL.md
 
@@ -300,9 +310,10 @@ Cleanup also scans `~/.claude/agents/` for foundry-managed symlinks (targets con
 **Phase 2 — Conflict scan** — identify entries needing user confirmation. Stale foundry symlinks (old version → current) are auto-replaced in Phase 4 without prompt:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 mkdir -p "$HOME/.claude/skills"  # timeout: 5000
 mapfile -t LINK_CONFLICTS < <(python "$PLUGIN_ROOT/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
-printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-setup-conflicts-${CLAUDE_SESSION_ID:-$$}.txt"  # timeout: 3000; persist for Phase 4; Bash calls don't share state
+printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-setup-conflicts-${CSID}.txt"  # timeout: 3000; persist for Phase 4; Bash calls don't share state
 ```
 
 The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
@@ -328,7 +339,7 @@ Options:
 (c) Review one by one
 
 On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. **Cap**: if `${#LINK_CONFLICTS[@]} > 10`, emit warning "⚠ ${#LINK_CONFLICTS[@]} conflicts found — per-item review capped at 10; showing first 10. Run again for the rest." and process only the first 10. Iterate over each entry (up to cap); for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CLAUDE_SESSION_ID:-$$}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
+On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. **Cap**: if `${#LINK_CONFLICTS[@]} > 10`, emit warning "⚠ ${#LINK_CONFLICTS[@]} conflicts found — per-item review capped at 10; showing first 10. Run again for the rest." and process only the first 10. Iterate over each entry (up to cap); for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CSID}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
 **Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
 
@@ -337,9 +348,10 @@ On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=
 - Neither flag (option a or no conflicts): replace unconditionally.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # restore arrays from Phase 2/3; Bash calls don't share state
-mapfile -t LINK_CONFLICTS < ${TMPDIR:-/tmp}/foundry-setup-conflicts-${CLAUDE_SESSION_ID:-$$}.txt 2>/dev/null || LINK_CONFLICTS=()
-mapfile -t APPROVED_CONFLICT_ENTRIES < ${TMPDIR:-/tmp}/foundry-setup-approved-${CLAUDE_SESSION_ID:-$$}.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
+mapfile -t LINK_CONFLICTS < ${TMPDIR:-/tmp}/foundry-setup-conflicts-${CSID}.txt 2>/dev/null || LINK_CONFLICTS=()
+mapfile -t APPROVED_CONFLICT_ENTRIES < ${TMPDIR:-/tmp}/foundry-setup-approved-${CSID}.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
 
 # is identifier in APPROVED_CONFLICT_ENTRIES?
 _approved() {
@@ -399,7 +411,8 @@ done  # timeout: 10000
 ## Step 11: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
 
 ```bash
-PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root" 2>/dev/null)  # reload: fresh shell (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null)  # reload: fresh shell (Check 41)
 [ -f "$HOME/.claude/CLAUDE.md" ] && cp "$HOME/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md.bak"  # timeout: 5000
 cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"

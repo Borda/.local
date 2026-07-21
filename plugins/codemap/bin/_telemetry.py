@@ -17,6 +17,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -36,7 +37,7 @@ def session_id() -> str:
         proj = Path(root).name
     except Exception:  # noqa: BLE001 — git absent / not a repo → fall back to cwd
         proj = Path.cwd().name
-    sid_file = Path(os.environ.get("TMPDIR", "/tmp")) / f"codemap-{proj}-session"
+    sid_file = Path(os.environ.get("TMPDIR") or tempfile.gettempdir()) / f"codemap-{proj}-session"
     try:
         return sid_file.read_text().strip()
     except OSError:

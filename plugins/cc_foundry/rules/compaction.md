@@ -1,5 +1,5 @@
 ---
-description: Compaction contract — verbatim skill state survival across auto-compact via .claude/state/skill-contract.md
+description: Compaction contract — verbatim skill state survival across auto-compact via .temp/state/skill-contract.md
 paths:
   - '**'
 ---
@@ -8,7 +8,7 @@ paths:
 
 ### Verbatim-file principle
 
-Must-keep details (run-dir, task IDs, key decisions, report paths) go in `.claude/state/skill-contract.md` — not relied on in prose summary. PreCompact hook (`task-log.js`) appends contract file **verbatim** to `session-context.md`; post-compaction re-read restores it losslessly.
+Must-keep details (run-dir, task IDs, key decisions, report paths) go in `.temp/state/skill-contract.md` — not relied on in prose summary. PreCompact hook (`task-log.js`) appends contract file **verbatim** to `session-context.md`; post-compaction re-read restores it losslessly.
 
 Prose Compact Instructions remain best-effort. Don't over-promise zero loss for anything not in contract.
 
@@ -26,8 +26,8 @@ Skills accepting `[--keep "<items>"]` append user's string verbatim to contract'
 
 ### Clear on completion
 
-Delete `.claude/state/skill-contract.md` at skill completion. Hook appends whatever file holds — skill that forgets to clear leaks stale preserve items into later unrelated compaction. Clearing is mandatory, not optional.
+Delete `.temp/state/skill-contract.md` at skill completion. Hook appends whatever file holds — skill that forgets to clear leaks stale preserve items into later unrelated compaction. Clearing is mandatory, not optional.
 
 ### Stale-contract caution
 
-If skill crashes before clearing, `.claude/state/skill-contract.md` persists. Mitigation: at Step 0, delete any pre-existing contract file before writing first boundary contract.
+If skill crashes before clearing, `.temp/state/skill-contract.md` persists. Mitigation: at Step 0, delete any pre-existing contract file before writing first boundary contract.

@@ -160,8 +160,8 @@ RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.py" arg1 arg2)
 
 | Output needed for | Script writes | Skill reads via |
 | --- | --- | --- |
-| Shell command arg (`"$VAR"`) | `${TMPDIR:-/tmp}/<skill>-<name>` file | `VAR=$(cat "${TMPDIR:-/tmp}/<skill>-<name>")` |
-| Prose condition / display only | `${TMPDIR:-/tmp}/<skill>-<name>` file | Read tool or plain prose |
+| Shell command arg (`"$VAR"`) | `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file | `VAR=$(cat "${TMPDIR:-/tmp}/<skill>-<name>-${CSID}")` |
+| Prose condition / display only | `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file | Read tool or plain prose |
 | Single value, same bash block | stdout | `VAR=$(python script.py ...)` |
 | Several values across later blocks | `bin/state.py set <ns> K=V …` | `eval "$(python … bin/state.py load <ns>)"` |
 
@@ -173,33 +173,35 @@ Shell variables set in one Bash tool call do not persist to the next separate Ba
 
 > **Scope**: this rule applies to DATA output (returning computed values to the skill). Shell-setup eval — e.g. `eval "$(python health_sentinel.py ...)"` injecting `SENTINEL=...` into the calling shell for health monitoring — is a different pattern and remains valid.
 
-**Naming convention**: `${TMPDIR:-/tmp}/<plugin>-<script-slug>-<value-name>`. When a script has more than one consumer (e.g. a shared `resolve-shared.py`), the calling skill passes a unique prefix: `--out-prefix <skill>-<run-id>`; the script writes `<prefix>-proj`, `<prefix>-index`. Never hardcode a prefix in a shared script — consumers will collide.
+**Naming convention**: `${TMPDIR:-/tmp}/<plugin>-<script-slug>-<value-name>-${CSID}` (terminal session-scope suffix — see `rules/claude-config.md` §TMPDIR Sentinel Scoping). When a script has more than one consumer (e.g. a shared `resolve-shared.py`), the calling skill passes a unique prefix: `--out-prefix <skill>-<run-id>`; the script writes `<prefix>-proj-${_CSID}`, `<prefix>-index-${_CSID}`. Never hardcode a prefix in a shared script — consumers will collide.
 
 ```python
 # script — owns output routing; prefix passed by caller when multi-consumer
-import os, sys
+import os, sys, tempfile
 from pathlib import Path
-tmpdir = os.environ.get("TMPDIR", "/tmp")
+_CSID = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
+tmpdir = os.environ.get("TMPDIR") or tempfile.gettempdir()
 prefix = sys.argv[1]  # e.g. "codemap-integration"
-Path(f"{tmpdir}/{prefix}-proj").write_text(proj)
-Path(f"{tmpdir}/{prefix}-index").write_text(index)
+Path(f"{tmpdir}/{prefix}-proj-{_CSID}").write_text(proj)
+Path(f"{tmpdir}/{prefix}-index-{_CSID}").write_text(index)
 sys.exit(0)
 ```
 
 ```bash
 # skill — exit-code check only; no parsing
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/myplugin}/bin/resolve.py" "myplugin-resolve" ...  # timeout: 5000
 ```
 
 ```bash
 # only when value feeds shell command
-INDEX=$(cat "${TMPDIR:-/tmp}/myplugin-resolve-index")
+INDEX=$(cat "${TMPDIR:-/tmp}/myplugin-resolve-index-${CSID}")
 python scan.py --index "$INDEX"  # timeout: 30000
 ```
 
 ```text
 # downstream prose — when value used only for display or condition
-Read ${TMPDIR:-/tmp}/myplugin-resolve-index. If empty: print ✗ and stop.
+Read ${TMPDIR:-/tmp}/myplugin-resolve-index-${CSID}. If empty: print ✗ and stop.
 ```
 
 **Anti-patterns — data output:**
@@ -504,7 +506,7 @@ HARD_CUTOFF=${HARD_CUTOFF:-900}
 
 When `foundry:manage create skill <name>` scaffolds a new SKILL.md, include this instruction:
 
-> Before writing any fenced code block, run `cat "$_FOUNDRY_SHARED/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate. Write bin/ script directly if verdict is MEDIUM or HIGH. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
+> Before writing any fenced code block, run `cat "$_FOUNDRY_SHARED/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate. Write bin/ script directly if verdict is MEDIUM or HIGH. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file; never `eval` stdout.
 
 ---
 

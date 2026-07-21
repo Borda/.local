@@ -98,7 +98,8 @@ Execute --plan path extraction; sets `$PLAN_FILE`.
 
 ```bash
 # persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
-echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-feature-dev-dir"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}"
 ```
 
 ## Flag parsing
@@ -106,12 +107,13 @@ echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-feature-dev-dir"
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-feature-keep-items"
-rm -f .claude/state/skill-contract.md  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}"
+rm -f .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ```bash
@@ -120,15 +122,16 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
     --skill feature --write-files "$ARGUMENTS"
 ```
 
-Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
+Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode-${CSID} 2>/dev/null || echo false)`.
 
 ```bash
 # timeout: 6000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 ISSUE_REF=""
 [[ "$ARGUMENTS" =~ --issue[[:space:]]+([^[:space:]]+) ]] && ISSUE_REF="${BASH_REMATCH[1]}"
-echo "$ISSUE_REF" > ${TMPDIR:-/tmp}/dev-issue-ref
+echo "$ISSUE_REF" > ${TMPDIR:-/tmp}/dev-issue-ref-${CSID}
 if [ -n "$ISSUE_REF" ]; then
-    REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+    REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream-${CSID} 2>/dev/null || echo "")
     if [ -n "$REPO_NAME" ]; then
         gh issue view "$ISSUE_REF" --repo "$REPO_NAME" 2>/dev/null || echo "⚠ Could not fetch issue $ISSUE_REF from $REPO_NAME — proceeding without issue context"
     else
@@ -150,12 +153,13 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 
 ```bash
 # timeout: 5000
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw-${CSID} 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW") || {
     echo "! BLOCKED — codemap-resolve failed (likely --codemap strict but codemap unavailable); run /codemap:scan-codebase or install codemap plugin"
     exit 1
 }
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}
 # codemap: integrated-via-shared
 ```
 
@@ -196,20 +200,22 @@ Compute run directory:
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _run=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/setup_worktree.py")   # mapfile absent on macOS bash 3.2 — use portable head/tail
 TS=$(echo "$_run" | head -1)
 TEAM_DIR=$(echo "$_run" | tail -1)
-echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts
-echo "$TEAM_DIR" > ${TMPDIR:-/tmp}/dev-feature-team-dir
-trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-$TS' EXIT
+echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}
+echo "$TEAM_DIR" > ${TMPDIR:-/tmp}/dev-feature-team-dir-${CSID}
+trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID}' EXIT
 ```
 
 **IMPORTANT**: in spawn prompts below, substitute `$_SPAWN_TS` and `$_SPAWN_TEAM_DIR` with actual computed values from bash block above — literal resolved strings, not shell variable references. Bare `$TS`/`$TEAM_DIR` inside a quoted Agent prompt string will NOT be expanded; spawned agent receives literal dollar-sign text, causing path mismatches and health-monitoring false timeouts.
 
 ```bash
 # timeout: 5000
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || echo "")        # re-derive — bash state lost between Bash() calls
-TEAM_DIR=$(cat ${TMPDIR:-/tmp}/dev-feature-team-dir 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || echo "")        # re-derive — bash state lost between Bash() calls
+TEAM_DIR=$(cat ${TMPDIR:-/tmp}/dev-feature-team-dir-${CSID} 2>/dev/null || echo "")
 _SPAWN_TS="$TS"
 _SPAWN_TEAM_DIR="$TEAM_DIR"
 ```
@@ -238,7 +244,8 @@ Summary below:
 
 ```bash
 # timeout: 5000
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
 for agent in sw-engineer qa-specialist doc-scribe; do
     expected=".temp/develop/$TS/feature-${agent}-$TS.md"
     [ -f "$expected" ] && echo "✓ $agent wrote $expected" || echo "⚠ $agent missing expected output $expected"
@@ -249,7 +256,8 @@ done
 
 ```bash
 # timeout: 5000
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || echo "")
 [ -n "$TS" ] || { echo "! dev-feature-team-ts missing — cannot verify Wave 1 output; aborting team mode"; exit 1; }
 WAVE1_FILE=".temp/develop/$TS/feature-sw-engineer-$TS.md"
 if [ ! -f "$WAVE1_FILE" ]; then
@@ -266,10 +274,11 @@ Health monitoring (CLAUDE.md §6): re-derive `$TS` at block start (bash state lo
 
 ```bash
 # timeout: 5000
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
 ```
 
-Create sentinel `touch ${TMPDIR:-/tmp}/feature-team-check-$TS`; every 5 min: `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/feature-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface with ⏱; never omit timed-out teammates.
+Create sentinel `touch ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID}`; every 5 min: `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID} -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface with ⏱; never omit timed-out teammates.
 
 After all teammates complete: read their output files from `.temp/develop/$TS/`, synthesize, run quality stack, produce Final Report. Exit — do not continue to solo Steps 1-5.
 
@@ -282,11 +291,12 @@ Gather full context before writing any code:
 > **Issue ID parsing rule**: any argument whose leading characters are a run of digits (optionally prefixed with `#`, e.g. `123` or `#123`) is treated as a GitHub issue number — leading digits are extracted and passed to `issue_fetch.py`. No numeric threshold and no `--issue` flag gate. To avoid a numeric feature goal being misread as an issue number, phrase goal as descriptive text that does not start with digits.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RAW="${ARGUMENTS#\#}"
 ISSUE_NUM=$(echo "$_RAW" | grep -oE '^[0-9]+' | head -1)
 ISSUE_NUM="${ISSUE_NUM:-$_RAW}"
 if [[ "$ISSUE_NUM" =~ ^[0-9]+$ ]]; then
-  REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+  REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream-${CSID} 2>/dev/null || echo "")
   if [ -n "$REPO_NAME" ]; then
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null  # timeout: 6000
   else
@@ -301,6 +311,7 @@ If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 if [[ "$ARGUMENTS" == *"::"* ]]; then
     _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
     TARGET_MODULE="${_QNAME%%::*}"
@@ -313,8 +324,8 @@ else
     TARGET_FN=""
 fi
 export TARGET_MODULE TARGET_FN
-echo "$TARGET_MODULE" > ${TMPDIR:-/tmp}/dev-feature-target-module   # persist — reloaded by rdeps block (bash state lost between Bash() calls)
-echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn
+echo "$TARGET_MODULE" > ${TMPDIR:-/tmp}/dev-feature-target-module-${CSID}   # persist — reloaded by rdeps block (bash state lost between Bash() calls)
+echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn-${CSID}
 ```
 
 > Pure net-new feature (no existing module/function named) → both empty → only `central` baseline runs, which is correct: nothing to compute caller impact against yet.
@@ -323,8 +334,9 @@ echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn
 
 ```bash
 # timeout: 6000
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled 2>/dev/null || echo false)
-TARGET_MODULE=$(cat ${TMPDIR:-/tmp}/dev-feature-target-module 2>/dev/null || echo "")   # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID} 2>/dev/null || echo false)
+TARGET_MODULE=$(cat ${TMPDIR:-/tmp}/dev-feature-target-module-${CSID} 2>/dev/null || echo "")   # re-derive — bash state lost between Bash() calls
 if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v scan-query >/dev/null 2>&1; then
     scan-query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests 2>/dev/null || true
 fi
@@ -408,7 +420,7 @@ Skip if feature calls no external library APIs — no new framework features, no
 **Decision — three states** (default is NOT "skip": it runs on substantial features and auto-skips only small ones):
 
 1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
-2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small feature.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)` = `true`) → **always run**, even on a small feature.
 3. else **default** → **run when feature is substantial** (multi-file, ≳50 lines, or adds any new public API — common case for a feature); **auto-skip when small** (single file, ≲50 lines, no new public API).
 
 Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial features where it would otherwise fire; `--challenge` forces it on small features where it would otherwise auto-skip.
@@ -424,20 +436,21 @@ Parse result:
 
 ```bash
 # Compaction contract — boundary 1: after scope analysis, before demo/edit (compaction-contract.md §Lifecycle)
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir" 2>/dev/null || echo "")
-_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:feature · phase: demo+edit (after scope analysis and plan)"
     echo "- run-dir: $_DEV_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: write demo test (Step 2) → TDD loop (Step 3) → review (Step 4)"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 2: Write a demo use-case
@@ -473,6 +486,7 @@ Both forms must:
 # Resolve MODULE_PATH before this block — e.g.:
 # MODULE_PATH=$(find src/ -name '*.py' | head -1)
 # timeout: 30000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 $PYTEST_CMD --collect-only --doctest-modules $MODULE_PATH -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}
 if [ "$COLLECT_EXIT" -eq 5 ]; then
     echo "⚠ GATE FAIL: no demo tests collected — demo file missing or doctest malformed"
@@ -481,14 +495,15 @@ elif [ "$COLLECT_EXIT" -ne 0 ]; then
     echo "⚠ Cannot collect doctests — check module for import errors (collect exit $COLLECT_EXIT)"
     GATE_EXIT=1
 fi
-echo "${GATE_EXIT:-0}" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
-echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit
+echo "${GATE_EXIT:-0}" > ${TMPDIR:-/tmp}/dev-feature-gate-exit-${CSID}
+echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit-${CSID}
 ```
 
 ```bash
 # timeout: 600000
-COLLECT_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-collect-exit 2>/dev/null || echo 1)
-GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-gate-exit 2>/dev/null || echo 1)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+COLLECT_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-collect-exit-${CSID} 2>/dev/null || echo 1)
+GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-gate-exit-${CSID} 2>/dev/null || echo 1)
 # doctest form — MODULE_PATH resolved above
 if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
     $PYTEST_CMD --doctest-modules $MODULE_PATH -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
@@ -497,11 +512,11 @@ if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
     else
         echo "✓ GATE OK: demo failed as expected (exit $GATE_EXIT)"
     fi
-    echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
+    echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit-${CSID}
 fi
 
 # python examples/demo_<feature>.py 2>&1 | tail -5; GATE_EXIT=$?
-# echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
+# echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit-${CSID}
 ```
 
 If `COLLECT_EXIT -ne 0`: stop — collection failed, gate skipped (GATE_EXIT=1). If `GATE_EXIT -eq 0`: invoke `AskUserQuestion` — do not silently proceed past a gate failure with prose alone: "Demo passed against current code — feature may already exist. How to proceed?" · (a) **Stop** — revisit Step 1 scope (recommended; feature likely already implemented) · (b) **Continue anyway** — proceed with TDD loop (gate explicitly overridden). On Stop: exit; do not advance to Step 3.
@@ -575,22 +590,23 @@ After each cycle, refresh compaction contract so a mid-loop compaction resumes T
 
 ```bash
 # WHY: boundary-1 contract (Step 1) says "next: Step 2 demo"; without this a mid-Step-3 compaction restarts the demo. Redo is idempotent but wastes agent spawns + test runs. checkpoint.md already lists completed steps for resume.
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
-_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}" 2>/dev/null || echo "")
 # tracked mods AND untracked new files — new TDD test/module files are untracked until staged; git diff alone drops them
 _CHANGED=$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u | tr '\n' ' ' | sed 's/ *$//')
 _PRESERVE="dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD, plan-file=${_PLAN_FILE:-none}, checkpoint=$_DEV_DIR/checkpoint.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:feature · phase: TDD loop in progress (Step 3)"
     echo "- run-dir: $_DEV_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: re-run suite to see current green state, then continue TDD for remaining behaviour — do NOT restart the Step 2 demo. checkpoint.md lists completed steps."
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 Repeat until all feature tests pass and Step 2 demo passes.
@@ -599,17 +615,18 @@ If Step 2 produced example script: promote into formal pytest test now that API 
 
 ```bash
 # Compaction contract — boundary 2: after TDD loop, before review stack (compaction-contract.md §Lifecycle)
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
 _CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:feature · phase: review+quality (after TDD loop complete)"
     echo "- run-dir: $_DEV_DIR"
     echo "- preserve: dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD"
     echo "- next: review and close gaps (Step 4) → docs (Step 5) → Final Report"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 4: Review and close gaps
@@ -699,7 +716,7 @@ cat "$_TPL"
 §Standard Final Report — use as output structure.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 <!-- Team spawn logic: see ## Team Mode Branch above -->

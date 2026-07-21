@@ -57,6 +57,35 @@ Working directory persists between Bash calls — two sequential calls equivalen
 
 **Worktrees**: same rule applies inside `isolation: "worktree"` agents (CWD = worktree root — no `cd` prefix needed). Settings in worktrees are snapshot from worktree-creation time — permissions added to main project after worktree created are NOT reflected; worktree agent hitting unexpected permission prompts → check if `settings.local.json` was updated since worktree creation.
 
+## TMPDIR Sentinel Scoping
+
+Cross-bash-block state (Bash tool state doesn't persist across separate tool invocations within a skill) commonly persists via `${TMPDIR:-/tmp}/<name>` sentinel files. `/tmp` is machine-global, not project- or session-scoped — a bare name like `${TMPDIR:-/tmp}/oss-review-run-dir` collides if two Claude Code sessions run the same skill concurrently (different projects, or two terminals in the same project).
+
+**Rule**: every bash block touching sentinels derives the session token once (first line), then every sentinel name takes `-${CSID}` as its **terminal** suffix (after any dynamic part, after any extension):
+
+```bash
+# ✓ correct — session-scoped, safe under concurrent sessions
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"
+
+# ✗ wrong — bare name, collides across concurrent sessions/projects
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir"
+
+# ✗ wrong — `CLAUDE_SESSION_ID` does not exist; `$$` is a NEW shell PID every Bash tool call
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir-${CLAUDE_SESSION_ID:-$$}"
+```
+
+Verified token facts (2026-07-21): env var is `CLAUDE_CODE_SESSION_ID` (not `CLAUDE_SESSION_ID`); `$$` changes per Bash tool call (fresh shell each call) — never use it; `$PPID` = Claude Code process PID, stable across all Bash calls in a session; spawned subagents inherit the SAME `CLAUDE_CODE_SESSION_ID` and `$PPID` as the lead, so cross-agent sentinel sharing works.
+
+- `export` (not plain assignment) — python/node children invoked in the same block must see `CSID`
+- Python scripts: `_CSID = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"` — never `os.getppid()` (that returns the transient bash shell PID, not the CC process); temp base via `os.environ.get("TMPDIR") or tempfile.gettempdir()`, never hardcoded `/tmp` (absent on native Windows Python)
+- Cross-OS (Linux/macOS/Windows-Git-Bash): `${TMPDIR:-/tmp}`, `$PPID`, `export` all work in Git Bash where `/tmp` mounts to the Windows temp dir
+- Exempt (no `CSID` suffix, mark line with trailing `# tmpdir-exempt: <reason>`): `mktemp ...XXXXXX` templates (already unique); sentinels produced/consumed by code running outside Claude Code (e.g. git post-commit hooks — no session env there; keep project-slug scoping)
+- Applies to every new sentinel added to any skill, hook, or bin script
+- Existing bare-name sentinels (78 files, 794 occurrences repo-wide as of 2026-07-21) are known debt — migration plan: `.plans/active/todo_protected-locations-rollout.md`; their lack of suffixing is not precedent to copy in new code
+- Args-derived suffixes alone (e.g. `${CLEAN_ARGS}`, a PR number) are not sufficient — two sessions in two *different* projects invoking the same skill with the same args still collide; `-${CSID}` is still required alongside them, not instead of them
+- Cleanup (`rm -f`) at skill completion must target the exact session-scoped filename, never a glob that could match another session's sentinel of the same base name
+
 ## List Range Label Discipline
 
 When editing file with lettered/numbered list range labels (e.g. `**Close-scenario archetypes (A–G):**`):

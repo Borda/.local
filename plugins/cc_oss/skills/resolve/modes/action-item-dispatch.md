@@ -25,6 +25,7 @@ CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
 **Concurrency guard — mutex + HEAD fingerprint** (Phase 2 holds worktrees open for the slowest specialist's whole runtime — minutes — so an external write to the branch, or a second resolve run, is far likelier to land mid-flight than under the old per-item design). The lock path is deterministic (recompute anytime from the git-common-dir + branch); the base SHA is a point-in-time value, so persist it to a tmpfile — shell vars don't survive between Step 8's separate bash calls:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _GITDIR=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")  # timeout: 3000
 _BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo "detached")  # timeout: 3000
 RESOLVE_LOCK="$_GITDIR/oss-resolve-${_BRANCH}.lock"  # shared across worktrees (git-common-dir)
@@ -39,7 +40,7 @@ if [ -f "$RESOLVE_LOCK" ]; then
     fi
 fi
 echo "$$ $(date -u +%FT%TZ)" > "$RESOLVE_LOCK"  # timeout: 3000
-git rev-parse HEAD > "${TMPDIR:-/tmp}/resolve-base-sha" 2>/dev/null || true  # HEAD fingerprint  # timeout: 3000
+git rev-parse HEAD > "${TMPDIR:-/tmp}/resolve-base-sha-${CSID}" 2>/dev/null || true  # HEAD fingerprint  # timeout: 3000
 ```
 
 The lock is released in Phase 3's cleanup block (and the 30-min staleness override reclaims it if a run crashes before then).
@@ -90,9 +91,10 @@ Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for commit scope and
 Each module's `rdeps` answer served from **review pre-flight cache** first (materialized in SKILL.md Step 8; contract in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache). `codemap_cache.py read` returns `{"reuse":true,...}` only when cached answer fresh against current index (matching `git_sha`, `scanned_at` not older); cache hit skips `scan-query` process entirely, so resolve after `/review` issues 0 duplicate pre-flight queries. Cache miss (`reuse:false`, no artifact, or oss helper absent) → query live, unchanged. Reused hits marked in artifact `delta.notes` so `codemap_cache.py report` can compute `reuse_ratio` as health metric.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # pre-loop; BLAST_RADIUS_CONTEXT shared with impl agents
 BLAST_RADIUS_CONTEXT=""
-CODEMAP_CACHE_DIR=$(cat "${TMPDIR:-/tmp}/resolve-codemap-cache-dir" 2>/dev/null || echo "")  # timeout: 3000
+CODEMAP_CACHE_DIR=$(cat "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}" 2>/dev/null || echo "")  # timeout: 3000
 _IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-').json"
 _CACHE_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py"
 if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
@@ -255,7 +257,8 @@ Parse each group's JSON: `commits` entries feed Phase 3's merge plan; `skipped` 
 **HEAD fingerprint check** — the worktrees branched from `resolve-base-sha`; verify the PR branch hasn't moved under us while Phase 2 ran. A moved base means an external write (human push, or a run that slipped the mutex) landed during Phase 2 — cherry-picks still apply (they replay each diff onto the current tip), but overlapping edits now surface as conflicts, so surface the drift rather than stack silently:
 
 ```bash
-_BASE_SHA=$(cat "${TMPDIR:-/tmp}/resolve-base-sha" 2>/dev/null || echo "")  # timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_BASE_SHA=$(cat "${TMPDIR:-/tmp}/resolve-base-sha-${CSID}" 2>/dev/null || echo "")  # timeout: 3000
 _NOW_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")  # timeout: 3000
 if [ -n "$_BASE_SHA" ] && [ "$_NOW_SHA" != "$_BASE_SHA" ]; then
     echo "⚠ base HEAD moved during Phase 2: ${_BASE_SHA:0:8} → ${_NOW_SHA:0:8} (external write)."
@@ -304,12 +307,13 @@ No commit for an item (it was in Phase 2's `skipped` list) → record the agent'
 Cleanup — remove each specialist worktree once all its commits are cherry-picked, then release the resolve mutex (recompute the deterministic lock path — the entry-block shell var is gone by this separate bash call):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 for _wt in "${SPECIALIST_WORKTREES[@]}"; do
     git worktree remove "$_wt" --force 2>/dev/null || true  # timeout: 5000
 done
 _GITDIR=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")  # timeout: 3000
 _BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo "detached")  # timeout: 3000
-rm -f "$_GITDIR/oss-resolve-${_BRANCH}.lock" "${TMPDIR:-/tmp}/resolve-base-sha"  # timeout: 3000
+rm -f "$_GITDIR/oss-resolve-${_BRANCH}.lock" "${TMPDIR:-/tmp}/resolve-base-sha-${CSID}"  # timeout: 3000
 ```
 
 > If Phase 3 stops on a conflict (routed to Step 5a) the lock is **not** released here — intentional: the run is still live. It clears on the retry's cleanup, or via the 30-min staleness override if the session is abandoned.

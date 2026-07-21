@@ -326,7 +326,13 @@ class TestRunOutput:
 
 
 class TestWriteSkillFiles:
-    """write_skill_files persists per-skill and legacy temp files."""
+    """write_skill_files persists per-skill and legacy temp files, suffixed with the session scope."""
+
+    @pytest.fixture(autouse=True)
+    def _force_shared_csid(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Remove session-id env vars so ``_csid()`` degrades deterministically to ``"shared"``."""
+        monkeypatch.delenv("CSID", raising=False)
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
 
     def test_unknown_skill_exits(self, tmp_path: Path):
         """Unknown skill name calls sys.exit(1)."""
@@ -340,7 +346,7 @@ class TestWriteSkillFiles:
         write_skill_files(skill, "", tmp_dir=tmp_path)
         for spec, _legacy in SKILL_SPECS[skill]:
             key = spec.flag or "codemap"
-            assert (tmp_path / f"dev-{skill}-{key}").exists(), f"missing per-skill file for {skill}/{key}"
+            assert (tmp_path / f"dev-{skill}-{key}-shared").exists(), f"missing per-skill file for {skill}/{key}"
 
     @pytest.mark.parametrize("skill", sorted(SKILL_SPECS))
     def test_registered_skills_emit_legacy_files(self, skill: str, tmp_path: Path):
@@ -349,32 +355,32 @@ class TestWriteSkillFiles:
         for _spec, legacy in SKILL_SPECS[skill]:
             if legacy is None:
                 continue
-            assert (tmp_path / legacy).exists(), f"missing legacy file {legacy} for skill {skill}"
+            assert (tmp_path / f"{legacy}-shared").exists(), f"missing legacy file {legacy}-shared for skill {skill}"
 
     def test_feature_flag_values_persisted(self, tmp_path: Path):
         """Feature skill: representative flags persist their parsed values."""
         write_skill_files("feature", "--semble --no-challenge --codemap fix auth.py", tmp_dir=tmp_path)
-        assert (tmp_path / "dev-feature-semble").read_text() == "true"
-        assert (tmp_path / "dev-feature-no-challenge").read_text() == "false"
-        assert (tmp_path / "dev-feature-codemap").read_text() == "strict"
+        assert (tmp_path / "dev-feature-semble-shared").read_text() == "true"
+        assert (tmp_path / "dev-feature-no-challenge-shared").read_text() == "false"
+        assert (tmp_path / "dev-feature-codemap-shared").read_text() == "strict"
         # Legacy paths mirror the same values
-        assert (tmp_path / "dev-semble-enabled").read_text() == "true"
-        assert (tmp_path / "dev-challenge-enabled").read_text() == "false"
-        assert (tmp_path / "dev-codemap-raw").read_text() == "strict"
+        assert (tmp_path / "dev-semble-enabled-shared").read_text() == "true"
+        assert (tmp_path / "dev-challenge-enabled-shared").read_text() == "false"
+        assert (tmp_path / "dev-codemap-raw-shared").read_text() == "strict"
 
     def test_debug_codemap_raw_persisted(self, tmp_path: Path):
         """Debug skill: --no-codemap writes 'off' to both per-skill and legacy CODEMAP_RAW files."""
         write_skill_files("debug", "--no-codemap symptom", tmp_dir=tmp_path)
-        assert (tmp_path / "dev-debug-codemap").read_text() == "off"
-        assert (tmp_path / "dev-codemap-raw").read_text() == "off"
+        assert (tmp_path / "dev-debug-codemap-shared").read_text() == "off"
+        assert (tmp_path / "dev-codemap-raw-shared").read_text() == "off"
 
     def test_defaults_applied_for_absent_flags(self, tmp_path: Path):
         """Absent flags fall back to declared defaults in both file flavours."""
         write_skill_files("refactor", "tidy module", tmp_dir=tmp_path)
-        assert (tmp_path / "dev-refactor-team").read_text() == "false"
-        assert (tmp_path / "dev-team-mode").read_text() == "false"
-        assert (tmp_path / "dev-refactor-repo").read_text() == ""
-        assert (tmp_path / "dev-upstream").read_text() == ""
+        assert (tmp_path / "dev-refactor-team-shared").read_text() == "false"
+        assert (tmp_path / "dev-team-mode-shared").read_text() == "false"
+        assert (tmp_path / "dev-refactor-repo-shared").read_text() == ""
+        assert (tmp_path / "dev-upstream-shared").read_text() == ""
 
 
 # ---------------------------------------------------------------------------
@@ -420,10 +426,12 @@ class TestMainEntryPoint:
         interpreted as argparse options.
         """
         monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.delenv("CSID", raising=False)
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
         rc = main(["--skill", "feature", "--write-files", "--semble --no-challenge fix auth.py"])
         assert rc == 0
-        assert (tmp_path / "dev-feature-semble").read_text() == "true"
-        assert (tmp_path / "dev-feature-no-challenge").read_text() == "false"
+        assert (tmp_path / "dev-feature-semble-shared").read_text() == "true"
+        assert (tmp_path / "dev-feature-no-challenge-shared").read_text() == "false"
 
     def test_skill_mode_missing_write_files_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
         """``--skill`` without ``--write-files`` → exit 1 (only supported skill mode)."""

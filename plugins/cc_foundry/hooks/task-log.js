@@ -29,7 +29,7 @@
 //      to invocations.jsonl; also clean up codex tracking if the agent was a codex:* type
 //   8. PreCompact: scan transcript tail for Write/Edit tool_use blocks and write modified
 //      file paths to state/session-context.md as a compaction breadcrumb; append the verbatim
-//      state/skill-contract.md (if present) so a per-skill compaction contract survives
+//      .temp/state/skill-contract.md (if present) so a per-skill compaction contract survives
 //   9. UserPromptSubmit: write a queue marker to state/queue/ (deduplicated via 500ms lock)
 //  10. Stop: clear state/tools/ and queue markers (deduplicated); agents left intact;
 //      delete orphaned timing start markers and accumulated lock-Pre-*.lock dedup files
@@ -76,7 +76,7 @@
 //     • Scans the tail of the transcript for Write/Edit tool_use blocks, extracts
 //       modified file paths, and writes state/session-context.md — a lightweight
 //       breadcrumb that survives context compaction and is re-read at session resume.
-//     • If state/skill-contract.md exists, appends its content verbatim under a
+//     • If .temp/state/skill-contract.md exists, appends its content verbatim under a
 //       "## Skill Compaction Contract" section so a skill's per-compaction contract
 //       survives unsummarized. Observational — a missing/unreadable contract is
 //       swallowed and never blocks compaction.
@@ -160,6 +160,11 @@ process.stdin.on("end", () => {
     // Resolve workspace root from CWD (hooks run with CWD = project root)
     const root = process.cwd();
     const stateDir = path.join(root, ".claude", "state");
+    // Per-skill compaction contract lives under .temp/state (not .claude/) so the active skill
+    // can write it with the Write tool without tripping Claude Code's sensitive-file gate on
+    // tool-call writes under .claude/. This hook only READS it; session-context.md stays in
+    // stateDir (.claude/state) since it's written here via Node fs, which bypasses that gate.
+    const contractDir = path.join(root, ".temp", "state");
     // Global logs dir — audit logs accumulate across all projects and sessions
     const globalLogsDir = path.join(os.homedir(), ".claude", "logs");
     const logFile = path.join(globalLogsDir, "invocations.jsonl");
@@ -490,7 +495,7 @@ process.stdin.on("end", () => {
           // Preserve a per-skill compaction contract verbatim, if one was staged.
           // Observational only — a missing/unreadable contract must never block compaction.
           try {
-            const contract = fs.readFileSync(path.join(stateDir, "skill-contract.md"), "utf8").trim();
+            const contract = fs.readFileSync(path.join(contractDir, "skill-contract.md"), "utf8").trim();
             if (contract) {
               lines.push("");
               lines.push("## Skill Compaction Contract");

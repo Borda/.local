@@ -29,6 +29,7 @@ Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `
 
 ```bash
 # timeout: 10000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _ARGS_UNSUPPORTED=0; _SKIP_NEXT=0
 # unquoted $ARGUMENTS word-splits; parse_scan_args.py handles quoted paths
 for _FLAG in $ARGUMENTS; do
@@ -40,22 +41,23 @@ for _FLAG in $ARGUMENTS; do
   esac
 done
 [ "$_ARGS_UNSUPPORTED" -eq 0 ] || exit 1
-SETUP_STDERR="${TMPDIR:-/tmp}/codemap-setup-err-$$"
+SETUP_STDERR="${TMPDIR:-/tmp}/codemap-setup-err-$$-${CSID}"
 SCAN_STATE_FILE=$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/setup_scan_env.sh" --arguments "$ARGUMENTS" 2>"$SETUP_STDERR")
 if [ $? -ne 0 ] || [ -z "$SCAN_STATE_FILE" ]; then
   printf "! setup_scan_env.sh failed"; [ -s "$SETUP_STDERR" ] && printf ": %s" "$(cat "$SETUP_STDERR")"; printf "\n"; exit 1
 fi
-printf '%s' "$SCAN_STATE_FILE" > "${TMPDIR:-/tmp}/codemap-state-ref"  # subsequent blocks read without knowing PID
+printf '%s' "$SCAN_STATE_FILE" > "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}"  # subsequent blocks read without knowing PID
 ```
 
 ```bash
 # timeout: 360000
-SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref" 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null)
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run from the beginning\n"; exit 1; }
 # shellcheck source=/dev/null
 . "$SCAN_STATE_FILE"
 # NUL-delimited args file avoids eval; produced by parse_scan_args.py
-_ARGS_FILE="${TMPDIR:-/tmp}/codemap-scan-args-nul-$$"
+_ARGS_FILE="${TMPDIR:-/tmp}/codemap-scan-args-nul-$$-${CSID}"
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$SCAN_ARGS_RAW" --nul-output "$_ARGS_FILE"
 SCAN_ARGS=()
 while IFS= read -r -d '' _arg; do
@@ -65,7 +67,7 @@ rm -f "$_ARGS_FILE"
 if ! "$SCAN_BIN" --timeout 360 "${SCAN_ARGS[@]}"; then
     printf "! scan-index failed (exit %d) — index may be stale or incomplete\n" "$?"
     # remove sentinel on failure; stale sentinel misleads Step 2
-    rm -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}"
+    rm -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}-${CSID}"
     exit 1
 fi
 ```
@@ -85,8 +87,9 @@ After scan, read index and report compact summary:
 
 ```bash
 # timeout: 15000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # only report if index exists; Step 1 may have failed
-SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref" 2>/dev/null)
+SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null)
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run /codemap:scan-codebase\n"; exit 1; }
 # shellcheck source=/dev/null
 . "$SCAN_STATE_FILE"
@@ -96,9 +99,9 @@ if [ -f "${_IDX}/${PROJ_NAME}.json" ]; then
     # scan-stats.py reads SCAN_ARGS env var (e.g. "--root src/mypackage") to resolve project root
     SCAN_ARGS="$SCAN_ARGS_RAW" python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-stats.py"
     # --incremental noop check; sentinel set in Step 1 on fallback to full scan
-    if [ -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}" ]; then
+    if [ -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}-${CSID}" ]; then
         echo "[codemap] Note: --incremental had no prior index — full scan ran instead"
-        rm -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}"
+        rm -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}-${CSID}"
     fi
 else
     echo "[codemap] Skipping stats — no index found (Step 1 may have failed)"
@@ -107,7 +110,7 @@ fi
 
 Degraded count reported — `scan-stats.py` reports module counts only, no per-file list. Not failure — index still useful.
 
-If `--incremental` passed and no prior index existed, Step 1 sets sentinel file (`codemap-incremental-noop-${PROJ_SLUG}`) before scan starts. Step 2 detects + removes it after stats, logging: `--incremental had no prior index — full scan ran instead`. If scan fails, Step 1 removes sentinel to avoid misleading state next run.
+If `--incremental` passed and no prior index existed, Step 1 sets sentinel file (`codemap-incremental-noop-${PROJ_SLUG}-${CSID}`) before scan starts. Step 2 detects + removes it after stats, logging: `--incremental had no prior index — full scan ran instead`. If scan fails, Step 1 removes sentinel to avoid misleading state next run.
 
 **Sentinel hostname limitation**: `PROJ_SLUG` includes machine hostname short-name. Docker containers/cloud instances with dynamic/random hostnames: sentinel key changes between runs — incremental-noop detection won't fire even with stale sentinel present. Known limitation; affects only Step 2 informational message, not scan correctness.
 

@@ -45,8 +45,9 @@ Top action:  [single most urgent recommendation]
 Run `mkdir -p .reports/analyse/ecosystem` then write full report to `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md` via Write tool — **no full analysis to terminal**.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload FOUNDRY_SHARED (Check 41: fresh shell; set by parent analyse/SKILL.md)
-FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-foundry-shared" 2>/dev/null || echo "")
+FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-foundry-shared-${CSID}" 2>/dev/null || echo "")
 [ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
 Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Ecosystem Impact Summary** template. Replace `[skill-specific path]` with `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md`. Terminal block: `---` on own line, entity line next, `→ saved to <path>` at end, `---` close. Print by reading lines 1–6 of report file, append `→ saved to <path>`. Report already has block — no separate prepend needed

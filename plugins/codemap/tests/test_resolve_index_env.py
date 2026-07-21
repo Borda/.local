@@ -1,7 +1,7 @@
 """Tests for ``bin/resolve_index_env.py`` — PROJ + INDEX temp-file writer.
 
 The script calls ``resolve_proj_index.py`` via subprocess, reads PROJ (line 1)
-and INDEX (line 2), and writes each to ``${TMPDIR}/codemap-resolve-{proj,index}``
+and INDEX (line 2), and writes each to ``${TMPDIR}/codemap-resolve-{proj,index}-${CSID}``
 for the caller to read back with ``cat``.
 
 Tests cover:
@@ -32,6 +32,18 @@ parse_resolver_output = _mod.parse_resolver_output
 main = _mod.main
 
 
+@pytest.fixture(autouse=True)
+def _no_session_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear CSID/CLAUDE_CODE_SESSION_ID so ``_resolve_csid()`` degrades to "shared".
+
+    Without this, a real Claude Code session running the suite would leak its own
+    session id into written filenames, making ``_read_resolve_file``'s fixed
+    ``-shared`` suffix assumption non-deterministic.
+    """
+    monkeypatch.delenv("CSID", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+
+
 def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str:
     """Read a resolve temp file by exact path.
 
@@ -43,7 +55,9 @@ def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str
     Returns:
         Contents of the temp file.
     """
-    path = tmp_path / f"{prefix}-resolve-{key}"
+    # tests monkeypatch CSID/CLAUDE_CODE_SESSION_ID empty (see conftest below) so
+    # _resolve_csid() always degrades to "shared" here.
+    path = tmp_path / f"{prefix}-resolve-{key}-shared"
     assert path.exists(), f"Expected temp file not found: {path}"
     return path.read_text()
 

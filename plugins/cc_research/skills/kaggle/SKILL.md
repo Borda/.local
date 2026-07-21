@@ -75,6 +75,7 @@ Clear at Step 1 start (stale prior run) and after Step 4 package-distillation ga
 
 ```bash
 # loads: compaction-contract.md
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 ARGS="$ARGUMENTS"
 COMPETITION_NAME=$(echo "$ARGS" | awk '{print $1}')
 RESUME_FLAG=""
@@ -98,10 +99,10 @@ echo "Type: ${PROBLEM_TYPE:-auto-detect}"
 echo "EDA only: $EDA_ONLY | Inference only: $INFERENCE_ONLY | Offline setup: $OFFLINE_SETUP"
 
 # Persist for Steps 3+4 (bash state lost across Bash() calls)
-echo "$COMPETITION_NAME" > "${TMPDIR:-/tmp}/kaggle-competition-name"
-echo "$EDA_ONLY"         > "${TMPDIR:-/tmp}/kaggle-eda-only"
-echo "$INFERENCE_ONLY"   > "${TMPDIR:-/tmp}/kaggle-inference-only"
-echo "$OFFLINE_SETUP"    > "${TMPDIR:-/tmp}/kaggle-offline-setup"
+echo "$COMPETITION_NAME" > "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}"
+echo "$EDA_ONLY"         > "${TMPDIR:-/tmp}/kaggle-eda-only-${CSID}"
+echo "$INFERENCE_ONLY"   > "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}"
+echo "$OFFLINE_SETUP"    > "${TMPDIR:-/tmp}/kaggle-offline-setup-${CSID}"
 
 mkdir -p .experiments/kaggle/  # timeout: 3000
 KEEP_ITEMS=""
@@ -109,8 +110,8 @@ if [[ "$ARGS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .claude/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/kaggle-keep-items"  # persist for Step 3 contract write
+rm -f .temp/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/kaggle-keep-items-${CSID}"  # persist for Step 3 contract write
 ```
 
 **Flag mutual-exclusion check** — if `EDA_ONLY` and `INFERENCE_ONLY` are both `true` (both `--eda-only` and `--inference-only` passed): print `` ! Conflicting flags: `--eda-only` and `--inference-only` are mutually exclusive (`--eda-only` is always-online with no training; `--inference-only` is always-offline/frozen-package with no EDA — see `foundation.md`). Pick one. `` then invoke `AskUserQuestion` — (a) **Abort** · (b) **Continue ignoring both** (falls back to full mode: neither eda-only nor inference-only applied). On Abort: stop.
@@ -185,9 +186,10 @@ Spawn prompt assembled from the inline problem profile below plus exactly one re
 
 ```bash
 # Re-hydrate flags persisted in Step 1 (bash state lost between Bash calls)
-COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name" 2>/dev/null || echo "$COMPETITION_NAME")
-EDA_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-eda-only" 2>/dev/null || echo "false")
-INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only" 2>/dev/null || echo "false")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || echo "$COMPETITION_NAME")
+EDA_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-eda-only-${CSID}" 2>/dev/null || echo "false")
+INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || echo "false")
 _KAGGLE_MODES="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills/kaggle/modes"
 COMPOSITION_FILE="$_KAGGLE_MODES/composition.md"
 MODE="full"
@@ -198,7 +200,7 @@ MODE="full"
 OUTPUT_SUFFIX=""
 [ "$INFERENCE_ONLY" = "true" ] && OUTPUT_SUFFIX="-inference"
 OUTFILE=".experiments/kaggle/${COMPETITION_NAME}${OUTPUT_SUFFIX}.py"
-echo "$MODE" > "${TMPDIR:-/tmp}/kaggle-mode"
+echo "$MODE" > "${TMPDIR:-/tmp}/kaggle-mode-${CSID}"
 echo "Mode: $MODE · Output: $OUTFILE"
 cat "$COMPOSITION_FILE"  # timeout: 5000
 ```
@@ -257,20 +259,21 @@ Write `<OUTFILE>`. Return only:
 
 ```bash
 # Compaction contract — boundary: after Step 3 notebook generated (compaction-contract.md §Lifecycle)
-_COMPETITION=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name" 2>/dev/null || echo "")
-_INF=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only" 2>/dev/null || echo "false")
-_KEEP=$(cat "${TMPDIR:-/tmp}/kaggle-keep-items" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_COMPETITION=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || echo "")
+_INF=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || echo "false")
+_KEEP=$(cat "${TMPDIR:-/tmp}/kaggle-keep-items-${CSID}" 2>/dev/null || echo "")
 _SUFFIX=""; [ "$_INF" = "true" ] && _SUFFIX="-inference"
 _OUTFILE=".experiments/kaggle/${_COMPETITION}${_SUFFIX}.py"
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: research:kaggle · phase: verify (after Step 3 notebook generated)"
     echo "- run-dir: .experiments/kaggle"
     echo "- preserve: outfile=${_OUTFILE}, competition=${_COMPETITION}${_KEEP_APPEND}"
     echo "- next: Step 4 verify structure, follow-up gate, package distillation"
-} > .claude/state/skill-contract.md  # timeout: 5000
+} > .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ## Step 4: Verify and report
@@ -284,9 +287,10 @@ After agent completes:
 
 ```bash
 # Re-derive OUTFILE from flags persisted in Step 1 (bash state lost between steps)
-COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name" 2>/dev/null || echo "$COMPETITION_NAME")
-INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only" 2>/dev/null || echo "false")
-MODE=$(cat "${TMPDIR:-/tmp}/kaggle-mode" 2>/dev/null || echo "full")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || echo "$COMPETITION_NAME")
+INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || echo "false")
+MODE=$(cat "${TMPDIR:-/tmp}/kaggle-mode-${CSID}" 2>/dev/null || echo "full")
 OUTPUT_SUFFIX=""; [ "$INFERENCE_ONLY" = "true" ] && OUTPUT_SUFFIX="-inference"
 OUTFILE=".experiments/kaggle/${COMPETITION_NAME}${OUTPUT_SUFFIX}.py"
 echo "=== Composition ==="; echo "$MODE"
@@ -347,7 +351,7 @@ If **(a)**:
 If **(b)**: skip; repeat this gate offer after next notebook written.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — kaggle notebook complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — kaggle notebook complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

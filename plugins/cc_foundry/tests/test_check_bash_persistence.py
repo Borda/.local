@@ -210,7 +210,7 @@ class TestReloadsBeforeRef:
 
     def test_dot_reload_quoted_path(self) -> None:
         """A quoted dot-source path (. "$FILE") is recognized as a reload."""
-        assert cbp.reloads_before_ref('. "${TMPDIR:-/tmp}/state"\necho "$VARX"\n', "VARX") is True
+        assert cbp.reloads_before_ref('. "${TMPDIR:-/tmp}/state-${CSID}"\necho "$VARX"\n', "VARX") is True
 
     def test_reload_after_reference_not_suppressed(self) -> None:
         """A reload appearing after the reference does not rescue it — still lost."""

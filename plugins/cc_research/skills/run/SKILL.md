@@ -31,7 +31,7 @@ DIMINISHING_RETURNS_WINDOW: 5 iterations < 0.5% each → warn user and suggest s
 STATE_DIR:                  .experiments/state/<run-id>/  (timestamped dir per run — see .claude/rules/artifact-lifecycle.md)
 SENTINEL_SLUG_FORMULA: |
   eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"
-  # Sentinel path: ${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}
+  # Sentinel path: ${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}  # tmpdir-exempt: user-shell-boundary
   # Bash state is lost between tool calls — re-source git_slugs.sh at each use site; it is the only authorized slug form.
 ```
 
@@ -115,9 +115,10 @@ cat "$_RESEARCH_SHARED/agent-resolution.md"
 **`CLAUDE_SKILL_DIR` resolution** — constants block provides default `plugins/cc_research/skills/run` (source-tree path). Resolve to installed path before use:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CLAUDE_SKILL_DIR=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/run 2>/dev/null | head -1)
 [ -z "$CLAUDE_SKILL_DIR" ] && CLAUDE_SKILL_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/cc_research/skills/run"
-echo "$CLAUDE_SKILL_DIR" > "${TMPDIR:-/tmp}/research-run-skill-dir"
+echo "$CLAUDE_SKILL_DIR" > "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}"
 ```
 
 ## Default Mode (Steps R1–R7)
@@ -135,7 +136,8 @@ If no `--researcher`/`--architect`, skip to R1.
 Follow `modes/hypothesis-pipeline.md`:
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
 cat "$CLAUDE_SKILL_DIR/modes/hypothesis-pipeline.md"  # timeout: 5000
 ```
 
@@ -176,9 +178,10 @@ KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .claude/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/research-run-keep-items"  # persist for Phase 8 contract write
+rm -f .temp/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/research-run-keep-items-${CSID}"  # persist for Phase 8 contract write
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`, `--keep`.
@@ -192,6 +195,7 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CODEMAP_RAW=auto
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
@@ -200,7 +204,7 @@ if [ $? -ne 0 ]; then
     [ "$CODEMAP_RAW" = "strict" ] && { echo "! BLOCKED — --codemap (strict) but codemap unavailable; run /codemap:scan-codebase or install codemap plugin"; exit 1; }
     CODEMAP_ENABLED=false
 fi
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/research-run-codemap-enabled
+echo "$CODEMAP_ENABLED" > "${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}"
 ```
 
 > loads: codemap-gates.md
@@ -232,11 +236,12 @@ Follow Gate A and Gate B.
 Generate `run-id` = `$(date -u +%Y-%m-%dT%H-%M-%SZ)`. Assign immediately:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 RUN_ID=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".experiments/${RUN_ID}"  # hypothesis pipeline + journal outputs (per <constants> note)
 STATE_DIR=".experiments/state/${RUN_ID}"  # per-iteration artifacts (state.json, experiments.jsonl, diary.md)
 mkdir -p "$RUN_DIR" "$STATE_DIR"  # timeout: 5000 — both dirs created before any Write to either
-echo "$RUN_ID" > "${TMPDIR:-/tmp}/research-run-id"  # persist for Phase 8 contract write (Check 41: fresh shell)
+echo "$RUN_ID" > "${TMPDIR:-/tmp}/research-run-id-${CSID}"  # persist for Phase 8 contract write (Check 41: fresh shell)
 ```
 
 Note: `STATE_DIR` (`.experiments/state/${RUN_ID}/`) is per-iteration artifact dir — distinct from `RUN_DIR`. Both coexist; see `<constants>` block.
@@ -365,7 +370,7 @@ Then proceed to R5.
 ```bash
 # REPO_SLUG / BRANCH_SLUG: source the single authorized slug form (see <constants>)
 eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"  # timeout: 3000
-COMMIT_SENTINEL="${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
+COMMIT_SENTINEL="${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # tmpdir-exempt: user-shell-boundary
 touch "$COMMIT_SENTINEL"  # timeout: 3000
 # trap not effective across Bash calls — commit protection handled by commit-guard.js hook (foundry-owned; see caveat below)
 ```
@@ -377,7 +382,8 @@ touch "$COMMIT_SENTINEL"  # timeout: 3000
 **`--team` mode**: If `--team` active, follow `modes/team.md` and execute Phases A–D in place of standard iteration loop below.
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
 cat "$CLAUDE_SKILL_DIR/modes/team.md"  # timeout: 5000
 ```
 
@@ -439,7 +445,7 @@ else
 fi
 ```
 
-**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled`):
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}`):
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 cat "$_RESEARCH_SHARED/codemap-context.md"
@@ -484,7 +490,8 @@ If Agent tool unavailable (nested subagent context), implement change inline, co
 > Follow `modes/compute-docker.md` — full Phase 2a and 2b logic for docker sandbox. Skip entire file if `sandbox_mode = "local"`.
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
 cat "$CLAUDE_SKILL_DIR/modes/compute-docker.md"  # timeout: 5000
 ```
 
@@ -497,7 +504,8 @@ Skip if `sandbox_mode = "local"` — handled in compute-docker.md above.
 Follow `modes/codex-copilot.md` — contains full Phase 2c logic, cost-bounded gate, Codex dispatch prompt, outcome handling, and stuck escalation.
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
 cat "$CLAUDE_SKILL_DIR/modes/codex-copilot.md"  # timeout: 5000
 ```
 
@@ -512,7 +520,7 @@ Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentine
 ```bash
 # Refresh sentinel — bash state lost between calls; re-source slug (same form as R5 setup)
 eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"  # timeout: 3000
-touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000
+touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000  # tmpdir-exempt: user-shell-boundary
 ```
 
 Stage only modified files (never `git add -A`):
@@ -533,7 +541,8 @@ If pre-commit hooks fail:
 > Follow `modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
 cat "$CLAUDE_SKILL_DIR/modes/phase5-metric.md"  # timeout: 5000
 ```
 
@@ -643,21 +652,22 @@ TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 
 ```bash
 # Compaction contract — overwrite each iteration; always reflects latest in-progress state (compaction-contract.md §Lifecycle)
-_RUN_ID=$(cat "${TMPDIR:-/tmp}/research-run-id" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/research-run-keep-items" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_RUN_ID=$(cat "${TMPDIR:-/tmp}/research-run-id-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/research-run-keep-items-${CSID}" 2>/dev/null || echo "")
 _STATE_JSON=".experiments/state/${_RUN_ID}/state.json"
 _ITER=$(jq -r '.iteration // 0' "$_STATE_JSON" 2>/dev/null || echo "?")
 _BEST=$(jq -r '.best_metric // "?"' "$_STATE_JSON" 2>/dev/null || echo "?")
 _PROG=$(jq -r '.program_file // ""' "$_STATE_JSON" 2>/dev/null || echo "")
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: research:run · phase: iteration-loop (after iter ${_ITER})"
     echo "- run-dir: .experiments/${_RUN_ID}"
     echo "- preserve: state-json=${_STATE_JSON}, program=${_PROG}, iter=${_ITER}, best-metric=${_BEST}${_KEEP_APPEND}"
     echo "- next: continue R5 from iter $(( _ITER + 1 )) or proceed to R6 when loop done"
-} > .claude/state/skill-contract.md  # timeout: 5000
+} > .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 #### Phase 9 — Progress checks
@@ -674,7 +684,7 @@ mkdir -p .claude/state  # timeout: 5000
 # Fresh shell — $COMMIT_SENTINEL from R5 setup is gone; re-derive the path before rm
 # (matches the Phase 4 re-derivation) or the cleanup is a silent no-op on "".
 eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"  # timeout: 3000
-rm -f "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000  (best-effort; commit-guard.js owns lifecycle)
+rm -f "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000  (best-effort; commit-guard.js owns lifecycle)  # tmpdir-exempt: user-shell-boundary
 ```
 
 ### Step R6: Results report
@@ -690,7 +700,8 @@ Write full report to `.reports/research/run-$BRANCH-$(date +%Y-%m-%d).md` via Wr
 Follow `modes/report.md`:
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
 cat "$CLAUDE_SKILL_DIR/modes/report.md"  # timeout: 5000
 ```
 `state.json`: `status = completed`.
@@ -714,7 +725,7 @@ Call `AskUserQuestion` tool after R7 output — do NOT write options as plain te
 - (c) label: `skip` — description: no further action
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — campaign complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — campaign complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Resume Mode
@@ -723,7 +734,8 @@ rm -f .claude/state/skill-contract.md  # clear contract — campaign complete (c
 > Follow and execute `modes/resume.md`.
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
 cat "$CLAUDE_SKILL_DIR/modes/resume.md"  # timeout: 5000
 ```
 
@@ -733,7 +745,8 @@ cat "$CLAUDE_SKILL_DIR/modes/resume.md"  # timeout: 5000
 > Execute only when `--colab` flag active. Follow and execute `modes/colab-setup.md`.
 
 ```bash
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "plugins/cc_research/skills/run")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "plugins/cc_research/skills/run")
 cat "$CLAUDE_SKILL_DIR/modes/colab-setup.md"  # timeout: 5000
 ```
 

@@ -15,6 +15,7 @@ Run when `SEMBLE_ENABLED=true`. Codemap availability already validated by `codem
 Run when skill accepts `--plan <path>` flag. Sets `$PLAN_FILE`.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 PLAN_FILE=""
 if [[ "$ARGUMENTS" =~ --plan[[:space:]]+([^[:space:]]+) ]]; then
   PLAN_FILE="${BASH_REMATCH[1]}"
@@ -27,7 +28,7 @@ if [ -n "$PLAN_FILE" ] && [ ! -f "$PLAN_FILE" ]; then
   exit 1
 fi
 # persist so later cross-Bash-call reads (compaction-contract boundaries in feature/fix/refactor) resolve it — shell var is lost between Bash() calls
-echo "$PLAN_FILE" > "${TMPDIR:-/tmp}/dev-plan-file"
+echo "$PLAN_FILE" > "${TMPDIR:-/tmp}/dev-plan-file-${CSID}"
 ```
 
 ## Team Spawn Template

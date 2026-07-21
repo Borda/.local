@@ -76,8 +76,10 @@ def _make_hook_body(plugin_root: str | None) -> str:
     if plugin_root and not _VALID_PLUGIN_ROOT_RE.match(str(plugin_root)):
         raise ValueError(f"plugin_root contains disallowed characters (only a-zA-Z0-9_./- allowed): {plugin_root}")
     # PID-qualified log path — avoids symlink attacks on the predictable shared /tmp/codemap-hook.log
-    # (CWE-377). ${TMPDIR:-/tmp} honours user-specific TMPDIR when set; $$ disambiguates per shell.
-    log_path = '"${TMPDIR:-/tmp}/codemap-hook-$$.log"'
+    # (CWE-377). ${TMPDIR:-/tmp} honours user-specific TMPDIR when set; $$ disambiguates per shell.  # tmpdir-exempt: git-hook-boundary
+    # Embedded into the installed git hook body, which runs outside Claude Code (no
+    # CLAUDE_CODE_SESSION_ID there) — see F6, plan §3.4. Not suffixed with -CSID.
+    log_path = '"${TMPDIR:-/tmp}/codemap-hook-$$.log"'  # tmpdir-exempt: git-hook-boundary
     if plugin_root:
         scan = f"{plugin_root}/bin/scan-index"
         inner = (

@@ -45,18 +45,19 @@ Parse flags into shell variables (not prose) so downstream blocks see correct va
 
 ```bash
 # timeout: 5000
-PLAN_NS="${TMPDIR:-/tmp}/dev-plan-$$"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLAN_NS="${TMPDIR:-/tmp}/dev-plan-$$-${CSID}"
 mkdir -p "$PLAN_NS"
-echo "$PLAN_NS" > "${TMPDIR:-/tmp}/dev-plan-ns-current"  # downstream blocks read back namespace
+echo "$PLAN_NS" > "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}"  # downstream blocks read back namespace
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" --skill plan --write-files "$ARGUMENTS"
-# values written to ${TMPDIR:-/tmp}/dev-plan-<flag> (legacy paths: see SKILL_SPECS["plan"])
-cp "${TMPDIR:-/tmp}/dev-challenge-enabled"  "$PLAN_NS/challenge-enabled" 2>/dev/null || echo "true"  > "$PLAN_NS/challenge-enabled"
-cp "${TMPDIR:-/tmp}/dev-codemap-raw"        "$PLAN_NS/codemap-raw"       2>/dev/null || echo "auto"  > "$PLAN_NS/codemap-raw"
-cp "${TMPDIR:-/tmp}/dev-semble-enabled"     "$PLAN_NS/semble-enabled"    2>/dev/null || echo "false" > "$PLAN_NS/semble-enabled"
-cp "${TMPDIR:-/tmp}/dev-plan-max-depth"     "$PLAN_NS/max-depth"         2>/dev/null || echo "3"     > "$PLAN_NS/max-depth"
+# values written to ${TMPDIR:-/tmp}/dev-plan-<flag>-${CSID} (legacy paths: see SKILL_SPECS["plan"])
+cp "${TMPDIR:-/tmp}/dev-challenge-enabled-${CSID}"  "$PLAN_NS/challenge-enabled" 2>/dev/null || echo "true"  > "$PLAN_NS/challenge-enabled"
+cp "${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}"        "$PLAN_NS/codemap-raw"       2>/dev/null || echo "auto"  > "$PLAN_NS/codemap-raw"
+cp "${TMPDIR:-/tmp}/dev-semble-enabled-${CSID}"     "$PLAN_NS/semble-enabled"    2>/dev/null || echo "false" > "$PLAN_NS/semble-enabled"
+cp "${TMPDIR:-/tmp}/dev-plan-max-depth-${CSID}"     "$PLAN_NS/max-depth"         2>/dev/null || echo "3"     > "$PLAN_NS/max-depth"
 ```
 
-Downstream blocks recover namespace then read back, e.g. `PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null); CODEMAP_ENABLED=$(cat "$PLAN_NS/codemap-enabled" 2>/dev/null || echo false)`.
+Downstream blocks recover namespace then read back, e.g. `PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID} 2>/dev/null); CODEMAP_ENABLED=$(cat "$PLAN_NS/codemap-enabled" 2>/dev/null || echo false)`.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -64,7 +65,8 @@ Downstream blocks recover namespace then read back, e.g. `PLAN_NS=$(cat ${TMPDIR
 
 ```bash
 # timeout: 5000
-PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID} 2>/dev/null)
 [ -n "$PLAN_NS" ] || { echo "! PLAN_NS empty — dev-plan-ns-current not found; re-run /develop:plan"; exit 1; }
 CODEMAP_RAW=$(cat "$PLAN_NS/codemap-raw" 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
@@ -103,7 +105,8 @@ Determine task type and affected surface.
 
 ```bash
 # timeout: 5000
-PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID} 2>/dev/null)
 if [[ "$ARGUMENTS" == *"::"* ]]; then
     _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
     TARGET_MODULE="${_QNAME%%::*}"
@@ -132,7 +135,8 @@ Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if
 
 ```bash
 # timeout: 15000
-PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID} 2>/dev/null)
 CODEMAP_ENABLED=$(cat "$PLAN_NS/codemap-enabled" 2>/dev/null || echo false)
 TARGET_MODULE=$(cat "$PLAN_NS/target-module" 2>/dev/null || echo "")
 if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1; then
@@ -160,9 +164,10 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
 
 ```bash
 # anti-loop guard  # timeout: 3000
-PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID} 2>/dev/null)
 MAX_DEPTH=$(cat "$PLAN_NS/max-depth" 2>/dev/null || echo 3)
-DEPTH_FILE="${TMPDIR:-/tmp}/dev-plan-depth-checkpoint"
+DEPTH_FILE="${TMPDIR:-/tmp}/dev-plan-depth-checkpoint-${CSID}"
 CURRENT_DEPTH=$(cat "$DEPTH_FILE" 2>/dev/null || echo "$MAX_DEPTH")
 if [ "$CURRENT_DEPTH" -le 0 ]; then
     echo "! depth limit ($MAX_DEPTH) reached — stopping plan→debug→plan loop"
@@ -194,7 +199,8 @@ Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-se
 
 ```bash
 # persist — bash state lost between Bash() calls  # timeout: 3000
-PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID} 2>/dev/null)
 echo "$PLAN_FILE" > "$PLAN_NS/plan-file"
 ```
 
@@ -301,7 +307,8 @@ Do not escalate: items resolvable from codebase, items that are risks (not block
 
 ```bash
 # re-hydrate PLAN_FILE — bash state lost between Bash() calls  # timeout: 3000
-PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID} 2>/dev/null)
 PLAN_FILE=$(cat "$PLAN_NS/plan-file" 2>/dev/null)
 [ -f "$PLAN_FILE" ] || { echo "plan: PLAN_FILE not found: $PLAN_FILE" >&2; exit 1; }
 ```

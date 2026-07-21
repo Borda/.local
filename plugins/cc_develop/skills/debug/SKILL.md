@@ -74,12 +74,13 @@ If `LANG_HINT` not `python`: invoke `AskUserQuestion` — "Non-Python project de
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-debug-keep-items"
-rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/dev-debug-hypotheses  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-debug-keep-items-${CSID}"
+rm -f .temp/state/skill-contract.md ${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}  # timeout: 5000
 ```
 
 ```bash
@@ -89,11 +90,12 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
 # URL normalization + log fetching: §URL Normalization in ci-log-extract.md
 ```
 
-**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-debug-codemap` (per-skill) and `${TMPDIR:-/tmp}/dev-codemap-raw` (legacy) by flag-parsing block above (via `dev_parse_args.py --skill debug --write-files`). Read per-skill path, then normalize via `codemap-resolve`:
+**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-debug-codemap-${CSID}` (per-skill) and `${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}` (legacy) by flag-parsing block above (via `dev_parse_args.py --skill debug --write-files`). Read per-skill path, then normalize via `codemap-resolve`:
 
 ```bash
 # timeout: 5000
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap 2>/dev/null || echo auto)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-${CSID} 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -104,7 +106,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     CODEMAP_ENABLED=false
 fi
 # skill-specific path — avoids stale value from prior feature --codemap run
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-debug-codemap-enabled
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID}
 ```
 
 > loads: codemap-gates.md
@@ -115,7 +117,7 @@ cat "$_DEV_SHARED/codemap-gates.md"
 ```
 Follow Gate A and Gate B.
 
-Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled 2>/dev/null || echo true)`, `CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id 2>/dev/null || echo "")`.
+Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled-${CSID} 2>/dev/null || echo true)`, `CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode-${CSID} 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id-${CSID} 2>/dev/null || echo "")`.
 
 ```bash
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
@@ -129,6 +131,7 @@ Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log 
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # strip flags first — "123 --no-challenge" would fail integer detection otherwise
 ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+|--no-codemap|--codemap//g' | xargs)
 if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS_FOR_MODE_DETECT" =~ ^#?[0-9]+$ ]]; then
@@ -136,7 +139,7 @@ if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS_FOR_MODE_DETECT" =~ ^
 else
     DEBUG_MODE="symptom"
 fi
-echo "$DEBUG_MODE" > ${TMPDIR:-/tmp}/dev-debug-mode
+echo "$DEBUG_MODE" > ${TMPDIR:-/tmp}/dev-debug-mode-${CSID}
 ```
 
 Subsequent steps branch by `DEBUG_MODE`:
@@ -156,12 +159,13 @@ Health monitoring (CLAUDE.md §6): for each spawned agent, use a **per-agent sen
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 for N in 1 2 3; do
-    touch "${TMPDIR:-/tmp}/debug-team-check-${N}"
+    touch "${TMPDIR:-/tmp}/debug-team-check-${N}-${CSID}"
 done
 ```
 
-Poll each independently every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-${N} -type f | wc -l` where `$N` is actual agent index in loop variable. A single shared sentinel collapses health isolation — stalled agent N=2 cannot be distinguished from active agent N=1. Hard cutoff 15 min no-file-activity per agent; mark timed-out agents with ⏱ in synthesis.
+Poll each independently every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-${N}-${CSID} -type f | wc -l` where `$N` is actual agent index in loop variable. A single shared sentinel collapses health isolation — stalled agent N=2 cannot be distinguished from active agent N=1. Hard cutoff 15 min no-file-activity per agent; mark timed-out agents with ⏱ in synthesis.
 
 ## Step 1: Understand the symptom
 
@@ -171,7 +175,8 @@ Collect all signals before forming any hypothesis.
 
 ```bash
 # timeout: 10000
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled 2>/dev/null || echo false)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID} 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     scan-query central --top 5 2>/dev/null
 fi
@@ -191,17 +196,19 @@ If codemap results returned: prepend `## Structural Context (codemap)` block to 
 
 ```bash
 # timeout: 6000
-REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream-${CSID} 2>/dev/null || echo "")
 if [ -n "$REPO_NAME" ]; then
     ISSUE_BODY=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null)
 else
     ISSUE_BODY=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null)
 fi
-echo "$ISSUE_BODY" | tee ${TMPDIR:-/tmp}/dev-issue-body   # persist — reloaded in next block (bash state lost between Bash() calls; re-fetching would duplicate the gh call)
+echo "$ISSUE_BODY" | tee ${TMPDIR:-/tmp}/dev-issue-body-${CSID}   # persist — reloaded in next block (bash state lost between Bash() calls; re-fetching would duplicate the gh call)
 ```
 
 ```bash
-ISSUE_BODY=$(cat ${TMPDIR:-/tmp}/dev-issue-body 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+ISSUE_BODY=$(cat ${TMPDIR:-/tmp}/dev-issue-body-${CSID} 2>/dev/null || echo "")
 TEST_PATH=$(echo "$ISSUE_BODY" | grep -oE '(tests?/[^[:space:]]+\.py|test_[^[:space:]]+\.py)' | head -1)
 if [ -z "$TEST_PATH" ]; then
   echo "→ No test file found in issue; running full test suite"
@@ -215,9 +222,10 @@ Run pytest with extracted path (empty `$TEST_PATH` → full suite):
 
 ```bash
 # timeout: 600000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 $PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
 GATE_EXIT=${PIPESTATUS[0]}
-echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
+echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit-${CSID}
 if [ "$GATE_EXIT" -ne 0 ]; then
     echo "Bug reproduced — tests fail. Proceed to fix."
 else
@@ -245,9 +253,10 @@ SUSPECT_FILE="${TEST_PATH:-}"  # empty → full-repo diff
 # Resolve TEST_PATH before this block — e.g.:
 # TEST_PATH=$(grep -rE '<symptom keyword>' tests/ --include='*.py' -l | head -1)
 # timeout: 600000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 $PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
 GATE_EXIT=${PIPESTATUS[0]}
-echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
+echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit-${CSID}
 if [ "$GATE_EXIT" -ne 0 ]; then
     echo "Bug reproduced — tests fail. Proceed to fix."
 else
@@ -326,7 +335,8 @@ Step catches non-obvious causes — ordering dependency, environment-specific st
 
 ```bash
 # WHY: ledger survives compaction via contract; prevents re-testing refuted causes after a mid-investigation compact
-echo "<candidate cause> :: open" >> ${TMPDIR:-/tmp}/dev-debug-hypotheses
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "<candidate cause> :: open" >> ${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}
 ```
 
 ## Challenger gate
@@ -334,7 +344,7 @@ echo "<candidate cause> :: open" >> ${TMPDIR:-/tmp}/dev-debug-hypotheses
 **Decision — three states** (default is NOT "skip": it runs on substantial root causes and auto-skips only narrow ones):
 
 1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
-2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a narrow root cause.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)` = `true`) → **always run**, even on a narrow root cause.
 3. else **default** → **run when root cause is substantial** (spans multiple files, a larger change, or touches public API); **auto-skip when narrow** (single file, ≲50 lines, no API change) — hypothesis simple enough to proceed directly.
 
 Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial cases where it would otherwise fire; `--challenge` forces it on narrow cases where it would otherwise auto-skip.
@@ -343,20 +353,21 @@ Spawn `foundry:challenger` with pattern analysis from Step 2 (differences betwee
 
 > "Review pattern analysis and candidate root causes. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
-Parse result — update hypothesis ledger (`${TMPDIR:-/tmp}/dev-debug-hypotheses`) with each candidate's verdict as you parse:
+Parse result — update hypothesis ledger (`${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}`) with each candidate's verdict as you parse:
 - **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into hypothesis list before Step 3 gate. Mark any candidate the challenger refuted `:: refuted (challenger)` in ledger.
 - **Concerns only** → add as alternative hypotheses in Step 3; append each new concern to ledger as `:: open (alt)`; continue.
 - **No findings / all refuted** → proceed.
 
 ```bash
 # Compaction contract — boundary: after evidence+challenge, before hypothesis gate (compaction-contract.md §Lifecycle)
-_DEBUG_MODE=$(cat "${TMPDIR:-/tmp}/dev-debug-mode" 2>/dev/null || echo "symptom")
-_CI_RUN=$(cat "${TMPDIR:-/tmp}/dev-ci-run-id" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-debug-keep-items" 2>/dev/null || echo "")
-_TRIED=$(head -6 "${TMPDIR:-/tmp}/dev-debug-hypotheses" 2>/dev/null)  # cap keeps contract ≤12 lines
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEBUG_MODE=$(cat "${TMPDIR:-/tmp}/dev-debug-mode-${CSID}" 2>/dev/null || echo "symptom")
+_CI_RUN=$(cat "${TMPDIR:-/tmp}/dev-ci-run-id-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-debug-keep-items-${CSID}" 2>/dev/null || echo "")
+_TRIED=$(head -6 "${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}" 2>/dev/null)  # cap keeps contract ≤12 lines
 _PRESERVE="mode=$_DEBUG_MODE, ci-run=${_CI_RUN:-none}"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:debug · phase: hypothesis+handoff (after evidence gathered and pattern analysis)"
@@ -367,7 +378,7 @@ mkdir -p .claude/state  # timeout: 5000
         echo "$_TRIED" | sed 's/^/    - /'
     fi
     echo "- next: state hypothesis with evidence (Step 3) → confirm root cause → write diagnosis → handoff to /develop:fix. Skip any candidate marked refuted/ruled-out above."
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 3: Hypothesis and gate
@@ -389,18 +400,19 @@ cat "$_DEV_SHARED/premise-grounding.md"
 
 **Gate**: present hypothesis to user, wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
 
-If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses` and re-run boundary contract block above before re-hypothesizing — keeps loop guard current so ruled-out cause not revisited.
+If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}` and re-run boundary contract block above before re-hypothesizing — keeps loop guard current so ruled-out cause not revisited.
 
 **Test impact (codemap) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `scan-query` availability (same gate as Step 1). `<SUSPECT>` is confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
 
 ```bash
 # timeout: 8000
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled 2>/dev/null || echo false)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID} 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1; then
     # SUSPECT resolved from Step 3 hypothesis — e.g. mypackage.auth::validate or mypackage.auth
-    scan-query test-impact "$SUSPECT" 2>/dev/null | tee ${TMPDIR:-/tmp}/dev-debug-test-impact
+    scan-query test-impact "$SUSPECT" 2>/dev/null | tee ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}
 else
-    rm -f ${TMPDIR:-/tmp}/dev-debug-test-impact  # no query — fix falls back to its own live query
+    rm -f ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}  # no query — fix falls back to its own live query
 fi
 ```
 
@@ -452,11 +464,12 @@ Write `$DIAG_FILE` with this structure:
 <high|medium|low>
 ```
 
-**Append Test Impact section** — only when Step 3 captured a non-empty, non-error result (`${TMPDIR:-/tmp}/dev-debug-test-impact` present). fix reads this to skip re-querying. Records raw JSON plus index `scanned_at` so fix can verify handoff is not older than current index (freshness guard):
+**Append Test Impact section** — only when Step 3 captured a non-empty, non-error result (`${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}` present). fix reads this to skip re-querying. Records raw JSON plus index `scanned_at` so fix can verify handoff is not older than current index (freshness guard):
 
 ```bash
 # timeout: 5000
-TI_FILE="${TMPDIR:-/tmp}/dev-debug-test-impact"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TI_FILE="${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}"
 if [ -s "$TI_FILE" ] && ! grep -q '"error"' "$TI_FILE"; then
     PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || basename "$PWD")
     _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}/${PROJ}.json"
@@ -499,7 +512,8 @@ Evidence: <key signals>
 - (b) label: `skip` — description: no action
 
 ```bash
-rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/dev-debug-hypotheses  # clear contract + ledger — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+rm -f .temp/state/skill-contract.md ${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}  # clear contract + ledger — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

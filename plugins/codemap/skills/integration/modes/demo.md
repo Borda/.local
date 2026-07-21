@@ -47,8 +47,9 @@ Ask: "No local Python repo detected. Which public repo to clone for demo?" Optio
 On cancel: stop. On selection:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CLONE_URL="https://github.com/<selected-repo>"
-SANDBOX="${TMPDIR:-/tmp}/codemap-demo-$$"
+SANDBOX="${TMPDIR:-/tmp}/codemap-demo-$$-${CSID}"
 mkdir -p "$SANDBOX"
 git clone --depth 1 "$CLONE_URL" "$SANDBOX/$(basename "$CLONE_URL" .git)"  # timeout: 60000
 TARGET="$SANDBOX/$(basename "$CLONE_URL" .git)"
@@ -62,11 +63,12 @@ Run bin scripts inline — demo controls cwd, parses C3 JSON directly. First res
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _DEMO_PROJ=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$TARGET")
 SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --output-prefix "codemap-demo-${_DEMO_PROJ}" 2>/dev/null
-_DEMO_INDEX=$(cat "${TMPDIR:-/tmp}/codemap-demo-${_DEMO_PROJ}-resolve-index" 2>/dev/null || echo "")
+_DEMO_INDEX=$(cat "${TMPDIR:-/tmp}/codemap-demo-${_DEMO_PROJ}-resolve-index-${CSID}" 2>/dev/null || echo "")
 ```
 
 ```bash
@@ -253,13 +255,14 @@ Each arm runs under own session, so its scan-query / Grep / Read / Glob calls la
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _AB_STAMP=$(date +%s)
 PLAIN_SESSION="demo-plain-${_AB_STAMP}"
 CODEMAP_SESSION="demo-codemap-${_AB_STAMP}"
 _DEMO_PROJ=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$TARGET")
 ```
 
-Seed arm's own session id into `${TMPDIR:-/tmp}/codemap-${_DEMO_PROJ}-session` immediately before that arm's `Agent()`/`Skill()` call — `PLAIN_SESSION` before plain arm, `CODEMAP_SESSION` before codemap arm (tool-use + cli hooks read this file to stamp each record with current session). Arms' self-reported `b`/`g`/`r`/`sq` counts discarded — cost read back from telemetry, not arm's word.
+Seed arm's own session id into `${TMPDIR:-/tmp}/codemap-${_DEMO_PROJ}-session-${CSID}` immediately before that arm's `Agent()`/`Skill()` call — `PLAIN_SESSION` before plain arm, `CODEMAP_SESSION` before codemap arm (tool-use + cli hooks read this file to stamp each record with current session). Arms' self-reported `b`/`g`/`r`/`sq` counts discarded — cost read back from telemetry, not arm's word.
 
 After both arms finish, derive measured per-arm token totals + signal-capped confidence with `measure_demo_arms.py` (all JSON/number crunching lives in bin script — never inline here):
 

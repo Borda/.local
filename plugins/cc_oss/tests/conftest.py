@@ -11,7 +11,22 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 _BIN_DIR = Path(__file__).parent.parent / "bin"
+
+
+@pytest.fixture(autouse=True)
+def _no_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Strip session-scoping env vars so TMPDIR sentinel tests are deterministic.
+
+    Without this, a test run from inside a live Claude Code session inherits
+    ``CLAUDE_CODE_SESSION_ID`` from the ambient shell, making CSID-suffixed
+    filenames unpredictable across environments. Absent both vars, bin/
+    scripts fall back to the literal ``"shared"`` token.
+    """
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("CSID", raising=False)
 
 
 def _load_bin_modules() -> None:

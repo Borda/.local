@@ -62,7 +62,7 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
 - RECALL_THRESHOLD: 0.70 (below → agent needs instruction improvement)
 - CALIBRATION_BORDERLINE: ±0.10 (|bias| within this → calibrated; between 0.10 and 0.15 → borderline)
 - CALIBRATION_WARN: ±0.15 (bias beyond this → confidence decoupled from quality)
-- CALIBRATE_LOG: `.claude/logs/calibrations.jsonl`
+- CALIBRATE_LOG: `.notes/logs/calibrations.jsonl` (legacy `.claude/logs/calibrations.jsonl` read-only fallback for historical entries)
 - AB_ADVANTAGE_THRESHOLD: 0.10 (delta recall or F1 above this → meaningful advantage; below → marginal or none)
 - PHASE_TIMEOUT_MIN: 5 (per-phase budget — if spawned subagents haven't all returned, collect partial results and continue)
 - PIPELINE_TIMEOUT_MIN: 10 (hard cutoff — pipeline not notified within 10 min of launch is timed out; extendable if agent explains delay) # tighter than global 15-min cutoff from CLAUDE.md §6 — intentional for calibrate
@@ -118,20 +118,21 @@ From `$ARGUMENTS`, determine:
 
 - **Strip flags first**: extract `--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local`, `--keep` before scope resolution; validate mutual exclusion (error and stop on conflict). Strip all flags from ARGUMENTS before scope token resolution:
   ```bash
+  export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
   KEEP_ITEMS=""
   if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
       KEEP_ITEMS="${BASH_REMATCH[1]}"
   fi
   ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
-  rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
+  rm -f .temp/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
   LOCAL_MODE=false; [[ "$ARGUMENTS" == *"--local"* ]] && LOCAL_MODE=true
   ARGUMENTS="${ARGUMENTS//--fast/}"; ARGUMENTS="${ARGUMENTS//--full/}"
   ARGUMENTS="${ARGUMENTS//--ab-test/}"; ARGUMENTS="${ARGUMENTS//--apply/}"
   ARGUMENTS="${ARGUMENTS//--skip-gate/}"; ARGUMENTS="${ARGUMENTS//--local/}"
   ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
-  mkdir -p "${TMPDIR:-/tmp}/calibrate-state"
-  echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/calibrate-state/local-mode"
-  echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/calibrate-state/keep-items"
+  mkdir -p "${TMPDIR:-/tmp}/calibrate-state-${CSID}"
+  echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode"
+  echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/calibrate-state-${CSID}/keep-items"
   ```
 - **Target list** — remaining tokens after flag-strip; union of resolved targets:
   - `all` or omitted → all agents + `/audit` + routing + communication + all rules
@@ -163,16 +164,18 @@ Do not proceed to Step 2 — silent no-op produces no report and confuses caller
 If benchmark will run (i.e., `--fast` or `--full` present, with or without `--apply`): generate timestamp `YYYY-MM-DDTHH-MM-SSZ` (UTC, e.g. `2026-03-03T13-44-48Z`) explicitly via the Bash tool and persist for downstream steps (fresh-shell state loss between Bash() calls):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 echo "Calibration timestamp: $TIMESTAMP"
-mkdir -p "${TMPDIR:-/tmp}/calibrate-state"
-echo "$TIMESTAMP" > "${TMPDIR:-/tmp}/calibrate-state/timestamp"
+mkdir -p "${TMPDIR:-/tmp}/calibrate-state-${CSID}"
+echo "$TIMESTAMP" > "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp"
 ```
 
 Every subsequent Bash block in Steps 2–6 that uses `$TIMESTAMP` must re-read it at the top of the block:
 
 ```bash
-TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null)
 [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
 # never fall back to $(date ...) — generates new timestamp → nonexistent run dir; surface state loss explicitly
 ```
@@ -235,7 +238,8 @@ For multiple tokens, merge resolved targets into per-mode groups before spawning
 
 Before spawning **any** pipeline (when target includes `agents`, `skills`, or `all`), check cross-plugin availability. When `LOCAL_MODE=true`, check `plugins/` source tree (local edits not yet installed); otherwise check installed plugin cache:
 ```bash
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state/local-mode" 2>/dev/null || echo "false")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || echo "false")
 if [ "$LOCAL_MODE" = "true" ]; then
     [ -d "plugins/cc_oss" ]      && OSS_AVAILABLE="plugins/cc_oss"           || OSS_AVAILABLE=""
     [ -d "plugins/cc_research" ] && RESEARCH_AVAILABLE="plugins/cc_research" || RESEARCH_AVAILABLE=""
@@ -257,19 +261,20 @@ Fallback role descriptions for cross-plugin agents (if ever substituted with `ge
 Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instructions for pipeline subagent. Pipeline template lives at `$CALIB_MODES_DIR/../templates/pipeline-prompt.md`. **N override**: `communication` caps at fast=3 / full=5 (not global FULL_N=10) to prevent pipeline context overflow — run `cat "$CALIB_MODES_DIR/communication.md"` for details. **`rules` mode** spawns one `general-purpose` subagent per rule file (not standard pipeline template) — run `cat "$CALIB_MODES_DIR/rules.md"` for direct-spawn approach.
 
 ```bash
-_TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/calibrate-state/keep-items" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/keep-items" 2>/dev/null || echo "")
 _RUN_DIR=".reports/calibrate/$_TIMESTAMP"
 _PRESERVE="run-dir=$_RUN_DIR, timestamp=$_TIMESTAMP"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:calibrate · phase: collect+synthesize (after pipeline fan-out)"
     echo "- run-dir: $_RUN_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: collect pipeline results → combined report → follow-up gate (Step 3) → log (Step 4) → signals (Step 5)"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 3: Collect results and print combined report
@@ -278,13 +283,14 @@ mkdir -p .claude/state  # timeout: 5000
 
 Per-target checkpoint init — **create checkpoint BEFORE spawning each pipeline** (sequential execution: only one runs at a time, do NOT pre-initialize checkpoints for unstarted targets). In Step 2, immediately before issuing each `Agent(...)` spawn call, run:
 ```bash
-touch ${TMPDIR:-/tmp}/calibrate-check-$batch_target; LAUNCH_AT=$(date +%s)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+touch ${TMPDIR:-/tmp}/calibrate-check-$batch_target-${CSID}; LAUNCH_AT=$(date +%s)
 ```
 Then spawn the pipeline. This ordering prevents false-alive readings on fast-exit agents (a checkpoint created after spawn may never see any writes if the agent exits before the first poll).
 
 > **Checkpoint granularity** — one checkpoint per **mode category** (e.g. `agents`, `skills`, `routing`, `communication`, `rules`), not one per individual agent within a mode. A mode stays "alive" as long as ANY of its pipelines (across all batches) writes a file under `.reports/calibrate/<TIMESTAMP>/<MODE>/` newer than the checkpoint. A fully stalled mode is one where zero pipelines have written in the check interval. The `$batch_target` substituted into the touch and poll commands is the **mode name** (e.g. `agents`), NOT a per-agent path.
 
-Poll every `$HEALTH_CHECK_INTERVAL_MIN` minutes: `find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer ${TMPDIR:-/tmp}/calibrate-check-$batch_target -type f | wc -l` — new files = alive; use Read tool (limit=20) on `pipeline.jsonl` to check for PROGRESS:/HEARTBEAT: if stalled; apply `$PIPELINE_TIMEOUT_MIN_DUAL` instead of `$PIPELINE_TIMEOUT_MIN` for dual-source (Codex-active) targets.
+Poll every `$HEALTH_CHECK_INTERVAL_MIN` minutes: `find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer ${TMPDIR:-/tmp}/calibrate-check-$batch_target-${CSID} -type f | wc -l` — new files = alive; use Read tool (limit=20) on `pipeline.jsonl` to check for PROGRESS:/HEARTBEAT: if stalled; apply `$PIPELINE_TIMEOUT_MIN_DUAL` instead of `$PIPELINE_TIMEOUT_MIN` for dual-source (Codex-active) targets.
 
 **On timeout**: read `tail -100 <output_file>` for partial JSON; if none use: `{"target":"<TARGET>","verdict":"timed_out","mean_recall":null,"gaps":["pipeline timed out — re-run individually with /calibrate <target> fast"]}`. Timed-out targets appear in report with ⏱ prefix and null metrics.
 
@@ -341,12 +347,12 @@ Targets with verdict `calibrated` and no proposed changes get single line: `✓ 
 
 ## Step 4: Concatenate JSONL logs
 
-Append each target's result line to `.claude/logs/calibrations.jsonl` using native tools (no Bash needed):
+Append each target's result line to `.notes/logs/calibrations.jsonl` using native tools (no Bash needed):
 
 1. Use Glob (pattern `*/result.jsonl`, path `.reports/calibrate/<TIMESTAMP>/`) to find all result files
 2. Read each result file with Read tool
-3. Read `.claude/logs/calibrations.jsonl` (if exists; use empty string if missing)
-4. Append new lines and Write combined content back to `.claude/logs/calibrations.jsonl`
+3. Read `.claude/logs/calibrations.jsonl` (legacy, if exists; use empty string if missing) and `.notes/logs/calibrations.jsonl` (if exists; use empty string if missing); concat both for historical context
+4. Append new lines and Write combined content back to `.notes/logs/calibrations.jsonl` only — never write to `.claude/logs/calibrations.jsonl`
 
 ## Step 5: Surface improvement signals
 
@@ -359,7 +365,7 @@ For each flagged target (recall < 0.70 or |bias| > 0.15):
 Proposals shown in Step 3 already surface actionable signals. Follow-up gate fires in Step 3 (unless `--skip-gate`). Mark "Analyse and report" completed. If `--apply` was set: proceed to Step 6.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Step 6: Apply proposals (apply mode)
@@ -371,7 +377,8 @@ Mark "Apply findings" in_progress.
 - Benchmark + auto-apply mode (`--fast`/`--full` + `--apply`): re-read TIMESTAMP from persisted state (fresh-shell state loss):
 
   ```bash
-  TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
+  export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+  TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null)
   [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — falling back to latest run dir"; TIMESTAMP=$(basename "$(find .reports/calibrate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)"); }  # safe: uses existing dir from find, not new $(date) timestamp — won't create phantom run dir
   ```
 
@@ -401,9 +408,10 @@ Continue to next target. Only if ALL targets are missing: stop with `! No propos
 
 **`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. When `LOCAL_MODE=true`, source tree takes priority; otherwise project-local override first, then plugin cache, then source-tree fallback:
 ```bash
-TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null)
 [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state/local-mode" 2>/dev/null || echo "false")
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || echo "false")
 # e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default)
 PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')
 AGENT_BARE=$(echo "<name>" | sed 's/^[^:]*://')
@@ -449,7 +457,7 @@ After all subagents complete, collect JSON results and print final summary:
 Mark "Apply findings" completed.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 End response with `## Confidence` block per CLAUDE.md output standards.

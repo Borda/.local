@@ -97,7 +97,7 @@ Logging hooks (timing, file-writes, audit trails) need no output — exit 0 sile
 Never emit to stdout from logging hook; unexpected output can interfere with Claude's tool-result handling.
 
 - `PostToolUse` receives tool result payload on stdin — use for timing deltas, logging tool output size, or writing audit records
-- `SubagentStop` fires when spawned agent completes — use to clean up per-agent state files (e.g. `${TMPDIR:-/tmp}/claude-state-<session-id>/agents/<id>.json`) (harness-managed path: `${TMPDIR:-/tmp}/claude-state-<session-id>`; not user-configurable)
+- `SubagentStop` fires when spawned agent completes — use to clean up per-agent state files (e.g. `${TMPDIR:-/tmp}/claude-state-<session-id>/agents/<id>.json`) (harness-managed path: `${TMPDIR:-/tmp}/claude-state-<session-id>`; not user-configurable) <!-- tmpdir-exempt: harness-managed path, not plugin-authored -->
 - Both hook types: wrap all logic in try/catch; catch → `process.exit(0)` always
 
 ## Anti-patterns

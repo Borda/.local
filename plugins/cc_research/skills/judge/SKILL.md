@@ -64,9 +64,10 @@ KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .claude/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/judge-keep-items"  # persist for J3 contract write
+rm -f .temp/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/judge-keep-items-${CSID}"  # persist for J3 contract write
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--skip-validation`, `--keep`.
@@ -136,8 +137,9 @@ Goodhart findings are `critical` (not just methodology notes) — broken metric 
 Pre-compute run dir before spawning:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "judge" ".experiments" 2>/dev/null)  # timeout: 5000
-echo "$RUN_DIR" > "${TMPDIR:-/tmp}/judge-run-dir"  # persist for J3 block (Check 41)
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/judge-run-dir-${CSID}"  # persist for J3 block (Check 41)
 ```
 
 **Synchronous spawn note**: J3 agents spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. Timeout handled post-hoc — after each Agent() returns, check output file; if missing/empty mark agent timed out (⏱). See J3 post-call checks below.
@@ -147,10 +149,11 @@ Dispatch agents in single response — scientist always; architect only when com
 Before constructing J3 prompts, expand all bash variables into concrete paths — never pass literal `<path_to_program.md>` or `<RUN_DIR>` placeholders to agents:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 PROGRAM_PATH=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
-echo "$PROGRAM_PATH" > "${TMPDIR:-/tmp}/judge-program-path"  # persist for J3 complexity-gate block (Check 41)
+echo "$PROGRAM_PATH" > "${TMPDIR:-/tmp}/judge-program-path-${CSID}"  # persist for J3 complexity-gate block (Check 41)
 # Reload RUN_DIR (Check 41: fresh shell per call — persisted in J2 block)
-RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir" 2>/dev/null)
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir-${CSID}" 2>/dev/null)
 ```
 
 Compute `SKIP_VALIDATION_NOTE` before constructing the prompt:
@@ -166,7 +169,8 @@ fi
 **Complexity gate** — mirrors P-P2b; skip architect for narrow single-scope experiments (saves full opus pass):
 
 ```bash
-PROGRAM_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path" 2>/dev/null)  # re-hydrate (Check 41: fresh shell — persisted in J3 pre-spawn block)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PROGRAM_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null)  # re-hydrate (Check 41: fresh shell — persisted in J3 pre-spawn block)
 _SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null || echo 0)  # timeout: 5000
 _STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
 SPAWN_ARCHITECT=false
@@ -212,19 +216,20 @@ Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** 
 File-parsed value takes priority over health monitor value; use file-parsed value when both present. Same precedence applies to `methodology_rating` parsed from `$RUN_DIR/methodology.md` vs envelope value. Use envelope value only when file missing or unparsable (e.g., timeout with no output).
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary: after J3 agents complete, before J4 validation (compaction-contract.md §Lifecycle)
-_RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir" 2>/dev/null || echo "")
-_PROG_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/judge-keep-items" 2>/dev/null || echo "")
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir-${CSID}" 2>/dev/null || echo "")
+_PROG_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/judge-keep-items-${CSID}" 2>/dev/null || echo "")
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: research:judge · phase: validation-verdict (after J3 review agents complete)"
     echo "- run-dir: ${_RUN_DIR}"
     echo "- preserve: run-dir=${_RUN_DIR}, program=${_PROG_PATH}, methodology=${_RUN_DIR}/methodology.md, scientific-review=${_RUN_DIR}/scientific-review.md${_KEEP_APPEND}"
     echo "- next: J4 local validation → J5 Codex review → J6 verdict and report"
-} > .claude/state/skill-contract.md  # timeout: 5000
+} > .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ## Step J4: Local validation
@@ -258,7 +263,8 @@ Record validation results for J6 report.
 **Complexity gate** — simple programs skip the Codex pass (J2 completeness, scientist review, and J4 dry-run still apply):
 
 ```bash
-PROGRAM_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path" 2>/dev/null)  # re-hydrate (Check 41: fresh shell)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+PROGRAM_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null)  # re-hydrate (Check 41: fresh shell)
 _SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null || echo 0)  # timeout: 5000
 _STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
 J5A_COMPLEX=false
@@ -453,7 +459,7 @@ Next: fix protocol, re-run /research:judge <path>      [NEEDS-REVISION or BLOCKE
 ```
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — judge verdict complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — judge verdict complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

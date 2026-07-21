@@ -27,10 +27,11 @@ NOT for: repo rebuild (use `/codemap:scan-codebase`); renaming symbols (use `/co
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || echo "")
 [ -n "$INDEX" ] && { [ -f "$INDEX" ] && STATE="present" || STATE="missing"; } || STATE="unresolved"
 ```
 

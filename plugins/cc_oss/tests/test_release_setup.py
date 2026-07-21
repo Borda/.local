@@ -5,8 +5,10 @@ returns pre-configured ``(returncode, stdout)`` pairs in call order.
 No real ``git`` invocations occur. The stable-branch path (3 git calls)
 and fallback path (8 calls) are both covered.
 
-Output is written to ``${TMPDIR}/release-setup/<KEY>`` files; tests use
-``monkeypatch.setenv("TMPDIR", str(tmp_path))`` to redirect writes.
+Output is written to ``${TMPDIR}/release-setup-<CSID>/<KEY>`` files; tests use
+``monkeypatch.setenv("TMPDIR", str(tmp_path))`` to redirect writes. The
+``conftest.py`` autouse fixture strips ``CLAUDE_CODE_SESSION_ID``/``CSID``,
+so ``<CSID>`` resolves to the literal ``"shared"`` fallback here.
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ def _patch_git_sequence(monkeypatch: pytest.MonkeyPatch, *outcomes: tuple[int, s
 
 
 def test_stable_branch_all_keys_emitted(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
-    """Stable branch (BRANCH_TAG found) → all 7 key files written under TMPDIR/release-setup/, exit 0."""
+    """Stable branch (BRANCH_TAG found) → all 7 key files written under TMPDIR/release-setup-shared/, exit 0."""
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     _patch_git_sequence(
         monkeypatch,
@@ -54,7 +56,7 @@ def test_stable_branch_all_keys_emitted(monkeypatch: pytest.MonkeyPatch, tmp_pat
     )
     rc = rs.main([])
     assert rc == 0
-    out_dir = tmp_path / "release-setup"
+    out_dir = tmp_path / "release-setup-shared"
     for key in ("SKILL_DIR", "REPO_ROOT", "BRANCH", "DATE", "LAST_TAG", "CHERRY_PICK_SUBJECTS", "SOURCE_TAG_REF"):
         assert (out_dir / key).exists(), f"expected output file missing: {key}"
 
@@ -69,7 +71,7 @@ def test_stable_branch_last_tag_value(monkeypatch: pytest.MonkeyPatch, tmp_path:
         (0, "v2.3.1"),
     )
     rs.main([])
-    out_dir = tmp_path / "release-setup"
+    out_dir = tmp_path / "release-setup-shared"
     assert (out_dir / "LAST_TAG").read_text() == "v2.3.1"
     assert (out_dir / "SOURCE_TAG_REF").read_text() == ""
 
@@ -84,7 +86,7 @@ def test_branch_slash_replaced_with_hyphen(monkeypatch: pytest.MonkeyPatch, tmp_
         (0, "v1.0.0"),
     )
     rs.main([])
-    assert (tmp_path / "release-setup" / "BRANCH").read_text() == "feature-my-thing"
+    assert (tmp_path / "release-setup-shared" / "BRANCH").read_text() == "feature-my-thing"
 
 
 def test_fallback_path_emits_source_and_cherry(
@@ -106,7 +108,7 @@ def test_fallback_path_emits_source_and_cherry(
     )
     rc = rs.main([])
     assert rc == 0
-    out_dir = tmp_path / "release-setup"
+    out_dir = tmp_path / "release-setup-shared"
     assert (out_dir / "LAST_TAG").read_text() == "v0.8.0"
     assert (out_dir / "SOURCE_TAG_REF").read_text() == "v0.9.0"
 
@@ -150,7 +152,7 @@ def test_no_tags_uses_initial_commit(monkeypatch: pytest.MonkeyPatch, capsys: py
 
 
 def test_all_output_files_written(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
-    """All 7 expected key files written to TMPDIR/release-setup/ with non-empty content for mandatory keys."""
+    """All 7 expected key files written to TMPDIR/release-setup-shared/ with non-empty content for mandatory keys."""
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     _patch_git_sequence(
         monkeypatch,
@@ -159,7 +161,7 @@ def test_all_output_files_written(monkeypatch: pytest.MonkeyPatch, tmp_path: pyt
         (0, "v1.0.0"),
     )
     rs.main([])
-    out_dir = tmp_path / "release-setup"
+    out_dir = tmp_path / "release-setup-shared"
     for key in ("SKILL_DIR", "REPO_ROOT", "BRANCH", "DATE", "LAST_TAG", "CHERRY_PICK_SUBJECTS", "SOURCE_TAG_REF"):
         assert (out_dir / key).exists(), f"output file missing: {key}"
     assert (out_dir / "REPO_ROOT").read_text() != ""

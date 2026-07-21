@@ -34,11 +34,12 @@ Prompt supplies key=value pairs (space-separated):
 Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE`, `PARTIAL_FILE`, `AXIS_GROUP` from prompt key=value pairs.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # loads: oss-shared-resolver.md
 # intentional boilerplate; also in gh-scraper.md, shepherd.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/cc_oss/skills/_shared"
-echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/warden-oss-shared"  # persist (Check 41)
+echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/warden-oss-shared-${CSID}"  # persist (Check 41)
 ```
 
 Determine axes for group:
@@ -75,7 +76,8 @@ CUTOFF_30D=$((ANALYSIS_NOW - 30*86400))  # CRITICAL-1: explicit 30d cutoff for A
 ## Step 3 — Score Axes
 
 ```bash
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/warden-oss-shared" 2>/dev/null || echo "plugins/cc_oss/skills/_shared")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/warden-oss-shared-${CSID}" 2>/dev/null || echo "plugins/cc_oss/skills/_shared")  # reload (Check 41)
 case "$AXIS_GROUP" in
   A) _GROUP_FILE="vitality-scoring-group-a.md" ;;
   B) _GROUP_FILE="vitality-scoring-group-b.md" ;;

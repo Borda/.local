@@ -4,10 +4,10 @@
 Resolves skill directory (installed cache → source tree fallback), repo
 root, branch slug, current UTC date, and branch-aware last-stable-tag
 baseline. Writes each resolved value to its own file under
-``${TMPDIR:-/tmp}/release-setup/`` for safe cross-block consumption.
-Informational notes go to stderr only.
+``${TMPDIR:-/tmp}/release-setup-${CSID}/`` for safe cross-block
+consumption. Informational notes go to stderr only.
 
-Output files (written to ``${TMPDIR:-/tmp}/release-setup/``):
+Output files (written to ``${TMPDIR:-/tmp}/release-setup-${CSID}/``):
     SKILL_DIR, REPO_ROOT, BRANCH, DATE, LAST_TAG,
     CHERRY_PICK_SUBJECTS (may be empty), SOURCE_TAG_REF (may be empty)
 
@@ -18,7 +18,7 @@ and the source-tag commit.
 
 Usage:
     release_setup.py
-    SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR")
+    SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR")
 
 Exit codes:
     0 — always (caller validates resolved values)
@@ -31,6 +31,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import which
@@ -111,7 +112,7 @@ def _resolve_skill_dir() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point — writes resolved vars to ${TMPDIR:-/tmp}/release-setup/<KEY> files.
+    """Entry point — writes resolved vars to ${TMPDIR:-/tmp}/release-setup-${CSID}/<KEY> files.
 
     Args:
         argv: Optional argument list (defaults to ``sys.argv[1:]``); no flags.
@@ -171,7 +172,9 @@ def main(argv: list[str] | None = None) -> int:
         source_tag_ref = source_tag
         print(f"ℹ Stable-branch mode: base={last_tag}  source={source_tag}", file=sys.stderr)
 
-    out_dir = Path(os.environ.get("TMPDIR", "/tmp")) / "release-setup"
+    csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
+    tmp = os.environ.get("TMPDIR") or tempfile.gettempdir()
+    out_dir = Path(tmp) / f"release-setup-{csid}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for key, val in (

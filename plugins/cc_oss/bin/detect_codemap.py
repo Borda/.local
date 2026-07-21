@@ -4,9 +4,9 @@
 consumers: resolve/SKILL.md, review/SKILL.md, analyse/modes/codemap-signals.md
 
 Determines whether the codemap plugin is installed and an index exists for the
-current project.  Writes result to ${TMPDIR:-/tmp}/<prefix>-codemap-enabled.
+current project.  Writes result to ${TMPDIR:-/tmp}/<prefix>-codemap-enabled-<CSID>.
 When check-index-currency is on PATH, also writes currency status to
-${TMPDIR:-/tmp}/<prefix>-codemap-currency ("current", "stale", or "no_index").
+${TMPDIR:-/tmp}/<prefix>-codemap-currency-<CSID> ("current", "stale", or "no_index").
 
 Usage:
     python detect_codemap.py --prefix resolve [--force-off] [--strict] [--proj <name>]
@@ -19,8 +19,8 @@ Flags:
     --idx-dir <path>  Codemap index directory override (default: .cache/codemap).
 
 Temp files written:
-    ${TMPDIR:-/tmp}/<prefix>-codemap-enabled   → "true" or "false"
-    ${TMPDIR:-/tmp}/<prefix>-codemap-currency  → "current", "stale", or "no_index"
+    ${TMPDIR:-/tmp}/<prefix>-codemap-enabled-<CSID>   → "true" or "false"
+    ${TMPDIR:-/tmp}/<prefix>-codemap-currency-<CSID>  → "current", "stale", or "no_index"
 
 Exit codes:
     0   success (CODEMAP_ENABLED written)
@@ -36,6 +36,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -111,9 +112,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Usage: detect_codemap.py --prefix <name> [--force-off] [--strict]", file=sys.stderr)
         return 2
 
-    tmpdir = os.environ.get("TMPDIR", "/tmp")
-    out_file = Path(tmpdir) / f"{prefix}-codemap-enabled"
-    currency_file = Path(tmpdir) / f"{prefix}-codemap-currency"
+    csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
+    tmpdir = os.environ.get("TMPDIR") or tempfile.gettempdir()
+    out_file = Path(tmpdir) / f"{prefix}-codemap-enabled-{csid}"
+    currency_file = Path(tmpdir) / f"{prefix}-codemap-currency-{csid}"
 
     if force_off:
         out_file.write_text("false\n")

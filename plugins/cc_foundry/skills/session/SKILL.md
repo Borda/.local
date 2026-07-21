@@ -20,7 +20,7 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 - **$ARGUMENTS**: required. Three modes:
   - `resume` (alias: `pending`) — list all open `session-open-*.md` memory files for this project, grouped by age; items ≥ 14 days get `⚠ stale` prefix; items ≥ 30 days deleted silently before listing
-  - `archive <partial-text>` — fuzzy-match parked item by name or content, delete memory file, append audit entry to `.claude/logs/session-archive.jsonl`
+  - `archive <partial-text>` — fuzzy-match parked item by name or content, delete memory file, append audit entry to `.notes/logs/session-archive.jsonl`
   - `summary` — compact session digest: completed tasks, parked items, recent git commits since session start; follows output-routing rule (≤10 lines → terminal; longer → `.temp/output-session-summary-<date>.md`)
 
 </inputs>
@@ -34,7 +34,7 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
   [ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
   ```
 - File pattern: `session-open-*.md`
-- Resolution log: `.claude/logs/session-archive.jsonl`
+- Resolution log: `.notes/logs/session-archive.jsonl` (legacy `.claude/logs/session-archive.jsonl` read-only fallback for historical entries)
 - Stale threshold: 14 days (add `⚠ stale` prefix when listing)
 - Delete threshold: 30 days (silently remove before listing)
 - Max open items: 10 (surface list and ask to archive before parking new ones)
@@ -152,20 +152,22 @@ Search candidates from Substep 2a. For `session-open-*.md` files: Grep with part
 
 Track match source:
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 MATCHED_SOURCE="file"          # "file" for session-open-*.md, "context" for session-context.md
 MATCHED_FILE="<full path>"     # only when MATCHED_SOURCE="file"
 MATCHED_SLUG="<slug>"
 ITEM_NAME="<name>"
 printf '%s\n' "$MATCHED_SOURCE" "$MATCHED_FILE" "$MATCHED_SLUG" "$ITEM_NAME" \
-    > "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
+    > "${TMPDIR:-/tmp}/session-match-${CSID}.txt"
 ```
 
 ### Substep 2c: Remove the matched item
 
 **If `MATCHED_SOURCE="file"`** (legacy `session-open-*.md`):
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS=$'\n' read -r MATCHED_SOURCE MATCHED_FILE MATCHED_SLUG ITEM_NAME \
-    < "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
+    < "${TMPDIR:-/tmp}/session-match-${CSID}.txt"
 rm "$MATCHED_FILE"  # timeout: 5000
 echo "deleted"
 ```
@@ -178,17 +180,18 @@ Use Edit tool to remove the matched bullet line from `.claude/state/session-cont
 Ensure log directory exists:
 
 ```bash
-mkdir -p .claude/logs # timeout: 5000
+mkdir -p .notes/logs # timeout: 5000
 ```
 
 Append one-line JSON entry atomically with bash redirection, using `ITEM_NAME` resolved in Substep 2b. Entry format: `{"ts":"<ISO8601-UTC>","item":"<name>","action":"archived"}`
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS=$'\n' read -r MATCHED_SOURCE MATCHED_FILE MATCHED_SLUG ITEM_NAME \
-    < "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
+    < "${TMPDIR:-/tmp}/session-match-${CSID}.txt"
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # jq escapes ITEM_NAME safely; prevents injection
-jq -n --arg ts "$TS" --arg item "$ITEM_NAME" '{"ts":$ts,"item":$item,"action":"archived"}' >> .claude/logs/session-archive.jsonl  # timeout: 5000
+jq -n --arg ts "$TS" --arg item "$ITEM_NAME" '{"ts":$ts,"item":$item,"action":"archived"}' >> .notes/logs/session-archive.jsonl  # timeout: 5000
 ```
 
 ### Substep 2e: Confirm to user
@@ -222,7 +225,7 @@ git log --oneline --since="$SINCE" | head -20 || true # timeout: 3000; empty OK 
 
 ### Substep 3d: Collect archived items from this session
 
-Use Read tool with `limit=20` on `.claude/logs/session-archive.jsonl` (skip if file does not exist).
+Use Read tool with `limit=20` on `.notes/logs/session-archive.jsonl` and (legacy) `.claude/logs/session-archive.jsonl` — skip either if it does not exist; merge entries from both.
 
 Filter entries with `ts` matching today's date.
 
@@ -305,7 +308,7 @@ Written to: `.claude/state/session-context.md` (project-local; tracked or gitign
 
 **Session-start behavior**: open-loop items NOT surfaced automatically at session start. Appear only when `/session resume` explicitly invoked. Don't add session-start hygiene step for this in CLAUDE.md.
 
-**Resolution log**: `.claude/logs/session-archive.jsonl` is project-local, append-only. Stays in git-tracked project directory as audit trail; separate from home-scoped memory files intentionally.
+**Resolution log**: `.notes/logs/session-archive.jsonl` is project-local, append-only (legacy `.claude/logs/session-archive.jsonl` read-only fallback for historical entries). Stays in git-tracked project directory as audit trail; separate from home-scoped memory files intentionally.
 
 **Scope**: parked ideas scoped to current project only — don't appear across projects. Project isolation enforced by file location (`.claude/state/session-context.md` lives inside the project's working tree).
 

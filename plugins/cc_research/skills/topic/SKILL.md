@@ -79,9 +79,10 @@ KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .claude/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/topic-keep-items"  # persist for Step 2 contract write
+rm -f .temp/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/topic-keep-items-${CSID}"  # persist for Step 2 contract write
 ```
 
 ```bash
@@ -111,15 +112,16 @@ Conduct broad SOTA search directly using `foundry:web-explorer` (or inline WebSe
 Pre-compute output paths before searching:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date +%Y-%m-%d)  # timeout: 3000
 # Anti-overwrite: resolve counter-suffix (quality-gates.md rule)
 AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE.md"
 _N=2; while [ -e "$AGENT_OUT" ]; do AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
 mkdir -p .temp  # timeout: 3000
-echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch"
-echo "$DATE" > "${TMPDIR:-/tmp}/topic-date"
-echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out"
+echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch-${CSID}"
+echo "$DATE" > "${TMPDIR:-/tmp}/topic-date-${CSID}"
+echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out-${CSID}"
 ```
 
 Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of top 5 papers found via WebSearch/WebFetch: extract method, key idea, benchmark results, compute cost, code availability. Write full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
@@ -136,21 +138,22 @@ Use Grep tool to search codebase for existing related code:
 - Limit to 1000 results (per external-data.md — never cap at default 10)
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary: after Step 2 literature gathered (compaction-contract.md §Lifecycle)
-_AGENT_OUT=$(cat "${TMPDIR:-/tmp}/topic-agent-out" 2>/dev/null || echo "")
-_BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch" 2>/dev/null || echo "")
-_DATE=$(cat "${TMPDIR:-/tmp}/topic-date" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/topic-keep-items" 2>/dev/null || echo "")
+_AGENT_OUT=$(cat "${TMPDIR:-/tmp}/topic-agent-out-${CSID}" 2>/dev/null || echo "")
+_BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || echo "")
+_DATE=$(cat "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/topic-keep-items-${CSID}" 2>/dev/null || echo "")
 _REPORT_OUT=".reports/research/topic-${_BRANCH}-${_DATE}.md"
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: research:topic · phase: synthesis (after Step 2 literature gathered)"
     echo "- run-dir: n/a"
     echo "- preserve: agent-out=${_AGENT_OUT}, report-out=${_REPORT_OUT}, branch=${_BRANCH}${_KEEP_APPEND}"
     echo "- next: Step 3 synthesize agent findings into report → follow-up gate"
-} > .claude/state/skill-contract.md  # timeout: 5000
+} > .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ## Step 3: Report
@@ -215,9 +218,10 @@ Path:        → .reports/research/topic-<branch>-<date>.md
 
 ```bash
 mkdir -p .reports/research  # timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload from Step 2a bash block (Check 41: fresh shell per call)
-BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch" 2>/dev/null || git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
-DATE=$(cat "${TMPDIR:-/tmp}/topic-date" 2>/dev/null || date +%Y-%m-%d)
+BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
+DATE=$(cat "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || date +%Y-%m-%d)
 # Anti-overwrite counter-suffix loop (per quality-gates.md output routing rule)
 BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; COUNT=2
 while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
@@ -275,7 +279,7 @@ Follow `modes/plan.md` (loaded above) and execute its workflow.
 ## Follow-up gate
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — topic research complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — topic research complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:

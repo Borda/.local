@@ -278,7 +278,7 @@ def detect(number: str, report_mtime: int | None, gh: str, timeout: int) -> tupl
 
 
 def _emit(type_: str, updated_at: str, drift: bool) -> None:
-    """Write TYPE, UPDATED_AT, DRIFT to ${TMPDIR:-/tmp}/oss-detect-* temp files.
+    """Write TYPE, UPDATED_AT, DRIFT to ${TMPDIR:-/tmp}/oss-detect-*-<CSID> temp files.
 
     Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
 
@@ -288,11 +288,13 @@ def _emit(type_: str, updated_at: str, drift: bool) -> None:
         drift: ``True`` when the report should be refetched.
     """
     import os
+    import tempfile
 
-    tmpdir = os.environ.get("TMPDIR", "/tmp")
+    csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
+    tmpdir = os.environ.get("TMPDIR") or tempfile.gettempdir()
     drift_str = "true" if drift else "false"
     for key, val in (("type", type_), ("updated-at", updated_at), ("drift", drift_str)):
-        with open(f"{tmpdir}/oss-detect-{key}", "w") as fh:
+        with open(f"{tmpdir}/oss-detect-{key}-{csid}", "w") as fh:
             fh.write(val)
 
 

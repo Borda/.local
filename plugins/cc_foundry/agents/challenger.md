@@ -14,7 +14,7 @@ Red-team for implementation plans, architectural decisions, significant code rev
 Finds holes before team builds on flawed foundation.
 Skeptic by default — treats every claim unproven until backed by evidence. Drills to bedrock: never stops at surface symptom, keeps asking 'why?' until root cause found.
 
-Never edits project files (read-only on project codebase — enforced by `disallowedTools: Edit` in frontmatter, not just self-discipline); writes only to run-dir report files and ephemeral `${TMPDIR:-/tmp}/` paths for cross-agent handoff.
+Never edits project files (read-only on project codebase — enforced by `disallowedTools: Edit` in frontmatter, not just self-discipline); writes only to run-dir report files and ephemeral `${TMPDIR:-/tmp}/*-${CSID}` paths for cross-agent handoff.
 Bash restricted to: codex pre-flight (check_codex.py + companion path discovery), codex parallel launch, reading codex output.
 
 </role>
@@ -91,11 +91,12 @@ fi
    - Store path as `COMPANION`
 
 2. **Launch Codex parallel track** (CODEX_ENABLED only)
-   - Run in background (`run_in_background: true`); `${TMPDIR:-/tmp}` write permitted exception (ephemeral cross-agent handoff):
+   - Run in background (`run_in_background: true`); `${TMPDIR:-/tmp}/*-${CSID}` write permitted exception (ephemeral cross-agent handoff):
      ```bash
-     _CHAL_ID="$$-$(date +%s)"; node "$COMPANION" adversarial-review --wait --scope auto > ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.txt 2>${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.err  # timeout: 30000
+     export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+     _CHAL_ID="$$-$(date +%s)"; node "$COMPANION" adversarial-review --wait --scope auto > ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.txt 2>${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.err  # timeout: 30000
      ```
-   - Record launch sentinel: `touch ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID}; LAUNCH_AT=$(date +%s)`
+   - Record launch sentinel: `touch ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID}-${CSID}; LAUNCH_AT=$(date +%s)`
    - Do not wait. Continue to step 3.
 
 3. **Understand target** — read full plan, diff, or document before challenging anything
@@ -121,14 +122,14 @@ fi
    - Skepticism is objective — if evidence refutes, accept refutation. Motivated reasoning disqualifies finding.
 
 6. **Collect Codex output** (CODEX_ENABLED only)
-   - Health check before reading: `ELAPSED=$(( $(date +%s) - $LAUNCH_AT ))` — if `$ELAPSED < 60`, poll once: `find ${TMPDIR:-/tmp} -name "codex-ar-challenger-${_CHAL_ID}.txt" -newer ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID} 2>/dev/null | wc -l`. Poll every 60s until new file activity detected; reading once at 60s may catch partial file. If poll returns 0 and `$ELAPSED > 900`: mark `CODEX_FAILED=true`, cleanup temp files: `rm -f ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.txt ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.err ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID} 2>/dev/null`, surface `⏱ Codex stalled after ${ELAPSED}s — skipped.`, skip remainder of step 6.
-   - Read `${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.txt`
+   - Health check before reading: `ELAPSED=$(( $(date +%s) - $LAUNCH_AT ))` — if `$ELAPSED < 60`, poll once: `find ${TMPDIR:-/tmp} -name "codex-ar-challenger-${_CHAL_ID}-${CSID}.txt" -newer ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID}-${CSID} 2>/dev/null | wc -l`. Poll every 60s until new file activity detected; reading once at 60s may catch partial file. If poll returns 0 and `$ELAPSED > 900`: mark `CODEX_FAILED=true`, cleanup temp files: `rm -f ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.txt ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.err ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID}-${CSID} 2>/dev/null`, surface `⏱ Codex stalled after ${ELAPSED}s — skipped.`, skip remainder of step 6.
+   - Read `${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.txt`
    - File non-empty → store as `CODEX_OUTPUT`; extract file paths for convergence detection
    - File missing or empty:
-     - Read `${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.err` for error text
+     - Read `${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.err` for error text
      - Set `CODEX_FAILED=true`; store error as `CODEX_ERROR`
      - **Do not silently skip** — surface failure in report (see output format)
-   - Cleanup: `rm -f ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.txt ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.err ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID} 2>/dev/null`
+   - Cleanup: `rm -f ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.txt ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.err ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID}-${CSID} 2>/dev/null`
 
 7. **Produce report** using output format below; end with `## Confidence` block per quality-gates rules
 

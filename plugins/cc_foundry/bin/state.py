@@ -11,11 +11,15 @@ that pattern behind one tested idiom instead of ad-hoc per-skill code:
     # reload (later block, fresh shell)
     eval "$(python "${CLAUDE_PLUGIN_ROOT}/bin/state.py" load audit-$RUN)"
 
-The namespace is chosen by the caller; include a run-unique component
-(timestamp / run-id) when concurrent sessions of the same skill could otherwise
-collide on a fixed name. Values are stored under
-``${TMPDIR:-/tmp}/claude-state-<namespace>.env`` and emitted single-quote-quoted
-so ``eval`` is injection-safe.
+The namespace is chosen by the caller. Session scoping is automatic: the file
+name embeds the session token (``CSID`` → ``CLAUDE_CODE_SESSION_ID`` → literal
+``shared``), so concurrent sessions never collide on the same namespace — a
+run-unique component (timestamp / run-id) is still useful to separate multiple
+runs *within* one session, but no longer required for cross-session safety.
+Values are stored under ``<tmp>/claude-state-<namespace>-<csid>.env`` (``<tmp>``
+= ``$TMPDIR`` or the platform temp dir — never a hardcoded ``/tmp``, which does
+not exist on native Windows Python) and emitted single-quote-quoted so ``eval``
+is injection-safe.
 
 Usage:
     state.py set <namespace> KEY=VALUE [KEY=VALUE ...]   # merge (create/update)
@@ -31,27 +35,53 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 _NS_SAFE = re.compile(r"[^A-Za-z0-9._-]")
 
 
+def _csid() -> str:
+    """Return the session token for sentinel scoping (resolved at call time).
+
+    Resolution chain: ``CSID`` (exported by the calling bash block) →
+    ``CLAUDE_CODE_SESSION_ID`` (set by Claude Code) → literal ``"shared"``.
+    Never derives from ``os.getppid()`` — that is the transient bash shell PID,
+    not the Claude Code process, and would diverge from the bash-side token.
+
+    Examples:
+        >>> import os
+        >>> _prev = os.environ.pop("CSID", None)
+        >>> os.environ["CSID"] = "abc"
+        >>> _csid()
+        'abc'
+        >>> _ = os.environ.pop("CSID")
+        >>> _ = os.environ.setdefault("CSID", _prev) if _prev else None
+    """
+    return os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
+
+
 def state_path(namespace: str) -> Path:
-    """Return the state file path for a namespace.
+    """Return the session-scoped state file path for a namespace.
 
     Args:
         namespace: Caller-chosen namespace (sanitized to a safe filename).
 
     Returns:
-        Path under ``${TMPDIR:-/tmp}`` for this namespace's values.
+        Path under the platform temp dir: ``claude-state-<namespace>-<csid>.env``.
 
     Examples:
+        >>> import os
+        >>> _prev = os.environ.pop("CSID", None)
+        >>> os.environ["CSID"] = "abc"
         >>> state_path("audit-123").name
-        'claude-state-audit-123.env'
+        'claude-state-audit-123-abc.env'
+        >>> _ = os.environ.pop("CSID")
+        >>> _ = os.environ.setdefault("CSID", _prev) if _prev else None
     """
     safe = _NS_SAFE.sub("_", namespace)
-    base = os.environ.get("TMPDIR", "/tmp")
-    return Path(base) / f"claude-state-{safe}.env"
+    base = os.environ.get("TMPDIR") or tempfile.gettempdir()
+    return Path(base) / f"claude-state-{safe}-{_csid()}.env"
 
 
 def _read(path: Path) -> dict[str, str]:

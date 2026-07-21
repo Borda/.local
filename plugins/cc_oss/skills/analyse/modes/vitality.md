@@ -9,9 +9,10 @@
 **Task tracking**: mark "Step 1 Data Fetch" in_progress before spawning.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload $GH_OWNER, $GH_REPO — fresh shell loses vars set in analyse/SKILL.md (Check 41)
-GH_OWNER=$(cat "${TMPDIR:-/tmp}/analyse-gh-owner" 2>/dev/null || echo "")
-GH_REPO=$(cat "${TMPDIR:-/tmp}/analyse-gh-repo" 2>/dev/null || echo "")
+GH_OWNER=$(cat "${TMPDIR:-/tmp}/analyse-gh-owner-${CSID}" 2>/dev/null || echo "")
+GH_REPO=$(cat "${TMPDIR:-/tmp}/analyse-gh-repo-${CSID}" 2>/dev/null || echo "")
 mkdir -p .reports/analyse/vitality  # timeout: 5000
 TODAY=$(TZ=UTC date +%Y-%m-%d)  # timeout: 5000
 RUN_TS=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
@@ -21,14 +22,14 @@ PARTIAL_B=".reports/analyse/vitality/partial-B-${GH_OWNER}-${GH_REPO}-${RUN_TS}.
 PARTIAL_C=".reports/analyse/vitality/partial-C-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
 SCORES_FILE=".reports/analyse/vitality/scores-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
 # Persist for later blocks in this file (Check 41)
-echo "$GH_OWNER" > "${TMPDIR:-/tmp}/vitality-gh-owner"
-echo "$GH_REPO" > "${TMPDIR:-/tmp}/vitality-gh-repo"
-echo "$DATA_FILE" > "${TMPDIR:-/tmp}/vitality-data-file"
-echo "$PARTIAL_A" > "${TMPDIR:-/tmp}/vitality-partial-a"
-echo "$PARTIAL_B" > "${TMPDIR:-/tmp}/vitality-partial-b"
-echo "$PARTIAL_C" > "${TMPDIR:-/tmp}/vitality-partial-c"
-echo "$SCORES_FILE" > "${TMPDIR:-/tmp}/vitality-scores-file"
-echo "$RUN_TS" > "${TMPDIR:-/tmp}/vitality-run-ts"
+echo "$GH_OWNER" > "${TMPDIR:-/tmp}/vitality-gh-owner-${CSID}"
+echo "$GH_REPO" > "${TMPDIR:-/tmp}/vitality-gh-repo-${CSID}"
+echo "$DATA_FILE" > "${TMPDIR:-/tmp}/vitality-data-file-${CSID}"
+echo "$PARTIAL_A" > "${TMPDIR:-/tmp}/vitality-partial-a-${CSID}"
+echo "$PARTIAL_B" > "${TMPDIR:-/tmp}/vitality-partial-b-${CSID}"
+echo "$PARTIAL_C" > "${TMPDIR:-/tmp}/vitality-partial-c-${CSID}"
+echo "$SCORES_FILE" > "${TMPDIR:-/tmp}/vitality-scores-file-${CSID}"
+echo "$RUN_TS" > "${TMPDIR:-/tmp}/vitality-run-ts-${CSID}"
 ```
 
 **Spawn**:
@@ -50,11 +51,12 @@ Spawn all 3 `oss:repo-warden` agents simultaneously in single response:
 **Health monitoring** (CLAUDE.md §6): before spawning, create checkpoint:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars — fresh shell (Check 41)
-GH_OWNER=$(cat "${TMPDIR:-/tmp}/vitality-gh-owner" 2>/dev/null || echo "")
-GH_REPO=$(cat "${TMPDIR:-/tmp}/vitality-gh-repo" 2>/dev/null || echo "")
-RUN_TS=$(cat "${TMPDIR:-/tmp}/vitality-run-ts" 2>/dev/null || echo "")
-SCORE_CHECKPOINT_FILE="/tmp/vitality-score-check-${GH_OWNER}-${GH_REPO}-${RUN_TS}"
+GH_OWNER=$(cat "${TMPDIR:-/tmp}/vitality-gh-owner-${CSID}" 2>/dev/null || echo "")
+GH_REPO=$(cat "${TMPDIR:-/tmp}/vitality-gh-repo-${CSID}" 2>/dev/null || echo "")
+RUN_TS=$(cat "${TMPDIR:-/tmp}/vitality-run-ts-${CSID}" 2>/dev/null || echo "")
+SCORE_CHECKPOINT_FILE="/tmp/vitality-score-check-${GH_OWNER}-${GH_REPO}-${RUN_TS}-${CSID}"  # tmpdir-exempt: pre-existing hardcoded path, not a sentinel-suffix rename site
 touch "$SCORE_CHECKPOINT_FILE"  # timeout: 5000
 ```
 
@@ -71,19 +73,21 @@ TaskUpdate "Step 2 Axis Scoring (3 parallel)" completed.
 Read all 3 partial files using Read tool. Merge into unified `$SCORES_FILE`:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/cc_oss/skills/_shared"
 SCORING_FILE="$_OSS_SHARED/vitality-scoring.md"
-echo "$SCORING_FILE" > "${TMPDIR:-/tmp}/vitality-scoring-file"  # persist (Check 41)
+echo "$SCORING_FILE" > "${TMPDIR:-/tmp}/vitality-scoring-file-${CSID}"  # persist (Check 41)
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars — fresh shell (Check 41)
-PARTIAL_A=$(cat "${TMPDIR:-/tmp}/vitality-partial-a" 2>/dev/null || echo "")
-PARTIAL_B=$(cat "${TMPDIR:-/tmp}/vitality-partial-b" 2>/dev/null || echo "")
-PARTIAL_C=$(cat "${TMPDIR:-/tmp}/vitality-partial-c" 2>/dev/null || echo "")
-SCORING_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scoring-file" 2>/dev/null || echo "")
-SCORES_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scores-file" 2>/dev/null || echo "")
+PARTIAL_A=$(cat "${TMPDIR:-/tmp}/vitality-partial-a-${CSID}" 2>/dev/null || echo "")
+PARTIAL_B=$(cat "${TMPDIR:-/tmp}/vitality-partial-b-${CSID}" 2>/dev/null || echo "")
+PARTIAL_C=$(cat "${TMPDIR:-/tmp}/vitality-partial-c-${CSID}" 2>/dev/null || echo "")
+SCORING_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scoring-file-${CSID}" 2>/dev/null || echo "")
+SCORES_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scores-file-${CSID}" 2>/dev/null || echo "")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/assemble_vitality_scores.py" \
     "$PARTIAL_A" "$PARTIAL_B" "$PARTIAL_C" "$SCORING_FILE" "$SCORES_FILE"  # timeout: 15000
 ```
@@ -91,8 +95,9 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/assemble_vitality_scores.py" \
 Extract variables from `$SCORES_FILE` for use in Steps 4–7:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload $SCORES_FILE — fresh shell (Check 41)
-SCORES_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scores-file" 2>/dev/null || echo "")
+SCORES_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scores-file-${CSID}" 2>/dev/null || echo "")
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/extract_vitality_vars.py" "$SCORES_FILE")"  # timeout: 5000
 echo "[vitality] scorer complete: health=${HEALTH_SCORE_PCT}% conf=${OVERALL_CONFIDENCE} passes=${TOTAL_PASSES}"
 ```
@@ -102,6 +107,7 @@ TaskUpdate "Step 3 Assemble Scores" completed.
 ## Step 4 — Report Generation
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 REPORT_TIMESTAMP=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
 REPORT_FILE=".reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-${REPORT_TIMESTAMP}.md"
 
@@ -116,7 +122,7 @@ REPORT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")  # tim
 find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
 
 # --quick: reload from Step 1 flag parse (fresh shell). Quick mode skips Steps 5 + 6 (codex review + adversarial loop).
-QUICK_MODE=$(cat "${TMPDIR:-/tmp}/analyse-quick-mode" 2>/dev/null || echo false)
+QUICK_MODE=$(cat "${TMPDIR:-/tmp}/analyse-quick-mode-${CSID}" 2>/dev/null || echo false)
 
 # Build agents list for frontmatter — reflects actual contributors
 if [ "$QUICK_MODE" = "true" ]; then
@@ -162,7 +168,8 @@ Full report structure (loaded above). Write `$REPORT_FILE` using that structure 
 ## Step 5 — Codex Independent Repo Review · Step 6 — Adversarial Rework Loop
 
 ```bash
-QUICK_MODE=$(cat "${TMPDIR:-/tmp}/analyse-quick-mode" 2>/dev/null || echo false)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+QUICK_MODE=$(cat "${TMPDIR:-/tmp}/analyse-quick-mode-${CSID}" 2>/dev/null || echo false)
 ```
 
 **When `$QUICK_MODE` = `true`**: skip both steps entirely — do NOT read either mode file below. Set the report's Independent Codex Review section to "skipped (--quick)" and replace the `## Adversarial Review` placeholder with "skipped (--quick) — single-pass scorecard, un-reviewed; rerun without --quick for a reviewed assessment". Proceed directly to Step 7.
@@ -191,8 +198,9 @@ Execute its steps (Step 6) — each returns here to the next in sequence.
 ## Step 7 — Terminal Summary Output
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload FOUNDRY_SHARED (Check 41: fresh shell; set by parent analyse/SKILL.md)
-FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-foundry-shared" 2>/dev/null || echo "")
+FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-foundry-shared-${CSID}" 2>/dev/null || echo "")
 [ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
 Compact block format (loaded above). File absent → warn "run /foundry:setup — printing plain terminal output instead."

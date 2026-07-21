@@ -28,4 +28,4 @@ Assertion raises → print `"⚠ GPU mismatch: requested ${colab_hw} but runtime
 
 <!-- Colab assertion: MCP call, not Bash — exempt from the script-file rule; correct as an inline one-liner. -->
 
-Timeout expires → refresh sentinel (use REPO_SLUG and BRANCH_SLUG from `<constants>` — re-derive per canonical formula, then `touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"`), append `status: timeout`, revert via `git revert HEAD --no-edit` **only if revert not already performed this iteration** (check: `git log --oneline -1` still shows experiment commit — HEAD already past revert commit → skip revert), continue loop.
+Timeout expires → refresh sentinel (use REPO_SLUG and BRANCH_SLUG from `<constants>` — re-derive per canonical formula, then `touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"` <!-- tmpdir-exempt: user-shell-boundary -->), append `status: timeout`, revert via `git revert HEAD --no-edit` **only if revert not already performed this iteration** (check: `git log --oneline -1` still shows experiment commit — HEAD already past revert commit → skip revert), continue loop.

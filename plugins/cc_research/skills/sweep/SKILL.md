@@ -85,6 +85,7 @@ Extract flags:
 **`--out` validation**: if `--out <path>` provided, validate path BEFORE any extraction or file write:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # POSIX path-traversal check (avoids bash-specific [[ ]])
 case "$OUT" in
   *..*)
@@ -99,7 +100,7 @@ if [ -n "$OUT" ]; then
         echo "sweep: --out path escapes project root: $OUT" >&2; exit 2
     fi
 fi
-echo "${OUT:-program.md}" > "${TMPDIR:-/tmp}/sweep-out-path"  # persist for S2/S3 contract writes (Check 41: fresh shell)
+echo "${OUT:-program.md}" > "${TMPDIR:-/tmp}/sweep-out-path-${CSID}"  # persist for S2/S3 contract writes (Check 41: fresh shell)
 ```
 
 ```bash
@@ -108,9 +109,10 @@ KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .claude/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/sweep-keep-items"  # persist for S2/S3 contract writes
+rm -f .temp/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}"  # persist for S2/S3 contract writes
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--skip-validation`, `--out`, `--keep`.
@@ -158,18 +160,19 @@ sweep: plan → <output path> ✓
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 1: after S2 plan written (compaction-contract.md §Lifecycle)
-_OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path" 2>/dev/null || echo "program.md")
-_KEEP=$(cat "${TMPDIR:-/tmp}/sweep-keep-items" 2>/dev/null || echo "")
+_OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || echo "program.md")
+_KEEP=$(cat "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || echo "")
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: research:sweep · phase: judge-gate (after S2 plan written)"
     echo "- run-dir: n/a"
     echo "- preserve: program-path=${_OUT}${_KEEP_APPEND}"
     echo "- next: S3 judge+refinement loop against ${_OUT}"
-} > .claude/state/skill-contract.md  # timeout: 5000
+} > .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ### Step S3: Judge + refinement loop
@@ -200,15 +203,16 @@ Repeat up to `MAX_REFINE` times:
 
        ```bash
        # WHY: without a post-fix refresh a compaction here resumes from boundary-1 (pre-loop) → re-judges from iteration 1. Placed AFTER fixes so "fixes applied through iteration N" is true.
-       _OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path" 2>/dev/null || echo "program.md")
-       mkdir -p .claude/state  # timeout: 5000
+       export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+       _OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || echo "program.md")
+       mkdir -p .temp/state  # timeout: 5000
        {
            echo "## Active Skill Contract"
            echo "- skill: research:sweep · phase: judge+refinement loop (S3, iteration <REFINE_ITER>/<MAX_REFINE> — fixes applied)"
            echo "- run-dir: n/a"
            echo "- preserve: program-path=${_OUT}, refine-iter=<REFINE_ITER>, no-fixes-iter=<NO_FIXES_ITER>, last-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>"
            echo "- next: re-judge program.md (it carries the fixes applied through iteration <REFINE_ITER>) → continue loop; do NOT reset REFINE_ITER. Exit on APPROVED/BLOCKED or REFINE_ITER==MAX_REFINE."
-       } > .claude/state/skill-contract.md
+       } > .temp/state/skill-contract.md
        ```
 
      - Continue next iteration (loop item #1 will re-judge).
@@ -217,18 +221,19 @@ Repeat up to `MAX_REFINE` times:
 > **Safety net**: loop edits modify `program.md` in place; P-P3 overwrite gate ensures user-authorized overwrite before S2 writes. Recover prior file from git if needed.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 2: after S3 judge loop settles verdict (compaction-contract.md §Lifecycle)
-_OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path" 2>/dev/null || echo "program.md")
-_KEEP=$(cat "${TMPDIR:-/tmp}/sweep-keep-items" 2>/dev/null || echo "")
+_OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || echo "program.md")
+_KEEP=$(cat "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || echo "")
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: research:sweep · phase: run-gate (after S3 judge+refinement)"
     echo "- run-dir: n/a"
     echo "- preserve: program-path=${_OUT}, judge-verdict=${VERDICT:-unknown}, judge-report=${JUDGE_REPORT:-n/a}${_KEEP_APPEND}"
     echo "- next: S4 gate on verdict → S5 run program if approved"
-} > .claude/state/skill-contract.md  # timeout: 5000
+} > .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ### Step S4: Gate on loop outcome
@@ -266,7 +271,7 @@ sweep: complete — plan → judge → run pipeline finished
 ```
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — sweep pipeline complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — sweep pipeline complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

@@ -37,13 +37,14 @@ NOT for: finding all callers of a function (use `/codemap:query-code fn-blast <m
 
 ```bash
 # timeout: 10000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 INDEX="${_IDX}/${_CM_PROJ}.json"
 
 SQ=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py" 2>/dev/null)
 [ -z "$SQ" ] && { echo "scan-query not found — install codemap plugin first"; exit 1; }
-echo "$SQ" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq"
+echo "$SQ" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq-${CSID}"
 
 [ ! -f "$INDEX" ] && echo "No index found — will build via codemap:scan-codebase"
 ```
@@ -86,20 +87,22 @@ Extract `QNAME` and `NO_MOCKS` flag from `$ARGUMENTS`.
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 ARGS="${ARGUMENTS:-}"
 QNAME=$(echo "$ARGS" | awk '{print $1}')
 MOCKS_FLAG=$(echo "$ARGS" | grep -q -- "--no-mocks" && echo "--no-mocks" || echo "")
-echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname"
-echo "$MOCKS_FLAG" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks"
+echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname-${CSID}"
+echo "$MOCKS_FLAG" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks-${CSID}"
 ```
 
 If `$ARGUMENTS` empty → `AskUserQuestion`: "Which function or module changed?" Options: (a) Enter `module::symbol` for function-level · (b) Enter bare module name for module-level · (c) Cancel — exit without running test-impact analysis. After the user answers, set `QNAME` from the answer and write it to the tmpfile before proceeding to Step 2:
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 QNAME="<answer from AskUserQuestion>"
-echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname"
+echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname-${CSID}"
 ```
 
 **Multi-symbol guard**: `$ARGUMENTS` may contain multiple space-separated tokens (e.g. `mypackage.auth::validate mypackage.auth::parse`). `awk '{print $1}'` silently truncates to first. If `$ARGUMENTS` has more than one token after stripping `--no-mocks`, print `⚠ test-impact accepts one symbol at a time — using first token only: $QNAME. Run separately for each remaining symbol.`
@@ -108,19 +111,20 @@ echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname"
 
 ```bash
 # timeout: 10000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
-QNAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname" 2>/dev/null)
-MOCKS_FLAG=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks" 2>/dev/null)
-SQ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq" 2>/dev/null)
+QNAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname-${CSID}" 2>/dev/null)
+MOCKS_FLAG=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks-${CSID}" 2>/dev/null)
+SQ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq-${CSID}" 2>/dev/null)
 RESULT=$("$SQ" test-impact "$QNAME" $MOCKS_FLAG 2>/dev/null)
 NOT_COVERED=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('index',{}).get('not_covered',[])))" 2>/dev/null || echo "[]")
 HINT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('index',{}).get('hint',''))" 2>/dev/null || echo "")
 TOTAL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('test_files',[])))" 2>/dev/null || echo "0")
 PYTEST_CMD=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pytest_cmd',''))" 2>/dev/null || echo "")
-echo "$NOT_COVERED" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered"
-echo "$HINT"        > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint"
-echo "$TOTAL"       > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-total"
-echo "$PYTEST_CMD"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-pytest-cmd"
+echo "$NOT_COVERED" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered-${CSID}"
+echo "$HINT"        > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint-${CSID}"
+echo "$TOTAL"       > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-total-${CSID}"
+echo "$PYTEST_CMD"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-pytest-cmd-${CSID}"
 ```
 
 Parse JSON output from `$RESULT`:

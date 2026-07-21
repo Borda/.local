@@ -4,7 +4,7 @@
 
 **Run-dir resolution preamble — prepend to every agent prompt:**
 
-> "First run Bash `RUN_DIR=$(cat "${TMPDIR:-/tmp}/oss-review-run-dir")` to obtain the exact run-dir path. Use `$RUN_DIR` verbatim for every file you read or write below — never retype the path literally (the leading `.` in `.temp` is easy to drop, which scatters output into a stray `temp/` dir)."
+> "First run Bash `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"` (plain `cat`, no `$()` command substitution — substitution triggers Claude Code's compound-command permission prompt even when `cat` itself is allow-listed) to read the exact run-dir path as plain text. Treat that text as `$RUN_DIR` for every file you read or write below — substitute it literally, never retype by hand (the leading `.` in `.temp` is easy to drop, which scatters output into a stray `temp/` dir)."
 
 Every agent prompt must end with:
 

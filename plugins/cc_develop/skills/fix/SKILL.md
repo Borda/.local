@@ -81,7 +81,8 @@ Execute --plan path extraction; sets `$PLAN_FILE`.
 
 ```bash
 # persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
-echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-fix-dev-dir"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}"
 ```
 
 ## Fix Mode
@@ -99,12 +100,13 @@ Diagnosis file format: see `/develop:debug` Final Report section for canonical f
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-fix-keep-items"
-rm -f .claude/state/skill-contract.md  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-fix-keep-items-${CSID}"
+rm -f .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ```bash
@@ -113,13 +115,14 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
     --skill fix --write-files "$ARGUMENTS"
 ```
 
-Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
+Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode-${CSID} 2>/dev/null || echo false)`.
 
-**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-codemap-raw` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
+**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
 
 ```bash
 # timeout: 5000
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw-${CSID} 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW" 2>&1)
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -127,7 +130,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     [ "$CODEMAP_RAW" = "strict" ] && exit 1
     CODEMAP_ENABLED=false
 fi
-echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
+echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}
 # codemap: integrated-via-shared
 ```
 
@@ -168,14 +171,15 @@ Compute run directory and create health sentinel:
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _run_out=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/setup_worktree.py" --sentinel fix-team-check)
 TS=$(echo "$_run_out" | head -1)
 RUN_DIR=$(echo "$_run_out" | tail -1)
 FIX_TEAM_DIR="$RUN_DIR"
 RUN_DIR_LITERAL="$RUN_DIR"
-echo "$TS" > ${TMPDIR:-/tmp}/dev-fix-team-ts
-echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-fix-run-dir
-trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT
+echo "$TS" > ${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}
+echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}
+trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT  # tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp (mirrors JS getSentinelDir), not TMPDIR-based
 ```
 
 Spawn 2 teammates in parallel using Agent() tool:
@@ -184,12 +188,13 @@ Spawn 2 teammates in parallel using Agent() tool:
 
 ```bash
 # timeout: 5000
-TS=$(cat ${TMPDIR:-/tmp}/dev-fix-team-ts 2>/dev/null || echo "")                                        # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TS=$(cat ${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID} 2>/dev/null || echo "")                                 # re-derive — bash state lost between Bash() calls
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | head -1)
 _SPAWN_DEV_SHARED="$_DEV_SHARED"
 _SPAWN_TS="$TS"
 _SPAWN_ARGS="$ARGUMENTS"
-_SPAWN_RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-fix-run-dir 2>/dev/null || echo ".temp/develop/$TS")
+_SPAWN_RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID} 2>/dev/null || echo ".temp/develop/$TS")
 ```
 
 **Teammate 1 — foundry:sw-engineer (model=opus) — hypothesis A**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, `$_SPAWN_ARGS`, and `$_SPAWN_RUN_DIR` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Read <_DEV_SHARED_LITERAL>/preflight-helpers.md §Team Spawn Template. Bug: <ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to <RUN_DIR_LITERAL>/fix-hypothesis-A-<TS_LITERAL>.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
@@ -200,11 +205,12 @@ Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start
 
 ```bash
 # timeout: 5000
-TS=$(cat ${TMPDIR:-/tmp}/dev-fix-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
-RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-fix-run-dir 2>/dev/null || echo ".temp/develop/$TS")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TS=$(cat ${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID} 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID} 2>/dev/null || echo ".temp/develop/$TS")
 ```
 
-Every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `$RUN_DIR/fix-hypothesis-*.md`; surface with ⏱; never omit.
+Every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` (tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp, not TMPDIR-based) — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `$RUN_DIR/fix-hypothesis-*.md`; surface with ⏱; never omit.
 
 After both teammates complete: read their output files from `$RUN_DIR/`, synthesize consensus root cause, facilitate cross-challenge between competing analyses. Lead then proceeds alone with Steps 2-4 (regression test, fix, review loop).
 
@@ -216,7 +222,8 @@ Gather all available context about bug:
 
 ```bash
 # timeout: 6000
-REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream-${CSID} 2>/dev/null || echo "")
 if [ -n "$REPO_NAME" ]; then
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null
 else
@@ -235,7 +242,8 @@ If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, 
 
 ```bash
 # timeout: 600000
-$PYTEST_CMD --tb=long "$TEST_PATH" -v >"${TMPDIR:-/tmp}/pytest-out.txt" 2>&1; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+$PYTEST_CMD --tb=long "$TEST_PATH" -v >"${TMPDIR:-/tmp}/pytest-out.txt-${CSID}" 2>&1; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt-${CSID}"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 
 **Codemap target derivation** — set `TARGET_MODULE`/`TARGET_FN` before loading `codemap-context.md` so its caller-impact queries (`fn-rdeps`, `fn-blast`) fire instead of only `central` baseline. User may pass explicit suspect as `module.path::function`:
@@ -275,7 +283,8 @@ Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 
 ```bash
 # timeout: 6000
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled 2>/dev/null || echo false)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID} 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ] && [ -z "$TARGET_FN" ] && command -v scan-query >/dev/null 2>&1; then
     DERIVED_FN=$(grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' "$DEV_DIR/checkpoint.md" 2>/dev/null | head -1)
     if [ -n "$DERIVED_FN" ]; then
@@ -323,7 +332,7 @@ cat "$_DEV_SHARED/plan-inline.md"
 **Decision — three states** (default is NOT "skip": it runs on substantial fixes and auto-skips only small ones):
 
 1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
-2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small fix.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)` = `true`) → **always run**, even on a small fix.
 3. else **default** → **run when fix is substantial** (multi-file, ≳50 lines, or touches public API); **auto-skip when small** (single file, ≲50 lines, no API change) — challenger adds little on trivial fixes.
 
 Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial fixes where it would otherwise fire; `--challenge` forces it on small fixes where it would otherwise auto-skip.
@@ -444,20 +453,21 @@ If issue found: revise test(s) before applying fix. Flawed reproduction = fix va
 
 ```bash
 # Compaction contract — boundary 1: after reproduction, before edit (compaction-contract.md §Lifecycle)
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-fix-dev-dir" 2>/dev/null || echo "")
-_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-fix-keep-items" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-fix-keep-items-${CSID}" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:fix · phase: edit (after reproduction test written)"
     echo "- run-dir: $_DEV_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: apply minimal fix (Step 3) → review+quality stack (Step 4)"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 3: Apply the fix
@@ -524,17 +534,18 @@ Make minimal change to fix root cause:
 
 ```bash
 # Compaction contract — boundary 2: after fix applied, before review stack (compaction-contract.md §Lifecycle)
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-fix-dev-dir" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
 _CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:fix · phase: review+quality (after fix applied)"
     echo "- run-dir: $_DEV_DIR"
     echo "- preserve: dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD"
     echo "- next: review and close gaps (Step 4) → Final Report"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 4: Review and close gaps
@@ -621,7 +632,7 @@ If file not found → skip quality stack entirely, note "foundry quality-stack n
 ```
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 <!-- Team branching logic is inline above at ## Team Mode Branch — executed immediately when TEAM_MODE=true, before Step 1. When to use: root cause unclear after initial triage, OR bug spans 3+ modules AND user accepted "Proceed anyway" at scope gate. Set via --team flag. -->

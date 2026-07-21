@@ -53,7 +53,8 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 <!-- loads: checks-index.md -->
 <!-- loads: checks-security.md -->
 ```bash
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/checks-index.md" "$AUDIT_TPL/checks-security.md"
 ```
 
@@ -72,25 +73,26 @@ Severity: deprecated/invalid = **high**; deprecated frontmatter field = **medium
 After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/system-checks.md`, include only summary table in context.
 
 ```bash
-_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state/run-dir" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state/keep-items" 2>/dev/null || echo "")
-_PRESERVE="run-dir=$_RUN_DIR, static-findings=${TMPDIR:-/tmp}/audit-state/static-findings.jsonl, finding-files=$_RUN_DIR/*.md"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/keep-items" 2>/dev/null || echo "")
+_PRESERVE="run-dir=$_RUN_DIR, static-findings=${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl, finding-files=$_RUN_DIR/*.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:audit · phase: aggregate (after parallel curator+system-checks fan-out)"
     echo "- run-dir: $_RUN_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: consolidate findings → aggregate.md + summary.jsonl → Step 7 report"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 5: Aggregate and classify findings
 
 **Delegate aggregation** to consolidator agent to avoid flooding main context. Spawn **foundry:curator** consolidator:
 
-> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present) AND the deterministic Layer-1 results at `${TMPDIR:-/tmp}/audit-state/static-findings.jsonl` (Step 1b — one JSON object per check; each `\"status\":\"fail\"` object's `lines` array is a set of already-verified mechanical findings, severity per the check's known level: fence/mode-dispatch=high, tag/README-drift/bash-persistence/spawn-vars/shared-drift=medium, orphaned-bin/routing=medium). Run `cat "$AUDIT_TPL/../severity-table.md"` via the Bash tool and apply its severity classification. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"critical|high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
+> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present) AND the deterministic Layer-1 results at `${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl` (Step 1b — one JSON object per check; each `\"status\":\"fail\"` object's `lines` array is a set of already-verified mechanical findings, severity per the check's known level: fence/mode-dispatch=high, tag/README-drift/bash-persistence/spawn-vars/shared-drift=medium, orphaned-bin/routing=medium). Run `cat "$AUDIT_TPL/../severity-table.md"` via the Bash tool and apply its severity classification. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"critical|high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
 
 Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate.md` in full — 200–600 lines, overflows context on large audits. Use `$RUN_DIR/summary.jsonl` for all dispatch decisions in Steps 7 and 8.
 
@@ -137,18 +139,19 @@ Returns to SKILL.md Step 6 (cross-validate critical findings) after Step 5b comp
 ## Step 7: Report findings
 
 ```bash
-_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state/run-dir" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state/keep-items" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/keep-items" 2>/dev/null || echo "")
 _PRESERVE="run-dir=$_RUN_DIR, aggregate=$_RUN_DIR/aggregate.md, summary=$_RUN_DIR/summary.jsonl"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:audit · phase: report (after aggregate complete)"
     echo "- run-dir: $_RUN_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: emit report → follow-up gate → optional fix mode (Steps 8-10) → Step 11"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 Before emitting, read current `$RUN_DIR/summary.jsonl` (may have been updated by Step 5b with net-new promoted findings) and recompute severity totals. Then emit report (omit Upgrade Proposals if none passed genuine-value filter):

@@ -1,7 +1,7 @@
 """Tests for ``bin/resolve_preflight.py``.
 
 ``subprocess.run`` and ``which`` monkeypatched — no real tools invoked.
-``monkeypatch.chdir`` places the ``.claude/state/preflight/`` TTL cache
+``monkeypatch.chdir`` places the ``.temp/state/preflight/`` TTL cache
 under ``tmp_path`` (the script uses a relative path).
 """
 
@@ -93,8 +93,8 @@ def test_gh_ok_codex_absent_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.chdir(tmp_path)
     rc = rp.main([])
     assert rc == 0
-    assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE").read_text() == "false"
-    assert (tmp_path / "resolve-preflight-GH_OK").read_text() == "true"
+    assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE-shared").read_text() == "false"
+    assert (tmp_path / "resolve-preflight-GH_OK-shared").read_text() == "true"
 
 
 def test_gh_ok_codex_present_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -116,7 +116,7 @@ def test_gh_ok_codex_present_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.chdir(tmp_path)
     rc = rp.main([])
     assert rc == 0
-    assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE").read_text() == "true"
+    assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE-shared").read_text() == "true"
 
 
 def test_gh_cache_hit_skips_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

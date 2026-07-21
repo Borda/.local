@@ -54,13 +54,14 @@ cat "$_FS/task-hygiene.md"
 ## Step 0: Parse flags
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
-rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/brainstorm-state-keep-items"
+rm -f .temp/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/brainstorm-state-keep-items-${CSID}"
 ```
 
 ## Step 1: Context scan
@@ -99,17 +100,19 @@ On **(b)**: skip viewer creation and the print launch note below; set `SIDECAR="
 On **(a)**:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 3000
 mkdir -p .plans/blueprint
 SIDECAR=".plans/blueprint/brainstorm-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
-echo "$SIDECAR" > "${TMPDIR:-/tmp}/brainstorm-state-sidecar"
+echo "$SIDECAR" > "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}"
 echo "$SIDECAR"
 ```
 
-**Persistence note**: shell variables do NOT persist across separate Bash calls. The `echo "$SIDECAR" > "${TMPDIR:-/tmp}/brainstorm-state-sidecar"` step above writes the path to a state file. At the top of every subsequent Bash block that references `$SIDECAR` (Steps 3–4), re-read it:
+**Persistence note**: shell variables do NOT persist across separate Bash calls. The `echo "$SIDECAR" > "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}"` step above writes the path to a state file. At the top of every subsequent Bash block that references `$SIDECAR` (Steps 3–4), re-read it:
 
 ```bash
-SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}" 2>/dev/null || echo "")
 ```
 
 If `$SIDECAR` is empty after re-read, treat as viewer opt-out and skip all sidecar Write steps.
@@ -318,20 +321,21 @@ Assemble tree state and write to `.plans/blueprint/YYYY-MM-DD-<slug>.md` using W
 **Gate**: do not proceed to Step 5 until file written and path confirmed.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _TREE_FILE=$(find .plans/blueprint -name "*.md" -maxdepth 1 -not -name "*-spec.md" 2>/dev/null | sort -r | head -1)
-_SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/brainstorm-state-keep-items" 2>/dev/null || echo "")
+_SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/brainstorm-state-keep-items-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="tree-file=$_TREE_FILE"
 [ -n "$_SIDECAR" ] && _PRESERVE="$_PRESERVE, sidecar=$_SIDECAR"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:brainstorm · phase: tree-review (after tree saved to disk)"
     echo "- run-dir: n/a"
     echo "- preserve: $_PRESERVE"
     echo "- next: curator tree review (Step 5) → approval gate (Step 6)"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 **Sidecar finalise** (skip if `$SIDECAR` is empty — viewer opt-out): using Write tool, write full current JSON content (same as `$SIDECAR`) with `session_status: "complete"` to `.plans/blueprint/<final-slug>.json` (same slug as `.md` file, `.json` extension). Then also overwrite `$SIDECAR` with `session_status: "complete"`. Do NOT move or rename `$SIDECAR` — open browser tabs keep polling original timestamp-slug path.
@@ -393,7 +397,7 @@ On (b): return to Step 3 with existing tree state — add requested branches or 
 On approval, suggest: `/brainstorm breakdown .plans/blueprint/<file>` to distill tree into spec.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 > Tree file is durable record of exploration. Share with teammates or use as context for future `/brainstorm` sessions on related ideas.

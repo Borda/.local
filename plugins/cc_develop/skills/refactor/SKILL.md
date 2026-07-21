@@ -90,7 +90,8 @@ Execute --plan path extraction; sets `$PLAN_FILE`.
 
 ```bash
 # persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
-echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-refactor-dev-dir"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}"
 ```
 
 ## Flag parsing
@@ -98,12 +99,13 @@ echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-refactor-dev-dir"
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-refactor-keep-items"
-rm -f .claude/state/skill-contract.md  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-refactor-keep-items-${CSID}"
+rm -f .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ```bash
@@ -112,16 +114,17 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
     --skill refactor --write-files "$ARGUMENTS"
 ```
 
-Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
+Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode-${CSID} 2>/dev/null || echo false)`.
 
-**Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap-resolve`. Uses skill-specific temp file (`dev-refactor-codemap-raw`) to avoid reading stale values from prior feature/debug runs:
+**Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap-resolve`. Uses skill-specific temp file (`dev-refactor-codemap-raw-${CSID}`) to avoid reading stale values from prior feature/debug runs:
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CODEMAP_RAW=auto
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
-echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw
+echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID}
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -130,7 +133,8 @@ echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw
 
 ```bash
 # timeout: 5000
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-refactor-codemap-raw 2>/dev/null || echo auto)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID} 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -142,7 +146,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     echo "⚠ codemap unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
     CODEMAP_ENABLED=false
 fi
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled-${CSID}
 # codemap: integrated-via-shared
 ```
 
@@ -226,7 +230,7 @@ cat "$_DEV_SHARED/plan-inline.md"
 **Decision — three states** (default is NOT "skip": it runs on substantial refactors and auto-skips only small contained ones):
 
 1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
-2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small change.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)` = `true`) → **always run**, even on a small change.
 3. else **default** → **run when refactor is substantial** (spans multiple files, ≳50 lines, or changes public API / an exported symbol); **auto-skip when small** (single file, ≲50 lines, no API change) — a contained refactor has little design surface to challenge.
 
 Two flags are opposites for two regimes, which is why both exist: `--no-challenge` suppresses gate on *substantial* changes where it would otherwise fire; `--challenge` forces it on *small* changes where it would otherwise auto-skip.
@@ -291,13 +295,14 @@ Compute run directory and create health sentinel:
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _run=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/setup_worktree.py" --sentinel refactor-team-check)
 TS=$(echo "$_run" | head -1)
 RUN_DIR=$(echo "$_run" | tail -1)
 RUN_DIR_LITERAL="$RUN_DIR"
-echo "$TS" > ${TMPDIR:-/tmp}/dev-refactor-team-ts
-echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir
-trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT
+echo "$TS" > ${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}
+echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}
+trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT  # tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp (mirrors JS getSentinelDir), not TMPDIR-based
 ```
 
 **IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
@@ -318,11 +323,12 @@ Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start
 
 ```bash
 # timeout: 5000
-TS=$(cat ${TMPDIR:-/tmp}/dev-refactor-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
-RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-refactor-run-dir 2>/dev/null || echo ".temp/develop/$TS")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+TS=$(cat ${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID} 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID} 2>/dev/null || echo ".temp/develop/$TS")
 ```
 
-Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn; every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
+Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn (tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp, not TMPDIR-based); every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
 
 After both complete: read their output files from `$RUN_DIR/`, synthesize outputs, run quality stack, produce Final Report. Exit — do not continue to Steps 3–5.
 
@@ -330,20 +336,21 @@ Continue to Step 3 only when `TEAM_MODE=false`.
 
 ```bash
 # Compaction contract — boundary 1: after coverage audit, before characterization tests (compaction-contract.md §Lifecycle)
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir" 2>/dev/null || echo "")
-_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-refactor-keep-items" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-refactor-keep-items-${CSID}" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:refactor · phase: characterize+edit (after coverage audit)"
     echo "- run-dir: $_DEV_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: add characterization tests (Step 3) → refactor with safety net (Step 4)"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 3: Add characterization tests (if needed)
@@ -364,14 +371,16 @@ Spawn with context:
 
 ```bash
 # timeout: 600000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 $PYTEST_CMD <test_file> -v; GATE_EXIT=$?
-echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
+echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit-${CSID}
 ```
 
 **Gate**: all characterization tests must pass before proceeding. Check exit code from persisted file (`$?` in a fresh shell is unrelated to prior pytest run):
 
 ```bash
-GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-gate-exit 2>/dev/null || echo 1)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-gate-exit-${CSID} 2>/dev/null || echo 1)
 if [ "${GATE_EXIT}" -eq 5 ]; then
     echo "GATE FAIL: no tests collected (exit 5) — characterization test file missing or not detected by pytest; cannot proceed to Step 4 without a safety net"
 elif [ "$GATE_EXIT" -ne 0 ]; then
@@ -405,8 +414,9 @@ For each change:
 
 ```bash
 # timeout: 3000
-echo "0"             > ${TMPDIR:-/tmp}/dev-inner-cycle
-echo "$(date +%s)"   > ${TMPDIR:-/tmp}/dev-start-time
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "0"             > ${TMPDIR:-/tmp}/dev-inner-cycle-${CSID}
+echo "$(date +%s)"   > ${TMPDIR:-/tmp}/dev-start-time-${CSID}
 MAX_WALL_SECONDS=1800  # 30 min cap (5 outer × MAX_INNER_CYCLES worst case)
 ```
 
@@ -414,10 +424,11 @@ At each inner iteration start, read back, increment, check:
 
 ```bash
 # timeout: 3000
-INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle 2>/dev/null || echo 0)
-START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time 2>/dev/null || echo $(date +%s))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle-${CSID} 2>/dev/null || echo 0)
+START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time-${CSID} 2>/dev/null || echo $(date +%s))
 INNER_CYCLE=$((INNER_CYCLE+1))
-echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle
+echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle-${CSID}
 MAX_INNER_CYCLES=5  # must match constants block — bash can't ref it directly
 if [ "$INNER_CYCLE" -gt $MAX_INNER_CYCLES ]; then
     echo "⚠ MAX_INNER_CYCLES ($MAX_INNER_CYCLES) reached — stopping refactor loop; report what succeeded, what broke, what remains"
@@ -440,17 +451,18 @@ After each change-test pair: re-read counter from temp file, increment, write ba
 
 ```bash
 # Compaction contract — boundary 2: after refactor edits, before review stack (compaction-contract.md §Lifecycle)
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
 _CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:refactor · phase: review+quality (after refactor edits applied)"
     echo "- run-dir: $_DEV_DIR"
     echo "- preserve: dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD"
     echo "- next: review and close gaps (Step 5) → Final Report"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 5: Review and close gaps
@@ -534,7 +546,7 @@ If not found → skip quality stack entirely, note the message above in Final Re
 ```
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

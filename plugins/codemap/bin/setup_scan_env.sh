@@ -96,21 +96,25 @@ if [ -n "$_RAW_TMPDIR" ]; then
         fi
     fi
 fi
-TMPDIR_DIR="${_RAW_TMPDIR:-/tmp}"
+TMPDIR_DIR="${_RAW_TMPDIR:-/tmp}"  # tmpdir-exempt: base-dir-fallback (directory root, not a sentinel filename)
+
+# Session-scope suffix — caller (scan-codebase/SKILL.md Step 1 block 1) exports CSID
+# before invoking this script; degrades to "shared" only if the caller forgot the export.
+CSID="${CSID:-shared}"
 
 # Per-PROJ_SLUG tmpfiles — survive across Bash tool calls; consumed by Step 1's
 # second block + Step 2 of scan-codebase/SKILL.md. PID-qualified to prevent
 # concurrent same-project scan runs from racing on shared state.
-printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug-$$"
-printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-$$"
-printf '%s' "$SCAN_ARGS_RAW"  > "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-$$"
-printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-$$"
+printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug-$$-${CSID}"
+printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-$$-${CSID}"
+printf '%s' "$SCAN_ARGS_RAW"  > "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-$$-${CSID}"
+printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-$$-${CSID}"
 
 # Keep non-PID versions as fallback for callers that predate this change
-printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug"
-printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}"
-printf '%s' "$SCAN_ARGS_RAW"  > "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}"
-printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}"
+printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug-${CSID}"
+printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-${CSID}"
+printf '%s' "$SCAN_ARGS_RAW"  > "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-${CSID}"
+printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-${CSID}"
 
 # --incremental requested but no prior index ⇒ scan-index will fall back to full scan.
 # Drop a sentinel so Step 2 can report the fallback after stats.
@@ -121,7 +125,7 @@ if [[ " $ARGUMENTS " == *" --incremental "* ]]; then
         # stderr — keeps stdout reserved for the state file path so the caller
         # can capture only that path via $(...).
         printf '[codemap] No prior index: falling back to full scan\n' >&2
-        touch "${TMPDIR_DIR}/codemap-incremental-noop-${PROJ_SLUG}"
+        touch "${TMPDIR_DIR}/codemap-incremental-noop-${PROJ_SLUG}-${CSID}"
     fi
 fi
 

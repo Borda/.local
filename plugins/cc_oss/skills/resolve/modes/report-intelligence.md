@@ -25,7 +25,8 @@ Building action items…
 
 <!-- loads: review-section-taxonomy.md -->
 ```bash
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared" 2>/dev/null || echo "")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_SHARED/review-section-taxonomy.md"  # timeout: 5000
 ```
 

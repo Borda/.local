@@ -121,7 +121,8 @@ def test_compute_drift_parse_failure_is_conservative(iso: str) -> None:
 
 # ---------------------------------------------------------------------------
 # main — CLI surface
-# Temp files written to ${TMPDIR}/oss-detect-{type,updated-at,drift}
+# Temp files written to ${TMPDIR}/oss-detect-{type,updated-at,drift}-shared
+# (CLAUDE_CODE_SESSION_ID/CSID stripped by conftest.py autouse fixture → "shared")
 # ---------------------------------------------------------------------------
 
 
@@ -137,9 +138,9 @@ def test_unparseable_number_emits_unknown(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(dtt, "which", lambda _: "/fake/gh")
     rc = dtt.main(["--number", "not-a-number"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "unknown"
-    assert (tmp_path / "oss-detect-updated-at").exists()
-    assert (tmp_path / "oss-detect-drift").read_text() == "false"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "unknown"
+    assert (tmp_path / "oss-detect-updated-at-shared").exists()
+    assert (tmp_path / "oss-detect-drift-shared").read_text() == "false"
 
 
 def test_missing_gh_emits_unknown(
@@ -151,7 +152,7 @@ def test_missing_gh_emits_unknown(
     rc = dtt.main(["--number", "123"])
     captured = capsys.readouterr()
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "unknown"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "unknown"
     assert "executable not found" in captured.err
 
 
@@ -167,9 +168,9 @@ def test_issue_detection_without_report_mtime(tmp_path: Path, monkeypatch: pytes
     )
     rc = dtt.main(["--number", "123"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "issue"
-    assert (tmp_path / "oss-detect-updated-at").read_text() == "2024-01-01T00:00:00Z"
-    assert (tmp_path / "oss-detect-drift").read_text() == "false"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "issue"
+    assert (tmp_path / "oss-detect-updated-at-shared").read_text() == "2024-01-01T00:00:00Z"
+    assert (tmp_path / "oss-detect-drift-shared").read_text() == "false"
 
 
 def test_pr_detection_via_pull_request_field(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,8 +191,8 @@ def test_pr_detection_via_pull_request_field(tmp_path: Path, monkeypatch: pytest
     )
     rc = dtt.main(["--number", "456"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "pr"
-    assert (tmp_path / "oss-detect-updated-at").read_text() == "2024-02-02T00:00:00Z"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "pr"
+    assert (tmp_path / "oss-detect-updated-at-shared").read_text() == "2024-02-02T00:00:00Z"
 
 
 def test_discussion_detection_via_graphql_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,8 +213,8 @@ def test_discussion_detection_via_graphql_fallback(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(dtt.subprocess, "run", fake_run)
     rc = dtt.main(["--number", "789"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "discussion"
-    assert (tmp_path / "oss-detect-updated-at").read_text() == "2024-03-03T00:00:00Z"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "discussion"
+    assert (tmp_path / "oss-detect-updated-at-shared").read_text() == "2024-03-03T00:00:00Z"
     assert len(calls) == 2  # both endpoints probed
 
 
@@ -228,9 +229,9 @@ def test_unknown_when_both_endpoints_empty(tmp_path: Path, monkeypatch: pytest.M
     )
     rc = dtt.main(["--number", "9999"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "unknown"
-    assert (tmp_path / "oss-detect-updated-at").exists()
-    assert (tmp_path / "oss-detect-drift").read_text() == "false"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "unknown"
+    assert (tmp_path / "oss-detect-updated-at-shared").exists()
+    assert (tmp_path / "oss-detect-drift-shared").read_text() == "false"
 
 
 @pytest.mark.parametrize(
@@ -265,8 +266,8 @@ def test_malformed_success_payloads_emit_conservative_results(
     rc = dtt.main(["--number", "1", "--report-mtime", "1704067200"])
 
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == expected_type
-    assert (tmp_path / "oss-detect-drift").read_text() in {"false", "true"}
+    assert (tmp_path / "oss-detect-type-shared").read_text() == expected_type
+    assert (tmp_path / "oss-detect-drift-shared").read_text() in {"false", "true"}
 
 
 def test_drift_true_when_thread_newer_than_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -281,8 +282,8 @@ def test_drift_true_when_thread_newer_than_report(tmp_path: Path, monkeypatch: p
     )
     rc = dtt.main(["--number", "1", "--report-mtime", "1700000000"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "issue"
-    assert (tmp_path / "oss-detect-drift").read_text() == "true"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "issue"
+    assert (tmp_path / "oss-detect-drift-shared").read_text() == "true"
 
 
 def test_drift_false_when_report_newer_than_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -297,7 +298,7 @@ def test_drift_false_when_report_newer_than_thread(tmp_path: Path, monkeypatch: 
     )
     rc = dtt.main(["--number", "1", "--report-mtime", "1800000000"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-drift").read_text() == "false"
+    assert (tmp_path / "oss-detect-drift-shared").read_text() == "false"
 
 
 def test_url_input_normalised_before_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -314,7 +315,7 @@ def test_url_input_normalised_before_detection(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr(dtt.subprocess, "run", fake_run)
     rc = dtt.main(["--number", "https://github.com/owner/repo/issues/7"])
     assert rc == 0
-    assert (tmp_path / "oss-detect-type").read_text() == "issue"
+    assert (tmp_path / "oss-detect-type-shared").read_text() == "issue"
     # The extracted /7 path must appear in the gh API call — not the full URL.
     assert any("/issues/7" in part for part in captured_cmds[0])
 
@@ -330,7 +331,7 @@ def test_temp_files_contain_no_shell_metacharacters(tmp_path: Path, monkeypatch:
         lambda *a, **k: _FakeCompleted(returncode=0, stdout=issue_payload),
     )
     dtt.main(["--number", "1"])
-    for fname in ("oss-detect-type", "oss-detect-updated-at", "oss-detect-drift"):
+    for fname in ("oss-detect-type-shared", "oss-detect-updated-at-shared", "oss-detect-drift-shared"):
         val = (tmp_path / fname).read_text()
         assert ";" not in val
         assert "`" not in val

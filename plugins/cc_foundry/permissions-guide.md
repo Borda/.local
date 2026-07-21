@@ -26,20 +26,21 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | --- | --- | --- |
 | `Read(.claude/*.md)` | Read top-level `.claude/` markdown files | Agents read CLAUDE.md, permissions-guide.md, TEAM_PROTOCOL.md at spawn |
 | `Read(.claude/**/*.md)` | Read any nested `.claude/` markdown file | Agents and skills read own agent/skill/rule files; curator reads config files for audit |
-| `Read(.claude/logs/**)` | Read log files under `.claude/logs/` | `/calibrate` reads calibrations.jsonl for historical context; `/audit` reads audit-errors.jsonl |
-| `Edit(.claude/logs/**)` | Edit log files under `.claude/logs/` | Skills append to calibrations.jsonl and audit-errors.jsonl without Bash redirection |
-| `Edit(.claude/state/**)` | Edit state files under `.claude/state/` | Skills refresh compaction contract (skill-contract.md) and session-context.md without sensitive-file prompts |
+| `Read(.claude/logs/**)` | Read log files under legacy `.claude/logs/` | Legacy fallback reads — `/calibrate` and `/session` merge pre-relocation entries alongside `.notes/logs/` for historical context; logs now write to `.notes/logs/` (see `Write(.notes/**)`) |
 | `Read(./**)` | Read any file in project root | Teammates read `TEAM_PROTOCOL.md` and agent files at spawn; skills read own SKILL.md files |
 | `Glob(./**)` | Glob-match any file in project | `/audit` and `/manage` enumerate agents, skills, hooks, source files without shell `find` |
 | `Grep(./**)` | Search content in any project file | `/audit` checks cross-references; `/calibrate` locates skill keyword patterns |
 | `Read(/tmp/**)` | Read temporary files under `/tmp/` | `/calibrate` reads checkpoint files for background agent health monitoring; skill temp output files |
 | `Write(.plans/**)` | Write plan and blueprint files to `.plans/` | `/brainstorm` writes spec and tree files to `.plans/blueprint/`; `/develop:plan` writes plans to `.plans/active/` |
 | `Write(.notes/**)` | Write notes and lessons to `.notes/` | Skills write lessons, diary entries, guides to `.notes/` |
-| `Write(.claude/state/**)` | Write state files to `.claude/state/` | PreCompact hook + skills create skill-contract.md / session-context.md (regenerable runtime state) without sensitive-file prompts |
 | `Write(.reports/**)` | Write files into `.reports/` skill run dirs | Skills and Codex write timestamped run artifacts (result.jsonl, analysis files) to `.reports/<skill>/` |
 | `Write(.temp/**)` | Write prose output files to `.temp/` | Quality-gates long output; research, review, resolve, session, other skills write findings to `.temp/output-<slug>-<date>.md` |
 | `Glob(~/.claude/**)` | Glob-match files in home `.claude/` directory | `/foundry:setup link` checks for existing symlinks/files before linking; `/investigate` probes verify agent/skill/config files exist in `~/.claude/`; scoped to `.claude/` only to avoid broad home-dir timeout |
 | `Read(~/.claude/**)` | Read files in home `.claude/` directory | `/foundry:setup` reads `~/.claude/settings.json` for merging; `/investigate` probes read `~/.claude/settings.json` during environment checks |
+
+### Known limitation — sensitive-file gate on `.claude/`
+
+Claude Code applies an additional, undocumented "sensitive file" classifier to tool-call writes/edits under project `.claude/` — confirmed on `.claude/state/skill-contract.md` and independently corroborated on `.claude/calibrate/runs/`. This is separate from the `permissions.allow`/`deny`/`ask` arrays above: matching `Edit`/`Bash` allow entries suppress the *ordinary* permission prompt, but the sensitive-file gate still fires on top of that — no settings.json field pre-authorizes it. The dialog's own "Yes, and always allow access to `<dir>` from this project" option is the only permanent grant, and it must be clicked live, once per project; it cannot be scripted into `permissions-allow.json` or merged by `/foundry:setup`. Hook-side writes (Node `fs`, e.g. `task-log.js`'s PreCompact write of `session-context.md`) are not tool-calls and bypass this gate entirely — prefer that pattern for new regenerable-state writes where feasible, before adding another Bash/Edit tool-call under `.claude/`. **`skill-contract.md` has since been relocated to `.temp/state/skill-contract.md`**, and calibrations/session-archive/audit-errors logs relocated to `.notes/logs/`, specifically to route around this gate (`.temp/` and `.notes/` are not sensitive-file-gated); the audit-errors.jsonl append exposure is resolved by that relocation — the only remaining known exposure under `.claude/` is the one-shot `.claude/permissions-guide.md` setup copy.
 
 ## Web
 
@@ -80,8 +81,7 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Bash(mkdir -p .reports/audit/*)` | Create `.reports/audit/` skill run subdirs | `/audit` creates timestamped run dir before spawning curator agents |
 | `Bash(mkdir -p .reports/review/*)` | Create `.reports/review/` final report subdirs | `/oss:review`, `/develop:review` create per-run dir for consolidated final report |
 | `Bash(mkdir -p .temp/review/*)` | Create `.temp/review/` intermediate handover subdirs | `/oss:review`, `/develop:review` create per-run dir for subagent handover files |
-| `Bash(rm .claude/state/*)` | Delete regenerable state files under `.claude/state/` (no `-f`) | Same clear step invoked without the `-f` flag — the `-f` pattern does not match a bare `rm` |
-| `Bash(rm -f .claude/state/*)` | Delete regenerable state files under `.claude/state/` | Compaction lifecycle clears skill-contract.md on skill completion (compaction-contract.md §Clear on completion); `.claude/state` is a protected path, so the clear step prompts without this |
+| `Bash(rm -f .temp/state/*)` | Delete regenerable skill-contract.md under `.temp/state/` | Compaction lifecycle clears skill-contract.md on skill completion — `.temp/` is not sensitive-file-gated, so this entry works (unlike the old `.claude/state/` location) |
 | `Bash(mkdir -p .reports/analyse/*)` | Create `.reports/analyse/` skill run subdirs | `/analyse` creates subdirs for thread, ecosystem, health modes |
 | `Bash(mkdir -p .experiments/*)` | Create `.experiments/` skill run subdirs | `/optimize` creates run dir for run mode artifacts |
 | `Bash(mkdir -p .developments/*)` | Create `.developments/` skill run subdirs | `/develop` creates run dir for review-cycle artifacts |

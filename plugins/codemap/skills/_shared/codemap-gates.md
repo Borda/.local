@@ -4,7 +4,7 @@
 
 Plugin-agnostic Gate A / Gate B machinery for missing-index and stale-index decisions. Consumer wrappers reference this file, supply only their **skip flag** (per-plugin flag disabling gates, e.g. `CODEMAP_RAW=auto` for develop, `CODEMAP_FORCE_OFF=false` for oss).
 
-Read currency first: `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/dev-codemap-currency" 2>/dev/null || echo "no_index")` (consumers may point at own currency file).
+Read currency first: `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/dev-codemap-currency-${CSID}" 2>/dev/null || echo "no_index")` (consumers may point at own currency file; `CSID` exported by caller per `claude-config.md` TMPDIR Sentinel Scoping).
 
 ## Gate A — missing index
 

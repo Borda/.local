@@ -61,7 +61,7 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 **Load files** from `.experiments/state/<run-id>/`:
 
 - `state.json`: extract `goal`, `best_metric`, `config` (incl. `metric.direction`), `iteration` count, `best_commit`. Compute `baseline_metric` from iteration 0 in `experiments.jsonl`.
-- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and **rewrite sanitized copy to `$RUN_DIR/experiments-clean.jsonl`** (skip truncated last line). All downstream steps (T2 retro_analyze.py, T3 dead-iter scan, T5 scientist) must read sanitized copy — never raw file — so every step sees same iteration set. Persist sanitized path: `echo "$RUN_DIR/experiments-clean.jsonl" > "${TMPDIR:-/tmp}/retro-jsonl-path"` (consumers re-hydrate from this file). If JSONL untruncated, sanitized copy byte-identical to raw file.
+- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and **rewrite sanitized copy to `$RUN_DIR/experiments-clean.jsonl`** (skip truncated last line). All downstream steps (T2 retro_analyze.py, T3 dead-iter scan, T5 scientist) must read sanitized copy — never raw file — so every step sees same iteration set. Persist sanitized path: `echo "$RUN_DIR/experiments-clean.jsonl" > "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}"` (consumers re-hydrate from this file). If JSONL untruncated, sanitized copy byte-identical to raw file.
 - `diary.md`: if present, read for qualitative context in T5.
 
 If `--compare <run-id-2>` present: load second run identically from `.experiments/state/<run-id-2>/`. If not found, stop: `"Compare target not found: .experiments/state/<run-id-2>/. Check run ID and retry."`
@@ -69,26 +69,29 @@ If `--compare <run-id-2>` present: load second run identically from `.experiment
 **Assign `RUN_ID_ARG`** from `$ARGUMENTS` — first positional non-flag token, empty if absent (ADV-H17):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _REMAINDER=$(echo "$ARGUMENTS" | sed -E 's/--compare[= ]+[^ ]+//g; s/--threshold[= ]+[^ ]+//g; s/--alpha[= ]+[^ ]+//g')
 RUN_ID_ARG=$(echo "$_REMAINDER" | awk '{for (i=1; i<=NF; i++) if ($i !~ /^--/) { print $i; exit }}')
 RUN_ID_ARG="${RUN_ID_ARG:-}"
-echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id"  # persist for T3 (vars lost between Bash calls)
+echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id-${CSID}"  # persist for T3 (vars lost between Bash calls)
 ```
 
 **Pre-compute run directory** — also fix `$RUN_ID` (resolved from input resolution above), persist `$RUN_DIR` for T3 (ADV-H18 + ADV-L16):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 RUN_ID="${RUN_ID_ARG:-$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/find_run_id.py" .experiments/state 2>/dev/null)}"  # loads: find_run_id.py
 # T-G2: find_run_id.py errors suppressed by 2>/dev/null; surface empty case to avoid double-slash path
 [ -z "$RUN_ID" ] && { echo "! Failed to resolve run ID — no completed run found or bin/find_run_id.py unavailable; check research plugin install."; exit 1; }
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
-echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved"
+echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}"
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "retro" ".experiments" 2>/dev/null)  # timeout: 5000
 mkdir -p "$RUN_DIR/scripts"  # timeout: 3000
-echo "$RUN_DIR" > "${TMPDIR:-/tmp}/retro-run-dir"  # T3 + fallback path reload from temp file
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/retro-run-dir-${CSID}"  # T3 + fallback path reload from temp file
 ```
 
 ### Step T2: Statistical significance analysis
@@ -96,13 +99,14 @@ echo "$RUN_DIR" > "${TMPDIR:-/tmp}/retro-run-dir"  # T3 + fallback path reload f
 Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python with scipy.stats:
 
 ```bash
-RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved" 2>/dev/null)  # re-hydrate RUN_ID from T1 (Check 41: fresh shell)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}" 2>/dev/null)  # re-hydrate RUN_ID from T1 (Check 41: fresh shell)
 ALPHA="${ALPHA:-0.05}"
 METRIC_DIRECTION=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/read_state_field.py" ".experiments/state/$RUN_ID/state.json" "config.metric.direction" --default "higher" 2>/dev/null || echo "higher")  # loads: read_state_field.py
-RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")  # re-hydrate sanitized path from T1 (Check 41: fresh shell)
+RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")  # re-hydrate sanitized path from T1 (Check 41: fresh shell)
 RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/retro_analyze.py" --jsonl "$RETRO_JSONL" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
 RETRO_EXIT=$?
-echo "$RETRO_RESULT" > "${TMPDIR:-/tmp}/retro-result"  # persist for effect-size block (Check 41: fresh shell)
+echo "$RETRO_RESULT" > "${TMPDIR:-/tmp}/retro-result-${CSID}"  # persist for effect-size block (Check 41: fresh shell)
 [ "$RETRO_EXIT" -eq 2 ] && { echo "retro: Input error (exit 2) — run-id '$RUN_ID' missing, malformed, or has no baseline record; re-run /research:run to create baseline"; exit 1; }
 ```
 
@@ -124,7 +128,8 @@ Read `direction` from `state.json` config (or infer from goal text), pass via `$
 **Effect size** — script does not return rank-biserial `r` directly. Compute via the bundled bin/ script:
 
 ```bash
-RETRO_RESULT=$(cat "${TMPDIR:-/tmp}/retro-result" 2>/dev/null)  # re-hydrate from T2 (Check 41: fresh shell)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+RETRO_RESULT=$(cat "${TMPDIR:-/tmp}/retro-result-${CSID}" 2>/dev/null)  # re-hydrate from T2 (Check 41: fresh shell)
 EFFECT_R=$(echo "$RETRO_RESULT" | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/compute_effect_size.py")  # timeout: 5000
 ```
 
@@ -155,10 +160,11 @@ Scan `experiments.jsonl` sequentially, skipping iteration 0 (baseline). For each
 Re-hydrate cross-Bash state at the start of every separate Bash invocation in T3 (each Bash call is a fresh shell — `$RUN_DIR` / `$RUN_ID_ARG` lost across calls; ADV-H18 / ADV-L16):
 
 ```bash
-RUN_DIR=$(cat "${TMPDIR:-/tmp}/retro-run-dir" 2>/dev/null)
-RUN_ID_ARG=$(cat "${TMPDIR:-/tmp}/retro-run-id" 2>/dev/null)
-RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved" 2>/dev/null)
-RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/retro-run-dir-${CSID}" 2>/dev/null)
+RUN_ID_ARG=$(cat "${TMPDIR:-/tmp}/retro-run-id-${CSID}" 2>/dev/null)
+RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}" 2>/dev/null)
+RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")
 # T-C1: separate guards — `|| ... &&` has subtle precedence. `exit 1` terminates the Bash
 # subprocess only — orchestrator must treat non-zero exit as hard stop, not proceed to T4.
 [ -z "$RUN_DIR" ] && { echo "retro T3: RUN_DIR missing — T1 must run first" >&2; exit 1; }

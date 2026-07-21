@@ -16,12 +16,13 @@ Two calling conventions:
 2. **Skill-driven with file writes** — caller passes ``--skill <name>
    --write-files <arguments>``; script looks up the per-skill flag set
    internally and writes each resulting value to a per-flag temp file
-   under ``${TMPDIR:-/tmp}/`` (no ``eval`` required by the caller).
+   under ``${TMPDIR:-/tmp}/`` with a ``-<CSID>`` session-scoping suffix on
+   every filename (no ``eval`` required by the caller).
 
    Example::
 
        python dev_parse_args.py --skill feature --write-files "$ARGUMENTS"
-       # Now read: $(cat ${TMPDIR:-/tmp}/dev-feature-codemap)
+       # Now read: $(cat ${TMPDIR:-/tmp}/dev-feature-codemap-${CSID})
 
    Two files are written for every variable: a *per-skill* path
    (``dev-<skill>-<flag>``) for the modern convention and a *legacy*
@@ -58,9 +59,25 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+
+
+def _csid() -> str:
+    """Return this session's file-naming scope suffix, resolved fresh on every call.
+
+    Prefers an explicit ``CSID`` (exported by the calling bash block), falls back to
+    ``CLAUDE_CODE_SESSION_ID`` (set by Claude Code itself), and finally ``"shared"``
+    when neither is present. Resolved as a function rather than a module constant so
+    callers (and tests) can change the environment between calls and see it take effect.
+
+    Examples:
+        >>> isinstance(_csid(), str) and len(_csid()) > 0
+        True
+    """
+    return os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
 
 
 # ---------------------------------------------------------------------------
@@ -361,23 +378,30 @@ SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
 
 
 def _per_skill_filename(skill: str, spec: FlagSpec) -> str:
-    """Compose the per-skill temp filename for a given spec.
+    """Compose the per-skill temp filename for a given spec, suffixed with the session scope.
 
     For codemap (no ``flag`` token) the key is the literal string ``codemap``.
 
     Examples:
-        >>> _per_skill_filename("feature", FlagSpec(kind="bool", flag="team", var="TEAM_MODE", default="false"))
-        'dev-feature-team'
-        >>> _per_skill_filename("debug", FlagSpec(kind="codemap", flag="", var="CODEMAP_RAW", default="auto"))
-        'dev-debug-codemap'
+        >>> _per_skill_filename(
+        ...     "feature", FlagSpec(kind="bool", flag="team", var="TEAM_MODE", default="false")
+        ... ).startswith("dev-feature-team-")
+        True
+        >>> _per_skill_filename(
+        ...     "debug", FlagSpec(kind="codemap", flag="", var="CODEMAP_RAW", default="auto")
+        ... ).startswith("dev-debug-codemap-")
+        True
     """
     key = spec.flag or ("codemap" if spec.kind == "codemap" else spec.var.lower())
-    return f"dev-{skill}-{key}"
+    return f"dev-{skill}-{key}-{_csid()}"
 
 
 def _tmp_dir() -> Path:
-    """Return the directory temp files are written to (mirrors shell ``${TMPDIR:-/tmp}``)."""
-    return Path(os.environ.get("TMPDIR", "/tmp"))
+    """Return the directory temp files are written to (mirrors shell ``${TMPDIR:-/tmp}`` — tmpdir-exempt: base dir only, not a filename).
+
+    Per-file session suffixing happens in ``_per_skill_filename``/``write_skill_files``, not here.
+    """
+    return Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
 
 
 def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -> dict[str, str]:
@@ -385,15 +409,15 @@ def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -
 
     Writes two files per variable when a legacy path is registered:
 
-    * Per-skill: ``${TMPDIR}/dev-<skill>-<flag>`` — modern convention used by callers
+    * Per-skill: ``${TMPDIR}/dev-<skill>-<flag>-<CSID>`` — modern convention used by callers
       that read flags back with explicit per-skill paths.
-    * Legacy: ``${TMPDIR}/<legacy-name>`` — preserves backward compatibility with
-      downstream Bash() blocks that read shared paths like ``dev-team-mode``.
+    * Legacy: ``${TMPDIR}/<legacy-name>-<CSID>`` — preserves backward compatibility with
+      downstream Bash() blocks that read shared paths like ``dev-team-mode-<CSID>``.
 
     Args:
         skill: registered skill name (key of ``SKILL_SPECS``).
         arguments: raw ``$ARGUMENTS`` string.
-        tmp_dir: override for the temp directory (defaults to ``${TMPDIR:-/tmp}``).
+        tmp_dir: override for the temp directory (defaults to ``${TMPDIR:-/tmp}`` — tmpdir-exempt: base dir only, not a filename).
 
     Returns:
         Dict mapping each declared shell variable name to its resolved string value.
@@ -407,11 +431,11 @@ def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -
         >>> with tempfile.TemporaryDirectory() as d:
         ...     vals = write_skill_files("feature", "--semble fix auth.py", tmp_dir=Path(d))
         ...     vals["SEMBLE_ENABLED"]
-        ...     (Path(d) / "dev-feature-semble").read_text()
-        ...     (Path(d) / "dev-semble-enabled").read_text()
+        ...     any(p.name.startswith("dev-feature-semble-") for p in Path(d).iterdir())
+        ...     any(p.name.startswith("dev-semble-enabled-") for p in Path(d).iterdir())
         'true'
-        'true'
-        'true'
+        True
+        True
     """
     if skill not in SKILL_SPECS:
         known = ", ".join(sorted(SKILL_SPECS))
@@ -432,9 +456,9 @@ def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -
         value = values[spec.var]
         (target_dir / _per_skill_filename(skill, spec)).write_text(value)
         if legacy is not None:
-            (target_dir / legacy).write_text(value)
+            (target_dir / f"{legacy}-{_csid()}").write_text(value)
     # Write CLEAN_ARGS (flags stripped) to a per-skill file so callers avoid eval
-    (target_dir / f"dev-{skill}-clean-args").write_text(_clean)
+    (target_dir / f"dev-{skill}-clean-args-{_csid()}").write_text(_clean)
     return values
 
 
@@ -479,7 +503,8 @@ def main(argv: list[str] | None = None) -> int:
     * ``dev_parse_args.py ARGUMENTS [SPEC...]`` — print eval-able shell block on stdout
       (legacy form used by ``eval "$(...)"`` callers).
     * ``dev_parse_args.py --skill <name> --write-files ARGUMENTS`` — parse using the
-      registered skill specs and write each value to a temp file under ``${TMPDIR:-/tmp}``.
+      registered skill specs and write each value to a temp file under ``${TMPDIR:-/tmp}`` (tmpdir-exempt: base dir only, not a filename).
+      Each written file gets its own ``-<CSID>`` suffix, see ``_per_skill_filename``.
 
     Args:
         argv: Optional argv override (defaults to ``sys.argv[1:]``).

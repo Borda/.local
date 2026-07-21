@@ -445,7 +445,9 @@ class TestPreCompactContract:
 
     PreCompact writes ``<cwd>/.claude/state/session-context.md`` (cwd = project root),
     not the ``/tmp/claude-state-<sid>`` ephemeral dir — so these tests pass ``cwd`` and
-    read the context file from that project-local state dir.
+    read the context file from that project-local state dir. The skill contract is
+    staged by skills at ``<cwd>/.temp/state/skill-contract.md`` (relocated out of
+    ``.claude/state/`` to dodge the sensitive-file gate), which is where the hook reads it.
     """
 
     def test_precompact_appends_contract_verbatim(self, sid: str, tmp_home: Path, tmp_path: Path, run_hook) -> None:
@@ -453,10 +455,12 @@ class TestPreCompactContract:
         proj = tmp_path / "proj"
         state = proj / ".claude" / "state"
         state.mkdir(parents=True)
+        contract_dir = proj / ".temp" / "state"
+        contract_dir.mkdir(parents=True)
         transcript = tmp_path / "transcript.jsonl"
         _write_transcript(transcript, ["/proj/src/foo.py"])
         contract = "CONTRACT: keep phase 3 in-progress; do NOT re-run steps 1-2.\n- next: verify tests"
-        (state / "skill-contract.md").write_text(contract, encoding="utf-8")
+        (contract_dir / "skill-contract.md").write_text(contract, encoding="utf-8")
 
         result = run_hook("task-log.js", _pre_compact(sid, str(transcript)), home=tmp_home, cwd=proj)
 
@@ -528,7 +532,9 @@ class TestPreCompactParkedItems:
         prior = f"# Session Context (auto-generated)\n## Files Modified This Session\n- /old/x.py\n\n{self._PARKED}\n"
         proj, state, transcript = self._seed(tmp_path, prior)
         contract = "CONTRACT: keep phase 3 in-progress; do NOT re-run steps 1-2."
-        (state / "skill-contract.md").write_text(contract, encoding="utf-8")
+        contract_dir = proj / ".temp" / "state"
+        contract_dir.mkdir(parents=True)
+        (contract_dir / "skill-contract.md").write_text(contract, encoding="utf-8")
 
         result = run_hook("task-log.js", _pre_compact(sid, str(transcript)), home=tmp_home, cwd=proj)
 

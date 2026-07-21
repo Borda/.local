@@ -63,6 +63,7 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CODEMAP_RAW=auto
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
@@ -71,7 +72,7 @@ if [ $? -ne 0 ]; then
     [ "$CODEMAP_RAW" = "strict" ] && { echo "! BLOCKED — --codemap (strict) but codemap unavailable; run /codemap:scan-codebase or install codemap plugin"; exit 1; }
     CODEMAP_ENABLED=false
 fi
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/research-verify-codemap-enabled
+echo "$CODEMAP_ENABLED" > "${TMPDIR:-/tmp}/research-verify-codemap-enabled-${CSID}"
 ```
 
 > loads: codemap-gates.md
@@ -86,6 +87,7 @@ Follow Gate A and Gate B.
 **Pre-compute run directory** — persist `RUN_DIR` and `OUT` to temp files so V3/V4/V5 (separate Bash shells) can reload them (ADV-H20):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date -u +%Y-%m-%d)  # timeout: 3000
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
@@ -93,17 +95,18 @@ mkdir -p .reports/research
 BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done
 # Persist for V3/V4/V5 (each Bash call = fresh shell). PID+epoch suffix distinguishes concurrent runs on same branch/day.
 _VTAG="${BRANCH}-${DATE}-$$-$(date +%s)"
-echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir"
-echo "$OUT"     > "${TMPDIR:-/tmp}/verify-${_VTAG}-out"
-echo "$_VTAG"   > "${TMPDIR:-/tmp}/verify-latest-tag"  # pointer for rehydration blocks
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}"
+echo "$OUT"     > "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}"
+echo "$_VTAG"   > "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}"  # pointer for rehydration blocks
 ```
 
 **State-rehydration block** (paste at the top of every separate Bash invocation in V3, V4, V5):
 
 ```bash
-_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag" 2>/dev/null)
-RUN_DIR=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir" 2>/dev/null)
-OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out" 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null)
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}" 2>/dev/null)
+OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null)
 [ -z "$RUN_DIR" ] || [ -z "$OUT" ] && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
 ```
 
@@ -124,6 +127,7 @@ Apply `--dim` filter: if `--dim F,H` specified, only audit those dimensions. Def
 **`--dim` validation**: derive `$DIM` from the `--dim` flag (default `F,H,E,N,C` when flag absent), then validate each specified dimension token against the known set before proceeding. **Persist status to temp file** so V3 (separate Bash shell) can short-circuit when V2 failed (ADV-M25 — bash `exit 2` only terminates V2's shell, not the V3 invocation):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 DIM="${DIM:-F,H,E,N,C}"
 V2_STATUS="ok"
 for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
@@ -132,16 +136,17 @@ for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
     *) echo "verify: unknown dimension: '$_DIM_VAL' — valid: F,H,E,N,C" >&2; V2_STATUS="failed" ;;
   esac
 done
-_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag" 2>/dev/null)
-echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status"
+_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null)
+echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}"
 [ "$V2_STATUS" = "failed" ] && exit 2
 ```
 
 **V3 entry guard** (run before any V3 work — paste immediately after the state-rehydration block):
 
 ```bash
-_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag" 2>/dev/null)
-V2_STATUS=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status" 2>/dev/null || echo "ok")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null)
+V2_STATUS=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}" 2>/dev/null || echo "ok")
 if [ "$V2_STATUS" = "failed" ]; then
     echo "verify V3: dimension validation failed in V2 — skipping V3."
     exit 1
@@ -152,7 +157,7 @@ fi
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`. Single agent handles all five dimensions — cross-dimension context requires holistic paper understanding.
 
-**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-verify-codemap-enabled`):
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-verify-codemap-enabled-${CSID}`):
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 cat "$_RESEARCH_SHARED/codemap-context.md"
@@ -236,7 +241,7 @@ Invoke `AskUserQuestion` — do NOT write options as plain text:
 - (a) label: `Stop here` — description: write partial report (passing claims only) to `$OUT`; fix mismatches and re-run `/research:verify`
 - (b) label: `Continue to full report` — description: proceed to V5/V6 and include failed claims in the full verification report
 
-**On (a)**: rehydrate `$OUT` (`OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out" 2>/dev/null)`), write the held partial-report markdown to `$OUT` (verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top), surface the file path, and exit. Full audit remains at `$RUN_DIR/audit-raw.md`. Do NOT also dump the mismatch table to terminal — it is already inside the partial report.
+**On (a)**: rehydrate `$OUT` (`OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null)`), write the held partial-report markdown to `$OUT` (verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top), surface the file path, and exit. Full audit remains at `$RUN_DIR/audit-raw.md`. Do NOT also dump the mismatch table to terminal — it is already inside the partial report.
 
 **On (b)**: discard the held partial-report markdown and proceed directly to V5/V6 — V5 writes the full report to `$OUT` (failed claims included).
 

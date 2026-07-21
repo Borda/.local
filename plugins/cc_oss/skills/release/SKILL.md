@@ -73,8 +73,9 @@ In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via
 2. Assert variables before spawning:
    ```bash
    [ -n "$GATHER_FILE" ] && [ -n "$REPO_ROOT" ] && [ -n "$RANGE" ] || { echo "Error: GATHER_FILE, REPO_ROOT, or RANGE is empty — verify Shared setup and Gather changes completed"; exit 1; }  # timeout: 5000
+   export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
    # Reload SKILL_DIR (Check 41: fresh shell)
-   SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+   SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
    cat "$SKILL_DIR/templates/gather-prompt.md"  # timeout: 5000
    ```
    Template (loaded above). Substitute `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>` with literal values. Spawn:
@@ -110,20 +111,21 @@ When `unconfirmed > 0`, surface removed items as notification (not a gate — al
 Pre-compute output paths and persist for downstream reload (fresh shell, Check 41):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Check 41: fresh shell loses between blocks
-BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
-DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
-RANGE=$(cat "${TMPDIR:-/tmp}/release-range" 2>/dev/null || echo "")
-REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup/REPO_ROOT" 2>/dev/null || echo "")
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || echo "")
+RANGE=$(cat "${TMPDIR:-/tmp}/release-range-${CSID}" 2>/dev/null || echo "")
+REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/REPO_ROOT" 2>/dev/null || echo "")
 GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
 [ -f "$GATHER_FILE" ] || { echo "Error: GATHER_FILE missing — phases 1–4 must complete first"; exit 1; }  # timeout: 5000
 CHANGELOG_AUDIT_FILE=".temp/release-changelog-audit-$BRANCH-$DATE.md"
 CONTRIBUTORS_FILE=".temp/release-contributors-$BRANCH-$DATE.md"
 mkdir -p .temp  # timeout: 5000
-echo "${CHANGELOG_AUDIT_FILE:-}" > "${TMPDIR:-/tmp}/release-changelog-audit"
-echo "${CONTRIBUTORS_FILE:-}" > "${TMPDIR:-/tmp}/release-contributors"
+echo "${CHANGELOG_AUDIT_FILE:-}" > "${TMPDIR:-/tmp}/release-changelog-audit-${CSID}"
+echo "${CONTRIBUTORS_FILE:-}" > "${TMPDIR:-/tmp}/release-contributors-${CSID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 cat "$SKILL_DIR/modes/changelog-audit-prompt.md"  # timeout: 5000
 ```
 
@@ -132,6 +134,7 @@ Prompt (loaded above) — execute (spawn Agent A + Agent B per instructions in t
 
 Validate both envelopes:
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 STATUS_A=$(echo "$ENVELOPE_A" | jq -r '.status' 2>/dev/null)
 CHANGELOG_AUDIT_FILE=$(echo "$ENVELOPE_A" | jq -r '.file' 2>/dev/null)
 CHANGELOG_FILE_FROM_A=$(echo "$ENVELOPE_A" | jq -r '.changelog_file // ""' 2>/dev/null)
@@ -144,9 +147,9 @@ if [ "$STATUS_B" != "done" ] || [ -z "$CONTRIBUTORS_FILE" ] || [ ! -f "$CONTRIBU
     echo "Error: contributors delegation failed — status=$STATUS_B, file=$CONTRIBUTORS_FILE" >&2; exit 1
 fi
 # re-persist — subagent may canonicalize paths
-echo "${CHANGELOG_AUDIT_FILE:-}" > "${TMPDIR:-/tmp}/release-changelog-audit"
-echo "${CONTRIBUTORS_FILE:-}" > "${TMPDIR:-/tmp}/release-contributors"
-[ -n "$CHANGELOG_FILE_FROM_A" ] && echo "${CHANGELOG_FILE_FROM_A}" > "${TMPDIR:-/tmp}/release-changelog-file"
+echo "${CHANGELOG_AUDIT_FILE:-}" > "${TMPDIR:-/tmp}/release-changelog-audit-${CSID}"
+echo "${CONTRIBUTORS_FILE:-}" > "${TMPDIR:-/tmp}/release-contributors-${CSID}"
+[ -n "$CHANGELOG_FILE_FROM_A" ] && echo "${CHANGELOG_FILE_FROM_A}" > "${TMPDIR:-/tmp}/release-changelog-file-${CSID}"
 ADDED=$(echo "$ENVELOPE_A" | jq -r '.added // 0' 2>/dev/null)
 FLAGGED=$(echo "$ENVELOPE_A" | jq -r '.flagged // 0' 2>/dev/null)
 COUNT=$(echo "$ENVELOPE_B" | jq -r '.count // 0' 2>/dev/null)
@@ -156,9 +159,10 @@ echo "Phases 5–6 delegated: $ADDED changelog entries added, $FLAGGED flagged; 
 `notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: estimate commit count with `git rev-list --count ${RANGE:-${LAST_TAG:-HEAD~20}..HEAD} 2>/dev/null`. If >50, delegate to `foundry:sw-engineer` subagent same as prepare mode — inline gather with >50 commits causes context flood. Define `GATHER_FILE` before spawning so envelope-validation block above can resolve the path:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload BRANCH, DATE (Check 41: fresh shell)
-BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
-DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || echo "")
 GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
 mkdir -p .temp  # timeout: 5000
 ```
@@ -175,11 +179,12 @@ mkdir -p .temp  # timeout: 5000
 | *(none)* | notes | `RANGE=""`, no flags; run all phases |
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 DO_CHANGELOG=false; DO_SUMMARY=false; DO_MIGRATION=false
 FIRST=$(echo "$ARGUMENTS" | awk '{print $1}')
 # empty when single-word ARGUMENTS (cut -d' ' -f2- echoes whole line for missing delimiter)
 REST=""; case "$ARGUMENTS" in *" "*) REST="${ARGUMENTS#* }";; esac
-echo "${REST:-}" > "${TMPDIR:-/tmp}/release-rest"
+echo "${REST:-}" > "${TMPDIR:-/tmp}/release-rest-${CSID}"
 # strip mode token — prevents leak into RANGE
 _PARSE_INPUT="$ARGUMENTS"; case "$FIRST" in notes|prepare|audit|demo) _PARSE_INPUT="$REST";; esac
 RANGE=$(echo "$_PARSE_INPUT" | grep -oE '[^ ]+([[:space:]]*->[[:space:]]*|\.\.)[^ ]+' | head -1 | tr -d '[:space:]')
@@ -195,23 +200,25 @@ RANGE="${RANGE/->/..}"
 Run this first — cold-start fallback (sets `$_OSS_SHARED`):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Check 41: persist across Bash blocks
-echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/release-oss-shared"
+echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/release-oss-shared-${CSID}"
 # loads: oss-shared-resolver.md
 ```
 
-Extracted to `bin/release_setup.py` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, `LAST_TAG`, `CHERRY_PICK_SUBJECTS`, `SOURCE_TAG_REF`. Writes each var under `${TMPDIR:-/tmp}/release-setup/`; stable-branch banner and "no stable tag" warnings go to stderr.
+Extracted to `bin/release_setup.py` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, `LAST_TAG`, `CHERRY_PICK_SUBJECTS`, `SOURCE_TAG_REF`. Writes each var under `${TMPDIR:-/tmp}/release-setup-${CSID}/`; stable-branch banner and "no stable tag" warnings go to stderr.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/release_setup.py"  # timeout: 10000
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
-REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup/REPO_ROOT" 2>/dev/null || echo "")
-BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
-DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
-LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup/LAST_TAG" 2>/dev/null || echo "")
-CHERRY_PICK_SUBJECTS=$(cat "${TMPDIR:-/tmp}/release-setup/CHERRY_PICK_SUBJECTS" 2>/dev/null || echo "")
-SOURCE_TAG_REF=$(cat "${TMPDIR:-/tmp}/release-setup/SOURCE_TAG_REF" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
+REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/REPO_ROOT" 2>/dev/null || echo "")
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || echo "")
+LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/LAST_TAG" 2>/dev/null || echo "")
+CHERRY_PICK_SUBJECTS=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/CHERRY_PICK_SUBJECTS" 2>/dev/null || echo "")
+SOURCE_TAG_REF=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SOURCE_TAG_REF" 2>/dev/null || echo "")
 [ -z "$REPO_ROOT" ] && { echo "Error: release_setup.py failed — REPO_ROOT empty; verify oss plugin installation"; exit 1; }
 ```
 
@@ -223,13 +230,14 @@ When no stable tags exist, `LAST_TAG` resolves to initial commit — surface via
 Find common base tag across ALL branches via `git tag --list` sorted by version, then `git merge-base HEAD <tag-commit>`. Use as range lower bound when current branch has no direct tag ancestry.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload Shared setup vars (Check 41: fresh shell)
-LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup/LAST_TAG" 2>/dev/null || echo "")
-CHERRY_PICK_SUBJECTS=$(cat "${TMPDIR:-/tmp}/release-setup/CHERRY_PICK_SUBJECTS" 2>/dev/null || echo "")
+LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/LAST_TAG" 2>/dev/null || echo "")
+CHERRY_PICK_SUBJECTS=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/CHERRY_PICK_SUBJECTS" 2>/dev/null || echo "")
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 [ -z "$RANGE" ] && echo "Error: could not determine commit range" && exit 1
 # Check 41: persist across Bash blocks
-echo "${RANGE:-}" > "${TMPDIR:-/tmp}/release-range"
+echo "${RANGE:-}" > "${TMPDIR:-/tmp}/release-range-${CSID}"
 
 # quote RANGE — tags may carry unusual chars (e.g. v1.2-rc.1+build.42)
 git log "$RANGE" --oneline --no-merges # timeout: 3000
@@ -286,8 +294,9 @@ Report: `- [UNDERTREATED] <feature> in <doc-file> — weight N vs peers M1/M2 (r
 
 <!-- loads: modes/classify-truth-check.md -->
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
 ```
 Follow above and execute. Contains: category table, PR accumulation rules, dedup rules, OMIT-INTERNAL body-signal override, cherry-pick annotation.
@@ -296,8 +305,9 @@ Follow above and execute. Contains: category table, PR accumulation rules, dedup
 
 <!-- loads: modes/classify-truth-check.md -->
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
 ```
 Follow above (Truth check section) and execute. Gate: runs after Classify, before Audit changelog. Verifies 🚀 Added / ⚠️ Breaking Changes / 🌱 Changed symbols exist in HEAD via codemap or grep fallback. Max 3 loop iterations.
@@ -306,8 +316,9 @@ Follow above (Truth check section) and execute. Gate: runs after Classify, befor
 
 <!-- loads: modes/classify-truth-check.md -->
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
 ```
 Follow above (Breaking-change classification section) and execute. Codemap-gated (skips without a v3 index). For each diff-derived public symbol, `fn-rdeps --exclude-tests` labels it Breaking (caller outside its own package) or internal; Breaking symbols move to ⚠️ Breaking Changes with caller evidence, and `migration_lines` feed the Draft migration guide as `breaking_callers` findings.
@@ -318,8 +329,9 @@ Gate — runs after Truth check. Only when project has migration docs page.
 
 **Detect** — migration doc OR any alternative describing API changes between versions:
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload REPO_ROOT (Check 41: fresh shell)
-REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup/REPO_ROOT" 2>/dev/null || echo "")
+REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/REPO_ROOT" 2>/dev/null || echo "")
 MIGRATION_DOC=$(find "$REPO_ROOT" -maxdepth 3 \( \
   -iname "MIGRATION*" -o -iname "UPGRADING*" -o \
   -iname "migration.md" -o -iname "upgrading.md" -o \
@@ -354,8 +366,9 @@ Collect all findings as `migration_gaps` list. Zero findings → migration doc c
 
 **`prepare`/`audit` modes**: delegated in parallel (see Delegation strategy). Reload paths:
 ```bash
-CHANGELOG_AUDIT_FILE=$(cat "${TMPDIR:-/tmp}/release-changelog-audit" 2>/dev/null || echo "")
-CHANGELOG_FILE=$(cat "${TMPDIR:-/tmp}/release-changelog-file" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CHANGELOG_AUDIT_FILE=$(cat "${TMPDIR:-/tmp}/release-changelog-audit-${CSID}" 2>/dev/null || echo "")
+CHANGELOG_FILE=$(cat "${TMPDIR:-/tmp}/release-changelog-file-${CSID}" 2>/dev/null || echo "")
 ```
 Read `$CHANGELOG_AUDIT_FILE` for audit findings; report added/flagged counts from delegation envelope. If file missing (delegation skipped), fall back to inline below.
 
@@ -373,15 +386,17 @@ Always report: "N items added, M flagged for review." This phase owns CHANGELOG-
 
 **`prepare`/`audit` modes**: delegated in parallel (see Delegation strategy). Reload path:
 ```bash
-CONTRIBUTORS_FILE=$(cat "${TMPDIR:-/tmp}/release-contributors" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CONTRIBUTORS_FILE=$(cat "${TMPDIR:-/tmp}/release-contributors-${CSID}" 2>/dev/null || echo "")
 ```
 Read `$CONTRIBUTORS_FILE` for formatted contributors list. If file missing (delegation skipped), fall back to inline below.
 
 **`notes` mode or delegation fallback**:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload $RANGE (Check 41: fresh shell)
-RANGE=$(cat "${TMPDIR:-/tmp}/release-range" 2>/dev/null || echo "")
+RANGE=$(cat "${TMPDIR:-/tmp}/release-range-${CSID}" 2>/dev/null || echo "")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/extract_contributors.py" --range "$RANGE"  # timeout: 5000
 ```
 
@@ -418,12 +433,13 @@ If `breaking_callers` non-empty (from Breaking-change classification): for each 
 Self-contained Python script in jupytext percent (`# %%`) format. Full story: install → setup → demonstrate each highlight → verify output.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload Shared setup vars (Check 41: fresh shell)
-BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
-DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || echo "")
 DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"
 mkdir -p .temp  # timeout: 5000
-echo "${DEMO_OUT:-}" > "${TMPDIR:-/tmp}/release-demo-out"
+echo "${DEMO_OUT:-}" > "${TMPDIR:-/tmp}/release-demo-out-${CSID}"
 ```
 
 Write demo to `$DEMO_OUT`. (`prepare` mode: `releases/$VERSION/demo.py` — see Phase 4.)
@@ -437,10 +453,11 @@ On option (c): mark demo excluded, skip to Draft executive summary — do NOT in
 
 On (a) or (b) confirmed:
 ```bash
-DEMO_OUT=$(cat "${TMPDIR:-/tmp}/release-demo-out" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+DEMO_OUT=$(cat "${TMPDIR:-/tmp}/release-demo-out-${CSID}" 2>/dev/null || echo "")
 python "$DEMO_OUT"  # timeout: 600000
 DEMO_EXIT=$?
-echo "${DEMO_EXIT}" > "${TMPDIR:-/tmp}/release-demo-exit"
+echo "${DEMO_EXIT}" > "${TMPDIR:-/tmp}/release-demo-exit-${CSID}"
 ```
 
 **Guard**: only proceed to failure handling when `$DEMO_EXIT -ne 0` after attempting a fix. Success (`$DEMO_EXIT = 0`) → proceed directly to Draft executive summary — no AskUserQuestion. Failure → fix and re-run (max 3 iterations total). Only after 3 failed attempts invoke `AskUserQuestion` ("Demo still failing after 3 attempts. Exclude from release and continue, or abort?"). Self-contained: package installed in current env; no live API calls or network deps; deterministic synthetic data; `# !pip install` lines are Python comments — interpreter skips.
@@ -454,10 +471,11 @@ echo "${DEMO_EXIT}" > "${TMPDIR:-/tmp}/release-demo-exit"
 Pre-flight — verify all templates present before proceeding:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload Shared setup vars (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
-BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
-DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || echo "")
 [ -z "$SKILL_DIR" ] && echo "Error: could not locate release skill directory" && exit 1
 for tmpl in release-draft.md audit-checks.md gather-prompt.md; do # timeout: 5000
     [ -f "$SKILL_DIR/templates/$tmpl" ] || {
@@ -479,9 +497,10 @@ Existing releases deviate from templates → match tone and prose style only. **
 
 Fetch origin URL for full changelog link:
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")  # timeout: 3000
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 cat "$SKILL_DIR/templates/release-draft.md"  # timeout: 5000
 ```
 
@@ -494,16 +513,18 @@ Key difference from `prepare`: phases run inline (no subagent delegation); outpu
 ### Adversarial review
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 cat "$SKILL_DIR/modes/adversarial-review.md"  # timeout: 5000
 ```
 Follow above and execute.
 
 <!-- loads: modes/release-draft-template.md -->
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 cat "$SKILL_DIR/modes/release-draft-template.md"  # timeout: 5000
 ```
 Follow above and execute (format templates, semantic consistency review, polish, shepherd spawn, write to disk).
@@ -511,8 +532,9 @@ Follow above and execute (format templates, semantic consistency review, polish,
 ## Mode: prepare
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/prepare.md" ] || { echo "Error: modes/prepare.md not found at $SKILL_DIR/modes/prepare.md — verify oss plugin installation"; exit 1; }
 cat "$SKILL_DIR/modes/prepare.md"  # timeout: 5000
 ```
@@ -522,11 +544,12 @@ Follow above and execute.
 ## Mode: audit
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/audit.md" ] || { echo "Error: modes/audit.md not found at $SKILL_DIR/modes/audit.md — verify oss plugin installation"; exit 1; }
 # guard: refuse to audit already-published release
-_AUDIT_VERSION=$(cat "${TMPDIR:-/tmp}/release-rest" 2>/dev/null | awk '{print $1}')
+_AUDIT_VERSION=$(cat "${TMPDIR:-/tmp}/release-rest-${CSID}" 2>/dev/null | awk '{print $1}')
 if [ -n "$_AUDIT_VERSION" ]; then
     if gh release view "$_AUDIT_VERSION" --json tagName --jq .tagName >/dev/null 2>&1; then  # timeout: 15000
         echo "! BLOCKED — $_AUDIT_VERSION is already a published release on GitHub. /release audit checks FORWARD readiness only."
@@ -542,8 +565,9 @@ Follow above and execute.
 ## Mode: demo
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/demo.md" ] || { echo "Error: modes/demo.md not found at $SKILL_DIR/modes/demo.md — verify oss plugin installation"; exit 1; }
 cat "$SKILL_DIR/modes/demo.md"  # timeout: 5000
 ```
@@ -562,7 +586,8 @@ Follow above and execute.
 - **Contributor email privacy**: `.temp/` must be in `.gitignore` — emails from `git log --format="%aN <%aE>"` must not leak into repo.
 - Public-facing output co-authored with `oss:shepherd` (requires `oss` plugin) — follow shepherd voice protocol:
   ```bash
-  _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/release-oss-shared" 2>/dev/null || echo "")
+  export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+  _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/release-oss-shared-${CSID}" 2>/dev/null || echo "")
   cat "$_OSS_SHARED/shepherd-voice.md"  # timeout: 5000
   ```
 - **Demo mode output**: jupytext percent format — convert with `jupytext --to notebook <file>.py`; replace placeholder URLs before publishing; Colab badge URL must point to actual notebook after upload

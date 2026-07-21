@@ -72,14 +72,15 @@ Preserve at boundary 2: final report path, PR#.
 ## Agent Resolution
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # loads: oss-shared-resolver.md
 # loads: review-section-taxonomy.md
 # loads: compaction-contract.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 _OSS_RESOLVE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/resolve 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/cc_oss/skills/resolve"
-echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/resolve-oss-shared"  # persist for later blocks (Check 41)
-echo "$_OSS_RESOLVE" > "${TMPDIR:-/tmp}/resolve-oss-resolve"  # persist for later blocks (Check 41)
+echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}"  # persist for later blocks (Check 41)
+echo "$_OSS_RESOLVE" > "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}"  # persist for later blocks (Check 41)
 cat "$_OSS_SHARED/agent-resolution.md"  # timeout: 5000
 ```
 
@@ -98,34 +99,38 @@ Contains: foundry check + fallback table. foundry not installed → use table to
 Capture caller's branch first — needed for Step 11 restore even when Step 4 (`gh pr checkout`) is skipped or fails mid-checkout. Initialise here so the restore path in Step 11 is always well-defined:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 SAVED_BRANCH=$(git branch --show-current 2>/dev/null || echo "")  # timeout: 3000
-echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch"
+echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}"
 ```
 
-Extracted to `bin/resolve_preflight.py` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Writes `CODEX_AVAILABLE` and `GH_OK` to `${TMPDIR:-/tmp}/resolve-preflight-*` files; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
+Extracted to `bin/resolve_preflight.py` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.temp/state/preflight/` (4 h TTL). Writes `CODEX_AVAILABLE` and `GH_OK` to `${TMPDIR:-/tmp}/resolve-preflight-*-<CSID>` files; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_preflight.py"  # timeout: 30000
 _PREFLIGHT_RC=$?
 [ "$_PREFLIGHT_RC" -ne 0 ] && { echo "! BLOCKED — resolve_preflight.py failed (gh missing/unauthenticated or git pull conflict); cannot proceed"; exit 1; }
-CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE" 2>/dev/null || echo "false")
-GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true")
+CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null || echo "false")
+GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK-${CSID}" 2>/dev/null || echo "true")
 ```
 
 gh missing or not authenticated → script exits 1 (error printed above; eval skipped when exit code non-zero).
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Extract --keep value before parse-resolve-args.py runs (compaction-contract.md §keep: semantics)
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/resolve-keep-items"  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}"  # timeout: 5000
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .claude/state/skill-contract.md  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)
 # loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
 _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_codemap.py"
@@ -137,9 +142,9 @@ CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
 [ "$CODEMAP_STRICT" = "true" ] && _DETECT_FLAGS="$_DETECT_FLAGS --strict"
 python "$_DETECT_CODEMAP" --prefix resolve $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && { echo "! BLOCKED — codemap strict mode requested but codemap not installed or index missing"; exit 1; }
-CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled" 2>/dev/null || echo "false")
-CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/resolve-codemap-currency" 2>/dev/null || echo "off")
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared" 2>/dev/null || echo "")  # reload (Check 41)
+CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}" 2>/dev/null || echo "false")
+CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/resolve-codemap-currency-${CSID}" 2>/dev/null || echo "off")
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 [ "$CODEMAP_FORCE_OFF" = "false" ] && cat "$_OSS_SHARED/codemap-gates.md"  # timeout: 5000
 ```
 
@@ -175,6 +180,7 @@ No PR number extractable → print: "Review output does not reference a PR — p
 Parse $ARGUMENTS:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 [ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" ] || { echo "Error: parse-resolve-args.py not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
 # parse-resolve-args.py does not handle codemap/keep flags — strip before passing (flags already parsed above)  # timeout: 3000
@@ -191,7 +197,7 @@ if grep -qvE "^[A-Z_][A-Z0-9_]*=([A-Za-z0-9_./:#@+-]*|'[^']*')$" "$tmpenv"; then
 fi
 . "$tmpenv"
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
-echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number"  # timeout: 3000
+echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}"  # timeout: 3000
 ```
 
 <!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
@@ -228,7 +234,8 @@ TaskUpdate(task_id=TASK_GATHER, status="in_progress")
 <!-- loads: report-intelligence.md -->
 
 ```bash
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/report-intelligence.md"  # timeout: 5000
 ```
 
@@ -238,7 +245,8 @@ Execute its steps (loaded above).
 <!-- loads: pr-intelligence.md -->
 
 ```bash
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/pr-intelligence.md"  # timeout: 5000
 ```
 
@@ -394,6 +402,7 @@ command -v gh >/dev/null 2>&1 || { echo "! BLOCKED — gh CLI required; install:
 **Branch-safety pre-check** — must run BEFORE `gh pr checkout` so a wrong-branch commit is impossible (per `git-commit.md` Gate 2). Verify the PR's `headRefName` is not the repo's default branch — `gh pr checkout` of a same-repo PR whose HEAD = default branch would land us on default and any later commit (Step 8) would violate Gate 2:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # local-first (no network); network fallback; hard-fail if neither resolves
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')  # timeout: 3000
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')  # timeout: 6000
@@ -404,7 +413,7 @@ if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     exit 1
 fi
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
-echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch"
+echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}"
 # SHA-first checkout guard: skip if already at PR head. Avoids worktree conflict — gh pr checkout
 # creates pr-N-slug alias when branch active in another worktree.
 PR_HEAD_OID=$(gh pr view "<PR#>" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
@@ -477,7 +486,8 @@ TaskUpdate(task_id=TASK_CONFLICT, status="in_progress")
 ```
 
 ```bash
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/conflict-resolution.md"  # timeout: 5000
 ```
 
@@ -517,7 +527,8 @@ If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items
 **Structural context (codemap — if `CODEMAP_ENABLED=true`)**: before reading action-item-dispatch.md, query blast radius of modules affected by selected items:
 
 ```bash
-CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled" 2>/dev/null || echo false)  # timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}" 2>/dev/null || echo false)  # timeout: 3000
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
     _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
@@ -530,6 +541,7 @@ If codemap output returned: prepend `## Structural Context (codemap)` block to e
 **Review pre-flight cache** — reuse the per-module codemap answers `/review` already computed, so the Step 8 blast-radius scan issues 0 duplicate pre-flight queries when a fresh review artifact exists (contract + artifact shape in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache; requires `develop`/`oss` codemap wiring). Locate the latest review run-dir and materialize the per-module cache once, before the per-item loop:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CODEMAP_CACHE_DIR=""
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     _IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/${_PROJ}.json"
@@ -539,7 +551,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
     _REVIEW_CTX=$(ls -t .temp/review/*/codemap-context.md 2>/dev/null | head -1)
     if [ -n "$_REVIEW_CTX" ] && [ -f "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py" ]; then
         # the .md wraps one `scan-query batch` JSON array under markdown headers — extract it
-        _BATCH_JSON="${TMPDIR:-/tmp}/resolve-review-batch.json"
+        _BATCH_JSON="${TMPDIR:-/tmp}/resolve-review-batch-${CSID}.json"
         sed -n '/^{/,$p' "$_REVIEW_CTX" | head -1 > "$_BATCH_JSON" 2>/dev/null || true
         if [ -s "$_BATCH_JSON" ] && [ -f "$_IDX_FILE" ]; then
             python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py" write \
@@ -548,7 +560,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
         fi
     fi
 fi
-echo "${CODEMAP_CACHE_DIR}" > "${TMPDIR:-/tmp}/resolve-codemap-cache-dir"  # timeout: 3000
+echo "${CODEMAP_CACHE_DIR}" > "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}"  # timeout: 3000
 ```
 
 `action-item-dispatch.md`'s per-item blast-radius scan reads this cache first (freshness-gated `codemap_cache.py read`) and only calls `scan-query` on a cache miss — see its **Pre-loop blast-radius scan**. Empty `CODEMAP_CACHE_DIR` (no review artifact, or oss helper absent) → every module is a cache miss and the scan queries live, unchanged from prior behaviour.
@@ -556,7 +568,8 @@ echo "${CODEMAP_CACHE_DIR}" > "${TMPDIR:-/tmp}/resolve-codemap-cache-dir"  # tim
 <!-- Step 8 defined in action-item-dispatch.md -->
 
 ```bash
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/action-item-dispatch.md"  # timeout: 5000
 ```
 
@@ -569,19 +582,20 @@ TaskUpdate(task_id=TASK_IMPL, status="completed")
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 1: after implementation loop, before lint gate (compaction-contract.md §Lifecycle)
-_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number" 2>/dev/null || echo "n/a")
-_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items" 2>/dev/null || echo "")
+_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || echo "n/a")
+_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="pr=${_PR_NUMBER}, items-implemented; next: lint/push/report"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: oss:resolve · phase: lint-qa (after implementation loop)"
     echo "- run-dir: n/a"
     echo "- preserve: ${_PRESERVE}"
     echo "- next: lint/QA gate (Step 9) → push (Step 10) → final report (Step 11)"
-} > .claude/state/skill-contract.md  # timeout: 5000
+} > .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ## Step 9: Lint and QA gate
@@ -591,7 +605,8 @@ TaskUpdate(task_id=TASK_LINT, status="in_progress")
 ```
 
 ```bash
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/lint-qa-gate.md"  # timeout: 5000
 ```
 
@@ -667,9 +682,10 @@ gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messa
 ## Step 11: Final report
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 2: before final report write (compaction-contract.md §Lifecycle)
-_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number" 2>/dev/null || echo "n/a")
-_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items" 2>/dev/null || echo "")
+_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || echo "n/a")
+_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="pr=${_PR_NUMBER}, final-report=pending-write"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 {
@@ -678,8 +694,8 @@ _PRESERVE="pr=${_PR_NUMBER}, final-report=pending-write"
     echo "- run-dir: n/a"
     echo "- preserve: ${_PRESERVE}"
     echo "- next: write final report → post-PR action gate"
-} > .claude/state/skill-contract.md  # timeout: 5000
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+} > .temp/state/skill-contract.md  # timeout: 5000
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_RESOLVE/templates/resolve-report.md"  # timeout: 5000
 ```
 
@@ -700,7 +716,8 @@ Report template (loaded above) — use for section structure.
 Include `### Challenge Log` section in report — one row per item: id · evidence verdict · suggestion verdict · resolution (as-suggested / self-resolved / rejected). Omit section when `--no-challenge`.
 
 ```bash
-SAVED_BRANCH=$(cat "${TMPDIR:-/tmp}/resolve-saved-branch" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+SAVED_BRANCH=$(cat "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}" 2>/dev/null || echo "")
 # skip restore when COMMIT_MODE=stage — staged changes would be lost
 if [ "$COMMIT_MODE" = "stage" ]; then
     echo "⚠ COMMIT_MODE=stage: changes are staged on $(git branch --show-current) — restore to $SAVED_BRANCH skipped to preserve staged work. Run: git stash && git switch $SAVED_BRANCH && git stash pop (on PR branch) when ready."
@@ -717,20 +734,21 @@ TaskUpdate(task_id=TASK_CLOSE, status="completed")
 Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Merge now (`gh pr merge <PR_NUMBER> --merge`) · (c) Skip.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Step 12: Comment dispatch + Codex review loop
 
 ```bash
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/comment-dispatch.md"  # timeout: 5000
 ```
 
 Execute its steps (loaded above).
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

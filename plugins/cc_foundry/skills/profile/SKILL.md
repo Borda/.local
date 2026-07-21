@@ -40,6 +40,7 @@ If $ARGUMENTS empty, default window is 24h.
 ## Step 1: Parse args + create run dir
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 5000
 SINCE="24h"
 SESSION_ID=""
@@ -63,16 +64,17 @@ mkdir -p "$REPORT_DIR"
   echo "SINCE=$SINCE"
   echo "SESSION_ID=$SESSION_ID"
   echo "TOP_N=$TOP_N"
-} | tee "${TMPDIR:-/tmp}/foundry-profile-state"
+} | tee "${TMPDIR:-/tmp}/foundry-profile-state-${CSID}"
 ```
 
-Values persisted to `${TMPDIR:-/tmp}/foundry-profile-state`; Steps 2–3 re-source it (bash state does not persist across Bash calls, and `REPORT_DIR` carries a per-shell timestamp that cannot be re-derived).
+Values persisted to `${TMPDIR:-/tmp}/foundry-profile-state-${CSID}`; Steps 2–3 re-source it (bash state does not persist across Bash calls, and `REPORT_DIR` carries a per-shell timestamp that cannot be re-derived).
 
 ## Step 2: Run analyzer
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 60000
-. "${TMPDIR:-/tmp}/foundry-profile-state" 2>/dev/null   # reload REPORT_DIR/SINCE/SESSION_ID/TOP_N (fresh shell)
+. "${TMPDIR:-/tmp}/foundry-profile-state-${CSID}" 2>/dev/null   # reload REPORT_DIR/SINCE/SESSION_ID/TOP_N (fresh shell)
 OPT_SID=""
 [ -n "$SESSION_ID" ] && OPT_SID="--session-id $SESSION_ID"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/timing_analyzer.py" \
@@ -88,8 +90,9 @@ echo "exit=$?"
 ## Step 3: Mark run complete
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 5000
-. "${TMPDIR:-/tmp}/foundry-profile-state" 2>/dev/null   # reload REPORT_DIR/SINCE/SESSION_ID/TOP_N (fresh shell)
+. "${TMPDIR:-/tmp}/foundry-profile-state-${CSID}" 2>/dev/null   # reload REPORT_DIR/SINCE/SESSION_ID/TOP_N (fresh shell)
 echo '{"status":"complete","since":"'"$SINCE"'","session_id":"'"$SESSION_ID"'","top_n":'"$TOP_N"'}' > "$REPORT_DIR/result.jsonl"
 ```
 

@@ -176,7 +176,7 @@ grep -rn 'eval.*"\$.*python\|eval.*"\$.*bin/' \
 
 False-positive exemption: `eval "$(python .../health_sentinel.py ...)"` — health monitoring shell-setup (emits `SENTINEL=...` for calling shell, not data output). Any other `eval "$(python ...)` = finding.
 
-**Sub-check 23d** — shell variable used for state across separate Bash tool calls. **Not grep-detectable** (requires cross-block analysis of Bash call boundaries, which are runtime not lexical). Flag during curator per-file review only: when auditing a skill, scan for `VAR=$(...)` pattern in one fenced block and `"$VAR"` or `[ -z "$VAR" ]` in a later fenced block with no `cat "${TMPDIR:-/tmp}/..."` supplying `VAR` between them.
+**Sub-check 23d** — shell variable used for state across separate Bash tool calls. **Not grep-detectable** (requires cross-block analysis of Bash call boundaries, which are runtime not lexical). Flag during curator per-file review only: when auditing a skill, scan for `VAR=$(...)` pattern in one fenced block and `"$VAR"` or `[ -z "$VAR" ]` in a later fenced block with no `cat "${TMPDIR:-/tmp}/...-${CSID}"` supplying `VAR` between them.
 
 | Sub-check | Pattern | Severity | Auto-fix |
 | --- | --- | --- | --- |
@@ -981,3 +981,24 @@ Fix: resolve the variable in a preceding bash block and substitute the resolved 
 | Sub-check | Pattern | Severity | Auto-fix |
 | --- | --- | --- | --- |
 | 42 — unexpanded spawn var | `$VAR` inside ` ```markdown ` block | critical | no — requires resolving value before spawn |
+
+## Check 44 — TMPDIR sentinel session scoping
+
+`/tmp` is machine-global. Every `${TMPDIR:-/tmp}/<name>` sentinel must carry the session token — `-${CSID}` (bash), `-{_CSID}`/`_csid()` (python), or the inline `${CLAUDE_CODE_SESSION_ID:-$PPID}` form (used where a preceding `export` line would displace the first-token permission match, e.g. `git`/`cd` blocks) — or a trailing `# tmpdir-exempt: <reason>` marker (valid reasons: `mktemp`, `git-hook-boundary`, `user-shell-boundary`). Bare names collide across concurrent sessions/projects. Canonical pattern: `rules/claude-config.md` §TMPDIR Sentinel Scoping.
+
+```bash
+printf "=== Check 44: TMPDIR sentinel session scoping ===\n"
+_C44_PAT='TMPDIR:-/tmp}/'  # tmpdir-exempt: lint-self-reference — pattern literal, not a sentinel
+grep -rn "$_C44_PAT" . --include='*.md' --include='*.py' --include='*.sh' 2>/dev/null \
+  | grep -v 'CSID' | grep -v '_csid' | grep -v 'CLAUDE_CODE_SESSION_ID' | grep -v 'tmpdir-exempt' \
+  | grep -v 'rules/claude-config.md' \
+  | while IFS= read -r line; do printf "C44-HIGH: unscoped TMPDIR sentinel: %s\n" "$line"; done  # timeout: 10000
+```
+
+**Severity**: high — silent cross-session/cross-project state bleed; one session reads another's run-dir, flags, or checkpoints with no error surfaced.
+
+Fix: apply `rules/claude-config.md` §TMPDIR Sentinel Scoping (export `CSID` first line of the block, terminal `-${CSID}` suffix on the sentinel filename); genuinely out-of-session sentinels (git hooks, user-shell-created auth files, mktemp templates) get the `# tmpdir-exempt: <reason>` marker instead.
+
+| Sub-check | Pattern | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| 44 — unscoped sentinel | `TMPDIR:-/tmp}/` line without session token or `tmpdir-exempt` marker | high | yes — mechanical suffix per claude-config rule |

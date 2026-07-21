@@ -61,7 +61,7 @@ Use `foundry:curator`, not `foundry:sw-engineer`, for `.claude/` edits (agents, 
 | Location | TTL | Condition |
 | --- | --- | --- |
 | `~/.claude/logs/` | forever | hook audit logs (invocations, compactions, timings) — global across all projects; rotate at 10 MB |
-| `.claude/logs/` | forever | skill-specific logs (calibrations, session-archive, audit-errors) — project-scoped; rotate at 10 MB |
+| `.notes/logs/` | forever | skill-specific logs (calibrations, session-archive, audit-errors) — project-scoped; rotate at 10 MB; legacy `.claude/logs/` read-only fallback for historical entries written before relocation |
 
 ## Cleanup Hook (SessionEnd)
 

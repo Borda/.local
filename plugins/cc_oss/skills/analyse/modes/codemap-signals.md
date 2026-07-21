@@ -9,12 +9,13 @@ Consumers: `modes/thread.md` (issue triage — stale-symbol check), `modes/vital
 Reuse oss shared detector — same helper review/resolve use. scan-query on PATH AND index for this project both required.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Resolve analyse skill dir if caller did not (cache first, source fallback)
 _OSS_ANALYSE=${_OSS_ANALYSE:-$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)}  # timeout: 5000
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_codemap.py" --prefix analyse 2>&1  # timeout: 5000
-CM_ENABLED=$(cat "${TMPDIR:-/tmp}/analyse-codemap-enabled" 2>/dev/null || echo "false")
-CM_CURRENCY=$(cat "${TMPDIR:-/tmp}/analyse-codemap-currency" 2>/dev/null || echo "no_index")
+CM_ENABLED=$(cat "${TMPDIR:-/tmp}/analyse-codemap-enabled-${CSID}" 2>/dev/null || echo "false")
+CM_CURRENCY=$(cat "${TMPDIR:-/tmp}/analyse-codemap-currency-${CSID}" 2>/dev/null || echo "no_index")
 ```
 
 `CM_ENABLED=false` → caller emits inline flag (see below) and skips every scan-query block. No AskUserQuestion — analyse is read-only triage; degrade silently-but-flagged per accept criterion. `CM_ENABLED=true` + `CM_CURRENCY=stale` → detector already printed a stale warning; proceed with stale data, caller notes "index stale — signals may miss recent code".
@@ -28,12 +29,13 @@ Thread names symbols/modules that may no longer exist. Extract candidate identif
 
 **Extract candidates** — dotted module paths (`a.b.c`) and CamelCase/snake symbol names appearing in backticks, tracebacks, or `import`/`from` lines. Cap at 8 candidates (highest-signal: those in code fences or import lines first). Skip stdlib/third-party names (`os`, `numpy`, `torch`, …) — only project-internal identifiers matter for staleness
 
-**Existence-check** — write the extracted candidates one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates.txt` (bash arrays do not survive a fresh shell — use a file), then build a batch of one query per candidate: module-shaped (`a.b.c`, has a dot) → `rdeps`; bare symbol → `find-symbol`. Run once:
+**Existence-check** — write the extracted candidates one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates-${CSID}.txt` (bash arrays do not survive a fresh shell — use a file), then build a batch of one query per candidate: module-shaped (`a.b.c`, has a dot) → `rdeps`; bare symbol → `find-symbol`. Run once:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Caller wrote candidates (one identifier per line) to this file before this fence.
-_CAND="${TMPDIR:-/tmp}/analyse-triage-candidates.txt"
-_BATCH="${TMPDIR:-/tmp}/analyse-triage-batch.json"
+_CAND="${TMPDIR:-/tmp}/analyse-triage-candidates-${CSID}.txt"
+_BATCH="${TMPDIR:-/tmp}/analyse-triage-batch-${CSID}.json"
 if [ "$CM_ENABLED" = "true" ] && [ -s "$_CAND" ]; then
     _BATCH_LEN=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/build_triage_batch.py" "$_CAND" "$_BATCH" 2>/dev/null || echo 0)  # timeout: 5000
     [ "${_BATCH_LEN:-0}" -gt 0 ] && scan-query batch "$_BATCH" 2>/dev/null  # timeout: 15000
@@ -59,11 +61,12 @@ Open PRs touching overlapping code are merge-conflict or duplicate-effort risks.
 **Bounded fetch** — `open_prs` from gh-scraper carries no `files` field; fetch changed-file name-lists here, but only when the open-PR count is small enough to stay within rate limits:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # GH_OWNER/GH_REPO set by vitality Step 1. Cap: skip when > PR_FILES_CAP open PRs (one API call each).
 PR_FILES_CAP=25
 _OPEN_PR_NUMS=$(gh pr list -R "$GH_OWNER/$GH_REPO" --state open --json number --jq '.[].number' --limit 201 2>/dev/null)  # timeout: 15000
 _OPEN_PR_COUNT=$(printf '%s\n' "$_OPEN_PR_NUMS" | grep -c . 2>/dev/null || echo 0)
-_PRSET="${TMPDIR:-/tmp}/analyse-prset-files.jsonl"
+_PRSET="${TMPDIR:-/tmp}/analyse-prset-files-${CSID}.jsonl"
 : > "$_PRSET"
 if [ "$_OPEN_PR_COUNT" -gt 0 ] && [ "$_OPEN_PR_COUNT" -le "$PR_FILES_CAP" ]; then
     for _n in $_OPEN_PR_NUMS; do
@@ -80,7 +83,8 @@ fi
 **Structural overlap** (only when `CM_ENABLED=true`) — derive each PR's touched modules from its `.py` file paths, then check whether any module pair across two PRs appears together in `coupled --top 30`:
 
 ```bash
-[ "$CM_ENABLED" = "true" ] && scan-query coupled --top 30 --exclude-tests 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-coupled.json"  # timeout: 10000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+[ "$CM_ENABLED" = "true" ] && scan-query coupled --top 30 --exclude-tests 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-coupled-${CSID}.json"  # timeout: 10000
 ```
 
 Parse `coupled[]` (each has `name`, `dep_count`). Two PRs whose modules are both high-coupling (`dep_count` ≥ 20) but share no files → "PRs #A and #B touch tightly-coupled modules (`m1`/`m2`) — review together even though file sets differ." `query_complete: false` → append "(coupling scan partial)".
@@ -92,13 +96,14 @@ Set `PRSET_CANDIDATES` = count of direct + structural candidate pairs; surface t
 Populate the report template's `### Structural Constraints` block from index-wide signals — not per-thread. Run once during vitality assembly:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 [ "$CM_ENABLED" = "true" ] || { echo "cm_central=[] cm_collision=0 cm_degraded=0"; }
 if [ "$CM_ENABLED" = "true" ]; then
-    scan-query central --top 5 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-central.json"  # timeout: 10000
+    scan-query central --top 5 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-central-${CSID}.json"  # timeout: 10000
 fi
 ```
 
-Parse `${TMPDIR:-/tmp}/analyse-cm-central.json`:
+Parse `${TMPDIR:-/tmp}/analyse-cm-central-${CSID}.json`:
 - `central[]` → top-5 highest-blast-radius modules (name + rdep_count). Emit a bullet: "Highest blast radius: `mod` (N reverse-deps) — changes here ripple widest; weight review effort accordingly."
 - coverage block `collision_count` (>0) → bullet: "N symbol-name collisions in the index — `find-symbol`/rename precision reduced for those names."
 - coverage block `degraded: true` → bullet: "index built in degraded mode — some structural signals approximate."

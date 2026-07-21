@@ -41,6 +41,10 @@ def sh(
         Captured ``CompletedProcess`` with text-mode stdout/stderr.
     """
     e = {**os.environ, **(env or {})}
+    # Force the script's CSID="${CSID:-shared}" fallback regardless of the host shell —
+    # a real Claude Code session (like the one running this suite) never sets CSID itself,
+    # only CLAUDE_CODE_SESSION_ID (which the script does not read directly).
+    e.pop("CSID", None)
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
         capture_output=True,
@@ -189,13 +193,18 @@ class TestHappyPath:
         assert state["SCAN_ARGS_RAW"] == ""
 
     def test_minimal_invocation_writes_per_slug_tmpfiles(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
-        """Per-PROJ_SLUG tmpfiles exist with content matching the sourceable state."""
+        """Per-PROJ_SLUG tmpfiles exist with content matching the sourceable state.
+
+        ``CSID`` env var is unset in the test invocation (only inherited by real
+        ``export CSID=...`` callers), so the script's ``CSID="${CSID:-shared}"``
+        fallback applies — every written filename carries a terminal ``-shared``.
+        """
         state = self._run_minimal(fake_repo, isolated_tmpdir)
         slug = state["PROJ_SLUG"]
-        assert (isolated_tmpdir / "codemap-proj-slug").read_text() == slug
-        assert (isolated_tmpdir / f"codemap-proj-name-{slug}").read_text() == fake_repo.name
-        assert (isolated_tmpdir / f"codemap-scan-bin-{slug}").read_text() == state["SCAN_BIN"]
-        assert (isolated_tmpdir / f"codemap-scan-args-{slug}").read_text() == ""
+        assert (isolated_tmpdir / "codemap-proj-slug-shared").read_text() == slug
+        assert (isolated_tmpdir / f"codemap-proj-name-{slug}-shared").read_text() == fake_repo.name
+        assert (isolated_tmpdir / f"codemap-scan-bin-{slug}-shared").read_text() == state["SCAN_BIN"]
+        assert (isolated_tmpdir / f"codemap-scan-args-{slug}-shared").read_text() == ""
 
     def test_minimal_invocation_does_not_create_incremental_sentinel(
         self, fake_repo: Path, isolated_tmpdir: Path
@@ -203,7 +212,7 @@ class TestHappyPath:
         """No --incremental request leaves the fallback sentinel absent."""
         state = self._run_minimal(fake_repo, isolated_tmpdir)
         slug = state["PROJ_SLUG"]
-        assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}").exists()
+        assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}-shared").exists()
 
     def test_root_flag_overrides_proj_name(self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path) -> None:
         """``--root /some/other`` ⇒ PROJ_NAME = basename(other), not repo basename."""
@@ -261,7 +270,7 @@ class TestIncrementalSentinel:
 
         state = _read_state(Path(r.stdout.strip()))
         slug = state["PROJ_SLUG"]
-        sentinel = isolated_tmpdir / f"codemap-incremental-noop-{slug}"
+        sentinel = isolated_tmpdir / f"codemap-incremental-noop-{slug}-shared"
         assert sentinel.is_file(), "incremental-noop sentinel should have been created"
 
     def test_sentinel_absent_when_prior_index_exists(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
@@ -281,7 +290,7 @@ class TestIncrementalSentinel:
 
         state = _read_state(Path(r.stdout.strip()))
         slug = state["PROJ_SLUG"]
-        assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}").exists()
+        assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}-shared").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -92,12 +92,13 @@ Surface progress at milestones: after system-wide checks ("✓ Checks 1-21 compl
 **Context budget**: full audit (12+ agents, 14+ skills, 12 system checks) runs close to context limits. File-based handoff mandatory — every sub-agent writes full output to file, returns only compact JSON envelope. Sub-agent echoing findings to context = compaction before audit completes.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
-rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
 LOCAL_MODE=false;       [[ " $ARGUMENTS " == *" --local "* ]]       && LOCAL_MODE=true
 ADVERSARIAL_MODE=false; [[ " $ARGUMENTS " == *" --adversarial "* ]] && ADVERSARIAL_MODE=true; [[ " $ARGUMENTS " == *" --challenge "* ]] && ADVERSARIAL_MODE=true
 EFFICIENCY_MODE=false;  [[ " $ARGUMENTS " == *" --efficiency "* ]]  && EFFICIENCY_MODE=true
@@ -115,8 +116,8 @@ if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFF
 fi
 
 # preflight helpers defined inline — fresh shell per Bash() call; sourced functions unavailable
-preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
-preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
+preflight_ok()   { local f=".temp/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
+preflight_pass() { mkdir -p .temp/state/preflight; date +%s >".temp/state/preflight/$1.ok"; }
 
 if [ ! -d ".claude" ]; then
     printf "! BREAKING: .claude/ directory not found — nothing to audit\n"
@@ -155,10 +156,10 @@ AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_
 
 # Persist LOCAL_MODE + AUDIT_TPL — fresh-shell state loss
 # Re-derive at each Step start — see ADV-M1
-mkdir -p "${TMPDIR:-/tmp}/audit-state"
-echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/audit-state/local-mode"
-echo "$AUDIT_TPL"  > "${TMPDIR:-/tmp}/audit-state/audit-tpl"
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/audit-state/keep-items"
+mkdir -p "${TMPDIR:-/tmp}/audit-state-${CSID}"
+echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode"
+echo "$AUDIT_TPL"  > "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl"
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/audit-state-${CSID}/keep-items"
 ```
 
 If `.claude/` missing, abort immediately. Missing `jq` is warning — audit continues with Check 4 skipped.
@@ -166,19 +167,20 @@ If `.claude/` missing, abort immediately. Missing `jq` is warning — audit cont
 **State re-derivation across Bash blocks** — Claude Code spawns a fresh shell per Bash() call; variables set in pre-flight are LOST in Steps 2–11. Every Bash block in subsequent steps that uses `LOCAL_MODE` or `AUDIT_TPL` must re-read them from the persisted state files:
 
 ```bash
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || echo false)
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 ```
 
-Place these two lines at the top of every Bash block in Steps 2–11 that references either variable.
+Place these three lines at the top of every Bash block in Steps 2–11 that references either variable.
 
 **Unsupported flag check** — after extracting supported flags (`--local`, `--upgrade`, `--adversarial`, `--efficiency`, `--skip-gate`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--local\`, \`--upgrade\`, \`--adversarial\`, \`--efficiency\`, \`--skip-gate\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 1: Run pre-commit (if configured)
 
 ```bash
-preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
-preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
+preflight_ok()   { local f=".temp/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
+preflight_pass() { mkdir -p .temp/state/preflight; date +%s >".temp/state/preflight/$1.ok"; }
 
 if (preflight_ok pre-commit || { command -v pre-commit &>/dev/null && preflight_pass pre-commit; }) &&
 [ -f .pre-commit-config.yaml ]; then
@@ -195,10 +197,11 @@ If pre-commit not configured, skip silently.
 Run the zero-LLM checker driver — the same deterministic checkers pre-commit enforces, aggregated into one reproducible findings file. These results are **authoritative** for their check classes: Steps 3–4 (LLM curator + judgment checks) must NOT re-derive them in prose — treat them as already-verified and spend model tokens only on judgment.
 
 ```bash
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || echo false)
 STATIC_SCOPE=$( [ "$LOCAL_MODE" = true ] && echo plugins || echo .claude )
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/audit_static.py" --scan-dir "$STATIC_SCOPE" \
-    --jsonl "${TMPDIR:-/tmp}/audit-state/static-findings.jsonl"  # timeout: 120000
+    --jsonl "${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl"  # timeout: 120000
 ```
 
 Covered deterministically by the driver (map to legacy check IDs — do NOT re-run these as prose): **14a** tag symmetry · **14b** fence symmetry · **14c** README drift · **14d** mode-dispatch integrity · **14e** cross-plugin shared-file drift · **41** bash-variable persistence · **42** spawn-prompt `$VAR` · **32d** orphaned bin/ scripts · **cli-flag-drift** SKILL.md flags vs argparse (`check_cli_flag_drift.py`, checks-index #42) · **R3** bin/computed-path reference integrity. The whole-repo checks (orphaned-bin, routing-links, shared-drift) always scope to `plugins/` regardless of `STATIC_SCOPE`; the driver is most complete in `--local` mode. Step 5 merges `static-findings.jsonl` into the aggregate.
@@ -210,8 +213,9 @@ Covered deterministically by the driver (map to legacy check IDs — do NOT re-r
 Read a compact git-churn signal so audit attention follows *measured* churn — the files and change-classes that keep being re-fixed are where the next defect most likely hides. Report the dominant recurring-fix class, not only point findings.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/audit_churn.py" --limit 300 --path plugins \
-    > "${TMPDIR:-/tmp}/audit-state/churn-signal.json" 2>/dev/null  # timeout: 20000
+    > "${TMPDIR:-/tmp}/audit-state-${CSID}/churn-signal.json" 2>/dev/null  # timeout: 20000
 ```
 
 Use `churn-signal.json` (`commit_types`, `top_churn`, `recurring_hint`) to: (1) prioritize per-file audits toward the most-churned files first in Step 3 batching; (2) add a **Recurring fix class** line to the Step 7 report naming the dominant theme (e.g. "version-bump churn — candidate for automation"). Zero-LLM, best-effort; skip silently if git is unavailable.
@@ -273,13 +277,14 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 Set up the run directory once before spawning any agents:
 
 ```bash
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || echo false)
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/make_run_dir.py" .reports/audit)  # timeout: 5000
 [ -z "$RUN_DIR" ] && { printf "! BREAKING: make_run_dir.py returned empty path — check Python availability and write permission on .reports/\n"; exit 1; }
 echo "Run dir: $RUN_DIR"
-echo "$RUN_DIR" > "${TMPDIR:-/tmp}/audit-state/run-dir"
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir"
 cat "$AUDIT_TPL/curator-prompt.md"
 ```
 
@@ -345,7 +350,8 @@ Execute Steps 8–10 loaded above inline (state on disk in `summary.jsonl`, `$RU
 
 <!-- loads: report-template.md -->
 ```bash
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/report-template.md"
 ```
 
@@ -356,7 +362,7 @@ Emit the complete audit report following the template and instructions loaded ab
 **Completion marker** — on successful completion, write `$RUN_DIR/result.jsonl` with one JSONL line summarising the run (severity totals, scope, pass count). On any abort/error path before completion, leave `result.jsonl` absent — the TTL cleanup hook (artifact-lifecycle.md) intentionally skips run directories without `result.jsonl`, preserving incomplete runs for post-mortem debugging. To force cleanup of a known-bad incomplete run, write `{"status":"incomplete","reason":"<one-line>"}` to `result.jsonl` so TTL can age it out.
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Mode: upgrade
@@ -364,7 +370,8 @@ rm -f .claude/state/skill-contract.md  # clear contract — skill complete (comp
 **Trigger**: `/audit --upgrade`
 
 ```bash
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/../modes/upgrade.md"
 ```
 
@@ -375,7 +382,8 @@ Execute the mode loaded above.
 **Trigger**: `/audit [<scope>...] --adversarial`
 
 ```bash
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/../modes/adversarial.md"
 ```
 
@@ -386,7 +394,8 @@ Execute the mode loaded above.
 **Trigger**: `/audit [<scope>...] --efficiency`
 
 ```bash
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/../modes/efficiency.md"
 ```
 
@@ -432,7 +441,7 @@ After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this
 - **Relationship to curator**: `foundry:curator` = single-file reactive audit; `/audit` = system-wide sweep running foundry:curator at scale + cross-file checks
 
 - **Paths must be portable**: `.claude/` for project-relative, `~/` or `$HOME/` for home — never literal `/Users/<name>/` or `/home/<name>/` (anti-examples only); applies to ALL config files including `settings.json`
-- **Bash error logging**: if bash block in Pre-flight or Step 4 fails unexpectedly, append JSONL line to `.claude/logs/audit-errors.jsonl` (`{"ts":"<ISO>","check":"<N>","error":"<message>"}`) for post-mortem — never swallow errors silently.
+- **Bash error logging**: if bash block in Pre-flight or Step 4 fails unexpectedly, append JSONL line to `.notes/logs/audit-errors.jsonl` (`{"ts":"<ISO>","check":"<N>","error":"<message>"}`) for post-mortem — never swallow errors silently.
 - **Parallel execution rule**: after Step 2, launch Steps 3 and 4 in same response — all foundry:curator spawns AND system-wide bash checks issued together. Do NOT run Step 3 first then Step 4. Aggregation (Step 5) waits for both. Docs-freshness web-explorer (within Step 4) launches in same parallel batch.
 - **Token cost**: Step 3 (foundry:curator spawns) most expensive. For quick structural scan needing only cross-reference + inventory validation, Step 4 system-wide checks often sufficient. Run `/audit agents` or `/audit skills` to scope, or skip Step 3 for fast pass when per-file quality trusted.
 - **Routing calibration complement**: to test whether skill trigger descriptions fire correctly (trigger accuracy, A/B testing), use `/foundry:calibrate routing`. `/audit` checks structural quality; `/foundry:calibrate routing` validates right skill selected by Claude Code dispatcher.

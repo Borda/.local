@@ -123,7 +123,7 @@ class TestSuppressionClasses:
 
     def test_param_expansion_with_default_not_flagged(self, tmp_path: Path) -> None:
         """${VAR:-default} idiom (class 1) is a portable shell form — not flagged."""
-        content = "```markdown\nwrite to ${TMPDIR:-/tmp}/out and ${CACHE_DIR:-/var}/x\n```\n"
+        content = "```markdown\nwrite to ${TMPDIR:-/tmp}/out and ${CACHE_DIR:-/var}/x\n```\n"  # tmpdir-exempt: synthetic ${VAR:-default}-idiom fixture, not a real sentinel — CSID would itself trip C42
         f = _file(tmp_path, content)
         assert cspv.check_file(f) == []
 

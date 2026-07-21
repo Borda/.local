@@ -17,7 +17,7 @@
    - (b) **Stop** — review/edit plan at `<path>` before continuing; re-invoke with `--plan <path>` when ready
    - (c) **Abort** — cancel
 5. On (b) or (c): stop
-6. On (a): set `PLAN_FILE=<path>` and persist it (`echo "$PLAN_FILE" > "${TMPDIR:-/tmp}/dev-plan-file"`) so compaction-contract boundary reads in feature/fix/refactor resolve it across Bash calls; continue to next step
+6. On (a): set `PLAN_FILE=<path>` and persist it (`echo "$PLAN_FILE" > "${TMPDIR:-/tmp}/dev-plan-file-${CSID}"`) so compaction-contract boundary reads in feature/fix/refactor resolve it across Bash calls; continue to next step
 
 ---
 

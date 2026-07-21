@@ -110,41 +110,44 @@ After Step 1 completes (scope and `TARGET` known), create these tasks **before a
 Strip flags from `$ARGUMENTS` before using as path:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Extract --keep quoted value (compaction-contract.md §keep: semantics)
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-review-keep-items"
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-review-keep-items-${CSID}"
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .claude/state/skill-contract.md  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" --skill review --write-files "$ARGUMENTS"
-# values → ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap} + legacy paths
-# CLEAN_ARGS → ${TMPDIR:-/tmp}/dev-review-clean-args
-REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")
+# values → ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap}-${CSID} + legacy paths
+# CLEAN_ARGS → ${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}
+REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || echo "$ARGUMENTS")
 # Strip --keep "<items>" so it does not leak into target path used by find/git diff
 REVIEW_ARGS=$(echo "$REVIEW_ARGS" | sed -E 's/ *--keep +"[^"]+"//' | xargs 2>/dev/null || echo "$REVIEW_ARGS")
-CHALLENGE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-enabled" 2>/dev/null || echo "true")
-CHALLENGE_FORCED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-forced" 2>/dev/null || echo "false")  # --challenge: force Agent 7 even on small diffs
-SEMBLE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-semble-enabled" 2>/dev/null || echo "false")
-CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || echo "auto")
+CHALLENGE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-enabled-${CSID}" 2>/dev/null || echo "true")
+CHALLENGE_FORCED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-forced-${CSID}" 2>/dev/null || echo "false")  # --challenge: force Agent 7 even on small diffs
+SEMBLE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-semble-enabled-${CSID}" 2>/dev/null || echo "false")
+CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}" 2>/dev/null || echo "auto")
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # normalize CODEMAP_RAW → true/false; strict exits on unavailability  # timeout: 5000
-CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || echo "auto")   # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}" 2>/dev/null || echo "auto")   # re-derive — bash state lost between Bash() calls
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
     [ "$CODEMAP_RAW" = "strict" ] && exit 1
     CODEMAP_ENABLED=false
 fi
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-review-codemap-enabled
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}
 # codemap: integrated-via-shared
 ```
 
@@ -161,7 +164,8 @@ If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. DMI s
 
 ```bash
 # timeout: 5000
-SEMBLE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-semble-enabled 2>/dev/null || echo false)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+SEMBLE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-semble-enabled-${CSID} 2>/dev/null || echo false)
 if [ "$SEMBLE_ENABLED" = "true" ]; then
     # can't verify semble MCP in bash — must check in LLM context
     # if mcp__semble__search not available in your tools:
@@ -176,7 +180,8 @@ Use `$REVIEW_ARGS` (not `$ARGUMENTS`) as path for rest of workflow.
 ## Step 1: Identify scope
 
 ```bash
-REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")   # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || echo "$ARGUMENTS")   # re-derive — bash state lost between Bash() calls
 if [ -n "$REVIEW_ARGS" ]; then
     TARGET="$REVIEW_ARGS"
     echo "Reviewing: $TARGET"
@@ -201,7 +206,8 @@ Filter to Python files only. No Python files → exit early (DMI skill — prose
 
 ```bash
 # timeout: 5000
-REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")   # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || echo "$ARGUMENTS")   # re-derive — bash state lost between Bash() calls
 # re-derive NON_PY_WARNINGS (assigned in a prior block; lost in this fresh shell)
 NON_PY_WARNINGS=""
 git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
@@ -241,14 +247,15 @@ Skip optional agents by classification:
 Extended scan for changed modules — runs v4 pre-flight queries per module, persists structured output to `$RUN_DIR/codemap-context.md`, and sets `codemap_available` flag for Step 3 agent spawns:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 codemap_available=false
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-enabled 2>/dev/null || echo false)
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID} 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     codemap_available=true
     # RUN_DIR not yet created (Step 2); stage here, copy to $RUN_DIR/codemap-context.md after mkdir
     # scan-query on PATH guaranteed — codemap-resolve confirmed it
-    CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md"
-    BATCH_REQ="${TMPDIR:-/tmp}/dev-review-codemap-batch.json"
+    CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md-${CSID}"
+    BATCH_REQ="${TMPDIR:-/tmp}/dev-review-codemap-batch.json-${CSID}"
     # build_codemap_batch.py derives changed modules from git diff (src-layout mapping,
     # dir fallback) and writes one batch request: central + 7 pre-flight queries per
     # module — one scan-query process, one shared coverage block, instead of N×7 spawns
@@ -260,7 +267,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
         scan-query --timeout 20 batch "$BATCH_REQ" 2>/dev/null
     } > "$CODEMAP_CONTEXT_STAGE"
 fi
-echo "$codemap_available" > "${TMPDIR:-/tmp}/dev-review-codemap-available"
+echo "$codemap_available" > "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}"
 ```
 
 Codemap context propagation in Step 3:
@@ -293,14 +300,15 @@ Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by
 Set up run directory:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".temp/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR"  # timeout: 5000
 # persisted for agents — hand-retyping drops leading dot (stray temp/review/ dirs)
-echo "$RUN_DIR" > "${TMPDIR:-/tmp}/dev-review-run-dir"
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}"
 REPORT_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR"  # timeout: 5000
-echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/dev-review-report-dir"  # persist for contract-write
+echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/dev-review-report-dir-${CSID}"  # persist for contract-write
 REPORT_DIR_LITERAL="$REPORT_DIR"
 ```
 
@@ -313,17 +321,19 @@ claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "codex (op
 Materialize codemap context into run directory (`$RUN_DIR` now exists):
 
 ```bash
-codemap_available=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-available" 2>/dev/null || echo "false")
-if [ "$codemap_available" = "true" ] && [ -f "${TMPDIR:-/tmp}/dev-review-codemap-context.md" ]; then
-    cp "${TMPDIR:-/tmp}/dev-review-codemap-context.md" "$RUN_DIR/codemap-context.md"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+codemap_available=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}" 2>/dev/null || echo "false")
+if [ "$codemap_available" = "true" ] && [ -f "${TMPDIR:-/tmp}/dev-review-codemap-context.md-${CSID}" ]; then
+    cp "${TMPDIR:-/tmp}/dev-review-codemap-context.md-${CSID}" "$RUN_DIR/codemap-context.md"
 fi
 ```
 
 If Codex available:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CODEX_OUT="$RUN_DIR/codex.md"
-echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # Step 6 re-reads — bash state lost
+echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out-${CSID}  # Step 6 re-reads — bash state lost
 ```
 
 If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as spawn prompt; inline prompt below is fallback when shared file absent.
@@ -359,7 +369,7 @@ Run directory created in Step 2 (`$RUN_DIR`).
 
 Prepend this to every agent spawn prompt (Agents 1–7 and the Step 5 consolidator):
 
-> "First run Bash `RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir")` to obtain the exact run-dir path. Use `$RUN_DIR` verbatim for every file you read or write — never retype the path literally (the leading `.` in `.temp` is easy to drop, scattering output into a stray `temp/` dir)."
+> "First run Bash `CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}")` to obtain the exact run-dir path. Use `$RUN_DIR` verbatim for every file you read or write — never retype the path literally (the leading `.` in `.temp` is easy to drop, scattering output into a stray `temp/` dir)."
 
 Inside agent prompt strings, leave `$RUN_DIR` literal — agent resolves it via preamble. Orchestrator must NOT hand-substitute run-dir path.
 
@@ -413,7 +423,7 @@ Launch agents simultaneously with Agent tool (security augmentation folded into 
 
 > "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-name>.md` using the Write tool — where `<agent-name>` is e.g. `sw-engineer`, `qa-specialist`, `perf-optimizer`, `doc-scribe`, `linting-expert`, `solution-architect`. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2,\"low\":0},\"file\":\"$RUN_DIR/<agent-name>.md\",\"confidence\":0.88}`"
 
-**Codemap context preamble (substituted by orchestrator)**: rehydrate `codemap_available=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-available 2>/dev/null || echo false)`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
+**Codemap context preamble (substituted by orchestrator)**: rehydrate `codemap_available=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID} 2>/dev/null || echo false)`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
 
 **Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions. `codemap_available=true`: read `fn-blast` first — skip caller-walk Reads on listed callers; verify only when needed for a specific finding.
 
@@ -468,29 +478,31 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 ```bash
 # Compaction contract — boundary 1: after fan-out, before consolidation (compaction-contract.md §Lifecycle)
-_RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir" 2>/dev/null || echo "")
-_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-report-dir" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-review-keep-items" 2>/dev/null || echo "")
-_TARGET=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "working-tree diff")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || echo "")
+_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-report-dir-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-review-keep-items-${CSID}" 2>/dev/null || echo "")
+_TARGET=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || echo "working-tree diff")
 _FINDING_FILES=$(ls "$_RUN_DIR/"*.md 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
 _PRESERVE="run-dir=$_RUN_DIR, report-dir=$_REPORT_DIR, target=$_TARGET, finding-files=$_FINDING_FILES"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:review · phase: consolidation (after parallel review-agent fan-out)"
     echo "- run-dir: $_RUN_DIR"
     echo "- preserve: $_PRESERVE"
     echo "- next: cross-validate critical findings (Step 4) → consolidate → final report"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 4: Cross-validate critical/blocking findings
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # re-derive — bash state lost between Bash() calls
 [ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
-RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir" 2>/dev/null || echo "$RUN_DIR")
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || echo "$RUN_DIR")
 if [ ! -f "$_FOUNDRY_SHARED/cross-validation-protocol.md" ]; then
     echo "⚠ cross-validation-protocol.md not found at $_FOUNDRY_SHARED — Step 4 skipped; critical findings are unverified. Install foundry plugin or verify _FOUNDRY_SHARED path."
     echo "## Cross-Validation: SKIPPED" >> "$RUN_DIR/cross-validation.md"
@@ -538,20 +550,21 @@ Print terminal block (universal rule — quality-gates.md §Report File Format):
 
 ```bash
 # Compaction contract — boundary 2: after consolidation, before follow-up (compaction-contract.md §Lifecycle)
-_RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir" 2>/dev/null || echo "")
-_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-report-dir" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || echo "")
+_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-report-dir-${CSID}" 2>/dev/null || echo "")
 {
     echo "## Active Skill Contract"
     echo "- skill: develop:review · phase: follow-up (after consolidation)"
     echo "- run-dir: $_RUN_DIR"
     echo "- preserve: final-report=$_REPORT_DIR/review-report.md"
     echo "- next: optional Codex delegation → follow-up gate"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 6: Delegate implementation follow-up (optional)
 
-Re-hydrate `CODEX_OUT` from persisted temp file (Bash() state does not survive between calls): `CODEX_OUT=$(cat ${TMPDIR:-/tmp}/dev-review-codex-out 2>/dev/null || echo "")`. Skip Step 6 if `$CODEX_OUT` empty or file at that path does not exist.
+Re-hydrate `CODEX_OUT` from persisted temp file (Bash() state does not survive between calls): `CODEX_OUT=$(cat ${TMPDIR:-/tmp}/dev-review-codex-out-${CSID} 2>/dev/null || echo "")`. Skip Step 6 if `$CODEX_OUT` empty or file at that path does not exist.
 
 After consolidating, identify tasks Codex can implement directly — not style violations (pre-commit handles those), but work requiring meaningful code or documentation grounded in actual implementation.
 
@@ -585,7 +598,7 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
 **Confidence block** — emitted by consolidator agent in `$REPORT_DIR/review-report.md`, not at skill level (DMI skill: top-level model invocation disabled, so any skill-level instruction would be unreachable).
 
 ```bash
-rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

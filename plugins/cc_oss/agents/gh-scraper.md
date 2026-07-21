@@ -32,6 +32,7 @@ Prompt must supply key=value pairs (space-separated):
 Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE` from prompt key=value pairs. Compute time anchors:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 ANALYSIS_NOW=$(TZ=UTC date +%s)  # timeout: 5000
 TODAY=$(TZ=UTC date +%Y-%m-%d)   # timeout: 5000
 # cross-platform: macOS BSD and GNU/Linux
@@ -65,10 +66,10 @@ mkdir -p "$(dirname "$DATA_FILE")"  # timeout: 5000
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/cc_oss/skills/_shared"
 # persist across Bash calls (Check 41: fresh shell per call)
-printf "%s" "$CUTOFF_3Y"   > "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y"
-printf "%s" "$CUTOFF_30D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-30d"
-printf "%s" "$CUTOFF_90D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d"
-printf "%s" "$CUTOFF_180D" > "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d"
+printf "%s" "$CUTOFF_3Y"   > "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y-${CSID}"
+printf "%s" "$CUTOFF_30D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-30d-${CSID}"
+printf "%s" "$CUTOFF_90D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d-${CSID}"
+printf "%s" "$CUTOFF_180D" > "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d-${CSID}"
 ```
 
 ## Step 2 — Data Fetch Group 1 (all parallel)
@@ -76,11 +77,12 @@ printf "%s" "$CUTOFF_180D" > "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d"
 Run all calls simultaneously — independent. Extracted to `bin/fetch_gh_data_group1.py` (parallel `gh api` + `gh issue list` + `gh pr list` calls; one JSON file per dataset under `$GROUP1_DIR`). Pre-compute output dir tied to `$DATA_FILE` so Step 4 can read each file back:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000
 # reload (Check 41: fresh shell loses Step 1 vars)
-CUTOFF_3Y=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y" 2>/dev/null)
-CUTOFF_90D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d" 2>/dev/null)
-CUTOFF_180D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d" 2>/dev/null)
+CUTOFF_3Y=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y-${CSID}" 2>/dev/null)
+CUTOFF_90D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d-${CSID}" 2>/dev/null)
+CUTOFF_180D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d-${CSID}" 2>/dev/null)
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/fetch_gh_data_group1.py" \
     --repo "$GH_OWNER/$GH_REPO" \
     --output-dir "$GROUP1_DIR" \

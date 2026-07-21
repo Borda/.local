@@ -52,15 +52,16 @@ Parse `$ARGUMENTS` (case-insensitive):
 Three-tier fallback (PATH → CLAUDE_PLUGIN_ROOT → newest cache install) handled by `bin/locate_scan_query.py`.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"  # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py")  # timeout: 5000
 if [ -n "$SQ" ] && [ -x "$SQ" ]; then
     printf "✓ scan-query: %s\n" "$SQ"
-    echo "ok" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status"
+    echo "ok" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}"
 else
     printf "✗ scan-query: not found\n"
     printf "  → Install: claude plugin install codemap@borda-ai-rig\n"
-    echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status"
+    echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}"
     exit 1
 fi
 ```
@@ -69,18 +70,19 @@ fi
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # C1 failed check — fresh shell loses exit status; use project-scoped sentinel
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
-[ "$C1_STATUS" = "failed" ] && { echo "C1 failed — skipping this step."; echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status"; exit 0; }
+C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}" 2>/dev/null || echo "ok")
+[ "$C1_STATUS" = "failed" ] && { echo "C1 failed — skipping this step."; echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status-${CSID}"; exit 0; }
 # stderr to tempfile; eval sees KEY=value stdout only. script emits PROJ/INDEX on stdout regardless of exit code
 # --output-prefix scopes tmpfiles per-project; avoids concurrent collision
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --check-exists --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
 _resolve_rc=$?
-PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj" 2>/dev/null || echo "")
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
-echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index"
+PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || echo "")
+echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-${CSID}"
 printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
 if [ "$_resolve_rc" -eq 0 ]; then
     printf "✓ index: exists\n"
@@ -90,7 +92,7 @@ else
     else
         printf "✗ resolve_index_env.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
     fi
-    echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status"
+    echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status-${CSID}"
     exit 1
 fi
 ```
@@ -102,11 +104,12 @@ fi
 `check_index_smoke.py` validates index is loadable JSON, reports mtime age by wrapping `smoke_test_index.py` (informational). When valid, `check-index-currency` does content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from stored `file_shas` field (covers non-git projects and pulls/branch switches bypassing post-commit hook).
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
-C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status" 2>/dev/null || echo "ok")
+C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}" 2>/dev/null || echo "ok")
+C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status-${CSID}" 2>/dev/null || echo "ok")
 [ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ] && { echo "C1/C2 failed — skipping this step."; exit 0; }
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-${CSID}")
 command -v jq >/dev/null 2>&1 || { printf "✗ jq not found — required for smoke test; install via brew install jq or apt-get install jq\n"; exit 1; }
 SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
 [ -n "$SMOKE_JSON" ] || { printf "⚠ check_index_smoke.py returned no output\n" >&2; exit 1; }
@@ -157,14 +160,15 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # stderr to tempfile; eval sees KEY=value stdout only (same as C2)
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
-PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj" 2>/dev/null || echo "")
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
+PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || echo "")
 [ -n "$PROJ" ] || { printf "✗ resolve_index_env.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"; exit 1; }
-echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-init-index"
+echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-init-index-${CSID}"
 ```
 
 Index exists: report, proceed. Index missing:
@@ -292,7 +296,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/inject_codemap.py" --apply \
 
 ```bash
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-ROLLBACK_LOG="$(mktemp "${TMPDIR:-/tmp}/codemap-init-rollback-XXXXXX.log")"
+ROLLBACK_LOG="$(mktemp "${TMPDIR:-/tmp}/codemap-init-rollback-XXXXXX.log")"  # tmpdir-exempt: mktemp
 echo "[codemap init] rollback log: $ROLLBACK_LOG"
 ```
 
@@ -395,7 +399,7 @@ Then write `.git/hooks/post-commit`. Idempotent — check for `# codemap: increm
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/install_post_commit_hook.py" --plugin-root "${CLAUDE_PLUGIN_ROOT}"
 ```
 
-Report: `✓ post-commit hook installed: <path>` or `✓ already installed` if marker present. Hook logs to `${TMPDIR:-/tmp}/codemap-hook.log` — failures and version-upgrade full scans visible.
+Report: `✓ post-commit hook installed: <path>` or `✓ already installed` if marker present. Hook logs to `${TMPDIR:-/tmp}/codemap-hook-$$.log` <!-- tmpdir-exempt: git-hook-boundary --> — failures and version-upgrade full scans visible.
 
 ### I6 — Summary report
 

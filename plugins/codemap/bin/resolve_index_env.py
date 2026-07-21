@@ -10,11 +10,12 @@ plugin cache subtree or ending in ``plugins/codemap``) to prevent arbitrary subp
 execution. ``TMPDIR`` is only honoured when absolute and owned by the current user.
 
 Usage:
+    export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
     _CM_PROJ=$(git rev-parse --show-toplevel | xargs basename)
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \\
         --output-prefix "codemap-${_CM_PROJ}"
-    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj")
-    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index")
+    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}")
+    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}")
 
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists
     # exit 1 when INDEX file missing; temp files still written for diagnostics
@@ -114,6 +115,26 @@ def _resolve_plugin_root() -> str:
     if raw is None or raw == "":
         return "plugins/codemap"
     return _validate_plugin_root(raw)
+
+
+def _resolve_csid() -> str:
+    """Return the session-scope suffix for written temp filenames.
+
+    Caller exports ``CSID`` (bash ``export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"``);
+    read fresh on every call (not cached at import time) so tests can monkeypatch
+    ``os.environ`` per-case. Degrades to ``"shared"`` only when the caller forgot the
+    export (accepted residual collision scope, WS3 lint flags the caller).
+
+    Returns:
+        ``CSID`` env value, else ``CLAUDE_CODE_SESSION_ID``, else ``"shared"``.
+
+    Examples:
+        >>> import os
+        >>> _ = os.environ.pop("CSID", None); _ = os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        >>> _resolve_csid()
+        'shared'
+    """
+    return os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
 
 
 def _resolve_tmpdir() -> str:
@@ -245,9 +266,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
-    """Write PROJ and INDEX to ``<tmpdir>/${prefix}-resolve-{proj,index}`` temp files.
+    """Write PROJ and INDEX to ``<tmpdir>/${prefix}-resolve-{proj,index}-${CSID}`` temp files.
 
-    Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
+    Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern. The
+    ``-{_CSID}`` terminal suffix scopes the filename to the calling session, so concurrent
+    sessions in the same project never collide (see module-level ``_CSID``).
     Temp files are always written (even on resolver failure) so downstream ``cat``
     calls can supply their own ``|| echo ""`` fallback without extra conditionals.
     The temp directory is resolved via :func:`_resolve_tmpdir` (owner-checked ``TMPDIR``).
@@ -259,8 +282,9 @@ def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
             ``"codemap-<proj>"`` to scope per-project and avoid concurrent collisions.
     """
     tmpdir = _resolve_tmpdir()
+    csid = _resolve_csid()
     for key, val in (("proj", proj), ("index", index)):
-        Path(tmpdir, f"{prefix}-resolve-{key}").write_text(val, encoding="utf-8")
+        Path(tmpdir, f"{prefix}-resolve-{key}-{csid}").write_text(val, encoding="utf-8")
 
 
 def _run_resolver(plugin_root: str) -> str:

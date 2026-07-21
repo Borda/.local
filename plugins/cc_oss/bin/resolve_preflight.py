@@ -3,11 +3,11 @@
 
 Verifies tool availability (codex optional, gh required), authentication,
 and remote state. Pulls latest if remote is ahead. Caches positive
-results under ``.claude/state/preflight/`` with a 4-hour TTL so repeat
+results under ``.temp/state/preflight/`` with a 4-hour TTL so repeat
 invocations short-circuit.
 
 Output:
-    files — writes CODEX_AVAILABLE and GH_OK to ${TMPDIR:-/tmp}/resolve-preflight-<KEY>
+    files — writes CODEX_AVAILABLE and GH_OK to ${TMPDIR:-/tmp}/resolve-preflight-<KEY>-<CSID>
     stderr — human-readable status (echoed to terminal)
 
 Exit codes:
@@ -17,9 +17,10 @@ Exit codes:
     2 — bad/missing required argument (argparse default)
 
 Caller pattern:
+    export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
     resolve_preflight.py  # timeout: 15000
-    CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE" 2>/dev/null || echo "false")
-    GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true")
+    CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null || echo "false")
+    GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK-${CSID}" 2>/dev/null || echo "true")
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from pathlib import Path
 from shutil import which
 
 _PREFLIGHT_TTL = 14400  # 4 hours in seconds
-_PREFLIGHT_DIR = Path(".claude/state/preflight")
+_PREFLIGHT_DIR = Path(".temp/state/preflight")
 
 
 def _preflight_ok(name: str, state_dir: Path = _PREFLIGHT_DIR) -> bool:
@@ -218,9 +219,10 @@ def main(argv: list[str] | None = None) -> int:
             print("✓ git: fetched origin (no upstream tracking on current branch — pull skipped)", file=sys.stderr)
 
     # --- write vars to TMPDIR files for safe cross-block consumption ------------
+    csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
     tmpdir = Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
-    (tmpdir / "resolve-preflight-CODEX_AVAILABLE").write_text(str(codex_available).lower())
-    (tmpdir / "resolve-preflight-GH_OK").write_text("true")
+    (tmpdir / f"resolve-preflight-CODEX_AVAILABLE-{csid}").write_text(str(codex_available).lower())
+    (tmpdir / f"resolve-preflight-GH_OK-{csid}").write_text("true")
     return 0
 
 

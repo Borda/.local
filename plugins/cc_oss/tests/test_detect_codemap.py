@@ -31,7 +31,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "test", "--force-off"])
         assert rc == 0
-        assert (tmp_path / "test-codemap-enabled").read_text() == "false\n"
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "false\n"
 
     def test_scan_query_present_index_present_writes_true(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -44,7 +44,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "myproj", "--idx-dir", str(idx_dir)])
         assert rc == 0
-        assert (tmp_path / "test-codemap-enabled").read_text() == "true\n"
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
 
     def test_scan_query_present_index_absent_writes_false(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -56,7 +56,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "myproj", "--idx-dir", str(idx_dir)])
         assert rc == 0
-        assert (tmp_path / "test-codemap-enabled").read_text() == "false\n"
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "false\n"
 
     def test_scan_query_absent_writes_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """scan-query not on PATH → writes 'false', exits 0."""
@@ -64,7 +64,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "myproj", "--idx-dir", str(tmp_path / "idx")])
         assert rc == 0
-        assert (tmp_path / "test-codemap-enabled").read_text() == "false\n"
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "false\n"
 
     def test_strict_no_scan_query_exits_1_with_install_hint(
         self,
@@ -103,7 +103,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "custom-proj", "--idx-dir", str(idx_dir)])
         assert rc == 0
-        assert (tmp_path / "test-codemap-enabled").read_text() == "true\n"
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
 
     def test_idx_dir_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """--idx-dir overrides default .cache/codemap lookup path."""
@@ -114,7 +114,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(custom_idx)])
         assert rc == 0
-        assert (tmp_path / "test-codemap-enabled").read_text() == "true\n"
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
 
     def test_codemap_index_dir_env_var(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CODEMAP_INDEX_DIR env var sets default index dir when --idx-dir absent."""
@@ -126,7 +126,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "envproj"])
         assert rc == 0
-        assert (tmp_path / "test-codemap-enabled").read_text() == "true\n"
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
 
     def test_tmpdir_env_var_controls_output_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """TMPDIR env var controls where the output file is written."""
@@ -136,7 +136,7 @@ class TestMain:
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "myprefix", "--proj", "proj", "--idx-dir", str(tmp_path)])
         assert rc == 0
-        assert (out_dir / "myprefix-codemap-enabled").exists()
+        assert (out_dir / "myprefix-codemap-enabled-shared").exists()
 
 
 class TestResolveProj:

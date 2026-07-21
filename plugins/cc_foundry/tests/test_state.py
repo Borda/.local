@@ -16,8 +16,10 @@ _spec.loader.exec_module(st)
 
 @pytest.fixture(autouse=True)
 def _tmp_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Redirect state files into a temp dir so tests never touch the real /tmp."""
+    """Redirect state files into a temp dir; strip session env so CSID resolves to 'shared'."""
     monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.delenv("CSID", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
 
 
 def test_set_then_load_round_trip() -> None:
@@ -71,4 +73,26 @@ def test_load_absent_namespace_is_empty(capsys: pytest.CaptureFixture[str]) -> N
 
 def test_namespace_sanitized() -> None:
     """Unsafe namespace chars are sanitized into the filename."""
-    assert st.state_path("a/b:c").name == "claude-state-a_b_c.env"
+    assert st.state_path("a/b:c").name == "claude-state-a_b_c-shared.env"
+
+
+def test_session_scoping_distinct_csids(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two different CSID values yield distinct state paths for the same namespace."""
+    monkeypatch.setenv("CSID", "sess-a")
+    path_a = st.state_path("ns7")
+    monkeypatch.setenv("CSID", "sess-b")
+    path_b = st.state_path("ns7")
+    assert path_a != path_b
+    assert path_a.name == "claude-state-ns7-sess-a.env"
+    assert path_b.name == "claude-state-ns7-sess-b.env"
+
+
+def test_session_scoping_fallback_chain(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CSID wins over CLAUDE_CODE_SESSION_ID; with neither set the token degrades to 'shared'."""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sid-1")
+    assert st.state_path("ns8").name == "claude-state-ns8-sid-1.env"
+    monkeypatch.setenv("CSID", "csid-1")
+    assert st.state_path("ns8").name == "claude-state-ns8-csid-1.env"
+    monkeypatch.delenv("CSID")
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    assert st.state_path("ns8").name == "claude-state-ns8-shared.env"

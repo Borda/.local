@@ -28,8 +28,9 @@ fi
 Bash state lost between SKILL.md code blocks — Step 2 EXPECTED_FILE construction reads these back via sourcing mode-flags file.
 
 ```bash
-echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag"
-_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}"
+_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}"
 {
     echo "CICD_ONLY_MODE=$CICD_ONLY_MODE"
     echo "DOCS_ONLY_MODE=$DOCS_ONLY_MODE"
@@ -40,7 +41,8 @@ _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
 ### Reload pattern (Step 2 and later blocks)
 
 ```bash
-_PR_TAG=$(cat "${TMPDIR:-/tmp}/oss-review-pr-tag" 2>/dev/null || echo "unknown")
-_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${_PR_TAG}"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_PR_TAG=$(cat "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || echo "unknown")
+_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${_PR_TAG}-${CSID}"
 [ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
 ```

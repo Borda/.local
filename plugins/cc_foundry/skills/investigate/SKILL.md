@@ -51,13 +51,14 @@ cat "$_FS/task-hygiene.md"
 ## Step 1: Parse symptom and scope
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
-rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/investigate-verdicts  # clear stale contract + probe ledger (compaction-contract.md §Lifecycle)  # timeout: 5000
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/investigate-keep-items"
+rm -f .temp/state/skill-contract.md ${TMPDIR:-/tmp}/investigate-verdicts-${CSID}  # clear stale contract + probe ledger (compaction-contract.md §Lifecycle)  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/investigate-keep-items-${CSID}"
 ```
 
 From $ARGUMENTS extract:
@@ -73,10 +74,11 @@ From $ARGUMENTS extract:
 **Init run directory unconditionally at start of Step 2** — `$INVESTIGATE_RUN` must be set even when Step 4 skipped (`--fast` path), so Step 6's read of `$INVESTIGATE_RUN/*-review.md` does not expand to `/codex-review.md` or unset reference. Step 4 creates review files only when adversarial review runs; Step 6 must guard reads with `[ -f <path> ]`.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 5000
 INVESTIGATE_RUN=".temp/investigate/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$INVESTIGATE_RUN"
-echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"  # persist; re-read in later steps
+echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path-${CSID}"  # persist; re-read in later steps
 echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"  # bash vars don't persist; read from stdout
 ```
 
@@ -111,7 +113,7 @@ jq . ~/.claude/settings.json  # timeout: 5000
 
 **Logs** (when symptom involves skill run, background agent, or hook):
 
-Use Grep with pattern `ERROR|WARN|failed|not found|exit` across `.claude/logs/`, `/tmp/`, or relevant `.reports/<skill>/` run dirs. Read last 50 lines of any relevant log file.
+Use Grep with pattern `ERROR|WARN|failed|not found|exit` across `.notes/logs/`, `.claude/logs/` (legacy fallback), `/tmp/`, or relevant `.reports/<skill>/` run dirs. Read last 50 lines of any relevant log file.
 
 Capture all output before Step 3.
 
@@ -128,18 +130,19 @@ Use the Write tool (NOT a `echo > $INVESTIGATE_RUN/...` heredoc, which loses bas
 Step 4 spawn prompts must instruct the subagent to Read these files (not rely on inline `${SYMPTOM_DESCRIPTION}` interpolation, which the LLM can paraphrase or truncate under context pressure).
 
 ```bash
-_INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items" 2>/dev/null || echo "")
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+_INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="run-dir=$_INVESTIGATE_RUN, symptom=$_INVESTIGATE_RUN/symptom.txt, signals=$_INVESTIGATE_RUN/signals.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:investigate · phase: hypothesise+probe (after signal gather)"
     echo "- run-dir: $_INVESTIGATE_RUN"
     echo "- preserve: $_PRESERVE"
     echo "- next: rank hypotheses (Step 3) → adversarial review (Step 4) → probe (Step 5) → report (Step 6)"
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 ## Step 3: Rank hypotheses
@@ -161,19 +164,20 @@ This avoids LLM-paraphrase risk when inlining a long table into a spawn prompt. 
 Refresh the compaction contract now that ranking is done — the boundary moves into the Step 4–5 loop so a mid-loop compaction resumes from `hypotheses.md` instead of re-ranking:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 2: ranking done, entering adversarial+probe loop (compaction-contract.md §Lifecycle)
-_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items" 2>/dev/null || echo "")
+_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items-${CSID}" 2>/dev/null || echo "")
 _PRESERVE="run-dir=$_IR, symptom=$_IR/symptom.txt, signals=$_IR/signals.md, hypotheses=$_IR/hypotheses.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:investigate · phase: adversarial+probe (after hypotheses ranked)"
     echo "- run-dir: $_IR"
     echo "- preserve: $_PRESERVE"
     echo "- next: adversarial review (Step 4, unless --fast) → probe hypotheses (Step 5) → report (Step 6). Resume from hypotheses.md — do NOT re-rank."
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 Common categories:
@@ -195,8 +199,9 @@ When `--fast`: mark Step 4 task as `deleted` (not completed — it was skipped).
 Otherwise, set up adversarial review. Run dir created in Step 2; re-resolve path string here (bash state does not persist):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 5000
-INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null)
+INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null)
 # fallback if path file absent
 [ -z "$INVESTIGATE_RUN" ] && INVESTIGATE_RUN=$(find .temp/investigate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
@@ -204,7 +209,7 @@ echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"
 echo "CODEX_OUT=$CODEX_OUT"  # spawn-prompt reads both stdout lines
 ```
 
-> **Step 2 appends the resolved run path to `${TMPDIR:-/tmp}/investigate-run-path`** so this resolution succeeds — see `echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"` in Step 2.
+> **Step 2 appends the resolved run path to `${TMPDIR:-/tmp}/investigate-run-path-${CSID}`** so this resolution succeeds — see `echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path-${CSID}"` in Step 2.
 
 Re-check Codex availability at point of use (bash vars don't persist across tool calls) and **echo result so next prose decision can read it**:
 
@@ -262,12 +267,13 @@ diff <(jq -S . .claude/settings.json) <(jq -S . ~/.claude/settings.json) | head 
 Per probe: mark **Confirmed**, **Ruled out**, or **Inconclusive**. Append each verdict to the probe ledger and refresh the contract — so a mid-loop compaction does not re-probe an already-decided hypothesis:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # WHY: probe verdicts live only in-context; a post-compact resume without this would re-probe ruled-out hypotheses (loop)
-echo "<hypothesis> :: <Confirmed|Ruled-out|Inconclusive>" >> ${TMPDIR:-/tmp}/investigate-verdicts
-_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null || echo "")
-_VERDICTS=$(tail -8 "${TMPDIR:-/tmp}/investigate-verdicts" 2>/dev/null)  # cap keeps contract compact; tail keeps most-recent verdicts
+echo "<hypothesis> :: <Confirmed|Ruled-out|Inconclusive>" >> ${TMPDIR:-/tmp}/investigate-verdicts-${CSID}
+_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || echo "")
+_VERDICTS=$(tail -8 "${TMPDIR:-/tmp}/investigate-verdicts-${CSID}" 2>/dev/null)  # cap keeps contract compact; tail keeps most-recent verdicts
 _REVIEW=""; [ -f "$_IR/codex-review.md" ] && _REVIEW="$_IR/codex-review.md"; [ -f "$_IR/challenger-review.md" ] && _REVIEW="$_IR/challenger-review.md"
-mkdir -p .claude/state  # timeout: 5000
+mkdir -p .temp/state  # timeout: 5000
 {
     echo "## Active Skill Contract"
     echo "- skill: foundry:investigate · phase: probe (Step 5)"
@@ -278,14 +284,14 @@ mkdir -p .claude/state  # timeout: 5000
         echo "$_VERDICTS" | sed 's/^/    - /'
     fi
     echo "- next: probe remaining pending hypotheses → confirm root cause → report (Step 6). Skip Confirmed/Ruled-out above."
-} > .claude/state/skill-contract.md
+} > .temp/state/skill-contract.md
 ```
 
 Stop when one hypothesis confirmed with clear evidence, or top-3 all ruled out (expand to lower-ranked candidates).
 
 ## Step 6: Report findings
 
-Re-resolve `$INVESTIGATE_RUN` from persisted path file (`cat "${TMPDIR:-/tmp}/investigate-run-path"`). Guard each read with `[ -f <path> ]`: if `$INVESTIGATE_RUN/codex-review.md` exists, read it; if `$INVESTIGATE_RUN/challenger-review.md` exists, read it. Either or both may be absent (Step 4 skipped via `--fast`, or spawned agent failed silently). Incorporate new hypotheses or blindspots from existing files into Evidence section below; skip read entirely if neither file present — do NOT block on missing review files.
+Re-resolve `$INVESTIGATE_RUN` from persisted path file (`cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}"`). Guard each read with `[ -f <path> ]`: if `$INVESTIGATE_RUN/codex-review.md` exists, read it; if `$INVESTIGATE_RUN/challenger-review.md` exists, read it. Either or both may be absent (Step 4 skipped via `--fast`, or spawned agent failed silently). Incorporate new hypotheses or blindspots from existing files into Evidence section below; skip read entirely if neither file present — do NOT block on missing review files.
 
 ```markdown
 ## Investigation: <symptom>
@@ -325,7 +331,8 @@ Invoke `AskUserQuestion` as follow-up gate:
 (c) Skip — diagnosis complete
 
 ```bash
-rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/investigate-verdicts  # clear contract + probe ledger — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+rm -f .temp/state/skill-contract.md ${TMPDIR:-/tmp}/investigate-verdicts-${CSID}  # clear contract + probe ledger — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>
