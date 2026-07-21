@@ -30,9 +30,9 @@ _GATES_CONTRACT = _SHARED / "codemap-gates.md"
 _CACHE_PATTERN = "ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/_shared"
 _SOURCE_FALLBACK = "plugins/codemap/skills/_shared"
 
-_DEVELOP_CONTEXT = _PLUGINS_DIR / "develop" / "skills" / "_shared" / "codemap-context.md"
-_DEVELOP_GATES = _PLUGINS_DIR / "develop" / "skills" / "_shared" / "codemap-gates.md"
-_OSS_GATES = _PLUGINS_DIR / "oss" / "skills" / "_shared" / "codemap-gates.md"
+_DEVELOP_CONTEXT = _PLUGINS_DIR / "cc_develop" / "skills" / "_shared" / "codemap-context.md"
+_DEVELOP_GATES = _PLUGINS_DIR / "cc_develop" / "skills" / "_shared" / "codemap-gates.md"
+_OSS_GATES = _PLUGINS_DIR / "cc_oss" / "skills" / "_shared" / "codemap-gates.md"
 
 
 class TestContextContract:

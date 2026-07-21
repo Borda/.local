@@ -29,7 +29,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execSync, spawn } = require("child_process");
+const { execSync, execFileSync, spawn } = require("child_process");
 
 const MAX_PARSE_BYTES = 10 * 1024 * 1024; // full parse skipped for indexes >10 MB
 const LOCK_TTL_MS = 10 * 60 * 1000; // 10 min — max expected scan duration before re-allow
@@ -243,7 +243,11 @@ function main() {
   // Dirty-tree check only when SHA matches — avoids double-stale trigger.
   if (headSha && gitSha && gitSha === headSha) {
     try {
-      const dirty = execSync("git status --porcelain -- '*.py'", { cwd, timeout: 3000 }).toString().trim();
+      // execFileSync (no shell) so the *.py pathspec reaches git literally — cmd.exe on
+      // Windows would keep the quotes and match nothing, silently zeroing the dirty count.
+      const dirty = execFileSync("git", ["status", "--porcelain", "--", "*.py"], { cwd, timeout: 3000 })
+        .toString()
+        .trim();
       dirtyPyCount = dirty ? dirty.split("\n").filter(Boolean).length : 0;
     } catch {
       /* git unavailable or non-git project */

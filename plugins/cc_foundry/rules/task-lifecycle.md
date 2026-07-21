@@ -34,3 +34,15 @@ Rule: **first line = concise task label** — role + target, ≤10 words, no boi
 ✗  Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state.
    You are a foundry:sw-engineer teammate fixing … [label now useless]
 ```
+
+### Fleet-view description: unique-first
+
+N agents, same task family → description leads with per-agent delta (dir/plugin/module), shared boilerplate after. Cap 1 terminal line — front-load differentiator, FleetView truncates tail not head.
+
+```text
+✓  B1 — cc_develop: session-scope TMPDIR sentinels
+✓  B2 — cc_foundry: session-scope TMPDIR sentinels
+
+✗  B1 — session-scope TMPDIR sentinels in plugins/cc_...
+✗  B2 — session-scope TMPDIR sentinels in plugins/cc_...  [same prefix, rows indistinguishable]
+```

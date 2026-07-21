@@ -1578,7 +1578,7 @@ def scan_config_refs(root: Path, module_names: set[str]) -> dict[str, list[dict]
     for pattern in _CONFIG_SCAN_PATTERNS:
         config_files.extend(root.glob(pattern))
     for cfg_path in sorted(config_files):
-        rel = str(cfg_path.relative_to(root))
+        rel = cfg_path.relative_to(root).as_posix()
         try:
             lines = cfg_path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
@@ -3228,10 +3228,17 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
             f"{', '.join(sorted(excluded_counts))}",
             file=sys.stderr,
         )
-    # Use fork on Unix to avoid __main__ re-import issues with extension-less script
-    _mp_ctx = multiprocessing.get_context("fork") if sys.platform != "win32" else None
-    with ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=_mp_ctx) as pool:
-        modules = list(pool.map(_parse_file_star, [(fp, root, src_ctx.name_root_for(fp)) for fp in filepaths]))
+    parse_args = [(fp, root, src_ctx.name_root_for(fp)) for fp in filepaths]
+    if sys.platform == "win32":
+        # spawn (Windows' only start method) would re-import this extension-less __main__
+        # script to unpickle the worker, with no freeze_support guard. Parse serially —
+        # functional parity with the Unix fork path, only slower.
+        modules = [_parse_file_star(a) for a in parse_args]
+    else:
+        # fork keeps parallelism and avoids the __main__ re-import entirely.
+        _mp_ctx = multiprocessing.get_context("fork")
+        with ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=_mp_ctx) as pool:
+            modules = list(pool.map(_parse_file_star, parse_args))
 
     src_root_rels = src_ctx.dedup_rels(root)
     modules, collisions = _dedup_modules(modules, src_root_rels)

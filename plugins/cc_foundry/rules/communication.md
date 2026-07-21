@@ -36,7 +36,7 @@ Box `╔═╗`/`╚═╝` zone creates header boundary. `▓▓▓` footer cre
 
 **Exemption — machine-parsed responses**: omit box header and footer when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone triggers exemption; both present also triggers it.
 
-**Exemption — quality-gates report headers**: when reply leads with quality-gates `---` metadata block (skill's Output Routing report header — YAML between `---` delimiters printed verbatim from report file, e.g. `/oss:review`, `/oss:resolve`, `/foundry:audit`, `/foundry:calibrate`), omit `╔═╗` box header — that `---` block IS reply header and box would shadow it. Print `---` block as first line of reply; keep `▓` footer. Never emit both box header and `---` metadata block in same reply.
+**Exemption — quality-gates report headers**: when reply leads with quality-gates `---` metadata block (skill's Output Routing report header — YAML between `---` delimiters converted to a two-column Markdown table per `quality-gates.md` Universal terminal-print rule, e.g. `/oss:review`, `/oss:resolve`, `/foundry:audit`, `/foundry:calibrate`), omit `╔═╗` box header — that table IS reply header and box would shadow it. Print the table as first block of reply; keep `▓` footer. Never emit both box header and metadata table in same reply.
 
 ## Progress and Transparency
 

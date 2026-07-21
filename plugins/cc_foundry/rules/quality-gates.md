@@ -121,7 +121,7 @@ Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write ac
 
 1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full evidence coverage, ultra-caveman compressed** (see §Prose Compression — "full" means no dropped findings, not verbose prose) — **execute the Write tool call; do not narrate intent and proceed without calling it** — this Write step never skipped; pipeline/background mode only exempts AskUserQuestion gate (step 2.iv), not this Write step. This is a **distinct, additional Write call** — writing to any other path (e.g. run-directory response file, report file) does not satisfy this step. Two writes expected: one to `.temp/output-*.md` (this step) and any other file writes for task.
 2. Print to terminal in this order:
-   1. **YAML header block** — print `---` metadata block verbatim from top of report file (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: NEEDS_WORK · findings: 8 · ...`
+   1. **YAML header table** — render `---` metadata block from top of report file as simple two-column Markdown table (`Field | Value`, one row per key, long values wrap in cell) — never print raw YAML verbatim (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: NEEDS_WORK · findings: 8 · ...`
    2. **Report path** — `→ <filepath>`
    3. **Executive summary** — prose: 2–3 sentence overview + each critical/high finding listed individually; omit medium/low detail unless ≤2 total findings
    4. **Follow-up gate** — invoke `AskUserQuestion` as final step; skip when: spawned via `Agent()` tool, running inside another skill's pipeline, or prompt explicitly states background/pipeline mode — when in doubt, invoke
@@ -150,9 +150,9 @@ Estimate file size: `$(( $(wc -c < file) / 4 ))` tokens.
 
 ## Report File Format
 
-**Universal terminal-print rule**: when skill or agent writes report file whose first non-whitespace line is `---` (YAML metadata block), that block MUST be printed verbatim in terminal as **first content of reply** — before report path line, before executive summary, before anything else. Optionally followed by: `→ <path>`, executive summary, skill-specific details. Applies to ALL skills and agents producing such reports — no per-skill duplication of this rule needed (per-skill wording may be kept for emphasis). The `---` block IS reply header; omit `╔═╗` Re:Anchor box when leading with it (see `communication.md` exemption).
+**Universal terminal-print rule**: when skill or agent writes report file whose first non-whitespace line is `---` (YAML metadata block), that block MUST be rendered in terminal as a **simple two-column Markdown table** (`Field | Value`, one row per YAML key, in file order) — never dumped as raw YAML — as **first content of reply**, before report path line, before executive summary, before anything else. Raw YAML wraps badly at terminal width; a table keeps each field on its own row regardless of value length. Optionally followed by: `→ <path>`, executive summary, skill-specific details. Applies to ALL skills and agents producing such reports — no per-skill duplication of this rule needed (per-skill wording may be kept for emphasis). The table IS reply header; omit `╔═╗` Re:Anchor box when leading with it (see `communication.md` exemption).
 
-Every report file created via output routing must begin with YAML metadata block between `---` delimiter lines. This block is canonical meta summary — printed verbatim to terminal before executive summary, machine-parseable by downstream skills.
+Every report file created via output routing must begin with YAML metadata block between `---` delimiter lines. This block is canonical meta summary — the file keeps it as raw YAML (machine-parseable by downstream skills); when printed to terminal it is converted to the two-column table above, never shown as raw YAML.
 
 **Required minimum fields** (all reports):
 
@@ -171,6 +171,22 @@ Path:       → .reports/<skill>/<timestamp>/<name>.md
 ```
 
 After required fields, add **skill-specific fields** relevant to report type (e.g. Verdict, CI, Risk, Blockers for `develop:review`; Best method, Papers for `research:topic`; Methodology, Findings for `research:judge`). `develop:review` report template is canonical reference. Skills with dedicated output routing (audit, review, resolve, analyse, release) must include equivalent `---` block at top of their report files.
+
+**Terminal render of the block above** (one row per key, in file order, values verbatim — no re-wrapping, no truncation):
+
+```markdown
+| Field | Value |
+| --- | --- |
+| Title | [Skill] — [subject] |
+| Date | [YYYY-MM-DD] |
+| Scope | [what was analyzed] |
+| Focus | [aspect examined] |
+| Agents | [agent names] |
+| Outcome | [verdict] |
+| Confidence | [score] — [key gaps] |
+| Next steps | [recommended follow-up] |
+| Path | → .reports/<skill>/<timestamp>/<name>.md |
+```
 
 ## Reporting Findings
 

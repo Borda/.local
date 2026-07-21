@@ -239,7 +239,7 @@ class TestMain:
     def test_real_plugins_tree_no_crash(self) -> None:
         """Smoke test against the actual plugins/ tree — must not raise, exit 0 or 1."""
         real_plugins = Path(__file__).resolve().parent.parent.parent  # plugins/
-        if not (real_plugins / "foundry").is_dir():
+        if not (real_plugins / "cc_foundry").is_dir():
             pytest.skip("Not run from project root with plugins/ tree")
         exit_code = main(["--scan-dir", str(real_plugins)])
         assert exit_code in (0, 1)
