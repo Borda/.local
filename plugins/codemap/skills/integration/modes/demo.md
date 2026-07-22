@@ -256,6 +256,9 @@ Each arm runs under own session, so its scan-query / Grep / Read / Glob calls la
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# Tag every CLI record the arms produce as benchmark load — debrief separates
+# scripted demo traffic from organic usage (untagged loops skewed the 2026-07 audit)
+export CODEMAP_TELEMETRY_SOURCE=bench
 _AB_STAMP=$(date +%s)
 PLAIN_SESSION="demo-plain-${_AB_STAMP}"
 CODEMAP_SESSION="demo-codemap-${_AB_STAMP}"

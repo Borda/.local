@@ -16,6 +16,19 @@ if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
 
+@pytest.fixture(autouse=True)
+def _telemetry_off(monkeypatch):
+    """Keep the suite out of the real telemetry stream.
+
+    The 2026-07 usage audit found 4.5K pytest-run records in the dev repo's live
+    cli.jsonl (fixture errors, 30–126s suite timings) drowning organic usage.
+    Tests exercising the logging path re-enable it explicitly
+    (``monkeypatch.delenv``/``setenv`` as in test_telemetry.py) or pass their own
+    ``log_dir``/``CODEMAP_LOG_DIR``.
+    """
+    monkeypatch.setenv("CODEMAP_LOGGING", "false")
+
+
 @pytest.fixture(scope="session")
 def scan_index() -> Path:
     """Path to the scan-index bin script."""

@@ -131,3 +131,36 @@ class TestDiffImpact:
         data = _query(scan_query, root, index_path, "--no-heal", "diff-impact")
         assert "index" in data
         assert all("index" not in m for m in data["changed_modules"])
+
+
+class TestDiffFileMode:
+    """--diff-file feeds the change set from a fetched unified diff (PR-review mode)."""
+
+    _DIFF = (
+        "diff --git a/lib.py b/lib.py\n"
+        "--- a/lib.py\n"
+        "+++ b/lib.py\n"
+        "@@ -1,2 +1,2 @@ def helper(x):\n"
+        "-    return x + 1\n"
+        "+    return x + 9\n"
+    )
+
+    def test_diff_file_maps_symbols_without_local_git_change(self, git_project, scan_query):
+        """A clean working tree still reports the diff-file's change set, symbol-mapped."""
+        root, index_path = git_project
+        diff_path = root / "pr.diff"
+        diff_path.write_text(self._DIFF)
+        data = _query(scan_query, root, index_path, "--no-heal", "diff-impact", "--diff-file", str(diff_path))
+        assert data["base"] == f"diff-file:{diff_path}"
+        (entry,) = data["changed_modules"]
+        assert entry["module"] == "lib"
+        assert entry["changed_symbols"] == ["lib::helper"]
+
+    def test_diff_file_ignores_non_python_and_deleted_files(self, git_project, scan_query):
+        """Doc files and /dev/null (deletions) contribute nothing to the change set."""
+        root, index_path = git_project
+        diff_path = root / "pr.diff"
+        diff_path.write_text("+++ b/README.md\n@@ -1 +1 @@\n+++ /dev/null\n@@ -1,5 +0,0 @@\n")
+        data = _query(scan_query, root, index_path, "--no-heal", "diff-impact", "--diff-file", str(diff_path))
+        assert data["changed_files"] == 0
+        assert data["changed_modules"] == []

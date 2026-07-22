@@ -303,8 +303,12 @@ function main() {
       }
       if (fs.existsSync(scanBin)) {
         try {
-          // Non-blocking: detached child, stdin/stdout/stderr all ignored
-          const scanArgs = ["--root", scanRoot, "--timeout", "300"];
+          // Non-blocking: detached child, stdin/stdout/stderr all ignored.
+          // --incremental restores the header's stated design (comment/code drift):
+          // the 2026-07 usage audit measured these background refreshes as repeated
+          // FULL scans up to 35s; incremental is 41ms–1.7s and scan-index falls back
+          // to a full scan on its own when the on-disk index predates v3.
+          const scanArgs = ["--incremental", "--root", scanRoot, "--timeout", "300"];
           const usePython = process.platform === "win32";
           const command = usePython ? process.env.PYTHON || "python" : scanBin;
           const commandArgs = usePython ? [scanBin, ...scanArgs] : scanArgs;

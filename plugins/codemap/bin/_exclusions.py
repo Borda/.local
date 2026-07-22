@@ -276,9 +276,19 @@ def is_excluded(rel_posix: str, exclusions: Exclusions) -> bool:
         True
         >>> is_excluded("vendor/lib.py", ex)
         True
+        >>> is_excluded(".sandbox/proj/src/app.py", ex)
+        True
         >>> is_excluded("src/app.py", ex)
         False
     """
-    if SKIP_DIRS.intersection(rel_posix.split("/")[:-1]):
+    parts = rel_posix.split("/")[:-1]
+    # Any dot-directory component prunes: dot-dirs are never part of a project's
+    # import space, but they can hold whole vendored checkouts — the 2026-07 usage
+    # audit found a `.sandbox/` tree contributing 646 of 928 indexed modules and
+    # dominating centrality. Must mirror the scan-index walk prune exactly, or
+    # excluded files reappear in the staleness diff as permanently "added".
+    if any(part.startswith(".") for part in parts):
+        return True
+    if SKIP_DIRS.intersection(parts):
         return True
     return _match_exclusion(rel_posix, exclusions) is not None

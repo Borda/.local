@@ -40,12 +40,11 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap_scan.py" --source=
 
 ## Review-pipeline injection (oss:review, develop:review)
 
-Review orchestrators run v4 pre-flight queries **per changed module** before spawning dimension agents, persist structured output, pass to each agent as `CODEMAP_CONTEXT` so agent skips redundant file reads. Pre-flight queries:
+Review orchestrators run v4 pre-flight queries **per changed module** before spawning dimension agents, persist structured output, pass to each agent as `CODEMAP_CONTEXT` so agent skips redundant file reads. Pre-flight queries (module-level only — a name-only changed-files list cannot supply the `module::fn` qnames `fn-rdeps`/`fn-blast` require; bare-module fn-* calls failed 100% in production, 2026-07 usage audit F1; fn-level returns once diff-hunk qname derivation lands — audit plan P1.2b):
 
 ```bash
-scan-query --timeout 5 fn-rdeps    "${MODULE}::${FN}" --exclude-tests 2>/dev/null  # direct callers (v4.6)
-scan-query --timeout 5 fn-blast    "${MODULE}::${FN}"   2>/dev/null  # transitive callers (v3)
-scan-query --timeout 5 mock-rdeps  "${MODULE}::${FN}"   2>/dev/null  # mock coverage (v4.1)
+scan-query --timeout 5 rdeps       "$MODULE"            2>/dev/null  # importer count → risk tier
+scan-query --timeout 5 mock-rdeps  "$MODULE"            2>/dev/null  # mock coverage (v4.1)
 scan-query --timeout 5 uncovered   --top 20 "$MODULE"   2>/dev/null  # test gaps (v4.2)
 scan-query --timeout 5 xrefs --broken      "$MODULE"    2>/dev/null  # stale doc refs (v4.5)
 scan-query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage (v4.4)
@@ -54,12 +53,12 @@ scan-query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage (v4.4
 > Per-agent consumption:
 > - `qa-specialist` — read `uncovered` + `mock-rdeps` first; skip manual test-file grep for symbols codemap already classifies; fall back to Read only when codemap context absent or insufficient
 > - `doc-scribe` — read `undocumented` + `xrefs --broken` first; skip docstring-scan reads on listed symbols
-> - `sw-engineer` — read `fn-rdeps` first (direct callers), then `fn-blast` for transitive depth; skip caller-walk reads when blast list complete
+> - `sw-engineer` — read `rdeps` first (importers per changed module); `fn-rdeps`/`fn-blast` only when a concrete `module::fn` qname is known (dimension queries above)
 > - `challenger` — unchanged; always reads source directly
 
 ## Review→resolve pre-flight cache (persisted artifact)
 
-Review runs per-changed-module pre-flight batch once (§Review-pipeline injection). Follow-on skill on same PR — `oss:resolve` after `/review` — otherwise re-issues identical `fn-rdeps`/`fn-blast`/`mock-rdeps`/`uncovered`/`xrefs`/`undocumented`/`rdeps` queries for same modules. Persisted cache lets follow-on **reuse** those answers instead.
+Review runs per-changed-module pre-flight batch once (§Review-pipeline injection). Follow-on skill on same PR — `oss:resolve` after `/review` — otherwise re-issues identical `rdeps`/`mock-rdeps`/`uncovered`/`xrefs`/`undocumented` queries for same modules. Persisted cache lets follow-on **reuse** those answers instead.
 
 **Artifact shape (report §5.3)** — one file per module at `.temp/<run>/codemap-context/<module>.json`, split into stable *prefix* (index-derived, content-hashed + git-sha stamped) and volatile *delta* (touched files, exhausted queries, notes) so a later cross-skill handoff generalizes without rework:
 

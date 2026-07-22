@@ -164,7 +164,9 @@ def _iter_python_files(root: Path, exclusions: Exclusions | None = None) -> tupl
         pruned = [d for d in dirnames if d in exclusions.dirs]
         for d in pruned:
             counts[d] = counts.get(d, 0) + _count_py_files(Path(dirpath) / d)
-        dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+        # Dot-dirs prune generically (mirrors _exclusions.is_excluded): never part of
+        # the import space, and can hold vendored checkouts that dominate the index.
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
         for fn in filenames:
             if not fn.endswith(".py"):
                 continue

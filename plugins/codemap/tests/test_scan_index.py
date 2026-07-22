@@ -523,3 +523,27 @@ class TestAtomicIndexWrite:
         index = json.loads((cache_dir / f"{tmp_path.name}.json").read_text())  # never corrupt/truncated
         assert any(m["name"] == "gamma" for m in index["modules"])
         assert not list(cache_dir.glob(f"{tmp_path.name}.json.*.tmp"))  # no PID-suffixed temp leaked
+
+
+def test_dot_directories_pruned_from_walk(tmp_path, gamma_src, scan_index):
+    """Any dot-dir (vendored checkout, sandbox, agent scratch) is excluded from the index."""
+    (tmp_path / "gamma.py").write_text(gamma_src)
+    sandbox = tmp_path / ".sandbox" / "vendored" / "src"
+    sandbox.mkdir(parents=True)
+    (sandbox / "vendored_mod.py").write_text("def v():\n    return 1\n")
+    agents = tmp_path / ".agents"
+    agents.mkdir()
+    (agents / "scratch.py").write_text("def s():\n    return 2\n")
+
+    result = subprocess.run(
+        [sys.executable, str(scan_index), "--root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+    )
+    assert result.returncode == 0, result.stderr
+
+    index = json.loads((tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json").read_text())
+    names = {m["name"] for m in index["modules"]}
+    assert "gamma" in names
+    assert not any("vendored_mod" in n or "scratch" in n for n in names)

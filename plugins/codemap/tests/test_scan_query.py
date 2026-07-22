@@ -3468,3 +3468,43 @@ class TestBatch:
         )
         assert result.returncode == 2, result.stderr + result.stdout
         assert "error" in json.loads(result.stdout)
+
+
+class TestArgvHardening:
+    """Malformed caller argv fails fast with an actionable message (2026-07 audit F1)."""
+
+    def _run_raw(self, scan_query, root, index_path, *args):
+        """Run scan-query expecting failure; return (returncode, parsed-stdout-JSON)."""
+        import subprocess as _sp
+        import sys as _sys
+
+        result = _sp.run(
+            [_sys.executable, str(scan_query), "--index", str(index_path), *args],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        return result.returncode, json.loads(result.stdout)
+
+    def test_newline_joined_names_rejected(self, project, scan_query):
+        """A newline-joined name list in ONE argument exits 1 naming the shell cause."""
+        root, index_path = project
+        rc, data = self._run_raw(scan_query, root, index_path, "rdeps", "alpha\nbeta\ngamma")
+        assert rc == 1
+        assert "3 names passed as ONE argument" in data["error"]
+        assert "batch" in data["error"]
+
+    def test_fn_command_with_module_arg_gets_redirect_hint(self, project, scan_query):
+        """fn-rdeps on a bare module names the mistake and points at rdeps."""
+        root, index_path = project
+        rc, data = self._run_raw(scan_query, root, index_path, "fn-rdeps", "gamma")
+        assert rc == 1
+        assert "'gamma' is a module, not a function qname" in data["error"]
+        assert "rdeps gamma" in data["error"]
+
+    def test_fn_command_with_unknown_symbol_keeps_generic_error(self, project, scan_query):
+        """A genuinely unknown symbol still gets the find-symbol pointer."""
+        root, index_path = project
+        rc, data = self._run_raw(scan_query, root, index_path, "fn-rdeps", "gamma::nope")
+        assert rc == 1
+        assert "find-symbol" in data["error"]

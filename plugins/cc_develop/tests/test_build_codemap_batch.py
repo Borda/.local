@@ -1,7 +1,7 @@
 """Tests for ``build_codemap_batch.py``.
 
 Covers:
-    - ``build_batch_request``: central-first ordering, seven queries per module,
+    - ``build_batch_request``: central-first ordering, five queries per module,
       ``uncovered`` flag placement, empty-module request.
     - ``main()`` entry point: batch JSON written + modules printed (diff monkeypatched),
       bad-arg exit code.
@@ -26,14 +26,16 @@ class TestBuildBatchRequest:
         """Empty module list yields exactly the central query."""
         assert bcb.build_batch_request([]) == [{"cmd": "central", "args": ["--top", "5"]}]
 
-    def test_seven_queries_per_module_in_order(self):
-        """Each module contributes the seven pre-flight queries after central."""
+    def test_five_queries_per_module_in_order(self):
+        """Each module contributes the five pre-flight queries after central.
+
+        ``fn-rdeps``/``fn-blast`` are intentionally absent: they need ``module::fn``
+        qnames a name-only diff cannot supply (2026-07 usage audit F1).
+        """
         req = bcb.build_batch_request(["pkg.mod"])
-        assert len(req) == 1 + 7
+        assert len(req) == 1 + 5
         assert [item["cmd"] for item in req[1:]] == [
             "rdeps",
-            "fn-rdeps",
-            "fn-blast",
             "mock-rdeps",
             "uncovered",
             "xrefs",
@@ -44,9 +46,9 @@ class TestBuildBatchRequest:
         ("index", "expected_args"),
         [
             pytest.param(1, ["pkg.mod"], id="rdeps-module-only"),
-            pytest.param(2, ["pkg.mod", "--exclude-tests"], id="fn-rdeps-flag-after-module"),
-            pytest.param(5, ["--top", "20", "pkg.mod"], id="uncovered-flags-before-module"),
-            pytest.param(6, ["pkg.mod", "--broken"], id="xrefs-flag-after-module"),
+            pytest.param(2, ["pkg.mod"], id="mock-rdeps-module-only"),
+            pytest.param(3, ["--top", "20", "pkg.mod"], id="uncovered-flags-before-module"),
+            pytest.param(4, ["pkg.mod", "--broken"], id="xrefs-flag-after-module"),
         ],
     )
     def test_argument_placement(self, index, expected_args):
@@ -55,12 +57,12 @@ class TestBuildBatchRequest:
         assert req[index]["args"] == expected_args
 
     def test_two_modules_grouped_per_module(self):
-        """Queries stay grouped per module: all seven for the first, then the second."""
+        """Queries stay grouped per module: all five for the first, then the second."""
         req = bcb.build_batch_request(["a.one", "b.two"])
-        assert len(req) == 1 + 14
-        first_block = [item for item in req[1:8]]
+        assert len(req) == 1 + 10
+        first_block = [item for item in req[1:6]]
         assert all("a.one" in item["args"] for item in first_block)
-        assert all("b.two" in item["args"] for item in req[8:])
+        assert all("b.two" in item["args"] for item in req[6:])
 
 
 # ---------- main() entry point ----------
@@ -78,7 +80,7 @@ class TestMain:
         assert capsys.readouterr().out.strip() == "pkg.mod"
         req = json.loads(out.read_text(encoding="utf-8"))
         assert req[0] == {"cmd": "central", "args": ["--top", "5"]}
-        assert len(req) == 8
+        assert len(req) == 6
 
     def test_no_changed_files_still_writes_central_request(self, tmp_path, monkeypatch, capsys):
         """Empty diff → central-only request, empty stdout line, exit 0."""

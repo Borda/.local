@@ -71,14 +71,19 @@ CLI record fields: `ts`, `layer`, `session`, `cmd`, `argv`, `result` (nested: `c
 
 Skill record fields: `ts`, `layer`, `session`, `skill`, `event`, `intent`, `hook_session`.
 
-Tool record fields (`layer: "tool"`, from `log-tool-use.js`): `ts`, `layer`, `session`, `tool` (`Grep`|`Read`|`Glob`), `target` (Grep/Glob pattern or search path, Read file_path). Count raw grep/read volume per session — the signal codemap's context-injection aims to reduce.
+Tool record fields (`layer: "tool"`, from `log-tool-use.js`): `ts`, `layer`, `session`, `v` (plugin version, 0.23+), `tool` (`Grep`|`Read`|`Glob`|`Bash`), `target` (Grep/Glob pattern or search path, Read file_path, Bash search command truncated to 200 chars — 0.23+ logs search-shaped Bash since harness configs without native Grep/Glob route all searching through Bash). Count raw grep/read volume per session — the signal codemap's context-injection aims to reduce.
 
 ## Step 3: Analyse
 
 Compute from filtered records:
 
+**Pre-filter (both layers):**
+- Drop records with `source: "bench"` (tagged benchmark/demo load) and cli records with empty `cmd` (pre-0.23 test-suite pollution) from all organic-usage stats; report their counts separately as "scripted/polluted records excluded: N"
+- When records carry `v` (plugin version, 0.23+): compute headline stats (error rate, stale rate, completeness) per distinct `v` as well as overall — the before/after signal for judging whether a release moved the metrics
+
 **CLI layer:**
 - Total invocations, success vs error rate — `exit_code: 0` = tool ran cleanly (success); `exit_code` present AND non-zero = error; `exit_code` absent = field not logged (treat as success unless `result.error` non-empty)
+- Completeness reasons: aggregate `result.index.completeness_reason` (0.23+: veto slug — `stale` / `untracked` / `degraded` / `collision` / `root_mismatch` / `module_degraded`; `ok` = complete) — the direct answer to "why is query_complete never true here"
 - Subcommand distribution: count per `cmd` value
 - Timing: median, p95, max `timing_ms`; compute p95 as sorted index: `sorted_ms = sorted(r["timing_ms"] for r in cli_records if r.get("timing_ms") is not None); p95 = sorted_ms[int(len(sorted_ms) * 0.95)] if sorted_ms else 0`
 - Coverage: fraction of results with `"not_covered": true` or non-empty `not_covered`

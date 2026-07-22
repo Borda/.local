@@ -257,14 +257,19 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
     CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md-${CSID}"
     BATCH_REQ="${TMPDIR:-/tmp}/dev-review-codemap-batch.json-${CSID}"
     # build_codemap_batch.py derives changed modules from git diff (src-layout mapping,
-    # dir fallback) and writes one batch request: central + 7 pre-flight queries per
-    # module — one scan-query process, one shared coverage block, instead of N×7 spawns
+    # dir fallback) and writes one batch request: central + 5 pre-flight queries per
+    # module — one scan-query process, one shared coverage block, instead of N×5 spawns
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/build_codemap_batch.py" "$BATCH_REQ"  # timeout: 5000
     {
         echo "## Structural Context (codemap)"
         echo
         echo "### Batched query results (one shared coverage block)"
         scan-query --timeout 20 batch "$BATCH_REQ" 2>/dev/null
+        echo
+        echo "### Change-set blast radius (diff-impact)"
+        # function-level context the module batch cannot provide: fn-rdeps per changed
+        # symbol (line-range mapped, methods included), unioned test-impact, risk tiers
+        scan-query --timeout 15 diff-impact 2>/dev/null
     } > "$CODEMAP_CONTEXT_STAGE"
 fi
 echo "$codemap_available" > "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}"
@@ -277,12 +282,12 @@ Codemap context propagation in Step 3:
   ## Structural Context (codemap, codemap_available=true)
   <content of $RUN_DIR/codemap-context.md>
 
-  Read this section first. The results are a single `batch` JSON array: each entry has `cmd` (the query) and `result` (its payload), keyed by `index`; one shared `index` coverage block covers the whole batch. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast` entries, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when a query's `result` is empty for a symbol you need or when verifying a specific finding.
+  Read this section first. The results are a single `batch` JSON array: each entry has `cmd` (the query) and `result` (its payload), keyed by `index`; one shared `index` coverage block covers the whole batch. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken` entries, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when a query's `result` is empty for a symbol you need or when verifying a specific finding.
 
   Per-agent priority (skip redundant reads for symbols the listed query already covers):
   - qa-specialist (Agent 2): `uncovered` + `mock-rdeps` first
   - doc-scribe (Agent 4): `undocumented` + `xrefs --broken` first
-  - sw-engineer (Agent 1): `fn-rdeps` first (direct callers), then `fn-blast` (transitive)
+  - sw-engineer (Agent 1): `rdeps` first (importers per changed module)
   - challenger (Agent 7): unchanged — always reads source directly
   ```
 - `codemap_available=false` → omit block; agents proceed with current file-read behaviour.
@@ -425,7 +430,7 @@ Launch agents simultaneously with Agent tool (security augmentation folded into 
 
 **Codemap context preamble (substituted by orchestrator)**: rehydrate `codemap_available=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID} 2>/dev/null || echo false)`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
 
-**Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions. `codemap_available=true`: read `fn-blast` first — skip caller-walk Reads on listed callers; verify only when needed for a specific finding.
+**Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions. `codemap_available=true`: read `rdeps` first (importer list per changed module) — skip importer-walk Reads on listed modules; verify only when needed for a specific finding.
 
 **API-consistency audit** (any diff hunk touching public API surface — new/changed function, method, class, constant, param, flag, return shape, or module placement; fires for new kwargs on already-exported functions too, not gated on `__init__.py` churn): for each public symbol added or changed, `Read` the ACTUAL surrounding surface from source — the existing function/class it lives beside, its siblings' signatures, the module it sits in — and validate the change against the established API principles, not in isolation:
 

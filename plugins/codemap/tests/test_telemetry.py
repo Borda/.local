@@ -58,3 +58,30 @@ def test_logging_disabled(tmp_path, monkeypatch):
     logdir = tmp_path / "logs"
     t.log_cli("x", [], {}, 0.0, log_dir=logdir)
     assert not logdir.exists()
+
+
+def test_source_tag_from_env(tmp_path, monkeypatch):
+    """CODEMAP_TELEMETRY_SOURCE stamps records so debrief can drop scripted load."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.delenv("CODEMAP_LOGGING", raising=False)
+    monkeypatch.setenv("CODEMAP_TELEMETRY_SOURCE", "bench")
+    _no_git(monkeypatch)
+    logdir = tmp_path / "logs"
+    t.log_cli("central", ["central"], {"x": 1}, 0.0, log_dir=logdir)
+    (record,) = [json.loads(line) for line in (logdir / "cli.jsonl").read_text().splitlines()]
+    assert record["source"] == "bench"
+    assert record["v"] not in ("", "?")
+
+
+def test_no_source_tag_by_default(tmp_path, monkeypatch):
+    """Untagged (organic) records carry no source field at all."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.delenv("CODEMAP_LOGGING", raising=False)
+    monkeypatch.delenv("CODEMAP_TELEMETRY_SOURCE", raising=False)
+    _no_git(monkeypatch)
+    logdir = tmp_path / "logs"
+    t.log_cli("central", ["central"], {"x": 1}, 0.0, log_dir=logdir)
+    (record,) = [json.loads(line) for line in (logdir / "cli.jsonl").read_text().splitlines()]
+    assert "source" not in record

@@ -23,6 +23,27 @@ from pathlib import Path
 
 LOG_MAX_BYTES = 10 * 1024 * 1024
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
+_PLUGIN_VERSION: str | None = None
+
+
+def plugin_version() -> str:
+    """Return the codemap plugin version (``.claude-plugin/plugin.json``), cached.
+
+    Stamped into every record as ``v`` so before/after comparisons across plugin
+    releases stay possible when analysing merged logs. ``"?"`` when unreadable.
+
+    Examples:
+        >>> isinstance(plugin_version(), str)
+        True
+    """
+    global _PLUGIN_VERSION  # noqa: PLW0603 — read-once cache; one file read per process
+    if _PLUGIN_VERSION is None:
+        try:
+            manifest = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
+            _PLUGIN_VERSION = str(json.loads(manifest.read_text()).get("version", "?"))
+        except Exception:  # noqa: BLE001 — telemetry must never break the CLI
+            _PLUGIN_VERSION = "?"
+    return _PLUGIN_VERSION
 
 
 def session_id() -> str:
@@ -73,12 +94,19 @@ def log_cli(cmd: str, argv: list[str], result: object, t0: float, *, log_dir: Pa
         record = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "layer": "cli",
+            "v": plugin_version(),
             "cmd": cmd,
             "session": sid,
             "argv": argv,
             "timing_ms": max(0, int((time.time() - t0) * 1000)),
             "result": result if isinstance(result, dict) else {},
         }
+        # Benchmark / demo runs tag themselves (export CODEMAP_TELEMETRY_SOURCE=bench)
+        # so debrief can separate scripted load from organic usage — untagged demo
+        # loops skewed the 2026-07 audit's per-project stats.
+        source = os.environ.get("CODEMAP_TELEMETRY_SOURCE")
+        if source:
+            record["source"] = source
         with log_file.open("a") as fh:
             fh.write(json.dumps(record, separators=(",", ":")) + "\n")
     except Exception:  # noqa: BLE001 — telemetry must never break the CLI

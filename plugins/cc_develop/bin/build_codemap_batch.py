@@ -4,9 +4,9 @@
 Derives changed modules from ``git diff HEAD --name-only`` (reusing the
 ``codemap_scan.py`` mapping: strip ``./``/``src/``/``.py``, ``/`` → ``.``, drop
 ``__init__``; directory fallback when the strip yields nothing) and writes one
-JSON array with ``central --top 5`` plus the seven per-module pre-flight queries.
+JSON array with ``central --top 5`` plus the five per-module pre-flight queries.
 One ``scan-query batch`` process then shares a single coverage block instead of
-paying the per-call spawn + coverage cost 7×N times.
+paying the per-call spawn + coverage cost 5×N times.
 
 Extracted from an inline bash+python heredoc in the review SKILL — heredoc
 python in skill bodies is banned (audit Check 23a/30e); ``bin/*.py`` is the
@@ -37,10 +37,12 @@ from codemap_scan import _git_diff_files, derive_modules_from_diff
 
 FALLBACK_LIMIT = 10
 
+# fn-rdeps/fn-blast are NOT in this set: they require `module::fn` qnames and a
+# name-only diff yields bare modules — every such batch item failed "Symbol not
+# found" in production (2026-07 usage audit). Function-level queries return once
+# qname derivation from diff hunks lands (audit plan P1.2b).
 PER_MODULE_QUERIES: tuple[tuple[str, ...], ...] = (
     ("rdeps",),  # importer count → risk tier
-    ("fn-rdeps", "--exclude-tests"),
-    ("fn-blast",),
     ("mock-rdeps",),
     ("uncovered", "--top", "20"),
     ("xrefs", "--broken"),
@@ -49,7 +51,7 @@ PER_MODULE_QUERIES: tuple[tuple[str, ...], ...] = (
 
 
 def build_batch_request(modules: list[str]) -> list[dict[str, object]]:
-    """Assemble the ordered batch request: one ``central`` plus seven queries per module.
+    """Assemble the ordered batch request: one ``central`` plus five queries per module.
 
     Args:
         modules: Dotted module names derived from the diff (possibly empty).
@@ -62,10 +64,10 @@ def build_batch_request(modules: list[str]) -> list[dict[str, object]]:
         >>> req[0]
         {'cmd': 'central', 'args': ['--top', '5']}
         >>> len(req)
-        8
+        6
         >>> req[1]
         {'cmd': 'rdeps', 'args': ['pkg.mod']}
-        >>> req[5]["args"]
+        >>> req[3]["args"]
         ['--top', '20', 'pkg.mod']
         >>> build_batch_request([])
         [{'cmd': 'central', 'args': ['--top', '5']}]

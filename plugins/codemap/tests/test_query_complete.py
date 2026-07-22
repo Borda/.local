@@ -339,3 +339,48 @@ class TestExclusionAwareStaleness:
         data = _query(scan_query, root, index_path, "--no-heal", "rdeps", "leaf")
         assert not any("new_scratch" in p for p in data["index"]["untracked_py"])
         assert data["index"]["query_complete"] is True
+
+
+class TestUntrackedCompleteness:
+    """Untracked files veto wide queries only while the index does not cover them."""
+
+    def test_new_untracked_file_vetoes_wide_query(self, git_project, scan_query):
+        """A brand-new untracked importer is invisible to the SHA diff → rdeps must not claim complete."""
+        root, index_path = git_project
+        (root / "scratch.py").write_text("import leaf\n")
+        data = _query(scan_query, root, index_path, "--no-heal", "rdeps", "leaf")
+        assert data["index"]["query_complete"] is False
+        assert data["index"]["completeness_reason"] == "untracked"
+        assert "scratch.py" in data["index"]["untracked_py"]
+
+    def test_indexed_untracked_does_not_veto(self, git_project, scan_query):
+        """Once a re-scan indexes the still-untracked file, its edges are covered → no veto."""
+        root, index_path = git_project
+        scratch = root / "scratch.py"
+        scratch.write_text("import leaf\n")
+        _scan(self_scan_index(scan_query), root)
+        data = _query(scan_query, root, index_path, "--no-heal", "rdeps", "leaf")
+        assert data["index"]["untracked_py"] == []
+        assert data["index"]["query_complete"] is True
+        assert data["index"]["completeness_reason"] == "ok"
+
+    def test_indexed_untracked_edit_marks_stale(self, git_project, scan_query):
+        """Editing an indexed-but-untracked file after the scan flips staleness (mtime signal)."""
+        import os as _os
+        import time as _time
+
+        root, index_path = git_project
+        scratch = root / "scratch.py"
+        scratch.write_text("import leaf\n")
+        _scan(self_scan_index(scan_query), root)
+        future = _time.time() + 30
+        _os.utime(scratch, (future, future))
+        data = _query(scan_query, root, index_path, "--no-heal", "rdeps", "leaf")
+        assert data["index"]["stale"] is True
+        assert data["index"]["query_complete"] is False
+        assert data["index"]["completeness_reason"] == "stale"
+
+
+def self_scan_index(scan_query: Path) -> Path:
+    """Resolve the sibling scan-index binary from the scan-query path."""
+    return scan_query.parent / "scan-index"

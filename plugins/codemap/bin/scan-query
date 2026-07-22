@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import calendar
 import json
 import os
 import re
@@ -170,7 +171,12 @@ def _print(*args: object, **kwargs: object) -> None:
         result = json.loads(raw)
     except Exception:  # noqa: BLE001 — non-JSON stdout still logs an empty result
         result = {}
-    log_cli(_CMD, sys.argv[1:], result, _T0, log_dir=_LOG_DIR)
+    # _CMD empty ⇒ main() never parsed a command: this process imported scan-query
+    # (pytest, tooling) and called a cmd_* directly. Logging here stamps the host
+    # process argv + import-age timing into cli.jsonl — 4.5K polluted records in
+    # the 2026-07 usage audit. Real CLI runs always pass through main() first.
+    if _CMD:
+        log_cli(_CMD, sys.argv[1:], result, _T0, log_dir=_LOG_DIR)
 
 
 def _has_call_graph(index: dict) -> bool:
@@ -874,6 +880,37 @@ def _untracked_py_files() -> list[str]:
         return []
 
 
+def _indexed_untracked_modified(paths: list[str], scanned_at: str) -> bool:
+    """Return True when any indexed-but-untracked file was modified after the scan.
+
+    Untracked files have no git blob, so the SHA-based staleness diff cannot see
+    their edits; the file mtime against the index ``scanned_at`` timestamp is the
+    only signal. Unparsable timestamps or unstatable paths are skipped (fail-open
+    to "not modified" — the file is still surfaced via the index itself).
+
+    Args:
+        paths: indexed-but-git-untracked ``.py`` paths (relative to CWD).
+        scanned_at: the index's ISO-8601 ``scanned_at`` timestamp.
+    """
+    if not paths or not scanned_at:
+        return False
+    try:
+        # scanned_at is UTC (scan-index: datetime.now(timezone.utc).isoformat()) —
+        # timegm keeps the comparison in UTC; mktime would shift by the local offset.
+        scanned_epoch = calendar.timegm(time.strptime(scanned_at[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return False
+    for p in paths:
+        try:
+            # +1s slack: scanned_at is floored to whole seconds ([:19]), so a file
+            # written in the same second as the scan would otherwise flag falsely.
+            if Path(p).stat().st_mtime > scanned_epoch + 1:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _coverage(index: dict) -> dict:
     """Return the shared, direction-independent coverage state for a query result.
 
@@ -930,7 +967,18 @@ def _coverage(index: dict) -> dict:
     # Blind spot: brand-new untracked .py files are invisible to the git-blob SHA diff,
     # so they never register as "stale". A whole-graph / global-in query must not claim
     # completeness while one exists — surfaced here, consumed by _query_complete.
-    untracked = _untracked_py_files()
+    # Files that ARE in the index despite being git-untracked (scan-index walks the
+    # filesystem, not git) are covered by the graph, so they must not veto — the
+    # 2026-07 usage audit found permanently-untracked scratch files (demo/*.py)
+    # vetoing completeness forever. Their residual blind spot — an edit after the
+    # scan is invisible to the SHA diff — is closed by the mtime check below.
+    untracked_all = _untracked_py_files()
+    indexed_paths = {m.get("path", "") for m in modules}
+    untracked = [p for p in untracked_all if p not in indexed_paths]
+    if not stale:
+        stale = _indexed_untracked_modified(
+            [p for p in untracked_all if p in indexed_paths], index.get("scanned_at", "")
+        )
 
     # scan-index may write a `collisions` list of
     # {name, kept, dropped} into index meta. Older indexes lack the key — treat missing as
@@ -1296,9 +1344,18 @@ def _cmd_coverage(
         if not complete:
             compact["degraded"] = emitted["degraded"]
             compact["note"] = note
+            compact["completeness_reason"] = reason
         return {**compact, **extra}
     relevant = _degraded_relevant(base, query_target if query_target is not None else module_name)
-    full = {**emitted, "note": note, "query_complete": complete, "exhaustive": complete}
+    full = {
+        **emitted,
+        "note": note,
+        "query_complete": complete,
+        "exhaustive": complete,
+        # Machine-readable veto slug ("ok" when complete) — debrief aggregates WHY
+        # completeness fails per project instead of regex-mining the human note.
+        "completeness_reason": reason,
+    }
     if relevant:
         full["degraded_relevant"] = relevant
     return {**full, **extra}
@@ -1975,6 +2032,46 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
 # ---------------------------------------------------------------------------
 
 
+def _reject_multiline_args(args: argparse.Namespace) -> None:
+    """Exit with an actionable error when any string argument embeds newlines.
+
+    Callers that expand an unquoted shell variable under zsh (no word splitting)
+    pass a whole newline-joined name list as ONE argument — the 2026-07 usage
+    audit traced ~all production CLI errors to this shape, surfacing only as the
+    unhelpful "module not indexed" / "Symbol not found".
+
+    Args:
+        args: the parsed argparse namespace for this invocation.
+    """
+    for value in vars(args).values():
+        if isinstance(value, str) and "\n" in value:
+            names = [line for line in value.splitlines() if line.strip()]
+            _exit_error(
+                f"{len(names)} names passed as ONE argument (newline-joined) — your shell did not "
+                "word-split the variable (zsh default). Call scan-query once per name, or use "
+                "'batch' with one request item per name."
+            )
+
+
+def _exit_symbol_not_found(index: dict, qname: str) -> None:
+    """Exit with the fn-* not-found error, hinting when *qname* is really a module.
+
+    The 2026-07 usage audit found every bare-module ``fn-rdeps``/``fn-blast`` call
+    failing with the generic "Symbol not found" — callers then retried other
+    wrong shapes. Detecting the module case turns a dead end into a redirect.
+
+    Args:
+        index: parsed codemap index dict.
+        qname: the symbol argument that failed to resolve.
+    """
+    if "::" not in qname and any(m.get("name") == qname for m in index.get("modules", [])):
+        _exit_error(
+            f"'{qname}' is a module, not a function qname — fn-* commands need 'module::function' "
+            f"(see 'symbols {qname}' for its functions). For module-level callers use: rdeps {qname}"
+        )
+    _exit_error(f"Symbol '{qname}' not found. Use 'find-symbol <pattern>' to search.")
+
+
 def cmd_fn_deps(index: dict, qname: str) -> None:
     """What does function *qname* call? Lists forward call edges.
 
@@ -1985,7 +2082,7 @@ def cmd_fn_deps(index: dict, qname: str) -> None:
     _require_call_graph(index)
     sym_map = _get_symbol_map(index)
     if qname not in sym_map:
-        _exit_error(f"Symbol '{qname}' not found. Use 'find-symbol <pattern>' to search.")
+        _exit_symbol_not_found(index, qname)
     _module_entry, sym = sym_map[qname]
     calls = [
         {"target": edge["target"], "resolution": edge.get("resolution", "")}
@@ -2021,7 +2118,7 @@ def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
     _require_call_graph(index)
     sym_map = _get_symbol_map(index)
     if qname not in sym_map:
-        _exit_error(f"Symbol '{qname}' not found. Use 'find-symbol <pattern>' to search.")
+        _exit_symbol_not_found(index, qname)
     rev_graph = _get_rev_graph(index)
     callers = []
     for caller_qname in sorted(set(rev_graph.get(qname, []))):
@@ -2107,7 +2204,7 @@ def cmd_fn_blast(index: dict, qname: str) -> None:
     _require_call_graph(index)
     sym_map = _get_symbol_map(index)
     if qname not in sym_map:
-        _exit_error(f"Symbol '{qname}' not found. Use 'find-symbol <pattern>' to search.")
+        _exit_symbol_not_found(index, qname)
     rev_graph = _get_rev_graph(index)
 
     # BFS
@@ -2184,7 +2281,7 @@ def cmd_test_impact(index: dict, qname: str, include_mocks: bool = True) -> None
         _require_call_graph(index)
         sym_map = _get_symbol_map(index)
         if qname not in sym_map:
-            _exit_error(f"Symbol '{qname}' not found. Use 'find-symbol <pattern>' to search.")
+            _exit_symbol_not_found(index, qname)
         rev_graph = _get_rev_graph(index)
         visited: set[str] = {qname}
         queue: deque[str] = deque([qname])
@@ -3429,13 +3526,21 @@ def _symbols_in_ranges(module: dict, ranges: list[tuple[int, int]]) -> list[str]
     return qnames
 
 
-def _map_changed_files(index: dict, base: str, paths: list[str]) -> tuple[list[dict], list[str]]:
+def _map_changed_files(
+    index: dict,
+    base: str,
+    paths: list[str],
+    ranges_by_path: dict[str, list[tuple[int, int]]] | None = None,
+) -> tuple[list[dict], list[str]]:
     """Resolve changed *paths* to their index modules and changed symbols.
 
     Args:
         index: parsed codemap index dict.
         base: git ref/range the diff was taken against (for per-file line ranges).
         paths: changed ``.py`` file paths from :func:`_git_diff_paths`.
+        ranges_by_path: pre-computed changed line ranges per path (from
+            :func:`_parse_unified_diff` in ``--diff-file`` mode). When ``None``,
+            ranges come from ``git diff`` per file.
 
     Returns:
         ``(modules, unmapped)`` where ``modules`` is a list of
@@ -3451,7 +3556,7 @@ def _map_changed_files(index: dict, base: str, paths: list[str]) -> tuple[list[d
         if entry is None:
             unmapped.append(path)
             continue
-        ranges = _git_diff_line_ranges(base, path)
+        ranges = ranges_by_path.get(path, []) if ranges_by_path is not None else _git_diff_line_ranges(base, path)
         modules.append(
             {
                 "module": entry["name"],
@@ -3460,6 +3565,54 @@ def _map_changed_files(index: dict, base: str, paths: list[str]) -> tuple[list[d
             }
         )
     return modules, unmapped
+
+
+def _parse_unified_diff(text: str) -> dict[str, list[tuple[int, int]]]:
+    """Map each ``.py`` file in a unified diff to its changed post-image line ranges.
+
+    Feeds ``--diff-file`` mode: a PR reviewed from a fetched diff (``gh pr diff``)
+    has no local git objects, so ranges must come from the diff text itself. Paths
+    are taken from ``+++ b/<path>`` lines (post-image side — the numbering the
+    index's symbol coordinates use); ranges from ``@@ -a,b +c,d @@`` headers. Pure
+    deletions (``+c,0``) contribute no post-image lines and are skipped; a deleted
+    file (``+++ /dev/null``) is dropped entirely. A file that appears with no
+    parsable ranges keeps an empty list — downstream treats that as "all symbols
+    potentially changed" (same conservative fallback as the git path).
+
+    Args:
+        text: full unified-diff text (``git diff`` / ``gh pr diff`` format).
+
+    Examples:
+        >>> d = "diff --git a/pkg/m.py b/pkg/m.py\\n--- a/pkg/m.py\\n+++ b/pkg/m.py\\n@@ -1,2 +3,4 @@ def f():\\n"
+        >>> _parse_unified_diff(d)
+        {'pkg/m.py': [(3, 6)]}
+        >>> _parse_unified_diff("+++ /dev/null\\n@@ -1,5 +0,0 @@\\n")
+        {}
+        >>> _parse_unified_diff("+++ b/doc/x.md\\n@@ -1 +1 @@\\n")
+        {}
+    """
+    ranges_by_path: dict[str, list[tuple[int, int]]] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        if line.startswith("+++ "):
+            target = line[4:].split("\t")[0].strip()
+            if target == "/dev/null":
+                current = None
+                continue
+            path = target[2:] if target.startswith(("a/", "b/")) else target
+            current = path if path.endswith(".py") else None
+            if current is not None:
+                ranges_by_path.setdefault(current, [])
+        elif line.startswith("@@") and current is not None:
+            match = re.search(r"\+(\d+)(?:,(\d+))?", line)
+            if not match:
+                continue
+            start = int(match.group(1))
+            count = int(match.group(2)) if match.group(2) is not None else 1
+            if count == 0:
+                continue
+            ranges_by_path[current].append((start, start + count - 1))
+    return ranges_by_path
 
 
 def _diff_impact_for_module(
@@ -3570,14 +3723,28 @@ def cmd_diff_impact(index: dict, args: argparse.Namespace, parser: argparse.Argu
 
     Args:
         index: parsed codemap index dict.
-        args: the diff-impact namespace; ``args.base`` is the ref to diff against.
+        args: the diff-impact namespace; ``args.base`` is the ref to diff against,
+            or ``args.diff_file`` a unified-diff file (``-`` = stdin) that replaces
+            local git as the change-set source (PR-review mode).
         parser: top-level argparse parser, reused to run sub-queries.
         project_root: resolved project root for file-path lookups.
     """
-    paths = _git_diff_paths(args.base)
+    diff_file = getattr(args, "diff_file", None)
+    if diff_file:
+        try:
+            diff_text = sys.stdin.read() if diff_file == "-" else Path(diff_file).read_text(errors="replace")
+        except OSError as exc:
+            _die_json({"error": "diff file unreadable", "path": diff_file, "detail": str(exc)}, _EXIT_BAD_INPUT)
+        ranges_by_path = _parse_unified_diff(diff_text)
+        paths: list[str] | dict = sorted(ranges_by_path)
+        base_label = f"diff-file:{diff_file}"
+    else:
+        ranges_by_path = None
+        paths = _git_diff_paths(args.base)
+        base_label = args.base
     if isinstance(paths, dict):  # git failed — surface as a hard, actionable error
         _die_json(paths, _EXIT_GENERIC)
-    changed_modules, unmapped = _map_changed_files(index, args.base, paths)
+    changed_modules, unmapped = _map_changed_files(index, args.base, paths, ranges_by_path)
 
     impacts = [_diff_impact_for_module(index, parser, project_root, cm) for cm in changed_modules]
     targets = [cm["module"] for cm in changed_modules] + [q for cm in changed_modules for q in cm["changed_symbols"]]
@@ -3587,7 +3754,7 @@ def cmd_diff_impact(index: dict, args: argparse.Namespace, parser: argparse.Argu
     _print(
         json.dumps(
             {
-                "base": args.base,
+                "base": base_label,
                 "changed_files": len(paths),
                 "changed_modules": impacts,
                 "unmapped_files": unmapped,
@@ -4062,6 +4229,13 @@ def main() -> None:
         metavar="REF",
         help="Git ref or range to diff against (default HEAD — staged + unstaged working-tree changes).",
     )
+    p_diff_impact.add_argument(
+        "--diff-file",
+        default=None,
+        metavar="PATH",
+        help="Read the change set from a unified-diff file (e.g. `gh pr diff` output) instead of "
+        "local git — for PR review where the change is not in the local object store. '-' reads stdin.",
+    )
 
     p_batch = sub.add_parser(
         "batch",
@@ -4108,6 +4282,7 @@ def main() -> None:
     global _CMD, _verbose_coverage  # noqa: PLW0603
     _CMD = args.command
     _verbose_coverage = args.verbose_coverage
+    _reject_multiline_args(args)
 
     if args.timeout > 0 and hasattr(signal, "SIGALRM"):
 

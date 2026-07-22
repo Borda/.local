@@ -24,11 +24,24 @@ if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1 && [
         echo "### Global blast-radius baseline"
         scan-query --timeout 5 central --top 5 2>/dev/null
         echo
-        for mod in $CHANGED_MODS; do
+        echo "### Change-set blast radius (diff-impact)"
+        # PR diff is not in local git objects — feed the fetched diff text directly.
+        # Restores function-level context (fn-rdeps per changed symbol, test-impact,
+        # risk tiers) that the per-module battery below cannot provide (P1.2b).
+        gh pr diff $CLEAN_ARGS 2>/dev/null | scan-query --timeout 15 diff-impact --diff-file - 2>/dev/null
+        echo
+        # while-read, NOT `for mod in $CHANGED_MODS`: zsh does not word-split unquoted
+        # vars (SH_WORD_SPLIT off), so the for-loop passed the whole newline-joined
+        # list as ONE argument — every battery call failed "module not indexed"
+        # (2026-07 usage audit: ~all CLI errors across 4 projects were this).
+        # fn-rdeps/fn-blast dropped: they require `module::fn` qnames, which a
+        # name-only changed-files list cannot provide — bare-module calls failed
+        # 100% in production. Function-level context returns once qname derivation
+        # from diff hunks lands (audit plan P1.2b).
+        printf '%s\n' "$CHANGED_MODS" | while IFS= read -r mod; do
+            [ -n "$mod" ] || continue
             echo "### Module: $mod"
             scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → risk tier
-            scan-query --timeout 5 fn-rdeps    "$mod" --exclude-tests 2>/dev/null
-            scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # caller impact (v3)
             scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock coverage (v4.1)
             scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)
             scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5)
@@ -47,7 +60,7 @@ echo "$CODEMAP_CONTEXT_STAGE"  > "${TMPDIR:-/tmp}/oss-review-codemap-context-sta
 ## Structural Context (codemap, codemap_available=true)
 <content of $RUN_DIR/codemap-context.md>
 
-Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast`, trust codemap output; skip redundant Grep/Read on same data. Fall back to file reads only when codemap output empty for symbol needed or verifying specific finding.
+Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`, trust codemap output; skip redundant Grep/Read on same data. Fall back to file reads only when codemap output empty for symbol needed or verifying specific finding.
 ```
 
 `codemap_available=false`: omit the block; agents proceed with current file-read behaviour.

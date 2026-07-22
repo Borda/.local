@@ -7,6 +7,10 @@
           {
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/record-exhausted.js\"",
             "type": "command"
+          },
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.js\"",
+            "type": "command"
           }
         ],
         "matcher": "Bash"
