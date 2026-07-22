@@ -74,8 +74,8 @@ After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/syst
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/keep-items" 2>/dev/null || echo "")
+IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || _RUN_DIR=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/audit-state-${CSID}/keep-items" 2>/dev/null || _KEEP=""
 _PRESERVE="run-dir=$_RUN_DIR, static-findings=${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl, finding-files=$_RUN_DIR/*.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -140,8 +140,8 @@ Returns to SKILL.md Step 6 (cross-validate critical findings) after Step 5b comp
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/keep-items" 2>/dev/null || echo "")
+IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || _RUN_DIR=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/audit-state-${CSID}/keep-items" 2>/dev/null || _KEEP=""
 _PRESERVE="run-dir=$_RUN_DIR, aggregate=$_RUN_DIR/aggregate.md, summary=$_RUN_DIR/summary.jsonl"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000

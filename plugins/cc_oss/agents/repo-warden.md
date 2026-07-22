@@ -77,7 +77,7 @@ CUTOFF_30D=$((ANALYSIS_NOW - 30*86400))  # CRITICAL-1: explicit 30d cutoff for A
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/warden-oss-shared-${CSID}" 2>/dev/null || echo "plugins/cc_oss/skills/_shared")  # reload (Check 41)
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/warden-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED="plugins/cc_oss/skills/_shared"  # reload (Check 41)
 case "$AXIS_GROUP" in
   A) _GROUP_FILE="vitality-scoring-group-a.md" ;;
   B) _GROUP_FILE="vitality-scoring-group-b.md" ;;

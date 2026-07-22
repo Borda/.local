@@ -48,7 +48,7 @@ For each finding: emit one flag line with location (`§<section-name>`, item tex
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload SKILL_DIR (Check 41: fresh shell)
-SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || echo "")
+IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
 [ -f "$SKILL_DIR/guidelines/writing-rules.md" ] && cat "$SKILL_DIR/guidelines/writing-rules.md"  # timeout: 5000
 ```
 Follow above (if present). If absent, proceed without style guidelines.
@@ -65,7 +65,7 @@ mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
 If `$SHEPHERD_AVAILABLE` equals `true`:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/release-oss-shared-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/release-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 [ -f "$_OSS_SHARED/shepherd-voice.md" ] || { echo "⚠ shepherd-voice.md not found — falling back"; SHEPHERD_AVAILABLE=false; }  # timeout: 5000
 ```
 
@@ -93,7 +93,7 @@ Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == true`):
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/release-oss-shared-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/release-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/release-checklist.md"  # timeout: 5000
 ```
 

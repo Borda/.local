@@ -73,15 +73,15 @@ fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # C1 failed check — fresh shell loses exit status; use project-scoped sentinel
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}" 2>/dev/null || echo "ok")
+IFS= read -r C1_STATUS < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}" 2>/dev/null || C1_STATUS="ok"
 [ "$C1_STATUS" = "failed" ] && { echo "C1 failed — skipping this step."; echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status-${CSID}"; exit 0; }
 # stderr to tempfile; eval sees KEY=value stdout only. script emits PROJ/INDEX on stdout regardless of exit code
 # --output-prefix scopes tmpfiles per-project; avoids concurrent collision
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --check-exists --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
 _resolve_rc=$?
-PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || echo "")
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || echo "")
+IFS= read -r PROJ < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || PROJ=""
+IFS= read -r INDEX < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || INDEX=""
 echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-${CSID}"
 printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
 if [ "$_resolve_rc" -eq 0 ]; then
@@ -106,10 +106,10 @@ fi
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}" 2>/dev/null || echo "ok")
-C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status-${CSID}" 2>/dev/null || echo "ok")
+IFS= read -r C1_STATUS < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status-${CSID}" 2>/dev/null || C1_STATUS="ok"
+IFS= read -r C2_STATUS < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status-${CSID}" 2>/dev/null || C2_STATUS="ok"
 [ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ] && { echo "C1/C2 failed — skipping this step."; exit 0; }
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-${CSID}")
+IFS= read -r INDEX < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-${CSID}" 2>/dev/null || INDEX=""
 command -v jq >/dev/null 2>&1 || { printf "✗ jq not found — required for smoke test; install via brew install jq or apt-get install jq\n"; exit 1; }
 SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
 [ -n "$SMOKE_JSON" ] || { printf "⚠ check_index_smoke.py returned no output\n" >&2; exit 1; }
@@ -165,8 +165,8 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
-PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || echo "")
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || echo "")
+IFS= read -r PROJ < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || PROJ=""
+IFS= read -r INDEX < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || INDEX=""
 [ -n "$PROJ" ] || { printf "✗ resolve_index_env.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"; exit 1; }
 echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-init-index-${CSID}"
 ```

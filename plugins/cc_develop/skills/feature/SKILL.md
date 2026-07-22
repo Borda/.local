@@ -122,7 +122,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
     --skill feature --write-files "$ARGUMENTS"
 ```
 
-Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode-${CSID} 2>/dev/null || echo false)`.
+Downstream blocks read back, e.g. `IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false`.
 
 ```bash
 # timeout: 6000
@@ -131,7 +131,7 @@ ISSUE_REF=""
 [[ "$ARGUMENTS" =~ --issue[[:space:]]+([^[:space:]]+) ]] && ISSUE_REF="${BASH_REMATCH[1]}"
 echo "$ISSUE_REF" > ${TMPDIR:-/tmp}/dev-issue-ref-${CSID}
 if [ -n "$ISSUE_REF" ]; then
-    REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream-${CSID} 2>/dev/null || echo "")
+    IFS= read -r REPO_NAME < "${TMPDIR:-/tmp}/dev-upstream-${CSID}" 2>/dev/null || REPO_NAME=""
     if [ -n "$REPO_NAME" ]; then
         gh issue view "$ISSUE_REF" --repo "$REPO_NAME" 2>/dev/null || echo "⚠ Could not fetch issue $ISSUE_REF from $REPO_NAME — proceeding without issue context"
     else
@@ -154,7 +154,7 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw-${CSID} 2>/dev/null || echo auto)
+IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW") || {
     echo "! BLOCKED — codemap-resolve failed (likely --codemap strict but codemap unavailable); run /codemap:scan-codebase or install codemap plugin"
     exit 1
@@ -214,8 +214,8 @@ trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID}' EXIT
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || echo "")        # re-derive — bash state lost between Bash() calls
-TEAM_DIR=$(cat ${TMPDIR:-/tmp}/dev-feature-team-dir-${CSID} 2>/dev/null || echo "")
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}" 2>/dev/null || TS=""        # re-derive — bash state lost between Bash() calls
+IFS= read -r TEAM_DIR < "${TMPDIR:-/tmp}/dev-feature-team-dir-${CSID}" 2>/dev/null || TEAM_DIR=""
 _SPAWN_TS="$TS"
 _SPAWN_TEAM_DIR="$TEAM_DIR"
 ```
@@ -245,7 +245,7 @@ Summary below:
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}" 2>/dev/null || TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 for agent in sw-engineer qa-specialist doc-scribe; do
     expected=".temp/develop/$TS/feature-${agent}-$TS.md"
     [ -f "$expected" ] && echo "✓ $agent wrote $expected" || echo "⚠ $agent missing expected output $expected"
@@ -257,7 +257,7 @@ done
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || echo "")
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}" 2>/dev/null || TS=""
 [ -n "$TS" ] || { echo "! dev-feature-team-ts missing — cannot verify Wave 1 output; aborting team mode"; exit 1; }
 WAVE1_FILE=".temp/develop/$TS/feature-sw-engineer-$TS.md"
 if [ ! -f "$WAVE1_FILE" ]; then
@@ -275,7 +275,7 @@ Health monitoring (CLAUDE.md §6): re-derive `$TS` at block start (bash state lo
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID} 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-feature-team-ts-${CSID}" 2>/dev/null || TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 ```
 
 Create sentinel `touch ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID}`; every 5 min: `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/feature-team-check-${TS}-${CSID} -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface with ⏱; never omit timed-out teammates.
@@ -296,7 +296,7 @@ _RAW="${ARGUMENTS#\#}"
 ISSUE_NUM=$(echo "$_RAW" | grep -oE '^[0-9]+' | head -1)
 ISSUE_NUM="${ISSUE_NUM:-$_RAW}"
 if [[ "$ISSUE_NUM" =~ ^[0-9]+$ ]]; then
-  REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream-${CSID} 2>/dev/null || echo "")
+  IFS= read -r REPO_NAME < "${TMPDIR:-/tmp}/dev-upstream-${CSID}" 2>/dev/null || REPO_NAME=""
   if [ -n "$REPO_NAME" ]; then
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null  # timeout: 6000
   else
@@ -335,8 +335,8 @@ echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn-${CSID}
 ```bash
 # timeout: 6000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID} 2>/dev/null || echo false)
-TARGET_MODULE=$(cat ${TMPDIR:-/tmp}/dev-feature-target-module-${CSID} 2>/dev/null || echo "")   # re-derive — bash state lost between Bash() calls
+IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
+IFS= read -r TARGET_MODULE < "${TMPDIR:-/tmp}/dev-feature-target-module-${CSID}" 2>/dev/null || TARGET_MODULE=""   # re-derive — bash state lost between Bash() calls
 if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v scan-query >/dev/null 2>&1; then
     scan-query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests 2>/dev/null || true
 fi
@@ -420,7 +420,7 @@ Skip if feature calls no external library APIs — no new framework features, no
 **Decision — three states** (default is NOT "skip": it runs on substantial features and auto-skips only small ones):
 
 1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
-2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)` = `true`) → **always run**, even on a small feature.
+2. else `--challenge` (`IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-challenge-forced-${CSID}" 2>/dev/null || CHALLENGE_FORCED=false` = `true`) → **always run**, even on a small feature.
 3. else **default** → **run when feature is substantial** (multi-file, ≳50 lines, or adds any new public API — common case for a feature); **auto-skip when small** (single file, ≲50 lines, no new public API).
 
 Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial features where it would otherwise fire; `--challenge` forces it on small features where it would otherwise auto-skip.
@@ -437,10 +437,10 @@ Parse result:
 ```bash
 # Compaction contract — boundary 1: after scope analysis, before demo/edit (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || echo "")
-_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}" 2>/dev/null || _KEEP=""
+IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
 _PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -502,8 +502,8 @@ echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit-${CSID}
 ```bash
 # timeout: 600000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-COLLECT_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-collect-exit-${CSID} 2>/dev/null || echo 1)
-GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-gate-exit-${CSID} 2>/dev/null || echo 1)
+IFS= read -r COLLECT_EXIT < "${TMPDIR:-/tmp}/dev-feature-collect-exit-${CSID}" 2>/dev/null || COLLECT_EXIT="1"
+IFS= read -r GATE_EXIT < "${TMPDIR:-/tmp}/dev-feature-gate-exit-${CSID}" 2>/dev/null || GATE_EXIT="1"
 # doctest form — MODULE_PATH resolved above
 if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
     $PYTEST_CMD --doctest-modules $MODULE_PATH -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
@@ -591,10 +591,10 @@ After each cycle, refresh compaction contract so a mid-loop compaction resumes T
 ```bash
 # WHY: boundary-1 contract (Step 1) says "next: Step 2 demo"; without this a mid-Step-3 compaction restarts the demo. Redo is idempotent but wastes agent spawns + test runs. checkpoint.md already lists completed steps for resume.
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
-_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
+IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 # tracked mods AND untracked new files — new TDD test/module files are untracked until staged; git diff alone drops them
 _CHANGED=$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u | tr '\n' ' ' | sed 's/ *$//')
 _PRESERVE="dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD, plan-file=${_PLAN_FILE:-none}, checkpoint=$_DEV_DIR/checkpoint.md"
@@ -616,8 +616,8 @@ If Step 2 produced example script: promote into formal pytest test now that API 
 ```bash
 # Compaction contract — boundary 2: after TDD loop, before review stack (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
 _CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
 mkdir -p .temp/state  # timeout: 5000
 {

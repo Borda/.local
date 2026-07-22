@@ -38,6 +38,17 @@ MANIFEST: list[dict[str, object]] = [
             "plugins/cc_research/hooks/agent-router.js",
         ],
     },
+    {
+        # Every plugin ships the blueprint auto-allow hook so a standalone
+        # install (e.g. cc_oss alone) still covers its own SKILL.md idioms.
+        "canonical": "plugins/cc_foundry/hooks/sentinel-read-allow.js",
+        "copies": [
+            "plugins/cc_oss/hooks/sentinel-read-allow.js",
+            "plugins/cc_develop/hooks/sentinel-read-allow.js",
+            "plugins/cc_research/hooks/sentinel-read-allow.js",
+            "plugins/codemap/hooks/sentinel-read-allow.js",
+        ],
+    },
 ]
 
 

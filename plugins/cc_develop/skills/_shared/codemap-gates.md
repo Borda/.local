@@ -8,7 +8,7 @@ _CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/_shar
 [ -f "$_CM_SHARED/codemap-gates.md" ] && cat "$_CM_SHARED/codemap-gates.md" || echo "codemap gates contract absent — use fallback below"
 ```
 
-Read currency: `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/dev-codemap-currency-${CSID}" 2>/dev/null || echo "no_index")`.
+Read currency: `IFS= read -r CODEMAP_CURRENCY < "${TMPDIR:-/tmp}/dev-codemap-currency-${CSID}" 2>/dev/null || CODEMAP_CURRENCY="no_index"`.
 
 Contract (`v2`) — follow both gates with develop's skip flag:
 - **Gate A — missing index**: fire when `CODEMAP_ENABLED=false` and `CODEMAP_RAW=auto`.

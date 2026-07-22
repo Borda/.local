@@ -8,8 +8,8 @@
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # fresh shell loses vars; Mode Detection persists REST to tmpdir
-REST=$(cat "${TMPDIR:-/tmp}/release-rest-${CSID}" 2>/dev/null || echo "")
-LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/LAST_TAG" 2>/dev/null || echo "")
+IFS= read -r REST < "${TMPDIR:-/tmp}/release-rest-${CSID}" 2>/dev/null || REST=""
+IFS= read -r LAST_TAG < "${TMPDIR:-/tmp}/release-setup-${CSID}/LAST_TAG" 2>/dev/null || LAST_TAG=""
 VERSION="${REST%% *}"
 [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
@@ -37,7 +37,7 @@ Set up release directory, back up existing artifacts:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-VERSION=$(cat "${TMPDIR:-/tmp}/release-prepare-version-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r VERSION < "${TMPDIR:-/tmp}/release-prepare-version-${CSID}" 2>/dev/null || VERSION=""  # reload (Check 41)
 RELEASE_DIR="releases/$VERSION"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/setup_release_dir.py" "$RELEASE_DIR" "$CHANGELOG_FILE"  # timeout: 5000
 ```
@@ -52,7 +52,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/setup_release_dir.py" "$RELEAS
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-VERSION=$(cat "${TMPDIR:-/tmp}/release-prepare-version-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r VERSION < "${TMPDIR:-/tmp}/release-prepare-version-${CSID}" 2>/dev/null || VERSION=""  # reload (Check 41)
 DEMO_OUT="releases/$VERSION/demo.py"
 echo "$DEMO_OUT" > "${TMPDIR:-/tmp}/release-prepare-demo-out-${CSID}"  # persist for next block (Check 41)
 ```
@@ -60,7 +60,7 @@ echo "$DEMO_OUT" > "${TMPDIR:-/tmp}/release-prepare-demo-out-${CSID}"  # persist
 Write generated script to `$DEMO_OUT` using Write tool. **Execution gate** — run:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-DEMO_OUT=$(cat "${TMPDIR:-/tmp}/release-prepare-demo-out-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r DEMO_OUT < "${TMPDIR:-/tmp}/release-prepare-demo-out-${CSID}" 2>/dev/null || DEMO_OUT=""  # reload (Check 41)
 python "$DEMO_OUT"  # timeout: 600000
 ```
 Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gate passes.

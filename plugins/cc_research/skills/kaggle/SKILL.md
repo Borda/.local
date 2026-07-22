@@ -187,9 +187,9 @@ Spawn prompt assembled from the inline problem profile below plus exactly one re
 ```bash
 # Re-hydrate flags persisted in Step 1 (bash state lost between Bash calls)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || echo "$COMPETITION_NAME")
-EDA_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-eda-only-${CSID}" 2>/dev/null || echo "false")
-INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || echo "false")
+IFS= read -r COMPETITION_NAME < "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || COMPETITION_NAME="$COMPETITION_NAME"
+IFS= read -r EDA_ONLY < "${TMPDIR:-/tmp}/kaggle-eda-only-${CSID}" 2>/dev/null || EDA_ONLY="false"
+IFS= read -r INFERENCE_ONLY < "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || INFERENCE_ONLY="false"
 _KAGGLE_MODES="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills/kaggle/modes"
 COMPOSITION_FILE="$_KAGGLE_MODES/composition.md"
 MODE="full"
@@ -260,9 +260,9 @@ Write `<OUTFILE>`. Return only:
 ```bash
 # Compaction contract — boundary: after Step 3 notebook generated (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_COMPETITION=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || echo "")
-_INF=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || echo "false")
-_KEEP=$(cat "${TMPDIR:-/tmp}/kaggle-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _COMPETITION < "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || _COMPETITION=""
+IFS= read -r _INF < "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || _INF="false"
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/kaggle-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _SUFFIX=""; [ "$_INF" = "true" ] && _SUFFIX="-inference"
 _OUTFILE=".experiments/kaggle/${_COMPETITION}${_SUFFIX}.py"
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
@@ -288,9 +288,9 @@ After agent completes:
 ```bash
 # Re-derive OUTFILE from flags persisted in Step 1 (bash state lost between steps)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || echo "$COMPETITION_NAME")
-INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || echo "false")
-MODE=$(cat "${TMPDIR:-/tmp}/kaggle-mode-${CSID}" 2>/dev/null || echo "full")
+IFS= read -r COMPETITION_NAME < "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || COMPETITION_NAME="$COMPETITION_NAME"
+IFS= read -r INFERENCE_ONLY < "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || INFERENCE_ONLY="false"
+IFS= read -r MODE < "${TMPDIR:-/tmp}/kaggle-mode-${CSID}" 2>/dev/null || MODE="full"
 OUTPUT_SUFFIX=""; [ "$INFERENCE_ONLY" = "true" ] && OUTPUT_SUFFIX="-inference"
 OUTFILE=".experiments/kaggle/${COMPETITION_NAME}${OUTPUT_SUFFIX}.py"
 echo "=== Composition ==="; echo "$MODE"

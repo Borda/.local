@@ -175,7 +175,7 @@ Every subsequent Bash block in Steps 2–6 that uses `$TIMESTAMP` must re-read i
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null)
+IFS= read -r TIMESTAMP < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null || TIMESTAMP=""
 [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
 # never fall back to $(date ...) — generates new timestamp → nonexistent run dir; surface state loss explicitly
 ```
@@ -239,7 +239,7 @@ For multiple tokens, merge resolved targets into per-mode groups before spawning
 Before spawning **any** pipeline (when target includes `agents`, `skills`, or `all`), check cross-plugin availability. When `LOCAL_MODE=true`, check `plugins/` source tree (local edits not yet installed); otherwise check installed plugin cache:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || echo "false")
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 if [ "$LOCAL_MODE" = "true" ]; then
     [ -d "plugins/cc_oss" ]      && OSS_AVAILABLE="plugins/cc_oss"           || OSS_AVAILABLE=""
     [ -d "plugins/cc_research" ] && RESEARCH_AVAILABLE="plugins/cc_research" || RESEARCH_AVAILABLE=""
@@ -262,8 +262,8 @@ Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instru
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/keep-items" 2>/dev/null || echo "")
+IFS= read -r _TIMESTAMP < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null || _TIMESTAMP=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/keep-items" 2>/dev/null || _KEEP=""
 _RUN_DIR=".reports/calibrate/$_TIMESTAMP"
 _PRESERVE="run-dir=$_RUN_DIR, timestamp=$_TIMESTAMP"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
@@ -378,7 +378,7 @@ Mark "Apply findings" in_progress.
 
   ```bash
   export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-  TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null)
+  IFS= read -r TIMESTAMP < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null || TIMESTAMP=""
   [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — falling back to latest run dir"; TIMESTAMP=$(basename "$(find .reports/calibrate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)"); }  # safe: uses existing dir from find, not new $(date) timestamp — won't create phantom run dir
   ```
 
@@ -409,9 +409,9 @@ Continue to next target. Only if ALL targets are missing: stop with `! No propos
 **`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. When `LOCAL_MODE=true`, source tree takes priority; otherwise project-local override first, then plugin cache, then source-tree fallback:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null)
+IFS= read -r TIMESTAMP < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null || TIMESTAMP=""
 [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || echo "false")
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 # e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default)
 PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')
 AGENT_BARE=$(echo "<name>" | sed 's/^[^:]*://')

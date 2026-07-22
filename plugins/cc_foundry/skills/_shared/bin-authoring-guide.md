@@ -160,7 +160,7 @@ RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.py" arg1 arg2)
 
 | Output needed for | Script writes | Skill reads via |
 | --- | --- | --- |
-| Shell command arg (`"$VAR"`) | `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file | `VAR=$(cat "${TMPDIR:-/tmp}/<skill>-<name>-${CSID}")` |
+| Shell command arg (`"$VAR"`) | `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file | `IFS= read -r VAR < "${TMPDIR:-/tmp}/<skill>-<name>-${CSID}"` |
 | Prose condition / display only | `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file | Read tool or plain prose |
 | Single value, same bash block | stdout | `VAR=$(python script.py ...)` |
 | Several values across later blocks | `bin/state.py set <ns> K=V …` | `eval "$(python … bin/state.py load <ns>)"` |
@@ -195,7 +195,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/myplugin}/bin/resolve.py" "myplugin-resolv
 
 ```bash
 # only when value feeds shell command
-INDEX=$(cat "${TMPDIR:-/tmp}/myplugin-resolve-index-${CSID}")
+IFS= read -r INDEX < "${TMPDIR:-/tmp}/myplugin-resolve-index-${CSID}" 2>/dev/null || INDEX=""
 python scan.py --index "$INDEX"  # timeout: 30000
 ```
 

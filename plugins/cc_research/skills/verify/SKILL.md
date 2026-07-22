@@ -104,9 +104,9 @@ echo "$_VTAG"   > "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}"  # pointer for reh
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null)
-RUN_DIR=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}" 2>/dev/null)
-OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null)
+IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
+IFS= read -r OUT < "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null || OUT=""
 [ -z "$RUN_DIR" ] || [ -z "$OUT" ] && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
 ```
 
@@ -136,7 +136,7 @@ for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
     *) echo "verify: unknown dimension: '$_DIM_VAL' — valid: F,H,E,N,C" >&2; V2_STATUS="failed" ;;
   esac
 done
-_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null)
+IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
 echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}"
 [ "$V2_STATUS" = "failed" ] && exit 2
 ```
@@ -145,8 +145,8 @@ echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}"
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null)
-V2_STATUS=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}" 2>/dev/null || echo "ok")
+IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
+IFS= read -r V2_STATUS < "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}" 2>/dev/null || V2_STATUS="ok"
 if [ "$V2_STATUS" = "failed" ]; then
     echo "verify V3: dimension validation failed in V2 — skipping V3."
     exit 1
@@ -241,7 +241,7 @@ Invoke `AskUserQuestion` — do NOT write options as plain text:
 - (a) label: `Stop here` — description: write partial report (passing claims only) to `$OUT`; fix mismatches and re-run `/research:verify`
 - (b) label: `Continue to full report` — description: proceed to V5/V6 and include failed claims in the full verification report
 
-**On (a)**: rehydrate `$OUT` (`OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null)`), write the held partial-report markdown to `$OUT` (verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top), surface the file path, and exit. Full audit remains at `$RUN_DIR/audit-raw.md`. Do NOT also dump the mismatch table to terminal — it is already inside the partial report.
+**On (a)**: rehydrate `$OUT` (`IFS= read -r OUT < "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null || OUT=""`), write the held partial-report markdown to `$OUT` (verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top), surface the file path, and exit. Full audit remains at `$RUN_DIR/audit-raw.md`. Do NOT also dump the mismatch table to terminal — it is already inside the partial report.
 
 **On (b)**: discard the held partial-report markdown and proceed directly to V5/V6 — V5 writes the full report to `$OUT` (failed claims included).
 

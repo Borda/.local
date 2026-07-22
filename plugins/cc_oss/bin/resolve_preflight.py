@@ -19,8 +19,8 @@ Exit codes:
 Caller pattern:
     export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
     resolve_preflight.py  # timeout: 15000
-    CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null || echo "false")
-    GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK-${CSID}" 2>/dev/null || echo "true")
+    IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null || CODEX_AVAILABLE="false"
+    IFS= read -r GH_OK < "${TMPDIR:-/tmp}/resolve-preflight-GH_OK-${CSID}" 2>/dev/null || GH_OK="true"
 """
 
 from __future__ import annotations

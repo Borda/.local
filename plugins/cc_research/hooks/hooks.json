@@ -1,5 +1,5 @@
 {
-  "description": "research plugin hooks: agent routing fallback",
+  "description": "research plugin hooks: agent routing fallback + blueprint sentinel-read auto-allow",
   "hooks": {
     "PreToolUse": [
       {
@@ -11,6 +11,15 @@
           }
         ],
         "matcher": "Agent"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sentinel-read-allow.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
       }
     ]
   }

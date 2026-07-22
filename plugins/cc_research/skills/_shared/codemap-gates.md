@@ -1,6 +1,6 @@
 <!-- file: codemap-gates.md — consumers: research/skills/run, verify -->
 
-Read `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/research-codemap-currency-${CSID}" 2>/dev/null || echo "no_index")`.
+Read `IFS= read -r CODEMAP_CURRENCY < "${TMPDIR:-/tmp}/research-codemap-currency-${CSID}" 2>/dev/null || CODEMAP_CURRENCY="no_index"`.
 
 **Gate A — missing index** (`CODEMAP_ENABLED=false` and `CODEMAP_RAW=auto`): invoke `AskUserQuestion`:
 - Question: "No codemap index for this project — structural dependency context unavailable. How to proceed?"

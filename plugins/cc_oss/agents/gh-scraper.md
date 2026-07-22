@@ -80,9 +80,9 @@ Run all calls simultaneously — independent. Extracted to `bin/fetch_gh_data_gr
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000
 # reload (Check 41: fresh shell loses Step 1 vars)
-CUTOFF_3Y=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y-${CSID}" 2>/dev/null)
-CUTOFF_90D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d-${CSID}" 2>/dev/null)
-CUTOFF_180D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d-${CSID}" 2>/dev/null)
+IFS= read -r CUTOFF_3Y < "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y-${CSID}" 2>/dev/null || CUTOFF_3Y=""
+IFS= read -r CUTOFF_90D < "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d-${CSID}" 2>/dev/null || CUTOFF_90D=""
+IFS= read -r CUTOFF_180D < "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d-${CSID}" 2>/dev/null || CUTOFF_180D=""
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/fetch_gh_data_group1.py" \
     --repo "$GH_OWNER/$GH_REPO" \
     --output-dir "$GROUP1_DIR" \

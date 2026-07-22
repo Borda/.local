@@ -1,5 +1,5 @@
 {
-  "description": "codemap plugin hooks: ambient index status injection + skill telemetry + redundant-scan guard",
+  "description": "codemap plugin hooks: ambient index status injection + skill telemetry + redundant-scan guard + blueprint sentinel-read auto-allow",
   "hooks": {
     "PostToolUse": [
       {
@@ -39,6 +39,15 @@
         "hooks": [
           {
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-redundant-scan.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sentinel-read-allow.js\"",
             "type": "command"
           }
         ],

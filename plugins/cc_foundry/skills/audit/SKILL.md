@@ -168,7 +168,7 @@ If `.claude/` missing, abort immediately. Missing `jq` is warning — audit cont
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || echo false)
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 ```
 
@@ -198,7 +198,7 @@ Run the zero-LLM checker driver — the same deterministic checkers pre-commit e
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || echo false)
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 STATIC_SCOPE=$( [ "$LOCAL_MODE" = true ] && echo plugins || echo .claude )
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/audit_static.py" --scan-dir "$STATIC_SCOPE" \
     --jsonl "${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl"  # timeout: 120000
@@ -278,7 +278,7 @@ Set up the run directory once before spawning any agents:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || echo false)
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/make_run_dir.py" .reports/audit)  # timeout: 5000

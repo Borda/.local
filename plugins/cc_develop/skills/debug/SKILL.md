@@ -95,7 +95,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-${CSID} 2>/dev/null || echo auto)
+IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-debug-codemap-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -117,7 +117,7 @@ cat "$_DEV_SHARED/codemap-gates.md"
 ```
 Follow Gate A and Gate B.
 
-Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled-${CSID} 2>/dev/null || echo true)`, `CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode-${CSID} 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id-${CSID} 2>/dev/null || echo "")`.
+Downstream blocks read back: `IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/dev-challenge-enabled-${CSID}" 2>/dev/null || CHALLENGE_ENABLED=true`, `IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-challenge-forced-${CSID}" 2>/dev/null || CHALLENGE_FORCED=false`, `IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false`, `IFS= read -r CI_RUN_ID < "${TMPDIR:-/tmp}/dev-ci-run-id-${CSID}" 2>/dev/null || CI_RUN_ID=""`.
 
 ```bash
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
@@ -176,7 +176,7 @@ Collect all signals before forming any hypothesis.
 ```bash
 # timeout: 10000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID} 2>/dev/null || echo false)
+IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     scan-query central --top 5 2>/dev/null
 fi
@@ -197,7 +197,7 @@ If codemap results returned: prepend `## Structural Context (codemap)` block to 
 ```bash
 # timeout: 6000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream-${CSID} 2>/dev/null || echo "")
+IFS= read -r REPO_NAME < "${TMPDIR:-/tmp}/dev-upstream-${CSID}" 2>/dev/null || REPO_NAME=""
 if [ -n "$REPO_NAME" ]; then
     ISSUE_BODY=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null)
 else
@@ -208,7 +208,7 @@ echo "$ISSUE_BODY" | tee ${TMPDIR:-/tmp}/dev-issue-body-${CSID}   # persist — 
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-ISSUE_BODY=$(cat ${TMPDIR:-/tmp}/dev-issue-body-${CSID} 2>/dev/null || echo "")
+IFS= read -r ISSUE_BODY < "${TMPDIR:-/tmp}/dev-issue-body-${CSID}" 2>/dev/null || ISSUE_BODY=""
 TEST_PATH=$(echo "$ISSUE_BODY" | grep -oE '(tests?/[^[:space:]]+\.py|test_[^[:space:]]+\.py)' | head -1)
 if [ -z "$TEST_PATH" ]; then
   echo "→ No test file found in issue; running full test suite"
@@ -344,7 +344,7 @@ echo "<candidate cause> :: open" >> ${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}
 **Decision — three states** (default is NOT "skip": it runs on substantial root causes and auto-skips only narrow ones):
 
 1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
-2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)` = `true`) → **always run**, even on a narrow root cause.
+2. else `--challenge` (`IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-challenge-forced-${CSID}" 2>/dev/null || CHALLENGE_FORCED=false` = `true`) → **always run**, even on a narrow root cause.
 3. else **default** → **run when root cause is substantial** (spans multiple files, a larger change, or touches public API); **auto-skip when narrow** (single file, ≲50 lines, no API change) — hypothesis simple enough to proceed directly.
 
 Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial cases where it would otherwise fire; `--challenge` forces it on narrow cases where it would otherwise auto-skip.
@@ -361,9 +361,9 @@ Parse result — update hypothesis ledger (`${TMPDIR:-/tmp}/dev-debug-hypotheses
 ```bash
 # Compaction contract — boundary: after evidence+challenge, before hypothesis gate (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_DEBUG_MODE=$(cat "${TMPDIR:-/tmp}/dev-debug-mode-${CSID}" 2>/dev/null || echo "symptom")
-_CI_RUN=$(cat "${TMPDIR:-/tmp}/dev-ci-run-id-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-debug-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _DEBUG_MODE < "${TMPDIR:-/tmp}/dev-debug-mode-${CSID}" 2>/dev/null || _DEBUG_MODE="symptom"
+IFS= read -r _CI_RUN < "${TMPDIR:-/tmp}/dev-ci-run-id-${CSID}" 2>/dev/null || _CI_RUN=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/dev-debug-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _TRIED=$(head -6 "${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}" 2>/dev/null)  # cap keeps contract ≤12 lines
 _PRESERVE="mode=$_DEBUG_MODE, ci-run=${_CI_RUN:-none}"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
@@ -407,7 +407,7 @@ If confidence low: propose targeted probe (minimal script, added log statement, 
 ```bash
 # timeout: 8000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID} 2>/dev/null || echo false)
+IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
 if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1; then
     # SUSPECT resolved from Step 3 hypothesis — e.g. mypackage.auth::validate or mypackage.auth
     scan-query test-impact "$SUSPECT" 2>/dev/null | tee ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}

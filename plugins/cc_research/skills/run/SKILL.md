@@ -137,7 +137,7 @@ Follow `modes/hypothesis-pipeline.md`:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/hypothesis-pipeline.md"  # timeout: 5000
 ```
 
@@ -383,7 +383,7 @@ touch "$COMMIT_SENTINEL"  # timeout: 3000
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/team.md"  # timeout: 5000
 ```
 
@@ -491,7 +491,7 @@ If Agent tool unavailable (nested subagent context), implement change inline, co
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/compute-docker.md"  # timeout: 5000
 ```
 
@@ -505,7 +505,7 @@ Follow `modes/codex-copilot.md` — contains full Phase 2c logic, cost-bounded g
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/codex-copilot.md"  # timeout: 5000
 ```
 
@@ -542,7 +542,7 @@ If pre-commit hooks fail:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/phase5-metric.md"  # timeout: 5000
 ```
 
@@ -653,8 +653,8 @@ TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 ```bash
 # Compaction contract — overwrite each iteration; always reflects latest in-progress state (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_RUN_ID=$(cat "${TMPDIR:-/tmp}/research-run-id-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/research-run-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _RUN_ID < "${TMPDIR:-/tmp}/research-run-id-${CSID}" 2>/dev/null || _RUN_ID=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/research-run-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _STATE_JSON=".experiments/state/${_RUN_ID}/state.json"
 _ITER=$(jq -r '.iteration // 0' "$_STATE_JSON" 2>/dev/null || echo "?")
 _BEST=$(jq -r '.best_metric // "?"' "$_STATE_JSON" 2>/dev/null || echo "?")
@@ -701,7 +701,7 @@ Follow `modes/report.md`:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/report.md"  # timeout: 5000
 ```
 `state.json`: `status = completed`.
@@ -735,7 +735,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — campaign complete (com
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR=""
 cat "$CLAUDE_SKILL_DIR/modes/resume.md"  # timeout: 5000
 ```
 
@@ -746,7 +746,7 @@ cat "$CLAUDE_SKILL_DIR/modes/resume.md"  # timeout: 5000
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || echo "plugins/cc_research/skills/run")
+IFS= read -r CLAUDE_SKILL_DIR < "${TMPDIR:-/tmp}/research-run-skill-dir-${CSID}" 2>/dev/null || CLAUDE_SKILL_DIR="plugins/cc_research/skills/run"
 cat "$CLAUDE_SKILL_DIR/modes/colab-setup.md"  # timeout: 5000
 ```
 

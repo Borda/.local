@@ -162,8 +162,8 @@ sweep: plan → <output path> ✓
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 1: after S2 plan written (compaction-contract.md §Lifecycle)
-_OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || echo "program.md")
-_KEEP=$(cat "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
 {
@@ -204,7 +204,7 @@ Repeat up to `MAX_REFINE` times:
        ```bash
        # WHY: without a post-fix refresh a compaction here resumes from boundary-1 (pre-loop) → re-judges from iteration 1. Placed AFTER fixes so "fixes applied through iteration N" is true.
        export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-       _OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || echo "program.md")
+       IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
        mkdir -p .temp/state  # timeout: 5000
        {
            echo "## Active Skill Contract"
@@ -223,8 +223,8 @@ Repeat up to `MAX_REFINE` times:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 2: after S3 judge loop settles verdict (compaction-contract.md §Lifecycle)
-_OUT=$(cat "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || echo "program.md")
-_KEEP=$(cat "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
 {

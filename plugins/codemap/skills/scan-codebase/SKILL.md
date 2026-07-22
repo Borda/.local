@@ -52,7 +52,7 @@ printf '%s' "$SCAN_STATE_FILE" > "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}"  # 
 ```bash
 # timeout: 360000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null)
+IFS= read -r SCAN_STATE_FILE < "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null || SCAN_STATE_FILE=""
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run from the beginning\n"; exit 1; }
 # shellcheck source=/dev/null
 . "$SCAN_STATE_FILE"
@@ -89,7 +89,7 @@ After scan, read index and report compact summary:
 # timeout: 15000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # only report if index exists; Step 1 may have failed
-SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null)
+IFS= read -r SCAN_STATE_FILE < "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null || SCAN_STATE_FILE=""
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run /codemap:scan-codebase\n"; exit 1; }
 # shellcheck source=/dev/null
 . "$SCAN_STATE_FILE"

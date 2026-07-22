@@ -156,7 +156,7 @@ Check if statusLine already points to the **current** plugin's statusline.js (fi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null)  # reload (Check 41)
+IFS= read -r PLUGIN_ROOT < "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null || PLUGIN_ROOT=""  # reload (Check 41)
 jq --arg root "$PLUGIN_ROOT" -e '
     (.statusLine.command // "") as $cmd
     | ($cmd | contains("statusline.js")) and ($cmd | contains($root))
@@ -219,7 +219,7 @@ Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — o
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null)  # reload: fresh shell (Check 41)
+IFS= read -r PLUGIN_ROOT < "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null || PLUGIN_ROOT=""  # reload: fresh shell (Check 41)
 if [ ! -f ".claude/permissions-guide.md" ]; then  # timeout: 5000
     cp "$PLUGIN_ROOT/permissions-guide.md" ".claude/permissions-guide.md"
     printf "  copied: permissions-guide.md\n"
@@ -284,7 +284,7 @@ After all writes, confirm file parses as valid JSON:
 jq empty ~/.claude/settings.json  # timeout: 5000
 ```
 
-If `jq` exits non-zero: restore from backup: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; SETUP_BAK_TS=$(cat "${TMPDIR:-/tmp}/foundry-setup-bak-ts-${CSID}" 2>/dev/null || ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//'); cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json`, report error, stop. If valid: continue.
+If `jq` exits non-zero: restore from backup: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; IFS= read -r SETUP_BAK_TS < "${TMPDIR:-/tmp}/foundry-setup-bak-ts-${CSID}" 2>/dev/null || SETUP_BAK_TS=$(ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//'); cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json`, report error, stop. If valid: continue.
 
 ## Step 10: Symlink rules and TEAM_PROTOCOL.md
 
@@ -412,7 +412,7 @@ done  # timeout: 10000
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null)  # reload: fresh shell (Check 41)
+IFS= read -r PLUGIN_ROOT < "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null || PLUGIN_ROOT=""  # reload: fresh shell (Check 41)
 [ -f "$HOME/.claude/CLAUDE.md" ] && cp "$HOME/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md.bak"  # timeout: 5000
 cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"

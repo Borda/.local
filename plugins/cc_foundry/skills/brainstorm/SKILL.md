@@ -112,7 +112,7 @@ echo "$SIDECAR"
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}" 2>/dev/null || echo "")
+IFS= read -r SIDECAR < "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}" 2>/dev/null || SIDECAR=""
 ```
 
 If `$SIDECAR` is empty after re-read, treat as viewer opt-out and skip all sidecar Write steps.
@@ -323,8 +323,8 @@ Assemble tree state and write to `.plans/blueprint/YYYY-MM-DD-<slug>.md` using W
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _TREE_FILE=$(find .plans/blueprint -name "*.md" -maxdepth 1 -not -name "*-spec.md" 2>/dev/null | sort -r | head -1)
-_SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/brainstorm-state-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _SIDECAR < "${TMPDIR:-/tmp}/brainstorm-state-sidecar-${CSID}" 2>/dev/null || _SIDECAR=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/brainstorm-state-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="tree-file=$_TREE_FILE"
 [ -n "$_SIDECAR" ] && _PRESERVE="$_PRESERVE, sidecar=$_SIDECAR"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"

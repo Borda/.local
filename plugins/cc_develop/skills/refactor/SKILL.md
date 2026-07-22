@@ -114,7 +114,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
     --skill refactor --write-files "$ARGUMENTS"
 ```
 
-Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode-${CSID} 2>/dev/null || echo false)`.
+Downstream blocks read back, e.g. `IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false`.
 
 **Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap-resolve`. Uses skill-specific temp file (`dev-refactor-codemap-raw-${CSID}`) to avoid reading stale values from prior feature/debug runs:
 
@@ -134,7 +134,7 @@ echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID}
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID} 2>/dev/null || echo auto)
+IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -230,7 +230,7 @@ cat "$_DEV_SHARED/plan-inline.md"
 **Decision — three states** (default is NOT "skip": it runs on substantial refactors and auto-skips only small contained ones):
 
 1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
-2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced-${CSID} 2>/dev/null || echo false)` = `true`) → **always run**, even on a small change.
+2. else `--challenge` (`IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-challenge-forced-${CSID}" 2>/dev/null || CHALLENGE_FORCED=false` = `true`) → **always run**, even on a small change.
 3. else **default** → **run when refactor is substantial** (spans multiple files, ≳50 lines, or changes public API / an exported symbol); **auto-skip when small** (single file, ≲50 lines, no API change) — a contained refactor has little design surface to challenge.
 
 Two flags are opposites for two regimes, which is why both exist: `--no-challenge` suppresses gate on *substantial* changes where it would otherwise fire; `--challenge` forces it on *small* changes where it would otherwise auto-skip.
@@ -324,8 +324,8 @@ Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-TS=$(cat ${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID} 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
-RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID} 2>/dev/null || echo ".temp/develop/$TS")
+IFS= read -r TS < "${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}" 2>/dev/null || TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}" 2>/dev/null || RUN_DIR=".temp/develop/$TS"
 ```
 
 Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn (tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp, not TMPDIR-based); every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
@@ -337,10 +337,10 @@ Continue to Step 3 only when `TEAM_MODE=false`.
 ```bash
 # Compaction contract — boundary 1: after coverage audit, before characterization tests (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || echo "")
-_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/dev-refactor-keep-items-${CSID}" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/dev-refactor-keep-items-${CSID}" 2>/dev/null || _KEEP=""
+IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
 _PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -380,7 +380,7 @@ echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit-${CSID}
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-gate-exit-${CSID} 2>/dev/null || echo 1)
+IFS= read -r GATE_EXIT < "${TMPDIR:-/tmp}/dev-gate-exit-${CSID}" 2>/dev/null || GATE_EXIT="1"
 if [ "${GATE_EXIT}" -eq 5 ]; then
     echo "GATE FAIL: no tests collected (exit 5) — characterization test file missing or not detected by pytest; cannot proceed to Step 4 without a safety net"
 elif [ "$GATE_EXIT" -ne 0 ]; then
@@ -425,8 +425,8 @@ At each inner iteration start, read back, increment, check:
 ```bash
 # timeout: 3000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle-${CSID} 2>/dev/null || echo 0)
-START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time-${CSID} 2>/dev/null || echo $(date +%s))
+IFS= read -r INNER_CYCLE < "${TMPDIR:-/tmp}/dev-inner-cycle-${CSID}" 2>/dev/null || INNER_CYCLE="0"
+IFS= read -r START_TIME < "${TMPDIR:-/tmp}/dev-start-time-${CSID}" 2>/dev/null || START_TIME=$(date +%s)
 INNER_CYCLE=$((INNER_CYCLE+1))
 echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle-${CSID}
 MAX_INNER_CYCLES=5  # must match constants block — bash can't ref it directly
@@ -452,8 +452,8 @@ After each change-test pair: re-read counter from temp file, increment, write ba
 ```bash
 # Compaction contract — boundary 2: after refactor edits, before review stack (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || echo "")
-_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
+IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
 _CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
 mkdir -p .temp/state  # timeout: 5000
 {

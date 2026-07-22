@@ -146,7 +146,7 @@ grep -n "BROKEN_NAME" FIXED_FILE
 - Zero fixable findings remain → mark fix pass complete, or
 - Hard limit: **5 total fix passes** (including initial Step 8) — still not converged → surface all remaining fixable findings with `⚠ CONVERGENCE LIMIT` warning; **do not re-enter Step 8; omit fix options from follow-up gate when convergence limit reached**.
 
-Track pass count via `$RUN_DIR/fix-passes.txt` (persist across bash calls — shell state does not persist). At each Step 10 entry: `PASS_COUNT=$(cat "$RUN_DIR/fix-passes.txt" 2>/dev/null || echo 0); PASS_COUNT=$((PASS_COUNT + 1)); echo "$PASS_COUNT" > "$RUN_DIR/fix-passes.txt"`. If `$PASS_COUNT >= 5`, stop loop immediately — do not re-enter Step 8 regardless of remaining findings. Never suppress findings to clean counter.
+Track pass count via `$RUN_DIR/fix-passes.txt` (persist across bash calls — shell state does not persist). At each Step 10 entry: `IFS= read -r PASS_COUNT < "$RUN_DIR/fix-passes.txt" 2>/dev/null || PASS_COUNT=0; PASS_COUNT=$((PASS_COUNT + 1)); echo "$PASS_COUNT" > "$RUN_DIR/fix-passes.txt"`. If `$PASS_COUNT >= 5`, stop loop immediately — do not re-enter Step 8 regardless of remaining findings. Never suppress findings to clean counter.
 
 Audit-fix sub-agent (when used) must apply this loop internally — instruct to keep spawning fix agents and re-audit agents until clean or 5-pass limit.
 

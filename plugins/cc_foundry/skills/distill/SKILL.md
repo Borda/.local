@@ -128,7 +128,7 @@ With `--eager` (lower thresholds):
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_KEEP=$(cat "${TMPDIR:-/tmp}/distill-state-${CSID}/keep-items" 2>/dev/null || echo "")
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/distill-state-${CSID}/keep-items" 2>/dev/null || _KEEP=""
 _PRESERVE="run-dir=n/a"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000

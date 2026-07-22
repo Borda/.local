@@ -75,6 +75,18 @@ echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir"
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir-${CLAUDE_SESSION_ID:-$$}"
 ```
 
+**Sentinel READS use `read`, never `$(cat ...)`** — command substitution makes prefix allow-rules fail-closed → "Contains expansion" permission prompt in every subagent:
+
+```bash
+# ✓ correct — no substitution, allow rules match, sentinel-read-allow hook covers compounds
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
+
+# ✗ wrong — $() triggers "Contains expansion" prompt regardless of allow list
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || echo "")
+```
+
+`read` takes the first line only and exits non-zero on a file without trailing newline — safe here because sentinel writes use `echo` (single line + newline); always append `|| VAR=<default>` for the missing-file case. Multi-line payloads (JSON blobs, report content) are not sentinels — keep `$(cat ...)` there and expect the prompt.
+
 Verified token facts (2026-07-21): env var is `CLAUDE_CODE_SESSION_ID` (not `CLAUDE_SESSION_ID`); `$$` changes per Bash tool call (fresh shell each call) — never use it; `$PPID` = Claude Code process PID, stable across all Bash calls in a session; spawned subagents inherit the SAME `CLAUDE_CODE_SESSION_ID` and `$PPID` as the lead, so cross-agent sentinel sharing works.
 
 - `export` (not plain assignment) — python/node children invoked in the same block must see `CSID`

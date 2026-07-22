@@ -114,7 +114,7 @@ echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" # timeout: 500
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload CLEAN_ARGS — fresh shell (Check 41)
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 CLEAN_ARGS="${CLEAN_ARGS#\#}"
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}"
 ```
@@ -124,7 +124,7 @@ echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}"
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload CLEAN_ARGS — fresh shell (Check 41)
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 DIRECT_PATH_MODE=false
 REPORT_FILE=""
 # *.md check must not intercept vitality/ecosystem; also reject plan/todo files
@@ -143,7 +143,7 @@ echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" # timeout: 5
 # Persist TODAY — repeated `date +%Y-%m-%d` may roll over midnight, producing mismatched cache/report paths
 _TODAY_FILE="${TMPDIR:-/tmp}/analyse-today-${CSID}"
 if [ -f "$_TODAY_FILE" ]; then
-    TODAY=$(cat "$_TODAY_FILE")
+    IFS= read -r TODAY < "$_TODAY_FILE" 2>/dev/null || TODAY=""
 else
     TODAY=$(date +%Y-%m-%d)
     echo "$TODAY" > "$_TODAY_FILE"
@@ -155,7 +155,7 @@ fi
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload CLEAN_ARGS — fresh shell (Check 41)
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 GH_OWNER=""
 GH_REPO=""
 if [[ "$CLEAN_ARGS" == vitality* ]]; then
@@ -220,9 +220,9 @@ Skip when `REPLY_MODE=false` and `DIRECT_PATH_MODE=false`.
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars — fresh shell (Check 41)
-REPLY_MODE=$(cat "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}" 2>/dev/null || echo "false")
-DIRECT_PATH_MODE=$(cat "${TMPDIR:-/tmp}/analyse-direct-path-mode-${CSID}" 2>/dev/null || echo "false")
-REPORT_FILE=$(cat "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" 2>/dev/null || echo "")
+IFS= read -r REPLY_MODE < "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}" 2>/dev/null || REPLY_MODE="false"
+IFS= read -r DIRECT_PATH_MODE < "${TMPDIR:-/tmp}/analyse-direct-path-mode-${CSID}" 2>/dev/null || DIRECT_PATH_MODE="false"
+IFS= read -r REPORT_FILE < "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" 2>/dev/null || REPORT_FILE=""
 if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "false" ]; then
     echo "! Error: report path '$REPORT_FILE' passed without --reply."
     echo "  Re-run as: /oss:analyse $REPORT_FILE --reply"
@@ -248,8 +248,8 @@ When `REPLY_MODE=true`, check if fresh report already exists before any API call
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars — fresh shell (Check 41)
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
-TODAY=$(cat "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || date +%Y-%m-%d)
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
 # Numeric mode only — vitality/ecosystem set REPORT_FILE in their mode files; DIRECT_PATH_MODE already set above.
 SUBDIR="thread"  # default for numeric args; overridden in vitality/ecosystem mode files
 _REPO_SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-' | tr -cd '[:alnum:]-')
@@ -280,8 +280,8 @@ Check local cache before API calls — prevents redundant fetches, avoids GitHub
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars — fresh shell (Check 41)
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
-TODAY=$(cat "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || date +%Y-%m-%d)
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
 CACHE_DIR=".cache/gh"
 # Repo slug in key prevents cross-repo cache poisoning (same issue# different repo)
 _CACHE_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
@@ -314,10 +314,10 @@ fi
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload drift state — fresh shell (Check 41)
-DRIFT=$(cat "${TMPDIR:-/tmp}/analyse-drift-${CSID}" 2>/dev/null || echo "false")
-FAST_PATH=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-${CSID}" 2>/dev/null || echo "false")
-FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative-${CSID}" 2>/dev/null || echo "false")
-REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime-${CSID}" 2>/dev/null || echo "0")
+IFS= read -r DRIFT < "${TMPDIR:-/tmp}/analyse-drift-${CSID}" 2>/dev/null || DRIFT="false"
+IFS= read -r FAST_PATH < "${TMPDIR:-/tmp}/analyse-fast-path-${CSID}" 2>/dev/null || FAST_PATH="false"
+IFS= read -r FAST_PATH_TENTATIVE < "${TMPDIR:-/tmp}/analyse-fast-path-tentative-${CSID}" 2>/dev/null || FAST_PATH_TENTATIVE="false"
+IFS= read -r REPORT_MTIME < "${TMPDIR:-/tmp}/analyse-report-mtime-${CSID}" 2>/dev/null || REPORT_MTIME="0"
 # Corrupt cache guard — validate TYPE before use
 [ "$TYPE" = "pr" ] || [ "$TYPE" = "issue" ] || [ "$TYPE" = "discussion" ] || { echo "! Error: corrupt cache — invalid type \"$TYPE\" for #$CLEAN_ARGS; delete .cache/gh/ to reset"; exit 1; }
 # Cache hit + FAST_PATH_TENTATIVE: lightweight updatedAt call; UPDATED_TS > REPORT_MTIME → DRIFT=true
@@ -343,8 +343,8 @@ UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars — fresh shell (Check 41)
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
-CACHE_FILE=$(cat "${TMPDIR:-/tmp}/analyse-cache-file-${CSID}" 2>/dev/null || echo "")
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r CACHE_FILE < "${TMPDIR:-/tmp}/analyse-cache-file-${CSID}" 2>/dev/null || CACHE_FILE=""
 [ -n "$ITEM" ] && [ -n "$CACHE_FILE" ] && jq -n \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg type "$TYPE" \
@@ -370,18 +370,18 @@ Cache miss:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload drift state — fresh shell (Check 41)
-DRIFT=$(cat "${TMPDIR:-/tmp}/analyse-drift-${CSID}" 2>/dev/null || echo "false")
-FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative-${CSID}" 2>/dev/null || echo "false")
-REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime-${CSID}" 2>/dev/null || echo "0")
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
+IFS= read -r DRIFT < "${TMPDIR:-/tmp}/analyse-drift-${CSID}" 2>/dev/null || DRIFT="false"
+IFS= read -r FAST_PATH_TENTATIVE < "${TMPDIR:-/tmp}/analyse-fast-path-tentative-${CSID}" 2>/dev/null || FAST_PATH_TENTATIVE="false"
+IFS= read -r REPORT_MTIME < "${TMPDIR:-/tmp}/analyse-report-mtime-${CSID}" 2>/dev/null || REPORT_MTIME="0"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 # One call covers all types; writes TYPE/UPDATED_AT/DRIFT to ${TMPDIR:-/tmp}/oss-detect-<var>-${CSID}
 if [ "$FAST_PATH_TENTATIVE" = "true" ]; then
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_thread_type.py" --number "$CLEAN_ARGS" --report-mtime "$REPORT_MTIME" 2>/dev/null  # timeout: 15000
 else
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_thread_type.py" --number "$CLEAN_ARGS" 2>/dev/null  # timeout: 15000
 fi
-TYPE=$(cat "${TMPDIR:-/tmp}/oss-detect-type-${CSID}" 2>/dev/null || echo "unknown")
-DRIFT=$(cat "${TMPDIR:-/tmp}/oss-detect-drift-${CSID}" 2>/dev/null || echo "false")
+IFS= read -r TYPE < "${TMPDIR:-/tmp}/oss-detect-type-${CSID}" 2>/dev/null || TYPE="unknown"
+IFS= read -r DRIFT < "${TMPDIR:-/tmp}/oss-detect-drift-${CSID}" 2>/dev/null || DRIFT="false"
 if [ "$FAST_PATH_TENTATIVE" = "true" ] && [ "$TYPE" != "unknown" ] && [ "$DRIFT" = "false" ]; then
     FAST_PATH=true
     echo "[resume] reusing existing report for #$CLEAN_ARGS"
@@ -408,10 +408,10 @@ Read and execute the mode file from `${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/skill
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary: after gather/fetch (Step 5), before synthesis gate (compaction-contract.md §Lifecycle)
-_CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
-_REPORT_FILE=$(cat "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" 2>/dev/null || echo "pending")
-_REPLY_MODE=$(cat "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}" 2>/dev/null || echo "false")
-_KEEP=$(cat "${TMPDIR:-/tmp}/analyse-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || _CLEAN_ARGS=""
+IFS= read -r _REPORT_FILE < "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" 2>/dev/null || _REPORT_FILE="pending"
+IFS= read -r _REPLY_MODE < "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}" 2>/dev/null || _REPLY_MODE="false"
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/analyse-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="target=#${_CLEAN_ARGS}, cache-dir=.cache/gh, report=${_REPORT_FILE}, reply-mode=${_REPLY_MODE}"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -462,9 +462,9 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars — fresh shell (Check 41)
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || echo "")
-CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || echo "")
-TODAY=$(cat "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || date +%Y-%m-%d)
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
 ```
 
 Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (Step 2, `FAST_PATH=true`) or freshly written by Step 5.
@@ -472,7 +472,7 @@ Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (St
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload _OSS_SHARED — fresh shell (Check 41)
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/shepherd-reply-protocol.md"  # timeout: 5000
 ```
 

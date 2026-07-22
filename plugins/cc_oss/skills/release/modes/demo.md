@@ -8,8 +8,8 @@
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars from Shared setup — fresh shell (Check 41)
-REST=$(cat "${TMPDIR:-/tmp}/release-rest-${CSID}" 2>/dev/null || echo "")
-LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/LAST_TAG" 2>/dev/null || echo "")
+IFS= read -r REST < "${TMPDIR:-/tmp}/release-rest-${CSID}" 2>/dev/null || REST=""
+IFS= read -r LAST_TAG < "${TMPDIR:-/tmp}/release-setup-${CSID}/LAST_TAG" 2>/dev/null || LAST_TAG=""
 RANGE="${REST:+${REST/->/../}}"
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 echo "$RANGE" > "${TMPDIR:-/tmp}/release-demo-range-${CSID}"  # persist for later blocks (Check 41)
@@ -21,7 +21,7 @@ Run gather/explore/validate inline for `$RANGE` (no delegation — demo single-p
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-RANGE=$(cat "${TMPDIR:-/tmp}/release-demo-range-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r RANGE < "${TMPDIR:-/tmp}/release-demo-range-${CSID}" 2>/dev/null || RANGE=""  # reload (Check 41)
 git diff --stat "$(echo "$RANGE" | sed 's/\.\./.../')"  # three-dot range preferred; timeout: 3000
 ```
 
@@ -91,8 +91,8 @@ Content rules:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload vars from Shared setup — fresh shell (Check 41)
-BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || echo "")
-DATE=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || echo "")
+IFS= read -r BRANCH < "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || BRANCH=""
+IFS= read -r DATE < "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || DATE=""
 # LAST_TAG = previous release (range lower bound) — not release being drafted
 # always .temp/; prepare mode uses releases/$VERSION/
 DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"

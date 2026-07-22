@@ -77,7 +77,7 @@ Gate — runs after Truth check, before Audit changelog. Labels each diff-derive
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload RANGE (Check 41: fresh shell)
-RANGE=$(cat "${TMPDIR:-/tmp}/release-range-${CSID}" 2>/dev/null || echo "")
+IFS= read -r RANGE < "${TMPDIR:-/tmp}/release-range-${CSID}" 2>/dev/null || RANGE=""
 CODEMAP_OK=$(scan-query list 2>/dev/null | wc -l)  # timeout: 5000
 # 0 = no index → skip this phase entirely (human Classify labels stand)
 ```
@@ -96,8 +96,8 @@ When `CODEMAP_OK` non-zero:
 3. Classify in one batched pass (one process, one coverage block) — pipe batch output through the classifier:
    ```bash
    export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-   BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || echo "")
-   DATE=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || echo "")
+   IFS= read -r BRANCH < "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH" 2>/dev/null || BRANCH=""
+   IFS= read -r DATE < "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || DATE=""
    BREAKING_FILE=".temp/release-breaking-$BRANCH-$DATE.json"
    mkdir -p .temp  # timeout: 5000
    scan-query batch "$QUERIES_FILE" 2>/dev/null \

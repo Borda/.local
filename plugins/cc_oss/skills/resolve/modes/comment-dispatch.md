@@ -87,7 +87,7 @@ If code changed, ensure `$CHANGE_SCOPE` set (default `targeted` if unset), then 
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/lint-qa-gate.md"  # timeout: 5000
 ```
 

@@ -100,10 +100,10 @@ Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python wi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}" 2>/dev/null)  # re-hydrate RUN_ID from T1 (Check 41: fresh shell)
+IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}" 2>/dev/null || RUN_ID=""  # re-hydrate RUN_ID from T1 (Check 41: fresh shell)
 ALPHA="${ALPHA:-0.05}"
 METRIC_DIRECTION=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/read_state_field.py" ".experiments/state/$RUN_ID/state.json" "config.metric.direction" --default "higher" 2>/dev/null || echo "higher")  # loads: read_state_field.py
-RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")  # re-hydrate sanitized path from T1 (Check 41: fresh shell)
+IFS= read -r RETRO_JSONL < "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/null || RETRO_JSONL=".experiments/state/$RUN_ID/experiments-clean.jsonl"  # re-hydrate sanitized path from T1 (Check 41: fresh shell)
 RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/retro_analyze.py" --jsonl "$RETRO_JSONL" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
 RETRO_EXIT=$?
 echo "$RETRO_RESULT" > "${TMPDIR:-/tmp}/retro-result-${CSID}"  # persist for effect-size block (Check 41: fresh shell)
@@ -129,7 +129,7 @@ Read `direction` from `state.json` config (or infer from goal text), pass via `$
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-RETRO_RESULT=$(cat "${TMPDIR:-/tmp}/retro-result-${CSID}" 2>/dev/null)  # re-hydrate from T2 (Check 41: fresh shell)
+IFS= read -r RETRO_RESULT < "${TMPDIR:-/tmp}/retro-result-${CSID}" 2>/dev/null || RETRO_RESULT=""  # re-hydrate from T2 (Check 41: fresh shell)
 EFFECT_R=$(echo "$RETRO_RESULT" | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/compute_effect_size.py")  # timeout: 5000
 ```
 
@@ -161,10 +161,10 @@ Re-hydrate cross-Bash state at the start of every separate Bash invocation in T3
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-RUN_DIR=$(cat "${TMPDIR:-/tmp}/retro-run-dir-${CSID}" 2>/dev/null)
-RUN_ID_ARG=$(cat "${TMPDIR:-/tmp}/retro-run-id-${CSID}" 2>/dev/null)
-RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}" 2>/dev/null)
-RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/retro-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
+IFS= read -r RUN_ID_ARG < "${TMPDIR:-/tmp}/retro-run-id-${CSID}" 2>/dev/null || RUN_ID_ARG=""
+IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}" 2>/dev/null || RUN_ID=""
+IFS= read -r RETRO_JSONL < "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/null || RETRO_JSONL=".experiments/state/$RUN_ID/experiments-clean.jsonl"
 # T-C1: separate guards — `|| ... &&` has subtle precedence. `exit 1` terminates the Bash
 # subprocess only — orchestrator must treat non-zero exit as hard stop, not proceed to T4.
 [ -z "$RUN_DIR" ] && { echo "retro T3: RUN_DIR missing — T1 must run first" >&2; exit 1; }

@@ -111,8 +111,8 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_preflight.py"  # timeout: 30000
 _PREFLIGHT_RC=$?
 [ "$_PREFLIGHT_RC" -ne 0 ] && { echo "! BLOCKED — resolve_preflight.py failed (gh missing/unauthenticated or git pull conflict); cannot proceed"; exit 1; }
-CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null || echo "false")
-GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK-${CSID}" 2>/dev/null || echo "true")
+IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE-${CSID}" 2>/dev/null || CODEX_AVAILABLE="false"
+IFS= read -r GH_OK < "${TMPDIR:-/tmp}/resolve-preflight-GH_OK-${CSID}" 2>/dev/null || GH_OK="true"
 ```
 
 gh missing or not authenticated → script exits 1 (error printed above; eval skipped when exit code non-zero).
@@ -142,9 +142,9 @@ CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
 [ "$CODEMAP_STRICT" = "true" ] && _DETECT_FLAGS="$_DETECT_FLAGS --strict"
 python "$_DETECT_CODEMAP" --prefix resolve $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && { echo "! BLOCKED — codemap strict mode requested but codemap not installed or index missing"; exit 1; }
-CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}" 2>/dev/null || echo "false")
-CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/resolve-codemap-currency-${CSID}" 2>/dev/null || echo "off")
-_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
+IFS= read -r CODEMAP_CURRENCY < "${TMPDIR:-/tmp}/resolve-codemap-currency-${CSID}" 2>/dev/null || CODEMAP_CURRENCY="off"
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""  # reload (Check 41)
 [ "$CODEMAP_FORCE_OFF" = "false" ] && cat "$_OSS_SHARED/codemap-gates.md"  # timeout: 5000
 ```
 
@@ -235,7 +235,7 @@ TaskUpdate(task_id=TASK_GATHER, status="in_progress")
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/report-intelligence.md"  # timeout: 5000
 ```
 
@@ -246,7 +246,7 @@ Execute its steps (loaded above).
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/pr-intelligence.md"  # timeout: 5000
 ```
 
@@ -487,7 +487,7 @@ TaskUpdate(task_id=TASK_CONFLICT, status="in_progress")
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/conflict-resolution.md"  # timeout: 5000
 ```
 
@@ -528,7 +528,7 @@ If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}" 2>/dev/null || echo false)  # timeout: 3000
+IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"  # timeout: 3000
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
     _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
@@ -569,7 +569,7 @@ echo "${CODEMAP_CACHE_DIR}" > "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/action-item-dispatch.md"  # timeout: 5000
 ```
 
@@ -584,8 +584,8 @@ TaskUpdate(task_id=TASK_IMPL, status="completed")
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 1: after implementation loop, before lint gate (compaction-contract.md §Lifecycle)
-_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || echo "n/a")
-_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _PR_NUMBER < "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || _PR_NUMBER="n/a"
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="pr=${_PR_NUMBER}, items-implemented; next: lint/push/report"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -606,7 +606,7 @@ TaskUpdate(task_id=TASK_LINT, status="in_progress")
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/lint-qa-gate.md"  # timeout: 5000
 ```
 
@@ -684,8 +684,8 @@ gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messa
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 2: before final report write (compaction-contract.md §Lifecycle)
-_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || echo "n/a")
-_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _PR_NUMBER < "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || _PR_NUMBER="n/a"
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="pr=${_PR_NUMBER}, final-report=pending-write"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 {
@@ -695,7 +695,7 @@ _PRESERVE="pr=${_PR_NUMBER}, final-report=pending-write"
     echo "- preserve: ${_PRESERVE}"
     echo "- next: write final report → post-PR action gate"
 } > .temp/state/skill-contract.md  # timeout: 5000
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/templates/resolve-report.md"  # timeout: 5000
 ```
 
@@ -717,7 +717,7 @@ Include `### Challenge Log` section in report — one row per item: id · eviden
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-SAVED_BRANCH=$(cat "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}" 2>/dev/null || echo "")
+IFS= read -r SAVED_BRANCH < "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}" 2>/dev/null || SAVED_BRANCH=""
 # skip restore when COMMIT_MODE=stage — staged changes would be lost
 if [ "$COMMIT_MODE" = "stage" ]; then
     echo "⚠ COMMIT_MODE=stage: changes are staged on $(git branch --show-current) — restore to $SAVED_BRANCH skipped to preserve staged work. Run: git stash && git switch $SAVED_BRANCH && git stash pop (on PR branch) when ready."
@@ -741,7 +741,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || echo "")  # reload (Check 41)
+IFS= read -r _OSS_RESOLVE < "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}" 2>/dev/null || _OSS_RESOLVE=""  # reload (Check 41)
 cat "$_OSS_RESOLVE/modes/comment-dispatch.md"  # timeout: 5000
 ```
 

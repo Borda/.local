@@ -68,7 +68,7 @@ _DEMO_PROJ=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null | xargs base
 SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --output-prefix "codemap-demo-${_DEMO_PROJ}" 2>/dev/null
-_DEMO_INDEX=$(cat "${TMPDIR:-/tmp}/codemap-demo-${_DEMO_PROJ}-resolve-index-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _DEMO_INDEX < "${TMPDIR:-/tmp}/codemap-demo-${_DEMO_PROJ}-resolve-index-${CSID}" 2>/dev/null || _DEMO_INDEX=""
 ```
 
 ```bash

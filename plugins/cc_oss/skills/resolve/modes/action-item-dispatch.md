@@ -94,7 +94,7 @@ Each module's `rdeps` answer served from **review pre-flight cache** first (mate
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # pre-loop; BLAST_RADIUS_CONTEXT shared with impl agents
 BLAST_RADIUS_CONTEXT=""
-CODEMAP_CACHE_DIR=$(cat "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}" 2>/dev/null || echo "")  # timeout: 3000
+IFS= read -r CODEMAP_CACHE_DIR < "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}" 2>/dev/null || CODEMAP_CACHE_DIR=""  # timeout: 3000
 _IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-').json"
 _CACHE_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py"
 if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
@@ -258,7 +258,7 @@ Parse each group's JSON: `commits` entries feed Phase 3's merge plan; `skipped` 
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_BASE_SHA=$(cat "${TMPDIR:-/tmp}/resolve-base-sha-${CSID}" 2>/dev/null || echo "")  # timeout: 3000
+IFS= read -r _BASE_SHA < "${TMPDIR:-/tmp}/resolve-base-sha-${CSID}" 2>/dev/null || _BASE_SHA=""  # timeout: 3000
 _NOW_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")  # timeout: 3000
 if [ -n "$_BASE_SHA" ] && [ "$_NOW_SHA" != "$_BASE_SHA" ]; then
     echo "⚠ base HEAD moved during Phase 2: ${_BASE_SHA:0:8} → ${_NOW_SHA:0:8} (external write)."

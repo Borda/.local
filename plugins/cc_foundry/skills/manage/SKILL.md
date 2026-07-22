@@ -503,7 +503,7 @@ Verify the entry is gone:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-HOOK_NAME=$(cat "${TMPDIR:-/tmp}/manage-hook-name-${CSID}" 2>/dev/null)
+IFS= read -r HOOK_NAME < "${TMPDIR:-/tmp}/manage-hook-name-${CSID}" 2>/dev/null || HOOK_NAME=""
 jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook + "\\.js"))] | length' .claude/settings.json  # timeout: 5000
 # Expected output: 0
 ```
@@ -513,7 +513,7 @@ jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 5000
-HOOK_NAME=$(cat "${TMPDIR:-/tmp}/manage-hook-name-${CSID}" 2>/dev/null)
+IFS= read -r HOOK_NAME < "${TMPDIR:-/tmp}/manage-hook-name-${CSID}" 2>/dev/null || HOOK_NAME=""
 PLUGIN_HOOKS_JSON="${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/hooks/hooks.json"
 if [ -f "$PLUGIN_HOOKS_JSON" ]; then
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/remove_hook_from_registry.py" \
@@ -756,8 +756,8 @@ Invoke `Skill(skill="foundry:audit", args="--skip-gate")` to validate created/mo
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_SKIP_FILE=$(cat "${TMPDIR:-/tmp}/manage-skip-audit-path-${CSID}" 2>/dev/null || echo "${TMPDIR:-/tmp}/manage-skip-audit-${CSID}")
-SKIP_AUDIT=$(cat "$_SKIP_FILE" 2>/dev/null || echo "false")  # reload (Check 41)
+IFS= read -r _SKIP_FILE < "${TMPDIR:-/tmp}/manage-skip-audit-path-${CSID}" 2>/dev/null || _SKIP_FILE="${TMPDIR:-/tmp}/manage-skip-audit-${CSID}"
+IFS= read -r SKIP_AUDIT < "$_SKIP_FILE" 2>/dev/null || SKIP_AUDIT="false"  # reload (Check 41)
 [[ "$SKIP_AUDIT" == "true" ]] && { echo "[--skip-audit] skipping Step 9 audit"; }
 ```
 

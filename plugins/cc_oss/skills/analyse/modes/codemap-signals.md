@@ -14,8 +14,8 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _OSS_ANALYSE=${_OSS_ANALYSE:-$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)}  # timeout: 5000
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_codemap.py" --prefix analyse 2>&1  # timeout: 5000
-CM_ENABLED=$(cat "${TMPDIR:-/tmp}/analyse-codemap-enabled-${CSID}" 2>/dev/null || echo "false")
-CM_CURRENCY=$(cat "${TMPDIR:-/tmp}/analyse-codemap-currency-${CSID}" 2>/dev/null || echo "no_index")
+IFS= read -r CM_ENABLED < "${TMPDIR:-/tmp}/analyse-codemap-enabled-${CSID}" 2>/dev/null || CM_ENABLED="false"
+IFS= read -r CM_CURRENCY < "${TMPDIR:-/tmp}/analyse-codemap-currency-${CSID}" 2>/dev/null || CM_CURRENCY="no_index"
 ```
 
 `CM_ENABLED=false` → caller emits inline flag (see below) and skips every scan-query block. No AskUserQuestion — analyse is read-only triage; degrade silently-but-flagged per accept criterion. `CM_ENABLED=true` + `CM_CURRENCY=stale` → detector already printed a stale warning; proceed with stale data, caller notes "index stale — signals may miss recent code".

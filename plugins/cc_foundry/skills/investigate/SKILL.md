@@ -131,8 +131,8 @@ Step 4 spawn prompts must instruct the subagent to Read these files (not rely on
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _INVESTIGATE_RUN < "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || _INVESTIGATE_RUN=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/investigate-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="run-dir=$_INVESTIGATE_RUN, symptom=$_INVESTIGATE_RUN/symptom.txt, signals=$_INVESTIGATE_RUN/signals.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -166,8 +166,8 @@ Refresh the compaction contract now that ranking is done — the boundary moves 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 2: ranking done, entering adversarial+probe loop (compaction-contract.md §Lifecycle)
-_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _IR < "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || _IR=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/investigate-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="run-dir=$_IR, symptom=$_IR/symptom.txt, signals=$_IR/signals.md, hypotheses=$_IR/hypotheses.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -201,7 +201,7 @@ Otherwise, set up adversarial review. Run dir created in Step 2; re-resolve path
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # timeout: 5000
-INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null)
+IFS= read -r INVESTIGATE_RUN < "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || INVESTIGATE_RUN=""
 # fallback if path file absent
 [ -z "$INVESTIGATE_RUN" ] && INVESTIGATE_RUN=$(find .temp/investigate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
@@ -270,7 +270,7 @@ Per probe: mark **Confirmed**, **Ruled out**, or **Inconclusive**. Append each v
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # WHY: probe verdicts live only in-context; a post-compact resume without this would re-probe ruled-out hypotheses (loop)
 echo "<hypothesis> :: <Confirmed|Ruled-out|Inconclusive>" >> ${TMPDIR:-/tmp}/investigate-verdicts-${CSID}
-_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _IR < "${TMPDIR:-/tmp}/investigate-run-path-${CSID}" 2>/dev/null || _IR=""
 _VERDICTS=$(tail -8 "${TMPDIR:-/tmp}/investigate-verdicts-${CSID}" 2>/dev/null)  # cap keeps contract compact; tail keeps most-recent verdicts
 _REVIEW=""; [ -f "$_IR/codex-review.md" ] && _REVIEW="$_IR/codex-review.md"; [ -f "$_IR/challenger-review.md" ] && _REVIEW="$_IR/challenger-review.md"
 mkdir -p .temp/state  # timeout: 5000

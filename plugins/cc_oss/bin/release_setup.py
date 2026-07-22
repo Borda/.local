@@ -18,7 +18,7 @@ and the source-tag commit.
 
 Usage:
     release_setup.py
-    SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR")
+    IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
 
 Exit codes:
     0 — always (caller validates resolved values)

@@ -140,10 +140,10 @@ Use Grep tool to search codebase for existing related code:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary: after Step 2 literature gathered (compaction-contract.md §Lifecycle)
-_AGENT_OUT=$(cat "${TMPDIR:-/tmp}/topic-agent-out-${CSID}" 2>/dev/null || echo "")
-_BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || echo "")
-_DATE=$(cat "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || echo "")
-_KEEP=$(cat "${TMPDIR:-/tmp}/topic-keep-items-${CSID}" 2>/dev/null || echo "")
+IFS= read -r _AGENT_OUT < "${TMPDIR:-/tmp}/topic-agent-out-${CSID}" 2>/dev/null || _AGENT_OUT=""
+IFS= read -r _BRANCH < "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || _BRANCH=""
+IFS= read -r _DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || _DATE=""
+IFS= read -r _KEEP < "${TMPDIR:-/tmp}/topic-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _REPORT_OUT=".reports/research/topic-${_BRANCH}-${_DATE}.md"
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
@@ -220,8 +220,8 @@ Path:        → .reports/research/topic-<branch>-<date>.md
 mkdir -p .reports/research  # timeout: 3000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload from Step 2a bash block (Check 41: fresh shell per call)
-BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
-DATE=$(cat "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || date +%Y-%m-%d)
+IFS= read -r BRANCH < "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
+IFS= read -r DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || DATE=$(date +%Y-%m-%d)
 # Anti-overwrite counter-suffix loop (per quality-gates.md output routing rule)
 BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; COUNT=2
 while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
