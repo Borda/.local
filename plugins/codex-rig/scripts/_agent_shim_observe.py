@@ -178,20 +178,27 @@ def _identity(
 ) -> RootIdentity:
     """Capture identity from one held directory descriptor."""
     metadata = os.fstat(directory_fd)
-    if (
-        not stat.S_ISDIR(metadata.st_mode)
-        or (owned and metadata.st_uid != os.geteuid())
-        or (private and stat.S_IMODE(metadata.st_mode) != 0o700)
-        or (protected and stat.S_IMODE(metadata.st_mode) & 0o022 != 0)
-    ):
-        raise ObservationError(f"unsafe directory: {path}")
+    mode = stat.S_IMODE(metadata.st_mode)
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ObservationError(f"unsafe directory type: {path}; expected directory")
+    if owned and metadata.st_uid != os.geteuid():
+        raise ObservationError(
+            f"unsafe directory owner: {path}; expected uid {os.geteuid()}, observed {metadata.st_uid}"
+        )
+    if private and mode != 0o700:
+        raise ObservationError(f"unsafe private directory mode: {path}; expected 0700, observed {mode:04o}")
+    if protected and mode & 0o7022 != 0:
+        raise ObservationError(
+            f"unsafe protected directory mode: {path}; "
+            f"expected no group/world write or special bits, observed {mode:04o}"
+        )
     return RootIdentity(
         canonical_path=str(path),
         device=metadata.st_dev,
         inode=metadata.st_ino,
         owner=metadata.st_uid,
         group=metadata.st_gid,
-        mode=f"{stat.S_IMODE(metadata.st_mode):04o}",
+        mode=f"{mode:04o}",
     )
 
 
@@ -205,6 +212,8 @@ def _observe_relative_root(
     parent_path: Path,
     parts: tuple[str, ...],
     label: str,
+    *,
+    private: bool = True,
 ) -> tuple[int | None, RootObservation]:
     """Open a contained root or bind its deepest held existing ancestor."""
     directory_fd = os.dup(parent_fd)
@@ -228,7 +237,13 @@ def _observe_relative_root(
             directory_fd = next_fd
             current_path /= part
             ancestor = _identity(current_path, directory_fd, owned=True)
-        identity = _identity(current_path, directory_fd, owned=True, private=True)
+        identity = _identity(
+            current_path,
+            directory_fd,
+            owned=True,
+            private=private,
+            protected=not private,
+        )
         return directory_fd, _existing_root_observation(current_path, identity)
     except Exception:
         try:
@@ -1085,7 +1100,13 @@ def observe_filesystem(*, codex_home: Path | str, plugin_root: Path | str) -> Fi
         target_observation = None
         state_observation = None
         try:
-            target_fd, target_observation = _observe_relative_root(home_fd, home, ("agents",), "target root")
+            target_fd, target_observation = _observe_relative_root(
+                home_fd,
+                home,
+                ("agents",),
+                "target root",
+                private=False,
+            )
             state_fd, state_observation = _observe_relative_root(
                 home_fd,
                 home,

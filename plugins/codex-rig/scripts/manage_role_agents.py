@@ -27,6 +27,7 @@ DIAGNOSTIC_INSTALL_ID = "123e4567-e89b-42d3-a456-426614174000"
 SUPPORTED_PLATFORMS = ("darwin", "linux")
 MARKETPLACE = "borda-ai-rig"
 PLUGIN_NAME = "codex-rig"
+MAX_BINARY_BYTES = 512 * 1024 * 1024
 
 # Unsupported hosts must reach the stable refusal protocol without importing
 # lifecycle modules whose POSIX primitives are intentionally unavailable there.
@@ -135,8 +136,12 @@ def _digest_regular_executable(path: Path, label: str) -> tuple[Path, str]:
         raise ValueError(f"{label} is unavailable: {error}") from error
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_size < 0 or before.st_size > 268_435_456:
-            raise ValueError(f"{label} is not a bounded regular file")
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError(f"{label} is not a regular file: {canonical}")
+        if before.st_size < 0 or before.st_size > MAX_BINARY_BYTES:
+            raise ValueError(
+                f"{label} exceeds {MAX_BINARY_BYTES}-byte safety limit: {canonical} has {before.st_size} bytes"
+            )
         digest = hashlib.sha256()
         while chunk := os.read(descriptor, 65_536):
             digest.update(chunk)
@@ -770,7 +775,7 @@ def apply_recovery(plan: RecoveryPlan, approved_digest: str) -> Journal | None:
             _cleanup_preparing(transaction_fd)
             terminal = None
         else:
-            target_fd = open_directory_at(home_fd, "agents")
+            target_fd = open_directory_at(home_fd, "agents", private=False)
             before_fd = open_directory_at(transaction_fd, "before")
             after_fd = open_directory_at(transaction_fd, "after")
             quarantine_fd = open_directory_at(transaction_fd, "quarantine")
@@ -922,7 +927,7 @@ def apply_mutation(
     descriptors: list[int] = []
     try:
         _revalidate_under_lock(plan, lock_fd)
-        target_fd, _ = create_private_path(home_fd, ("agents",))
+        target_fd, _ = create_directory_at(home_fd, "agents", private=False)
         state_fd, _ = create_private_path(home_fd, ("codex-rig", "shims"))
         descriptors.extend((target_fd, state_fd))
         transactions_fd, _ = create_directory_at(state_fd, "transactions")
@@ -948,7 +953,7 @@ def apply_mutation(
             plan,
             handles,
             target_path=target_path,
-            target_identity=directory_identity(target_fd),
+            target_identity=directory_identity(target_fd, private=False),
             state_path=state_path,
             state_identity=directory_identity(state_fd),
         )

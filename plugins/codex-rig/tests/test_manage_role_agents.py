@@ -259,6 +259,9 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     module = load_module(MANAGER_PATH, "codex_rig_manager_mutation")
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
+    agents = home / "agents"
+    agents.mkdir(mode=0o700)
+    agents.chmod(0o755)
     codex = executable(tmp_path)
     install_id = "123e4567-e89b-42d3-a456-426614174001"
     before_plan = snapshot(tmp_path)
@@ -277,8 +280,9 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     committed = module.apply_mutation(install, install.approval.digest)
 
     assert committed.journal_state == "COMMITTED"
-    targets = sorted((home / "agents").glob("codex-rig-*.toml"))
+    targets = sorted(agents.glob("codex-rig-*.toml"))
     assert len(targets) == 15
+    assert stat.S_IMODE(agents.stat().st_mode) == 0o755
     installed = snapshot(home)
     repeated = module.plan_mutation(
         action="install",
@@ -304,9 +308,73 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     removed = module.apply_mutation(removal, removal.approval.digest)
 
     assert removed.journal_state == "COMMITTED"
-    assert list((home / "agents").glob("codex-rig-*.toml")) == []
+    assert list(agents.glob("codex-rig-*.toml")) == []
+    assert stat.S_IMODE(agents.stat().st_mode) == 0o755
     state = (home / "codex-rig" / "shims" / "state.json").read_text()
     assert '"transaction_status":"removed"' in state
+
+
+def test_large_symlinked_codex_executable_uses_package_binary_bound(tmp_path: Path) -> None:
+    """Accept a stable Codex executable above the obsolete 256 MiB limit."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_large_codex")
+    target = tmp_path / "codex-target"
+    with target.open("wb") as stream:
+        stream.truncate(268_435_457)
+    target.chmod(0o700)
+    link = tmp_path / "codex"
+    link.symlink_to(target)
+
+    canonical, digest = module._digest_regular_executable(link, "Codex executable")
+
+    assert canonical == target.resolve()
+    assert len(digest) == 64
+    assert set(digest) <= set("0123456789abcdef")
+
+
+def test_codex_executable_accepts_exact_package_binary_bound(tmp_path: Path) -> None:
+    """Accept the inclusive 512 MiB package-wide executable boundary."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_exact_binary_bound")
+    target = tmp_path / "codex-target"
+    with target.open("wb") as stream:
+        stream.truncate(module.MAX_BINARY_BYTES)
+    target.chmod(0o700)
+    link = tmp_path / "codex"
+    link.symlink_to(target)
+    before = tuple(
+        (path.lstat().st_mode, path.lstat().st_ino, path.lstat().st_nlink, path.lstat().st_size)
+        for path in (target, link)
+    )
+
+    canonical, digest = module._digest_regular_executable(link, "Codex executable")
+
+    assert canonical == target.resolve()
+    assert len(digest) == 64
+    assert set(digest) <= set("0123456789abcdef")
+    assert (
+        tuple(
+            (path.lstat().st_mode, path.lstat().st_ino, path.lstat().st_nlink, path.lstat().st_size)
+            for path in (target, link)
+        )
+        == before
+    )
+
+
+def test_oversized_codex_executable_reports_observed_size_and_limit(tmp_path: Path) -> None:
+    """Explain the exact bounded-file invariant when an executable is too large."""
+    module = load_module(MANAGER_PATH, "codex_rig_manager_oversized_codex")
+    target = tmp_path / "codex"
+    with target.open("wb") as stream:
+        stream.truncate(module.MAX_BINARY_BYTES + 1)
+    target.chmod(0o700)
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            rf"Codex executable exceeds {module.MAX_BINARY_BYTES}-byte safety limit: "
+            rf"{target} has {module.MAX_BINARY_BYTES + 1} bytes"
+        ),
+    ):
+        module._digest_regular_executable(target, "Codex executable")
 
 
 def test_wrong_approval_digest_causes_zero_writes(tmp_path: Path) -> None:

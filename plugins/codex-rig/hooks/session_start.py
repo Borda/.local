@@ -12,6 +12,7 @@ from pathlib import Path
 
 MAX_INPUT_BYTES = 65_536
 MAX_OUTPUT_BYTES = 1_048_576
+MAX_REASON_CHARS = 240
 
 
 def _response(message: str | None = None) -> str:
@@ -45,6 +46,33 @@ def _plugin_root() -> Path:
     return root
 
 
+def _health_message(result: dict[str, object], classification: str) -> str:
+    """Render one bounded failed check without suggesting an unsafe repair."""
+    checks = result.get("checks")
+    reason = "details unavailable"
+    if isinstance(checks, dict):
+        preferred = "blocked" if classification == "blocked" else "degraded"
+        for name in ("python", "platform", "filesystem", "executables", "package", "active_package"):
+            value = checks.get(name)
+            if isinstance(value, dict) and value.get("status") == preferred:
+                detail = value.get("detail")
+                if isinstance(detail, str) and detail:
+                    reason = f"{name}: {detail}"
+                    break
+    if reason == "details unavailable":
+        # Platform-refusal path (native Windows / unknown POSIX host) short-circuits
+        # before any per-check diagnosis and carries only a top-level detail — surface
+        # it rather than the useless "details unavailable" placeholder.
+        top_detail = result.get("detail")
+        if isinstance(top_detail, str) and top_detail:
+            reason = top_detail
+    reason = reason.replace("\n", " ")[:MAX_REASON_CHARS]
+    return (
+        f"Codex Rig shim health: {classification} — {reason}. No files changed. "
+        "Run $codex-rig:agent-shims status for all checks and safe next steps."
+    )
+
+
 def main() -> int:
     """Run the packaged doctor and surface only actionable degraded health."""
     try:
@@ -67,11 +95,11 @@ def main() -> int:
             raise ValueError("doctor did not return a valid diagnostic")
         message = None
         if classification != "healthy":
-            message = f"Codex Rig shim health: {classification}. Run $agent-shims status for details."
+            message = _health_message(result, classification)
         print(_response(message))
         return 0
     except (OSError, subprocess.TimeoutExpired, ValueError, json.JSONDecodeError) as error:
-        print(_response(f"Codex Rig shim health check unavailable: {error}. Run $agent-shims doctor."))
+        print(_response(f"Codex Rig shim health check unavailable: {error}. Run $codex-rig:agent-shims doctor."))
         return 0
 
 

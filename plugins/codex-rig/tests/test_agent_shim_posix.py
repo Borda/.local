@@ -81,6 +81,90 @@ def test_private_directory_mode_is_independent_of_umask(tmp_path: Path) -> None:
     assert stat.S_IMODE((tmp_path / "child").stat().st_mode) == 0o700
 
 
+def test_existing_protected_directory_is_opened_without_permission_change(tmp_path: Path) -> None:
+    """Open an owned protected namespace while preserving its public read mode."""
+    module = load_module()
+    child = tmp_path / "agents"
+    child.mkdir(mode=0o700)
+    child.chmod(0o755)
+    root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        child_fd, created = module.create_directory_at(root_fd, "agents", private=False)
+        identity = module.directory_identity(child_fd, private=False)
+        os.close(child_fd)
+    finally:
+        os.close(root_fd)
+
+    assert created is False
+    assert identity.mode == "0755"
+    assert stat.S_IMODE(child.stat().st_mode) == 0o755
+
+
+def test_protected_target_primitives_preserve_mode(roots: tuple[int, int, Path, Path]) -> None:
+    """Publish, detach, and restore through an existing protected target."""
+    module = load_module()
+    source_fd, target_fd, source, target = roots
+    target.chmod(0o755)
+    payload = b"generated-shim\n"
+    digest = hashlib.sha256(payload).hexdigest()
+    module.write_exclusive_at(source_fd, "staged.toml", payload)
+
+    module.publish_noclobber(source_fd, "staged.toml", target_fd, "role.toml", expected_hash=digest)
+    module.unlink_verified_at(
+        source_fd,
+        "staged.toml",
+        expected_hash=digest,
+        expected_mode=0o600,
+        expected_links=2,
+    )
+    module.detach_verified(
+        target_fd,
+        "role.toml",
+        source_fd,
+        "quarantine.toml",
+        expected_hash=digest,
+    )
+    module.restore_quarantine_at(
+        source_fd,
+        "quarantine.toml",
+        target_fd,
+        "role.toml",
+        expected_hash=digest,
+    )
+
+    assert (target / "role.toml").read_bytes() == payload
+    assert not (source / "quarantine.toml").exists()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [0o775, 0o4700, 0o2700, 0o1700],
+    ids=["group-writable", "setuid", "setgid", "sticky"],
+)
+def test_protected_directory_rejects_group_writable_or_special_modes(tmp_path: Path, mode: int) -> None:
+    """Reject target namespaces that another principal could mutate or redirect."""
+    module = load_module()
+    child = tmp_path / "agents"
+    child.mkdir(mode=0o700)
+    child.chmod(mode)
+    observed_mode = stat.S_IMODE(child.stat().st_mode)
+    if observed_mode != mode:
+        pytest.skip(f"filesystem did not retain requested mode {mode:04o}; observed {observed_mode:04o}")
+    root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(
+            module.PosixPrimitiveError,
+            match=(
+                "unsafe protected directory mode: expected no group/world write or special bits, "
+                rf"observed {mode:04o}"
+            ),
+        ):
+            module.create_directory_at(root_fd, "agents", private=False)
+    finally:
+        os.close(root_fd)
+
+
 def test_private_path_rejects_symlink_component(tmp_path: Path) -> None:
     """Refuse a link where a held private child directory is required."""
     module = load_module()
@@ -102,7 +186,7 @@ def test_private_path_rejects_group_writable_parent(tmp_path: Path) -> None:
     tmp_path.chmod(0o770)
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        with pytest.raises(module.PosixPrimitiveError, match="unsafe directory"):
+        with pytest.raises(module.PosixPrimitiveError, match="unsafe protected directory mode"):
             module.create_private_path(root_fd, ("codex-rig", "shims"))
     finally:
         os.close(root_fd)
@@ -561,7 +645,7 @@ def test_coordination_lock_rejects_group_writable_home(tmp_path: Path, intent: s
     tmp_path.chmod(0o770)
     home_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        with pytest.raises(module.PosixPrimitiveError, match="unsafe directory descriptor"):
+        with pytest.raises(module.PosixPrimitiveError, match="unsafe protected directory mode"):
             module.acquire_coordination_lock(
                 home_fd,
                 intent=intent,

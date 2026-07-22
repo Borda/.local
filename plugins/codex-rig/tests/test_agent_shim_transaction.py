@@ -184,6 +184,7 @@ def transaction_fixture(tmp_path: Path) -> tuple[ModuleType, object, object, dic
     for path in roots.values():
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
+    roots["target"].chmod(0o755)
     for child in ("before", "after", "quarantine"):
         path = roots["transaction"] / child
         path.mkdir(mode=0o700)
@@ -374,6 +375,7 @@ def test_each_forward_mutation_boundary_rolls_back_exactly(
     else:
         assert target.read_bytes() == b"previous challenger shim\n"
         assert state.read_bytes() == b'{"transaction_status":"previous"}'
+    assert stat.S_IMODE(roots["target"].stat().st_mode) == 0o755
 
 
 @pytest.mark.parametrize(
@@ -441,5 +443,6 @@ transaction_module.apply_transaction(journal, handles, checkpoint=kill)
     else:
         assert target.read_bytes() == b"previous challenger shim\n"
         assert state.read_bytes() == b'{"transaction_status":"previous"}'
+    assert stat.S_IMODE(roots["target"].stat().st_mode) == 0o755
     module.cleanup_transaction(terminal, handles)
     assert list(roots["transaction"].iterdir()) == []

@@ -101,13 +101,14 @@ def _directory_identity(fd: int, *, private: bool, protected: bool = False) -> D
     """Validate and identify one held directory descriptor."""
     metadata = os.fstat(fd)
     mode = stat.S_IMODE(metadata.st_mode)
-    if (
-        not stat.S_ISDIR(metadata.st_mode)
-        or metadata.st_uid != os.geteuid()
-        or (private and mode != PRIVATE_DIRECTORY_MODE)
-        or (protected and mode & 0o022 != 0)
-    ):
-        _fail("unsafe directory descriptor")
+    if not stat.S_ISDIR(metadata.st_mode):
+        _fail("unsafe directory descriptor type")
+    if metadata.st_uid != os.geteuid():
+        _fail(f"unsafe directory descriptor owner: expected uid {os.geteuid()}, observed {metadata.st_uid}")
+    if private and mode != PRIVATE_DIRECTORY_MODE:
+        _fail(f"unsafe private directory mode: expected 0700, observed {mode:04o}")
+    if protected and mode & 0o7022 != 0:
+        _fail(f"unsafe protected directory mode: expected no group/world write or special bits, observed {mode:04o}")
     return DirectoryIdentity(
         metadata.st_dev,
         metadata.st_ino,
@@ -119,7 +120,7 @@ def _directory_identity(fd: int, *, private: bool, protected: bool = False) -> D
 
 def directory_identity(fd: int, *, private: bool = True) -> DirectoryIdentity:
     """Return the validated identity of one held directory descriptor."""
-    return _directory_identity(fd, private=private)
+    return _directory_identity(fd, private=private, protected=not private)
 
 
 def open_directory_at(parent_fd: int, name: str, *, private: bool = True) -> int:
@@ -131,16 +132,17 @@ def open_directory_at(parent_fd: int, name: str, *, private: bool = True) -> int
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
             dir_fd=parent_fd,
         )
-        _directory_identity(fd, private=private)
+        _directory_identity(fd, private=private, protected=not private)
         return fd
     except OSError as error:
         if "fd" in locals():
             os.close(fd)
-        raise PosixPrimitiveError(f"unsafe directory {child}: {error.strerror}") from error
+        detail = error.strerror or str(error)
+        raise PosixPrimitiveError(f"unsafe directory {child}: {detail}") from error
 
 
-def create_directory_at(parent_fd: int, name: str) -> tuple[int, bool]:
-    """Create or open one private child directory and fsync creation."""
+def create_directory_at(parent_fd: int, name: str, *, private: bool = True) -> tuple[int, bool]:
+    """Create a private child or open one with the requested protection."""
     child = _basename(name, "directory name")
     _directory_identity(parent_fd, private=False, protected=True)
     created = False
@@ -153,7 +155,7 @@ def create_directory_at(parent_fd: int, name: str) -> tuple[int, bool]:
         os.chmod(child, PRIVATE_DIRECTORY_MODE, dir_fd=parent_fd)
     except FileExistsError:
         pass
-    fd = open_directory_at(parent_fd, child)
+    fd = open_directory_at(parent_fd, child, private=private)
     try:
         if created:
             os.fsync(fd)
@@ -339,13 +341,19 @@ def unlink_verified_at(
     expected_mode: int,
     expected_links: int = 1,
     allow_absent: bool = False,
+    parent_private: bool = True,
 ) -> bool:
     """Unlink one exact current-user regular file and durably record absence."""
-    if type(allow_absent) is not bool or type(expected_links) is not int or expected_links < 1:
+    if (
+        type(allow_absent) is not bool
+        or type(parent_private) is not bool
+        or type(expected_links) is not int
+        or expected_links < 1
+    ):
         _fail("invalid absence permission")
     digest = _digest(expected_hash, "unlink hash")
     mode = _mode(expected_mode, "unlink mode")
-    _directory_identity(parent_fd, private=True)
+    _directory_identity(parent_fd, private=parent_private, protected=not parent_private)
     try:
         _, identity = read_regular_at(
             parent_fd,
@@ -398,6 +406,8 @@ def publish_noclobber(
     """Hard-link an exact staged file into an absent target name."""
     source = _basename(source_name, "source name")
     target = _basename(target_name, "target name")
+    _directory_identity(source_fd, private=True)
+    _directory_identity(target_fd, private=False, protected=True)
     payload, identity = read_regular_at(source_fd, source, expected_mode=PRIVATE_FILE_MODE)
     if identity.sha256 != expected_hash:
         _fail("staged publication hash mismatch")
@@ -431,7 +441,7 @@ def detach_verified(
     """Atomically detach a target and restore mismatched bytes without clobber."""
     target = _basename(target_name, "target name")
     quarantine = _basename(quarantine_name, "quarantine name")
-    target_root = _directory_identity(target_fd, private=True)
+    target_root = _directory_identity(target_fd, private=False, protected=True)
     quarantine_root = _directory_identity(quarantine_fd, private=True)
     if target_root.device != quarantine_root.device:
         _fail("detach roots must share one device")
@@ -505,7 +515,7 @@ def restore_quarantine_at(
     target = _basename(target_name, "target name")
     digest = _digest(expected_hash, "quarantine hash")
     quarantine_root = _directory_identity(quarantine_fd, private=True)
-    target_root = _directory_identity(target_fd, private=True)
+    target_root = _directory_identity(target_fd, private=False, protected=True)
     if quarantine_root.device != target_root.device:
         _fail("restore roots must share one device")
     _, before = read_regular_at(

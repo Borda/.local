@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4
+
+- Accept protected current-user Codex agent directories without changing their permissions, while keeping lifecycle state private.
+- Align executable validation with the package-wide 512 MiB bound and report exact failed invariants.
+- Make SessionStart and `agent-shims` diagnostics explain the first cause, confirm zero writes, and provide safe next steps.
+
 ## 0.2.3
 
 - Add intent-first target-merge conflict resolution to PR remediation, with explicit merge-commit authorization and fail-closed completion evidence.

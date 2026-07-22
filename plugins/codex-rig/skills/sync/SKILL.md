@@ -73,7 +73,7 @@ After approval, use only commands confirmed by authoritative help:
 ```bash
 codex plugin marketplace add Borda/AI-Rig
 # Optional reproducible release pin:
-# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2
+# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.4
 codex plugin marketplace upgrade borda-ai-rig
 codex plugin add codex-rig@borda-ai-rig
 ```

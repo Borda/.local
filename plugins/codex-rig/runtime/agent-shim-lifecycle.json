@@ -340,7 +340,7 @@
   "doctor": {
     "always_live": true,
     "approved_apply_probes": [
-      "create or verify private target and state roots after digest approval and lock acquisition",
+      "create a missing private target root or verify an existing protected target root, and verify private state roots after digest approval and lock acquisition",
       "require target and state roots on the same device",
       "probe case behavior, hard-link no-clobber, file and directory fsync, and atomic state replacement only inside a nonce-bound private probe directory under the state root",
       "remove every recognized probe file and fsync its parent before transaction preparation"
@@ -1249,7 +1249,7 @@
       "PENDING",
       "RESTORED"
     ],
-    "root_creation_rule": "after lock and digest equality, create missing target and state path components directory-relative, establish mode 0700, immediately open each component with no-follow directory flags, verify identity and ownership, fsync each parent, and require target and state roots to share one device; on Python/Linux without no-follow descriptor-relative chmod, permission repair of the just-created name occurs only under the held current-user private parent before the immediate no-follow open, within the declared same-UID tampering exclusion",
+    "root_creation_rule": "after lock and digest equality, create missing target and state path components directory-relative at mode 0700; an existing target root may retain its exact observed mode only when it is a current-user real directory with no group/world write or special permission bits, while state and recovery roots remain exact mode 0700; immediately open each component with no-follow directory flags, verify identity and ownership, fsync each parent, and require target and state roots to share one device; on Python/Linux without no-follow descriptor-relative chmod, permission repair of a just-created name occurs only under the held current-user protected parent before the immediate no-follow open, within the declared same-UID tampering exclusion",
     "root_retention_rule": "never remove the user agents directory; safely created empty state directories and the fixed lock may remain after an approved probe failure or crash and never imply installed state",
     "state_primitive": "atomically replace only manager-owned state.json under the held lock by renaming exact transaction-local state.publish.json across same-filesystem held directories, then fsync the state root; a crash before replace leaves the journal-bound publish link, while a crash after replace consumes that link and leaves the exact after state",
     "state_publish_artifact": "state.publish.json is a same-inode hard link to exact state.after.json inside the private transaction directory; it is created only after every target is VERIFIED and is consumed as the source of atomic state replacement",

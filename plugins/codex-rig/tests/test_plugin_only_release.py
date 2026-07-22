@@ -374,7 +374,7 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
     guide_path = PLUGIN_ROOT / "README.md"
     guide = normalized_text(guide_path).lower()
     for required in (
-        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.3",
+        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.4",
         "codex plugin add codex-rig@borda-ai-rig",
         "optional sessionstart diagnostic",
         "type that exact digest only after explicit approval",
@@ -388,7 +388,7 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
 
     install_lines = {line.strip() for line in guide_path.read_text(encoding="utf-8").splitlines()}
     assert "codex plugin marketplace add Borda/AI-Rig" in install_lines
-    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.3" in install_lines
+    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.4" in install_lines
 
 
 def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None:
@@ -456,7 +456,7 @@ elif args[:3] == ["plugin", "marketplace", "add"]:
 elif args[:2] == ["plugin", "add"]:
     pass
 elif args[:2] == ["plugin", "list"]:
-    print(json.dumps({"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.2.2"}]}))
+    print(json.dumps({"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.2.4"}]}))
 else:
     raise SystemExit(f"unexpected fake Codex call: {args}")
 """,
@@ -477,9 +477,9 @@ else:
         ),
         (
             "pinned",
-            ("codex", "--codex-ref", "codex-rig-v0.2.2"),
-            "plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.2",
-            "marketplace source: codex-rig-v0.2.2",
+            ("codex", "--codex-ref", "codex-rig-v0.2.4"),
+            "plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.4",
+            "marketplace source: codex-rig-v0.2.4",
             True,
         ),
         (
@@ -526,7 +526,7 @@ else:
         calls = log.read_text(encoding="utf-8").splitlines()
         assert expected_add in calls
         assert expected_source in result.stdout
-        assert "Codex Rig 0.2.2 installed" in result.stdout
+        assert "Codex Rig 0.2.4 installed" in result.stdout
         assert (codex_home / "AGENTS.md").exists() is expect_global_agents
         if expect_global_agents:
             global_agents = (codex_home / "AGENTS.md").read_text(encoding="utf-8")

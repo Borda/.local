@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.2.3`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.2.4`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -30,7 +30,7 @@ No official marketplace is assumed. Local, unpushed changes are not installable 
 ```bash
 codex plugin marketplace add Borda/AI-Rig
 # Optional reproducible release pin:
-# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.3
+# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.4
 codex plugin add codex-rig@borda-ai-rig
 ```
 
@@ -251,6 +251,8 @@ $codex-rig:agent-shims remove
 - `install`: report the platform block without creating or relinking files.
 - `remove`: plan removal of intact, authenticated Codex Rig shims. No prefix-based cleanup.
 
+`doctor` and `status` are read-only. A blocked result names the failed check, observed path/mode/size, and required invariant; it does not authorize a repair. The optional SessionStart hook shows the first bounded reason and confirms that no files changed. Do not apply recursive permission changes or delete/link-replace evidence from the diagnostic alone. Existing `$CODEX_HOME/agents` directories are accepted when they are real current-user directories without group/world write or special permission bits; lifecycle state and recovery directories remain private mode `0700`.
+
 Prior lifecycle files use authenticated names such as `codex-rig-linting-expert.toml`. `remove` prints the exact target root, operations, and SHA-256 approval digest. Review the displayed plan. Type that exact digest only after explicit approval. Wrong or missing digest causes cancellation without authorized writes.
 
 Interrupted recognized transactions use a separate recovery digest. Approved recovery rolls back partial mutation or finalizes durable committed state. Repeat the original action after recovery. Use `remove` to recover prior interrupted transactions; blocked `install` never enters recovery or mutation planning.
@@ -272,6 +274,7 @@ Recovery: reinstall `codex-rig@borda-ai-rig`, start a fresh session, run `doctor
 
 - Foreign or marker-only `codex-rig-*.toml` files are never adopted, overwritten, or removed.
 - Modified managed shims, concurrent drift, unsafe links/nodes, ambiguous package selection, or changed runtime binaries block mutation.
+- Executable hashing is bounded consistently at 512 MiB across the manager, generator, and verifier; larger files report the selected path, observed size, and limit.
 - Missing, malformed, oversized, aliased, or identity-inconsistent lifecycle state blocks cleanup. Manual evidence recovery is required.
 - Only one exact recognized interrupted transaction can be recovered. Unknown, conflicting, or multiple residue remains blocked.
 - The manager owns only its authenticated roster and state under the current user's Codex home; it never cleans unrelated agents.

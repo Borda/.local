@@ -31,7 +31,7 @@ def test_scaffold_has_stable_role_card_release_identity() -> None:
     manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
 
     assert manifest["name"] == "codex-rig"
-    assert manifest["version"] == "0.2.3"
+    assert manifest["version"] == "0.2.4"
     assert manifest["author"]["name"] == "Jiri Borovec"
     assert "hooks" not in manifest
     assert "mcpServers" not in manifest

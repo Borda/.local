@@ -227,6 +227,7 @@ def _restore_operation(handles: TransactionDirectories, operation: JournalOperat
                 expected_hash=identity.sha256,
                 expected_mode=PRIVATE_FILE_MODE,
                 expected_links=2,
+                parent_private=False,
             )
         return
     if operation.intent == "noop":
@@ -246,6 +247,7 @@ def _restore_operation(handles: TransactionDirectories, operation: JournalOperat
                 expected_hash=current.sha256,
                 expected_mode=PRIVATE_FILE_MODE,
                 expected_links=2,
+                parent_private=False,
             )
         restore_quarantine_at(
             handles.quarantine_fd,

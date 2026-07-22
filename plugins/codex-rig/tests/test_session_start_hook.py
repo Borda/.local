@@ -9,6 +9,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+
+# The packaged doctor refuses at the platform gate on native Windows (and unknown
+# POSIX hosts) before running any per-check diagnosis — SUPPORTED_PLATFORMS is
+# ("darwin", "linux"). Tests that assert a specific POSIX per-check reason
+# (filesystem mode, active-package path) cannot hold there; they are scoped off.
+_posix_doctor_only = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX doctor per-check diagnosis; native Windows hits the platform-refusal gate",
+)
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 HOOK_CONFIG = PLUGIN_ROOT / "hooks" / "hooks.json"
@@ -70,6 +81,7 @@ def test_default_hook_config_is_exact_and_diagnostic_only() -> None:
     assert "hooks" not in plugin
 
 
+@_posix_doctor_only
 def test_hook_reuses_manager_doctor_and_preserves_real_home(tmp_path: Path) -> None:
     """Surface degraded health without creating state in the real Codex home."""
     home = tmp_path / "home"
@@ -97,8 +109,71 @@ def test_hook_reuses_manager_doctor_and_preserves_real_home(tmp_path: Path) -> N
     assert completed.stderr == b""
     result = json.loads(completed.stdout)
     assert result["continue"] is True
-    assert "Run $agent-shims status" in result["systemMessage"]
+    assert "active_package: plugin root is not the selected cache-version path" in result["systemMessage"]
+    assert "No files changed" in result["systemMessage"]
+    assert "Run $codex-rig:agent-shims status" in result["systemMessage"]
     assert snapshot(tmp_path) == before
+
+
+@_posix_doctor_only
+def test_hook_surfaces_one_bounded_block_reason(tmp_path: Path) -> None:
+    """Explain the first failed invariant instead of repeating only blocked."""
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    agents = home / "agents"
+    agents.mkdir(mode=0o700)
+    agents.chmod(0o775)
+    environment = os.environ.copy()
+    environment["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
+    environment["CODEX_HOME"] = str(home)
+    environment["PATH"] = str(tmp_path)
+    before = snapshot(tmp_path)
+
+    completed = subprocess.run(
+        [sys.executable, str(HOOK_SCRIPT)],
+        input=hook_input(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=environment,
+        check=False,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0
+    result = json.loads(completed.stdout)
+    message = result["systemMessage"]
+    assert "filesystem: unsafe protected directory mode" in message
+    assert "observed 0775" in message
+    assert "executables:" not in message
+    assert "Codex executable was not found" not in message
+    assert "No files changed" in message
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="platform-refusal path only runs where the doctor is unsupported (native Windows)",
+)
+def test_hook_surfaces_platform_refusal_detail(tmp_path: Path) -> None:
+    """On an unsupported host, name the refusal reason instead of 'details unavailable'."""
+    environment = os.environ.copy()
+    environment["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
+
+    completed = subprocess.run(
+        [sys.executable, str(HOOK_SCRIPT)],
+        input=hook_input(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=environment,
+        check=False,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0
+    result = json.loads(completed.stdout)
+    assert result["continue"] is True
+    assert "unsupported" in result["systemMessage"]
+    assert "details unavailable" not in result["systemMessage"]
 
 
 def test_invalid_hook_input_fails_open_without_traceback(tmp_path: Path) -> None:
@@ -120,3 +195,4 @@ def test_invalid_hook_input_fails_open_without_traceback(tmp_path: Path) -> None
     result = json.loads(completed.stdout)
     assert result["continue"] is True
     assert "health check unavailable" in result["systemMessage"]
+    assert "Run $codex-rig:agent-shims doctor" in result["systemMessage"]

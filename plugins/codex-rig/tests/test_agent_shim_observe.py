@@ -679,13 +679,53 @@ def test_corrupt_oversized_and_aliased_evidence_blocks(tmp_path: Path, evidence:
     assert result.targets in {"absent", "unsafe"}
 
 
+def test_owned_protected_target_root_mode_0755_is_accepted(tmp_path: Path) -> None:
+    """Accept a user-owned target namespace that other users cannot mutate."""
+    module = load_module(OBSERVER_PATH, "codex_rig_observe_protected_target")
+    codex_home, plugin_root, target_root, _ = make_roots(tmp_path)
+    target_root.chmod(0o755)
+    before = snapshot(tmp_path)
+
+    result = observe(module, codex_home, plugin_root)
+
+    assert result.classification == "degraded"
+    assert result.reason == "runtime and mutation prerequisites remain unverified"
+    assert result.target_root_observation.identity.mode == "0755"
+    assert result.targets == "absent"
+    assert result.namespace_inventory_status == "complete"
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [0o4700, 0o2700, 0o1700],
+    ids=["setuid", "setgid", "sticky"],
+)
+def test_protected_target_root_special_bits_block(tmp_path: Path, mode: int) -> None:
+    """Reject every special permission bit from the mutable target namespace."""
+    module = load_module(OBSERVER_PATH, f"codex_rig_observe_target_special_{mode:04o}")
+    codex_home, plugin_root, target_root, _ = make_roots(tmp_path)
+    target_root.chmod(mode)
+    observed_mode = stat.S_IMODE(target_root.stat().st_mode)
+    if observed_mode != mode:
+        pytest.skip(f"filesystem did not retain requested mode {mode:04o}; observed {observed_mode:04o}")
+
+    result = observe(module, codex_home, plugin_root)
+
+    assert result.classification == "blocked"
+    assert result.reason == (
+        f"unsafe protected directory mode: {target_root}; "
+        f"expected no group/world write or special bits, observed {mode:04o}"
+    )
+
+
 @pytest.mark.parametrize("evidence", ["target-root-mode", "state-root-mode", "target-file-mode", "control-name"])
 def test_nonprivate_or_ambiguous_local_evidence_blocks(tmp_path: Path, evidence: str) -> None:
     """Require private owned lifecycle roots and unambiguous contained names."""
     module = load_module(OBSERVER_PATH, f"codex_rig_observe_private_{evidence}")
     codex_home, plugin_root, target_root, state_root = make_roots(tmp_path)
     if evidence == "target-root-mode":
-        target_root.chmod(0o755)
+        target_root.chmod(0o775)
     elif evidence == "state-root-mode":
         state_root.chmod(0o755)
     elif evidence == "target-file-mode":
@@ -698,6 +738,13 @@ def test_nonprivate_or_ambiguous_local_evidence_blocks(tmp_path: Path, evidence:
     result = observe(module, codex_home, plugin_root)
 
     assert result.classification == "blocked"
+    if evidence == "target-root-mode":
+        assert result.reason == (
+            f"unsafe protected directory mode: {target_root}; "
+            "expected no group/world write or special bits, observed 0775"
+        )
+    elif evidence == "state-root-mode":
+        assert result.reason == (f"unsafe private directory mode: {state_root}; expected 0700, observed 0755")
 
 
 @pytest.mark.parametrize(
@@ -1008,7 +1055,8 @@ def test_group_writable_home_returns_blocked(tmp_path: Path) -> None:
 
     assert result.classification == "blocked"
     assert result.codex_home_identity is None
-    assert "unsafe directory" in result.reason
+    assert "unsafe protected directory mode" in result.reason
+    assert "observed 0770" in result.reason
 
 
 def test_unsafe_state_path_closes_an_already_open_target_descriptor(
@@ -1030,8 +1078,10 @@ def test_unsafe_state_path_closes_an_already_open_target_descriptor(
         parent_path: Path,
         parts: tuple[str, ...],
         label: str,
+        *,
+        private: bool = True,
     ) -> tuple[int | None, object]:
-        descriptor, observation = original(parent_fd, parent_path, parts, label)
+        descriptor, observation = original(parent_fd, parent_path, parts, label, private=private)
         if parts == ("agents",) and descriptor is not None:
             captured.append(descriptor)
         return descriptor, observation
