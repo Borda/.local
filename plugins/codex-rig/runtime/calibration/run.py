@@ -104,6 +104,7 @@ class Paths:
     run_gates: Path
     run_py: Path
     write_result_py: Path
+    create_run: Path
     collect_diff: Path
     collect_pr: Path
     select_git_remote: Path
@@ -163,11 +164,12 @@ class Paths:
             quality_gates=shared_dir / "quality-gates.md",
             helper_cli_contract=shared_dir / "helper-cli-contract.md",
             native_skill_contract=shared_dir / "native-skill-contract.md",
-            run_gates=shared_dir / "run-gates.sh",
+            run_gates=shared_dir / ("run_gates.py" if layout == "plugin" else "run-gates.sh"),
             run_py=calibration_dir / "run.py",
             write_result_py=shared_dir / "write-result.py",
-            collect_diff=shared_dir / "collect-diff.sh",
-            collect_pr=shared_dir / "collect-pr.sh",
+            create_run=shared_dir / "create_run.py",
+            collect_diff=shared_dir / ("collect_diff.py" if layout == "plugin" else "collect-diff.sh"),
+            collect_pr=shared_dir / ("collect_pr.py" if layout == "plugin" else "collect-pr.sh"),
             select_git_remote=shared_dir / "select-git-remote.py",
             sync_manifest=asset_root / ("package-manifest.json" if layout == "plugin" else "sync-manifest.json"),
             find_review_report=shared_dir / "find-review-report.py",
@@ -628,7 +630,12 @@ def check_core_configs(run: CalibrationRun) -> None:
         check_contains(run, skill_file, "Calibration Hooks", "native-skill-contract")
         check_contains(run, skill_file, "Output Contract", "skill-schema-all")
         check_contains(run, skill_file, "quality-gates", "skill-schema-all")
-        check_contains(run, skill_file, f".reports/codex/{skill}/", "skill-schema-all")
+        check_contains(
+            run,
+            skill_file,
+            rf"(?:\.reports/codex/{skill}/|create_run\.py --skill {skill})",
+            "skill-schema-all",
+        )
         check_contains(run, skill_file, "result-template.json", "skill-schema-all")
         check_contains(run, skill_file, "helper-cli-contract", "skill-schema-all")
         template_file = skill_file.with_name("result-template.json")
@@ -676,13 +683,15 @@ def check_core_configs(run: CalibrationRun) -> None:
         "run.py",
         "run_live_ab.py",
         "score_behavioral.py",
-        "run-gates.sh",
-        "collect-diff.sh",
-        "collect-pr.sh",
         "find-review-report.py",
         "select-git-remote.py",
         "write-result.py",
         "validate-artifacts.py",
+    )
+    helper_names += (
+        ("create_run.py", "run_gates.py", "collect_diff.py", "collect_pr.py")
+        if run.paths.layout == "plugin"
+        else ("run-gates.sh", "collect-diff.sh", "collect-pr.sh")
     )
     if run.paths.layout == "source":
         helper_names += ("codex-harness.sh",)
@@ -841,7 +850,13 @@ def check_native_runtime_leaks(run: CalibrationRun) -> None:
 
 def is_executable(path: Path) -> bool:
     """Return whether a path exists and is executable."""
-    return path.exists() and os.access(path, os.X_OK)
+    return path.is_file() and (sys.platform == "win32" or os.access(path, os.X_OK))
+
+
+def cli_argv(path: Path, *arguments: str | Path) -> list[str | Path]:
+    """Build a portable argv vector for a Python helper or native executable."""
+    prefix: list[str | Path] = [sys.executable, path] if path.suffix == ".py" else [path]
+    return [*prefix, *arguments]
 
 
 def run_command(
@@ -893,6 +908,8 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         "validate-artifacts": run.paths.validate_artifacts,
         "write-result": run.paths.write_result_py,
     }
+    if run.paths.layout == "plugin":
+        cli_paths["create-run"] = run.paths.create_run
     if run.paths.codex_harness.exists():
         if run.paths.layout == "source":
             cli_paths["codex-harness"] = run.paths.codex_harness
@@ -908,9 +925,10 @@ def check_shared_scripts(run: CalibrationRun) -> None:
     discovery_roots = (
         run.paths.calibration_dir.glob("*.py"),
         run.paths.shared_dir.glob("*.py"),
-        run.paths.shared_dir.glob("*.sh"),
         (run.paths.skills_dir / "code-review").glob("*.py"),
     )
+    if run.paths.layout == "source":
+        discovery_roots += (run.paths.shared_dir.glob("*.sh"),)
     for candidates in discovery_roots:
         discovered.update(path for path in candidates if read_text(path).startswith("#!"))
     if run.paths.layout == "source":
@@ -938,7 +956,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
     check_python_syntax(run, run.paths.live_contract, "live_contract.py")
     check_python_syntax(run, run.paths.code_review_validate_artifacts, "code-review/validate_artifacts.py")
     for label, script in cli_paths.items():
-        result = run_command([script, "--help"])
+        result = run_command(cli_argv(script, "--help"))
         if result.returncode != 0 or "usage" not in result.stdout.lower():
             run.fail_and_leak("shared-script-selftests", f"shared-script-help-invalid:{label}")
     run_selftests(run)
@@ -948,45 +966,48 @@ def run_selftests(run: CalibrationRun) -> None:
     """Run smoke tests for shared helpers that are safe offline."""
     selftest_dir = run.paths.out_dir / "selftest"
     selftest_dir.mkdir(parents=True, exist_ok=True)
+    success_command = "exit 0"
+    failure_command = "exit 1"
+    timeout_command = "Start-Sleep -Seconds 2" if sys.platform == "win32" else "sleep 2"
 
     if is_executable(run.paths.run_gates):
         result = run_command(
-            [
+            cli_argv(
                 run.paths.run_gates,
                 "--out",
                 selftest_dir / "gates",
                 "--lint",
-                "true",
+                success_command,
                 "--format",
-                "true",
+                success_command,
                 "--types",
-                "true",
+                success_command,
                 "--tests",
-                "true",
+                success_command,
                 "--review",
-                "true",
-            ]
+                success_command,
+            )
         )
         if result.returncode != 0 or not (selftest_dir / "gates" / "gates.json").exists():
             run.fail_and_leak("shared-script-selftests", "selftest-missing:gates.json")
 
         failed_gates_dir = selftest_dir / "failed-gates"
         failed_result = run_command(
-            [
+            cli_argv(
                 run.paths.run_gates,
                 "--out",
                 failed_gates_dir,
                 "--lint",
-                "false",
+                failure_command,
                 "--format",
-                "true",
+                success_command,
                 "--types",
-                "true",
+                success_command,
                 "--tests",
-                "true",
+                success_command,
                 "--review",
-                "true",
-            ]
+                success_command,
+            )
         )
         failed_payload = json.loads((failed_gates_dir / "gates.json").read_text(encoding="utf-8"))
         if failed_result.returncode == 0 or failed_payload.get("status") != "fail":
@@ -994,21 +1015,21 @@ def run_selftests(run: CalibrationRun) -> None:
 
         exit_125_dir = selftest_dir / "exit-125-gates"
         exit_125 = run_command(
-            [
+            cli_argv(
                 run.paths.run_gates,
                 "--out",
                 exit_125_dir,
                 "--lint",
                 "exit 125",
                 "--format",
-                "true",
+                success_command,
                 "--skip-types",
                 "synthetic no typed target",
                 "--tests",
-                "true",
+                success_command,
                 "--review",
-                "true",
-            ]
+                success_command,
+            )
         )
         exit_125_payload = json.loads((exit_125_dir / "gates.json").read_text(encoding="utf-8"))
         lint_gate = next(item for item in exit_125_payload["checks"] if item["id"] == "lint")
@@ -1017,23 +1038,23 @@ def run_selftests(run: CalibrationRun) -> None:
 
         timeout_dir = selftest_dir / "timeout-gates"
         timed_out = run_command(
-            [
+            cli_argv(
                 run.paths.run_gates,
                 "--out",
                 timeout_dir,
                 "--lint",
-                "sleep 2",
+                timeout_command,
                 "--format",
-                "true",
+                success_command,
                 "--skip-types",
                 "synthetic no typed target",
                 "--tests",
-                "true",
+                success_command,
                 "--review",
-                "true",
+                success_command,
                 "--timeout-seconds",
                 "1",
-            ]
+            )
         )
         timeout_payload = json.loads((timeout_dir / "gates.json").read_text(encoding="utf-8"))
         if timed_out.returncode != 124 or timeout_payload.get("status") != "timeout":
@@ -1079,7 +1100,8 @@ def run_selftests(run: CalibrationRun) -> None:
             run.fail_and_leak("shared-script-selftests", "selftest-setup:collect-diff")
         fixture.write_text("after\n", encoding="utf-8")
         result = run_command(
-            [run.paths.collect_diff, "--scope", "working-tree", "--out", selftest_dir / "diff"], cwd=diff_repo
+            cli_argv(run.paths.collect_diff, "--scope", "working-tree", "--out", selftest_dir / "diff"),
+            cwd=diff_repo,
         )
         expected_files = ("status.txt", "diff.patch", "files.txt", "diffstat.txt", "numstat.txt", "untracked.txt")
         for expected in expected_files:
@@ -1087,7 +1109,7 @@ def run_selftests(run: CalibrationRun) -> None:
                 run.fail_and_leak("shared-script-selftests", f"selftest-missing:collect-diff:{expected}")
 
     if is_executable(run.paths.collect_pr):
-        result = run_command(["bash", "-n", run.paths.collect_pr])
+        result = run_command([sys.executable, "-m", "py_compile", run.paths.collect_pr])
         if result.returncode != 0:
             run.fail_and_leak("shared-script-selftests", "selftest-syntax:collect-pr")
     if run.paths.select_git_remote.exists():
@@ -1871,22 +1893,24 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
             "remaining_limits": [],
         },
     }
+    success_command = "exit 0"
+    timeout_command = "Start-Sleep -Seconds 2" if sys.platform == "win32" else "sleep 2"
     gates = run_command(
-        [
+        cli_argv(
             run.paths.run_gates,
             "--out",
             validate_dir,
             "--lint",
-            "true",
+            success_command,
             "--format",
-            "true",
+            success_command,
             "--types",
-            "true",
+            success_command,
             "--tests",
-            "true",
+            success_command,
             "--review",
-            "true",
-        ]
+            success_command,
+        )
     )
     if gates.returncode != 0:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:validate-artifacts-run-gates")
@@ -1943,23 +1967,23 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
 
     timeout_dir = selftest_dir / "gate-timeout"
     timeout = run_command(
-        [
+        cli_argv(
             run.paths.run_gates,
             "--out",
             timeout_dir,
             "--timeout-seconds",
             "1",
             "--lint",
-            "sleep 2",
+            timeout_command,
             "--format",
-            "true",
+            success_command,
             "--skip-types",
             "synthetic configuration fixture has no typed target",
             "--tests",
-            "true",
+            success_command,
             "--review",
-            "true",
-        ]
+            success_command,
+        )
     )
     if timeout.returncode != 124:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:run-gates-timeout-exit")

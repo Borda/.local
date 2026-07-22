@@ -8,6 +8,7 @@ on:
       - "plugins/**"
       - "benchmarks/**"
       - "pyproject.toml"
+      - "sync.sh"
 
 jobs:
   tests:
@@ -41,3 +42,12 @@ jobs:
 
       - name: 🧪 Run plugin tests (Python bin/ + JS hooks)
         run: uv run --only-group test --python ${{ matrix.python-version }} pytest -W error::DeprecationWarning
+
+      - name: 🪟 Verify native Codex Rig entrypoints
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PYTHONDONTWRITEBYTECODE = "1"
+          uv run --only-group test --python ${{ matrix.python-version }} python plugins/codex-rig/scripts/build_package.py --check
+          uv run --only-group test --python ${{ matrix.python-version }} python plugins/codex-rig/scripts/validate_package.py
+          uv run --only-group test --python ${{ matrix.python-version }} python plugins/codex-rig/shared/collect_pr.py --help

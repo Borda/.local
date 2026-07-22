@@ -24,13 +24,9 @@ Source-backed research for documentation, API migration, paper, or state-of-the-
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/research/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill research` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Define research question, mode, and constraints
 
@@ -44,7 +40,7 @@ Modes:
 
 ### 03: Gather sources
 
-Write `$OUT_DIR/sources.md`:
+Write `<run-directory>/sources.md`:
 
 ```markdown
 | Source | Type | Date/version | Why reliable | Used for |
@@ -58,7 +54,7 @@ Source rules:
 - Mark stale/unavailable source explicitly.
 - Do not cite secondary summaries for high-impact claims unless independently corroborated.
 
-For `sota`, `paper`, `methodology`, `code-fidelity`, apply `../../shared/specialist-orchestration.md` when independent expertise improves correctness. Write `"$OUT_DIR/specialist-research-plan.md"` with context packs for:
+For `sota`, `paper`, `methodology`, `code-fidelity`, apply `../../shared/specialist-orchestration.md` when independent expertise improves correctness. Write `<run-directory>/specialist-research-plan.md` with context packs for:
 
 - `web-explorer`: current docs, release notes, API and dependency changes.
 - `scientist`: formulas, methodology, metrics, ablations, benchmark claims.
@@ -71,9 +67,9 @@ Do not send full papers, repositories, or all search results to every specialist
 
 ### 04: Map to codebase context when implementation is relevant
 
-Inspect `collect-diff.sh --help`; collect `working-tree` scope into `$OUT_DIR/baseline`. Run topic scan separately; record unavailable paths/collection failures as evidence gaps.
+Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` scope into `<run-directory>/baseline`. Run topic scan separately; record unavailable paths/collection failures as evidence gaps.
 
-### 05: Produce `$OUT_DIR/research.md` with:
+### 05: Produce `<run-directory>/research.md` with:
 
 - `Question`
 - `Constraints`
@@ -95,10 +91,8 @@ Inspect `collect-diff.sh --help`; collect `working-tree` scope into `$OUT_DIR/ba
 
 ### 07: Run review gate
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
-```
+Run `git diff --check` as an argv command. Write its combined output to `<run-directory>/review.txt` and retain its
+exit status as review evidence; do not erase a nonzero result.
 
 ### 08: Run shared gates and write the validated result artifact
 

@@ -45,16 +45,16 @@ def test_windows_ignores_only_unsupported_posix_lifecycle_files(monkeypatch: pyt
 
 @pytest.mark.parametrize(
     ("action", "expected_code"),
-    [("doctor", 0), ("status", 0), ("install", 5), ("remove", 5)],
+    [("install", 5), ("remove", 5)],
 )
-def test_windows_manager_refuses_before_posix_imports_or_writes(
+def test_windows_manager_blocks_mutation_before_posix_imports_or_writes(
     action: str,
     expected_code: int,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Return the stable unsupported-host contract without touching user state."""
+    """Keep unsupported persistent-shim mutation outside the Windows diagnostic path."""
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "absent-home"))
     specification = importlib.util.spec_from_file_location(f"codex_rig_windows_manager_{action}", MANAGER_PATH)
@@ -66,11 +66,8 @@ def test_windows_manager_refuses_before_posix_imports_or_writes(
     specification.loader.exec_module(module)
 
     assert module.main([action]) == expected_code
-    assert json.loads(capsys.readouterr().out) == {
-        "action": action,
-        "classification": "blocked",
-        "detail": "platform win32; native Windows and unknown POSIX hosts are unsupported",
-        "platform": "win32",
-        "writes": 0,
-    }
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["action"] == action
+    assert payload["classification"] == "platform-blocked"
+    assert payload["writes"] == 0
     assert tuple(tmp_path.rglob("*")) == before

@@ -24,22 +24,15 @@ Run linear implementation with strict gates.
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/develop/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill develop` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Record baseline diff and branch
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-git rev-parse --abbrev-ref HEAD >"$OUT_DIR/branch.txt"
-```
+Run `git rev-parse --abbrev-ref HEAD` as an argv command and write stdout to `<run-directory>/branch.txt`.
 
-Inspect `collect-diff.sh --help`; collect `working-tree` into `$OUT_DIR/baseline`.
+Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` into `<run-directory>/baseline`.
 
 ### 03: Route the change type and define ownership
 
@@ -83,7 +76,7 @@ While implementing, keep the code understandable from the code itself:
 
 Apply `../../shared/specialist-orchestration.md`. Stay single-agent for narrow implementation that fits in one to three files and one domain. Use specialist orchestration when the task crosses domains, benefits from independent verification, or can split into parallel context packs.
 
-Before spawning or substituting specialists, write `"$OUT_DIR/specialist-plan.md"` with one row per planned pass:
+Before spawning or substituting specialists, write `<run-directory>/specialist-plan.md` with one row per planned pass:
 
 | role | trigger | context pack | expected output | mode |
 | --- | --- | --- | --- | --- |
@@ -98,9 +91,9 @@ Required orchestration patterns:
 - docs-impacting behavior: `doc-scribe` gets only the verified public behavior, API signatures, examples, and migration notes; do not send unrelated implementation details.
 - high-risk or broad changes: `challenger` runs after the draft plan or diff to stress-test assumptions and residual risk.
 
-Each specialist context pack must include only relevant files, hunks, logs, and questions. Do not give every specialist the full task history. If specialist fan-out is unavailable, record the in-main substitute in `$OUT_DIR/specialist-notes.md` and lower confidence when independence mattered.
+Each specialist context pack must include only relevant files, hunks, logs, and questions. Do not give every specialist the full task history. If specialist fan-out is unavailable, record the in-main substitute in `<run-directory>/specialist-notes.md` and lower confidence when independence mattered.
 
-### 07: Write `$OUT_DIR/development-notes.md` before running gates
+### 07: Write `<run-directory>/development-notes.md` before running gates
 
 Required sections:
 
@@ -112,7 +105,7 @@ Required sections:
 
 ### 08: Run shared quality gates
 
-Inspect `run-gates.sh --help`, then run all project-relevant gates with explicit commands or skip reasons.
+Inspect `python PLUGIN_ROOT/shared/run_gates.py --help`, then run all project-relevant gates with explicit commands or skip reasons.
 
 ### 09: Review the changed files and the gate output before deciding pass/fail
 
@@ -120,7 +113,7 @@ Inspect `run-gates.sh --help`, then run all project-relevant gates with explicit
 
 ### 11: Run confidence calibration and recovery before any user-facing output
 
-Write `"$OUT_DIR/confidence-calibration.md"` with these sections:
+Write `<run-directory>/confidence-calibration.md` with these sections:
 
 - `Initial Confidence`: starting score and the concrete uncertainty sources.
 - `Objective Evidence`: code paths read, tests/checks run, reproduction or acceptance evidence, and artifacts inspected.

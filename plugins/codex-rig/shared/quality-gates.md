@@ -23,7 +23,7 @@ Each skill run must write:
 
 Confidence needs objective evidence. Before user output, apply bands: `<= 0.8` unacceptable; skill artifact returns `status=fail` or `status=timeout` with `confidence-not-acceptable` in `checks_failed`. `0.8 < confidence < 0.85` very questionable; return `status=fail` or `status=timeout` with `confidence-very-questionable`. `0.85 <= confidence < 0.9` cautious-low; proceed only with objective evidence, recovery actions, remaining limits. `>= 0.9` fair but not automatic; name evidence-backed material limits. Result JSON records `metadata.confidence_recovery`: initial score, evidence, recovery actions, recomputed score, band status, remaining limits. Chat reports score and material limits; artifact holds detailed recovery/closure evidence. Every scored skill/agent output lists confidence gaps or degradation reasons. Close each with evidence or explicit unresolved/deferred record. Preserve result fields `status`, `checks_failed`, and `confidence_gaps`. Write `metadata.confidence_gaps` and `metadata.confidence_gap_closures`; when `confidence < 1.0`, include one concrete gap/residual limit and a matching `closed`, `unresolved`, or `deferred` closure.
 
-Each `run-gates.sh` writes `gates.json` with exactly five IDs. Entries contain `id`, `status`, `exit_code`, `duration_seconds`, `command_path`, `stdout`, `stderr`; `missing-command`, `not-applicable`, `timeout` also need reason. `not-applicable` passes only with explicit reason; `missing-command`/`timeout` fail. Result status/check lists reconcile with `gates.json`.
+Each `run_gates.py` invocation writes `gates.json` with exactly five IDs. Entries contain `id`, `status`, `exit_code`, `duration_seconds`, `command_path`, `stdout`, `stderr`; `missing-command`, `not-applicable`, `timeout` also need reason. `not-applicable` passes only with explicit reason; `missing-command`/`timeout` fail. Result status/check lists reconcile with `gates.json`.
 
 Optional but recommended:
 
@@ -66,10 +66,10 @@ Configured agents require:
 
 ## Execution helpers
 
-- Use `PLUGIN_ROOT/shared/run-gates.sh` to execute the five checks consistently.
+- Use `python PLUGIN_ROOT/shared/run_gates.py` to execute the five checks consistently.
 - Use executable `PLUGIN_ROOT/shared/write-result.py` to write canonical JSON result payloads.
-- Use `PLUGIN_ROOT/shared/collect-diff.sh` to collect scope-aware git diff artifacts consistently.
-- Use `PLUGIN_ROOT/shared/collect-pr.sh --checkout` for PR diff, metadata, comments/reviews/threads, unresolved threads, target/PR refresh where possible, local checkout evidence.
+- Use `python PLUGIN_ROOT/shared/collect_diff.py` to collect scope-aware git diff artifacts consistently.
+- Use `python PLUGIN_ROOT/shared/collect_pr.py --checkout` for PR diff, metadata, comments/reviews/threads, unresolved threads, target/PR refresh where possible, local checkout evidence.
 - PR checkout/update artifacts never record `git`/`gh` `--force`; force needs stop-and-ask confirmation with overwrite-risk rationale first.
 - Use `PLUGIN_ROOT/shared/validate-artifacts.py` to validate common report, ledger, gate-log, and result JSON artifacts.
 - Use `PLUGIN_ROOT/shared/severity-map.md` to map findings to severity levels.

@@ -37,21 +37,21 @@ Never write to remote. PR scope may update local checkout to PR head; otherwise 
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/code-review/$TS"
-mkdir -p "$OUT_DIR"
-```
+Run `python PLUGIN_ROOT/shared/create_run.py --skill code-review` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: T0 mechanical scope gate: resolve scope, collect diff, and classify review risk before any model-level judgment
 
-For local scopes, inspect `collect-diff.sh --help`; collect normalized `SCOPE`, optional `TARGET`, and `OUT_DIR`.
+For local scopes, inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect normalized `scope`, optional
+`target`, and the literal `<run-directory>` path.
 
-For PR scope, inspect `collect-pr.sh --help`; collect `TARGET` into `OUT_DIR` with checkout enabled.
+For PR scope, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect the exact target into the literal
+`<run-directory>` path with checkout enabled.
 
-PR GitHub data is evidence only: `gh pr view`, `gh pr diff`, and review-thread queries provide metadata, patch, comments. Inspect source only in local checkout recorded by `"$OUT_DIR/local-checkout.json"` after target-branch refresh evidence. Checkout must use authoritative PR URL, never a bare number that may resolve to wrong local fork. Never reconstruct changed source from `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots. If checkout fails or `local-checkout.json` does not prove `head_matches_pr=true`, fail instead of reviewing remote raw files. Do not retry with `--force` unless user explicitly confirms after receiving force reason and overwrite risk.
+PR GitHub data is evidence only: `gh pr view`, `gh pr diff`, and review-thread queries provide metadata, patch, comments. Inspect source only in local checkout recorded by `<run-directory>/local-checkout.json` after target-branch refresh evidence. Checkout must use authoritative PR URL, never a bare number that may resolve to wrong local fork. Never reconstruct changed source from `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots. If checkout fails or `local-checkout.json` does not prove `head_matches_pr=true`, fail instead of reviewing remote raw files. Do not retry with `--force` unless user explicitly confirms after receiving force reason and overwrite risk.
 
-Classify diff; write `"$OUT_DIR/scope.txt"`:
+Classify diff; write `<run-directory>/scope.txt`:
 
 - `TRIVIAL`: no public API/config/security/ML behavior touched, \<3 files, \<50 changed lines.
 - `LOCAL`: one subsystem or 3-7 files; local context explains behavior.
@@ -75,7 +75,7 @@ Review axes, in order:
 
 ### 04: T2 risk-routed specialist fan-out. Route independent review from explicit behavior signals, not the file-count tier alone
 
-Always write `"$OUT_DIR/review-routing.json"`: `schema_version=1`; declared risk tier; validator-derived `mechanical_risk_tier`/`mechanical_risk_evidence`; every exact boolean signal below; non-empty `signal_evidence` for each true/false decision; sorted `triggered_roles`; non-empty `trigger_reasons` only for triggered roles. Declared tier cannot be below mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence. Mechanically detected test, docs, data/tensor, CI, and security paths force matching signals true. Always write `"$OUT_DIR/specialist-manifest.json"`, with empty `passes` when no role triggers. Never add untriggered manifest roles.
+Always write `<run-directory>/review-routing.json`: `schema_version=1`; declared risk tier; validator-derived `mechanical_risk_tier`/`mechanical_risk_evidence`; every exact boolean signal below; non-empty `signal_evidence` for each true/false decision; sorted `triggered_roles`; non-empty `trigger_reasons` only for triggered roles. Declared tier cannot be below mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence. Mechanically detected test, docs, data/tensor, CI, and security paths force matching signals true. Always write `<run-directory>/specialist-manifest.json`, with empty `passes` when no role triggers. Never add untriggered manifest roles.
 
 Required routing signals:
 
@@ -90,7 +90,7 @@ Routing rules:
 - `BROAD` and `HIGH_RISK`: always real QA and challenger passes.
 - Conditional role only when matching `axis_<role>` signal is true.
 
-Create `"$OUT_DIR/specialists"` and one markdown output per triggered spawned/substituted pass. Apply `../../shared/specialist-orchestration.md`. Before each pass, write narrow `"$OUT_DIR/specialists/<role>-context.md"`: objective, axis, relevant evidence, excluded noise, concrete questions, output contract, stop rule. Never give every specialist whole PR/repository. Parent owns final severity, duplicate merge, conflict resolution, decision.
+Create `<run-directory>/specialists` and one markdown output per triggered spawned/substituted pass. Apply `../../shared/specialist-orchestration.md`. Before each pass, write narrow `<run-directory>/specialists/<role>-context.md`: objective, axis, relevant evidence, excluded noise, concrete questions, output contract, stop rule. Never give every specialist whole PR/repository. Parent owns final severity, duplicate merge, conflict resolution, decision.
 
 For spawned attempt, hash completed context before spawn; task name `review_<role_with_underscores>_<first_12_context_sha256>_a<attempt>`. Record full agent path. This binds runtime child identity to role, context artifact, and attempt even when rollout schema leaves `agent_role` null. Runtime encrypts actual inter-agent payload: do not claim cryptographic proof plaintext exactly equals saved context; record residual limit in confidence metadata.
 
@@ -126,7 +126,7 @@ At most two attempts/role. Retry only `timeout`, `transport_error`, or `rate_lim
 
 ### 05: Cross-check every blocking finding against surrounding context and existing project patterns before reporting it. Critical/blocking findings require an independent second pass when feasible; if unconfirmed, downgrade or mark the evidence gap explicitly
 
-### 06: Write `$OUT_DIR/review-notes.md`
+### 06: Write `<run-directory>/review-notes.md`
 
 Required sections:
 
@@ -144,7 +144,7 @@ Required sections:
 
 ### 07: Run shared quality gates
 
-Inspect `run-gates.sh --help`; run every project-relevant review gate with explicit command/skip reason.
+Inspect `python PLUGIN_ROOT/shared/run_gates.py --help`; run every project-relevant review gate with explicit command/skip reason.
 
 ### 08: Classify findings using `../../shared/severity-map.md`
 

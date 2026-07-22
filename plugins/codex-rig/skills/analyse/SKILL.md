@@ -26,13 +26,9 @@ guess a cache version or fall back to a source checkout.
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/analyse/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill analyse` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Normalize the analysis mode
 
@@ -45,10 +41,10 @@ Unsupported/ambiguous mode => fail with usage note, unless pasted evidence suppo
 
 ### 03: Capture scope and source inventory before drawing conclusions
 
-Use `PLUGIN_ROOT/shared/collect-diff.sh --help`; collect `working-tree` into `$OUT_DIR/baseline`. Scan references
+Use `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` into `<run-directory>/baseline`. Scan references
 separately; record failed diff collection.
 
-### 04: Gather evidence with a ledger. Write `$OUT_DIR/evidence.md` with one row per claim:
+### 04: Gather evidence with a ledger. Write `<run-directory>/evidence.md` with one row per claim:
 
 ```markdown
 | Claim | Source | Freshness | Confidence | Notes |
@@ -66,7 +62,7 @@ Evidence rules:
 
 Use `../../shared/specialist-orchestration.md` for broad/multi-risk PR/issue, ecosystem, or independently challenged conclusions. Stay single-agent when narrow local fan-out duplicates context.
 
-Write `"$OUT_DIR/orchestration.md"` when fan-out is used or intentionally skipped for a broad scope. Include:
+Write `<run-directory>/orchestration.md` when fan-out is used or intentionally skipped for a broad scope. Include:
 
 - specialist axes considered
 - context pack per triggered axis
@@ -77,7 +73,7 @@ Routes: `solution-architect` architecture/API; `qa-specialist` testability; `sec
 
 ### 06: Analyze alternatives before recommending action
 
-Required sections in `$OUT_DIR/analysis.md`:
+Required sections in `<run-directory>/analysis.md`:
 
 - `Question`
 - `Scope`
@@ -90,10 +86,8 @@ Required sections in `$OUT_DIR/analysis.md`:
 
 ### 07: Run the self-review check
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
-```
+Run `git diff --check` as an argv command. Write its combined output to `<run-directory>/review.txt` and retain its
+exit status as review evidence; do not erase a nonzero result.
 
 ### 08: Decide gate result
 
@@ -108,7 +102,7 @@ Replace skip with command when analysis includes code changes/executable probes.
 
 ## Self-Critical Gate
 
-Before final output, answer in `$OUT_DIR/self-review.md`:
+Before final output, answer in `<run-directory>/self-review.md`:
 
 1. Which claim would be most damaging if wrong?
 2. What evidence directly supports it?

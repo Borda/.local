@@ -12,13 +12,9 @@ from pathlib import Path
 import pytest
 
 
-# The packaged doctor refuses at the platform gate on native Windows (and unknown
-# POSIX hosts) before running any per-check diagnosis — SUPPORTED_PLATFORMS is
-# ("darwin", "linux"). Tests that assert a specific POSIX per-check reason
-# (filesystem mode, active-package path) cannot hold there; they are scoped off.
 _posix_doctor_only = pytest.mark.skipif(
     sys.platform == "win32",
-    reason="POSIX doctor per-check diagnosis; native Windows hits the platform-refusal gate",
+    reason="POSIX filesystem permission diagnostic",
 )
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +69,7 @@ def test_default_hook_config_is_exact_and_diagnostic_only() -> None:
         {
             "type": "command",
             "command": 'python3 "$PLUGIN_ROOT/hooks/session_start.py"',
+            "commandWindows": 'python "$env:PLUGIN_ROOT\\hooks\\session_start.py"',
             "timeout": 30,
             "statusMessage": "Checking Codex Rig shim health",
         }
@@ -81,13 +78,12 @@ def test_default_hook_config_is_exact_and_diagnostic_only() -> None:
     assert "hooks" not in plugin
 
 
-@_posix_doctor_only
 def test_hook_reuses_manager_doctor_and_preserves_real_home(tmp_path: Path) -> None:
     """Surface degraded health without creating state in the real Codex home."""
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
-    codex = tmp_path / "codex"
-    codex.write_bytes(b"#!/bin/sh\nexit 0\n")
+    codex = tmp_path / ("codex.cmd" if sys.platform == "win32" else "codex")
+    codex.write_bytes(b"@exit /b 0\r\n" if sys.platform == "win32" else b"#!/bin/sh\nexit 0\n")
     codex.chmod(0o700)
     environment = os.environ.copy()
     environment["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
@@ -148,32 +144,6 @@ def test_hook_surfaces_one_bounded_block_reason(tmp_path: Path) -> None:
     assert "Codex executable was not found" not in message
     assert "No files changed" in message
     assert snapshot(tmp_path) == before
-
-
-@pytest.mark.skipif(
-    sys.platform != "win32",
-    reason="platform-refusal path only runs where the doctor is unsupported (native Windows)",
-)
-def test_hook_surfaces_platform_refusal_detail(tmp_path: Path) -> None:
-    """On an unsupported host, name the refusal reason instead of 'details unavailable'."""
-    environment = os.environ.copy()
-    environment["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
-
-    completed = subprocess.run(
-        [sys.executable, str(HOOK_SCRIPT)],
-        input=hook_input(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=environment,
-        check=False,
-        timeout=30,
-    )
-
-    assert completed.returncode == 0
-    result = json.loads(completed.stdout)
-    assert result["continue"] is True
-    assert "unsupported" in result["systemMessage"]
-    assert "details unavailable" not in result["systemMessage"]
 
 
 def test_invalid_hook_input_fails_open_without_traceback(tmp_path: Path) -> None:

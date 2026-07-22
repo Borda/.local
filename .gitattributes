@@ -6,9 +6,15 @@
 *.js   text eol=lf
 *.md   text eol=lf
 *.json text eol=lf
+*.jsonl text eol=lf
+*.txt  text eol=lf
 *.yaml text eol=lf
 *.yml  text eol=lf
 *.toml text eol=lf
+
+# Extensionless Codex Rig package text participates in exact hash identity.
+plugins/codex-rig/LICENSE text eol=lf
+plugins/codex-rig/NOTICE  text eol=lf
 
 # Binary assets — never diff or convert
 *.png  binary

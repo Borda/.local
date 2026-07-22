@@ -324,8 +324,7 @@ def test_sync_clear_teardown_wiring() -> None:
     assert "clear)      CLEAR=true ;;" in script
     assert "if $CLEAR; then" in script
     assert 'claude plugin uninstall "${p}@${MARKETPLACE}"' in script
-    assert 'codex plugin remove "$CODEX_PLUGIN"' in script
-    assert '--remove --codex-home "${CODEX_HOME:-$HOME/.codex}"' in script
+    assert 'python3 "$CODEX_SYNC_SCRIPT" clear' in script
 
 
 def test_sync_global_agents_defaults_on_with_negative_opt_out() -> None:
@@ -338,9 +337,8 @@ def test_sync_global_agents_defaults_on_with_negative_opt_out() -> None:
     assert "--no-codex-global-agents) INSTALL_CODEX_GLOBAL_AGENTS=false" in script
     assert "SYNC_CLAUDE=true" in script
     assert "SYNC_CODEX=true" in script
-    assert "CODEX_MARKETPLACE_ROOT/plugins/codex-rig/assets/AGENTS.md" in script
-    assert "CODEX_MARKETPLACE_ROOT/plugins/codex-rig/scripts/install_global_agents.py" in script
-    assert '"${CODEX_HOME:-$HOME/.codex}"' in script
+    assert 'CODEX_SYNC_SCRIPT="$PROJECT_DIR/plugins/codex-rig/scripts/sync_codex.py"' in script
+    assert 'python3 "$CODEX_SYNC_SCRIPT" "${CODEX_SYNC_ARGS[@]}"' in script
 
 
 def test_sync_rejects_codex_ref_for_claude_only_scope(posix_bash: str) -> None:

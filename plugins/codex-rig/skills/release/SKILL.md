@@ -22,13 +22,9 @@ SemVer-aware release readiness/communication. Prepares release evidence/docs; ne
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/release/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill release` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Determine mode, range, and target version
 
@@ -41,15 +37,14 @@ Unknown mode/ambiguous range => fail before release docs.
 
 ### 03: Collect release evidence
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-RELEASE_RANGE="${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null)..HEAD}"
-git log --oneline "$RELEASE_RANGE" >"$OUT_DIR/commits.txt" 2>/dev/null || true
-```
+Use the supplied `range`; when absent, run `git describe --tags --abbrev=0` as argv and form `<printed-tag>..HEAD`.
+Retain that literal release range in workflow state, run `git log --oneline <release-range>` as argv, and write stdout
+to `<run-directory>/commits.txt`. Record range or log collection failure instead of treating empty output as success.
 
-Inspect `collect-diff.sh --help`; collect `commit` scope for `RELEASE_RANGE` into `$OUT_DIR/range`. Collection failure is evidence gap, not empty release.
+Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `commit` scope for the retained release range into
+`<run-directory>/range`. Collection failure is evidence gap, not empty release.
 
-Write `$OUT_DIR/change-table.md`: change type, user impact, breaking status, docs need, verification evidence.
+Write `<run-directory>/change-table.md`: change type, user impact, breaking status, docs need, verification evidence.
 
 ### 04: Verify release readiness
 
@@ -62,14 +57,14 @@ Required checks:
 - Do not advertise reverted changes as live features.
 - Call out security/dependency changes with source evidence.
 
-Write `$OUT_DIR/release-readiness.md` with:
+Write `<run-directory>/release-readiness.md` with:
 
 - `SemVer`
 - `Migration`
 - `Checks`
 - `Blockers`
 
-For `prepare`/`audit`, apply `../../shared/specialist-orchestration.md` for public API changes, CI/release automation, security/dependency changes, docs/migration work, or broad verification risk. Write `"$OUT_DIR/specialist-release-plan.md"` with narrow context packs for:
+For `prepare`/`audit`, apply `../../shared/specialist-orchestration.md` for public API changes, CI/release automation, security/dependency changes, docs/migration work, or broad verification risk. Write `<run-directory>/specialist-release-plan.md` with narrow context packs for:
 
 - `oss-shepherd`: SemVer, deprecation policy, maintainer readiness.
 - `cicd-steward`: release workflow, publishing, CI status, artifact gates.
@@ -82,7 +77,7 @@ Single-agent for `notes` on narrow low-risk range unless SemVer/migration impact
 
 ### 05: Run required checks from `../../shared/quality-gates.md`
 
-Inspect `run-gates.sh --help`; run every project-required release gate with explicit commands/skip reasons.
+Inspect `python PLUGIN_ROOT/shared/run_gates.py --help`; run every project-required release gate with explicit commands/skip reasons.
 
 ### 06: Classify blockers and warnings
 

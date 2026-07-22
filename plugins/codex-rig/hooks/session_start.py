@@ -60,9 +60,8 @@ def _health_message(result: dict[str, object], classification: str) -> str:
                     reason = f"{name}: {detail}"
                     break
     if reason == "details unavailable":
-        # Platform-refusal path (native Windows / unknown POSIX host) short-circuits
-        # before any per-check diagnosis and carries only a top-level detail — surface
-        # it rather than the useless "details unavailable" placeholder.
+        # Unknown-host refusal paths can carry only a top-level detail. Surface it
+        # instead of the useless generic placeholder.
         top_detail = result.get("detail")
         if isinstance(top_detail, str) and top_detail:
             reason = top_detail

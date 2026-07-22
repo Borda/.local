@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.2.4`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.3.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -21,7 +21,8 @@ The plugin is complete for the capabilities Codex can currently install and veri
 - Codex CLI with plugin support
 - Python 3.10+
 - Public GitHub access for install or marketplace refresh
-- A POSIX local filesystem for legacy agent-shim management; the plugin workflows themselves remain portable
+- Windows, macOS, or Linux for workflows, package verification, sync, and read-only diagnostics
+- A POSIX local filesystem only for authenticated legacy agent-shim cleanup
 
 No official marketplace is assumed. Local, unpushed changes are not installable from GitHub.
 
@@ -30,7 +31,7 @@ No official marketplace is assumed. Local, unpushed changes are not installable 
 ```bash
 codex plugin marketplace add Borda/AI-Rig
 # Optional reproducible release pin:
-# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.4
+# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.3.0
 codex plugin add codex-rig@borda-ai-rig
 ```
 
@@ -59,6 +60,14 @@ bash sync.sh codex                                # Codex scope only
 bash sync.sh codex --no-codex-global-agents       # skip global guidance
 bash sync.sh clear                                # teardown: uninstall plugins + strip managed block
 bash sync.sh clear codex                          # teardown Codex scope only
+```
+
+Native Codex-only restore and teardown need no Bash or `jq`:
+
+```text
+python plugins/codex-rig/scripts/sync_codex.py
+python plugins/codex-rig/scripts/sync_codex.py --codex-ref codex-rig-v0.3.0
+python plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
 `bash sync.sh claude` changes only Claude scope. `--codex-ref REF` selects a Codex source revision; it does not change product scope.
@@ -251,7 +260,7 @@ $codex-rig:agent-shims remove
 - `install`: report the platform block without creating or relinking files.
 - `remove`: plan removal of intact, authenticated Codex Rig shims. No prefix-based cleanup.
 
-`doctor` and `status` are read-only. A blocked result names the failed check, observed path/mode/size, and required invariant; it does not authorize a repair. The optional SessionStart hook shows the first bounded reason and confirms that no files changed. Do not apply recursive permission changes or delete/link-replace evidence from the diagnostic alone. Existing `$CODEX_HOME/agents` directories are accepted when they are real current-user directories without group/world write or special permission bits; lifecycle state and recovery directories remain private mode `0700`.
+`doctor` and `status` are read-only on Windows, macOS, and Linux. Windows verifies package hashes, active selection, executables, and an inventory of exact `codex-rig-*.toml` names; it does not authenticate, adopt, or mutate those files. POSIX additionally validates lifecycle state and permissions. A blocked result names the failed check and required invariant; it does not authorize a repair. The optional SessionStart hook shows the first bounded reason and confirms that no files changed. Do not apply recursive permission changes or delete/link-replace evidence from the diagnostic alone. Existing POSIX `$CODEX_HOME/agents` directories are accepted when they are real current-user directories without group/world write or special permission bits; lifecycle state and recovery directories remain private mode `0700`.
 
 Prior lifecycle files use authenticated names such as `codex-rig-linting-expert.toml`. `remove` prints the exact target root, operations, and SHA-256 approval digest. Review the displayed plan. Type that exact digest only after explicit approval. Wrong or missing digest causes cancellation without authorized writes.
 
@@ -282,7 +291,7 @@ Recovery: reinstall `codex-rig@borda-ai-rig`, start a fresh session, run `doctor
 - Hook trust, plugin install, shim install, and shim removal are separate lifecycle decisions.
 - Plugin removal does not edit `$CODEX_HOME/AGENTS.md`; a sync-installed managed block remains until explicitly removed.
 - A successful shim transaction proves file ownership and link integrity, not runtime profile selection.
-- Native Windows and network/distributed filesystems are unsupported for shim mutation; read-only workflow skills remain usable.
+- Native Windows and network/distributed filesystems are unsupported for shim mutation. Windows workflows, package verification, sync, hooks, and read-only shim inventory remain supported.
 
 ## What changed from the idealized design
 
@@ -326,6 +335,8 @@ python3 plugins/codex-rig/scripts/validate_package.py
 python3 -m pytest -q plugins/codex-rig
 NO_MKDOCS_2_WARNING=1 python3 -m mkdocs build --strict
 ```
+
+On Windows, use `python` in place of `python3`; `build_package.py --check`, package validation, calibration, and tests are native. Authoritative manifest regeneration (`--update`) remains POSIX-only because released mode bits are part of the package contract.
 
 The package is accepted only when the generated manifest is current, every recorded file hash matches, plugin-only copied-tree tests pass, lifecycle safety tests pass, Windows collection and path behavior pass, the offline calibration harness passes, and public documentation builds without warnings.
 

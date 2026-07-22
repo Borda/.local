@@ -23,13 +23,9 @@ Run linear configuration/workflow audit.
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/audit/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill audit` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Normalize scope and collect inventory
 
@@ -40,17 +36,13 @@ Scopes:
 - `roles`: role-routing instructions and an explicitly supplied plugin/package role-card root.
 - `all`: every applicable surface above. Missing optional local skills or roles is `not-configured`, not drift.
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-{
-  rg --files -g 'AGENTS.md' -g '.codex/config.toml' -g '.agents/skills/**' 2>/dev/null || true
-  if [[ -n "${TARGET:-}" && -e "$TARGET" ]]; then find "$TARGET" -maxdepth 4 -type f; fi
-} | sort -u >"$OUT_DIR/inventory.txt"
-```
+Run `rg --files` with the `AGENTS.md`, `.codex/config.toml`, and `.agents/skills/**` globs as argv. When `target` is
+supplied and exists, enumerate regular files under it to depth four with a platform-native filesystem walk. Sort and
+deduplicate both result sets into `<run-directory>/inventory.txt`; record unavailable inputs or collection failures.
 
 ### 03: Build an audit ledger before running gates
 
-Write `$OUT_DIR/audit-ledger.md` with these sections:
+Write `<run-directory>/audit-ledger.md` with these sections:
 
 - `Inventory`: configured/present policy, skills, and role-routing surfaces.
 - `Broken References`: missing files, stale paths, unresolved shared resources.
@@ -59,7 +51,7 @@ Write `$OUT_DIR/audit-ledger.md` with these sections:
 - `Overlap`: duplicate/fuzzy ownership decisions.
 - `Recommendations`: ranked fixes.
 
-For `scope=all`, `mode=adversarial`, or audits crossing skills, agents, CI/config, apply `../../shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-audit-plan.md"` packs for:
+For `scope=all`, `mode=adversarial`, or audits crossing skills, agents, CI/config, apply `../../shared/specialist-orchestration.md`. Write `<run-directory>/specialist-audit-plan.md` packs for:
 
 - `curator`: skill/agent/config drift, duplication, calibration hygiene.
 - `linting-expert`: Markdown, Python, shell, ruff/mypy/pre-commit references.
@@ -70,25 +62,20 @@ Stay single-agent for narrow `scope=config`, `scope=skills`, or `scope=agents` a
 
 ### 04: Run shared quality gates
 
-Follow `../../shared/helper-cli-contract.md` and `run-gates.sh --help`. Use project-configured lint, format, type, and test commands for the discovered surfaces, explicit reasons for inapplicable gates, and clean diff review.
+Follow `../../shared/helper-cli-contract.md` and `python PLUGIN_ROOT/shared/run_gates.py --help`. Use project-configured lint, format, type, and test commands for the discovered surfaces, explicit reasons for inapplicable gates, and clean diff review.
 
 ### 05: Detect drift and broken references
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-rg -n "config_file|skills/|roles/|quality-gates|run-gates.sh|write-result.py" \
-  AGENTS.md .codex .agents "${TARGET:-}" >"$OUT_DIR/reference-scan.txt" 2>/dev/null || true
-```
+Run `rg -n` for `config_file|skills/|roles/|quality-gates|run_gates.py|write-result.py` over existing `AGENTS.md`,
+`.codex`, `.agents`, and the optional target. Write results to `<run-directory>/reference-scan.txt`; record missing
+inputs or command failure explicitly.
 
 ### 06: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-rg -n "delegat|specialist|spawn|role|\[agents\." AGENTS.md .codex/config.toml \
-  >"$OUT_DIR/spawn-sections.txt" 2>/dev/null || true
-rg -n "Trigger and skip boundaries|TRIGGER when|SKIP when|NOT for" "${TARGET:-AGENTS.md}" \
-  >"$OUT_DIR/spawn-policy-sections.txt" 2>/dev/null || true
-```
+Run two separate `rg -n` argv scans: `delegat|specialist|spawn|role|\[agents\.` over existing `AGENTS.md` and
+`.codex/config.toml`, writing `<run-directory>/spawn-sections.txt`; then
+`Trigger and skip boundaries|TRIGGER when|SKIP when|NOT for` over the supplied target or `AGENTS.md`, writing
+`<run-directory>/spawn-policy-sections.txt`. Record missing inputs or command failure explicitly.
 
 ### 07: Review native skill and agent contract consistency
 
@@ -110,15 +97,9 @@ Each configured role or agent has:
 
 ### 08: Review role-roster consistency when a role-card target is supplied
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-if [[ -n "${TARGET:-}" ]]; then
-  rg -n "^(role_id|name|model|description|developer_instructions)" "$TARGET" \
-    >"$OUT_DIR/role-roster-scan.txt" 2>/dev/null || true
-else
-  : >"$OUT_DIR/role-roster-scan.txt"
-fi
-```
+When a target is supplied, run `rg -n` for `^(role_id|name|model|description|developer_instructions)` over that exact
+target and write `<run-directory>/role-roster-scan.txt`; record scan failure. Without a target, create that artifact as
+an empty file and classify the role roster as not configured.
 
 Classify overlap as `keep`, `sharpen`, `merge-prune`:
 

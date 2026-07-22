@@ -27,13 +27,9 @@ this general-purpose skill.
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/manage/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill manage` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Parse intent and target
 
@@ -49,13 +45,11 @@ Unknown intent => fail before edit.
 
 ### 03: Resolve owned files and blast radius
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-rg --files -g 'AGENTS.md' -g '.codex/**' -g '.agents/**' | sort >"$OUT_DIR/inventory.txt"
-rg -n "$TARGET" .codex .agents AGENTS.md >"$OUT_DIR/references.txt" 2>/dev/null || true
-```
+Run `rg --files` with the `AGENTS.md`, `.codex/**`, and `.agents/**` globs as an argv command; sort its lines and write
+them to `<run-directory>/inventory.txt`. Run `rg -n` for the exact target over `.codex`, `.agents`, and `AGENTS.md`,
+write results to `<run-directory>/references.txt`, and record unavailable inputs or command failure explicitly.
 
-Write `$OUT_DIR/ownership.md`: exact edited and intentionally untouched files.
+Write `<run-directory>/ownership.md`: exact edited and intentionally untouched files.
 
 Resolve the current skill path and reject any target whose canonical path is inside the same installed plugin root.
 Reject generated `codex-rig-*.toml` targets here even when they are outside the cache; report the dedicated lifecycle
@@ -82,7 +76,7 @@ Never infer that the source repository is present from the installed cache layou
 
 ### 06: Propagate references
 
-For behavior changes, update relevant descriptions, mappings, routing text, calibration notes in same patch. List intentionally stale references in `$OUT_DIR/unresolved-references.md`.
+For behavior changes, update relevant descriptions, mappings, routing text, calibration notes in same patch. List intentionally stale references in `<run-directory>/unresolved-references.md`.
 
 For broad changes with separable config, docs, calibration, or verification workstreams, route through
 `delegation-lead` and shared specialist orchestration. Use the lowest-cost capable canonical role per bounded
@@ -91,7 +85,7 @@ checks, visible unresolved limits, and parent-owned final acceptance.
 
 ### 07: Run shared quality gates
 
-Inspect `run-gates.sh --help`. Supply real affected-surface commands and explicit reasons for every inapplicable gate; never use `true` as skip reason. Review includes clean diff check.
+Inspect `python PLUGIN_ROOT/shared/run_gates.py --help`. Supply real affected-surface commands and explicit reasons for every inapplicable gate; never use `true` as skip reason. Review includes clean diff check.
 
 ### 08: Write mandatory result artifact
 

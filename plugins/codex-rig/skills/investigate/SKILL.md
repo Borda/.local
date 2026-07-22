@@ -22,17 +22,13 @@ Diagnosis-first loop for unclear failures: failing tests, tracebacks, regression
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/investigate/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill investigate` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Capture symptom and reproduction context
 
-Write `$OUT_DIR/symptom.md` with:
+Write `<run-directory>/symptom.md` with:
 
 - failing command or observed behavior
 - expected behavior
@@ -42,17 +38,15 @@ Write `$OUT_DIR/symptom.md` with:
 
 ### 03: Gather signals before forming hypotheses
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-git log --oneline -10 >"$OUT_DIR/recent-commits.txt" 2>/dev/null || true
-python --version >"$OUT_DIR/python-version.txt" 2>&1 || true
-```
+Run `git log --oneline -10` and `python --version` as separate argv commands. Write their complete outputs to
+`<run-directory>/recent-commits.txt` and `<run-directory>/python-version.txt`; record either collection failure rather
+than treating an empty file as successful evidence.
 
-Inspect `collect-diff.sh --help`, collect `working-tree` scope into `$OUT_DIR/baseline`; record collection failure, never treat as empty diff.
+Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`, collect `working-tree` scope into `<run-directory>/baseline`; record collection failure, never treat as empty diff.
 
 Add needed tool logs, CI excerpts, tracebacks, config, changed source. Absence of evidence ≠ evidence of absence.
 
-### 04: Rank hypotheses in `$OUT_DIR/hypotheses.md`
+### 04: Rank hypotheses in `<run-directory>/hypotheses.md`
 
 ```markdown
 | Rank | Hypothesis | Supporting evidence | Falsification check | Status |
@@ -65,7 +59,7 @@ Include ≥3 plausible hypotheses unless failing command + code/log directly pro
 
 Apply `../../shared/specialist-orchestration.md` for multi-domain symptoms or useful parallel evidence. Stay single-agent for narrow deterministic failure with one obvious hypothesis.
 
-Write `"$OUT_DIR/specialist-probes.md"` before fan-out: role, hypothesis, context path, expected falsification signal, mode (`spawned`, `substituted`, `not_triggered`).
+Write `<run-directory>/specialist-probes.md` before fan-out: role, hypothesis, context path, expected falsification signal, mode (`spawned`, `substituted`, `not_triggered`).
 
 Recommended probe routing:
 
@@ -91,7 +85,7 @@ Each probe must have a clear outcome:
 - `ruled_out`
 - `inconclusive`
 
-Persist probe commands and outputs under `$OUT_DIR/probes/` or inline in `$OUT_DIR/probes.md`.
+Persist probe commands and outputs under `<run-directory>/probes/` or inline in `<run-directory>/probes.md`.
 
 ### 07: Run the anti-rationalization gate
 
@@ -104,7 +98,7 @@ A root-cause claim requires:
 
 Low confidence: continue probing, no fix proposal.
 
-Write `$OUT_DIR/root-cause.md` with:
+Write `<run-directory>/root-cause.md` with:
 
 - `Evidence`
 - `Falsification`
@@ -113,7 +107,7 @@ Write `$OUT_DIR/root-cause.md` with:
 
 ### 08: Run shared quality gates or targeted checks relevant to the failure
 
-Inspect `run-gates.sh --help`, run full/targeted gates needed to falsify hypotheses.
+Inspect `python PLUGIN_ROOT/shared/run_gates.py --help`, run full/targeted gates needed to falsify hypotheses.
 
 ### 09: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`
 

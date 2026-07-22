@@ -29,13 +29,9 @@ Metric-driven optimization with explicit guards, rollback criteria, experiment l
 
 ### 01: Create run directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/optimize/$TS"
-mkdir -p "$OUT_DIR"
-```
-
-In each later Bash block that sets `OUT_DIR`, replace `<run-directory-created-in-step-01>` with the exact path created in step 01.
+Run `python PLUGIN_ROOT/shared/create_run.py --skill optimize` once. Retain its single printed path as
+`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
+reuse the path through a shell variable; shell variables do not persist across tool calls.
 
 ### 02: Validate metric and guard commands
 
@@ -50,15 +46,13 @@ Require:
 
 Dry-run both before edit:
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-${METRIC_CMD} >"$OUT_DIR/metric-baseline.txt" 2>&1
-${GUARD_CMD} >"$OUT_DIR/guard-baseline.txt" 2>&1
-```
+Execute the configured `metric_cmd` and `guard_cmd` separately with the host-native command runner. Write complete
+combined output to `<run-directory>/metric-baseline.txt` and `<run-directory>/guard-baseline.txt`; retain both exit
+codes and stop before editing if either command cannot run.
 
 ### 03: Record baseline and hypothesis
 
-Write `$OUT_DIR/hypothesis.md`:
+Write `<run-directory>/hypothesis.md`:
 
 - metric to improve
 - expected mechanism
@@ -66,7 +60,7 @@ Write `$OUT_DIR/hypothesis.md`:
 - guard risk
 - rollback condition
 
-For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code, apply `../../shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-optimization-plan.md"` with narrow context packs for:
+For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code, apply `../../shared/specialist-orchestration.md`. Write `<run-directory>/specialist-optimization-plan.md` with narrow context packs for:
 
 - `squeezer`: profiling mechanism, bottleneck hypothesis, measurement plan.
 - `qa-specialist`: guard coverage and regression risk.
@@ -78,24 +72,18 @@ No fan-out for one small measured change with stable metric/guard. Never let spe
 
 Initialize machine-readable iteration log:
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-: >"$OUT_DIR/experiments.jsonl"
-```
+Create an empty `<run-directory>/experiments.jsonl` with the filesystem tool before the first iteration.
 
 ### 04: Apply one minimal optimization change per iteration
 
-One independent hypothesis per iteration. Do not optimize unmeasured paths. Before each, write `$OUT_DIR/iteration-<n>-before.patch` with scoped-file diff. If iteration fails and only its patch is present, revert with `git apply -R` against iteration diff; otherwise fail run when clean reversal cannot be proven. Never use `git reset --hard`.
+One independent hypothesis per iteration. Do not optimize unmeasured paths. Before each, write `<run-directory>/iteration-<n>-before.patch` with scoped-file diff. If iteration fails and only its patch is present, revert with `git apply -R` against iteration diff; otherwise fail run when clean reversal cannot be proven. Never use `git reset --hard`.
 
 ### 05: Re-measure
 
-```bash
-OUT_DIR="<run-directory-created-in-step-01>"
-${METRIC_CMD} >"$OUT_DIR/metric-after.txt" 2>&1
-${GUARD_CMD} >"$OUT_DIR/guard-after.txt" 2>&1
-```
+Re-run the same retained `metric_cmd` and `guard_cmd` separately with the host-native command runner. Write complete
+combined output to `<run-directory>/metric-after.txt` and `<run-directory>/guard-after.txt`; retain both exit codes.
 
-### 06: Compare baseline and after results in `$OUT_DIR/comparison.md`
+### 06: Compare baseline and after results in `<run-directory>/comparison.md`
 
 Required fields:
 
@@ -106,7 +94,7 @@ Required fields:
 - confidence
 - noise caveats
 
-Append one JSON object/iteration to `$OUT_DIR/experiments.jsonl`:
+Append one JSON object/iteration to `<run-directory>/experiments.jsonl`:
 
 ```json
 {
@@ -131,7 +119,7 @@ Append one JSON object/iteration to `$OUT_DIR/experiments.jsonl`:
 
 ### 08: Run shared quality gates
 
-Inspect `run-gates.sh --help`. Tests runs configured test or guard command; give real commands or explicit reasons for other gates.
+Inspect `python PLUGIN_ROOT/shared/run_gates.py --help`. Tests runs configured test or guard command; give real commands or explicit reasons for other gates.
 
 ### 09: Write and validate the mandatory result artifact
 

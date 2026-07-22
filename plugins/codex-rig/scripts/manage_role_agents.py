@@ -131,7 +131,9 @@ def _digest_regular_executable(path: Path, label: str) -> tuple[Path, str]:
     """Resolve and hash one stable current-user executable without links."""
     try:
         canonical = path.resolve(strict=True)
-        descriptor = os.open(canonical, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(canonical, flags)
     except OSError as error:
         raise ValueError(f"{label} is unavailable: {error}") from error
     try:
@@ -171,14 +173,11 @@ def _active_package_check(
     codex_home: Path,
     codex_binary: Path,
     codex_hash: str,
-    roster: GeneratedRoster,
+    plugin_version: str,
 ) -> CheckResult:
     """Run the active-cache oracle in a disposable copy of Codex metadata."""
-    role = next((item for item in roster.roles if item.role_id == "challenger"), None)
-    if role is None:
-        return CheckResult("blocked", "challenger role is absent from the package roster")
     try:
-        expected_root = codex_home / "plugins" / "cache" / MARKETPLACE / PLUGIN_NAME / roster.plugin_version
+        expected_root = codex_home / "plugins" / "cache" / MARKETPLACE / PLUGIN_NAME / plugin_version
         if not expected_root.is_dir() or not os.path.samefile(plugin_root, expected_root):
             return CheckResult("degraded", "plugin root is not the selected cache-version path")
         with tempfile.TemporaryDirectory(prefix="codex-rig-doctor-") as temporary:
@@ -224,7 +223,7 @@ def _active_package_check(
             and item.get("marketplaceName") == MARKETPLACE
             and item.get("installed") is True
             and item.get("enabled") is True
-            and item.get("version") == roster.plugin_version
+            and item.get("version") == plugin_version
         ]
     except (KeyError, TypeError, ValueError):
         matches = []
@@ -239,13 +238,104 @@ def _active_package_check(
     return CheckResult("pass", "active package, manifest, helper, and representative card match")
 
 
-def _classification(checks: dict[str, CheckResult], observation: FilesystemObservation) -> str:
-    """Reduce exact prerequisite evidence to the stable doctor classification."""
-    if observation.classification == "blocked" or any(item.status == "blocked" for item in checks.values()):
+def _check_classification(checks: dict[str, CheckResult], filesystem_classification: str) -> str:
+    """Reduce prerequisite checks and filesystem state to one classification."""
+    if filesystem_classification == "blocked" or any(item.status == "blocked" for item in checks.values()):
         return "blocked"
     if any(item.status != "pass" for item in checks.values()):
         return "degraded"
     return "healthy"
+
+
+def _classification(checks: dict[str, CheckResult], observation: FilesystemObservation) -> str:
+    """Reduce exact prerequisite evidence to the stable doctor classification."""
+    return _check_classification(checks, observation.classification)
+
+
+def _windows_inventory(codex_home: Path) -> tuple[CheckResult, tuple[str, ...]]:
+    """Inventory legacy shim names on Windows without authenticating or mutating them."""
+    agents = codex_home / "agents"
+    if not agents.exists():
+        return CheckResult("pass", "agents directory absent; no shim candidates"), ()
+    metadata = agents.lstat()
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if agents.is_symlink() or attributes & reparse_flag or not agents.is_dir():
+        return CheckResult("blocked", f"agents path is linked or not a directory: {agents}"), ()
+    candidates: list[str] = []
+    for entry in agents.iterdir():
+        if not entry.name.startswith("codex-rig-") or entry.suffix != ".toml":
+            continue
+        entry_metadata = entry.lstat()
+        entry_attributes = getattr(entry_metadata, "st_file_attributes", 0)
+        if entry.is_symlink() or entry_attributes & reparse_flag or not entry.is_file():
+            return CheckResult("blocked", f"shim candidate is linked or not a file: {entry.name}"), ()
+        candidates.append(entry.name)
+    return (
+        CheckResult("pass", "Windows inventory is read-only; persistent shim mutation is unavailable"),
+        tuple(sorted(candidates)),
+    )
+
+
+def _diagnose_windows(
+    *,
+    action: str,
+    codex_home: Path,
+    plugin_root: Path,
+    codex_binary: Path | None,
+    check_active_package: bool,
+) -> DiagnosticResult:
+    """Run portable Windows package, executable, and shim-inventory checks."""
+    from _package_identity import verify_package
+
+    home = codex_home.resolve(strict=True)
+    root = plugin_root.resolve(strict=True)
+    if Path(os.path.abspath(codex_home)) != home or Path(os.path.abspath(plugin_root)) != root:
+        raise ValueError("Codex home and plugin root must be canonical non-symlink paths")
+    python_version = ".".join(str(item) for item in sys.version_info[:3])
+    checks = {
+        "python": CheckResult(
+            "pass" if sys.version_info >= MINIMUM_PYTHON else "blocked",
+            f"Python {python_version}; minimum is 3.10",
+        ),
+        "platform": CheckResult("pass", f"platform {sys.platform}; native read-only diagnostics supported"),
+    }
+    filesystem, candidates = _windows_inventory(home)
+    checks["filesystem"] = filesystem
+    plugin_version: str | None = None
+    try:
+        identity = verify_package(root, enforce_modes=False)
+        plugin_version = identity.version
+        _, _ = _digest_regular_executable(Path(sys.executable), "Python executable")
+        codex_path, codex_hash = _digest_regular_executable(_codex_executable(codex_binary), "Codex executable")
+        checks["package"] = CheckResult(
+            "pass",
+            f"verified {identity.files_verified} package files; POSIX mode checks are not applicable",
+        )
+        checks["executables"] = CheckResult("pass", "canonical Python and Codex executables are stable")
+        checks["active_package"] = (
+            _active_package_check(root, home, codex_path, codex_hash, identity.version)
+            if check_active_package
+            else CheckResult("degraded", "active package oracle was explicitly skipped")
+        )
+    except (OSError, ValueError) as error:
+        checks["package"] = CheckResult("blocked", str(error))
+        checks["executables"] = CheckResult("blocked", str(error))
+        checks["active_package"] = CheckResult("blocked", "package or executable validation failed first")
+    return DiagnosticResult(
+        action,
+        _check_classification(checks, "blocked" if filesystem.status == "blocked" else "pass"),
+        plugin_version,
+        python_version,
+        sys.platform,
+        str(home),
+        str(root),
+        checks,
+        "not-applicable",
+        "inventory-only",
+        "not-applicable",
+        candidates,
+    )
 
 
 def diagnose(
@@ -259,6 +349,14 @@ def diagnose(
     """Run a zero-write live doctor and optional installed-state summary."""
     if action not in {"doctor", "status"}:
         raise ValueError("diagnostic action must be doctor or status")
+    if sys.platform == "win32":
+        return _diagnose_windows(
+            action=action,
+            codex_home=codex_home,
+            plugin_root=plugin_root,
+            codex_binary=codex_binary,
+            check_active_package=check_active_package,
+        )
     home = codex_home.resolve(strict=True)
     root = plugin_root.resolve(strict=True)
     if Path(os.path.abspath(codex_home)) != home or Path(os.path.abspath(plugin_root)) != root:
@@ -293,7 +391,7 @@ def diagnose(
         checks["package"] = CheckResult("pass", "package manifest, generator, verifier, and all roles match")
         checks["executables"] = CheckResult("pass", "canonical Python and Codex executables are stable")
         checks["active_package"] = (
-            _active_package_check(root, home, codex_path, codex_hash, roster)
+            _active_package_check(root, home, codex_path, codex_hash, roster.plugin_version)
             if check_active_package
             else CheckResult("degraded", "active package oracle was explicitly skipped")
         )
@@ -1001,7 +1099,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except SystemExit as error:
         return int(error.code)
-    if not sys.platform.startswith(SUPPORTED_PLATFORMS):
+    if not sys.platform.startswith(SUPPORTED_PLATFORMS) and sys.platform != "win32":
         print(
             json.dumps(
                 {
@@ -1026,6 +1124,19 @@ def main(argv: list[str] | None = None) -> int:
                     "action": "install",
                     "classification": "platform-blocked",
                     "detail": "active Codex collaboration has no explicit custom-agent selector",
+                    "writes": 0,
+                },
+                sort_keys=True,
+            )
+        )
+        return 5
+    if arguments.action == "remove" and sys.platform == "win32":
+        print(
+            json.dumps(
+                {
+                    "action": "remove",
+                    "classification": "platform-blocked",
+                    "detail": "persistent shim mutation requires the POSIX lifecycle backend",
                     "writes": 0,
                 },
                 sort_keys=True,

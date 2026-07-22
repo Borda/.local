@@ -21,10 +21,10 @@ Long workflows keep contract-level `## Workflow` with `### NN:` ordered subheade
 
 - Keep `.reports/codex/<skill>/<timestamp>/result.json` as the canonical artifact.
 - New human-readable report artifacts use Caveman Ultra: each fact once, no filler or repeated context. Do not compress or omit machine-readable JSON, commands, paths, code, logs, patches, required tables, evidence, failures, risks, owner/action, or confidence limits. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
-- Use `PLUGIN_ROOT/shared/run-gates.sh` and executable `write-result.py` when the skill changes files or runs code checks.
+- Use `python PLUGIN_ROOT/shared/run_gates.py` and executable `write-result.py` when the skill changes files or runs code checks.
 - Use `PLUGIN_ROOT/shared/helper-cli-contract.md` for gate/write/validate lifecycle. Helper `--help` owns options; skills do not duplicate full local CLI invocations.
-- Use `PLUGIN_ROOT/shared/collect-diff.sh` for scope-aware `working-tree`, `path`, `commit` diffs; do not duplicate git plumbing.
-- Use `PLUGIN_ROOT/shared/collect-pr.sh --checkout` for PR diff, metadata, comments/reviews/threads, unresolved threads, target/PR refresh where possible, local checkout evidence; no ad hoc `gh`/raw URL snapshots.
+- Use `python PLUGIN_ROOT/shared/collect_diff.py` for scope-aware `working-tree`, `path`, `commit` diffs; do not duplicate git plumbing.
+- Use `python PLUGIN_ROOT/shared/collect_pr.py --checkout` for PR diff, metadata, comments/reviews/threads, unresolved threads, target/PR refresh where possible, local checkout evidence; no ad hoc `gh`/raw URL snapshots.
 - Use `PLUGIN_ROOT/shared/find-review-report.py` for path-free PR report lookup; no ad hoc JSON parsing in instructions.
 - Delegation/in-main substitute passes use `PLUGIN_ROOT/shared/specialist-orchestration.md`, narrow context packs, explicit output contracts, parent consolidation.
 - Put bulky skill result JSON examples in sibling `result-template.json`. In `SKILL.md`, reference it; do not embed long "Minimum artifact payload" blocks.

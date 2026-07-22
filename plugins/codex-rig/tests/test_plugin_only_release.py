@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +63,10 @@ EXPECTED_KAGGLE_REFERENCES = {
 RELATIVE_DEPENDENCY = re.compile(r"`((?:\.\./\.\./(?:shared|runtime)/|references/)[A-Za-z0-9_./-]+)")
 PRIVATE_WORK_ITEM = re.compile(r"\b(?:W\d+|H\d{2}|M\d{2})\b")
 PRIVATE_PLAN_REFERENCE = re.compile(r"(?:^|[/\s`'\"])(plan_[A-Za-z0-9_.-]+\.md)")
-PERSONAL_ABSOLUTE_PATH = re.compile(r"/(?:Users|home)/[^/\s'\"]+(?:/[^\s'\"]+)?")
+PERSONAL_ABSOLUTE_PATH = re.compile(
+    r"(?:/(?:Users|home)/[^/\\\s'\"]+|(?i:[A-Z]:[\\/]+Users[\\/]+[^/\\\s'\"]+))"
+    r"(?:[\\/][^\s'\"]+)?",
+)
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -85,6 +89,60 @@ def load_shared_artifact_validator() -> Any:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_package_validator() -> Any:
+    """Load the package validator without relying on package imports."""
+    path = PLUGIN_ROOT / "scripts" / "validate_package.py"
+    spec = importlib.util.spec_from_file_location("codex_rig_package_validator", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b"C:" + b"\\Users\\" + b"Alice\\project",
+        b"d:" + b"/users/" + b"alice/project",
+    ),
+    ids=("backslash", "case-insensitive-forward-slash"),
+)
+def test_package_validator_rejects_windows_user_profile_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes
+) -> None:
+    """Reject absolute Windows user-profile paths from public payloads."""
+    validator = load_package_validator()
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    (package_root / "runtime.txt").write_bytes(payload)
+    monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
+
+    with pytest.raises(ValueError, match=r"private material in payload: runtime\.txt"):
+        validator.validate_publication_payload()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b"C:\\ProgramData\\codex-rig",
+        b"%USERPROFILE%\\codex-rig",
+        b"docs/windows/users/guide.md",
+    ),
+    ids=("system-root", "portable-variable", "relative-documentation"),
+)
+def test_package_validator_accepts_non_private_windows_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes
+) -> None:
+    """Keep portable and non-profile Windows paths publishable."""
+    validator = load_package_validator()
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    (package_root / "runtime.txt").write_bytes(payload)
+    monkeypatch.setattr(validator, "PACKAGE_ROOT", package_root)
+
+    validator.validate_publication_payload()
 
 
 def write_merge_resolution(path: Path, **overrides: object) -> dict[str, object]:
@@ -374,7 +432,7 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
     guide_path = PLUGIN_ROOT / "README.md"
     guide = normalized_text(guide_path).lower()
     for required in (
-        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.2.4",
+        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.3.0",
         "codex plugin add codex-rig@borda-ai-rig",
         "optional sessionstart diagnostic",
         "type that exact digest only after explicit approval",
@@ -388,7 +446,7 @@ def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None
 
     install_lines = {line.strip() for line in guide_path.read_text(encoding="utf-8").splitlines()}
     assert "codex plugin marketplace add Borda/AI-Rig" in install_lines
-    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.4" in install_lines
+    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.3.0" in install_lines
 
 
 def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None:
@@ -399,24 +457,18 @@ def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None
 
     raw_script = sync_path.read_text(encoding="utf-8")
     script = " ".join(raw_script.split()).lower()
-    for required in (
-        "codex plugin marketplace upgrade",
-        "codex plugin marketplace add",
-        "codex plugin add",
-        "codex plugin list",
-        "legacy files copied by older sync versions are not deleted automatically",
-    ):
-        assert required in script
+    assert "scripts/sync_codex.py" in script
     for forbidden in ("codex_src", 'rsync -a --no-perms "$codex_src', 'cp "$codex_src'):
         assert forbidden not in script
 
-    executable_lines = {
-        line.strip() for line in raw_script.splitlines() if line.strip() and not line.lstrip().startswith("#")
-    }
-    assert 'codex plugin marketplace add "$CODEX_MARKETPLACE_SOURCE"' in executable_lines
-    assert 'codex plugin marketplace add "$CODEX_MARKETPLACE_SOURCE" --ref "$CODEX_REF"' in executable_lines
+    native_sync = PLUGIN_ROOT / "scripts" / "sync_codex.py"
+    native_text = native_sync.read_text(encoding="utf-8")
+    assert "Legacy files copied by older sync versions are not deleted automatically" in native_text
+    assert '"plugin", "marketplace", "upgrade"' in native_text
+    assert '"plugin", "marketplace", "add"' in native_text
+    assert '"plugin", "add"' in native_text
+    assert '"plugin", "list"' in native_text
     assert "--codex-ref)" in raw_script
-    assert "marketplace source: ${CODEX_REF:-default branch}" in raw_script
     assert "print_claude_plugin_identity" in raw_script
 
 
@@ -428,9 +480,7 @@ def test_repository_sync_defaults_to_latest_and_accepts_explicit_ref(tmp_path: P
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    fake_codex = fake_bin / "codex"
-    fake_codex.write_text(
-        """#!/usr/bin/env python3
+    fake_codex_source = """#!/usr/bin/env python3
 import json
 import os
 import sys
@@ -456,13 +506,19 @@ elif args[:3] == ["plugin", "marketplace", "add"]:
 elif args[:2] == ["plugin", "add"]:
     pass
 elif args[:2] == ["plugin", "list"]:
-    print(json.dumps({"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.2.4"}]}))
+    print(json.dumps({"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"}]}))
 else:
     raise SystemExit(f"unexpected fake Codex call: {args}")
-""",
-        encoding="utf-8",
-    )
-    fake_codex.chmod(0o755)
+"""
+    if sys.platform == "win32":
+        fake_program = fake_bin / "fake_codex.py"
+        fake_program.write_text(fake_codex_source, encoding="utf-8")
+        fake_codex = fake_bin / "codex.cmd"
+        fake_codex.write_bytes(f'@echo off\r\n"{sys.executable}" "%~dp0fake_codex.py" %*\r\n'.encode("utf-8"))
+    else:
+        fake_codex = fake_bin / "codex"
+        fake_codex.write_text(fake_codex_source, encoding="utf-8")
+        fake_codex.chmod(0o755)
     fake_claude = fake_bin / "claude"
     fake_claude.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
     fake_claude.chmod(0o755)
@@ -477,9 +533,9 @@ else:
         ),
         (
             "pinned",
-            ("codex", "--codex-ref", "codex-rig-v0.2.4"),
-            "plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.2.4",
-            "marketplace source: codex-rig-v0.2.4",
+            ("codex", "--codex-ref", "codex-rig-v0.3.0"),
+            "plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.3.0",
+            "marketplace source: codex-rig-v0.3.0",
             True,
         ),
         (
@@ -526,7 +582,7 @@ else:
         calls = log.read_text(encoding="utf-8").splitlines()
         assert expected_add in calls
         assert expected_source in result.stdout
-        assert "Codex Rig 0.2.4 installed" in result.stdout
+        assert "Codex Rig 0.3.0 installed" in result.stdout
         assert (codex_home / "AGENTS.md").exists() is expect_global_agents
         if expect_global_agents:
             global_agents = (codex_home / "AGENTS.md").read_text(encoding="utf-8")

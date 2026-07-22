@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from _package_identity import verify_package
+
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = PACKAGE_ROOT / "package-manifest.json"
@@ -188,6 +190,28 @@ def encode_manifest(manifest: dict[str, Any]) -> bytes:
     return (json.dumps(manifest, indent=2, ensure_ascii=True, sort_keys=True) + "\n").encode("utf-8")
 
 
+def enforces_posix_modes() -> bool:
+    """Return whether this host can authoritatively generate POSIX mode records."""
+    return os.name != "nt"
+
+
+def manifests_match(current: dict[str, Any], generated: dict[str, Any], *, enforce_modes: bool) -> bool:
+    """Compare schema-1 manifests while optionally excluding filesystem mode values."""
+    if enforce_modes:
+        return current == generated
+
+    def portable(value: dict[str, Any]) -> dict[str, Any]:
+        normalized = json.loads(json.dumps(value))
+        files = normalized.get("files")
+        if isinstance(files, list):
+            for record in files:
+                if isinstance(record, dict):
+                    record.pop("mode", None)
+        return normalized
+
+    return portable(current) == portable(generated)
+
+
 def parse_args() -> argparse.Namespace:
     """Parse manifest generation arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -200,6 +224,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Generate the manifest or check the committed bytes."""
     args = parse_args()
+    enforce_modes = enforces_posix_modes()
+    if args.update and not enforce_modes:
+        raise SystemExit("package-manifest-update-requires-posix")
+    if args.check and not enforce_modes:
+        verify_package(PACKAGE_ROOT, enforce_modes=False)
+        current_manifest = load_json(MANIFEST_PATH)
+        if not manifests_match(current_manifest, build_manifest(), enforce_modes=False):
+            raise SystemExit("package-manifest-out-of-date")
+        print("Package manifest is current; POSIX mode verification is not applicable.")
+        return
     expected = encode_manifest(build_manifest())
     current = MANIFEST_PATH.read_bytes() if MANIFEST_PATH.is_file() else None
     if args.check:

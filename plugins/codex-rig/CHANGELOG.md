@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Add native Windows package verification, read-only shim diagnostics, SessionStart execution, and explicit CI acceptance.
+- Replace Bash-only workflow execution with canonical Python diff, PR, gate, run-directory, and Codex sync entrypoints; remove redundant POSIX compatibility wrappers.
+- Preserve exact POSIX mode enforcement and authenticated shim cleanup while treating modes and shim mutation as explicitly not applicable on Windows.
+- Freeze the audited Windows skip surface and reject private Windows user-profile paths from published package bytes.
+- Keep extensionless package identity files LF-stable and resolve validated Windows batch launchers during Codex sync.
+
 ## 0.2.4
 
 - Accept protected current-user Codex agent directories without changing their permissions, while keeping lifecycle state private.

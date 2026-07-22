@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from _package_identity import verify_package
+
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = PACKAGE_ROOT / "scripts" / "build_package.py"
@@ -47,7 +49,9 @@ EXPECTED_ROLES = {
     "sw-engineer",
     "web-explorer",
 }
-PRIVATE_PATH_PATTERN = re.compile(rb"/(?:Users|home)/[^/\s]+")
+PRIVATE_PATH_PATTERN = re.compile(
+    rb"(?:/(?:Users|home)/[^/\\\s]+|(?i:[A-Z]:[\\/]+Users[\\/]+[^/\\\s]+))",
+)
 PRIVATE_KEY_MARKER = b"BEGIN " + b"PRIVATE KEY"
 
 
@@ -104,6 +108,7 @@ def main() -> None:
     if generated.returncode != 0:
         raise SystemExit(generated.returncode)
     try:
+        verify_package(PACKAGE_ROOT)
         validate_semantics()
         validate_publication_payload()
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:

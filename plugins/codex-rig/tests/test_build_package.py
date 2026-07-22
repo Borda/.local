@@ -10,7 +10,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -77,6 +77,36 @@ def test_manifest_encoding_matches_pre_commit_json_order() -> None:
     assert builder.encode_manifest(manifest) == expected
 
 
+def test_portable_manifest_comparison_ignores_only_mode_values() -> None:
+    """Let native Windows check release bytes without rewriting POSIX modes."""
+    builder = load_builder()
+    current = {
+        "schema": 1,
+        "files": [{"path": "payload.txt", "sha256": "a" * 64, "mode": "0644"}],
+    }
+    generated = {
+        "schema": 1,
+        "files": [{"path": "payload.txt", "sha256": "a" * 64, "mode": "0666"}],
+    }
+
+    assert builder.manifests_match(current, generated, enforce_modes=False)
+    assert not builder.manifests_match(current, generated, enforce_modes=True)
+
+    generated["files"][0]["sha256"] = "b" * 64
+    assert not builder.manifests_match(current, generated, enforce_modes=False)
+
+
+def test_update_refuses_without_posix_mode_enforcement(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep authoritative release-mode generation off native Windows."""
+    builder = load_builder()
+    monkeypatch.setattr(builder, "parse_args", lambda: SimpleNamespace(check=False, update=True))
+    monkeypatch.setattr(builder, "enforces_posix_modes", lambda: False)
+    monkeypatch.setattr(builder, "build_manifest", lambda: pytest.fail("update continued into generation"))
+
+    with pytest.raises(SystemExit, match="package-manifest-update-requires-posix"):
+        builder.main()
+
+
 @POSIX_ONLY
 def test_manifest_binds_the_pure_role_generator() -> None:
     """Prevent installed managers from importing unbound generator bytes."""
@@ -108,6 +138,7 @@ def test_generation_checks_source_independent_installed_copy(tmp_path: Path) -> 
     assert result.stdout == "Package manifest is current.\n"
 
 
+@POSIX_ONLY
 def test_update_rewrites_stale_manifest(tmp_path: Path) -> None:
     """Prevent the explicit update mode from leaving stale package hashes."""
     installed = copied_plugin(tmp_path)
@@ -124,6 +155,7 @@ def test_update_rewrites_stale_manifest(tmp_path: Path) -> None:
     assert current.returncode == 0, current.stderr
 
 
+@POSIX_ONLY
 def test_update_is_idempotent_after_normalizing_stale_manifest(tmp_path: Path) -> None:
     """Prevent platform normalization from causing repeated manifest rewrites."""
     installed = copied_plugin(tmp_path)
@@ -156,14 +188,13 @@ def test_update_is_idempotent_after_normalizing_stale_manifest(tmp_path: Path) -
 def test_generation_rejects_incomplete_public_roster(
     tmp_path: Path, mutator: Callable[[Path], None], expected: str
 ) -> None:
-    """Prevent incomplete installed packages from receiving a fresh manifest."""
+    """Reject an incomplete installed roster on every supported platform."""
     installed = copied_plugin(tmp_path)
     mutator(installed)
+    builder = load_builder(installed / "scripts" / "build_package.py")
 
-    result = run_builder(installed, "--update")
-
-    assert result.returncode == 2
-    assert expected in result.stderr
+    with pytest.raises(ValueError, match=expected):
+        builder.build_manifest()
 
 
 @POSIX_ONLY
