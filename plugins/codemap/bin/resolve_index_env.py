@@ -76,16 +76,22 @@ def _validate_plugin_root(plugin_root: str) -> str:
         ValueError: if ``plugin_root`` is empty, relative, or does not match the safe pattern.
 
     Examples:
-        >>> _validate_plugin_root("/Users/x/.claude/plugins/cache/borda/codemap/0.1.0")
-        '/Users/x/.claude/plugins/cache/borda/codemap/0.1.0'
-        >>> _validate_plugin_root("/opt/repo/plugins/codemap")
-        '/opt/repo/plugins/codemap'
+        >>> import sys
+        >>> _drive = "C:" if sys.platform == "win32" else ""  # 3.13+ ntpath.isabs needs a drive
+        >>> cache_root = _drive + "/Users/x/.claude/plugins/cache/borda/codemap/0.1.0"
+        >>> _validate_plugin_root(cache_root) == cache_root
+        True
+        >>> repo_root = _drive + "/opt/repo/plugins/codemap"
+        >>> _validate_plugin_root(repo_root) == repo_root
+        True
         >>> _validate_plugin_root("plugins/codemap")
         Traceback (most recent call last):
         ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: 'plugins/codemap'
-        >>> _validate_plugin_root("/tmp/evil")
-        Traceback (most recent call last):
-        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: '/tmp/evil'
+        >>> try:
+        ...     _validate_plugin_root(_drive + "/tmp/evil")
+        ... except ValueError:
+        ...     print("rejected")
+        rejected
     """
     if not plugin_root or not os.path.isabs(plugin_root) or not _VALID_PLUGIN_ROOT_RE.fullmatch(plugin_root):
         raise ValueError(f"CLAUDE_PLUGIN_ROOT is not a safe path: {plugin_root!r}")

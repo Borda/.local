@@ -33,7 +33,8 @@ package = false  # env anchor only; never build/install the root as a package
 [tool.ruff]
 line-length = 120
 extend-exclude = [
-  ".experiments/", # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
+  ".experiments/",                 # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
+  "plugins/codemap/tests/corpus/", # frozen-grammar fixtures — intentional post-3.11 syntax, parse-errors under py310 target
 ]
 format = {}
 

@@ -1,0 +1,28 @@
+#!/bin/sh
+# codemap-py POSIX launcher (plan §7.3/§7.4): probe an eligible CPython, exec the
+# single Python entry. No install, no Bash dependency, no shell-command mode.
+set -u
+
+HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+ROOT="$(CDPATH= cd -- "$HERE/.." && pwd -P)"
+ENTRY="$ROOT/scripts/codemap_py_entry.py"
+PROBE='import sys;v=sys.version_info;raise SystemExit(0 if sys.implementation.name=="cpython" and v.major==3 and 11<=v.minor<15 else 127)'
+
+# An authoritative CODEMAP_PYTHON is the sole candidate and must fail hard when
+# invalid — never fall through to the defaults (plan §7.3). It is quoted as a
+# single argv element so a path containing spaces is not word-split (F9); the
+# multi-word `py -3` form applies only to the Windows built-ins in the .cmd.
+if [ -n "${CODEMAP_PYTHON:-}" ]; then
+  if "$CODEMAP_PYTHON" -c "$PROBE" >/dev/null 2>&1; then
+    exec "$CODEMAP_PYTHON" "$ENTRY" "$@"
+  fi
+else
+  for PY in python3 python; do
+    if command -v "$PY" >/dev/null 2>&1 && "$PY" -c "$PROBE" >/dev/null 2>&1; then
+      exec "$PY" "$ENTRY" "$@"
+    fi
+  done
+fi
+
+printf '%s\n' "codemap-py: no eligible CPython >=3.11,<3.15 interpreter (set CODEMAP_PYTHON to one)" >&2
+exit 127
