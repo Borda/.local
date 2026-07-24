@@ -69,31 +69,45 @@ def script_gen_real_issues():
 
 @pytest.fixture(scope="session")
 def scan_query_binary() -> Path:
-    """Path to scan-query binary; skips if not present.
+    """Path to scan-query binary; fails on POSIX when the tracked binary is absent.
+
+    Windows skips (the harness exercises the POSIX launcher only). On POSIX the
+    binary is a tracked file, so a missing path means a broken checkout, not an
+    unavailable dependency — fail loudly instead of yielding a false-green skip.
 
     Returns:
         Absolute path to the scan-query executable.
     """
     if sys.platform == "win32":
-        pytest.skip("scan-query is a POSIX shebang script; not directly executable on Windows")
-    binary = REPO_ROOT / "plugins" / "codemap" / "bin" / "scan-query"
+        pytest.skip(
+            "benchmark harness exercises the POSIX launcher only; "
+            "codemap-py Windows coverage lives in plugins/codemap-py tests"
+        )
+    binary = REPO_ROOT / "plugins" / "codemap-py" / "bin" / "scan-query"
     if not binary.exists():
-        pytest.skip(f"scan-query binary not found at {binary}")
+        pytest.fail(f"tracked scan-query binary missing at {binary} — broken checkout")
     return binary
 
 
 @pytest.fixture(scope="session")
 def scan_index_binary() -> Path:
-    """Path to scan-index binary; skips if not present.
+    """Path to scan-index binary; fails on POSIX when the tracked binary is absent.
+
+    Windows skips (the harness exercises the POSIX launcher only). On POSIX the
+    binary is a tracked file, so a missing path means a broken checkout, not an
+    unavailable dependency — fail loudly instead of yielding a false-green skip.
 
     Returns:
         Absolute path to the scan-index executable.
     """
     if sys.platform == "win32":
-        pytest.skip("scan-index is a POSIX shebang script; not directly executable on Windows")
-    binary = REPO_ROOT / "plugins" / "codemap" / "bin" / "scan-index"
+        pytest.skip(
+            "benchmark harness exercises the POSIX launcher only; "
+            "codemap-py Windows coverage lives in plugins/codemap-py tests"
+        )
+    binary = REPO_ROOT / "plugins" / "codemap-py" / "bin" / "scan-index"
     if not binary.exists():
-        pytest.skip(f"scan-index binary not found at {binary}")
+        pytest.fail(f"tracked scan-index binary missing at {binary} — broken checkout")
     return binary
 
 

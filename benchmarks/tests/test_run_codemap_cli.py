@@ -1022,8 +1022,8 @@ class TestFindCodemapBin:
         assert result == Path("/usr/local/bin/scan-query")
 
     def test_finds_binary_in_plugin_root_when_not_on_path(self, script_run_cli: Any, tmp_path: Path) -> None:
-        """Scenario: binary not on PATH but present under plugin_root/plugins/codemap/bin/."""
-        bin_dir = tmp_path / "plugins" / "codemap" / "bin"
+        """Scenario: binary not on PATH but present under plugin_root/plugins/codemap-py/bin/."""
+        bin_dir = tmp_path / "plugins" / "codemap-py" / "bin"
         bin_dir.mkdir(parents=True)
         binary = bin_dir / "scan-query"
         binary.write_text("#!/usr/bin/env python3\n")
@@ -1034,6 +1034,20 @@ class TestFindCodemapBin:
 
     def test_returns_none_when_plugin_root_lacks_binary(self, script_run_cli: Any, tmp_path: Path) -> None:
         """Scenario: plugin_root provided but binary file absent → None."""
+        with patch("shutil.which", return_value=None):
+            result = script_run_cli.find_codemap_bin("scan-query", plugin_root=tmp_path)
+        assert result is None
+
+    def test_legacy_codemap_path_never_selected(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: only the retired plugins/codemap/bin/ holds the binary → None.
+
+        The resolver targets the renamed ``codemap-py`` identity exclusively, so a
+        stale pre-rename checkout must not yield a false-green binary path.
+        """
+        legacy = tmp_path / "plugins" / "codemap" / "bin"
+        legacy.mkdir(parents=True)
+        (legacy / "scan-query").write_text("#!/usr/bin/env python3\n")
+
         with patch("shutil.which", return_value=None):
             result = script_run_cli.find_codemap_bin("scan-query", plugin_root=tmp_path)
         assert result is None

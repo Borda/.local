@@ -241,20 +241,20 @@ def _folder_to_name(folder: str) -> str:
     while their plugin names stayed bare (``foundry`` …). Cache dirs,
     ``installed_plugins.json`` keys, namespaces, and subprocess ``plugin`` args
     all use the bare name, so a folder-derived identity must strip the prefix to
-    resolve against the installed plugin. Non-renamed folders (``codemap``,
-    ``codex-rig``) pass through unchanged.
+    resolve against the installed plugin. Folders whose plugin name carries no
+    ``cc_`` prefix (``codemap-py``, ``codex-rig``) pass through unchanged.
 
     Args:
-        folder: On-disk folder basename, e.g. ``"cc_foundry"`` or ``"codemap"``.
+        folder: On-disk folder basename, e.g. ``"cc_foundry"`` or ``"codemap-py"``.
 
     Returns:
-        The bare plugin name, e.g. ``"foundry"`` or ``"codemap"``.
+        The bare plugin name, e.g. ``"foundry"`` or ``"codemap-py"``.
 
     Examples:
         >>> _folder_to_name("cc_foundry")
         'foundry'
-        >>> _folder_to_name("codemap")
-        'codemap'
+        >>> _folder_to_name("codemap-py")
+        'codemap-py'
     """
     return folder.removeprefix("cc_")
 

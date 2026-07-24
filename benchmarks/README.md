@@ -95,7 +95,7 @@ Runs the same 16 import-graph tasks under four arms:
 pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 
 # 2. Build codemap index once (excluded from benchmark timing)
-python plugins/codemap/bin/scan-index --root /path/to/repo
+python plugins/codemap-py/bin/scan-index --root /path/to/repo
 
 # 3. Run all tasks, all arms, all model tiers
 python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo --run-all --report
@@ -219,7 +219,7 @@ Two arms run the same tasks:
 pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 
 # 2. Build index once
-python plugins/codemap/bin/scan-index --root ./<repo-dir>
+python plugins/codemap-py/bin/scan-index --root ./<repo-dir>
 
 # 3. Run all 54 tasks, both arms, haiku model
 python benchmarks/run-codemap-bench.py \
@@ -701,7 +701,7 @@ Token overhead 🚧 (pending clean re-run). Semble uses fewer input tokens than 
 | hard    | 🚧          | 🚧            | 🚧    |
 | extreme | 🚧          | 🚧            | 🚧    |
 
-Codemap reduces tool calls in every tier (🚧) — exploration savings are real but small vs preamble cost. Known limitations and planned mitigations: see `plugins/codemap/README.md`.
+Codemap reduces tool calls in every tier (🚧) — exploration savings are real but small vs preamble cost. Known limitations and planned mitigations: see `plugins/codemap-py/README.md`.
 
 Results above include all three arms. Combined arm excluded from default "all" runs (run with `--arm combined` to include).
 

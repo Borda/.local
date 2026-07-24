@@ -16,7 +16,7 @@ Usage:
 
 Requirements:
     - repo clone with a pre-built codemap index (see tasks-bench.json "repo.default_path")
-    - scan-query on PATH or at plugins/codemap/bin/scan-query
+    - scan-query on PATH or at plugins/codemap-py/bin/scan-query
 """
 
 from __future__ import annotations
@@ -186,7 +186,7 @@ def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
 
     Args:
         name: Binary name to find (e.g. "scan-query").
-        plugin_root: Optional project root containing plugins/codemap/bin/.
+        plugin_root: Optional project root containing plugins/codemap-py/bin/.
 
     Returns:
         Resolved path or None if not found.
@@ -195,7 +195,7 @@ def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
     if which:
         return Path(which)
     if plugin_root:
-        candidate = plugin_root / "plugins" / "codemap" / "bin" / name
+        candidate = plugin_root / "plugins" / "codemap-py" / "bin" / name
         if candidate.exists():
             return candidate
     return None
@@ -521,7 +521,7 @@ def _callers_via_ast(primary_fn: str, repo: Path) -> tuple[set[str], str | None]
 def _undocumented_via_ast(repo: Path, module: str | None = None) -> tuple[set[str], str | None]:
     """Independent AST oracle for the ``undocumented`` check: public symbols with no docstring.
 
-    Mirrors scan-query ``cmd_undocumented`` / ``_is_public_symbol`` (plugins/codemap/bin/
+    Mirrors scan-query ``cmd_undocumented`` / ``_is_public_symbol`` (plugins/codemap-py/bin/
     scan-query): a symbol is *public* when no dotted component of its qualified name starts
     with ``_`` (excludes dunders, private helpers, private classes); test modules are skipped.
     A symbol is *undocumented* when :func:`ast.get_docstring` returns falsy. Qualified names
@@ -2025,7 +2025,7 @@ def main(
 
     sq = find_codemap_bin("scan-query", plugin_root)
     if sq is None:
-        print("ERROR: scan-query not found on PATH or in plugins/codemap/bin/")
+        print("ERROR: scan-query not found on PATH or in plugins/codemap-py/bin/")
         sys.exit(1)
 
     index_path = resolve_index_path(index_path, repo_path)

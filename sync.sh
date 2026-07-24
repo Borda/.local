@@ -65,7 +65,7 @@ if [[ -n "$CODEX_REF" ]] && ! $SYNC_CODEX; then
     exit 2
 fi
 
-PLUGINS=(foundry oss develop research codemap)
+PLUGINS=(foundry oss develop research codemap-py)
 EXTERNAL_PLUGINS=(codex@openai-codex caveman@caveman ponytail@ponytail)
 MARKETPLACE=$(jq -r '.name' .claude-plugin/marketplace.json)
 SETTINGS="$HOME/.claude/settings.json"

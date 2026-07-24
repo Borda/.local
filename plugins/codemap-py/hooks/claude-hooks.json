@@ -1,0 +1,69 @@
+{
+  "description": "codemap-py plugin hooks: ambient index status injection + skill telemetry + redundant-scan guard",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/record-exhausted.js\"",
+            "type": "command"
+          },
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Grep|Read|Glob"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-skill-start.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Skill"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-redundant-scan.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.js\"",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/inject-preamble.js\"",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

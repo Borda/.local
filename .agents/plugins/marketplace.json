@@ -15,6 +15,13 @@
         "path": "./plugins/codex-rig",
         "source": "local"
       }
+    },
+    {
+      "name": "codemap-py",
+      "source": {
+        "path": "./plugins/codemap-py",
+        "source": "local"
+      }
     }
   ]
 }

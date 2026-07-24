@@ -26,8 +26,8 @@
     },
     {
       "description": "Codebase structural index \u2014 scan Python projects, query the import graph for blast-radius and coupling",
-      "name": "codemap",
-      "source": "./plugins/codemap"
+      "name": "codemap-py",
+      "source": "./plugins/codemap-py"
     }
   ]
 }

@@ -24,7 +24,7 @@ printf "=== Check 35: \$ARGUMENTS shell injection risk ===\n"
 ```
 
 **Severity**: `security` — direct shell injection vector.
-Fix: route env-var user input through bin/ script with shlex-safe argument parsing (see `plugins/codemap/bin/parse_scan_args.py` as reference).
+Fix: route env-var user input through bin/ script with shlex-safe argument parsing (see `plugins/codemap-py/bin/parse_scan_args.py` as reference).
 
 ## Check 36 — eval-unsafe bin/ output security
 

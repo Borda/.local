@@ -3,8 +3,8 @@
 **Wrapper** — the Gate A / Gate B machinery lives in the codemap-shipped gates contract. Resolve and read it:
 
 ```bash
-_CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/_shared 2>/dev/null | head -1)"
-[ -z "$_CM_SHARED" ] && _CM_SHARED="plugins/codemap/skills/_shared"
+_CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/claude-skills/_shared 2>/dev/null | head -1)"
+[ -z "$_CM_SHARED" ] && _CM_SHARED="plugins/codemap-py/claude-skills/_shared"
 [ -f "$_CM_SHARED/codemap-gates.md" ] && cat "$_CM_SHARED/codemap-gates.md" || echo "codemap gates contract absent — use fallback below"
 ```
 

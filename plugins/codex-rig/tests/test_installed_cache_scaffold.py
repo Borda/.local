@@ -50,7 +50,8 @@ def test_repository_marketplace_contract() -> None:
     marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
 
     assert marketplace["name"] == "borda-ai-rig"
-    assert marketplace["plugins"][0]["source"]["path"] == "./plugins/codex-rig"
+    codex_entry = next(p for p in marketplace["plugins"] if p["name"] == "codex-rig")
+    assert codex_entry["source"]["path"] == "./plugins/codex-rig"
 
 
 def test_representative_skill_and_role_are_cache_portable() -> None:

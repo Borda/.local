@@ -33,8 +33,8 @@ package = false  # env anchor only; never build/install the root as a package
 [tool.ruff]
 line-length = 120
 extend-exclude = [
-  ".experiments/",                 # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
-  "plugins/codemap/tests/corpus/", # frozen-grammar fixtures — intentional post-3.11 syntax, parse-errors under py310 target
+  ".experiments/",                    # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
+  "plugins/codemap-py/tests/corpus/", # frozen-grammar fixtures — intentional post-3.11 syntax, parse-errors under py310 target
 ]
 format = {}
 
@@ -45,7 +45,7 @@ ini_options.addopts = [
   "--import-mode=importlib",
   "--color=yes",
   "--doctest-modules",
-  "--cov=plugins/codemap/bin",
+  "--cov=plugins/codemap-py/bin",
   "--cov=plugins/cc_develop/bin",
   "--cov=plugins/cc_foundry/bin",
   "--cov=plugins/cc_oss/bin",

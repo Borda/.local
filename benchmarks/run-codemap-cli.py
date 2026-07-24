@@ -64,7 +64,7 @@ self-contained fixture repo in a tmp dir whose ground truth is KNOWN by construc
 exactly-corrupted index, a single broken sphinx xref), so — unlike S/H/X — a pass is genuine
 independent-oracle correctness, and they JOIN the primary verdict. They assert the user-visible CLI
 contract against an arbitrary target repo (a product acceptance check), not the per-edge-case matrix
-already unit-tested in plugins/codemap/tests/. Each needs scan-index to build its fixture; when it is
+already unit-tested in plugins/codemap-py/tests/. Each needs scan-index to build its fixture; when it is
 absent the suite skips (like S/H/X). They run OFFLINE — independent of the repo_path / index_path.
 
   Suite D — diff-impact: changed module/symbol detection, risk tiers (HIGH >=5 importers / MODERATE /
@@ -91,8 +91,8 @@ Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-inde
 ## Requirements
 
   - Python 3.8+ (stdlib for C/A/L/Q/X; pandas+rich for reporting); git on PATH
-  - A pytorch-lightning clone + pre-built index (python3 plugins/codemap/bin/scan-index --root <clone>)
-  - scan-query on PATH or at plugins/codemap/bin/scan-query (found automatically)
+  - A pytorch-lightning clone + pre-built index (python3 plugins/codemap-py/bin/scan-index --root <clone>)
+  - scan-query on PATH or at plugins/codemap-py/bin/scan-query (found automatically)
   - benchmarks/suites/tasks-bench.json present for S/H/X (auto-skipped if absent)
 
 ## Quick start
@@ -603,7 +603,7 @@ def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
     """Locate a codemap CLI binary (scan-query or scan-index) on PATH or in the plugin directory.
 
     Checks ``PATH`` first via :func:`shutil.which`.  Falls back to
-    ``<plugin_root>/plugins/codemap/bin/<name>`` when ``plugin_root`` is given.
+    ``<plugin_root>/plugins/codemap-py/bin/<name>`` when ``plugin_root`` is given.
 
     Args:
         name: Binary name to locate (e.g. ``"scan-query"`` or ``"scan-index"``).
@@ -618,7 +618,7 @@ def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
     if which:
         return Path(which)
     if plugin_root:
-        candidate = plugin_root / "plugins" / "codemap" / "bin" / name
+        candidate = plugin_root / "plugins" / "codemap-py" / "bin" / name
         if candidate.exists():
             return candidate
     return None
@@ -3006,7 +3006,7 @@ def run_suite_xrefs(
 # scan-query never authors that truth, so a pass is genuine independent-oracle correctness and the
 # suite joins the primary verdict (suite name "correctness", in _PRIMARY_SUITES). They assert the
 # user-visible CLI contract against an arbitrary target repo (a product acceptance check), not the
-# per-edge-case matrix already unit-tested in plugins/codemap/tests/ — kept thin, no duplication.
+# per-edge-case matrix already unit-tested in plugins/codemap-py/tests/ — kept thin, no duplication.
 #
 # Each suite runs OFFLINE (no external PL clone / index) but needs scan-index to build its fixture;
 # when scan-index is unavailable the suite skips (logs + returns []), mirroring the S/H/X skip path.
@@ -3721,7 +3721,7 @@ def _ensure_index(index_path: Path, repo_path: Path, scan_index_bin: Path | None
     log(f"[index] not found at {index_path}")
     if scan_index_bin is None:
         log("ERROR: scan-index not found — cannot auto-build the index.")
-        log(f"Run manually:  python3 plugins/codemap/bin/scan-index --root {repo_path}")
+        log(f"Run manually:  python3 plugins/codemap-py/bin/scan-index --root {repo_path}")
         log("Then retry, or pass --index-path <path-to-index.json>.")
         sys.exit(1)
     log(f"[index] building now via {scan_index_bin} --root {repo_path} ...")

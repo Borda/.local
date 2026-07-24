@@ -98,11 +98,11 @@ class TestFindCodemapBin:
         assert result == Path("/usr/local/bin/scan-query")
 
     def test_falls_back_to_plugin_dir(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Falls back to plugins/codemap/bin/<name> when PATH lookup fails.
+        """Falls back to plugins/codemap-py/bin/<name> when PATH lookup fails.
 
         Scenario: binary not on PATH but present in plugin directory structure.
         """
-        bin_dir = tmp_path / "plugins" / "codemap" / "bin"
+        bin_dir = tmp_path / "plugins" / "codemap-py" / "bin"
         bin_dir.mkdir(parents=True)
         binary = bin_dir / "scan-query"
         binary.write_text("#!/bin/sh")
@@ -117,7 +117,7 @@ class TestFindCodemapBin:
         Scenario: partial plugin install; bin/ dir created but binary not
         present.
         """
-        bin_dir = tmp_path / "plugins" / "codemap" / "bin"
+        bin_dir = tmp_path / "plugins" / "codemap-py" / "bin"
         bin_dir.mkdir(parents=True)
         # binary file deliberately NOT created
 
@@ -132,6 +132,21 @@ class TestFindCodemapBin:
         """
         with patch("shutil.which", return_value=None):
             result = script_gen_bench.find_codemap_bin("scan-query")
+        assert result is None
+
+    def test_legacy_codemap_path_never_selected(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """The pre-rename plugins/codemap/bin/ folder is never resolved.
+
+        Scenario: only the retired ``codemap`` identity holds the binary. The
+        resolver targets ``codemap-py`` exclusively, so a stale checkout must
+        yield None rather than a false-green fixture pointing at the old tree.
+        """
+        legacy = tmp_path / "plugins" / "codemap" / "bin"
+        legacy.mkdir(parents=True)
+        (legacy / "scan-query").write_text("#!/bin/sh")
+
+        with patch("shutil.which", return_value=None):
+            result = script_gen_bench.find_codemap_bin("scan-query", tmp_path)
         assert result is None
 
 

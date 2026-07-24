@@ -69,7 +69,7 @@ claude plugin install foundry@borda-ai-rig   # base agents + audit, manage, cali
 claude plugin install oss@borda-ai-rig       # OSS workflow: analyse, review, resolve, release
 claude plugin install develop@borda-ai-rig   # development: feature, fix, refactor, plan, debug
 claude plugin install research@borda-ai-rig  # ML research: topic, plan, judge, run, sweep
-claude plugin install codemap@borda-ai-rig   # structural index: import graph, blast-radius scores
+claude plugin install codemap-py@borda-ai-rig   # structural index: import graph, blast-radius scores
 ```
 
 > [!NOTE]
@@ -441,7 +441,7 @@ AI-Rig/
 │   ├── oss/                # OSS plugin: shepherd, cicd-steward + analyse/review/resolve/release (+ internal: gh-scraper, repo-warden)
 │   ├── develop/            # Develop plugin: feature/fix/refactor/plan/debug
 │   ├── research/           # Research plugin: scientist, data-steward + topic/plan/judge/run/sweep
-│   ├── codemap/            # Claude plugin: structural index, blast-radius scores, import graph
+│   ├── codemap-py/         # Claude plugin: structural index, blast-radius scores, import graph
 │   └── codex-rig/          # Codex plugin: workflows, role cards, gates, calibration, lifecycle
 ├── .github/
 │   ├── codex-harness.sh    # offline Codex config harness for CI
@@ -475,7 +475,7 @@ claude plugin install foundry@borda-ai-rig   # reinstalls from updated source
 claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
-claude plugin install codemap@borda-ai-rig
+claude plugin install codemap-py@borda-ai-rig
 
 codex plugin marketplace upgrade borda-ai-rig
 codex plugin add codex-rig@borda-ai-rig
@@ -497,7 +497,7 @@ claude plugin uninstall foundry
 claude plugin uninstall oss
 claude plugin uninstall develop
 claude plugin uninstall research
-claude plugin uninstall codemap
+claude plugin uninstall codemap-py
 ```
 
 For Codex Rig, remove authenticated legacy shims before uninstalling the plugin:

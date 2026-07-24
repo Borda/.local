@@ -1175,7 +1175,7 @@ class TestContaminationDetection:
         [
             ("cat /repo/.cache/codemap/proj.json", True),
             ("less .cache/scan/x.json", True),
-            ("python3 plugins/codemap/bin/scan-query symbol X", True),
+            ("python3 plugins/codemap-py/bin/scan-query symbol X", True),
             ("grep -rn Trainer src/", False),
             # Windows backslash separators must still match the forward-slash markers.
             (r"C:\repo\.cache\codemap\proj.json", True),

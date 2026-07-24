@@ -27,7 +27,7 @@ Secondary:
 ## Quick start
 
   # Build index once (excluded from timing)
-  python plugins/codemap/bin/scan-index --root ./<repo-dir>
+  python plugins/codemap-py/bin/scan-index --root ./<repo-dir>
 
   # Run all tasks, both arms, haiku model
   python benchmarks/run-codemap-bench.py --repo-path ./<repo-dir> --run-all
@@ -378,7 +378,7 @@ def _find_codemap_bin(plugin_root: Path | None) -> Path | None:
     """Locate scan-query binary.
 
     Args:
-        plugin_root: Project root containing plugins/codemap/bin/.
+        plugin_root: Project root containing plugins/codemap-py/bin/.
 
     Returns:
         Path to scan-query, or None if not found.
@@ -389,7 +389,7 @@ def _find_codemap_bin(plugin_root: Path | None) -> Path | None:
     if which:
         return Path(which)
     if plugin_root:
-        cand = plugin_root / "plugins" / "codemap" / "bin" / "scan-query"
+        cand = plugin_root / "plugins" / "codemap-py" / "bin" / "scan-query"
         if cand.exists():
             return cand
     return None
@@ -429,7 +429,7 @@ def _resolve_index(repo_path: Path, explicit: Path | None = None) -> Path:
     raise FileNotFoundError(
         f"No codemap index found under {repo_path}/.cache/{{codemap,scan}}/.\n"
         "Build it first:\n"
-        f"  python plugins/codemap/bin/scan-index --root {repo_path}"
+        f"  python plugins/codemap-py/bin/scan-index --root {repo_path}"
     )
 
 
@@ -921,7 +921,7 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
         Environment dict for subprocess.Popen.
     """
     env = os.environ.copy()
-    plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap"
+    plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap-py"
     bin_dirs = sorted(plugin_cache.glob("*/bin"), reverse=True)
     if bin_dirs:
         env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")
@@ -935,7 +935,7 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
 # the FULL untruncated tool input (Bash command / Read path) in _handle, not the truncated tool_log:
 # the prebuilt index at .cache/{codemap,scan}/*.json holds every structural answer, so a raw Read/cat
 # of it lets the control arm self-serve answers without ever calling scan-query.
-_CONTAMINATION_MARKERS: tuple[str, ...] = ("scan-query", "codemap/bin", ".cache/codemap", ".cache/scan")
+_CONTAMINATION_MARKERS: tuple[str, ...] = ("scan-query", "codemap-py/bin", ".cache/codemap", ".cache/scan")
 
 
 def _is_contaminating_access(text: str) -> bool:
@@ -3032,7 +3032,7 @@ class BenchRunner:
         elif name == "Bash":
             result.bash_calls += 1
             cmd = inp.get("command", "")
-            if "scan-query" in cmd or "codemap/bin" in cmd:
+            if "scan-query" in cmd or "codemap-py/bin" in cmd:
                 result.scan_query_calls += 1
                 sub = _parse_scan_query_subcommand(cmd)
                 if sub is not None:

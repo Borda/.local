@@ -25,7 +25,7 @@ reducing tool call count, elapsed time, and context consumption.
                 seconds) is intentionally excluded: it amortises over every subsequent query a
                 developer makes and is not part of the per-task exploration loop.
 
-  See: plugins/codemap/bin/scan-index --root <repo>
+  See: plugins/codemap-py/bin/scan-index --root <repo>
 
 ## Metrics (per task × arm × model)
 
@@ -95,7 +95,7 @@ reducing tool call count, elapsed time, and context consumption.
 ## Quick start
 
   # 1. Build the index once (excluded from benchmark timing)
-  python plugins/codemap/bin/scan-index --root /path/to/repo
+  python plugins/codemap-py/bin/scan-index --root /path/to/repo
 
   # 2. Run all tasks across all model tiers
   python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo --all --report
@@ -495,7 +495,7 @@ def find_index(repo_path: Path, explicit: Optional[Path]) -> Path:
     raise FileNotFoundError(
         f"No codemap index found in {repo_path / '.cache'}.\n"
         f"Build it first (one-time, not measured):\n"
-        f"  python plugins/codemap/bin/scan-index --root {repo_path}"
+        f"  python plugins/codemap-py/bin/scan-index --root {repo_path}"
     )
 
 
@@ -1522,7 +1522,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             A copy of the process environment with PATH (and, for structural arms, the opt-out).
         """
         env = os.environ.copy()
-        plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap"
+        plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap-py"
         bin_dirs = sorted(plugin_cache.glob("*/bin"), reverse=True)  # latest version first
         if bin_dirs:
             env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")

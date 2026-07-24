@@ -90,9 +90,9 @@ research turns the messy, iterative cycle of ML improvement into a structured pi
 
 ______________________________________________________________________
 
-### 🗂️ codemap — instant structural answers
+### 🗂️ codemap-py — instant structural answers
 
-codemap scans your Python project once and builds a structural index — an import graph with blast-radius metrics, symbol locations, and a function-level call graph. Every Claude Code session that follows can answer structural questions in a single tool call instead of 20 Glob/Grep passes. On pytorch-lightning (646 modules), plain-arm agents hit the 300-second timeout on three out of eight benchmark tasks; with codemap, zero timeouts.
+codemap-py scans your Python project once and builds a structural index — an import graph with blast-radius metrics, symbol locations, and a function-level call graph. Every Claude Code session that follows can answer structural questions in a single tool call instead of 20 Glob/Grep passes. On pytorch-lightning (646 modules), plain-arm agents hit the 300-second timeout on three out of eight benchmark tasks; with codemap-py, zero timeouts.
 
 **Best for:**
 
@@ -100,7 +100,7 @@ codemap scans your Python project once and builds a structural index — an impo
 - Identifying coupling hotspots: `scan-query central --top 5` surfaces the five modules with the widest blast radius
 - Eliminating cold-start exploration: agents start every session with full structural context, not a Glob/Grep marathon
 
-[Full documentation →](codemap.md)
+[Full documentation →](codemap-py.md)
 
 ______________________________________________________________________
 
@@ -126,7 +126,7 @@ claude plugin install foundry@borda-ai-rig
 claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
-claude plugin install codemap@borda-ai-rig
+claude plugin install codemap-py@borda-ai-rig
 ```
 
 One-time setup — run inside Claude Code after installing:
@@ -168,7 +168,7 @@ ______________________________________________________________________
 | Fix a bug and prove the fix                     | `/develop:fix`                                                  |
 | Run a structured ML experiment                  | `/research:plan` then `/research:judge` then `/research:run`    |
 | Cut a release with correct SemVer and changelog | `/oss:release`                                                  |
-| Understand blast radius before a refactor       | `/codemap:scan-codebase` then `scan-query rdeps <module>`       |
+| Understand blast radius before a refactor       | `/codemap-py:scan-codebase` then `scan-query rdeps <module>`    |
 | Measure whether agents are drifting in accuracy | `/foundry:calibrate`                                            |
 | Use native Codex workflows and specialist roles | `$codex-rig:investigate`, then `$codex-rig:develop`             |
 
@@ -187,9 +187,9 @@ The plugins are designed to be composed. Here are three workflows that span the 
 5. `/oss:review` — six-agent parallel review before the PR merges
 6. `/oss:release` — SemVer-correct release with changelog and migration guide
 
-**Codemap → Develop → OSS: safe refactoring**
+**Codemap-py → Develop → OSS: safe refactoring**
 
-1. `/codemap:scan-codebase` — build the structural index
+1. `/codemap-py:scan-codebase` — build the structural index
 2. `scan-query central --top 5` — identify the riskiest modules to touch
 3. `/develop:refactor` — lock in characterization tests, then refactor with full blast-radius awareness
 4. `/oss:resolve` — close any review feedback in one pass before merge
@@ -214,7 +214,7 @@ ______________________________________________________________________
 
 ??? question "What is Borda's AI-Rig?"
 
-    Borda's AI-Rig is five Claude Code plugins — foundry, oss, develop, research, and codemap — plus Codex Rig for OpenAI Codex. Together they provide specialist routing, validate-first discipline, and calibrated quality gates across the Python/ML OSS lifecycle.
+    Borda's AI-Rig is five Claude Code plugins — foundry, oss, develop, research, and codemap-py — plus Codex Rig for OpenAI Codex. Together they provide specialist routing, validate-first discipline, and calibrated quality gates across the Python/ML OSS lifecycle.
 
 ??? question "How is this different from just prompting Claude?"
 
@@ -230,7 +230,7 @@ ______________________________________________________________________
 
 ??? question "What is a blast-radius score?"
 
-    Blast-radius score (from the codemap plugin) measures how many modules would be affected if a given module changed. `scan-query rdeps mypackage.auth` returns every module that imports `auth`. High blast-radius modules are the riskiest to refactor — codemap surfaces these before you touch anything.
+    Blast-radius score (from the codemap-py plugin) measures how many modules would be affected if a given module changed. `scan-query rdeps mypackage.auth` returns every module that imports `auth`. High blast-radius modules are the riskiest to refactor — codemap-py surfaces these before you touch anything.
 
 ??? question "Does this work without all five Claude plugins?"
 

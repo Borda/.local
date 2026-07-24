@@ -1,0 +1,12 @@
+{
+  "author": {
+    "name": "Jirka",
+    "url": "https://github.com/Borda/AI-Rig"
+  },
+  "description": "Codebase structural index - scan Python projects once, query the import graph for blast-radius and coupling before touching code \u2014 Python projects only",
+  "homepage": "https://github.com/Borda/AI-Rig",
+  "license": "Apache-2.0",
+  "name": "codemap-py",
+  "repository": "https://github.com/Borda/AI-Rig",
+  "version": "0.25.0"
+}

@@ -46,7 +46,9 @@ MANIFEST: list[dict[str, object]] = [
             "plugins/cc_oss/hooks/sentinel-read-allow.js",
             "plugins/cc_develop/hooks/sentinel-read-allow.js",
             "plugins/cc_research/hooks/sentinel-read-allow.js",
-            "plugins/codemap/hooks/sentinel-read-allow.js",
+            # codemap-py intentionally ships no copy: its hook helpers are
+            # Python-only by contract, and the cc_foundry canonical covers all
+            # Bash calls session-wide whenever cc_foundry is installed.
         ],
     },
 ]

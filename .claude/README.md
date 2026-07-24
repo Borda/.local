@@ -58,7 +58,7 @@ claude plugin install foundry@borda-ai-rig
 claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
-claude plugin install codemap@borda-ai-rig
+claude plugin install codemap-py@borda-ai-rig
 ```
 
 **Step 2** — run inside Claude Code:
@@ -467,7 +467,7 @@ Each mode enforces validation gate *before* writing implementation code:
 
 ## 🧭 Native Claude Code skills
 
-Two capabilities below ship **natively with Claude Code** — not part of this repo's plugins (foundry / oss / develop / research / codemap). Work in any project, including this one, alongside plugin skills above.
+Two capabilities below ship **natively with Claude Code** — not part of this repo's plugins (foundry / oss / develop / research / codemap-py). Work in any project, including this one, alongside plugin skills above.
 
 ### Skill auto-selection (the "skills advisor")
 
@@ -492,7 +492,7 @@ Native research harness for questions needing real sourcing rather than single a
 **When to use it**
 
 - **Use it** for deep, multi-source, fact-checked write-up on a topic — comparisons, state-of-the-art surveys, "what's actually true about X" where citations and cross-checking wanted, not quick recall.
-- **Don't use it** for single-fact lookup (normal web search or inline answer faster) or anything answerable from codebase (use `/codemap:query-code`, grep, or direct read).
+- **Don't use it** for single-fact lookup (normal web search or inline answer faster) or anything answerable from codebase (use `/codemap-py:query-code`, grep, or direct read).
 - **Scope first** — if question underspecified (e.g. "what car should I buy" with no budget / use-case / region), asks 2-3 clarifying questions before spending search budget. Giving constraints up front produces sharper report.
 
 ## 🗺️ Plugin dependency matrix
