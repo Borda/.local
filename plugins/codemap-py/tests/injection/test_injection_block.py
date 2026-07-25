@@ -119,17 +119,12 @@ class TestInjectCheckRoundTrip:
 
 
 class TestReadmeDrift:
-    """The README's documented block markers must stay consistent with the shipped BLOCK."""
+    """The README must not resurface the retired manual-injection wiring workflow."""
 
-    def test_readme_documents_block_markers(self):
-        """README manual-injection section names the markers BLOCK actually emits."""
-        readme = _README.read_text(encoding="utf-8")
-        # README points at the single source of truth and its key tokens, not a hand-written copy.
-        assert "_injection_block.py" in readme
-        assert ib.SCAN_QUERY_MARKER in readme
-        assert "central --top 3" in readme
-        assert "codemap_evidence:" in readme
-        assert "codemap-block: vN" in readme
+    # The positive "README documents the BLOCK markers" guard was retired in 0.26.0: the
+    # manual-injection user workflow (`integration init`) is gone, so the README no longer
+    # documents `_injection_block.py`'s hand-wiring markers. The `_injection_block.py`
+    # machinery itself lingers as internal code until its Phase-5 removal.
 
     def test_readme_does_not_carry_stale_locate_helper(self):
         """The old locate_scan_query.py-based manual block must be gone from the README snippet."""

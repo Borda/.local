@@ -125,6 +125,7 @@ def canonical_root(cwd: Path | str | None = None) -> Path:
                 [git, "rev-parse", "--show-toplevel"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 cwd=str(work),
                 check=True,
                 timeout=_GIT_TIMEOUT_S,

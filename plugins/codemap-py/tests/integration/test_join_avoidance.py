@@ -23,6 +23,8 @@ import pytest
 
 import join_avoidance as ja
 
+_EXIT_USAGE = 2  # join_avoidance.main's own bare literal (bin/join_avoidance.py:610) — no exported constant to import
+
 _BASE = datetime(2026, 7, 10, 1, 0, 0, tzinfo=timezone.utc)
 
 
@@ -158,11 +160,12 @@ class TestSummarize:
     def test_totals_and_rate(self) -> None:
         """Rate is flagged events over all tool events; totals count the raw inputs."""
         answers = ja.parse_cli_records([_cli("pkg.auth", 0.0)])
-        events = ja.parse_tool_records([_tool("import pkg.auth", 2.0), _tool("import pkg.billing", 3.0)])
+        tool_records = [_tool("import pkg.auth", 2.0), _tool("import pkg.billing", 3.0)]
+        events = ja.parse_tool_records(tool_records)
 
         summary = ja.summarize(answers, events, window_min=10)
 
-        assert summary.total_tool_events == 2
+        assert summary.total_tool_events == len(tool_records)
         assert summary.total_complete_answers == 1
         assert len(summary.avoidance_events) == 1
         assert summary.rate == pytest.approx(0.5)
@@ -233,7 +236,7 @@ class TestMainCli:
 
     def test_missing_inputs_exit_2(self, capsys: pytest.CaptureFixture) -> None:
         """Neither --logs nor --cli/--tools given is a usage error (exit 2)."""
-        assert ja.main([]) == 2
+        assert ja.main([]) == _EXIT_USAGE
         assert "give --logs" in capsys.readouterr().err
 
     def test_text_output_reports_rate(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

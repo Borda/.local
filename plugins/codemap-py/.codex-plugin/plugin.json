@@ -8,5 +8,6 @@
   "license": "Apache-2.0",
   "name": "codemap-py",
   "repository": "https://github.com/Borda/AI-Rig",
-  "version": "0.25.1"
+  "skills": "./codex-skills/",
+  "version": "0.26.0"
 }

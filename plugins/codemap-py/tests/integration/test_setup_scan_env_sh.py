@@ -23,6 +23,7 @@ import pytest
 
 SCRIPT = Path(__file__).parent.parent.parent / "bin" / "setup_scan_env.sh"
 PLUGIN_ROOT = Path(__file__).parent.parent.parent  # contains real bin/scan-index
+_EXIT_BAD_ARGS = 3  # setup_scan_env.sh's own argument-validation exit code
 
 
 def sh(
@@ -94,7 +95,7 @@ class TestArgumentValidation:
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
             cwd=str(fake_repo),
         )
-        assert r.returncode == 3
+        assert r.returncode == _EXIT_BAD_ARGS
         assert "unknown argument" in r.stderr
 
     def test_arguments_without_value(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
@@ -104,7 +105,7 @@ class TestArgumentValidation:
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
             cwd=str(fake_repo),
         )
-        assert r.returncode == 3
+        assert r.returncode == _EXIT_BAD_ARGS
         assert "needs a value" in r.stderr
 
 

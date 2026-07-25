@@ -72,6 +72,8 @@ _INCLUDE_DIRS: tuple[str, ...] = (
     "scripts",
     "src",
     "claude-skills",
+    "codex-skills",
+    "shared",
     "hooks",
 )
 # Top-level product documents — all required; a missing one is a closure error.
@@ -138,9 +140,9 @@ def _load_identity(source_root: Path) -> tuple[str, str]:
     return str(manifest["name"]), str(manifest["version"])
 
 
-def _skill_roster(source_root: Path) -> list[str]:
-    """Return the sorted Claude skill names (directories holding a ``SKILL.md``)."""
-    skills_dir = source_root / "claude-skills"
+def _skill_roster(source_root: Path, skills_subdir: str) -> list[str]:
+    """Return the sorted skill names (directories holding a ``SKILL.md``) under *skills_subdir*."""
+    skills_dir = source_root / skills_subdir
     if not skills_dir.is_dir():
         return []
     return sorted(child.name for child in skills_dir.iterdir() if (child / "SKILL.md").is_file())
@@ -311,7 +313,10 @@ def build_package(source_root: Path, out: Path, mode_map: dict[str, bool] | None
         "schema": _SCHEMA,
         "name": name,
         "version": version,
-        "skills": {"claude": _skill_roster(source_root), "codex": []},
+        "skills": {
+            "claude": _skill_roster(source_root, "claude-skills"),
+            "codex": _skill_roster(source_root, "codex-skills"),
+        },
         "files": records,
         "exclusions": list(_EXCLUSIONS),
     }

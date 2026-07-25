@@ -33,7 +33,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from codemap_py import index_paths, query, rwgate
+from codemap_py import index_paths, integration, query, rwgate
 
 _MIN = (3, 11)
 _MAX_EXCLUSIVE = (3, 15)
@@ -265,6 +265,8 @@ def main(argv: Sequence[str] | None = None, plugin_root: Path | None = None) -> 
         return _run_index(rest, root)
     if command == "query":
         return _run_query(rest, root)
+    if command == "integrate":
+        return integration.run(rest, root)
     sys.stderr.write(f"codemap-py: unknown command {command!r}\n{_USAGE}\n")
     return _USAGE_EXIT
 

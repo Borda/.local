@@ -6,6 +6,41 @@ repository directory, and skill namespace change. Pre-`0.25.0` history was recor
 `codemap` under `plugins/codemap/` — see the repository git history for that line; it is
 not reproduced here.
 
+## 0.26.0
+
+- Make the `integrate apply` engine byte-exact on Windows: `_atomic_write` now writes the managed block in binary mode so the on-disk bytes stay LF-only on every OS, matching the plan's expected post-state hash and the block's own embedded SHA-256 stamp (text-mode writes translated `\n` to `\r\n` on Windows, corrupting the self-authenticating marker and failing the post-write hash check); source-write rollback likewise restores the exact original bytes.
+- Decode every `git`/native-CLI subprocess with `encoding="utf-8"` (`canonical_root`, `_git_dirty`, `_run_native`, and the JSON probe) so a project path containing non-ASCII characters resolves correctly on Windows instead of being mangled by the console code page and misrouting the dirty-overlap and identity checks.
+- Seed the integration test fixtures LF-only and disable `core.autocrlf` in the disposable fixture repos so the suite is byte-deterministic across platforms; add a test asserting a freshly applied managed block contains no `\r\n`.
+- **Dual-runtime skill parity.** `codemap-py` now ships a Codex skill roster under
+  `codex-skills/` alongside the existing Claude roster under `claude-skills/`, and the
+  Codex manifest points `skills` at `./codex-skills/`. Both runtimes expose the same six
+  skills — `scan-codebase`, `query-code`, `test-impact`, `rename-refs`, `integration`,
+  and `debrief-coding` — with identical truth-claims (inputs, outputs, exit codes,
+  completeness metadata, caveats), differing only in runtime-specific invocation (Codex
+  resolves an explicit plugin-root path and has no `bin/` PATH or `AskUserQuestion` tool).
+  A shared capability contract (`shared/capability-contract.md`) is the single source of
+  those truth-claims, and a parity test rejects missing skills, stale command names,
+  unsupported cache paths, or contradictory limits. Codex still ships no hooks in this
+  release — a documented automation limitation, not hidden parity.
+- **Native `integrate` control plane** (`codemap-py integrate check|plan|apply|sync|demo`,
+  surfaced as `/codemap-py:integration` and `$codemap-py:integration`). `check` is a
+  read-only health report; `plan` persists an inspectable artifact (exact targets,
+  before-state hashes, argv arrays, ordered operations, rollback identities) bound by a
+  SHA-256; `apply` updates only sentinel-bounded managed blocks inside allowlisted
+  consumer source files (marker `<!-- codemap-py:integration:begin v1 sha256=… -->`),
+  preserving everything outside the block byte-for-byte and refusing foreign/modified
+  markers, path escapes, symlinks, installed-cache roots, or dirty overlap; `sync` runs
+  only the approved native plugin-manager argv and never mutates source or global
+  instructions; `demo` records disposable evidence. Every mutation is dry-run-first,
+  hash-approved, journaled with before-images, and rolled back on partial failure, ending
+  `recovery-required` if a rollback cannot be verified. This replaces the retired
+  installed-cache `init` injection model.
+- The Claude `integration` skill was rewritten from the retired `check|init|demo` model to
+  `check|plan|apply|sync|demo`; the legacy demo A/B measurement helper was removed. The
+  package builder now ships `codex-skills/` and `shared/` and records the Codex skill
+  roster in the manifest, and the package validator now enforces Codex six-skill parity in
+  place of the former zero-roster rule. Both plugin manifests move to `0.26.0`.
+
 ## 0.25.1
 
 - Extracted the two monolithic `bin/` executables into an importable

@@ -15,7 +15,7 @@ Index captures per module: import graph, blast-radius metrics, **symbol list** (
 
 Agents + develop skills query index via `scan-query` for module deps, blast radius, coupling, symbol source before editing.
 
-NOT for: querying existing index (use `/codemap-py:query-code`); integration health checks or injection (use `/codemap-py:integration`); first-time codemap onboarding or injection into skill files (use `/codemap-py:integration init`).
+NOT for: querying existing index (use `/codemap-py:query-code`); integration health checks or wiring consumer integration (use `/codemap-py:integration` — `check`/`plan`/`apply`).
 
 </objective>
 

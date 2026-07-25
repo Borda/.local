@@ -104,18 +104,17 @@ def test_manifest_pair_shares_identity(package: Path) -> None:
     assert claude["version"] == codex["version"]
 
 
-def test_codex_manifest_ships_zero_skills_and_hooks(package: Path) -> None:
-    """The Codex manifest advertises no skill roster and no hooks (pre-Phase-4)."""
+def test_codex_manifest_ships_six_skill_roster_and_no_hooks(package: Path) -> None:
+    """The Codex manifest advertises the ``codex-skills/`` roster and still no hooks (Phase 4)."""
     codex = json.loads((package / ".codex-plugin" / "plugin.json").read_text())
-    assert "skills" not in codex
+    assert codex["skills"] == "./codex-skills/"
     assert "hooks" not in codex
 
 
 def test_manifest_skill_rosters(package: Path) -> None:
-    """The package manifest lists all six Claude skills and an empty Codex roster."""
+    """The package manifest lists the same six skills for both Claude and Codex (plan §8.2 parity)."""
     rosters = json.loads((package / "package-manifest.json").read_text())["skills"]
-    assert rosters["codex"] == []
-    assert set(rosters["claude"]) == {
+    expected = {
         "scan-codebase",
         "query-code",
         "test-impact",
@@ -123,6 +122,8 @@ def test_manifest_skill_rosters(package: Path) -> None:
         "integration",
         "debrief-coding",
     }
+    assert set(rosters["claude"]) == expected
+    assert set(rosters["codex"]) == expected
 
 
 @pytest.mark.parametrize(
@@ -130,7 +131,6 @@ def test_manifest_skill_rosters(package: Path) -> None:
     [
         pytest.param("skills", id="no-default-skills-dir"),
         pytest.param("hooks/hooks.json", id="no-default-hooks-json"),
-        pytest.param("codex-skills", id="no-codex-skills-dir"),
         pytest.param("tests", id="no-tests-dir"),
     ],
 )
@@ -147,6 +147,7 @@ def test_package_omits_paths(package: Path, absent_rel: str) -> None:
     [
         pytest.param("claude-skills/query-code/SKILL.md", id="skill"),
         pytest.param("claude-skills/_shared/codemap-context.md", id="shared-doc"),
+        pytest.param("codex-skills/query-code/SKILL.md", id="codex-skill"),
         pytest.param("hooks/claude-hooks.json", id="hook-manifest"),
         pytest.param("hooks/inject-preamble.js", id="hook-js"),
         pytest.param("bin/scan-index", id="cli-alias"),

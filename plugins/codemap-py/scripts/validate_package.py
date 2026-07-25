@@ -19,7 +19,8 @@ artifact:
   disk AND in the inventory — the Claude ``skills`` pointer directory, each
   package-manifest roster skill's ``SKILL.md`` (roster matches the on-disk skill
   dirs exactly), the ``hooks`` pointer file, and every hook helper it references;
-  the Codex manifest declares no skills and ships no ``codex-skills/``;
+  the Codex manifest declares ``skills: ./codex-skills/`` and ships
+  ``codex-skills/`` with the same six-skill roster as Claude (plan §8.2 parity);
 - executable modes: on POSIX, each file's on-disk executable bit matches its
   manifest ``exec`` flag (informational on Windows).
 
@@ -199,8 +200,9 @@ def _check_claude_roster(package: Path, manifest: dict, inventory: set[str]) -> 
             findings.append(f"rostered skill missing SKILL.md: {relative}")
         elif relative not in inventory:
             findings.append(f"rostered skill not in inventory: {relative}")
-    if manifest.get("skills", {}).get("codex", []):
-        findings.append(f"codex roster must be empty, got {manifest['skills']['codex']}")
+    codex_roster = set(manifest.get("skills", {}).get("codex", []))
+    if codex_roster != roster:
+        findings.append(f"codex roster {sorted(codex_roster)} != claude roster {sorted(roster)} (plan §8.2 parity)")
     return findings
 
 
@@ -217,7 +219,7 @@ def _check_hook_helpers(package: Path, hooks_relative: str, inventory: set[str])
 
 
 def _check_declared_components(package: Path, manifest: dict, inventory: set[str]) -> list[str]:
-    """Require every component both manifest declares (Claude skills/hooks, Codex none) to exist."""
+    """Require every component both manifests declare (Claude skills/hooks, Codex skills parity) to exist."""
     findings = _check_claude_roster(package, manifest, inventory)
     claude = _load_json(package / ".claude-plugin" / "plugin.json")
     skills_ptr = claude.get("skills")
@@ -233,10 +235,17 @@ def _check_declared_components(package: Path, manifest: dict, inventory: set[str
         else:
             findings += _check_hook_helpers(package, hooks_relative, inventory)
     codex = _load_json(package / ".codex-plugin" / "plugin.json")
-    if "skills" in codex:
-        findings.append("codex manifest must declare no skills key (Codex ships zero skills)")
-    if (package / "codex-skills").exists():
-        findings.append("codex-skills directory present but Codex ships zero skills")
+    if codex.get("skills") != "./codex-skills/":
+        findings.append(f"codex manifest must declare skills: ./codex-skills/, got {codex.get('skills')!r}")
+    codex_roster = set(manifest.get("skills", {}).get("codex", []))
+    if not (package / "codex-skills").is_dir() and codex_roster:
+        findings.append("codex-skills directory missing (Codex ships the same six-skill roster as Claude)")
+    for skill in sorted(codex_roster):
+        relative = f"codex-skills/{skill}/SKILL.md"
+        if not (package / relative).is_file():
+            findings.append(f"rostered codex skill missing SKILL.md: {relative}")
+        elif relative not in inventory:
+            findings.append(f"rostered codex skill not in inventory: {relative}")
     return findings
 
 

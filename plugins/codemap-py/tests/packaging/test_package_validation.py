@@ -26,7 +26,7 @@ import validate_package as validator  # noqa: E402  (needs the scripts path inse
 _CLAUDE_MANIFEST = (
     b'{"name": "codemap-py", "version": "0.25.0", "skills": "./claude-skills/", "hooks": "./hooks/claude-hooks.json"}\n'
 )
-_CODEX_MANIFEST = b'{"name": "codemap-py", "version": "0.25.0"}\n'
+_CODEX_MANIFEST = b'{"name": "codemap-py", "version": "0.25.0", "skills": "./codex-skills/"}\n'
 _HOOKS_WIRING = (
     b'{"hooks": {"SessionStart": [{"hooks": [{"type": "command", '
     b'"command": "node \\"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.js\\""}]}]}}\n'
@@ -42,6 +42,7 @@ _MEMBERS: dict[str, tuple[bytes, bool]] = {
     "CHANGELOG.md": (b"# Changelog\n", False),
     "claude-skills/scan-codebase/SKILL.md": (b"---\nname: scan-codebase\n---\n", False),
     "claude-skills/_shared/codemap-context.md": (b"shared loader\n", False),
+    "codex-skills/scan-codebase/SKILL.md": (b"---\nname: scan-codebase\n---\n", False),
     "hooks/claude-hooks.json": (_HOOKS_WIRING, False),
     "hooks/seed-session.js": (b"// seed session\n", False),
     "bin/scan-index": (b"#!/usr/bin/env python3\nprint('index')\n", True),
@@ -62,7 +63,7 @@ def _write_valid_package(package: Path) -> None:
         "schema": 2,
         "name": "codemap-py",
         "version": "0.25.0",
-        "skills": {"claude": ["scan-codebase"], "codex": []},
+        "skills": {"claude": ["scan-codebase"], "codex": ["scan-codebase"]},
         "files": sorted(records, key=lambda record: record["path"]),
         "exclusions": ["__pycache__/", "tests/"],
     }
@@ -239,22 +240,30 @@ def test_rostered_skill_missing_skillmd_flagged(valid_package: Path) -> None:
     )
 
 
-def test_codex_manifest_declaring_skills_flagged(valid_package: Path) -> None:
-    """A Codex manifest that declares a skills key violates the zero-roster contract."""
+def test_codex_manifest_missing_skills_key_flagged(valid_package: Path) -> None:
+    """A Codex manifest that omits the ``skills`` pointer violates the six-skill-parity contract."""
     codex = valid_package / ".codex-plugin" / "plugin.json"
-    payload = b'{"name": "codemap-py", "version": "0.25.0", "skills": "./codex-skills/"}\n'
+    payload = b'{"name": "codemap-py", "version": "0.25.0"}\n'
     codex.write_bytes(payload)
     _mutate_manifest(valid_package, lambda m: _sync_hash(m, ".codex-plugin/plugin.json", payload))
-    assert any("codex manifest must declare no skills key" in item for item in validate_findings(valid_package))
-
-
-def test_codex_skills_directory_flagged(valid_package: Path) -> None:
-    """A shipped ``codex-skills/`` directory violates the zero-roster contract."""
-    _add_member(valid_package, "codex-skills/rogue/SKILL.md", b"---\nname: rogue\n---\n")
     assert any(
-        "codex-skills directory present but Codex ships zero skills" == item
+        "codex manifest must declare skills: ./codex-skills/" in item for item in validate_findings(valid_package)
+    )
+
+
+def test_rostered_codex_skill_missing_skillmd_flagged(valid_package: Path) -> None:
+    """A rostered Codex skill whose ``SKILL.md`` is absent violates the six-skill-parity contract."""
+    _drop_member(valid_package, "codex-skills/scan-codebase/SKILL.md")
+    assert any(
+        "rostered codex skill missing SKILL.md: codex-skills/scan-codebase/SKILL.md" == item
         for item in validate_findings(valid_package)
     )
+
+
+def test_codex_roster_mismatch_flagged(valid_package: Path) -> None:
+    """A Codex roster that diverges from the Claude roster violates plan §8.2 parity."""
+    _mutate_manifest(valid_package, lambda m: m["skills"].__setitem__("codex", []))
+    assert any(item.startswith("codex roster [] != claude roster") for item in validate_findings(valid_package))
 
 
 # --- executable-mode drift (R6) --------------------------------------------

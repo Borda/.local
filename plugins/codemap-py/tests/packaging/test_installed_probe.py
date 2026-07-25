@@ -71,8 +71,8 @@ def test_claude_probe_installs_and_verifies_exact_roster() -> None:
     _assert_runtime_proof(result)
 
 
-def test_codex_probe_installs_and_verifies_zero_roster() -> None:
-    """The Codex probe installs the built package and verifies the zero-skill roster."""
+def test_codex_probe_installs_and_verifies_exact_roster() -> None:
+    """The Codex probe installs the built package and verifies the exact six-skill roster (Phase 4)."""
     result = _run_probe("probe_codex_install.py")
     if result["status"] == "codex-cli-not-present":
         pytest.skip("codex CLI not present on this runner")
@@ -80,8 +80,7 @@ def test_codex_probe_installs_and_verifies_zero_roster() -> None:
     assert result["_returncode"] == 0
     verification = result["verification"]
     assert verification["ok"] is True, verification["issues"]
-    assert verification["skill_dirs"] == []
-    assert verification["checks"]["package_codex_roster_empty"] is True
+    assert set(verification["skill_dirs"]) == _EXPECTED_CLAUDE_SKILLS
     _assert_source_hidden(result["installed_path"])
     _assert_runtime_proof(result)
 

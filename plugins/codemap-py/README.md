@@ -2,9 +2,9 @@
 
 > **Every `/develop:fix`, `/develop:refactor`, `/oss:review` run gets blast-radius context automatic — you do nothing.**
 
-codemap-py builds structural index of Python project — import graph, blast-radius scores, function call graph — injects context into existing `/develop` and `/oss` skills. Setup once; after that, invisible infrastructure. Ask Claude fix `auth.py` — agent already knows which 38 other modules import it before touching single line.
+codemap-py builds structural index of Python project — import graph, blast-radius scores, function call graph — injects context into existing `/develop` and `/oss` skills. Nothing to wire yourself; invisible infrastructure from first install. Ask Claude fix `auth.py` — agent already knows which 38 other modules import it before touching single line.
 
-No direct querying. Wire in once, let other skills pick it up.
+Nothing to wire — other skills pick the index up automatically. Direct querying via `/codemap-py:query-code` also available for manual exploration.
 
 **Python first.** Scanner uses `ast.parse` to index `.py` files and `.pyi` type stubs (a sibling `.py` stays authoritative and its `.pyi` is recorded as a shadowed stub; a stub with no implementation is indexed once as stub-only, contributing declarations and imports but no call edges). `.rst` and `docs/**/*.md` also scanned for Sphinx/MkDocs cross-refs, included in cache-invalidation hashing — doc-only edits trigger incremental re-scans. Non-Python symbol indexing (TypeScript, Go, Rust) planned.
 
@@ -38,11 +38,11 @@ ______________________________________________________________________
 
 ## 🤔 What is codemap-py?
 
-Claude Code plugin for Python projects. Pre-builds structural index — who imports whom, which modules widest blast radius, how functions call each other — injects context into `/develop` and `/oss` skills doing real code work. Index built once; currency gates at skill-invocation time detect stale state auto (covers `git pull`, branch switches, uncommitted edits), prompt refresh when needed. Optional post-commit hook accelerates refresh after local commits. Every skill invocation starts with structural awareness in hand.
+Claude Code plugin for Python projects. Pre-builds structural index — who imports whom, which modules widest blast radius, how functions call each other — injects context into `/develop` and `/oss` skills doing real code work. Index built once; currency gates at skill-invocation time detect stale state auto (covers `git pull`, branch switches, uncommitted edits), prompt refresh when needed. Every skill invocation starts with structural awareness in hand.
 
 Without codemap-py, every session starts blind: agent gropes through codebase with Glob and Grep, burns 20–30 tool calls just understanding structure before real work. On 200-module project those calls still miss blast-radius risks and import cycles structural scan surfaces instant.
 
-codemap-py fix: scan once, wire in once, every code-touching skill benefits auto.
+codemap-py fix: scan once, every code-touching skill benefits auto — wiring into `/develop` and `/oss` already ships pre-built, nothing to inject yourself.
 
 ______________________________________________________________________
 
@@ -62,7 +62,7 @@ On pytorch-lightning (646 modules), plain-arm agents hit 300-second hard timeout
 
 ### With codemap-py
 
-After `/codemap-py:integration init`, existing skills wired. Run `/develop:refactor auth.py` — before spawning any agent, skill silent runs:
+Wiring into `/develop` and `/oss` ships pre-built — nothing to run first. Run `/develop:refactor auth.py` — before spawning any agent, skill silent runs:
 
 ```bash
 scan-query central --top 5         # which modules are highest risk overall?
@@ -117,7 +117,7 @@ Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0
 >
 > codemap-py injects rich dependency graph into every agent prompt. On weaker models or tasks with large blast-radius graphs, extra context can overwhelm model, cause fallback to grep-heavy loops — performing *worse* than plain arm. Benchmark labels this failure mode `degenerate_grep_loop`.
 >
-> Good integration needs three things: (1) **skill-first protocol** — agent calls `/codemap-py:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap-py queries per task; (3) **hard stop on `query_complete: true`** — when index says list complete for query direction, write answer immediate, no more tool calls. `query_complete` direction-scoped: `deps`/`symbols` query on healthy module can be complete while another file degraded, but `rdeps`/`central`/`path` require zero degraded files. Legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle. Skipping any — especially ignoring completeness flag — primary cause of regressions flipping codemap-py benefit into liability. Use `/codemap-py:integration init` to wire correct, not manual context injection.
+> Good integration needs three things: (1) **skill-first protocol** — agent calls `/codemap-py:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap-py queries per task; (3) **hard stop on `query_complete: true`** — when index says list complete for query direction, write answer immediate, no more tool calls. `query_complete` direction-scoped: `deps`/`symbols` query on healthy module can be complete while another file degraded, but `rdeps`/`central`/`path` require zero degraded files. Legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle. Skipping any — especially ignoring completeness flag — primary cause of regressions flipping codemap-py benefit into liability. Wiring itself ships pre-built in `/develop` and `/oss`; run `/codemap-py:integration check` to confirm it's present and current rather than hand-editing skill files.
 
 ### Real-world proof: daily-work benchmark
 
@@ -189,21 +189,24 @@ Skills use two gates at invocation time:
 | **Silent degradation** — index missing → skills proceed at full token cost, no warning                                                                             | Fixed — `codemap-context.md` emits ⚠ warning to stderr when `scan-query` unavailable or index missing                                                        |
 | **`check_injection.py` blind spot** — health check detected marker comment presence only; could not catch TARGET-unset defect or missing `fn-rdeps` wiring         | Fixed — second audit layer added: `check_fn_rdeps_wiring()` now reports whether `fn-rdeps` wired in all required files                                       |
 
+> Table above is the pre-Phase-4 audit history against the retired cache-injection model. Current wiring health for `foundry`, `oss`, `develop`, `research`, and `codex-rig` is reported live by `/codemap-py:integration check` — see [integration](#integration) below — not by re-running the historical fixes above.
+
 ______________________________________________________________________
 
 ## 🔑 Identity, compatibility, and requirements
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin — same maintained product and SemVer history, new plugin identity starting at `0.25.0`.
 
-| Surface                | Value                                                                                                                                                |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product / plugin name  | `codemap-py`                                                                                                                                         |
-| Canonical CLI          | `codemap-py index [args]` / `codemap-py query [args]` / `codemap-py doctor [--json]`                                                                 |
-| Compatibility aliases  | `scan-index` → `codemap-py index`, `scan-query` → `codemap-py query` — kept through the whole `0.x` line, removed no earlier than `1.0.0`            |
-| Claude skill namespace | `/codemap-py:<skill>`                                                                                                                                |
-| Codex support          | Codex plugin manifest ships in `0.25.0`; **no Codex skill roster yet** — the skill set for Codex arrives in a later `0.25.x` release                 |
-| Project cache          | `.cache/codemap/` — unchanged by this rename; nothing is moved, merged, or rewritten                                                                 |
-| Python requirement     | CPython `>=3.11,<3.15` (validated before `codemap_py` is imported; an unsupported interpreter exits `127` with actionable stderr, never a traceback) |
+| Surface                | Value                                                                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product / plugin name  | `codemap-py`                                                                                                                                                                                                                            |
+| Canonical CLI          | `codemap-py index [args]` / `codemap-py query [args]` / `codemap-py doctor [--json]`                                                                                                                                                    |
+| Compatibility aliases  | `scan-index` → `codemap-py index`, `scan-query` → `codemap-py query` — kept through the whole `0.x` line, removed no earlier than `1.0.0`                                                                                               |
+| Claude skill namespace | `/codemap-py:<skill>`                                                                                                                                                                                                                   |
+| Codex skill namespace  | `$codemap-py:<skill>` — full parity roster (`codex-skills/`), same six skills, same truth claims as the Claude roster; differs only in invocation syntax and tool bindings                                                              |
+| Codex hooks            | None shipped in this release — no ambient index-status, telemetry, or redundant-scan-guard hooks on the Codex side yet (documented limitation, not an oversight); the Claude roster's `hooks/claude-hooks.json` has no Codex equivalent |
+| Project cache          | `.cache/codemap/` — unchanged by this rename; nothing is moved, merged, or rewritten                                                                                                                                                    |
+| Python requirement     | CPython `>=3.11,<3.15` (validated before `codemap_py` is imported; an unsupported interpreter exits `127` with actionable stderr, never a traceback)                                                                                    |
 
 > ! BREAKING — the Claude skill namespace changed from `/codemap:*` to `/codemap-py:*`. Renaming a single plugin manifest cannot keep the old namespace alive alongside the new one, so any saved prompt, alias, or automation invoking `/codemap:scan-codebase`-style triggers must be updated to `/codemap-py:scan-codebase`. `scan-index`/`scan-query`, `.cache/codemap/`, and every `CODEMAP_*` environment variable are unaffected by this rename and keep working exactly as before.
 
@@ -261,7 +264,7 @@ Reload shell (`source ~/.zshrc`), `scan-query` available everywhere. Snippet alw
 claude plugin install codemap-py@borda-ai-rig
 ```
 
-After upgrade, re-run `/codemap-py:integration init` to re-apply injection blocks — plugin cache replaced on reinstall, prior injections lost.
+Wiring lives in checked-in consumer source now, not the installed plugin cache — reinstalling never wipes it, so there's no re-injection step. Run `/codemap-py:integration check` afterward if you want to confirm everything still reports current.
 
 </details>
 
@@ -281,20 +284,19 @@ ______________________________________________________________________
 
 `codemap-py` `0.25.0` is the direct successor to `codemap` `0.24.x` — same maintained product, new plugin identity. **Never run `codemap` and `codemap-py` in the same session** — close every old-plugin session before switching; the legacy plugin does not implement the new shared-index read/write gate and is rejected as a concurrent producer.
 
-01. Note the installed `codemap` version and confirm an immutable rollback tag/commit exists before touching anything.
-02. Update the plugin marketplace.
-03. Uninstall `codemap` (or disable it only when evidence proves a disabled plugin's components cannot load).
-04. Close every Claude Code and Codex session that had `codemap` active.
-05. Install and enable `codemap-py`.
-06. Start a fresh runtime session.
-07. Run `/codemap-py:integration check` to audit what needs re-wiring, then `/codemap-py:integration init` to re-inject structural-context blocks into installed skills.
-08. Approve and apply the recommendations `init` reports for any consumer skill that needs migrating.
-09. Start fresh Claude Code and Codex sessions.
-10. Run `codemap-py doctor`, build or reuse one index, and run one query to confirm the new namespace and CLI work end to end against the existing `.cache/codemap/` project cache.
+1. Note the installed `codemap` version and confirm an immutable rollback tag/commit exists before touching anything.
+2. Update the plugin marketplace.
+3. Uninstall `codemap` (or disable it only when evidence proves a disabled plugin's components cannot load).
+4. Close every Claude Code and Codex session that had `codemap` active.
+5. Install and enable `codemap-py`.
+6. Start a fresh runtime session.
+7. Run `/codemap-py:integration check` to confirm every installed consumer (`foundry`, `oss`, `develop`, `research`, `codex-rig`) reports current wiring against the new `codemap-py` identity.
+8. Start fresh Claude Code and Codex sessions.
+9. Run `codemap-py doctor`, build or reuse one index, and run one query to confirm the new namespace and CLI work end to end against the existing `.cache/codemap/` project cache.
 
 No migration step deletes user data automatically; the project cache and any prior index are only ever read and revalidated, never rewritten in place.
 
-**This release also bumps the injected context-block version** (`codemap-block: v1` → `v2`). Every consumer skill wired against `codemap` still carries the old stamp, so `/codemap-py:integration check` reports it **OUTDATED** right after the switch — this is expected, not a regression. Step 07 above is the fix: run `/codemap-py:integration init` (or `init --approve` for scripted use) to re-inject the current block into every OUTDATED site; `check` then reports them current again.
+**Managed-block wiring ships pre-applied.** Every consumer plugin carries its own `codemap-py:integration:begin v1 sha256=...` managed block as checked-in source, versioned in lockstep with its own release — there's no separate per-user re-injection step, and no injected-block staleness to fix by hand. Step 07's `/codemap-py:integration check` should report every installed consumer current right after the switch; if one instead reports outdated or missing, that's a packaging defect in that consumer's own release, not something to patch locally — report it (see [Contributing / feedback](#contributing--feedback)).
 
 ### Rolling back
 
@@ -307,7 +309,7 @@ ______________________________________________________________________
 
 ## ⚡ Quick start
 
-Two commands — then forget codemap-py, use normal skills.
+One command — then forget codemap-py, use normal skills.
 
 **Step 1 — build the index:**
 
@@ -333,15 +335,13 @@ Most central (by rdep_count):
   19  myproject.auth
 ```
 
-**Step 2 — wire codemap-py into your installed skills:**
+**Step 2 — confirm the wiring (optional):**
 
 ```text
-/codemap-py:integration init
+/codemap-py:integration check
 ```
 
-<!-- mirrors integration/SKILL.md Step I5 -->
-
-Discovers all installed `develop` and `oss` skills, shows recommendation table, injects structural context block into each you approve. Also offers post-commit git hook install so index stays current auto.
+Wiring into `/develop` and `/oss` ships pre-built into those plugins' own release — there's nothing to inject yourself. `check` is a zero-write health audit; run it any time to confirm every installed consumer reports current.
 
 Done. Run normal skills — codemap-py works silent in background:
 
@@ -365,24 +365,20 @@ ______________________________________________________________________
 
 Run `/codemap-py:scan-codebase` after clone or project setup. Index lands in `.cache/codemap/<project>.json`. Re-run only after major structural changes or when gate fires.
 
-### 2 — Wire in once per project
+### 2 — Wiring ships pre-built
 
-Run `/codemap-py:integration init` once. Injects structural context block into each `/develop` and `/oss` skill, (optional) installs post-commit hook. Without wiring, index exists but no skill uses it.
+`/develop` and `/oss` carry their own `codemap-py:integration:begin v1 sha256=...` managed block as checked-in source, shipped already wired as part of each plugin's own release — nothing to inject yourself. Run `/codemap-py:integration check` any time to confirm the wiring is present and current for the plugins you have installed; a shipped consumer reporting outdated or missing is a packaging defect to report, not something to self-fix.
 
 ### 3 — Gates are the primary safety mechanism
 
-After wiring, two gates fire auto at start of each skill invocation:
+Two gates fire auto at start of each `/develop`/`/oss` skill invocation:
 
 - **Gate A — missing index**: fires when index absent. Offers: build now, continue without codemap-py, or abort.
 - **Gate B — stale index**: fires when `check-index-currency` detects drift (git HEAD changed, uncommitted `.py` edits, or per-file SHA-256 mismatch). Offers: rescan, continue with stale data, or skip codemap-py.
 
-Gates cover what post-commit hook misses: `git pull`, branch switches, uncommitted edits.
+Gates catch every staleness path: `git pull`, branch switches, uncommitted edits, non-git projects. This is the sole staleness-detection mechanism — codemap-py ships no post-commit git hook.
 
-### 4 — Post-commit hook is optional
-
-Hook triggers `scan-codebase --incremental` after local commits only — convenience accelerator, not safety net. Gates work without it. Install via `/codemap-py:integration init`; skip for manual control.
-
-### 5 — Ambient index status (UserPromptSubmit hook)
+### 4 — Ambient index status (UserPromptSubmit hook)
 
 `UserPromptSubmit` hook fires every user message, injects one-line codemap-py status into Claude context when index exists at `.cache/codemap/<project>.json`. Index **absent**: hook silent for non-Python dirs (zero output, near-zero overhead); Python projects get once-per-session bootstrap prompt (below).
 
@@ -401,7 +397,7 @@ Index **current**: hook injects status line once per session (30-min TTL flag at
 
 Complements per-skill SKILL.md injection — which handles dynamic per-PR `scan-query` output and interactive Gate A/B prompts — with lightweight always-on preamble reaching every turn, not just skill invocations.
 
-### 6 — Redundant-scan guard (Pre/PostToolUse hooks)
+### 5 — Redundant-scan guard (Pre/PostToolUse hooks)
 
 Once `scan-query rdeps <module>` returns **`query_complete`** result (legacy alias `exhaustive`), import graph for that module complete and authoritative — re-grepping with `grep`/`rg` adds nothing but tokens. Benchmarks showed agents (weak tiers especially) ignoring "stop" instruction, looping verification greps, burning millions of input tokens at zero recall gain.
 
@@ -409,7 +405,7 @@ Two hooks close this mechanical: `record-exhausted.js` (PostToolUse on Bash) not
 
 Because `query_complete` direction-scoped, guard only ever arms for `rdeps`/`fn-rdeps` (global-in) results, marked complete only when zero files degraded — false `complete` can never block exact grep that would surface hidden edge.
 
-### 7 — Two-tier currency check
+### 6 — Two-tier currency check
 
 `check-index-currency` runs inside Gate B:
 
@@ -420,117 +416,94 @@ ______________________________________________________________________
 
 ## 🔧 Skills reference
 
+Triggers below are the Claude Code `/codemap-py:<skill>` form. The identical six skills also ship as a Codex roster (`codex-skills/`), invoked `$codemap-py:<skill>` with the same truth claims — differing only in invocation syntax and tool bindings.
+
 ______________________________________________________________________
 
 ### integration
 
-**Trigger**: `/codemap-py:integration check | init [--approve] | demo [--repo <path|url>] [--public] [--anonymize] [--keep-clone] [--output <path>]`
+**Trigger**: `/codemap-py:integration check|plan|apply|sync|demo [--runtime {claude,codex,both}] ...`. Default (no args) is `check`. Also ships on the Codex side as `$codemap-py:integration`, same five modes, same truth claims — see [Identity, compatibility, and requirements](#identity-compatibility-and-requirements).
 
-Three modes. `init` once — wires codemap-py into existing skills and agents. `check` anytime — verifies setup healthy. `demo` — validates end-to-end codemap-py plugged in correct, yields expected gains.
+Runtime adapter over the `codemap-py integrate` engine (`src/codemap_py/integration.py`). Five modes, matching the pinned CLI surface exactly — no `init` mode, no open-ended "discover every installed skill, score it, let you pick" flow. Either host runtime (Claude Code or Codex) can target Claude Code, Codex, or both via `--runtime`; the skill never invokes the other runtime's model, only its native plugin-manager CLI.
+
+**Closed consumer set** — an explicit mapping, not a discovery registry:
+
+| Runtime     | Consumers                               | Provider     |
+| ----------- | --------------------------------------- | ------------ |
+| Claude Code | `foundry`, `oss`, `develop`, `research` | `codemap-py` |
+| Codex       | `codex-rig`                             | `codemap-py` |
+
+`--runtime codex` scopes to `codex-rig` only; `--runtime claude` to the four Claude consumers; `--runtime both` (or omitted) to all five. Adding a consumer requires a plan revision to this table, never a runtime-discovered extension.
+
+| Mode    | Args                                                                                          | Mutation                      | Exit                                     |
+| ------- | --------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------- |
+| `check` | `[--runtime {claude,codex,both}] [--json]`                                                    | none                          | 0 ok; 1 runtime/fs fail; 2 bad syntax    |
+| `plan`  | `[--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>]` | report artifact only          | 0; 2 bad syntax                          |
+| `apply` | `--plan <artifact> --approve <sha256>`                                                        | verified source checkout only | 0; 1 drift/fs; 2 bad approve/syntax      |
+| `sync`  | `--source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...]`     | local runtime plugin state    | 0; 1 partial-fail/journal; 2 bad approve |
+| `demo`  | `[--runtime ...]`                                                                             | disposable evidence only      | 0; 1 fail                                |
 
 #### check mode
 
-Fast diagnostic, no side effects. Checks:
-
-1. `scan-query` reachable on PATH (or via fallback locations)
-2. Index file exists for current project
-3. Index age (warns if older than 7 days)
-4. Smoke test: runs `central --top 3`, verifies output
-5. Which installed skill files have codemap-py injection block
-
-Each check prints `✓`, `✗`, or `⚠` with one-line remediation hint if needed.
+Zero-write health audit. Reports installed/active versions, roots, protocol compatibility, Codex-Rig-owned global-instruction status when publicly verifiable (`absent`/`present`/`authenticated` from verifiable bytes only — `stale` only via a versioned Codex-Rig-owned read-only status contract, otherwise `unavailable`, never guessed), fallback state, shared-index identity across runtimes (`split_index_roots` when Claude and Codex resolve different index paths), and runtime-log isolation.
 
 ```text
 /codemap-py:integration check
+/codemap-py:integration check --runtime codex --json
 ```
 
-#### init mode
+#### plan mode
 
-Interactive onboarding for current project:
-
-1. Builds index if missing (offers `/codemap-py:scan-codebase`)
-2. Discovers all installed skills and agents across all plugins
-3. Scores candidates by value tier (High / Medium / Low / Skip) — would structural context help
-4. Presents recommendation table, asks which to wire in
-5. Inserts correct injection block into each selected skill or agent file
-6. Offers `.git/hooks/post-commit` hook install for automatic incremental rebuilds
+Writes a report artifact only — never mutates. Records schema/protocol version, operation ID, exact targets, before-state hashes, desired versions/refs/hashes, exact argv for every native CLI call `sync` would run, ordered operations, rollback identities, expected post-state, and the plan's own SHA-256. The CLI prints the artifact path, operation count, and SHA-256 — relay all three verbatim, never paraphrase the hash.
 
 ```text
-/codemap-py:integration init
+/codemap-py:integration plan --consumers foundry,oss --out .reports/integrate/plan.json
 ```
 
-Pass `--approve` to apply all High and Medium recommendations non-interactive:
+#### apply mode
+
+Maintainer/source-checkout operation: atomically updates the current-version **managed block** in each allowlisted consumer source file (a version-controlled file, e.g. `plugins/cc_foundry/skills/_shared/codemap-context.md` — never an installed plugin cache path) from an approved plan. The managed block is bounded by sentinel markers:
 
 ```text
-/codemap-py:integration init --approve
+<!-- codemap-py:integration:begin v1 sha256=<64-hex block-body sha256> -->
+...engine-owned managed content...
+<!-- codemap-py:integration:end -->
 ```
 
-`--approve` delegates injection to `bin/inject_codemap.py` — scores each skill candidate for Python/codemap-py relevance (0–4), injects context block before `## Step 1`, backs up before writing, rolls back on failure. Run direct for scripted or CI use:
+`apply` refuses foreign/modified markers (a hash that doesn't match any version the engine generated), path escapes, symlinks, installed-cache roots, dirty working-tree overlap on the target file, and unverified product identity. Requires `--plan <artifact>` and `--approve <sha256>` matching the SHA-256 the plan just showed — the skill always prints the plan summary and SHA-256 in chat and calls `AskUserQuestion` for explicit confirmation before passing `--approve`; it never constructs or guesses the value on the user's behalf. `apply` leaves changes unstaged and uncommitted, and reports the native reinstall commands to run next — it never runs them itself.
 
-```bash
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/inject_codemap.py" \
-    --plugin-root <path> [--apply] [--dry-run] [--verbose]
+Because the managed block lives in checked-in source rather than an installed plugin cache, it survives every future `claude plugin install`/`codex plugin add` reinstall untouched — this supersedes the retired cache-injection model (`bin/inject_codemap.py`/`bin/_injection_block.py`), which had to re-inject after every reinstall. An end user installing immutable releases normally never needs `apply` — `check`, `sync`, and `demo` cover normal use; `apply` is how the maintainers keep the shipped consumer plugins wired ahead of a release.
+
+```text
+/codemap-py:integration apply --plan .reports/integrate/plan.json --approve 9f86d0...
 ```
 
-#### Manual injection
+#### sync mode
 
-Write custom skills or agents, want codemap-py yourself — injection block single source of truth in `bin/_injection_block.py` (`BLOCK` constant). `init` and `check` both import it; hand-written variant drifts, fails `check`. Print canonical block, paste before first agent spawn:
+Installs/reinstalls the approved plan's targets in local runtime(s) via native plugin-manager CLIs (`claude plugin install`, `codex plugin add`) — never rewrites consumer source. Same approval gate as `apply` (plan summary + SHA-256 shown, `AskUserQuestion` before passing `--approve`), plus `--source {local-candidate,release}`:
 
-```bash
-# timeout: 5000
-python -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin'); import _injection_block as b; sys.stdout.write(b.BLOCK)"
+- `local-candidate` — build a deterministic package + disposable local marketplace from a verified source checkout; development/CI only.
+- `release` — select an immutable Git ref + release-set manifest, verify marketplace and package hashes, install only that published identity. No implicit "latest".
+
+After a successful sync that installs/reinstalls a Claude consumer or `codemap-py` itself, run `/reload-plugins` (or start a fresh session) before relying on the update — this session's tool list was already resolved. When `--runtime` included `codex` and `codex-rig`/`codemap-py` were synced, start a new Codex session too.
+
+```text
+/codemap-py:integration sync --source release --plan .reports/integrate/plan.json --approve 9f86d0... --runtime both
 ```
 
-Block:
-
-- detects index with `command -v scan-query` + `.cache/codemap/<project>.json` check (silent skip when absent);
-- runs `scan-query central --top 3` for global baseline;
-- runs one targeted query when you set `TARGET_MODULE` / `TARGET_FN` first — `fn-rdeps` for known function, else `rdeps` for known module;
-- prints `codemap_evidence:` line summarising retrieval reliability;
-- carries `codemap-block: vN` version stamp so `check` reports OUTDATED after block upgrade.
-
-Full query map lives in `claude-skills/_shared/codemap-context.md`. For agent `.md` files (no `$ARGUMENTS`): add instruction running `scan-query central --top 5` plus `scan-query rdeps <target_module>` when target derivable from task, before any Glob/Grep exploration; skip silent when index absent.
-
-**Durability**: injecting into plugin's own cache file (under `~/.claude/plugins/cache/`) wiped on next `claude plugin install` — Claude Code has no project-local override for single plugin file, plugin skills namespace-isolated. After upgrade, run `/codemap-py:integration check` (reports wiped blocks MISSING, or OUTDATED when block version changed), re-run `init` to re-inject. Personal skills and agents under `.claude/skills/`, `~/.claude/skills/`, `.claude/agents/` are project/user files, not cache — survive upgrades untouched; prefer them when same skill exists both places.
+On partial failure (`exit 1`), the journal reports the exact state (`planned → approved → applying:<t> → verified:<t> → complete`, or a `rollback-started → rollback-succeeded|rollback-failed → recovery-required` path) — first-target success followed by second-target failure stops immediately; rollback performs only what the approved plan already contains. `recovery-required` is terminal and never auto-clears — follow the bounded manual recovery commands the engine reports, never improvised ones.
 
 #### demo mode
 
-End-to-end validation for repo. Runs plumbing check, builds index if missing, executes sample tasks to populate telemetry logs, runs plain-vs-codemap-py A/B proving expected gains, produces final report with link to debrief output.
-
-**Flags** (all optional):
-
-| Flag                   | Effect                                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `--repo <path\|url>`   | Target repo — local path or git URL; URL triggers clone gate                                                 |
-| `--public`             | Force clone gate even if current repo has `.py` files                                                        |
-| `--anonymize`          | Forward `--anonymize` to `debrief-coding` in final report                                                    |
-| `--probe-skill <name>` | Probe specific user skill (priority: this arg > develop/oss list > synthetic); report states which probe ran |
-| `--keep-clone`         | Skip cleanup prompt after demo on cloned repo                                                                |
-| `--output <path>`      | Override report output path (default: `.reports/codemap/demo-<date>.md`)                                     |
+Runs `check` plus one representative `central --top 3` structural query, writing disposable evidence to `.reports/integrate/<ts>/demo.json` — a plumbing smoke test, not the plain-vs-codemap-py A/B benchmark (that lives separately, see [Real-world proof: daily-work benchmark](#real-world-proof-daily-work-benchmark) above).
 
 ```text
-# Validate current repo
-/codemap-py:integration demo
-
-# Validate with a fresh public-repo clone (gate fires first)
-/codemap-py:integration demo --public
-
-# Run demo on a specific repo path
-/codemap-py:integration demo --repo /path/to/myproject
-
-# Produce an anonymized shareable report
-/codemap-py:integration demo --anonymize
+/codemap-py:integration demo --runtime both
 ```
 
-**A/B caveat**: arms prompt-gated (not hard tool deny-list). Tool-call counts serve as cost proxy. Recall scored against ground truth for `psf/requests` pinned task set; other repos use cross-arm agreement as recall proxy.
+#### `--approve` semantics
 
-**Scenarios covered:**
-
-1. Fresh repo, no index — demo builds it (D3), reports module count.
-2. Stale index — D2 flags stale age; D3 refreshes.
-3. Skills never invoked (Sk=0) — D7 flags this, explains diagnostic artifact.
-4. Public-repo demo — D1a clone gate fires before any clone; D9 offers cleanup.
-5. Anonymized report — `--anonymize` forwarded to `debrief-coding`; output safe to share.
+`--approve <sha256>` is valid only alongside an explicit mutation mode (`apply`/`sync`), a saved plan artifact, and the exact SHA-256 shown for that plan — it binds to the plan's hash, not its logical content, so any edit to the plan artifact invalidates the approval. It never authorizes new targets, remote publication, Git history/remote mutation, marketplace-file editing, user instruction-file editing, or data deletion. This supersedes the old `init --approve` flag, which auto-applied every High/Medium wiring recommendation non-interactively — same flag name, unrelated meaning; don't confuse the two across plugin versions.
 
 ### scan-codebase
 
@@ -548,7 +521,7 @@ Builds structural index — runs `ast.parse` across every `.py` file in project.
 
 #### When to run
 
-Full scan once at project setup. After that, skill-invocation currency gates detect stale state, prompt rescan auto — rarely need manual run. Want forced refresh — `--incremental` fast enough for most changes. Install optional post-commit git hook (via `/codemap-py:integration init`) for background auto-refresh after local commits.
+Full scan once at project setup. After that, skill-invocation currency gates detect stale state, prompt rescan auto — rarely need manual run. Want forced refresh — `--incremental` fast enough for most changes.
 
 #### Performance
 
@@ -1009,26 +982,12 @@ Priority chain: `--root` flag › `scan_root` in index › `git rev-parse --show
 
 ### Keeping the index current
 
-**Primary mechanism — skill-invocation currency gates**: every `/develop:*` or `/oss:*` skill run calls `check-index-currency` before spawning any agent. Two-tier check: stored `git_sha` vs HEAD (Tier 1, git repos), or per-file content hashes from stored `file_shas` map (Tier 2, non-git or after pull/branch switch). If stale:
+**Skill-invocation currency gates** — the sole staleness-detection mechanism: every `/develop:*` or `/oss:*` skill run calls `check-index-currency` before spawning any agent. Two-tier check: stored `git_sha` vs HEAD (Tier 1, git repos), or per-file content hashes from stored `file_shas` map (Tier 2, non-git or after pull/branch switch). If stale:
 
 - **Gate A** (index missing): skill pauses, offers build inline or skip.
 - **Gate B** (index stale): skill warns, offers: rescan now, continue with stale index, or abort.
 
-Catches all staleness paths post-commit hook misses: `git pull`, branch switches, uncommitted edits, non-git projects.
-
-**Secondary mechanism — post-commit hook** (optional, local commits only): install once via `/codemap-py:integration init`, every `git commit` triggers incremental background rebuild:
-
-```bash
-# .git/hooks/post-commit (installed by /codemap-py:integration init)
-# codemap:start — managed block, do not edit between start/end
-# codemap: incremental index rebuild — do not remove this line
-if command -v scan-index >/dev/null 2>&1; then
-    scan-index --incremental 2>/dev/null &
-fi
-# codemap:end
-```
-
-Rebuild runs in background — commit completes immediate, index updates silent within seconds. Managed block bounded by `# codemap:start`/`# codemap:end` sentinels: reinstalling replaces in place (upgrading body across plugin versions) while preserving surrounding user hook content — re-running installer idempotent. Hook = convenience shortcut; skill-invocation gates = authoritative safety net.
+Catches every staleness path: `git pull`, branch switches, uncommitted edits, non-git projects. codemap-py ships no post-commit git hook — re-run `/codemap-py:scan-codebase --incremental` yourself after a commit if you want the index warm ahead of the next gate check; otherwise the gates catch it on the next skill invocation regardless.
 
 ______________________________________________________________________
 
@@ -1107,13 +1066,7 @@ Run integration check:
 /codemap-py:integration check
 ```
 
-Look for `⚠ missing injection in:` lines pointing to specific skill files. Injection missing — run:
-
-```text
-/codemap-py:integration init
-```
-
-and select skills to wire in.
+Wiring into `/develop` and `/oss` ships baked into those plugins' own release — there's no end-user injection step anymore. If `check` reports a shipped consumer as missing or outdated, that's a packaging defect, not something to self-fix: report it (see [Contributing / feedback](#contributing--feedback)) rather than trying to re-wire the consumer yourself.
 
 ______________________________________________________________________
 
