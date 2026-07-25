@@ -15,12 +15,34 @@ taken from git's tracked mode (``100755``), never from the build host's
 byte-identical ``package-manifest.json`` (review F10 closure). ``--check``
 rebuilds to a temporary directory and byte-compares.
 
+Mode authority: by default the exec-mode map is derived from ``source_root``'s
+OWN git index (``git ls-files --stage``), which is authoritative for a direct
+build in the real tracked checkout. A build from a DISPOSABLE copy (as the
+install probes use) cannot trust that copy's own synthesized index — a fresh
+``git add -A`` on a ``core.filemode=false`` host records ``100644`` for every
+file regardless of its real on-disk bit. ``--mode-map <path>`` overrides the
+git-derived map with an externally supplied ``{relative_posix_path: bool}``
+JSON file (the caller derives it from the REAL repository before any copy is
+made).
+
+Payload membership: within each ``_INCLUDE_DIRS`` subtree, membership is drawn
+from the SAME map used for modes, not a separate filesystem walk — a shipped
+candidate is a key of the effective exec-mode map under that subtree's prefix,
+so "pure function of the tracked sources" (below) is literally true. An
+untracked file under an include dir (e.g. a concurrent work-in-progress from
+another wave) is therefore simply invisible to the payload rather than a
+build error; a *tracked* candidate absent from the working tree still raises.
+Top-level required documents are still admitted by filesystem presence (they
+sit outside ``_INCLUDE_DIRS``), but one present on disk yet untracked still
+raises via the mode-map lookup below.
+
 CLI (install probes depend on this contract — do not deviate)::
 
-    python plugins/codemap-py/scripts/build_package.py --out <dir> [--check]
+    python plugins/codemap-py/scripts/build_package.py --out <dir> [--check] [--mode-map <path>]
 
 Exit ``0`` on success; ``1`` on a ``--check`` mismatch; ``2`` on usage or a
-payload-closure error (missing required document, symlink, case collision).
+payload-closure error (missing required document, symlink, case collision,
+missing mode-map entry).
 """
 
 from __future__ import annotations
@@ -48,6 +70,7 @@ _INCLUDE_DIRS: tuple[str, ...] = (
     ".codex-plugin",
     "bin",
     "scripts",
+    "src",
     "claude-skills",
     "hooks",
 )
@@ -162,12 +185,47 @@ def _git_exec_modes(source_root: Path) -> dict[str, bool]:
     return modes
 
 
-def _iter_source_payload(source_root: Path) -> list[tuple[Path, str]]:
-    """Return ``(absolute_source, relative_posix)`` payload pairs in canonical order.
+def _load_mode_map(path: Path) -> dict[str, bool]:
+    """Load an externally supplied ``{relative_posix_path: is_executable}`` map.
+
+    Used in place of ``_git_exec_modes`` when the build runs against a
+    disposable copy whose own synthesized git index is not authoritative (see
+    the module docstring's "Mode authority" section).
 
     Raises:
-        ValueError: on a symlink in the payload, a case-folding collision, or a
-            missing required document.
+        ValueError: when the file is missing, not valid JSON, or not a JSON
+            object mapping strings to booleans.
+
+    Examples:
+        >>> import tempfile
+        >>> with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        ...     _ = f.write('{"bin/x": true}')
+        ...     name = f.name
+        >>> _load_mode_map(Path(name))
+        {'bin/x': True}
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read mode map {path}: {error}") from error
+    if not isinstance(raw, dict) or not all(isinstance(k, str) and isinstance(v, bool) for k, v in raw.items()):
+        raise ValueError(f"mode map {path} must be a JSON object of {{relative_posix_path: bool}}")
+    return raw
+
+
+def _iter_source_payload(source_root: Path, tracked: dict[str, bool]) -> list[tuple[Path, str]]:
+    """Return ``(absolute_source, relative_posix)`` payload pairs in canonical order.
+
+    ``_INCLUDE_DIRS`` membership comes from ``tracked``'s keys (the same map the
+    caller uses for exec modes), not a filesystem walk: a path under an include-dir
+    prefix that has no entry in ``tracked`` is untracked and simply excluded from the
+    payload, rather than admitted and later failing the mode-map lookup. This is what
+    keeps membership and mode authority from diverging (review MEDIUM closure).
+
+    Raises:
+        ValueError: on a symlink in the payload, a case-folding collision, a missing
+            required document, or a tracked include-dir path absent from the working
+            tree (git index and working tree disagree — not silently skipped).
     """
     pairs: list[tuple[Path, str]] = []
     folded: set[str] = set()
@@ -177,15 +235,16 @@ def _iter_source_payload(source_root: Path) -> list[tuple[Path, str]]:
             raise ValueError(f"missing required document: {name}")
         _admit(doc, name, folded, pairs)
     for dir_name in _INCLUDE_DIRS:
-        root = source_root / dir_name
-        for path in sorted(root.rglob("*")):
-            relative = path.relative_to(source_root).as_posix()
+        prefix = f"{dir_name}/"
+        for relative in sorted(rel for rel in tracked if rel.startswith(prefix)):
             if _is_excluded(relative):
                 continue
+            path = source_root / relative
             if path.is_symlink():
                 raise ValueError(f"symlink payload forbidden: {relative}")
-            if path.is_file():
-                _admit(path, relative, folded, pairs)
+            if not path.is_file():
+                raise ValueError(f"tracked payload path missing from working tree: {relative}")
+            _admit(path, relative, folded, pairs)
     return pairs
 
 
@@ -205,28 +264,47 @@ def _write_file(path: Path, data: bytes, executable: bool) -> None:
     path.chmod(_MODE_EXEC if executable else _MODE_DATA)
 
 
-def build_package(source_root: Path, out: Path) -> dict[str, Any]:
+def build_package(source_root: Path, out: Path, mode_map: dict[str, bool] | None = None) -> dict[str, Any]:
     """Build the package into ``out`` and return its manifest.
 
     The destination is cleared first, so a build is a pure function of the
-    tracked sources plus git's recorded modes.
+    tracked sources plus the effective exec-mode map — that same map is also the
+    ``_INCLUDE_DIRS`` membership authority (see the module docstring's "Payload
+    membership" section), so an untracked file under an include dir cannot leak
+    into the shipped payload.
 
     Args:
         source_root: Plugin root holding the tracked tree.
         out: Destination directory (created fresh).
+        mode_map: Authoritative ``{relative_posix_path: is_executable}`` map.
+            When ``None`` (direct builds in the real tracked checkout), the map
+            is derived from ``source_root``'s own git index. When supplied
+            (disposable-copy builds), it overrides the copy's own index — see
+            the module docstring's "Mode authority" section.
 
     Returns:
         The ``package-manifest.json`` document as a dict.
+
+    Raises:
+        ValueError: when a required top-level document is present on disk but
+            has no entry in the effective mode map (untracked) — never silently
+            defaulted to non-executable. (An ``_INCLUDE_DIRS`` file with no map
+            entry cannot reach this: it is excluded from membership itself.)
     """
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
     name, version = _load_identity(source_root)
-    exec_modes = _git_exec_modes(source_root)
+    exec_modes = _git_exec_modes(source_root) if mode_map is None else mode_map
     records: list[dict[str, Any]] = []
-    for src, relative in _iter_source_payload(source_root):
+    for src, relative in _iter_source_payload(source_root, exec_modes):
         data = src.read_bytes()
-        executable = exec_modes.get(relative, False)
+        # Structurally unreachable for _INCLUDE_DIRS candidates (membership is already
+        # exec_modes-filtered above); still live for a required top-level document that
+        # is present on disk but untracked (no mode-map entry at all).
+        if relative not in exec_modes:
+            raise ValueError(f"missing mode-map entry for shipped payload path: {relative}")
+        executable = exec_modes[relative]
         _write_file(out / relative, data, executable)
         records.append({"path": relative, "sha256": _sha256(data), "exec": executable})
     manifest = {
@@ -272,16 +350,16 @@ def _exec_mode_mismatches(out: Path, manifest: dict[str, Any]) -> list[str]:
     return mismatches
 
 
-def _run_check(source_root: Path, out: Path) -> int:
+def _run_check(source_root: Path, out: Path, mode_map: dict[str, bool] | None = None) -> int:
     """Rebuild to a temp dir, byte-compare, and verify on-disk executable modes."""
     with tempfile.TemporaryDirectory() as tmp:
         rebuild = Path(tmp) / "rebuild"
-        manifest = build_package(source_root, rebuild)
+        manifest = build_package(source_root, rebuild, mode_map)
         if out.exists() and any(out.iterdir()):
             reference = out
         else:
             reference = Path(tmp) / "reference"
-            build_package(source_root, reference)
+            build_package(source_root, reference, mode_map)
         diffs = _compare(rebuild, reference)
         # Verify executable modes on BOTH the temp rebuild and the --out reference: a
         # byte-identical file whose mode was tampered in --out is invisible to _compare.
@@ -303,15 +381,21 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build the deterministic codemap-py package.")
     parser.add_argument("--out", required=True, type=Path, help="package output directory")
     parser.add_argument("--check", action="store_true", help="rebuild to temp and byte-compare")
+    parser.add_argument(
+        "--mode-map",
+        type=Path,
+        help="JSON {relative_posix_path: bool} overriding source_root's own git-derived exec modes",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Build the package, or verify determinism with ``--check``."""
     args = _parse_args(argv)
+    mode_map = _load_mode_map(args.mode_map) if args.mode_map else None
     if args.check:
-        return _run_check(SOURCE_ROOT, args.out)
-    manifest = build_package(SOURCE_ROOT, args.out)
+        return _run_check(SOURCE_ROOT, args.out, mode_map)
+    manifest = build_package(SOURCE_ROOT, args.out, mode_map)
     print(f"built {manifest['name']} {manifest['version']}: {len(manifest['files'])} files -> {args.out}")
     return 0
 

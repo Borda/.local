@@ -1,0 +1,514 @@
+"""Query engine extraction parity (plan §12 Phase 3, step 2; §7.2).
+
+Proves the query-engine move into :mod:`codemap_py.query` preserved behavior
+exactly, by comparing the pre-extraction monolithic ``bin/scan-query``
+(checked out from ``HEAD`` — an uncommitted working-tree move, so ``HEAD``
+still holds the true pre-extraction script, same convention as
+``test_extraction_parity_scanner_discovery.py``/``test_extraction_parity_graph_coverage_testimpact.py``) against two current
+surfaces:
+
+- the now-thin ``bin/scan-query`` launcher (delegates to
+  :func:`codemap_py.query.main`) — byte-identical stdout/stderr/exit code is
+  the primary regression gate, since both the golden script and the launcher
+  share the same ``scan-query`` argv[0] basename, so argparse's ``prog``
+  (derived from ``os.path.basename(sys.argv[0])``, never pinned by
+  ``_build_parser()``) is identical on both sides even for usage/error
+  banners;
+- ``python -m codemap_py query ...`` (:mod:`codemap_py.cli`'s in-process
+  dispatch under the §4.4 read lease) — cross-path equivalence for the
+  extracted package path. This surface's argv[0] basename is ``__main__.py``,
+  not ``scan-query``, so argparse's own usage/error banners legitimately
+  differ in that one token (pre-existing argparse behavior, not a regression
+  introduced by the extraction — see :func:`_error_suffix` below). Every
+  other byte, including the entire JSON payload on every success path and
+  the ``_die_json``-style missing-index error, is asserted identical.
+
+Coverage: all 28 non-composite subcommands (:data:`_QUERY_CASES`, enumerated
+from ``codemap_py.query``'s ``_add_*_subparsers`` helpers) plus the two
+composite commands (``batch``, ``diff-impact``) exercised separately since
+each needs its own input shape (stdin JSON / a git working-tree diff), plus
+three error paths (missing index, unknown subcommand, missing required
+positional). Every case runs across both path classes (plain, and one with
+spaces + non-ASCII characters — repo convention, see
+``test_extraction_parity_core_modules_and_cli_entrypoint.py``).
+
+Query output is JSON-only — grep across ``codemap_py/query.py`` found no
+``--json``/``--text`` toggle on any subcommand (every ``cmd_*`` handler
+calls ``_print(json.dumps(...))`` unconditionally) — so there is no separate
+text-output mode to exercise here.
+
+FILE OWNERSHIP NOTE: duplicates the old-bin checkout / path-classes helpers
+from ``test_extraction_parity_scanner_discovery.py``/``test_extraction_parity_graph_coverage_testimpact.py`` rather than
+factoring them into ``conftest.py`` — this task's boundary permits editing
+only this new file plus the report, not the shared ``conftest.py``.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+_TESTS_DIR = Path(__file__).resolve().parents[1]
+_PLUGIN_ROOT = _TESTS_DIR.parent
+_SRC = _PLUGIN_ROOT / "src"
+_NEW_SCAN_QUERY = _PLUGIN_ROOT / "bin" / "scan-query"
+_PARITY_GOLDEN_DIR = _TESTS_DIR / "data" / "parity_golden"
+
+# The pre-extraction monolith and the three sibling shims it bare-imports
+# (all self-contained — stdlib only, confirmed by inspection at HEAD). Frozen
+# as static fixtures under tests/data/parity_golden/ rather than read via
+# `git show HEAD:...` — a HEAD-pinned checkout silently degrades to the
+# post-extraction thin launcher once the extraction commit lands (HEAD then
+# advances past the monolith), and is simply absent in a shallow CI clone that
+# never fetched the old SHA. See _assert_is_monolith for the loud-failure guard
+# against a golden fixture being accidentally overwritten in kind.
+_OLD_BIN_FILES = ("scan-query", "_exclusions.py", "_schema.py", "_telemetry.py")
+
+# The monolith is roughly 10x-100x larger than its post-extraction thin
+# launcher/shim counterpart; thresholds sit with headroom below the monolith
+# line count and well above the current thin-file line count.
+_MONOLITH_MIN_LINES = {
+    "scan-query": 500,
+    "_exclusions.py": 100,
+    "_schema.py": 50,
+    "_telemetry.py": 50,
+}
+
+# Substrings present in every current (post-extraction) bin/ shim or launcher
+# docstring, absent from every pre-extraction monolith source — their presence
+# in a golden fixture means it was accidentally overwritten with
+# post-extraction content instead of holding the frozen monolith.
+_POST_EXTRACTION_MARKERS = ("codemap_py", "thin launcher", "compatibility shim")
+
+
+def _assert_is_monolith(name: str, content: str) -> None:
+    """Fail loudly if *content* looks like the post-extraction shim, not the golden monolith."""
+    lines = content.splitlines()
+    assert len(lines) > _MONOLITH_MIN_LINES[name], (
+        f"parity_golden/{name} has only {len(lines)} lines (expected > {_MONOLITH_MIN_LINES[name]}) "
+        "— looks like the post-extraction thin bin/ file was committed in place of the "
+        "pre-extraction monolith golden"
+    )
+    for marker in _POST_EXTRACTION_MARKERS:
+        assert marker not in content, (
+            f"parity_golden/{name} contains {marker!r}, which only appears in post-extraction "
+            "bin/ sources — the golden fixture was accidentally overwritten with the thin "
+            "launcher/shim instead of the monolith"
+        )
+
+
+_PATH_CLASSES = [
+    pytest.param("proj", id="normal"),
+    pytest.param("proj café ünïcode dir", id="spaces_nonascii"),
+]
+
+# Every non-composite scan-query subcommand (batch/diff-impact are covered by
+# dedicated tests below since each needs its own input shape), with args that
+# resolve against the fixture project built by _write_fixture_project.
+_QUERY_CASES = [
+    pytest.param(["deps", "pkg.alpha"], id="deps"),
+    pytest.param(["rdeps", "pkg.gamma"], id="rdeps"),
+    pytest.param(["central"], id="central"),
+    pytest.param(["coupled"], id="coupled"),
+    pytest.param(["path", "pkg.alpha", "pkg.gamma"], id="path"),
+    pytest.param(["list"], id="list"),
+    pytest.param(["packages"], id="packages"),
+    pytest.param(["symbol", "func_gamma"], id="symbol"),
+    pytest.param(["symbols", "pkg.gamma"], id="symbols"),
+    pytest.param(["find-symbol", "func_.*"], id="find-symbol"),
+    pytest.param(["fn-deps", "pkg.alpha::func_alpha"], id="fn-deps"),
+    pytest.param(["fn-rdeps", "pkg.gamma::func_gamma"], id="fn-rdeps"),
+    pytest.param(["fn-central"], id="fn-central"),
+    pytest.param(["fn-blast", "pkg.gamma::func_gamma"], id="fn-blast"),
+    pytest.param(["test-impact", "pkg.alpha::func_alpha"], id="test-impact"),
+    pytest.param(["mock-rdeps", "pkg.beta::func_beta"], id="mock-rdeps"),
+    pytest.param(["subprocess-deps", "pkg.subproc"], id="subprocess-deps"),
+    pytest.param(["subprocess-rdeps", "pkg.gamma"], id="subprocess-rdeps"),
+    pytest.param(["fixture-rdeps", "sample"], id="fixture-rdeps"),
+    pytest.param(["fixture-graph", "tests.test_alpha"], id="fixture-graph"),
+    pytest.param(["import-types", "pkg.alpha"], id="import-types"),
+    pytest.param(["undocumented", "pkg.undoc"], id="undocumented"),
+    pytest.param(["uncovered", "pkg.undoc"], id="uncovered"),
+    # No --with-coverage rebuild in this fixture, so this is a deterministic
+    # error path (exit 1, "no coverage data") rather than a success path —
+    # parity across all three surfaces holds regardless of exit code.
+    pytest.param(["coverage", "pkg.alpha::func_alpha"], id="coverage"),
+    pytest.param(["coverage-gap", "pkg.alpha"], id="coverage-gap"),
+    pytest.param(["xrefs", "pkg.gamma::func_gamma"], id="xrefs"),
+    pytest.param(["dead-symbols"], id="dead-symbols"),
+    pytest.param(["dead-modules"], id="dead-modules"),
+]
+
+
+def _materialize_old_bin(dest: Path) -> Path:
+    """Copy the frozen pre-extraction monolithic ``scan-query`` + siblings into *dest*.
+
+    Returns the path to the copied ``scan-query`` script, written under the
+    literal basename ``scan-query`` (not a tmp-random name) — argparse derives
+    ``prog`` from ``os.path.basename(sys.argv[0])`` with no explicit override in
+    ``_build_parser()``, so keeping the golden script's basename identical to the
+    current ``bin/scan-query`` launcher's is what makes even the argparse
+    usage/error banners byte-identical between old and new (see module docstring).
+    """
+    for name in _OLD_BIN_FILES:
+        content = (_PARITY_GOLDEN_DIR / name).read_text()
+        _assert_is_monolith(name, content)
+        (dest / name).write_text(content)
+    return dest / "scan-query"
+
+
+@pytest.fixture(scope="module")
+def old_scan_query(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Session-stable path to the golden pre-extraction ``scan-query``."""
+    return _materialize_old_bin(tmp_path_factory.mktemp("old_bin_query_engine"))
+
+
+def _write_fixture_project(root: Path) -> None:
+    """Write a small project exercising every query-command family.
+
+    Layout:
+        pkg/gamma.py    — leaf module, no imports; func_gamma
+        pkg/beta.py     — imports gamma; func_beta calls func_gamma; docstring
+                          xref to gamma (sphinx_xrefs)
+        pkg/alpha.py    — imports beta, gamma, and stdlib os; func_alpha calls
+                          func_beta; docstring xrefs to both beta and gamma
+        pkg/subproc.py  — subprocess.run(["python", ".../gamma.py"]) — one
+                          resolved subprocess edge (subprocess-deps/-rdeps)
+        pkg/undoc.py    — one undocumented, uncovered, dead-adjacent function
+        tests/test_alpha.py — a pytest fixture ("sample"), a real call into
+                          func_alpha (test-impact/coverage), and a
+                          mock.patch("pkg.beta.func_beta") call (mock-rdeps)
+    """
+    pkg = root / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "gamma.py").write_text(
+        '"""Leaf module -- no imports."""\n'
+        "\n"
+        "\n"
+        "def func_gamma(x):\n"
+        '    """Return x incremented by one."""\n'
+        "    return x + 1\n"
+    )
+    (pkg / "beta.py").write_text(
+        '"""Imports gamma."""\n'
+        "\n"
+        "import pkg.gamma as gamma\n"
+        "\n"
+        "\n"
+        "def func_beta(x):\n"
+        '    """Double the result of :func:`pkg.gamma.func_gamma`."""\n'
+        "    return gamma.func_gamma(x) * 2\n"
+    )
+    (pkg / "alpha.py").write_text(
+        '"""Imports beta and gamma, plus stdlib os."""\n'
+        "\n"
+        "import os\n"
+        "\n"
+        "import pkg.beta as beta\n"
+        "import pkg.gamma as gamma\n"
+        "\n"
+        "\n"
+        "def func_alpha(x):\n"
+        '    """Calls :func:`pkg.beta.func_beta` and :func:`pkg.gamma.func_gamma`."""\n'
+        "    _ = os.getcwd()\n"
+        "    return beta.func_beta(x) + gamma.func_gamma(x)\n"
+    )
+    (pkg / "subproc.py").write_text(
+        '"""Spawns pkg/gamma.py as a subprocess."""\n'
+        "\n"
+        "import subprocess\n"
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def run_gamma_script():\n"
+        '    """Run gamma.py as a child process."""\n'
+        '    subprocess.run(["python", str(Path(__file__).parent / "gamma.py")])\n'
+    )
+    (pkg / "undoc.py").write_text("def undoc_fn(x):\n    return x + 1\n")
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "__init__.py").write_text("")
+    (tests / "test_alpha.py").write_text(
+        '"""Tests exercising pkg.alpha / pkg.beta."""\n'
+        "\n"
+        "from unittest import mock\n"
+        "\n"
+        "import pytest\n"
+        "\n"
+        "import pkg.alpha\n"
+        "\n"
+        "\n"
+        "@pytest.fixture\n"
+        "def sample():\n"
+        '    """Sample input value."""\n'
+        "    return 3\n"
+        "\n"
+        "\n"
+        "def test_alpha_uses_beta(sample):\n"
+        '    """func_alpha combines beta and gamma results."""\n'
+        "    assert pkg.alpha.func_alpha(sample) == 9\n"
+        "\n"
+        "\n"
+        "def test_alpha_with_mock():\n"
+        '    """Mocks pkg.beta.func_beta to isolate func_alpha\'s own logic."""\n'
+        '    with mock.patch("pkg.beta.func_beta") as m:\n'
+        "        m.return_value = 10\n"
+        "        pkg.alpha.func_alpha(5)\n"
+    )
+
+
+def _scan(root: Path) -> None:
+    """Run the current ``bin/scan-index`` once against *root* (asserts success)."""
+    result = subprocess.run(
+        [sys.executable, str(_PLUGIN_ROOT / "bin" / "scan-index"), "--root", str(root)],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.fixture(scope="module", params=_PATH_CLASSES)
+def built_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
+    """Build and scan the fixture project once per path class; return its root."""
+    base = tmp_path_factory.mktemp("query_parity")
+    root = base / request.param
+    _write_fixture_project(root)
+    _scan(root)
+    return root
+
+
+def _env() -> dict[str, str]:
+    """Base subprocess environment: telemetry off, no stray index-dir override, forced UTF-8 I/O.
+
+    ``PYTHONUTF8=1`` pins stdio/argv decoding to UTF-8 regardless of the host's console
+    codepage (relevant on Windows, where a non-ASCII path would otherwise decode via
+    cp1252 and diverge between the two child processes under comparison).
+    """
+    env = {**os.environ, "CODEMAP_LOGGING": "false", "PYTHONUTF8": "1"}
+    env.pop("CODEMAP_INDEX_DIR", None)
+    return env
+
+
+def _run_old(
+    old_scan_query: Path, args: list[str], cwd: Path, stdin: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the checked-out pre-extraction ``scan-query``."""
+    return subprocess.run(
+        [sys.executable, str(old_scan_query), *args],
+        cwd=str(cwd),
+        env=_env(),
+        capture_output=True,
+        encoding="utf-8",
+        input=stdin,
+        timeout=30,
+        check=False,
+    )
+
+
+def _run_new_bin(args: list[str], cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Invoke the current thin ``bin/scan-query`` launcher."""
+    return subprocess.run(
+        [sys.executable, str(_NEW_SCAN_QUERY), *args],
+        cwd=str(cwd),
+        env=_env(),
+        capture_output=True,
+        encoding="utf-8",
+        input=stdin,
+        timeout=30,
+        check=False,
+    )
+
+
+def _run_cli_module(args: list[str], cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Invoke ``python -m codemap_py query ...`` (:mod:`codemap_py.cli` dispatch)."""
+    env = {**_env(), "PYTHONPATH": str(_SRC)}
+    return subprocess.run(
+        [sys.executable, "-m", "codemap_py", "query", *args],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        input=stdin,
+        timeout=30,
+        check=False,
+    )
+
+
+def _error_suffix(stderr: str) -> str:
+    """Return the ``: error: ...`` tail of an argparse stderr message, prog-name-free.
+
+    argparse's own usage/error banners embed ``prog`` (``os.path.basename(sys.argv[0])``,
+    never pinned by ``_build_parser()``), which legitimately differs between
+    ``bin/scan-query`` (``prog="scan-query"``) and ``python -m codemap_py`` (
+    ``prog="__main__.py"``) — see module docstring. The substantive error text always
+    follows the first ``": error: "`` marker and never itself contains a prog-derived
+    token, so comparing that suffix (rather than the whole banner) verifies the actual
+    error content is unchanged while not asserting on the known-divergent prog token.
+    """
+    marker = ": error: "
+    idx = stderr.find(marker)
+    return stderr if idx == -1 else stderr[idx + len(marker) :]
+
+
+class TestOldVsNewBinParity:
+    """Golden pre-extraction ``scan-query`` vs. the current thin launcher.
+
+    Both share the ``scan-query`` argv[0] basename, so every byte — including
+    argparse usage/error banners — is asserted identical; this is the primary
+    extraction regression gate.
+    """
+
+    @pytest.mark.parametrize("case", _QUERY_CASES)
+    def test_query_kind_matches_golden(self, old_scan_query: Path, built_project: Path, case: list[str]) -> None:
+        """Every non-composite subcommand is byte-identical old-vs-new."""
+        old = _run_old(old_scan_query, case, built_project)
+        new = _run_new_bin(case, built_project)
+        assert old.returncode == new.returncode
+        assert old.stdout == new.stdout
+        assert old.stderr == new.stderr
+
+    def test_batch_matches_golden(self, old_scan_query: Path, built_project: Path) -> None:
+        """The ``batch`` composite command matches old-vs-new (stdin JSON array)."""
+        stdin = json.dumps([{"cmd": "deps", "args": ["pkg.alpha"]}, {"cmd": "symbol", "args": ["func_gamma"]}])
+        old = _run_old(old_scan_query, ["batch"], built_project, stdin=stdin)
+        new = _run_new_bin(["batch"], built_project, stdin=stdin)
+        assert old.returncode == new.returncode
+        assert old.stdout == new.stdout
+        assert old.stderr == new.stderr
+
+    def test_missing_index_matches_golden(self, old_scan_query: Path, tmp_path: Path) -> None:
+        """A project with no built index produces the same ``_die_json`` error old-vs-new."""
+        old = _run_old(old_scan_query, ["list"], tmp_path)
+        new = _run_new_bin(["list"], tmp_path)
+        assert old.returncode == new.returncode == 1
+        assert old.stdout == new.stdout
+        assert old.stderr == new.stderr
+
+    def test_unknown_subcommand_matches_golden(self, old_scan_query: Path, built_project: Path) -> None:
+        """An invalid subcommand produces the same argparse usage error old-vs-new."""
+        old = _run_old(old_scan_query, ["totally-bogus-cmd"], built_project)
+        new = _run_new_bin(["totally-bogus-cmd"], built_project)
+        assert old.returncode == new.returncode == 2
+        assert old.stdout == new.stdout == ""
+        assert old.stderr == new.stderr
+
+    def test_missing_required_arg_matches_golden(self, old_scan_query: Path, built_project: Path) -> None:
+        """A subcommand missing its required positional errors identically old-vs-new."""
+        old = _run_old(old_scan_query, ["symbol"], built_project)
+        new = _run_new_bin(["symbol"], built_project)
+        assert old.returncode == new.returncode == 2
+        assert old.stdout == new.stdout == ""
+        assert old.stderr == new.stderr
+
+
+class TestCrossPathParity:
+    """Current thin ``bin/scan-query`` vs. ``python -m codemap_py query ...``.
+
+    Cross-path equivalence for the extracted package path (:mod:`codemap_py.cli`
+    calling :func:`codemap_py.query.main` in-process under the §4.4 read lease).
+    Success-path JSON output is asserted byte-identical; the two argparse-native
+    usage-error cases compare via :func:`_error_suffix` since their ``prog`` token
+    legitimately differs (see that helper's docstring).
+    """
+
+    @pytest.mark.parametrize("case", _QUERY_CASES)
+    def test_query_kind_matches_module_dispatch(self, built_project: Path, case: list[str]) -> None:
+        """Every non-composite subcommand is byte-identical bin-vs-module-dispatch."""
+        new_bin = _run_new_bin(case, built_project)
+        cli = _run_cli_module(case, built_project)
+        assert new_bin.returncode == cli.returncode
+        assert new_bin.stdout == cli.stdout
+        assert new_bin.stderr == cli.stderr
+
+    def test_batch_matches_module_dispatch(self, built_project: Path) -> None:
+        """The ``batch`` composite command matches bin-vs-module-dispatch (stdin JSON array)."""
+        stdin = json.dumps([{"cmd": "deps", "args": ["pkg.alpha"]}, {"cmd": "symbol", "args": ["func_gamma"]}])
+        new_bin = _run_new_bin(["batch"], built_project, stdin=stdin)
+        cli = _run_cli_module(["batch"], built_project, stdin=stdin)
+        assert new_bin.returncode == cli.returncode
+        assert new_bin.stdout == cli.stdout
+        assert new_bin.stderr == cli.stderr
+
+    def test_missing_index_matches_module_dispatch(self, tmp_path: Path) -> None:
+        """A missing index produces the same ``_die_json`` error bin-vs-module-dispatch.
+
+        No argparse usage banner is involved (this is a plain JSON error object),
+        so full byte identity holds including stderr.
+        """
+        new_bin = _run_new_bin(["list"], tmp_path)
+        cli = _run_cli_module(["list"], tmp_path)
+        assert new_bin.returncode == cli.returncode == 1
+        assert new_bin.stdout == cli.stdout
+        assert new_bin.stderr == cli.stderr
+
+    def test_unknown_subcommand_error_content_matches_module_dispatch(self, built_project: Path) -> None:
+        """An invalid subcommand's error content (prog token aside) matches bin-vs-module."""
+        new_bin = _run_new_bin(["totally-bogus-cmd"], built_project)
+        cli = _run_cli_module(["totally-bogus-cmd"], built_project)
+        assert new_bin.returncode == cli.returncode == 2
+        assert new_bin.stdout == cli.stdout == ""
+        assert _error_suffix(new_bin.stderr) == _error_suffix(cli.stderr)
+
+    def test_missing_required_arg_error_content_matches_module_dispatch(self, built_project: Path) -> None:
+        """A missing required positional's error content matches bin-vs-module (prog aside)."""
+        new_bin = _run_new_bin(["symbol"], built_project)
+        cli = _run_cli_module(["symbol"], built_project)
+        assert new_bin.returncode == cli.returncode == 2
+        assert new_bin.stdout == cli.stdout == ""
+        assert _error_suffix(new_bin.stderr) == _error_suffix(cli.stderr)
+
+
+@pytest.fixture(scope="module", params=_PATH_CLASSES)
+def diff_impact_project(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
+    """Git repo with one committed baseline, then one uncommitted tracked edit.
+
+    Isolated from ``built_project`` — module-scoped, not class-scoped-as-instance-method
+    (pytest deprecates the latter), and its own fixture rather than sharing
+    ``built_project`` so the working-tree mutation this test needs never leaks into the
+    other parametrized cases that assume a pristine, unmutated tree.
+    """
+    base = tmp_path_factory.mktemp("query_parity_git")
+    root = base / request.param
+    _write_fixture_project(root)
+    subprocess.run(["git", "init", "-q"], cwd=str(root), check=True, timeout=10)
+    subprocess.run(["git", "config", "user.email", "t@t.t"], cwd=str(root), check=True, timeout=10)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(root), check=True, timeout=10)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, timeout=10)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(root), check=True, timeout=10)
+    _scan(root)
+    gamma = root / "pkg" / "gamma.py"
+    gamma.write_text(gamma.read_text().replace("return x + 1", "return x + 1  # trivial working-tree change"))
+    return root
+
+
+class TestDiffImpactParity:
+    """``diff-impact`` needs its own git working tree — isolated from ``built_project``.
+
+    Uses the module-level :func:`diff_impact_project` fixture (committed baseline, then
+    one working-tree edit to a tracked, imported-and-called leaf module).
+    """
+
+    def test_diff_impact_matches_golden(self, old_scan_query: Path, diff_impact_project: Path) -> None:
+        """``diff-impact --base HEAD`` over a real working-tree edit matches old-vs-new."""
+        old = _run_old(old_scan_query, ["diff-impact", "--base", "HEAD"], diff_impact_project)
+        new = _run_new_bin(["diff-impact", "--base", "HEAD"], diff_impact_project)
+        assert old.returncode == new.returncode == 0
+        assert old.stdout == new.stdout
+        assert old.stderr == new.stderr
+
+    def test_diff_impact_matches_module_dispatch(self, diff_impact_project: Path) -> None:
+        """``diff-impact --base HEAD`` matches bin-vs-module-dispatch."""
+        new_bin = _run_new_bin(["diff-impact", "--base", "HEAD"], diff_impact_project)
+        cli = _run_cli_module(["diff-impact", "--base", "HEAD"], diff_impact_project)
+        assert new_bin.returncode == cli.returncode == 0
+        assert new_bin.stdout == cli.stdout
+        assert new_bin.stderr == cli.stderr

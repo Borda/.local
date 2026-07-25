@@ -1,0 +1,3513 @@
+#!/usr/bin/env python3
+"""scan-index — build the codemap structural index.
+
+Scans all Python files in the project using ast.parse (import graph)
+and computes structural metrics (rdep_count, dep_count, rcall_count).
+Extracts per-symbol call-graph edges with import-based resolution.
+Writes .cache/codemap/<project>.json (or $CODEMAP_INDEX_DIR/<project>.json when set).
+
+Usage:
+    scan-index
+    scan-index --root /path/to/project
+    scan-index --incremental          # re-parse only changed files (requires v3 index)
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import builtins
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
+import fnmatch
+import functools
+import json
+import multiprocessing
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _exclusions import (
+    SKIP_DIRS,
+    Exclusions,
+    _GLOB_META_RE,
+    _load_exclusions,
+    _match_exclusion,
+    load_src_roots,
+)
+from _schema import SCAN_VERSION, Resolution
+from _telemetry import log_cli
+
+_STDLIB_MODULES: frozenset[str] = frozenset(sys.stdlib_module_names)  # Python 3.10+; project requires 3.10+
+_WINDOWS_REPLACE_RETRIES = 8
+_WINDOWS_REPLACE_DELAY_SECONDS = 0.025
+
+
+@dataclass(frozen=True)
+class CallEdge:
+    """Single outgoing call edge from a function or method.
+
+    Dataclass (not TypedDict): named construction and attribute access; converted to dict
+    by as_dict() at the _parse_file boundary before JSON serialisation.
+    """
+
+    target: str  # "pkg.db::fetch_user" (module::symbol) or raw chain if unresolved
+    resolution: Resolution
+
+    def as_dict(self) -> dict:
+        """Serialise to a plain dict for JSON output."""
+        return {"target": self.target, "resolution": self.resolution}
+
+
+@dataclass(frozen=True)
+class Symbol:
+    """Extracted symbol (class, function, or method) with call edges.
+
+    Dataclass (not TypedDict): see CallEdge note above.
+    """
+
+    name: str
+    qualified_name: str
+    type: str  # "class" | "function" | "method"
+    start_line: int
+    end_line: int
+    calls: list[CallEdge]
+    has_docstring: bool = False  # v4.4 — True when ast.get_docstring returned non-None
+    docstring_first_line: str | None = None  # v4.4 — first non-empty line, stripped, ≤80 chars
+
+    def as_dict(self) -> dict:
+        """Serialise to a plain dict (including nested CallEdge list) for JSON output."""
+        return {
+            "name": self.name,
+            "qualified_name": self.qualified_name,
+            "type": self.type,
+            "start_line": self.start_line,
+            "end_line": self.end_line,
+            "calls": [c.as_dict() for c in self.calls],
+            "has_docstring": self.has_docstring,
+            "docstring_first_line": self.docstring_first_line,
+        }
+
+
+_DOCSTRING_FIRST_LINE_MAX = 80
+
+
+def _docstring_fields(
+    node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[bool, str | None]:
+    """Return ``(has_docstring, docstring_first_line)`` for a class/function/async-function node.
+
+    The first line is the first non-empty stripped line of the docstring, truncated
+    to ``_DOCSTRING_FIRST_LINE_MAX`` characters. ``docstring_first_line`` is ``None``
+    when the symbol has no docstring, or when every line of the docstring is blank.
+
+    Args:
+        node: AST node whose docstring to extract (must be a definition node accepted by ``ast.get_docstring``).
+
+    Examples:
+        >>> import ast
+        >>> tree = ast.parse('def f():\\n    \"\"\"Hi there.\"\"\"')
+        >>> _docstring_fields(tree.body[0])
+        (True, 'Hi there.')
+        >>> tree = ast.parse("def g():\\n    pass")
+        >>> _docstring_fields(tree.body[0])
+        (False, None)
+    """
+    raw = ast.get_docstring(node, clean=False)
+    if raw is None:
+        return False, None
+    first = next((line.strip() for line in raw.splitlines() if line.strip()), "")
+    if not first:
+        return True, None
+    return True, first[:_DOCSTRING_FIRST_LINE_MAX]
+
+
+# Forms a mock patch can take in a test file.
+_MOCK_FORM_DECORATOR = "decorator"
+_MOCK_FORM_CALL = "call"
+_MOCK_FORM_MOCKER = "mocker"
+
+
+# SKIP_DIRS, Exclusions, and the exclusion parsers/matchers now live in _exclusions.py
+# so scan-query's staleness diff applies byte-identical rules (imported above).
+
+BUILTINS = frozenset(dir(builtins))
+
+_TEST_PATH_RE = re.compile(r"(^|/)tests?/|/test_[^/]+\.py$|/[^/]+_test\.py$|/conftest\.py$")
+_DOCS_PATH_RE = re.compile(r"(^|/)docs?/")
+_EXAMPLES_PATH_RE = re.compile(r"(^|/)examples?/")
+
+
+def _iter_python_files(root: Path, exclusions: Exclusions | None = None) -> tuple[list[Path], dict[str, int]]:
+    """Walk root with directory pruning, returning non-symlink .py files and exclusion counts.
+
+    Args:
+        root: project root to walk.
+        exclusions: extra dir-name/glob exclusions layered on :data:`SKIP_DIRS`. When
+            ``None``, only the built-in ``SKIP_DIRS`` apply.
+
+    Returns:
+        Tuple of ``(files, counts)`` where ``counts`` maps each exclusion entry that
+        pruned at least one path to the number of ``.py`` files it removed.
+    """
+    exclusions = exclusions or Exclusions(frozenset(), (), {})
+    skip_dirs = SKIP_DIRS | exclusions.dirs
+    counts: dict[str, int] = {}
+    result: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+        pruned = [d for d in dirnames if d in exclusions.dirs]
+        for d in pruned:
+            counts[d] = counts.get(d, 0) + _count_py_files(Path(dirpath) / d)
+        # Dot-dirs prune generically (mirrors _exclusions.is_excluded): never part of
+        # the import space, and can hold vendored checkouts that dominate the index.
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
+        for fn in filenames:
+            if not fn.endswith(".py"):
+                continue
+            fp = Path(dirpath) / fn
+            if fp.is_symlink():
+                continue
+            rel = fp.relative_to(root).as_posix()
+            matched = next((g for g in exclusions.globs if fnmatch.fnmatch(rel, g)), None)
+            if matched is not None:
+                counts[matched] = counts.get(matched, 0) + 1
+                continue
+            result.append(fp)
+    return result, counts
+
+
+def _count_py_files(directory: Path) -> int:
+    """Count non-symlink ``.py`` files beneath *directory* (for pruned-dir exclusion stats).
+
+    Args:
+        directory: directory being pruned from the walk.
+
+    Returns:
+        Number of ``.py`` files under it, or 0 if it cannot be traversed.
+    """
+    total = 0
+    for _dirpath, _dirnames, filenames in os.walk(directory):
+        total += sum(1 for fn in filenames if fn.endswith(".py"))
+    return total
+
+
+def _classify_entity(rel_path: Path, name: str) -> tuple[str, str]:
+    """Return ``(entity_type, package)`` for a module.
+
+    ``entity_type`` is one of ``"test"``, ``"docs"``, ``"example"``, or ``"pkg"``.
+    ``package`` is the top-level component of the dotted module name (first segment).
+
+    Args:
+        rel_path: module path relative to the project root.
+        name: fully-qualified dotted module name (e.g. ``"mypackage.sub.mod"``).
+
+    Examples:
+        >>> from pathlib import Path
+        >>> _classify_entity(Path("tests/test_foo.py"), "tests.test_foo")
+        ('test', 'tests')
+        >>> _classify_entity(Path("docs/conf.py"), "docs.conf")
+        ('docs', 'docs')
+        >>> _classify_entity(Path("examples/demo.py"), "examples.demo")
+        ('example', 'examples')
+        >>> _classify_entity(Path("mypackage/core.py"), "mypackage.core")
+        ('pkg', 'mypackage')
+        >>> _classify_entity(Path("src/mypackage/core.py"), "src.mypackage.core")
+        ('pkg', 'mypackage')
+    """
+    posix = rel_path.as_posix()
+    if _TEST_PATH_RE.search(posix):
+        entity_type = "test"
+    elif _DOCS_PATH_RE.search(posix):
+        entity_type = "docs"
+    elif _EXAMPLES_PATH_RE.search(posix):
+        entity_type = "example"
+    else:
+        entity_type = "pkg"
+    parts = name.split(".")
+    # Strip "src" layout prefix that leaks when detect_src_root falls back to root —
+    # mirrors _build_internal_prefix_set which applies the same strip for import matching.
+    pkg = parts[1] if parts[0] == "src" and len(parts) > 1 else parts[0]
+    return entity_type, pkg
+
+
+_GIT_TIMEOUT_S = 10  # max seconds to wait for any git subprocess (H78: hung process guard)
+_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file — guard against auto-generated files causing OOM (S3)
+
+
+def find_root() -> Path:
+    """Return the git repository root, or cwd if not inside a git repo."""
+    try:
+        root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=_GIT_TIMEOUT_S,
+        ).strip()
+        return Path(root)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return Path.cwd()
+
+
+def get_git_sha(root: Path) -> str | None:
+    """Return the current HEAD commit SHA, or None if git is unavailable.
+
+    Args:
+        root: project root path used as cwd for the git command.
+    """
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            cwd=str(root),
+            timeout=_GIT_TIMEOUT_S,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+
+def _git_file_hashes(root: Path, exclusions: Exclusions) -> dict[str, str]:
+    """Return git blob SHAs for all tracked ``.py``/``.rst``/``docs/**/*.md`` files.
+
+    Hashes Python sources plus documentation files that participate in v4.5 xref
+    scanning. Markdown files outside ``docs/`` are excluded — README.md and other
+    top-level notes do not feed mkdocstrings autorefs, so adding them would cause
+    spurious incremental rebuilds.
+
+    Args:
+        root: repository root used as cwd.
+        exclusions: paths matching these are dropped so git-tracked-but-excluded files
+            (e.g. a vendored copy named in ``.codemapignore``) never enter the index.
+    """
+    output = subprocess.check_output(
+        ["git", "ls-files", "-s", "-z", "--", "*.py", "*.rst", "docs/**/*.md"],
+        cwd=str(root),
+        stderr=subprocess.DEVNULL,
+        timeout=_GIT_TIMEOUT_S,
+    )
+    hashes: dict[str, str] = {}
+    for entry in output.split(b"\0"):
+        line = entry.decode("utf-8", errors="replace").strip()
+        if not line:
+            continue
+        tab_idx = line.index("\t")
+        rel_path = line[tab_idx + 1 :]
+        if _match_exclusion(rel_path, exclusions) is not None:
+            continue
+        sha = line.split()[1]
+        hashes[rel_path] = sha
+    return hashes
+
+
+def _md5_file_hashes(root: Path, exclusions: Exclusions) -> dict[str, str]:
+    """Return MD5 digests for ``.py``/``.rst``/``docs/**/*.md`` files (non-git fallback).
+
+    Args:
+        root: directory to search recursively.
+        exclusions: dir-name/glob exclusions applied to both ``.py`` and doc files.
+    """
+    import hashlib
+
+    hashes: dict[str, str] = {}
+    py_files, _counts = _iter_python_files(root, exclusions)
+    for py_file in py_files:
+        try:
+            hashes[py_file.relative_to(root).as_posix()] = hashlib.md5(py_file.read_bytes()).hexdigest()
+        except OSError as exc:
+            print(f"[codemap] ⚠ could not hash {py_file}: {exc} — treating as unchanged", file=sys.stderr)
+    rst_files, md_files = _iter_doc_files(root)
+    for doc_file in rst_files + md_files:
+        rel = doc_file.relative_to(root).as_posix()
+        if _match_exclusion(rel, exclusions) is not None:
+            continue
+        try:
+            hashes[rel] = hashlib.md5(doc_file.read_bytes()).hexdigest()
+        except OSError as exc:
+            print(f"[codemap] ⚠ could not hash {doc_file}: {exc} — treating as unchanged", file=sys.stderr)
+    return hashes
+
+
+def get_file_hashes(root: Path, exclusions: Exclusions | None = None) -> dict[str, str]:
+    """Git blob SHAs for tracked source/doc files; falls back to MD5 for non-git projects.
+
+    Includes ``.py``, ``.rst``, and ``docs/**/*.md`` so doc-only edits invalidate
+    the index and trigger a re-scan of the xref tables.
+
+    Args:
+        root: project root path.
+        exclusions: dir-name/glob exclusions; excluded paths are omitted so the hash
+            set stays consistent with the walked module list. ``None`` = no extra exclusions.
+    """
+    exclusions = exclusions or Exclusions(frozenset(), (), {})
+    try:
+        return _git_file_hashes(root, exclusions)
+    except Exception:
+        return _md5_file_hashes(root, exclusions)
+
+
+# ── detect_src_root helpers ─────────────────────────────────────────────────────
+
+
+def _detect_src_root_from_config(root: Path) -> Path | None:
+    """Strategy 1: read explicit package location from pyproject.toml / setup.cfg.
+
+    Args:
+        root: project root to search for config files.
+    """
+    for config in (root / "pyproject.toml", root / "setup.cfg"):
+        if not config.exists():
+            continue
+        # Regex matches TOML/ini array syntax only; does not handle multi-line or complex TOML
+        m = re.search(r"where\s*=\s*\[([^\]]+)\]", config.read_text(errors="replace"))
+        if not m:
+            continue
+        for entry in re.findall(r'["\']([^"\']+)["\']', m.group(1)):
+            candidate = root / entry
+            if candidate.is_dir():
+                return candidate
+    return None
+
+
+def _detect_src_root_from_init(root: Path) -> Path | None:
+    """Strategy 2: find top-level package directories via __init__.py chain.
+
+    Args:
+        root: project root to search for __init__.py files.
+    """
+    source_roots: set[Path] = set()
+    for init in sorted(root.rglob("__init__.py")):
+        rel = init.relative_to(root)
+        if any(part in SKIP_DIRS for part in rel.parts):
+            continue
+        pkg_dir = init.parent
+        parent = pkg_dir.parent
+        if not str(parent).startswith(str(root)):
+            continue
+        if (parent / "__init__.py").exists():
+            continue
+        source_roots.add(parent)
+
+    if len(source_roots) == 1:
+        return source_roots.pop()
+    if len(source_roots) > 1:
+        for candidate in source_roots:
+            if candidate.name == "src":
+                return candidate
+        return max(source_roots, key=lambda p: len(p.parts))
+    return None
+
+
+@functools.lru_cache(maxsize=4)
+def detect_src_root(root: Path) -> Path:
+    """Return the effective Python source root.
+
+    Resolution order:
+    1. pyproject.toml / setup.cfg  [tool.setuptools.packages.find] where = [...]
+    2. __init__.py chain — find directories that ARE packages whose parent is NOT
+    3. src/ heuristic — fallback for repos without __init__.py-based packages
+
+    Args:
+        root: project root to inspect.
+    """
+    result = _detect_src_root_from_config(root)
+    if result is not None:
+        return result
+    result = _detect_src_root_from_init(root)
+    if result is not None:
+        return result
+    # Strategy 3: src/ heuristic
+    src_dir = root / "src"
+    if src_dir.is_dir() and not (src_dir / "__init__.py").exists():
+        return src_dir
+    return root
+
+
+def extract_imports(tree: ast.Module) -> list[str]:
+    """Extract direct import module names from a pre-parsed AST.
+
+    Args:
+        tree: parsed AST of the module.
+    """
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.add(alias.name)
+            continue
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+    return sorted(imports)
+
+
+def _extract_string_sequence(value: ast.expr) -> list[str] | None:
+    """Return the string elements of a ``List`` or ``Tuple`` literal of string constants.
+
+    Returns ``None`` for any non-literal element (variable, comprehension, call),
+    signalling that the sequence cannot be resolved statically.
+
+    Examples:
+        >>> import ast
+        >>> _extract_string_sequence(ast.parse('["a", "b"]', mode='eval').body)
+        ['a', 'b']
+        >>> _extract_string_sequence(ast.parse('("x",)', mode='eval').body)
+        ['x']
+        >>> _extract_string_sequence(ast.parse('[a, b]', mode='eval').body) is None
+        True
+    """
+    if not isinstance(value, (ast.List, ast.Tuple)):
+        return None
+    out: list[str] = []
+    for elt in value.elts:
+        if not (isinstance(elt, ast.Constant) and isinstance(elt.value, str)):
+            return None
+        out.append(elt.value)
+    return out
+
+
+def extract_module_exports(tree: ast.Module) -> list[str] | None:
+    """Extract the static value of a module's ``__all__`` assignment.
+
+    Returns ``None`` when:
+      * no top-level ``__all__`` assignment is present (no export filter — any
+        public symbol may be live)
+      * ``__all__`` is computed dynamically (comprehension, function call,
+        variable reference) — cannot be statically determined
+
+    Returns ``list[str]`` when ``__all__`` is a ``List``/``Tuple`` of string
+    literal constants. Detects three assignment forms:
+      * ``__all__ = ["a", "b"]`` — :class:`ast.Assign`
+      * ``__all__: list[str] = ["a", "b"]`` — :class:`ast.AnnAssign`
+      * ``__all__ += ["a", "b"]`` — :class:`ast.AugAssign`
+
+    Args:
+        tree: parsed AST of the module.
+
+    Examples:
+        >>> import ast
+        >>> extract_module_exports(ast.parse('__all__ = ["foo", "bar"]'))
+        ['foo', 'bar']
+        >>> extract_module_exports(ast.parse('x = 1')) is None
+        True
+        >>> extract_module_exports(ast.parse('__all__ = [f"x_{i}" for i in range(3)]')) is None
+        True
+        >>> extract_module_exports(ast.parse('__all__: list[str] = ("a",)'))
+        ['a']
+    """
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    result = _extract_string_sequence(node.value)
+                    if result is None:
+                        print(
+                            "[codemap] debug: __all__ has dynamic value — exports treated as unknown",
+                            file=sys.stderr,
+                        )
+                    return result
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+            if isinstance(target, ast.Name) and target.id == "__all__" and node.value is not None:
+                result = _extract_string_sequence(node.value)
+                if result is None:
+                    print(
+                        "[codemap] debug: __all__ has dynamic value — exports treated as unknown",
+                        file=sys.stderr,
+                    )
+                return result
+        elif isinstance(node, ast.AugAssign):
+            target = node.target
+            if isinstance(target, ast.Name) and target.id == "__all__":
+                result = _extract_string_sequence(node.value)
+                if result is None:
+                    print(
+                        "[codemap] debug: __all__ has dynamic augmented value — exports treated as unknown",
+                        file=sys.stderr,
+                    )
+                return result
+    return None
+
+
+# ── build_import_scope helpers ──────────────────────────────────────────────────
+
+
+def _process_ast_import(node: ast.Import, name_map: dict[str, str], module_map: dict[str, str]) -> None:
+    """Populate name_map and module_map from an ``import ...`` statement.
+
+    Args:
+        node: the Import AST node to process.
+        name_map: mapping from local name to fully-qualified name (mutated in-place).
+        module_map: mapping from first component to full module path (mutated in-place).
+    """
+    for alias in node.names:
+        if alias.asname:
+            name_map[alias.asname] = alias.name
+            continue
+        first = alias.name.split(".")[0]
+        name_map[first] = first
+        if "." in alias.name:
+            module_map[first] = alias.name
+
+
+def _resolve_import_from_base(node: ast.ImportFrom, package: str) -> str:
+    """Resolve the fully-qualified base module for a ``from ... import`` statement.
+
+    Args:
+        node: the ImportFrom AST node to resolve.
+        package: dotted package name of the current module (used for relative imports).
+    """
+    base = node.module or ""
+    if not (node.level and node.level > 0):
+        return base
+    parts = package.split(".") if package else []
+    up = node.level - 1
+    anchor = ".".join(parts[: len(parts) - up]) if up < len(parts) else ""
+    if anchor and base:
+        return f"{anchor}.{base}"
+    return anchor or base
+
+
+def _process_ast_import_from(
+    node: ast.ImportFrom,
+    package: str,
+    name_map: dict[str, str],
+    star_imports: list[str],
+) -> None:
+    """Populate name_map and star_imports from a ``from ... import ...`` statement.
+
+    Args:
+        node: the ImportFrom AST node to process.
+        package: dotted package name of the current module (used for relative imports).
+        name_map: mapping from local name to fully-qualified name (mutated in-place).
+        star_imports: list of modules imported via ``*`` (mutated in-place).
+    """
+    if not node.names:
+        return
+    base = _resolve_import_from_base(node, package)
+    if len(node.names) == 1 and node.names[0].name == "*":
+        if base:
+            star_imports.append(base)
+        return
+    for alias in node.names:
+        name_map[alias.asname or alias.name] = f"{base}.{alias.name}" if base else alias.name
+
+
+def build_import_scope(tree: ast.Module, module_name: str) -> tuple[dict[str, str], dict[str, str], list[str]]:
+    """Build the import scope for a module.
+
+    Args:
+        tree: parsed AST of the module.
+        module_name: fully-qualified dotted name of the module being analysed.
+
+    Returns:
+        name_map: direct name -> fully qualified name
+        module_map: first component -> full module path (for ``import pkg.db`` style)
+        star_imports: list of modules imported via ``from X import *``
+    """
+    name_map: dict[str, str] = {}
+    module_map: dict[str, str] = {}
+    star_imports: list[str] = []
+    package = module_name.rsplit(".", 1)[0] if "." in module_name else ""
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            _process_ast_import(node, name_map, module_map)
+        elif isinstance(node, ast.ImportFrom):
+            _process_ast_import_from(node, package, name_map, star_imports)
+
+    return name_map, module_map, star_imports
+
+
+def _extract_imports_and_scope(
+    tree: ast.Module, module_name: str
+) -> tuple[list[str], dict[str, str], dict[str, str], list[str]]:
+    """Single ast.walk: returns (sorted_imports, name_map, module_map, star_imports)."""
+    name_map: dict[str, str] = {}
+    module_map: dict[str, str] = {}
+    star_imports: list[str] = []
+    imports: set[str] = set()
+    package = module_name.rsplit(".", 1)[0] if "." in module_name else ""
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.add(alias.name)
+            _process_ast_import(node, name_map, module_map)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+            _process_ast_import_from(node, package, name_map, star_imports)
+
+    return sorted(imports), name_map, module_map, star_imports
+
+
+def resolve_call_chain(func_node: ast.expr) -> str | None:
+    """Reconstruct a dotted name from an ast.Call.func node.
+
+    Returns None for unresolvable expressions (subscripts, call-on-call, etc.).
+
+    Args:
+        func_node: the ``func`` attribute of an ast.Call node.
+    """
+    if isinstance(func_node, ast.Name):
+        return func_node.id
+    if isinstance(func_node, ast.Attribute):
+        base = resolve_call_chain(func_node.value)
+        return f"{base}.{func_node.attr}" if base else None
+    return None
+
+
+def resolve_call(
+    chain: str,
+    name_map: dict[str, str],
+    module_map: dict[str, str],
+    local_names: set[str],
+    current_class: str,
+    current_module: str,
+    star_imports: list[str] | None = None,
+) -> CallEdge:
+    """Resolve a call chain to a CallEdge with target and resolution kind.
+
+    Resolution order:
+    1. Exact match in name_map -> "import"
+    2. Prefix match in name_map -> "import"
+    3. Prefix match in module_map -> "import"
+    4. First component in local_names -> "local"
+    5. Starts with "self." or current_class prefix -> "self"
+    6. First component in star_imports -> "star"
+    7. First component in BUILTINS -> "builtin"
+    8. Everything else -> "unresolved"
+
+    Args:
+        chain: dotted call chain string (e.g. ``"pkg.db.fetch_user"``).
+        name_map: local-name -> fully-qualified-name from build_import_scope.
+        module_map: first-component -> full module path from build_import_scope.
+        local_names: top-level function/class names defined in the current file.
+        current_class: name of the enclosing class, or empty string.
+        current_module: dotted module name of the file being analysed.
+    """
+    first_component = chain.split(".")[0]
+
+    # 1. Exact match in name_map (handles `from pkg.db import fetch_user; fetch_user()`)
+    if chain in name_map:
+        fqn = name_map[chain]
+        if "." in fqn:
+            mod, sym = fqn.rsplit(".", 1)
+            return CallEdge(target=f"{mod}::{sym}", resolution=Resolution.IMPORT)
+        return CallEdge(target=chain, resolution=Resolution.UNRESOLVED)
+
+    # Also handle dotted chains where the first component is in name_map
+    if first_component in name_map and first_component != chain:
+        fqn_base = name_map[first_component]
+        rest = chain[len(first_component) + 1 :]
+        mod, sym = f"{fqn_base}.{rest}".rsplit(".", 1)
+        return CallEdge(target=f"{mod}::{sym}", resolution=Resolution.IMPORT)
+
+    # 2. Prefix match in module_map (handles `import pkg.db; pkg.db.fetch_user()`)
+    if first_component in module_map:
+        full_module = module_map[first_component]
+        rest = chain[len(first_component) + 1 :] if len(chain) > len(first_component) else ""
+        full_chain = f"{full_module}.{rest}" if rest else full_module
+        if "." in full_chain:
+            mod, sym = full_chain.rsplit(".", 1)
+            return CallEdge(target=f"{mod}::{sym}", resolution=Resolution.IMPORT)
+        return CallEdge(target=chain, resolution=Resolution.UNRESOLVED)
+
+    # 3. Local names (functions/classes defined in the same file)
+    if first_component in local_names:
+        return CallEdge(target=f"{current_module}::{chain}", resolution=Resolution.LOCAL)
+
+    # 4. Self / class reference
+    if chain.startswith("self."):
+        method_attr = chain[5:]  # strip "self."
+        if current_class:
+            return CallEdge(
+                target=f"{current_module}::{current_class}.{method_attr}",
+                resolution=Resolution.SELF,
+            )
+        return CallEdge(target=chain, resolution=Resolution.SELF)
+    if current_class and chain.startswith(f"{current_class}."):
+        return CallEdge(target=chain, resolution=Resolution.SELF)
+
+    # 5. Star import — name may come from a star-imported module
+    if star_imports:
+        return CallEdge(target=chain, resolution=Resolution.STAR)
+
+    # 6. Builtins
+    if first_component in BUILTINS:
+        return CallEdge(target=chain, resolution=Resolution.BUILTIN)
+
+    # 7. Unresolved
+    return CallEdge(target=chain, resolution=Resolution.UNRESOLVED)
+
+
+# ── extract_symbols helpers ─────────────────────────────────────────────────────
+
+
+def _walk_calls(
+    ast_node: ast.AST,
+    name_map: dict[str, str],
+    module_map: dict[str, str],
+    local_names: set[str],
+    current_class: str,
+    module_name: str,
+    star_imports: list[str] | None = None,
+) -> list[CallEdge]:
+    """Walk an AST node and return all non-builtin call edges.
+
+    Args:
+        ast_node: root node to walk (function body, decorator, class statement, etc.).
+        name_map: local-name -> fully-qualified-name from build_import_scope.
+        module_map: first-component -> full module path from build_import_scope.
+        local_names: top-level names defined in the current file.
+        current_class: enclosing class name for self-resolution, or empty string.
+        module_name: dotted module name of the file being analysed.
+        star_imports: modules imported via ``from X import *``, or None.
+    """
+    calls: list[CallEdge] = []
+    for child in ast.walk(ast_node):
+        if not isinstance(child, ast.Call):
+            continue
+        chain = resolve_call_chain(child.func)
+        if not chain:
+            continue
+        edge = resolve_call(chain, name_map, module_map, local_names, current_class, module_name, star_imports)
+        if edge.resolution != Resolution.BUILTIN:
+            calls.append(edge)
+    return calls
+
+
+def _extract_class_symbol(
+    node: ast.ClassDef,
+    name_map: dict[str, str],
+    module_map: dict[str, str],
+    local_names: set[str],
+    module_name: str,
+    star_imports: list[str] | None = None,
+) -> list[Symbol]:
+    """Return the class Symbol plus one Symbol per method from a ClassDef node.
+
+    Args:
+        node: the ClassDef AST node to extract symbols from.
+        name_map: local-name -> fully-qualified-name from build_import_scope.
+        module_map: first-component -> full module path from build_import_scope.
+        local_names: top-level names defined in the current file.
+        module_name: dotted module name of the file being analysed.
+        star_imports: modules imported via ``from X import *``, or None.
+    """
+    class_calls: list[CallEdge] = []
+    for decorator in node.decorator_list:
+        class_calls.extend(
+            _walk_calls(decorator, name_map, module_map, local_names, node.name, module_name, star_imports)
+        )
+    for child in node.body:
+        if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            class_calls.extend(
+                _walk_calls(child, name_map, module_map, local_names, node.name, module_name, star_imports)
+            )
+
+    class_has_doc, class_doc_first = _docstring_fields(node)
+    symbols: list[Symbol] = [
+        Symbol(
+            name=node.name,
+            qualified_name=node.name,
+            type="class",
+            start_line=node.lineno,
+            end_line=node.end_lineno or node.lineno,
+            calls=class_calls,
+            has_docstring=class_has_doc,
+            docstring_first_line=class_doc_first,
+        )
+    ]
+    for child in node.body:
+        if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        method_calls = _walk_calls(child, name_map, module_map, local_names, node.name, module_name, star_imports)
+        method_has_doc, method_doc_first = _docstring_fields(child)
+        symbols.append(
+            Symbol(
+                name=child.name,
+                qualified_name=f"{node.name}.{child.name}",
+                type="method",
+                start_line=child.lineno,
+                end_line=child.end_lineno or child.lineno,
+                calls=method_calls,
+                has_docstring=method_has_doc,
+                docstring_first_line=method_doc_first,
+            )
+        )
+    return symbols
+
+
+def extract_symbols(
+    tree: ast.Module,
+    module_name: str = "",
+    name_map: dict[str, str] | None = None,
+    module_map: dict[str, str] | None = None,
+    star_imports: list[str] | None = None,
+) -> list[Symbol]:
+    """Extract top-level classes, functions, and class methods with line ranges and call edges.
+
+    Args:
+        tree: parsed AST of the module.
+        module_name: dotted module name used for local-resolution targets.
+        name_map: pre-built import name map; computed fresh if omitted.
+        module_map: pre-built module map; computed fresh if omitted.
+        star_imports: modules imported via ``from X import *``, or None.
+    """
+    nm = name_map or {}
+    mm = module_map or {}
+    local_names: set[str] = {
+        node.name for node in tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    symbols: list[Symbol] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            symbols.extend(_extract_class_symbol(node, nm, mm, local_names, module_name, star_imports))
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            func_calls = _walk_calls(node, nm, mm, local_names, "", module_name, star_imports)
+            func_has_doc, func_doc_first = _docstring_fields(node)
+            symbols.append(
+                Symbol(
+                    name=node.name,
+                    qualified_name=node.name,
+                    type="function",
+                    start_line=node.lineno,
+                    end_line=node.end_lineno or node.lineno,
+                    calls=func_calls,
+                    has_docstring=func_has_doc,
+                    docstring_first_line=func_doc_first,
+                )
+            )
+    return symbols
+
+
+def path_to_module(filepath: Path, src_root: Path) -> str:
+    """Convert a file path to a dotted module name relative to src_root.
+
+    Args:
+        filepath: absolute path to the .py file.
+        src_root: source root to make the path relative to.
+    """
+    rel = filepath.relative_to(src_root)
+    parts = list(rel.with_suffix("").parts)
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
+def _effective_src_root(filepath: Path, configured_roots: tuple[Path, ...], default_root: Path) -> Path:
+    """Return the source root a file's dotted name should be computed relative to.
+
+    In a monorepo, ``[tool.codemap] src_roots`` can list several package roots (e.g.
+    ``libs/core/src`` and ``services/api/src``). A file's module name derives from the
+    first configured root that contains it — list order is priority, so a file under an
+    earlier root is named relative to that root even if a later root would also match.
+    When no configured root contains the file (or none are configured), *default_root*
+    is returned, preserving the single-root ``detect_src_root`` behaviour unchanged.
+
+    Args:
+        filepath: absolute path to the ``.py`` file being named.
+        configured_roots: explicit source roots in priority order (may be empty).
+        default_root: fallback root when no configured root contains *filepath*
+            (typically the ``detect_src_root`` result).
+
+    Returns:
+        The source root *filepath*'s dotted name should be relative to.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> roots = (Path("/repo/libs/core/src"), Path("/repo/services/api/src"))
+        >>> _effective_src_root(Path("/repo/libs/core/src/pkg_a/m.py"), roots, Path("/repo"))
+        PosixPath('/repo/libs/core/src')
+        >>> _effective_src_root(Path("/repo/other/m.py"), roots, Path("/repo"))
+        PosixPath('/repo')
+    """
+    for candidate in configured_roots:
+        if filepath == candidate or candidate in filepath.parents:
+            return candidate
+    return default_root
+
+
+def count_loc(source: str) -> int:
+    """Count non-blank lines in source.
+
+    Args:
+        source: raw source text of a Python file.
+    """
+    return sum(1 for line in source.splitlines() if line.strip())
+
+
+def has_main_guard(source: str) -> bool:
+    """Return True if source contains an ``if __name__ == '__main__'`` guard.
+
+    Args:
+        source: raw source text of a Python file.
+    """
+    return bool(re.search(r'if\s+__name__\s*==\s*[\'"]__main__[\'"]', source))
+
+
+def _count_loc_and_main_guard(source: str) -> tuple[int, bool]:
+    """Single pass over source lines: returns (loc, has_main_guard)."""
+    loc = 0
+    has_guard = False
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped:
+            loc += 1
+        if not has_guard and stripped.startswith("if __name__") and "__main__" in stripped:
+            has_guard = True
+    return loc, has_guard
+
+
+def extract_dynamic_imports(tree: ast.Module) -> list[dict]:
+    """Extract string-literal dynamic import paths from AST.
+
+    Covers ``importlib.import_module("X")``, ``pkgutil.import_module("X")``,
+    and ``__import__("X")``. Only string-constant first arguments are captured —
+    non-literal expressions (e.g. ``importlib.import_module(name)``) are skipped.
+
+    Args:
+        tree: parsed AST of a Python module.
+
+    Returns:
+        List of ``{"literal": str, "line": int}`` dicts, one per match.
+
+    Examples:
+        >>> import ast
+        >>> src = 'import importlib\\nimportlib.import_module("my.pkg")'
+        >>> extract_dynamic_imports(ast.parse(src))
+        [{'literal': 'my.pkg', 'line': 2}]
+        >>> extract_dynamic_imports(ast.parse("__import__('os.path')"))
+        [{'literal': 'os.path', 'line': 1}]
+        >>> extract_dynamic_imports(ast.parse("importlib.import_module(name)"))
+        []
+    """
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        arg0 = node.args[0] if node.args else None
+        if arg0 is None or not (isinstance(arg0, ast.Constant) and isinstance(arg0.value, str)):
+            continue
+        # importlib.import_module("X") or pkgutil.import_module("X")
+        if isinstance(func, ast.Attribute) and func.attr == "import_module":
+            results.append({"literal": arg0.value, "line": node.lineno})
+        # __import__("X")
+        elif isinstance(func, ast.Name) and func.id == "__import__":
+            results.append({"literal": arg0.value, "line": node.lineno})
+    return results
+
+
+def _normalize_patch_target(dotted: str) -> str | None:
+    """Normalize a dotted patch string to ``module::symbol`` form.
+
+    Heuristic: if the second-to-last component starts with an uppercase letter,
+    treat it as a class (``module::ClassName.attr``); otherwise treat the last
+    component as a free function or class at module level (``module::name``).
+
+    Returns ``None`` when the input lacks any dotted structure (cannot be split
+    into module + attribute).
+
+    Examples:
+        >>> _normalize_patch_target("mypackage.core.my_func")
+        'mypackage.core::my_func'
+        >>> _normalize_patch_target("mypackage.core.MyClass.method")
+        'mypackage.core::MyClass.method'
+        >>> _normalize_patch_target("mypackage.core.MyClass")
+        'mypackage.core::MyClass'
+        >>> _normalize_patch_target("singletoken") is None
+        True
+    """
+    parts = dotted.split(".")
+    if len(parts) < 2:
+        return None
+    # Detect "module.Class.method" — penultimate component starts uppercase ⇒ class.
+    if len(parts) >= 3 and parts[-2][:1].isupper():
+        module = ".".join(parts[:-2])
+        attr = ".".join(parts[-2:])
+    else:
+        module = ".".join(parts[:-1])
+        attr = parts[-1]
+    return f"{module}::{attr}"
+
+
+def _patch_string_arg(node: ast.Call) -> str | None:
+    """Return the first argument's string value if it is an ``ast.Constant`` of type str."""
+    if not node.args:
+        return None
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value
+    return None
+
+
+def _is_patch_call(call: ast.Call) -> str | None:
+    """Identify ``patch(...)``, ``mock.patch(...)``, or ``mocker.patch(...)`` calls.
+
+    Returns the form label (``"mocker"`` when the receiver is ``mocker``,
+    ``"call"`` otherwise) when *call* is a string-target patch invocation,
+    or ``None`` otherwise.
+    """
+    func = call.func
+    # mocker.patch('...') or mock.patch('...')
+    if isinstance(func, ast.Attribute) and func.attr == "patch":
+        if isinstance(func.value, ast.Name):
+            if func.value.id == "mocker":
+                return _MOCK_FORM_MOCKER
+            # mock.patch('...') — fallthrough to generic call form
+            return _MOCK_FORM_CALL
+        return _MOCK_FORM_CALL
+    # bare patch('...')
+    if isinstance(func, ast.Name) and func.id == "patch":
+        return _MOCK_FORM_CALL
+    return None
+
+
+def _is_patch_object_call(call: ast.Call) -> bool:
+    """True when *call* is ``patch.object(...)`` or ``mock.patch.object(...)``."""
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr != "object":
+        return False
+    inner = func.value
+    if isinstance(inner, ast.Name) and inner.id == "patch":
+        return True
+    if isinstance(inner, ast.Attribute) and inner.attr == "patch":
+        return True
+    return False
+
+
+def _resolve_patch_object(call: ast.Call, name_map: dict[str, str]) -> str | None:
+    """Resolve a ``patch.object(mod, 'attr')`` call into a ``module::attr`` key.
+
+    Returns ``None`` when the first argument is not a simple ``Name`` resolvable
+    via *name_map*, or when the second argument is not a string constant.
+    """
+    if len(call.args) < 2:
+        return None
+    target_mod_node = call.args[0]
+    attr_node = call.args[1]
+    if not (isinstance(attr_node, ast.Constant) and isinstance(attr_node.value, str)):
+        return None
+    if isinstance(target_mod_node, ast.Name):
+        resolved = name_map.get(target_mod_node.id, target_mod_node.id)
+        return f"{resolved}::{attr_node.value}"
+    if isinstance(target_mod_node, ast.Attribute):
+        chain = resolve_call_chain(target_mod_node)
+        if not chain:
+            return None
+        first = chain.split(".")[0]
+        if first in name_map:
+            resolved_base = name_map[first]
+            rest = chain[len(first) + 1 :]
+            full_mod = f"{resolved_base}.{rest}" if rest else resolved_base
+            return f"{full_mod}::{attr_node.value}"
+    return None
+
+
+def extract_mock_patches(tree: ast.Module, filepath: Path) -> list[dict]:
+    """Extract every ``patch(...)`` and ``patch.object(...)`` target in a test module.
+
+    Detects four forms (decorator-string, decorator ``patch.object``, in-body call,
+    and ``mocker.patch`` pytest-mock idiom) and normalises each to
+    ``{"target": "module::symbol", "file": str(filepath), "line": int, "form": str}``.
+
+    Unresolvable strings (no dots, or ``patch.object`` with non-Name module) are
+    logged to stderr and skipped — never raise.
+
+    Args:
+        tree: parsed AST of the module.
+        filepath: filesystem path of the test module (recorded in each entry).
+
+    Returns:
+        List of dicts, one per detected patch site, in source order.
+
+    Examples:
+        >>> import ast, pathlib
+        >>> src = "from unittest.mock import patch\\n@patch('pkg.x.fn')\\ndef test_a():\\n    pass\\n"
+        >>> result = extract_mock_patches(ast.parse(src), pathlib.Path("test_a.py"))
+        >>> result[0]["target"]
+        'pkg.x::fn'
+        >>> result[0]["form"]
+        'decorator'
+    """
+    # Build a name_map for resolving patch.object module references.
+    name_map: dict[str, str] = {}
+    module_map: dict[str, str] = {}
+    star_imports: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            _process_ast_import(node, name_map, module_map)
+        elif isinstance(node, ast.ImportFrom):
+            _process_ast_import_from(node, "", name_map, star_imports)
+
+    results: list[dict] = []
+    seen: set[tuple[str, int, str]] = set()  # (target, line, form) for de-dup
+    file_str = str(filepath)
+
+    def _emit(target_key: str, line: int, form: str) -> None:
+        sig = (target_key, line, form)
+        if sig in seen:
+            return
+        seen.add(sig)
+        results.append({"target": target_key, "file": file_str, "line": line, "form": form})
+
+    def _handle_string_patch(call: ast.Call, form: str) -> None:
+        raw = _patch_string_arg(call)
+        if raw is None:
+            return
+        target_key = _normalize_patch_target(raw)
+        if target_key is None:
+            print(
+                f"[codemap] ⚠ mock patch with unresolvable target '{raw}' at {file_str}:{call.lineno} — skipped",
+                file=sys.stderr,
+            )
+            return
+        _emit(target_key, call.lineno, form)
+
+    def _handle_patch_object(call: ast.Call, form: str) -> None:
+        target_key = _resolve_patch_object(call, name_map)
+        if target_key is None:
+            print(
+                f"[codemap] ⚠ patch.object with unresolvable module at {file_str}:{call.lineno} — skipped",
+                file=sys.stderr,
+            )
+            return
+        _emit(target_key, call.lineno, form)
+
+    def _handle_call_node(call: ast.Call, in_decorator: bool) -> None:
+        form_label = _MOCK_FORM_DECORATOR if in_decorator else None
+        if _is_patch_object_call(call):
+            _handle_patch_object(call, form_label or _MOCK_FORM_CALL)
+            return
+        call_form = _is_patch_call(call)
+        if call_form is None:
+            return
+        # Decorator wins over call-form label; mocker.patch keeps mocker form.
+        if in_decorator and call_form == _MOCK_FORM_CALL:
+            effective = _MOCK_FORM_DECORATOR
+        else:
+            effective = call_form
+        _handle_string_patch(call, effective)
+
+    # Walk decorators of every function/async-function/class definition.
+    decorator_call_ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for deco in node.decorator_list:
+                # Decorator can be a Name (no args) or a Call.
+                if isinstance(deco, ast.Call):
+                    decorator_call_ids.add(id(deco))
+                    _handle_call_node(deco, in_decorator=True)
+
+    # Walk all remaining ast.Call nodes for in-body forms.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and id(node) not in decorator_call_ids:
+            _handle_call_node(node, in_decorator=False)
+
+    return results
+
+
+_CONFIG_SCAN_PATTERNS = ("pyproject.toml", "setup.cfg", "setup.py", "*.yml", "*.yaml")
+# Match dotted names with ≥1 dot — simple module path heuristic (no single-word false positives).
+_DOTTED_NAME_RE = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)(?:\.[a-zA-Z_][a-zA-Z0-9_]+)+\b")
+
+# ── v4.5 Sphinx / MkDocs cross-reference scanning ───────────────────────────────
+
+# Sphinx role markup like :func:`mypackage.fn`, :class:`~pkg.MyCls`, :meth:`pkg.Cls.m`
+_SPHINX_XREF_RE = re.compile(r":(?P<role>[a-z]+):`(?P<target>[^`]+)`")
+
+# Roles whose targets we resolve into the symbol-index ``module::name`` form.
+# Stored as a frozenset for fast membership tests in the hot doc-scanning loop.
+_SPHINX_RESOLVABLE_ROLES: frozenset[str] = frozenset({"func", "class", "meth", "mod", "attr", "data", "exc"})
+
+# MkDocs autorefs: [text][identifier] — identifier is a dotted Python path.
+_MKDOCS_NAMED_RE = re.compile(r"\[(?:[^\]]+)\]\[([A-Za-z_][A-Za-z0-9_.]*)\]")
+# MkDocs autorefs backtick form: [`identifier`][]
+_MKDOCS_BACKTICK_RE = re.compile(r"\[`([A-Za-z_][A-Za-z0-9_.]*)`\]\[\]")
+
+
+def _resolve_xref_target(role: str, raw_target: str, current_module: str) -> str | None:
+    """Resolve a Sphinx role target string to a ``module::name`` symbol key.
+
+    Strips Sphinx prefix markers (``~`` shows short label, ``!`` suppresses link)
+    and dispatches on *role* to derive the canonical symbol-index key.
+
+    Resolution rules per role:
+      * ``func`` / ``class`` / ``exc`` / ``attr`` / ``data`` — ``a.b.c`` →
+        ``a.b::c``. Bare names (no dot) — assume current module: ``current::name``.
+      * ``meth`` — ``a.b.Cls.method`` → ``a.b::Cls.method``. The class component
+        is kept after the ``::`` separator.
+      * ``mod`` — module-level reference; stored as bare module name (no ``::``).
+
+    Leading ``.`` in *raw_target* signals a relative reference: it is resolved
+    against the package containing *current_module*.
+
+    Args:
+        role: Sphinx role name (lowercase, e.g. ``"func"``, ``"class"``).
+        raw_target: target string captured from the role markup, possibly prefixed
+            with ``~`` or ``!`` and possibly relative (leading dot).
+        current_module: dotted name of the module whose docstring contains the
+            reference; used as the resolution anchor for bare names and relative
+            references.
+
+    Returns:
+        Canonical symbol key (``module::name`` or bare module), or ``None`` when
+        *role* is not in :data:`_SPHINX_RESOLVABLE_ROLES` or *raw_target* is empty.
+
+    Examples:
+        >>> _resolve_xref_target("func", "pkg.mod.fn", "other")
+        'pkg.mod::fn'
+        >>> _resolve_xref_target("func", "~pkg.mod.fn", "other")
+        'pkg.mod::fn'
+        >>> _resolve_xref_target("meth", "pkg.mod.Cls.method", "other")
+        'pkg.mod::Cls.method'
+        >>> _resolve_xref_target("mod", "pkg.sub", "other")
+        'pkg.sub'
+        >>> _resolve_xref_target("func", "local_fn", "pkg.mod")
+        'pkg.mod::local_fn'
+        >>> _resolve_xref_target("unknown", "x", "y") is None
+        True
+    """
+    if role not in _SPHINX_RESOLVABLE_ROLES:
+        return None
+    target = raw_target.strip()
+    if not target:
+        return None
+    # Strip Sphinx prefix markers before processing.
+    if target[:1] in ("~", "!"):
+        target = target[1:]
+    if not target:
+        return None
+    # Relative references: leading "." anchors against current module's package.
+    if target.startswith("."):
+        stripped = target.lstrip(".")
+        package = current_module.rsplit(".", 1)[0] if "." in current_module else current_module
+        target = f"{package}.{stripped}" if stripped else package
+        if not target:
+            return None
+
+    if role == "mod":
+        return target
+
+    if role == "meth":
+        # module.ClassName.method → module::ClassName.method
+        parts = target.split(".")
+        if len(parts) >= 3:
+            module_part = ".".join(parts[:-2])
+            attr_part = ".".join(parts[-2:])
+            return f"{module_part}::{attr_part}"
+        if len(parts) == 2:
+            # Bare ClassName.method — anchor against current module.
+            return f"{current_module}::{target}" if current_module else target
+        # Single component — anchor against current module.
+        return f"{current_module}::{target}" if current_module else target
+
+    # func / class / exc / attr / data — dotted path → module::name
+    if "." in target:
+        module_part, name_part = target.rsplit(".", 1)
+        return f"{module_part}::{name_part}"
+    return f"{current_module}::{target}" if current_module else target
+
+
+def _docstring_nodes(tree: ast.Module) -> list[tuple[ast.AST, int]]:
+    """Yield ``(node, base_line)`` for every node whose docstring should be scanned.
+
+    Walks the AST and surfaces the module itself plus every class, function, and
+    async-function node. ``base_line`` is the line at which the node's docstring
+    starts (``node.body[0].lineno`` when the first statement is a constant string).
+
+    Returns:
+        List of ``(node, base_line)`` for each docstring-bearing node.
+    """
+    results: list[tuple[ast.AST, int]] = []
+    # Module-level docstring
+    if tree.body and isinstance(tree.body[0], ast.Expr) and isinstance(tree.body[0].value, ast.Constant):
+        if isinstance(tree.body[0].value.value, str):
+            results.append((tree, tree.body[0].lineno))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, "body", [])
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                if isinstance(body[0].value.value, str):
+                    results.append((node, body[0].lineno))
+    return results
+
+
+def extract_sphinx_xrefs(tree: ast.Module, filepath: Path, root: Path, current_module: str) -> list[dict]:
+    """Extract Sphinx cross-reference roles from every docstring in *tree*.
+
+    Walks module-, class-, function-, and async-function-level docstrings and
+    matches :data:`_SPHINX_XREF_RE` against their text. Each match is normalised
+    via :func:`_resolve_xref_target` to a ``module::name`` symbol-index key.
+
+    Line numbers are approximated: the matched role is reported at the docstring's
+    base line (start of the triple-quoted string). Per-line offsets are not tracked
+    because AST docstring nodes only expose the opening literal's ``lineno``.
+
+    Args:
+        tree: parsed AST of the module.
+        filepath: filesystem path of the source file (recorded in each entry).
+        root: project root used to store a portable relative file path.
+        current_module: dotted name of the module (used to anchor bare names).
+
+    Returns:
+        List of ``{"role", "target", "file", "line", "source"}`` dicts in
+        document order. ``source`` is always ``"sphinx"``.
+    """
+    results: list[dict] = []
+    file_str = filepath.relative_to(root).as_posix()
+    for node, base_line in _docstring_nodes(tree):
+        doc = ast.get_docstring(node, clean=False)
+        if not doc:
+            continue
+        for match in _SPHINX_XREF_RE.finditer(doc):
+            role = match.group("role")
+            raw_target = match.group("target")
+            target = _resolve_xref_target(role, raw_target, current_module)
+            if target is None:
+                continue
+            results.append(
+                {
+                    "role": role,
+                    "target": target,
+                    "file": file_str,
+                    "line": base_line,
+                    "source": "sphinx",
+                }
+            )
+    return results
+
+
+def scan_rst_xrefs(rst_path: Path, root: Path) -> list[dict]:
+    """Scan a reStructuredText file for Sphinx role cross-references.
+
+    Reads the file line by line and matches :data:`_SPHINX_XREF_RE`. The
+    "current module" anchor is empty because ``.rst`` files belong to no Python
+    module — bare role targets without a dotted prefix are dropped (anchor empty
+    ⇒ no resolution).
+
+    Args:
+        rst_path: filesystem path to the ``.rst`` file.
+        root: project root used to compute the relative path stored in each entry.
+
+    Returns:
+        List of ``{"role", "target", "file", "line", "source"}`` dicts.
+        ``source`` is always ``"sphinx"``.
+    """
+    try:
+        text = rst_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    try:
+        rel = rst_path.relative_to(root).as_posix()
+    except ValueError:
+        rel = str(rst_path)
+    results: list[dict] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for match in _SPHINX_XREF_RE.finditer(line):
+            role = match.group("role")
+            raw_target = match.group("target")
+            target = _resolve_xref_target(role, raw_target, current_module="")
+            if target is None:
+                continue
+            results.append(
+                {
+                    "role": role,
+                    "target": target,
+                    "file": rel,
+                    "line": lineno,
+                    "source": "sphinx",
+                }
+            )
+    return results
+
+
+def _resolve_mkdocs_identifier(identifier: str) -> str | None:
+    """Convert a mkdocstrings identifier to a ``module::name`` symbol key.
+
+    Identifiers without at least one dot are treated as page anchors (not Python
+    paths) and discarded. For dotted identifiers, the heuristic mirrors
+    :func:`_normalize_patch_target`: if the second-to-last component starts with
+    an uppercase letter it is treated as a class (``module::Class.member``);
+    otherwise the final component is the attribute (``module::name``).
+
+    Returns:
+        Canonical symbol key, or ``None`` for single-token identifiers.
+
+    Examples:
+        >>> _resolve_mkdocs_identifier("pkg.mod.fn")
+        'pkg.mod::fn'
+        >>> _resolve_mkdocs_identifier("pkg.mod.Cls.method")
+        'pkg.mod::Cls.method'
+        >>> _resolve_mkdocs_identifier("anchor") is None
+        True
+    """
+    if "." not in identifier:
+        return None
+    parts = identifier.split(".")
+    if len(parts) >= 3 and parts[-2][:1].isupper():
+        module_part = ".".join(parts[:-2])
+        attr_part = ".".join(parts[-2:])
+    else:
+        module_part = ".".join(parts[:-1])
+        attr_part = parts[-1]
+    return f"{module_part}::{attr_part}"
+
+
+def scan_mkdocs_xrefs(md_path: Path, root: Path) -> list[dict]:
+    """Scan a Markdown file for mkdocstrings autorefs cross-references.
+
+    Matches two autorefs forms per line:
+      * ``[text][identifier]`` — :data:`_MKDOCS_NAMED_RE`
+      * ``[`identifier`][]`` — :data:`_MKDOCS_BACKTICK_RE`
+
+    Identifiers without a dot are page anchors and skipped; dotted identifiers
+    are resolved via :func:`_resolve_mkdocs_identifier`.
+
+    Args:
+        md_path: filesystem path to the ``.md`` file.
+        root: project root used to compute the relative path stored in each entry.
+
+    Returns:
+        List of ``{"role", "target", "file", "line", "source"}`` dicts.
+        ``role`` is always ``"mkdocs"``; ``source`` is always ``"mkdocs"``.
+    """
+    try:
+        text = md_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    try:
+        rel = md_path.relative_to(root).as_posix()
+    except ValueError:
+        rel = str(md_path)
+    results: list[dict] = []
+    seen: set[tuple[str, int]] = set()  # (target, line) — backtick form is also matched by named regex
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for match in _MKDOCS_BACKTICK_RE.finditer(line):
+            identifier = match.group(1)
+            target = _resolve_mkdocs_identifier(identifier)
+            if target is None:
+                continue
+            sig = (target, lineno)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            results.append(
+                {
+                    "role": "mkdocs",
+                    "target": target,
+                    "file": rel,
+                    "line": lineno,
+                    "source": "mkdocs",
+                }
+            )
+        for match in _MKDOCS_NAMED_RE.finditer(line):
+            identifier = match.group(1)
+            target = _resolve_mkdocs_identifier(identifier)
+            if target is None:
+                continue
+            sig = (target, lineno)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            results.append(
+                {
+                    "role": "mkdocs",
+                    "target": target,
+                    "file": rel,
+                    "line": lineno,
+                    "source": "mkdocs",
+                }
+            )
+    return results
+
+
+def _iter_doc_files(root: Path) -> tuple[list[Path], list[Path]]:
+    """Walk *root* and return ``(.rst files, docs/**/*.md files)``.
+
+    ``.rst`` files anywhere under the tree are returned. Markdown files are
+    restricted to ``docs/`` subtrees to avoid pulling in README.md, CHANGELOG.md,
+    and other non-API documentation that drives mkdocstrings autorefs.
+
+    Args:
+        root: project root to walk.
+
+    Returns:
+        Tuple of ``(rst_files, md_files)`` lists.
+    """
+    rst_files: list[Path] = []
+    md_files: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        rel_dir = Path(dirpath).relative_to(root).as_posix() if Path(dirpath) != root else ""
+        in_docs = rel_dir == "docs" or rel_dir.startswith("docs/")
+        for fn in filenames:
+            fp = Path(dirpath) / fn
+            if fp.is_symlink():
+                continue
+            if fn.endswith(".rst"):
+                rst_files.append(fp)
+            elif fn.endswith(".md") and in_docs:
+                md_files.append(fp)
+    return rst_files, md_files
+
+
+def scan_config_refs(root: Path, module_names: set[str]) -> dict[str, list[dict]]:
+    """Scan config files for string references to known module paths.
+
+    Targets: ``pyproject.toml``, ``setup.cfg``, ``setup.py``, ``*.yml``, ``*.yaml``
+    at the project root (non-recursive). Uses line-by-line regex scan — no TOML/YAML
+    parser required; produces minor false-positive risk mitigated by exact-match against
+    the known module names set.
+
+    Args:
+        root: project root path.
+        module_names: set of known dotted module names from the index.
+
+    Returns:
+        Dict mapping module name → list of ``{"file": str, "line": int, "context": str}``.
+    """
+    refs: dict[str, list[dict]] = {}
+    config_files: list[Path] = []
+    for pattern in _CONFIG_SCAN_PATTERNS:
+        config_files.extend(root.glob(pattern))
+    for cfg_path in sorted(config_files):
+        rel = cfg_path.relative_to(root).as_posix()
+        try:
+            lines = cfg_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for lineno, line in enumerate(lines, start=1):
+            for m in _DOTTED_NAME_RE.finditer(line):
+                candidate = m.group()
+                if candidate in module_names:
+                    refs.setdefault(candidate, []).append(
+                        {
+                            "file": rel,
+                            "line": lineno,
+                            "context": line.strip()[:120],
+                        }
+                    )
+    return refs
+
+
+# ── v5.1 conftest.py sys.path awareness ────────────────────────────────────────
+
+
+def _extract_path_file_parent_dir(arg: ast.expr, conftest_dir: Path) -> Path | None:
+    """Resolve ``str(Path(__file__).parent / "name")`` form to an absolute directory.
+
+    Returns ``None`` for any unsupported shape — multi-level ``.parent.parent``,
+    ``.resolve()`` chains, ``os.path.join`` forms, or any non-literal RHS of the
+    division operator. Only the exact 1-level ``Path(__file__).parent / "name"``
+    pattern (with name as a string constant) is supported.
+
+    Args:
+        arg: AST node taken from the second positional argument of
+            ``sys.path.insert(N, ...)``; expected to be a ``Call`` to ``str``.
+        conftest_dir: directory containing the conftest.py being parsed —
+            used as the anchor for ``Path(__file__).parent``.
+    """
+    if not (isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name) and arg.func.id == "str"):
+        return None
+    if not arg.args:
+        return None
+    inner = arg.args[0]
+    if not (isinstance(inner, ast.BinOp) and isinstance(inner.op, ast.Div)):
+        return None
+    if not (isinstance(inner.right, ast.Constant) and isinstance(inner.right.value, str)):
+        return None
+    left = inner.left
+    # Require Attribute chain: Path(__file__).parent — left.attr == "parent", left.value is Call to Path(__file__).
+    if not (isinstance(left, ast.Attribute) and left.attr == "parent"):
+        return None
+    base = left.value
+    if not (isinstance(base, ast.Call) and isinstance(base.func, ast.Name) and base.func.id == "Path"):
+        return None
+    if not (base.args and isinstance(base.args[0], ast.Name) and base.args[0].id == "__file__"):
+        return None
+    return conftest_dir / inner.right.value
+
+
+def _is_syspath_insert_call(call: ast.Call) -> bool:
+    """True when *call* matches ``sys.path.insert(N, arg)`` exactly.
+
+    Two positional args required; receiver must be the literal ``sys.path``
+    attribute chain. ``sys.path.append`` and slice assignment are not detected
+    here (treated as unsupported and skipped silently at the walk level).
+    """
+    func = call.func
+    if not (isinstance(func, ast.Attribute) and func.attr == "insert"):
+        return False
+    receiver = func.value
+    if not (isinstance(receiver, ast.Attribute) and receiver.attr == "path"):
+        return False
+    inner = receiver.value
+    if not (isinstance(inner, ast.Name) and inner.id == "sys"):
+        return False
+    return len(call.args) >= 2
+
+
+def extract_conftest_syspath(conftest_path: Path, root: Path) -> list[Path]:
+    """Parse a conftest.py AST and return resolved directory paths added to ``sys.path``.
+
+    Supported patterns (static, constant-foldable):
+
+      * ``sys.path.insert(N, "str_literal")`` — resolved relative to
+        ``conftest_path.parent``.
+      * ``sys.path.insert(N, str(Path(__file__).parent / "name"))`` — resolved
+        to ``conftest_path.parent / "name"``.
+
+    Unsupported patterns are skipped with a single ``⚠ conftest:`` warning to
+    stderr — ``Path(__file__).parent.parent / ...``, ``os.path.join(...)``,
+    variable-then-use, ``sys.path.append``, slice assignment, ``.resolve()``
+    chains.
+
+    Args:
+        conftest_path: filesystem path to the conftest.py file.
+        root: project root (unused today, reserved for future relative-to-root
+            anchoring; kept for API stability).
+
+    Returns:
+        List of resolved absolute directory paths added to ``sys.path``.
+        Empty when the file has no ``sys.path.insert`` calls or all calls use
+        unsupported shapes.
+    """
+    _ = root  # reserved
+    try:
+        source = conftest_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    try:
+        tree = ast.parse(source, filename=str(conftest_path))
+    except SyntaxError:
+        return []
+
+    conftest_dir = conftest_path.parent
+    results: list[Path] = []
+    for stmt in tree.body:
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            continue
+        call = stmt.value
+        if not _is_syspath_insert_call(call):
+            continue
+        arg = call.args[1]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            results.append(conftest_dir / arg.value)
+            continue
+        resolved = _extract_path_file_parent_dir(arg, conftest_dir)
+        if resolved is not None:
+            results.append(resolved)
+            continue
+        print(
+            f"⚠ conftest: unsupported sys.path pattern at {conftest_path}:{call.lineno} — skipped",
+            file=sys.stderr,
+        )
+    return results
+
+
+def _collect_module_aliases(
+    conftest_paths: list[Path],
+    indexed_names: set[str],
+    root: Path,
+) -> dict[str, str]:
+    """Map bare module names made importable by conftest ``sys.path`` shims to dotted names.
+
+    For each directory resolved via :func:`extract_conftest_syspath`, list the
+    Python files directly inside it (non-recursive). For every file, the bare
+    name is its stem; the function searches *indexed_names* for any module
+    whose final dotted component equals the bare name.
+
+      * Unique match → record ``bare_name -> full_dotted_name``.
+      * Multiple matches → ambiguous; skipped with a stderr warning.
+      * No match → likely a non-indexed script; skipped silently.
+
+    Args:
+        conftest_paths: every conftest.py discovered during the scan.
+        indexed_names: dotted names of all modules with ``status == "ok"``.
+        root: project root (unused today; kept for API stability with future
+            features that may need to resolve relative paths).
+
+    Returns:
+        Mapping of bare module name → fully-qualified dotted module name.
+    """
+    _ = root
+    # Index modules by their final dotted component for O(1) lookup.
+    by_last: dict[str, list[str]] = {}
+    for name in indexed_names:
+        last = name.rsplit(".", 1)[-1]
+        by_last.setdefault(last, []).append(name)
+
+    aliases: dict[str, str] = {}
+    seen_dirs: set[Path] = set()
+    for conftest_path in conftest_paths:
+        for syspath_dir in extract_conftest_syspath(conftest_path, root):
+            try:
+                resolved_dir = syspath_dir.resolve()
+            except OSError:
+                continue
+            if resolved_dir in seen_dirs:
+                continue
+            seen_dirs.add(resolved_dir)
+            if not resolved_dir.is_dir():
+                continue
+            for entry in sorted(resolved_dir.iterdir()):
+                if entry.is_symlink() or not entry.is_file() or entry.suffix != ".py":
+                    continue
+                bare = entry.stem
+                if bare == "__init__":
+                    continue
+                if bare in aliases:
+                    continue
+                candidates = by_last.get(bare, [])
+                if not candidates:
+                    continue
+                if len(candidates) > 1:
+                    print(
+                        f"⚠ conftest: ambiguous alias '{bare}' (candidates: {', '.join(candidates)}) — skipped",
+                        file=sys.stderr,
+                    )
+                    continue
+                aliases[bare] = candidates[0]
+    return aliases
+
+
+# ── v5.2 subprocess call-edge extraction ───────────────────────────────────────
+
+# Bare interpreter tokens recognised at index 0 of the args list / os.system string.
+_SUBPROCESS_PY_TOKENS: frozenset[str] = frozenset({"python", "python3"})
+
+
+def _resolve_path_file_parent_script(arg: ast.expr, caller_dir: Path) -> Path | None:
+    """Resolve ``str(Path(__file__).parent / "name.py")`` to an absolute file path.
+
+    Mirrors :func:`_extract_path_file_parent_dir` but resolves against the
+    calling module's directory (``caller_dir``) instead of a conftest dir.
+    Returns ``None`` for any unsupported shape.
+
+    Args:
+        arg: AST node from the args list element (expected: ``Call`` to ``str``).
+        caller_dir: directory containing the file whose AST is being walked —
+            anchor for ``Path(__file__).parent``.
+    """
+    if not (isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name) and arg.func.id == "str"):
+        return None
+    if not arg.args:
+        return None
+    inner = arg.args[0]
+    if not (isinstance(inner, ast.BinOp) and isinstance(inner.op, ast.Div)):
+        return None
+    if not (isinstance(inner.right, ast.Constant) and isinstance(inner.right.value, str)):
+        return None
+    left = inner.left
+    if not (isinstance(left, ast.Attribute) and left.attr == "parent"):
+        return None
+    base = left.value
+    if not (isinstance(base, ast.Call) and isinstance(base.func, ast.Name) and base.func.id == "Path"):
+        return None
+    if not (base.args and isinstance(base.args[0], ast.Name) and base.args[0].id == "__file__"):
+        return None
+    return caller_dir / inner.right.value
+
+
+def _is_python_token(node: ast.expr) -> bool:
+    """True when *node* is either ``Constant("python"|"python3")`` or ``sys.executable``."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value in _SUBPROCESS_PY_TOKENS
+    if isinstance(node, ast.Attribute) and node.attr == "executable":
+        return isinstance(node.value, ast.Name) and node.value.id == "sys"
+    return False
+
+
+def _subprocess_script_arg(args_list: ast.List, caller_dir: Path) -> str | None:
+    """Extract the script-path string from a ``subprocess.run/Popen`` args list.
+
+    Recognised shapes for ``args_list.elts[1]`` (after the interpreter token):
+
+      * ``Constant(str)`` — bare script name (e.g. ``"other.py"``).
+      * ``Call`` to ``str(Path(__file__).parent / "x.py")`` — 1-level Path form.
+
+    Returns the resolved or raw script path string, or ``None`` when the shape
+    is unsupported.
+    """
+    if len(args_list.elts) < 2:
+        return None
+    if not _is_python_token(args_list.elts[0]):
+        return None
+    script_node = args_list.elts[1]
+    if isinstance(script_node, ast.Constant) and isinstance(script_node.value, str):
+        return script_node.value
+    resolved = _resolve_path_file_parent_script(script_node, caller_dir)
+    if resolved is not None:
+        return str(resolved)
+    return None
+
+
+def _is_subprocess_run_or_popen(call: ast.Call) -> bool:
+    """True when *call* is ``subprocess.run(...)`` or ``subprocess.Popen(...)``."""
+    func = call.func
+    if not (isinstance(func, ast.Attribute) and func.attr in ("run", "Popen")):
+        return False
+    return isinstance(func.value, ast.Name) and func.value.id == "subprocess"
+
+
+def _is_os_system(call: ast.Call) -> bool:
+    """True when *call* is ``os.system(...)``."""
+    func = call.func
+    if not (isinstance(func, ast.Attribute) and func.attr == "system"):
+        return False
+    return isinstance(func.value, ast.Name) and func.value.id == "os"
+
+
+def _os_system_script(call: ast.Call) -> str | None:
+    """Extract the script name from ``os.system("python <script>")``.
+
+    Returns the script token directly following ``python``/``python3`` after a
+    whitespace split, or ``None`` when the form is unsupported (non-constant
+    arg, no Python invocation token, no token after the interpreter).
+    """
+    if not call.args:
+        return None
+    first = call.args[0]
+    if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+        return None
+    tokens = first.value.split()
+    if len(tokens) < 2 or tokens[0] not in _SUBPROCESS_PY_TOKENS:
+        return None
+    return tokens[1]
+
+
+def _resolve_script_to_module(script: str, caller_dir: Path, root: Path, indexed_files: dict[str, str]) -> str | None:
+    """Match a resolved script path against indexed module file paths.
+
+    Resolution rules:
+      * Absolute path → resolved as-is.
+      * Relative path → resolved against ``caller_dir``.
+      * Result then matched against the indexed files map (rel-path → module
+        name). The map is built by :func:`extract_subprocess_calls`'s caller.
+
+    Args:
+        script: script path string captured from the subprocess call.
+        caller_dir: directory of the file whose AST is being walked.
+        root: project root used to compute relative paths.
+        indexed_files: map of POSIX rel-path → dotted module name for every
+            ``status == "ok"`` module in the index.
+
+    Returns:
+        Dotted module name if matched, ``None`` otherwise.
+    """
+    script_path = Path(script)
+    if not script_path.is_absolute():
+        script_path = caller_dir / script_path
+    try:
+        resolved = script_path.resolve()
+    except OSError:
+        return None
+    try:
+        rel = resolved.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return None
+    return indexed_files.get(rel)
+
+
+def extract_subprocess_calls(
+    tree: ast.Module,
+    filepath: Path,
+    root: Path,
+    indexed_files: dict[str, str] | None = None,
+) -> list[dict]:
+    """Extract subprocess invocations of other Python scripts in this module.
+
+    Scans the AST for three subprocess forms and produces one entry per call
+    that resolves to an indexed module:
+
+      * ``subprocess.run([<py>, <script>, ...])``
+      * ``subprocess.Popen([<py>, <script>, ...])``
+      * ``os.system("python <script> ...")`` (string form, whitespace-split)
+
+    Recognised ``<py>`` tokens are ``"python"`` / ``"python3"`` string constants
+    or ``sys.executable``. Recognised ``<script>`` shapes are bare string
+    constants or ``str(Path(__file__).parent / "name.py")`` (1-level Path).
+
+    Out of scope (documented for future expansion): ``runpy.run_path``, the
+    ``sh`` library, shell strings without a ``python`` interpreter token,
+    multi-level ``Path(__file__).parent.parent`` chains.
+
+    Unresolvable scripts (no matching indexed module) emit a single stderr
+    warning and are skipped — never raised.
+
+    Args:
+        tree: parsed AST of the module being scanned.
+        filepath: filesystem path of the source file (recorded in each entry).
+        root: project root used to resolve relative script paths.
+        indexed_files: map of POSIX rel-path → dotted module name. When
+            ``None``, the function returns ``[]`` because no resolution is
+            possible without the module list (callers build this once per
+            scan from the parsed module entries).
+
+    Returns:
+        List of ``{"target_module": str, "file": str, "line": int}`` dicts, one
+        per resolved subprocess call, in source order.
+
+    Examples:
+        >>> import ast, pathlib
+        >>> src = "import subprocess\\nsubprocess.run(['python', 'x.py'])\\n"
+        >>> extract_subprocess_calls(ast.parse(src), pathlib.Path("/tmp/a.py"), pathlib.Path("/tmp"), {}) == []
+        True
+    """
+    if indexed_files is None:
+        return []
+    caller_dir = filepath.parent
+    file_str = str(filepath)
+    results: list[dict] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        script: str | None = None
+        if _is_subprocess_run_or_popen(node):
+            if not node.args:
+                continue
+            first_arg = node.args[0]
+            if not isinstance(first_arg, ast.List):
+                continue
+            script = _subprocess_script_arg(first_arg, caller_dir)
+        elif _is_os_system(node):
+            script = _os_system_script(node)
+        if script is None:
+            continue
+        target = _resolve_script_to_module(script, caller_dir, root, indexed_files)
+        if target is None:
+            print(
+                f"⚠ subprocess: unresolvable script {script!r} in {filepath}",
+                file=sys.stderr,
+            )
+            continue
+        results.append({"target_module": target, "file": file_str, "line": node.lineno})
+    return results
+
+
+# ── v5.3 pytest fixture dependency graph ───────────────────────────────────────
+
+# Pytest fixtures injected at runtime — no static definition in any conftest.
+# Listed so test functions taking these as parameters are not flagged unknown.
+_PYTEST_BUILTIN_FIXTURES: frozenset[str] = frozenset(
+    {
+        "tmp_path",
+        "tmp_path_factory",
+        "tmpdir",
+        "tmpdir_factory",
+        "monkeypatch",
+        "mocker",
+        "caplog",
+        "capsys",
+        "capfd",
+        "capsysbinary",
+        "capfdbinary",
+        "request",
+        "pytestconfig",
+        "fixture_union",
+        "recwarn",
+        "cache",
+        "doctest_namespace",
+        "record_property",
+        "record_xml_attribute",
+        "record_testsuite_property",
+    }
+)
+
+
+def _is_pytest_fixture_decorator(decorator: ast.expr) -> tuple[bool, str | None]:
+    """Identify whether *decorator* marks the function as a ``@pytest.fixture``.
+
+    Returns ``(is_fixture, scope)`` where *scope* is the explicit ``scope=`` keyword
+    value (string literal only) or ``None`` when omitted, dynamic, or the decorator
+    is not a fixture decorator. ``scope`` resolution defaults to ``"function"``
+    upstream in :func:`extract_fixtures` when this function returns ``None``.
+
+    Recognised forms:
+      * ``@pytest.fixture`` — ``Attribute(value=Name('pytest'), attr='fixture')``
+      * ``@pytest.fixture(scope='session')`` — ``Call`` wrapping the attribute form
+      * ``@fixture`` — bare ``Name('fixture')`` (assumes ``from pytest import fixture``)
+
+    Args:
+        decorator: AST decorator node from a function definition's ``decorator_list``.
+
+    Examples:
+        >>> import ast
+        >>> tree = ast.parse("import pytest\\n@pytest.fixture\\ndef f(): pass")
+        >>> _is_pytest_fixture_decorator(tree.body[1].decorator_list[0])
+        (True, None)
+        >>> tree = ast.parse("import pytest\\n@pytest.fixture(scope='session')\\ndef f(): pass")
+        >>> _is_pytest_fixture_decorator(tree.body[1].decorator_list[0])
+        (True, 'session')
+    """
+    # Bare @pytest.fixture
+    if isinstance(decorator, ast.Attribute) and decorator.attr == "fixture":
+        if isinstance(decorator.value, ast.Name) and decorator.value.id == "pytest":
+            return True, None
+        return False, None
+    # Bare @fixture (assumes `from pytest import fixture`)
+    if isinstance(decorator, ast.Name) and decorator.id == "fixture":
+        return True, None
+    # @pytest.fixture(...) or @fixture(...)
+    if isinstance(decorator, ast.Call):
+        func = decorator.func
+        is_fixture = False
+        if isinstance(func, ast.Attribute) and func.attr == "fixture":
+            if isinstance(func.value, ast.Name) and func.value.id == "pytest":
+                is_fixture = True
+        elif isinstance(func, ast.Name) and func.id == "fixture":
+            is_fixture = True
+        if not is_fixture:
+            return False, None
+        for kw in decorator.keywords:
+            if kw.arg == "scope" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                return True, kw.value.value
+        return True, None
+    return False, None
+
+
+def _body_yields(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Return True when *node*'s body contains any ``Yield`` or ``YieldFrom`` expression.
+
+    Nested function definitions are not descended into — only yields that belong
+    directly to *node* count toward classifying the fixture as a generator.
+
+    Examples:
+        >>> import ast
+        >>> _body_yields(ast.parse("def f():\\n    yield 1").body[0])
+        True
+        >>> _body_yields(ast.parse("def f():\\n    return 1").body[0])
+        False
+    """
+    for child in ast.walk(node):
+        if child is node:
+            continue
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child is not node:
+            # Skip nested function definitions; their yields are not this fixture's.
+            continue
+        if isinstance(child, (ast.Yield, ast.YieldFrom)):
+            return True
+    return False
+
+
+def extract_fixtures(tree: ast.Module, filepath: Path) -> list[dict]:
+    """Extract every ``@pytest.fixture`` decorated function defined in *tree*.
+
+    Walks the top-level module body for ``FunctionDef`` / ``AsyncFunctionDef``
+    nodes carrying a fixture decorator (see :func:`_is_pytest_fixture_decorator`).
+    Each match is recorded with ``name``, ``scope`` (string literal from a
+    ``scope=`` kwarg, or ``"function"`` when omitted), ``loc`` (the function's
+    line number), ``yields`` (whether the body contains ``yield`` / ``yield from``),
+    and ``params`` (the fixture's positional / keyword argument names, ``self`` /
+    ``cls`` excluded — used downstream by ``fixture-graph`` to walk per-fixture
+    dependency trees).
+
+    Non-decorator forms (functions registered via ``pytest.fixture(scope=...)(fn)``
+    call syntax instead of decoration) are not recognised — they fall outside
+    pytest's discoverable fixture surface in practice.
+
+    Args:
+        tree: parsed AST of the module being scanned.
+        filepath: filesystem path of the source file (recorded for diagnostics
+            but not embedded in the output today).
+
+    Returns:
+        List of ``{"name", "scope", "loc", "yields", "params"}`` dicts in source order.
+
+    Examples:
+        >>> import ast, pathlib
+        >>> src = "import pytest\\n@pytest.fixture\\ndef f(db):\\n    yield 1\\n"
+        >>> extract_fixtures(ast.parse(src), pathlib.Path("conftest.py"))
+        [{'name': 'f', 'scope': 'function', 'loc': 3, 'yields': True, 'params': ['db']}]
+    """
+    _ = filepath  # reserved for future diagnostics
+    results: list[dict] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        scope: str | None = None
+        is_fixture = False
+        for decorator in node.decorator_list:
+            matched, explicit_scope = _is_pytest_fixture_decorator(decorator)
+            if matched:
+                is_fixture = True
+                if explicit_scope is not None:
+                    scope = explicit_scope
+                break
+        if not is_fixture:
+            continue
+        results.append(
+            {
+                "name": node.name,
+                "scope": scope or "function",
+                "loc": node.lineno,
+                "yields": _body_yields(node),
+                "params": _function_param_names(node),
+            }
+        )
+    return results
+
+
+def _function_param_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Return the positional/keyword parameter names of *node*, excluding ``self`` / ``cls``.
+
+    Skips ``*args``, ``**kwargs``, and positional-only ``/`` marker semantics — pytest
+    fixtures are injected through standard positional/keyword args only.
+
+    Examples:
+        >>> import ast
+        >>> _function_param_names(ast.parse("def f(self, a, b=1, *args): pass").body[0])
+        ['a', 'b']
+    """
+    args = node.args
+    names: list[str] = []
+    for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+        if arg.arg in ("self", "cls"):
+            continue
+        names.append(arg.arg)
+    return names
+
+
+def extract_fixture_uses(
+    tree: ast.Module,
+    defined_fixtures: dict[str, dict],
+    all_conftest_exports: dict[str, dict],
+) -> list[dict]:
+    """Extract fixture-name parameters consumed by ``test_*`` and fixture functions in *tree*.
+
+    Walks top-level functions (and methods of top-level classes) and treats each
+    non-``self`` / ``cls`` parameter as a candidate fixture name when the function
+    is either:
+
+      * named ``test_*`` (a pytest test); or
+      * decorated with ``@pytest.fixture`` (a fixture itself, whose parameters
+        are fixture dependencies — used by ``fixture-graph`` to walk
+        dependency trees in conftest modules).
+
+    Each candidate is resolved against three sources, in this order:
+
+      1. ``defined_fixtures`` — fixtures defined in the same module (local
+         conftest/test-file fixtures shadow everything else).
+      2. ``all_conftest_exports`` — fixtures exported by any conftest reachable
+         in the project, with the closest conftest already resolved by the caller.
+      3. :data:`_PYTEST_BUILTIN_FIXTURES` — pytest's runtime-injected fixtures
+         (``tmp_path``, ``monkeypatch``, ``mocker``…); emitted with
+         ``scope=None`` / ``defined_in=None``.
+
+    Unknown names (plugin fixtures, fixtures defined in non-indexed conftests)
+    are emitted with ``scope=None`` / ``defined_in=None`` so the caller can still
+    surface them without inventing a source.
+
+    Each fixture name is emitted at most once per module, even when consumed by
+    multiple test functions — the caller's interest is reverse-dependency, not
+    per-test count.
+
+    Args:
+        tree: parsed AST of a test module.
+        defined_fixtures: ``name -> {scope, ...}`` map of fixtures defined in the
+            same module (typically the test file or a local conftest).
+        all_conftest_exports: ``name -> {scope, defined_in}`` map of fixtures
+            visible through the conftest hierarchy, deeper-conftest-wins.
+
+    Returns:
+        List of ``{"name", "scope", "defined_in"}`` dicts, deduplicated by name,
+        ordered alphabetically.
+
+    Examples:
+        >>> import ast
+        >>> src = "def test_a(tmp_path, my_fix):\\n    pass\\n"
+        >>> tree = ast.parse(src)
+        >>> extract_fixture_uses(tree, {}, {"my_fix": {"scope": "session", "defined_in": "conftest"}})
+        [{'name': 'my_fix', 'scope': 'session', 'defined_in': 'conftest'}, {'name': 'tmp_path', 'scope': None, 'defined_in': None}]
+    """
+    seen: dict[str, dict] = {}
+
+    def _record(name: str) -> None:
+        if name in seen:
+            return
+        if name in defined_fixtures:
+            scope = defined_fixtures[name].get("scope", "function")
+            seen[name] = {"name": name, "scope": scope, "defined_in": None}
+            return
+        if name in all_conftest_exports:
+            entry = all_conftest_exports[name]
+            seen[name] = {
+                "name": name,
+                "scope": entry.get("scope", "function"),
+                "defined_in": entry.get("defined_in"),
+            }
+            return
+        # Builtin or unknown — emit with sentinel nulls so callers can still see usage.
+        seen[name] = {"name": name, "scope": None, "defined_in": None}
+
+    def _is_relevant(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        if fn.name.startswith("test_"):
+            return True
+        for decorator in fn.decorator_list:
+            is_fix, _ = _is_pytest_fixture_decorator(decorator)
+            if is_fix:
+                return True
+        return False
+
+    def _walk_function(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        if not _is_relevant(fn):
+            return
+        for param in _function_param_names(fn):
+            _record(param)
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _walk_function(node)
+        elif isinstance(node, ast.ClassDef):
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    _walk_function(child)
+
+    return sorted(seen.values(), key=lambda d: d["name"])
+
+
+def _conftest_depth(path: str) -> int:
+    """Return the directory depth of a conftest path; deeper conftests shadow shallower ones.
+
+    A bare ``conftest.py`` at the project root has depth 0; ``tests/conftest.py``
+    has depth 1, and so on. Used to sort the conftest list so deeper conftests
+    are processed last and win on collision via dict-update semantics.
+
+    Examples:
+        >>> _conftest_depth("conftest.py")
+        0
+        >>> _conftest_depth("tests/conftest.py")
+        1
+        >>> _conftest_depth("tests/unit/conftest.py")
+        2
+    """
+    parts = Path(path).parts
+    return max(len(parts) - 1, 0)
+
+
+def _collect_conftest_fixture_exports(modules: list[dict]) -> dict[str, dict]:
+    """Aggregate every conftest's fixture exports into a single ``name -> info`` map.
+
+    Processes conftest modules sorted by directory depth ascending so deeper
+    conftests overwrite shallower ones on name collision — matching pytest's
+    "closer conftest wins" scoping rule approximately.
+
+    Args:
+        modules: list of module entry dicts (must have ``fixture_exports``
+            already attached to conftest entries by the earlier scan pass).
+
+    Returns:
+        Mapping ``fixture_name -> {"scope": str, "defined_in": str}``.
+    """
+    conftests = [m for m in modules if Path(m.get("path", "")).name == "conftest.py"]
+    conftests.sort(key=lambda m: _conftest_depth(m.get("path", "")))
+    aggregated: dict[str, dict] = {}
+    for m in conftests:
+        for fix in m.get("fixture_exports", []) or []:
+            aggregated[fix["name"]] = {
+                "scope": fix.get("scope", "function"),
+                "defined_in": m.get("name", ""),
+            }
+    return aggregated
+
+
+def _attach_fixture_graph(modules: list[dict], root: Path) -> None:
+    """Walk every parseable module and attach fixture exports/uses in two passes.
+
+    Pass 1 — re-parse each ``status == "ok"`` module to extract any
+    ``@pytest.fixture`` definitions; conftest and test files alike may define
+    fixtures locally. Non-test, non-conftest modules get an empty
+    ``fixture_exports`` list to keep the schema uniform.
+
+    Pass 2 — for every test module (``is_test=True``), reparse and resolve each
+    test function's parameter list against (a) fixtures defined in the same
+    module and (b) the aggregated conftest exports from pass 1.
+
+    Args:
+        modules: module entry list (mutated in-place).
+        root: project root used to resolve relative file paths.
+    """
+    # Pass 1: extract fixture_exports for every parseable module.
+    for m in modules:
+        if m.get("status") != "ok":
+            continue
+        path = m.get("path", "")
+        if not path:
+            m["fixture_exports"] = []
+            continue
+        filepath = root / path
+        try:
+            source = filepath.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=str(filepath))
+        except (OSError, SyntaxError):
+            m["fixture_exports"] = []
+            continue
+        m["fixture_exports"] = extract_fixtures(tree, filepath)
+
+    # Aggregate conftest exports once (deep-conftest wins).
+    all_conftest_exports = _collect_conftest_fixture_exports(modules)
+
+    # Pass 2: for test modules, extract fixture_uses.
+    for m in modules:
+        if m.get("status") != "ok" or not m.get("is_test"):
+            continue
+        path = m.get("path", "")
+        if not path:
+            m["fixture_uses"] = []
+            continue
+        filepath = root / path
+        try:
+            source = filepath.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=str(filepath))
+        except (OSError, SyntaxError):
+            m["fixture_uses"] = []
+            continue
+        defined_local = {f["name"]: f for f in m.get("fixture_exports", []) or []}
+        m["fixture_uses"] = extract_fixture_uses(tree, defined_local, all_conftest_exports)
+
+
+def _build_fixture_rdep_count(modules: list[dict]) -> dict[str, int]:
+    """Count how many distinct test modules use each fixture (reverse index).
+
+    Args:
+        modules: module entry list with ``fixture_uses`` already attached.
+
+    Returns:
+        Mapping ``fixture_name -> count of test modules referencing it``.
+    """
+    counts: dict[str, int] = {}
+    for m in modules:
+        for fix in m.get("fixture_uses", []) or []:
+            name = fix.get("name")
+            if not name:
+                continue
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+# ── v5.4 coverage.py integration ───────────────────────────────────────────────
+
+# Minimum coverage library version required for the CoverageData public API used
+# below (read(), measured_files(), lines(), contexts_by_lineno()). 7.4 was the
+# first release to stabilise the SQLite schema and the contexts_by_lineno API
+# shape we depend on; lower versions raise/return unexpected types.
+_COVERAGE_MIN_LIB_VERSION: tuple[int, int] = (7, 4)
+
+
+def _parse_coverage_version(version: str) -> tuple[int, int] | None:
+    """Parse the first two components of a dotted version string into ``(major, minor)``.
+
+    Returns ``None`` when the first two components are not integers — keeps the
+    caller's error path simple (any unparsable version is treated as too old).
+
+    Examples:
+        >>> _parse_coverage_version("7.4.1")
+        (7, 4)
+        >>> _parse_coverage_version("7.10")
+        (7, 10)
+        >>> _parse_coverage_version("garbage") is None
+        True
+    """
+    parts = version.split(".")
+    if len(parts) < 2:
+        return None
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+
+
+def _read_coverage_data(coverage_path: Path) -> dict[str, dict] | None:
+    """Read a ``.coverage`` SQLite file and return per-file coverage information.
+
+    Returns ``None`` (with a stderr warning) when any of the following holds:
+
+      * ``coverage`` is not importable;
+      * the installed library is older than :data:`_COVERAGE_MIN_LIB_VERSION`;
+      * ``coverage_path`` does not exist on disk;
+      * the file is corrupted or unreadable by ``CoverageData.read()``.
+
+    On success, each measured source file is mapped to a dict with two keys:
+
+      * ``lines`` — frozenset of measured line numbers (line-coverage mode);
+      * ``contexts`` — ``{lineno: [context_str, ...]}`` mapping (empty when
+        ``--cov-context`` was not enabled at collection time).
+
+    Args:
+        coverage_path: filesystem path to the coverage SQLite database.
+
+    Returns:
+        Mapping ``absolute_file_path -> {"lines": frozenset[int], "contexts": dict}``,
+        or ``None`` on any failure mode listed above.
+    """
+    try:
+        import coverage as _coverage  # local import — optional dependency
+    except ImportError:
+        print("⚠ coverage not installed — skipping coverage integration", file=sys.stderr)
+        return None
+
+    version = getattr(_coverage, "__version__", "0.0")
+    parsed = _parse_coverage_version(version)
+    if parsed is None or parsed < _COVERAGE_MIN_LIB_VERSION:
+        min_str = ".".join(str(p) for p in _COVERAGE_MIN_LIB_VERSION)
+        print(f"⚠ coverage {min_str}+ required, found {version} — skipping", file=sys.stderr)
+        return None
+
+    if not coverage_path.exists():
+        print(f"⚠ .coverage file not found at {coverage_path} — skipping", file=sys.stderr)
+        return None
+
+    try:
+        data = _coverage.CoverageData(basename=str(coverage_path))
+        data.read()
+    except Exception as exc:
+        print(f"⚠ failed to read coverage data at {coverage_path}: {exc} — skipping", file=sys.stderr)
+        return None
+
+    result: dict[str, dict] = {}
+    for measured_file in data.measured_files():
+        lines = data.lines(measured_file)
+        if lines is None:
+            # File was tracked but no line data (arc-only mode without --branch line coverage).
+            measured_lines: frozenset[int] = frozenset()
+        else:
+            measured_lines = frozenset(lines)
+        try:
+            contexts = data.contexts_by_lineno(measured_file)
+        except Exception:
+            # contexts_by_lineno may raise for arc-only files; treat as no contexts.
+            contexts = {}
+        result[measured_file] = {
+            "lines": measured_lines,
+            "contexts": {int(ln): list(ctxs) for ln, ctxs in contexts.items()},
+        }
+    return result
+
+
+def _match_coverage_file(module_path: Path, coverage_data: dict[str, dict]) -> dict | None:
+    """Resolve a module's filesystem path against the coverage-data keys.
+
+    Coverage records measured files via the path seen at collection time — that
+    may be absolute, may differ from the index's relative form, and may use a
+    different case-fold on the filesystem. Match in two passes:
+
+      1. Exact absolute match (``module_path`` resolved + cast to string).
+      2. Suffix match — coverage key ends with the module's relative path.
+
+    Args:
+        module_path: absolute filesystem path of the module being indexed.
+        coverage_data: result of :func:`_read_coverage_data` (file → info).
+
+    Returns:
+        The matched ``{"lines", "contexts"}`` dict, or ``None`` when no entry
+        matches.
+    """
+    try:
+        resolved_abs = str(module_path.resolve())
+    except OSError:
+        resolved_abs = str(module_path)
+    if resolved_abs in coverage_data:
+        return coverage_data[resolved_abs]
+    str_path = str(module_path)
+    if str_path in coverage_data:
+        return coverage_data[str_path]
+    # Suffix match — coverage paths may carry an alternate prefix (e.g. /private + /var symlinks).
+    rel_suffix = module_path.as_posix()
+    for key, info in coverage_data.items():
+        if key.endswith(rel_suffix) or Path(key).as_posix().endswith(rel_suffix):
+            return info
+    return None
+
+
+def _compute_symbol_coverage(
+    start_line: int,
+    end_line: int,
+    measured_lines: frozenset[int],
+    contexts: dict[int, list[str]],
+) -> tuple[float, list[str] | None]:
+    """Compute ``(coverage_pct, covered_by)`` for one symbol's line range.
+
+    ``coverage_pct`` is the fraction of the inclusive ``[start_line, end_line]``
+    range that appears in *measured_lines*, rounded to 4 decimal places. The
+    denominator is clamped to ``max(1, end_line - start_line + 1)`` so 1-line
+    symbols still yield a valid ratio.
+
+    ``covered_by`` is the sorted, deduplicated list of context strings attached
+    to any line in the range. It is ``None`` when contexts are empty for the
+    entire range (the project was indexed without ``--cov-context``) — callers
+    treat ``None`` as "context data not available" rather than "no tests cover
+    this".
+
+    Args:
+        start_line: 1-based inclusive start line of the symbol.
+        end_line: 1-based inclusive end line of the symbol.
+        measured_lines: frozenset of line numbers reported by coverage.
+        contexts: ``{lineno: [ctx, ...]}`` mapping from the coverage file.
+
+    Examples:
+        >>> _compute_symbol_coverage(1, 4, frozenset([1, 2, 3, 4]), {})
+        (1.0, None)
+        >>> _compute_symbol_coverage(1, 4, frozenset([1, 2]), {})
+        (0.5, None)
+        >>> _compute_symbol_coverage(1, 1, frozenset(), {})
+        (0.0, None)
+        >>> pct, ctx = _compute_symbol_coverage(1, 2, frozenset([1, 2]), {1: ["test_a"], 2: ["test_b", "test_a"]})
+        >>> (pct, ctx)
+        (1.0, ['test_a', 'test_b'])
+    """
+    total = max(1, end_line - start_line + 1)
+    in_range = {ln for ln in measured_lines if start_line <= ln <= end_line}
+    pct = round(len(in_range) / total, 4)
+    ctx_set: set[str] = set()
+    for ln in in_range:
+        for ctx in contexts.get(ln, []):
+            # Coverage records the empty string for the "no-context" sentinel when --cov-context
+            # is enabled but a line is hit outside any pytest test; drop these to avoid noise.
+            if ctx:
+                ctx_set.add(ctx)
+    covered_by = sorted(ctx_set) if ctx_set else None
+    return pct, covered_by
+
+
+def _attach_coverage(modules: list[dict], root: Path, coverage_data: dict[str, dict]) -> None:
+    """Annotate every ``status == "ok"`` symbol with ``coverage_pct`` and ``covered_by`` in-place.
+
+    Symbols in modules whose file path is not present in *coverage_data* are
+    left untouched — callers distinguish "no field" (coverage not measured
+    for this module) from ``coverage_pct == 0.0`` (measured, no lines hit).
+
+    Args:
+        modules: module entry list (mutated in-place).
+        root: project root used to resolve relative module paths.
+        coverage_data: result of :func:`_read_coverage_data`.
+    """
+    for m in modules:
+        if m.get("status") != "ok":
+            continue
+        rel_path = m.get("path", "")
+        if not rel_path:
+            continue
+        module_path = root / rel_path
+        info = _match_coverage_file(module_path, coverage_data)
+        if info is None:
+            continue
+        measured_lines: frozenset[int] = info["lines"]
+        contexts: dict[int, list[str]] = info["contexts"]
+        for sym in m.get("symbols", []):
+            start = sym.get("start_line")
+            end = sym.get("end_line")
+            if not isinstance(start, int) or not isinstance(end, int):
+                continue
+            pct, covered_by = _compute_symbol_coverage(start, end, measured_lines, contexts)
+            sym["coverage_pct"] = pct
+            sym["covered_by"] = covered_by
+
+
+def _maybe_stamp_coverage_mtime(file_shas: dict[str, str], coverage_path: Path | None) -> None:
+    """Add a synthetic ``__coverage_mtime__`` entry to *file_shas* keyed by the coverage file's mtime.
+
+    Re-running tests overwrites ``.coverage`` without changing any Python source
+    file. Without this stamp, incremental scans would skip rebuilding coverage
+    annotations because ``file_shas`` would compare equal to the prior run.
+    The stamp invalidates the prior index when the coverage file changes; it is
+    cheap and easy to detect at staleness check time.
+
+    No-op when *coverage_path* is None or the file is unreadable.
+
+    Args:
+        file_shas: in-progress hash dictionary (mutated in-place).
+        coverage_path: optional ``.coverage`` file whose mtime to stamp.
+    """
+    if coverage_path is None:
+        return
+    try:
+        mtime_ns = coverage_path.stat().st_mtime_ns
+    except OSError:
+        return
+    file_shas["__coverage_mtime__"] = str(mtime_ns)
+
+
+def _build_indexed_files(modules: list[dict]) -> dict[str, str]:
+    """Build the ``rel-path -> module name`` lookup used to resolve subprocess script args.
+
+    Args:
+        modules: module entry list (only ``status == "ok"`` entries are mapped).
+    """
+    return {m["path"]: m["name"] for m in modules if m.get("status") == "ok" and m.get("path")}
+
+
+def _attach_subprocess_calls(modules: list[dict], root: Path) -> None:
+    """Walk every parseable module file and attach ``subprocess_calls`` in-place.
+
+    The full module list must already be available so that script paths can be
+    matched to dotted module names. Re-parses each source file once — the cost
+    is small relative to the initial parse pass and avoids threading the AST
+    through ``_parse_file``.
+
+    Args:
+        modules: module entry list (mutated in-place).
+        root: project root used for script-path resolution.
+    """
+    indexed_files = _build_indexed_files(modules)
+    for m in modules:
+        if m.get("status") != "ok":
+            continue
+        path = m.get("path", "")
+        if not path:
+            continue
+        filepath = root / path
+        try:
+            source = filepath.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=str(filepath))
+        except (OSError, SyntaxError):
+            m["subprocess_calls"] = []
+            continue
+        m["subprocess_calls"] = extract_subprocess_calls(tree, filepath, root, indexed_files)
+
+
+def _build_subprocess_rdep_count(modules: list[dict]) -> dict[str, int]:
+    """Build the reverse index ``target_module -> caller_count`` from subprocess_calls entries.
+
+    Args:
+        modules: module entry list with ``subprocess_calls`` already attached.
+    """
+    counts: dict[str, int] = {}
+    for m in modules:
+        for call in m.get("subprocess_calls", []) or []:
+            target = call.get("target_module")
+            if target:
+                counts[target] = counts.get(target, 0) + 1
+    return counts
+
+
+def _apply_config_refs(root: Path, modules: list[dict]) -> None:
+    """Attach config_refs from scan_config_refs to matching module entries in-place.
+
+    Args:
+        root: project root used for config file discovery.
+        modules: module entry list (mutated in-place).
+    """
+    module_names = {m["name"] for m in modules if m.get("status") == "ok"}
+    refs = scan_config_refs(root, module_names)
+    for m in modules:
+        name = m.get("name", "")
+        if name in refs:
+            m["config_refs"] = refs[name]
+
+
+def _parse_file_star(args: tuple[Path, Path, Path]) -> dict:
+    """Unpack args tuple and delegate to _parse_file (required for ProcessPoolExecutor.map)."""
+    return _parse_file(*args)
+
+
+def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
+    """Parse a single .py file and return its module entry dict (ok or degraded).
+
+    Args:
+        filepath: absolute path to the .py file to parse.
+        root: project root used to compute relative paths.
+        src_root: source root used to derive the dotted module name.
+    """
+    rel_path = filepath.relative_to(root)
+    try:
+        name = path_to_module(filepath, src_root)
+    except ValueError:
+        name = path_to_module(filepath, root)
+
+    file_size = filepath.stat().st_size
+    if file_size > _MAX_FILE_SIZE_BYTES:
+        print(
+            f"[codemap] ⚠ skipping {rel_path}: file too large ({file_size // (1024 * 1024)} MB > "
+            f"{_MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB limit)",
+            file=sys.stderr,
+        )
+        return {
+            "name": name,
+            "path": rel_path.as_posix(),
+            "status": "degraded",
+            "reason": f"file too large ({file_size} bytes) — skipped to prevent OOM",
+        }
+    try:
+        try:
+            source = filepath.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            # errors="replace" would substitute U+FFFD and index corrupted source
+            # silently; mark degraded so scan-query surfaces it in degraded_files.
+            return {"name": name, "path": rel_path.as_posix(), "status": "degraded", "reason": f"encoding: {exc}"}
+        tree = ast.parse(source, filename=str(filepath))
+        try:
+            imports, nm, mm, star_imports = _extract_imports_and_scope(tree, name)
+        except Exception as exc:
+            print(f"[codemap] ⚠ import scope build failed for {rel_path}: {exc}", file=sys.stderr)
+            imports = extract_imports(tree)
+            nm, mm, star_imports = {}, {}, []
+        symbols = extract_symbols(tree, name, nm, mm, star_imports or None)
+        dynamic_imports = extract_dynamic_imports(tree)
+        _loc, _is_entry = _count_loc_and_main_guard(source)
+        is_test = bool(_TEST_PATH_RE.search(rel_path.as_posix()))
+        entity_type, pkg = _classify_entity(rel_path, name)
+        sphinx_xrefs = extract_sphinx_xrefs(tree, filepath, root, name)
+        exports = extract_module_exports(tree)
+        entry: dict = {
+            "name": name,
+            "path": rel_path.as_posix(),
+            "loc": _loc,
+            "dep_count": len(imports),
+            "direct_imports": imports,
+            "symbols": [s.as_dict() for s in symbols],
+            "is_entry_point": _is_entry,
+            "is_test": is_test,
+            "entity_type": entity_type,
+            "package": pkg,
+            "has_star_imports": bool(star_imports),
+            "exports": exports,
+            "sphinx_xrefs": sphinx_xrefs,
+            "status": "ok",
+        }
+        if dynamic_imports:
+            entry["dynamic_imports"] = dynamic_imports
+        if is_test:
+            entry["mock_patches"] = extract_mock_patches(tree, filepath)
+        return entry
+    except SyntaxError as exc:
+        return {"name": name, "path": rel_path.as_posix(), "status": "degraded", "reason": f"SyntaxError: {exc}"}
+    except Exception as exc:
+        return {"name": name, "path": rel_path.as_posix(), "status": "degraded", "reason": str(exc)}
+
+
+def _build_internal_prefix_set(indexed_names: set[str]) -> set[str]:
+    """Return every dotted prefix of every indexed module name (plus sans-``src.`` variants).
+
+    Used by ``classify_imports`` to decide whether an import string targets an
+    internal project module. ``src``-layout packages indexed under ``src.pkg.x``
+    must also match a bare ``import pkg`` — so for any name starting with
+    ``src.``, also add the name with the ``src.`` prefix stripped.
+
+    Args:
+        indexed_names: set of dotted module names discovered during the scan.
+
+    Examples:
+        >>> sorted(_build_internal_prefix_set({"pkg.a", "src.lib.b"}))
+        ['lib', 'lib.b', 'pkg', 'pkg.a', 'src', 'src.lib', 'src.lib.b']
+    """
+    prefixes: set[str] = set()
+    for name in indexed_names:
+        if not name:
+            continue
+        parts = name.split(".")
+        for i in range(1, len(parts) + 1):
+            prefixes.add(".".join(parts[:i]))
+        if parts[0] == "src" and len(parts) > 1:
+            sans_parts = parts[1:]
+            for i in range(1, len(sans_parts) + 1):
+                prefixes.add(".".join(sans_parts[:i]))
+    return prefixes
+
+
+def classify_imports(imports: list[str], internal_prefixes: set[str]) -> dict[str, list[str]]:
+    """Classify each import string as stdlib, third-party, or internal.
+
+    Classification rules (checked in order):
+
+    1. **Relative** (starts with ``.``) → internal (same package).
+    2. **stdlib** — top-level dotted component is in :data:`sys.stdlib_module_names`.
+    3. **internal** — any dotted prefix of the import path appears in
+       *internal_prefixes* (computed via :func:`_build_internal_prefix_set`).
+    4. **third-party** — everything else.
+
+    The original import strings are preserved verbatim in each group; no
+    normalisation is applied.
+
+    Args:
+        imports: raw import strings as recorded by :func:`extract_imports`.
+        internal_prefixes: prefix set returned by :func:`_build_internal_prefix_set`.
+
+    Examples:
+        >>> classify_imports(
+        ...     ["os", "os.path", "numpy", "mypkg.core", ".local"],
+        ...     {"mypkg", "mypkg.core"},
+        ... )
+        {'stdlib': ['os', 'os.path'], 'third_party': ['numpy'], 'internal': ['mypkg.core', '.local']}
+        >>> classify_imports(["__future__"], set())
+        {'stdlib': ['__future__'], 'third_party': [], 'internal': []}
+    """
+    stdlib: list[str] = []
+    third_party: list[str] = []
+    internal: list[str] = []
+    for imp in imports:
+        if imp.startswith("."):
+            internal.append(imp)
+            continue
+        top = imp.split(".", 1)[0]
+        if top in _STDLIB_MODULES:
+            stdlib.append(imp)
+            continue
+        parts = imp.split(".")
+        matched_internal = False
+        for i in range(1, len(parts) + 1):
+            if ".".join(parts[:i]) in internal_prefixes:
+                matched_internal = True
+                break
+        if matched_internal:
+            internal.append(imp)
+        else:
+            third_party.append(imp)
+    return {"stdlib": stdlib, "third_party": third_party, "internal": internal}
+
+
+def _recompute_metrics(modules: list[dict], module_aliases: dict[str, str] | None = None) -> None:
+    """Recompute rdep_count and rcall_count in-place from the current module list.
+
+    Also computes the v4.1 reverse indexes (``mock_rdep_count`` per module and
+    per symbol, plus per-symbol ``fn_rdep_test_count``). When *module_aliases*
+    is provided (v5.1+), bare import names that match an alias key are
+    attributed to the full dotted target during rdep counting and import
+    classification.
+
+    Args:
+        modules: list of module entry dicts (mutated in-place).
+        module_aliases: optional ``bare_name -> full_dotted_name`` map from
+            ``_collect_module_aliases`` (conftest.py ``sys.path`` shims).
+    """
+    aliases = module_aliases or {}
+    rdep_counts: dict[str, int] = {}
+    rcall_counts: dict[str, int] = {}
+    # fn_rdep_test_count: per fully-qualified target ("module::symbol") -> count of test callers.
+    fn_test_caller_counts: dict[str, int] = {}
+    # mock_rdep_count: per fully-qualified target -> count of distinct test files mocking it.
+    mock_per_symbol: dict[str, set[str]] = {}
+    for m in modules:
+        for imp in m.get("direct_imports", []):
+            resolved = aliases.get(imp, imp)
+            rdep_counts[resolved] = rdep_counts.get(resolved, 0) + 1
+        caller_is_test = bool(m.get("is_test"))
+        for sym in m.get("symbols", []):
+            for edge in sym.get("calls", []):
+                if edge["resolution"] != "import":
+                    continue
+                target_module = edge["target"].split("::")[0]
+                rcall_counts[target_module] = rcall_counts.get(target_module, 0) + 1
+                if caller_is_test:
+                    fn_test_caller_counts[edge["target"]] = fn_test_caller_counts.get(edge["target"], 0) + 1
+        # mock_patches: only present on test modules; map each unique (target, file) once.
+        for entry in m.get("mock_patches", []) or []:
+            target = entry.get("target")
+            file_ = entry.get("file")
+            if not target or not file_:
+                continue
+            mock_per_symbol.setdefault(target, set()).add(file_)
+    for m in modules:
+        if m.get("status") == "ok":
+            m["rdep_count"] = rdep_counts.get(m["name"], 0)
+            m["rcall_count"] = rcall_counts.get(m["name"], 0)
+            m["dep_count"] = len(m.get("direct_imports", []))
+            # Per-module mock_rdep_count: total distinct test files mocking any symbol in this module.
+            mod_files: set[str] = set()
+            mod_prefix = f"{m['name']}::"
+            for target, files in mock_per_symbol.items():
+                if target.startswith(mod_prefix):
+                    mod_files.update(files)
+            m["mock_rdep_count"] = len(mod_files)
+            # Per-symbol: stamp fn_rdep_test_count and mock_rdep_count on each symbol dict.
+            for sym in m.get("symbols", []):
+                full_qname = f"{m['name']}::{sym['qualified_name']}"
+                sym["fn_rdep_test_count"] = fn_test_caller_counts.get(full_qname, 0)
+                sym["mock_rdep_count"] = len(mock_per_symbol.get(full_qname, set()))
+    # Phase 1.5: classify each module's direct imports into stdlib/third_party/internal (v4.3).
+    # v5.1: bare aliases from conftest.py sys.path shims also count as internal prefixes.
+    indexed_names = {m["name"] for m in modules if m.get("status") == "ok"}
+    internal_prefixes = _build_internal_prefix_set(indexed_names) | set(aliases.keys())
+    for m in modules:
+        if m.get("status") != "ok":
+            continue
+        m["import_groups"] = classify_imports(m.get("direct_imports", []), internal_prefixes)
+
+    # Phase 2: dynamic_imported_by — cross-reference dynamic_imports literals against known modules.
+    all_module_names = {m["name"] for m in modules if m.get("status") == "ok"}
+    dynamic_rdeps: dict[str, list[dict]] = {}
+    for m in modules:
+        caller_name = m.get("name", "")
+        caller_path = m.get("path", "")
+        for entry in m.get("dynamic_imports", []):
+            literal: str = entry["literal"]
+            # Match exact module name; avoid matching sub-paths of a shorter module name twice.
+            if literal in all_module_names:
+                dynamic_rdeps.setdefault(literal, []).append(
+                    {"importer": caller_name, "path": caller_path, "line": entry["line"], "literal": literal}
+                )
+            else:
+                # literal may be a sub-path like "pkg.sub.mod" — attribute to the longest prefix match.
+                matched = next(
+                    (n for n in sorted(all_module_names, key=len, reverse=True) if literal.startswith(n + ".")), None
+                )
+                if matched:
+                    dynamic_rdeps.setdefault(matched, []).append(
+                        {"importer": caller_name, "path": caller_path, "line": entry["line"], "literal": literal}
+                    )
+    for m in modules:
+        name = m.get("name", "")
+        if name in dynamic_rdeps:
+            m["dynamic_imported_by"] = dynamic_rdeps[name]
+
+
+def _collect_doc_xrefs(root: Path) -> list[dict]:
+    """Scan ``.rst`` and ``docs/**/*.md`` files for cross-references.
+
+    Wraps :func:`scan_rst_xrefs` and :func:`scan_mkdocs_xrefs` over every doc
+    file found by :func:`_iter_doc_files`. Used as a top-level pool of refs that
+    have no owning Python module entry.
+
+    Args:
+        root: project root used to discover doc files and compute relative paths.
+
+    Returns:
+        Flat list of xref dicts from all ``.rst`` and ``.md`` files.
+    """
+    rst_files, md_files = _iter_doc_files(root)
+    refs: list[dict] = []
+    for rst in rst_files:
+        refs.extend(scan_rst_xrefs(rst, root))
+    for md in md_files:
+        refs.extend(scan_mkdocs_xrefs(md, root))
+    return refs
+
+
+def _build_sphinx_xref_count(modules: list[dict], doc_xrefs: list[dict]) -> dict[str, int]:
+    """Compute the reverse-index ``target -> total reference count`` for v4.5.
+
+    Aggregates every xref across module docstrings and external doc files into
+    a single counter. Stored as a top-level key on the index so :func:`cmd_xrefs`
+    can answer "is this symbol referenced anywhere in the docs?" in O(1).
+
+    Args:
+        modules: module entry list (each may carry ``sphinx_xrefs``).
+        doc_xrefs: top-level xref list from ``.rst`` / ``.md`` files.
+
+    Returns:
+        Mapping of canonical symbol key → total reference count.
+    """
+    counts: dict[str, int] = {}
+    for m in modules:
+        for entry in m.get("sphinx_xrefs", []) or []:
+            target = entry.get("target")
+            if not target:
+                continue
+            counts[target] = counts.get(target, 0) + 1
+    for entry in doc_xrefs:
+        target = entry.get("target")
+        if not target:
+            continue
+        counts[target] = counts.get(target, 0) + 1
+    return counts
+
+
+def _src_root_rels(src_root_rel: str | tuple[str, ...]) -> tuple[str, ...]:
+    """Normalise a single source-root rel or a priority tuple into a non-empty tuple.
+
+    Accepts the legacy single-string form (``""`` when src root == project root) or a
+    tuple of source-root rels in priority order (monorepo ``src_roots``). Empty strings
+    are dropped — they denote "src root is the project root", which every path is
+    trivially under, so they carry no ranking signal.
+
+    Args:
+        src_root_rel: source root rel string, or tuple of rels in priority order.
+
+    Returns:
+        Tuple of non-empty source-root rels in priority order (possibly empty).
+
+    Examples:
+        >>> _src_root_rels("src")
+        ('src',)
+        >>> _src_root_rels("")
+        ()
+        >>> _src_root_rels(("libs/core/src", "services/api/src", ""))
+        ('libs/core/src', 'services/api/src')
+    """
+    rels = (src_root_rel,) if isinstance(src_root_rel, str) else tuple(src_root_rel)
+    return tuple(r for r in rels if r)
+
+
+def _under_root_rank(path: str, root_rels: tuple[str, ...]) -> int:
+    """Return the priority rank of the first source root *path* lies under.
+
+    Rank ``0`` is the highest-priority (first-listed) root; a path under no configured
+    root gets ``len(root_rels)`` so it always sorts after any in-root path. With a single
+    root this reproduces the original ``0 (under) vs 1 (outside)`` ranking exactly.
+
+    Args:
+        path: module path relative to project root, posix separators.
+        root_rels: source-root rels in priority order (from :func:`_src_root_rels`).
+
+    Returns:
+        Index of the matching root (0-based priority), or ``len(root_rels)`` if none.
+
+    Examples:
+        >>> _under_root_rank("src/pkg/mod.py", ("src",))
+        0
+        >>> _under_root_rank("copy/pkg/mod.py", ("src",))
+        1
+        >>> _under_root_rank("services/api/src/pkg/m.py", ("libs/core/src", "services/api/src"))
+        1
+    """
+    for rank, rel in enumerate(root_rels):
+        if path == rel or path.startswith(rel + "/"):
+            return rank
+    return len(root_rels)
+
+
+def _dedup_key(path: str, src_root_rel: str | tuple[str, ...]) -> tuple[int, int, str]:
+    """Sort key selecting the canonical winner among modules sharing a dotted name.
+
+    Prefers, in order: a path under a configured source root (earlier-listed roots win
+    over later ones), then the shortest path (by component count), then lexicographic
+    order. Fully deterministic regardless of filesystem walk order.
+
+    Args:
+        path: module path relative to project root, posix separators.
+        src_root_rel: source root rel (``""`` when src root == root) or, for monorepos
+            with multiple ``src_roots``, a tuple of rels in priority order.
+
+    Returns:
+        Tuple ranking this path — lower sorts first (= preferred winner).
+
+    Examples:
+        >>> _dedup_key("src/pkg/mod.py", "src")
+        (0, 3, 'src/pkg/mod.py')
+        >>> _dedup_key("copy/pkg/mod.py", "src")
+        (1, 3, 'copy/pkg/mod.py')
+        >>> _dedup_key("services/api/src/pkg/m.py", ("libs/core/src", "services/api/src"))
+        (1, 5, 'services/api/src/pkg/m.py')
+    """
+    root_rels = _src_root_rels(src_root_rel)
+    return (_under_root_rank(path, root_rels), len(path.split("/")), path)
+
+
+def _dedup_modules(modules: list[dict], src_root_rel: str | tuple[str, ...]) -> tuple[list[dict], list[dict]]:
+    """Drop duplicate dotted names deterministically, keeping the canonical path.
+
+    Args:
+        modules: parsed module entries (each with ``name`` and ``path``).
+        src_root_rel: source root rel used by :func:`_dedup_key` — a single rel string,
+            or a priority-ordered tuple of rels for monorepos with multiple ``src_roots``.
+
+    Returns:
+        Tuple ``(kept_modules, collisions)`` where ``collisions`` is a list of
+        ``{"name", "kept", "dropped"}`` records (empty when no name repeated).
+    """
+    by_name: dict[str, list[dict]] = {}
+    for m in modules:
+        by_name.setdefault(m.get("name", ""), []).append(m)
+
+    kept: list[dict] = []
+    collisions: list[dict] = []
+    for name in sorted(by_name):
+        entries = by_name[name]
+        if len(entries) == 1:
+            kept.append(entries[0])
+            continue
+        entries.sort(key=lambda m: _dedup_key(m.get("path", ""), src_root_rel))
+        winner, *losers = entries
+        kept.append(winner)
+        dropped = [m.get("path", "") for m in losers]
+        collisions.append({"name": name, "kept": winner.get("path", ""), "dropped": dropped})
+        print(
+            f"[codemap] ⚠ name collision: '{name}' at {[winner.get('path', '')] + dropped} "
+            f"— kept '{winner.get('path', '')}'",
+            file=sys.stderr,
+        )
+    return kept, collisions
+
+
+def _build_excluded_roots(exclusions: Exclusions, counts: dict[str, int]) -> list[dict]:
+    """Assemble the ``excluded_roots`` meta list from loaded exclusions and hit counts.
+
+    Every user-configured entry appears (even at ``count == 0``) so consumers can see
+    what was requested; built-in ``SKIP_DIRS`` are omitted — they are implicit and
+    constant. Entries are sorted by descending count then name for stable output.
+
+    Args:
+        exclusions: loaded user exclusions (carries source provenance).
+        counts: per-entry ``.py`` files removed, keyed by the raw pattern/dir-name.
+
+    Returns:
+        List of ``{"pattern", "kind", "source", "count"}`` records.
+    """
+    roots = []
+    for entry, source in exclusions.sources.items():
+        kind = "glob" if _GLOB_META_RE.search(entry) else "dir"
+        roots.append({"pattern": entry, "kind": kind, "source": source, "count": counts.get(entry, 0)})
+    roots.sort(key=lambda r: (-r["count"], r["pattern"]))
+    return roots
+
+
+@dataclass(frozen=True)
+class _SrcRootContext:
+    """Resolved source-root context shared by full and incremental scans.
+
+    Bundles the effective source root(s) so both :func:`scan` and
+    :func:`incremental_scan` derive module names and rank collisions identically.
+    ``configured`` is the explicit monorepo ``[tool.codemap] src_roots`` list (empty
+    when unconfigured); ``default`` is the single-root ``detect_src_root`` fallback used
+    for any file not under a configured root — and the only root when none are configured.
+    """
+
+    configured: tuple[Path, ...]
+    default: Path
+
+    def name_root_for(self, filepath: Path) -> Path:
+        """Return the source root *filepath*'s dotted name is computed relative to."""
+        return _effective_src_root(filepath, self.configured, self.default)
+
+    def dedup_rels(self, root: Path) -> tuple[str, ...]:
+        """Return source-root rels (posix, relative to *root*) in dedup-priority order.
+
+        Configured roots come first, in declaration order; the default root is appended
+        last so an in-``src`` path still beats a stray copy when no explicit roots match.
+        The project-root sentinel (``""``) is dropped by :func:`_src_root_rels`.
+        """
+        ordered = [*self.configured, self.default]
+        rels: list[str] = []
+        seen: set[str] = set()
+        for candidate in ordered:
+            rel = "" if candidate == root else candidate.relative_to(root).as_posix()
+            if rel and rel not in seen:
+                seen.add(rel)
+                rels.append(rel)
+        return tuple(rels)
+
+    def meta(self, root: Path) -> list[str]:
+        """Return the effective source roots as posix rels for the index meta.
+
+        Configured roots first (declaration order), then the default root when it is a
+        proper subdirectory of *root* — so single-``src`` layouts still record ``["src"]``.
+        The project root itself is omitted (represented by an empty list).
+        """
+        return list(self.dedup_rels(root))
+
+
+def _resolve_src_roots(root: Path) -> _SrcRootContext:
+    """Build the :class:`_SrcRootContext` for *root* from config and heuristics.
+
+    Reads explicit ``[tool.codemap] src_roots`` (monorepo multi-root layout) and always
+    computes the single-root ``detect_src_root`` fallback. When no roots are configured
+    the context collapses to that single root, so behaviour is byte-identical to the
+    prior single-root path.
+
+    Args:
+        root: project root to resolve source roots for.
+    """
+    return _SrcRootContext(configured=tuple(load_src_roots(root)), default=detect_src_root(root))
+
+
+def scan(root: Path, coverage_path: Path | None = None) -> dict:
+    """Run a full scan of all .py files under root and return the index dict.
+
+    Args:
+        root: project root to scan.
+        coverage_path: optional path to a ``.coverage`` SQLite file. When
+            provided and loadable, per-symbol ``coverage_pct`` / ``covered_by``
+            fields are attached (v5.4).
+    """
+    src_ctx = _resolve_src_roots(root)
+    exclusions = _load_exclusions(root)
+
+    filepaths, excluded_counts = _iter_python_files(root, exclusions)
+    filepaths = sorted(filepaths, key=lambda p: p.relative_to(root).as_posix())
+    if excluded_counts:
+        total = sum(excluded_counts.values())
+        print(
+            f"[codemap] excluded {total} .py file(s) via {len(excluded_counts)} pattern(s): "
+            f"{', '.join(sorted(excluded_counts))}",
+            file=sys.stderr,
+        )
+    parse_args = [(fp, root, src_ctx.name_root_for(fp)) for fp in filepaths]
+    if sys.platform == "win32":
+        # spawn (Windows' only start method) would re-import this extension-less __main__
+        # script to unpickle the worker, with no freeze_support guard. Parse serially —
+        # functional parity with the Unix fork path, only slower.
+        modules = [_parse_file_star(a) for a in parse_args]
+    else:
+        # fork keeps parallelism and avoids the __main__ re-import entirely.
+        _mp_ctx = multiprocessing.get_context("fork")
+        with ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=_mp_ctx) as pool:
+            modules = list(pool.map(_parse_file_star, parse_args))
+
+    src_root_rels = src_ctx.dedup_rels(root)
+    modules, collisions = _dedup_modules(modules, src_root_rels)
+    excluded_roots = _build_excluded_roots(exclusions, excluded_counts)
+
+    # v5.1: collect conftest.py sys.path aliases before metric recompute so
+    # rdep_count and import_groups attribute bare imports to their full names.
+    conftest_paths = [fp for fp in filepaths if fp.name == "conftest.py"]
+    indexed_names = {m["name"] for m in modules if m.get("status") == "ok"}
+    module_aliases = _collect_module_aliases(conftest_paths, indexed_names, root)
+
+    _recompute_metrics(modules, module_aliases)
+    # Phase 3: config-file refs — scan pyproject.toml, setup.cfg, *.yml, *.yaml.
+    _apply_config_refs(root, modules)
+    # Phase 4 (v4.5): collect xrefs from .rst and docs/**/*.md and build reverse index.
+    doc_xrefs = _collect_doc_xrefs(root)
+    sphinx_xref_count = _build_sphinx_xref_count(modules, doc_xrefs)
+    # Phase 5 (v5.2): subprocess call edges — needs complete module list to resolve script paths.
+    _attach_subprocess_calls(modules, root)
+    subprocess_rdep_count = _build_subprocess_rdep_count(modules)
+    # Phase 6 (v5.3): pytest fixture dependency graph — needs complete module list for
+    # conftest aggregation; runs after metrics so is_test stays consistent.
+    _attach_fixture_graph(modules, root)
+    fixture_rdep_count = _build_fixture_rdep_count(modules)
+    # Phase 7 (v5.4): optional coverage integration. Failures inside _read_coverage_data
+    # produce a stderr warning and a None return — the rest of the index still builds.
+    if coverage_path is not None:
+        coverage_data = _read_coverage_data(coverage_path)
+        if coverage_data is not None:
+            _attach_coverage(modules, root, coverage_data)
+
+    file_shas = get_file_hashes(root, exclusions)
+    _maybe_stamp_coverage_mtime(file_shas, coverage_path)
+
+    return {
+        "scan_version": SCAN_VERSION,
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "git_sha": get_git_sha(root),
+        "project": root.name,
+        "scan_root": str(root.resolve()),
+        "src_layout": bool(src_root_rels),
+        "src_roots": src_ctx.meta(root),
+        "file_shas": file_shas,
+        "modules": modules,
+        "doc_xrefs": doc_xrefs,
+        "sphinx_xref_count": sphinx_xref_count,
+        "module_aliases": module_aliases,
+        "subprocess_rdep_count": subprocess_rdep_count,
+        "fixture_rdep_count": fixture_rdep_count,
+        "excluded_roots": excluded_roots,
+        "collisions": collisions,
+    }
+
+
+def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = None) -> dict:
+    """Re-parse only files whose hash changed since the last scan.
+
+    Args:
+        root: project root path.
+        old_index: previously written index dict loaded from disk.
+        coverage_path: optional path to a ``.coverage`` SQLite file. When
+            provided, the coverage stamp is compared so re-running tests alone
+            forces re-annotation even when no source file changed (v5.4).
+    """
+    src_ctx = _resolve_src_roots(root)
+    exclusions = _load_exclusions(root)
+    current_shas = get_file_hashes(root, exclusions)
+    _maybe_stamp_coverage_mtime(current_shas, coverage_path)
+    stored_shas: dict[str, str] = old_index.get("file_shas", {})
+
+    # Coverage stamp differences live alongside file hashes; treat them like any other key for invalidation.
+    changed = {p for p in current_shas if stored_shas.get(p) != current_shas[p]}
+    deleted = {p for p in stored_shas if p not in current_shas}
+    # The synthetic coverage stamp is not a source file; do not feed it into the parse loop below.
+    changed.discard("__coverage_mtime__")
+    deleted.discard("__coverage_mtime__")
+
+    if not changed and not deleted:
+        print("[codemap] Index already up to date.", file=sys.stderr)
+        return old_index
+
+    modules_by_path: dict[str, dict] = {m["path"]: m for m in old_index.get("modules", [])}
+
+    for path in sorted(deleted):
+        modules_by_path.pop(path, None)
+        print(f"[codemap]   - removed {path}", file=sys.stderr)
+
+    for rel_path_str in sorted(changed):
+        filepath = root / rel_path_str
+        if not filepath.exists():
+            modules_by_path.pop(rel_path_str, None)
+            continue
+        entry = _parse_file(filepath, root, src_ctx.name_root_for(filepath))
+        action = "updated" if rel_path_str in stored_shas else "added"
+        modules_by_path[entry["path"]] = entry
+        print(f"[codemap]   {action} {rel_path_str}", file=sys.stderr)
+
+    src_root_rels = src_ctx.dedup_rels(root)
+    modules, collisions = _dedup_modules(list(modules_by_path.values()), src_root_rels)
+    excluded_roots = _build_excluded_roots(exclusions, {})
+    # v5.1: re-collect conftest.py aliases from disk (cheap full sweep — every
+    # conftest can affect rdep_count, so per-file invalidation is unsafe).
+    conftest_paths = [root / m["path"] for m in modules if m.get("path", "").endswith("conftest.py")]
+    indexed_names = {m["name"] for m in modules if m.get("status") == "ok"}
+    module_aliases = _collect_module_aliases(conftest_paths, indexed_names, root)
+
+    _recompute_metrics(modules, module_aliases)
+    _apply_config_refs(root, modules)
+    # v4.5: rebuild doc_xrefs / sphinx_xref_count — cheap full re-scan beats trying
+    # to invalidate per-file (RST/MD files have no module entry to update).
+    doc_xrefs = _collect_doc_xrefs(root)
+    sphinx_xref_count = _build_sphinx_xref_count(modules, doc_xrefs)
+    # v5.2: rebuild subprocess edges over the merged module set — caller resolution
+    # depends on the complete module list, so per-file invalidation is unsafe.
+    _attach_subprocess_calls(modules, root)
+    subprocess_rdep_count = _build_subprocess_rdep_count(modules)
+    # v5.3: rebuild fixture graph over the merged module set — conftest visibility
+    # is project-wide so per-file invalidation cannot preserve the override hierarchy.
+    _attach_fixture_graph(modules, root)
+    fixture_rdep_count = _build_fixture_rdep_count(modules)
+    # v5.4: re-annotate coverage if a coverage file is still in scope. Skip silently
+    # otherwise so prior coverage annotations carried over via {**old_index, ...} survive.
+    if coverage_path is not None:
+        coverage_data = _read_coverage_data(coverage_path)
+        if coverage_data is not None:
+            _attach_coverage(modules, root, coverage_data)
+
+    return {
+        **old_index,
+        "scan_version": SCAN_VERSION,
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "git_sha": get_git_sha(root),
+        "project": root.name,
+        "scan_root": str(root.resolve()),
+        "src_layout": bool(src_root_rels),
+        "src_roots": src_ctx.meta(root),
+        "file_shas": current_shas,
+        "modules": modules,
+        "doc_xrefs": doc_xrefs,
+        "sphinx_xref_count": sphinx_xref_count,
+        "module_aliases": module_aliases,
+        "subprocess_rdep_count": subprocess_rdep_count,
+        "fixture_rdep_count": fixture_rdep_count,
+        "excluded_roots": excluded_roots,
+        "collisions": collisions,
+    }
+
+
+def _build_index(args: argparse.Namespace, root: Path, out_path: Path) -> dict:
+    """Dispatch to incremental or full scan based on args and existing index state.
+
+    Args:
+        args: parsed CLI arguments (uses ``args.incremental`` and
+            ``args.with_coverage``).
+        root: project root path.
+        out_path: path to the existing index file (may not exist yet).
+    """
+    coverage_path = Path(args.with_coverage) if args.with_coverage else None
+    if args.incremental and out_path.exists():
+        with out_path.open() as f:
+            old_index = json.load(f)
+        if int(old_index.get("scan_version", 0)) >= SCAN_VERSION and old_index.get("file_shas"):
+            print(f"[codemap] Incremental scan {root} ...", file=sys.stderr)
+            return incremental_scan(root, old_index, coverage_path=coverage_path)
+        print("[codemap] v2 index found — falling back to full scan ...", file=sys.stderr)
+        return scan(root, coverage_path=coverage_path)
+    if args.incremental:
+        print("[codemap] No existing index found — running full scan ...", file=sys.stderr)
+    print(f"[codemap] Scanning {root} ...", file=sys.stderr)
+    return scan(root, coverage_path=coverage_path)
+
+
+def _replace_index(tmp_path: Path, out_path: Path) -> None:
+    """Atomically promote a complete temporary index, retrying transient NTFS sharing failures."""
+    for attempt in range(_WINDOWS_REPLACE_RETRIES):
+        try:
+            tmp_path.replace(out_path)
+            return
+        except PermissionError as exc:
+            transient = sys.platform == "win32" and getattr(exc, "winerror", None) in {5, 32}
+            if not transient or attempt == _WINDOWS_REPLACE_RETRIES - 1:
+                raise
+            # Keep both complete files intact while a concurrent reader releases the destination.
+            time.sleep(_WINDOWS_REPLACE_DELAY_SECONDS * 2**attempt)
+
+
+def main() -> None:
+    """Parse CLI arguments and run the scan."""
+    parser = argparse.ArgumentParser(description="Build the codemap structural index.")
+    parser.add_argument("--root", type=Path, default=None, help="Project root (default: git root or cwd)")
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Re-parse only files changed since last scan (requires an existing v3 index).",
+    )
+    parser.add_argument(
+        "--with-coverage",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to a .coverage SQLite file (v5.4). When provided, per-symbol "
+            "coverage_pct and covered_by fields are attached. Requires coverage>=7.4."
+        ),
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Hard timeout in seconds; 0 = no limit (default). Uses SIGALRM — Unix only.",
+    )
+    args = parser.parse_args()
+
+    if args.timeout > 0 and hasattr(signal, "SIGALRM"):
+
+        def _timeout_handler(signum: int, frame: object) -> None:  # noqa: ARG001
+            print(f"scan-index: timed out after {args.timeout}s", file=sys.stderr)
+            sys.exit(2)
+
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(args.timeout)
+
+    t0 = time.time()
+    try:
+        root = args.root or find_root()
+        _custom = os.environ.get("CODEMAP_INDEX_DIR")
+        out_dir = Path(_custom) if _custom else root / ".cache" / "codemap"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{root.name}.json"
+
+        index = _build_index(args, root, out_path)
+
+        ok = sum(1 for m in index["modules"] if m.get("status") == "ok")
+        degraded = sum(1 for m in index["modules"] if m.get("status") == "degraded")
+
+        # PID-qualify the temp name so concurrent writers (inject-preamble bg refresh,
+        # post-commit hook, scan-query self-heal) never share one ".json.tmp" and
+        # clobber each other's write phase — os.replace is atomic on rename but NOT on
+        # the write, so two writers on a shared temp name interleave into corrupt bytes.
+        # A live PID is unique among running processes, so each writer owns its own temp.
+        tmp_path = out_path.with_suffix(f".json.{os.getpid()}.tmp")
+        try:
+            with tmp_path.open("w") as f:
+                json.dump(index, f, separators=(",", ":"))
+            _replace_index(tmp_path, out_path)
+        except BaseException:
+            # Never leak a PID-suffixed temp if the write/replace fails or is interrupted.
+            tmp_path.unlink(missing_ok=True)
+            raise
+
+        print(f"[codemap] \u2713 {out_path}", file=sys.stderr)
+        print(f"[codemap]   {ok} modules indexed, {degraded} degraded", file=sys.stderr)
+        if degraded:
+            for m in index["modules"]:
+                if m.get("status") == "degraded":
+                    print(f"[codemap]   \u26a0 {m['path']}: {m['reason']}", file=sys.stderr)
+        log_cli(
+            "index",
+            sys.argv[1:],
+            {"modules_indexed": ok, "degraded": degraded, "incremental": bool(args.incremental)},
+            t0,
+        )
+    except PermissionError as exc:
+        print(f"[codemap] ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -15,6 +15,20 @@ _BIN_DIR = Path(__file__).parent.parent / "bin"
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+_DATA_DIR = Path(__file__).parent / "data"
+
+
+@pytest.fixture(scope="session")
+def corpus_dir() -> Path:
+    """Path to the frozen-grammar corpus fixture (``tests/data/corpus``)."""
+    return _DATA_DIR / "corpus"
+
+
+@pytest.fixture(scope="session")
+def corpus_pyi_dir() -> Path:
+    """Path to the ``.pyi`` scope-extension fixture project root (``tests/data/corpus_pyi/proj``)."""
+    return _DATA_DIR / "corpus_pyi" / "proj"
+
 
 @pytest.fixture(autouse=True)
 def _telemetry_off(monkeypatch):

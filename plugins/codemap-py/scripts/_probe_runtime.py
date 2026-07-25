@@ -6,11 +6,15 @@ it, so the probes instead build from a DISPOSABLE COPY of the tracked plugin
 source that is then deleted — satisfying §9.4 step 03 ("make the source checkout
 unavailable") literally, without touching the developer checkout:
 
-1. copy the plugin working tree (minus caches/tests/junk) into a temp checkout
-   OUTSIDE the repo, ``git init`` + ``git add`` it so the copy carries tracked-mode
-   metadata (``copy2`` preserves the executable bits), and build the candidate by
-   running THAT COPY's ``build_package.py`` (so the copy is ``SOURCE_ROOT``) — the
-   launcher therefore keeps its executable bit in the candidate;
+1. capture the authoritative exec-mode map from the REAL repo's git index
+   (``real_source_mode_map``) BEFORE any copy exists; copy the plugin working
+   tree (minus caches/tests/junk) into a temp checkout OUTSIDE the repo and
+   build the candidate by running THAT COPY's ``build_package.py --mode-map``
+   pointed at the captured map (so the copy is ``SOURCE_ROOT`` but the copy's
+   OWN synthesized git index is never consulted for modes) — the launcher
+   therefore keeps its executable bit in the candidate even on a
+   ``core.filemode=false`` host, where a fresh ``git add -A`` in the copy would
+   otherwise record every file as ``100644`` regardless of its real bit;
 2. install from the temp marketplace via the runtime CLI;
 3. DELETE the whole temp source tree (copy + candidate + marketplace) — the source
    the installed bytes came from is now literally unavailable
@@ -35,6 +39,12 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+import build_package  # noqa: E402  (needs the scripts path insert above)
 
 _MIN_MINOR, _MAX_MINOR_EXCLUSIVE = 11, 15
 _MAJOR, _PROBE_FIELDS = "3", 3
@@ -61,11 +71,18 @@ _STAGE_IGNORE = shutil.ignore_patterns(
 def stage_disposable_source(repo_root: Path, checkout_parent: Path) -> Path:
     """Copy the plugin working tree into a disposable checkout OUTSIDE the repo; return its root.
 
-    ``copytree`` alone drops ``.git``, so the copy's ``build_package.py`` would have no
-    tracked modes to read. We therefore ``git init`` + ``git add`` the copy: ``copy2``
-    preserves the working-tree executable bits, and ``git add`` records them as 100755/
-    100644 in a fresh throwaway index — giving the copy the SAME tracked-mode metadata the
-    real build derives (so the launcher keeps its executable bit). No commit/config needed.
+    ``git init`` + ``git add`` gives the copy a working index for reasons unrelated to exec
+    modes or payload membership (e.g. other tools that expect a git root). The copy's own
+    index is authority for NEITHER: a fresh ``git add -A`` on a ``core.filemode=false`` host
+    records ``100644`` for every file regardless of its real on-disk bit, AND ``copytree``
+    (filtered only by ``_STAGE_IGNORE`` junk patterns, not by tracked status) copies any
+    untracked working-tree file straight into the copy — so the copy's own re-synthesized
+    index would treat it as "tracked" there too. ``build_from_checkout`` always overrides the
+    copy's index with the REAL repo's map (``real_source_mode_map``, captured before this copy
+    is made) for BOTH modes and membership (``build_package._iter_source_payload`` draws
+    ``_INCLUDE_DIRS`` membership from that same map's keys) — so an untracked file physically
+    present in the copy (e.g. a concurrent wave's WIP) is still excluded from the shipped
+    payload, never a build failure or a leaked file.
     """
     checkout = checkout_parent / "codemap-py"
     shutil.copytree(repo_root / "plugins" / "codemap-py", checkout, ignore=_STAGE_IGNORE)
@@ -74,10 +91,40 @@ def stage_disposable_source(repo_root: Path, checkout_parent: Path) -> Path:
     return checkout
 
 
-def build_from_checkout(checkout: Path, candidate: Path) -> tuple[bool, str]:
-    """Build the candidate by running the disposable COPY's builder (copy is SOURCE_ROOT)."""
+def real_source_mode_map(repo_root: Path) -> dict[str, bool]:
+    """Return the authoritative exec-mode map from the REAL repo's git index.
+
+    Must be called BEFORE ``stage_disposable_source`` makes any copy: the copy's own
+    freshly synthesized index is not authoritative (see ``stage_disposable_source``).
+    The real repo's tracked history IS authoritative regardless of the build host's
+    ``core.filemode`` setting, since ``git ls-files --stage`` reports the mode recorded
+    at commit time, not a live re-check of the working-tree bit.
+    """
+    return build_package._git_exec_modes(repo_root / "plugins" / "codemap-py")
+
+
+def write_real_mode_map(repo_root: Path, dest: Path) -> Path:
+    """Write the REAL repo's authoritative exec-mode map to ``dest`` as JSON; return ``dest``."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(real_source_mode_map(repo_root)), encoding="utf-8")
+    return dest
+
+
+def build_from_checkout(checkout: Path, candidate: Path, mode_map_path: Path) -> tuple[bool, str]:
+    """Build the candidate by running the disposable COPY's builder (copy is SOURCE_ROOT).
+
+    ``mode_map_path`` (``write_real_mode_map``'s output) overrides the copy's own
+    synthesized git index — the copy is never the mode authority.
+    """
     proc = subprocess.run(
-        [sys.executable, str(checkout / "scripts" / "build_package.py"), "--out", str(candidate)],
+        [
+            sys.executable,
+            str(checkout / "scripts" / "build_package.py"),
+            "--out",
+            str(candidate),
+            "--mode-map",
+            str(mode_map_path),
+        ],
         capture_output=True,
         text=True,
         timeout=120,

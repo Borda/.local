@@ -55,6 +55,7 @@ from _probe_runtime import (  # noqa: E402  (needs the scripts path insert above
     build_from_checkout,
     runtime_proof,
     stage_disposable_source,
+    write_real_mode_map,
 )
 
 MKT_NAME = "codemap-py-probe-mkt"
@@ -218,8 +219,11 @@ def run_probe() -> dict:
 
     result: dict = {"probe": "codex", "codex_version": codex_version}
     try:
+        # Capture the REAL repo's mode map BEFORE the disposable copy exists — the copy's
+        # own synthesized index is not authoritative (see _probe_runtime.stage_disposable_source).
+        mode_map_path = write_real_mode_map(_REPO_ROOT, src_root / "mode-map.json")
         checkout = stage_disposable_source(_REPO_ROOT, src_root / "checkout")
-        built_ok, detail = build_from_checkout(checkout, candidate)
+        built_ok, detail = build_from_checkout(checkout, candidate, mode_map_path)
         if not built_ok:
             return {**result, "status": "builder-failed", "detail": detail}
 

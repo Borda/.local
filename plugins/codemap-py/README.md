@@ -6,7 +6,7 @@ codemap-py builds structural index of Python project — import graph, blast-rad
 
 No direct querying. Wire in once, let other skills pick it up.
 
-**Python first.** Scanner uses `ast.parse` to index `.py` files. `.rst` and `docs/**/*.md` also scanned for Sphinx/MkDocs cross-refs, included in cache-invalidation hashing — doc-only edits trigger incremental re-scans. Non-Python symbol indexing (TypeScript, Go, Rust) planned.
+**Python first.** Scanner uses `ast.parse` to index `.py` files and `.pyi` type stubs (a sibling `.py` stays authoritative and its `.pyi` is recorded as a shadowed stub; a stub with no implementation is indexed once as stub-only, contributing declarations and imports but no call edges). `.rst` and `docs/**/*.md` also scanned for Sphinx/MkDocs cross-refs, included in cache-invalidation hashing — doc-only edits trigger incremental re-scans. Non-Python symbol indexing (TypeScript, Go, Rust) planned.
 
 ______________________________________________________________________
 

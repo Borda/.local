@@ -1,0 +1,3 @@
+# Scenario: nested module shadowed by an authoritative nested/core.py.
+# Expected: shadowed_stub; the run() call edge from core.py survives unchanged.
+def run(value: int) -> int: ...

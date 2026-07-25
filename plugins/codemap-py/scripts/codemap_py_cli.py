@@ -1,254 +1,27 @@
 #!/usr/bin/env python3
-"""codemap-py minimal CLI dispatcher (plan §7.2, §7.3, §7.5).
+"""scripts/codemap_py_cli.py — compatibility shim for :mod:`codemap_py.cli`.
 
-Transitional shim: dispatch ``codemap-py {index,query,doctor}`` to the current
-``bin/`` executables using argument arrays with ``shell=False``. Every public
-read/update enters the §4.4 RW gate — ``query`` under a shared read lease,
-``index`` under an exclusive writer lease — and both resolve the index identity
-through the single §4.4 resolver (``_index_identity.resolve_index``). It also
-owns the interpreter probe (plan §7.3). No general shell-command mode exists.
+``scripts/codemap_py_entry.py`` imports :mod:`codemap_py.cli` directly
+(plan §7.2); this shim exists only so consumers that import the bare
+``codemap_py_cli`` name after inserting ``scripts/`` onto their own
+``sys.path`` (tests, an editable checkout) keep working. It prepends
+``<plugin-root>/src`` to the process import path, then replaces its own entry
+in ``sys.modules`` with the real package module so every attribute access —
+including ``is_supported``/``candidate_interpreters``/``resolve_interpreter``
+tests exercise directly — reaches the one authoritative implementation.
 
-Exit codes (plan §7.5): ``0`` success, ``1`` runtime/index failure (bounded
-structured stderr — ``index_busy`` / ``index_coordination_unavailable``), ``2``
-invalid syntax, ``127`` no eligible CPython interpreter (including an invalid
-authoritative ``CODEMAP_PYTHON``).
+consumers: tests — imported as bare ``codemap_py_cli``; not a standalone executable
 """
 
 from __future__ import annotations
 
-import importlib
-import json
-import os
-import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
 
-_MIN = (3, 11)
-_MAX_EXCLUSIVE = (3, 15)
-_PROBE_FIELDS = 3
-_USAGE = "usage: codemap-py {index,query,doctor} [args...]"
-_PROBE_SNIPPET = "import sys;v=sys.version_info;print(sys.implementation.name,v.major,v.minor)"
-_NO_INTERPRETER_EXIT = 127
-_USAGE_EXIT = 2
-_RUNTIME_ERROR_EXIT = 1
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-ProbeResult = tuple[str, int, int]
-Probe = Callable[[Sequence[str]], "ProbeResult | None"]
+from codemap_py import cli as _impl  # noqa: E402  (needs the sys.path insert above)
 
-
-def _default_plugin_root() -> Path:
-    """Return the plugin root when the CLI is imported outside the entry."""
-    return Path(__file__).resolve().parents[1]
-
-
-def is_supported(impl: str, major: int, minor: int) -> bool:
-    """Return whether an interpreter identity satisfies the CPython bound.
-
-    Examples:
-        >>> is_supported("cpython", 3, 12)
-        True
-        >>> is_supported("cpython", 3, 10)
-        False
-        >>> is_supported("pypy", 3, 12)
-        False
-    """
-    return impl == "cpython" and (major, minor) >= _MIN and (major, minor) < _MAX_EXCLUSIVE
-
-
-def candidate_interpreters(env: Mapping[str, str], platform: str) -> list[list[str]]:
-    """Return ordered interpreter candidates for a platform (plan §7.3).
-
-    An authoritative ``CODEMAP_PYTHON`` override, when set, is the sole
-    candidate — a present-but-invalid override must fail hard, never fall
-    through to the defaults.
-
-    Examples:
-        >>> candidate_interpreters({}, "linux")
-        [['python3'], ['python']]
-        >>> candidate_interpreters({}, "win32")
-        [['py', '-3'], ['python.exe'], ['python3.exe']]
-        >>> candidate_interpreters({"CODEMAP_PYTHON": "/x/py"}, "linux")
-        [['/x/py']]
-    """
-    override = env.get("CODEMAP_PYTHON", "").strip()
-    if override:
-        return [[override]]
-    if platform == "win32":
-        return [["py", "-3"], ["python.exe"], ["python3.exe"]]
-    return [["python3"], ["python"]]
-
-
-def _probe_version(executable: Sequence[str]) -> ProbeResult | None:
-    """Run the version probe for a candidate; return identity or ``None``."""
-    try:
-        completed = subprocess.run(
-            [*executable, "-c", _PROBE_SNIPPET],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if completed.returncode != 0:
-        return None
-    parts = completed.stdout.split()
-    if len(parts) != _PROBE_FIELDS:
-        return None
-    impl, major, minor = parts
-    if not (major.isdigit() and minor.isdigit()):
-        return None
-    return impl, int(major), int(minor)
-
-
-def resolve_interpreter(
-    env: Mapping[str, str] | None = None,
-    platform: str | None = None,
-    probe: Probe = _probe_version,
-) -> tuple[list[str] | None, str | None]:
-    """Resolve the first eligible interpreter, or a hard-fail diagnostic.
-
-    Returns:
-        ``(argv, None)`` for the selected interpreter, or ``(None, diagnostic)``
-        when no candidate satisfies CPython ``>=3.11,<3.15`` (including an
-        invalid authoritative ``CODEMAP_PYTHON``).
-    """
-    env = os.environ if env is None else env
-    platform = sys.platform if platform is None else platform
-    override_present = bool(env.get("CODEMAP_PYTHON", "").strip())
-    for candidate in candidate_interpreters(env, platform):
-        identity = probe(candidate)
-        if identity is not None and is_supported(*identity):
-            return candidate, None
-    scope = "authoritative CODEMAP_PYTHON" if override_present else "PATH"
-    return None, f"codemap-py: no eligible CPython >=3.11,<3.15 interpreter found via {scope}"
-
-
-def _import_bin(plugin_root: Path, name: str) -> Any:
-    """Import a ``bin/`` support module, ensuring ``bin/`` is on the import path.
-
-    The entry script already prepends ``bin/``; direct callers (tests, an editable
-    install) may not, so this is idempotent.
-    """
-    bin_dir = str(plugin_root / "bin")
-    if bin_dir not in sys.path:
-        sys.path.insert(0, bin_dir)
-    return importlib.import_module(name)
-
-
-def _emit_error(code: str, detail: str) -> int:
-    """Write one bounded structured stderr line; return the §7.5 exit ``1``."""
-    sys.stderr.write(json.dumps({"error": code, "detail": detail}) + "\n")
-    return _RUNTIME_ERROR_EXIT
-
-
-def _child_argv(script: str, rest: Sequence[str], plugin_root: Path, root: Path) -> list[str]:
-    """Build the child argv, pinning ``--root`` to the resolver's canonical root.
-
-    Pinning ``--root`` keeps legacy scan-index/scan-query resolution aligned with
-    the §4.4 resolver root, so both agree on the DEFAULT-layout index path; a
-    user-supplied ``--root`` is honoured untouched.
-
-    Pre-Phase-3 seam: under ``CODEMAP_INDEX_DIR`` the resolver keys the index in a
-    ``<root-key>/`` subdirectory while the legacy child resolves the flat
-    ``<override>/<project>.json`` path, so in that override case the gate
-    coordinates a different file than the child touches. Phase 3 folds resolution
-    into the package and removes the divergence.
-    """
-    pin = [] if "--root" in rest else ["--root", str(root)]
-    return [sys.executable, str(plugin_root / "bin" / script), *pin, *rest]
-
-
-def _doctor(rest: Sequence[str], plugin_root: Path) -> int:
-    """Report the resolved interpreter, version, plugin root, and index path."""
-    info = sys.version_info
-    resolved = _import_bin(plugin_root, "_index_identity").resolve_index()
-    report = {
-        "python": sys.executable,
-        "version": f"{info.major}.{info.minor}.{info.micro}",
-        "implementation": sys.implementation.name,
-        "supported": is_supported(sys.implementation.name, info.major, info.minor),
-        "plugin_root": str(plugin_root),
-        "index_path": str(resolved.index_path),
-    }
-    if "--json" in rest:
-        print(json.dumps(report, indent=2, sort_keys=True))
-    else:
-        print("\n".join(f"{key}: {report[key]}" for key in sorted(report)))
-    return 0
-
-
-def _gate_kwargs() -> dict[str, float]:
-    """Optional bounded gate timeout from ``CODEMAP_GATE_TIMEOUT`` (seconds).
-
-    Absent or non-positive leaves the gate's own default bound; a positive value
-    lets callers (and tests) shorten the wait before ``index_busy``.
-    """
-    raw = os.environ.get("CODEMAP_GATE_TIMEOUT", "").strip()
-    try:
-        value = float(raw)
-    except ValueError:
-        return {}
-    return {"timeout": value} if value > 0 else {}
-
-
-def _run_query(rest: Sequence[str], plugin_root: Path) -> int:
-    """Run scan-query under a shared read lease (plan §4.4)."""
-    if not (plugin_root / "bin" / "scan-query").is_file():
-        return _emit_error("missing_executable", "scan-query")
-    identity = _import_bin(plugin_root, "_index_identity")
-    gate = _import_bin(plugin_root, "_rwgate")
-    resolved = identity.resolve_index()
-    argv = _child_argv("scan-query", rest, plugin_root, resolved.root)
-    try:
-        with gate.read_index(resolved.index_path, **_gate_kwargs()):
-            # Lease spans the whole child run; scan-query does its own parsing.
-            return subprocess.run(argv, check=False).returncode
-    except gate.IndexBusy:
-        return _emit_error("index_busy", "read lease timed out under a live writer")
-    except gate.CoordinationUnavailable:
-        return _emit_error("index_coordination_unavailable", "coordination root is unwritable")
-
-
-def _run_index(rest: Sequence[str], plugin_root: Path) -> int:
-    """Run scan-index under an exclusive writer lease (plan §4.4)."""
-    if not (plugin_root / "bin" / "scan-index").is_file():
-        return _emit_error("missing_executable", "scan-index")
-    identity = _import_bin(plugin_root, "_index_identity")
-    gate = _import_bin(plugin_root, "_rwgate")
-    resolved = identity.resolve_index()
-    argv = _child_argv("scan-index", rest, plugin_root, resolved.root)
-
-    def build_fn(_index_path: Path) -> int:
-        return subprocess.run(argv, check=False).returncode
-
-    try:
-        return gate.write_index(resolved.index_path, build_fn, **_gate_kwargs())
-    except gate.IndexBusy:
-        return _emit_error("index_busy", "writer lease timed out")
-    except gate.CoordinationUnavailable:
-        return _emit_error("index_coordination_unavailable", "coordination root is unwritable")
-
-
-def main(argv: Sequence[str] | None = None, plugin_root: Path | None = None) -> int:
-    """Dispatch ``index``/``query``/``doctor`` (plan §7.5 exit codes)."""
-    argv = sys.argv[1:] if argv is None else list(argv)
-    root = _default_plugin_root() if plugin_root is None else plugin_root
-    if not argv:
-        sys.stderr.write(_USAGE + "\n")
-        return _USAGE_EXIT
-    command, rest = argv[0], argv[1:]
-    if command == "doctor":
-        return _doctor(rest, root)
-    if command == "index":
-        return _run_index(rest, root)
-    if command == "query":
-        return _run_query(rest, root)
-    sys.stderr.write(f"codemap-py: unknown command {command!r}\n{_USAGE}\n")
-    return _USAGE_EXIT
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+sys.modules[__name__] = _impl
