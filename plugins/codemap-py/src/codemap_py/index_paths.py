@@ -42,6 +42,7 @@ from pathlib import Path
 _GIT_TIMEOUT_S = 5
 INDEX_SUBDIR = Path(".cache", "codemap")
 COORDINATION_DIRNAME = ".index-rw"
+_CLAUDE_CACHE_GLOB = "borda-ai-rig/codemap-py/*"
 
 INDEX_ROOT_COLLISION = "index_root_collision"
 SPLIT_INDEX_ROOTS = "split_index_roots"
@@ -298,3 +299,78 @@ def diagnose_split_index_roots(path_a: Path, path_b: Path) -> Diagnostic | None:
         "runtime environments resolve different index paths; not reconciling",
         {"path_a": str(path_a), "path_b": str(path_b)},
     )
+
+
+def _is_plausible_plugin_dir(path: Path) -> bool:
+    """Return whether *path* is a bounded, marker-bearing plugin directory.
+
+    The resolver rejects filesystem roots and home directories before scanning
+    installed plugin candidates, preventing an untrusted explicit path from
+    turning migration checks into a broad traversal.
+    """
+    if not path.is_dir():
+        return False
+    resolved = _real(path)
+    home = _real(Path.home())
+    if resolved == resolved.anchor or resolved == home:
+        return False
+    markers = (
+        resolved / "plugin.json",
+        resolved / ".claude-plugin" / "plugin.json",
+        resolved / "agents",
+        resolved / "skills",
+    )
+    return any(marker.exists() for marker in markers)
+
+
+def resolve_plugin_root(explicit: str | None) -> Path | None:
+    """Resolve a safe codemap-py Claude plugin root from an argument or cache.
+
+    Args:
+        explicit: Optional caller-supplied plugin root. Unsafe or implausible
+            values fall through to the ordinary installed-cache lookup.
+
+    Returns:
+        The resolved newest codemap-py cache entry, or ``None`` when unavailable.
+    """
+    if explicit:
+        candidate = _real(Path(explicit).expanduser())
+        if _is_plausible_plugin_dir(candidate):
+            return candidate
+    cache = Path.home() / ".claude" / "plugins" / "cache"
+    candidates = sorted(
+        cache.glob(_CLAUDE_CACHE_GLOB),
+        key=lambda candidate: candidate.stat().st_mtime if candidate.exists() else 0.0,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def derive_cache_root(plugin_root: Path) -> Path:
+    """Return the Claude plugin cache root containing *plugin_root*'s identity.
+
+    Args:
+        plugin_root: A resolved ``.../<plugin>/<version>`` directory.
+
+    Returns:
+        The enclosing cache root, two parent levels above the plugin root.
+    """
+    return plugin_root.parent.parent
+
+
+def detect_dual_identity(cache_base: Path | None = None) -> str | None:
+    """Detect simultaneous legacy ``codemap`` and current ``codemap-py`` installs.
+
+    Args:
+        cache_base: Optional Claude plugin-cache directory. Defaults to the
+            current user's cache location.
+
+    Returns:
+        ``"dual_plugin_identity"`` when both names are present, otherwise
+        ``None``.
+    """
+    cache = cache_base or Path.home() / ".claude" / "plugins" / "cache"
+    legacy_glob = _CLAUDE_CACHE_GLOB.replace("codemap-py", "codemap")
+    if any(cache.glob(_CLAUDE_CACHE_GLOB)) and any(cache.glob(legacy_glob)):
+        return "dual_plugin_identity"
+    return None

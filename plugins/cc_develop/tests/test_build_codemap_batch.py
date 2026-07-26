@@ -20,7 +20,7 @@ import build_codemap_batch as bcb
 
 
 class TestBuildBatchRequest:
-    """``build_batch_request`` assembles the ordered scan-query batch array."""
+    """``build_batch_request`` assembles the ordered codemap-py query batch array."""
 
     def test_central_always_first_and_alone_when_no_modules(self):
         """Empty module list yields exactly the central query."""

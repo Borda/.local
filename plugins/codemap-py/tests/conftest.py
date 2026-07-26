@@ -15,6 +15,12 @@ _BIN_DIR = Path(__file__).parent.parent / "bin"
 if str(_BIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BIN_DIR))
 
+_SRC_DIR = Path(__file__).parent.parent / "src"
+# src/ on sys.path so `from codemap_py import ...` collects under isolated runs
+# (the full suite gets src/ via --doctest-modules; a lone gate run would not).
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
 _DATA_DIR = Path(__file__).parent / "data"
 
 

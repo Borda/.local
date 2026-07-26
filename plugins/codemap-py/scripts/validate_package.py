@@ -210,7 +210,7 @@ def _check_hook_helpers(package: Path, hooks_relative: str, inventory: set[str])
     """Require every hook helper referenced by the wiring file to exist and be inventoried."""
     findings: list[str] = []
     blob = json.dumps(_load_json(package / hooks_relative))
-    for ref in sorted(set(re.findall(r"hooks/[A-Za-z0-9_.-]+\.js", blob))):
+    for ref in sorted(set(re.findall(r"hooks/[A-Za-z0-9_.-]+\.py", blob))):
         if not (package / ref).is_file():
             findings.append(f"referenced hook helper missing: {ref}")
         elif ref not in inventory:

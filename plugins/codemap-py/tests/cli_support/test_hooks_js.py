@@ -1,23 +1,23 @@
-"""Contract tests for the codemap JS hooks driven via stdin JSON subprocess.
+"""Contract tests for the codemap Python hooks driven via stdin JSON subprocess.
 
 Each hook is exercised exactly the way Claude Code drives it: a single event JSON is
-piped to `node <hook>` on stdin, and the observable side effects (stdout shape, tmp
+piped to `python <hook>` on stdin, and the observable side effects (stdout shape, tmp
 files written, spawn markers, exit code) are asserted. No production code is touched —
 a suspected production bug is pinned with an ``xfail(strict=True)`` test plus a note in
 the return envelope, never a fix.
 
 Hooks under test:
 
-- ``inject-preamble.js``       — UserPromptSubmit: index-status preamble, stale-index
+- ``inject-preamble.py``       — UserPromptSubmit: index-status preamble, stale-index
                                   background refresh with an atomic O_EXCL lock, and
                                   a once-per-session emit flag. Both the lock and the
                                   session flag use ``readTimestamp`` which must map a
                                   corrupted (non-numeric/empty) file to a *stale* age
                                   rather than a NaN that poisons every comparison.
-- ``guard-redundant-scan.js``  — PreToolUse(Bash): deny import-discovery greps for a
+- ``guard-redundant-scan.py``  — PreToolUse(Bash): deny import-discovery greps for a
                                   module already marked exhaustive this session.
-- ``seed-session.js``          — SessionStart: seed the per-project session tmpfile.
-- ``log-skill-start.js``       — PreToolUse(Skill): log codemap:* skill invocations.
+- ``seed-session.py``          — SessionStart: seed the per-project session tmpfile.
+- ``log-skill-start.py``       — PreToolUse(Skill): log codemap:* skill invocations.
 
 TEST SEAM (inject-preamble): the hook keys its lock/flag tmp files on the git-root
 basename, resolves the index dir from ``CODEMAP_INDEX_DIR``, and resolves the
@@ -30,9 +30,9 @@ real scan.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -42,17 +42,19 @@ from pathlib import Path
 import pytest
 
 _HOOKS = Path(__file__).parent.parent.parent / "hooks"
-_INJECT = _HOOKS / "inject-preamble.js"
-_GUARD = _HOOKS / "guard-redundant-scan.js"
-_SEED = _HOOKS / "seed-session.js"
-_SKILL = _HOOKS / "log-skill-start.js"
+_INJECT = _HOOKS / "inject-preamble.py"
+_GUARD = _HOOKS / "guard-redundant-scan.py"
+_SEED = _HOOKS / "seed-session.py"
+_SKILL = _HOOKS / "log-skill-start.py"
 
-# These must mirror the constants baked into inject-preamble.js.
+_INJECT_SPEC = importlib.util.spec_from_file_location("codemap_inject_preamble", _INJECT)
+assert _INJECT_SPEC and _INJECT_SPEC.loader
+_INJECT_MODULE = importlib.util.module_from_spec(_INJECT_SPEC)
+_INJECT_SPEC.loader.exec_module(_INJECT_MODULE)
+
+# These must mirror the constants baked into inject-preamble.py.
 _LOCK_TTL_MS = 10 * 60 * 1000  # LOCK_TTL_MS
 _SESSION_TTL_MS = 30 * 60 * 1000  # SESSION_TTL_MS
-
-pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
-
 
 # ── helpers ──────────────────────────────────────────────────────────────────────
 
@@ -118,7 +120,7 @@ def _run_inject(
     *,
     prompt: str = "hello",
 ) -> subprocess.CompletedProcess:
-    """Drive inject-preamble.js with all three seams pinned to controlled dirs."""
+    """Drive inject-preamble.py with all three seams pinned to controlled dirs."""
     env = {
         **os.environ,
         "CODEMAP_INDEX_DIR": str(idx_dir),
@@ -129,7 +131,7 @@ def _run_inject(
         "TMP": str(tmpdir),
     }
     return subprocess.run(
-        ["node", str(_INJECT)],
+        [sys.executable, str(_INJECT)],
         input=json.dumps({"prompt": prompt}),
         text=True,
         capture_output=True,
@@ -180,7 +182,7 @@ def _run_inject_with_event(
     tmpdir: Path,
     event: dict,
 ) -> subprocess.CompletedProcess:
-    """Drive inject-preamble.js piping a full UserPromptSubmit *event* dict on stdin.
+    """Drive inject-preamble.py piping a full UserPromptSubmit *event* dict on stdin.
 
     Mirrors :func:`_run_inject` but lets a test control the whole event (e.g. supply
     ``session_id``) rather than only the prompt string.
@@ -195,7 +197,7 @@ def _run_inject_with_event(
         "TMP": str(tmpdir),
     }
     return subprocess.run(
-        ["node", str(_INJECT)],
+        [sys.executable, str(_INJECT)],
         input=json.dumps(event),
         text=True,
         capture_output=True,
@@ -395,6 +397,27 @@ class TestInjectPreambleRefreshLock:
         # The lock the hook briefly acquired must be released so a later hook can retry.
         assert not _lock_file(tmpdir, proj).exists(), "lock must be released when scan bin absent"
 
+    def test_windows_refresh_uses_python_and_new_process_group(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Windows branch starts the script through Python in an isolated process group."""
+        scan_bin = tmp_path / "scan-index"
+        scan_bin.write_text("print('scan')\n")
+        calls: list[tuple[list[str], dict]] = []
+
+        def fake_popen(command: list[str], **kwargs: object) -> object:
+            calls.append((command, kwargs))
+            return object()
+
+        monkeypatch.setattr(_INJECT_MODULE.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(_INJECT_MODULE.os, "name", "nt")
+
+        assert _INJECT_MODULE.spawn_refresh(scan_bin, tmp_path, tmp_path)
+        command, kwargs = calls.pop()
+        assert command[:2] == [sys.executable, str(scan_bin)]
+        assert kwargs["creationflags"] == getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+        assert "start_new_session" not in kwargs
+
 
 # ── inject-preamble: session marker (cross-agent scan-query contract) ─────────────
 
@@ -496,7 +519,7 @@ class TestInjectPreambleSessionMarker:
             "TMP": str(tmpdir),
         }
         result = subprocess.run(
-            ["node", str(_INJECT)],
+            [sys.executable, str(_INJECT)],
             input="}{ not json",
             text=True,
             capture_output=True,
@@ -614,11 +637,11 @@ class TestInjectPreambleStaleCollapse:
 
 
 def _run_guard(command: str, session: str, tmpdir: Path) -> subprocess.CompletedProcess:
-    """Drive guard-redundant-scan.js with an isolated TMPDIR for the sentinel lookup."""
+    """Drive guard-redundant-scan.py with an isolated TMPDIR for the sentinel lookup."""
     env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir)}
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session}
     return subprocess.run(
-        ["node", str(_GUARD)],
+        [sys.executable, str(_GUARD)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
@@ -697,7 +720,7 @@ class TestGuardRedundantScan:
     def test_garbage_stdin_fails_open(self, tmp_path: Path) -> None:
         """Non-JSON stdin must fail open (exit 0, no deny)."""
         result = subprocess.run(
-            ["node", str(_GUARD)],
+            [sys.executable, str(_GUARD)],
             input="not json at all",
             text=True,
             capture_output=True,
@@ -711,10 +734,10 @@ class TestGuardRedundantScan:
 
 
 def _run_seed(payload: dict, cwd: Path, tmpdir: Path) -> subprocess.CompletedProcess:
-    """Drive seed-session.js with cwd + TMPDIR pinned so the session tmpfile is observable."""
+    """Drive seed-session.py with cwd + TMPDIR pinned so the session tmpfile is observable."""
     env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir)}
     return subprocess.run(
-        ["node", str(_SEED)],
+        [sys.executable, str(_SEED)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
@@ -758,7 +781,7 @@ class TestSeedSession:
         tmpdir = tmp_path / "tmp"
         tmpdir.mkdir()
         result = subprocess.run(
-            ["node", str(_SEED)],
+            [sys.executable, str(_SEED)],
             input="}{ not json",
             text=True,
             capture_output=True,
@@ -772,10 +795,10 @@ class TestSeedSession:
 
 
 def _run_skill(payload: dict, cwd: Path, tmpdir: Path) -> subprocess.CompletedProcess:
-    """Drive log-skill-start.js with cwd + TMPDIR pinned."""
+    """Drive log-skill-start.py with cwd + TMPDIR pinned."""
     env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir)}
     return subprocess.run(
-        ["node", str(_SKILL)],
+        [sys.executable, str(_SKILL)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
@@ -858,7 +881,7 @@ class TestLogSkillStart:
         tmpdir = tmp_path / "tmp"
         tmpdir.mkdir()
         result = subprocess.run(
-            ["node", str(_SKILL)],
+            [sys.executable, str(_SKILL)],
             input="not-json",
             text=True,
             capture_output=True,

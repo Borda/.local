@@ -532,7 +532,7 @@ IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}"
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
     _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
-    scan-query rdeps --top 10 2>/dev/null || true  # timeout: 5000
+    codemap-py query rdeps --top 10 2>/dev/null || true  # timeout: 5000
 fi
 ```
 
@@ -550,7 +550,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
     # review persists its pre-flight batch blob to .temp/review/<ts>/codemap-context.md
     _REVIEW_CTX=$(ls -t .temp/review/*/codemap-context.md 2>/dev/null | head -1)
     if [ -n "$_REVIEW_CTX" ] && [ -f "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py" ]; then
-        # the .md wraps one `scan-query batch` JSON array under markdown headers — extract it
+        # the .md wraps one `codemap-py query batch` JSON array under markdown headers — extract it
         _BATCH_JSON="${TMPDIR:-/tmp}/resolve-review-batch-${CSID}.json"
         sed -n '/^{/,$p' "$_REVIEW_CTX" | head -1 > "$_BATCH_JSON" 2>/dev/null || true
         if [ -s "$_BATCH_JSON" ] && [ -f "$_IDX_FILE" ]; then
@@ -563,7 +563,7 @@ fi
 echo "${CODEMAP_CACHE_DIR}" > "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}"  # timeout: 3000
 ```
 
-`action-item-dispatch.md`'s per-item blast-radius scan reads this cache first (freshness-gated `codemap_cache.py read`) and only calls `scan-query` on a cache miss — see its **Pre-loop blast-radius scan**. Empty `CODEMAP_CACHE_DIR` (no review artifact, or oss helper absent) → every module is a cache miss and the scan queries live, unchanged from prior behaviour.
+`action-item-dispatch.md`'s per-item blast-radius scan reads this cache first (freshness-gated `codemap_cache.py read`) and only calls `codemap-py query` on a cache miss — see its **Pre-loop blast-radius scan**. Empty `CODEMAP_CACHE_DIR` (no review artifact, or oss helper absent) → every module is a cache miss and the scan queries live, unchanged from prior behaviour.
 
 <!-- Step 8 defined in action-item-dispatch.md -->
 

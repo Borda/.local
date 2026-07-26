@@ -251,26 +251,26 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 
 <codemap_context>
 
-Codemap pre-flight — run if `scan-query` available; skip manual Glob/Grep enumeration for any module codemap already covers. Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight — run if `codemap-py query` available; skip manual Glob/Grep enumeration for any module codemap already covers. Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     if [ -n "$TARGET_MODULE" ]; then
-        scan-query uncovered --top 20 "$TARGET_MODULE" 2>/dev/null
-        scan-query coverage-gap --threshold 0.8 "$TARGET_MODULE" 2>/dev/null
-        [ -n "$TARGET_FN" ] && scan-query mock-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+        codemap-py query uncovered --top 20 "$TARGET_MODULE" 2>/dev/null
+        codemap-py query coverage-gap --threshold 0.8 "$TARGET_MODULE" 2>/dev/null
+        [ -n "$TARGET_FN" ] && codemap-py query mock-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
         # review/worktree — replaces step 01 enumeration
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
-            scan-query uncovered --top 20 "$_MOD" 2>/dev/null
-            scan-query coverage-gap --threshold 0.8 "$_MOD" 2>/dev/null
+            codemap-py query uncovered --top 20 "$_MOD" 2>/dev/null
+            codemap-py query coverage-gap --threshold 0.8 "$_MOD" 2>/dev/null
         done
     fi
-    [ -n "$TARGET_FIXTURE" ] && scan-query fixture-rdeps "$TARGET_FIXTURE" 2>/dev/null
-    [ -n "$TARGET_TEST_FILE" ] && scan-query fixture-graph "$TARGET_TEST_FILE" 2>/dev/null
+    [ -n "$TARGET_FIXTURE" ] && codemap-py query fixture-rdeps "$TARGET_FIXTURE" 2>/dev/null
+    [ -n "$TARGET_TEST_FILE" ] && codemap-py query fixture-graph "$TARGET_TEST_FILE" 2>/dev/null
 fi
 ```
 

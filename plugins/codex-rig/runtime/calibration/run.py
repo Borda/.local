@@ -105,6 +105,7 @@ class Paths:
     run_py: Path
     write_result_py: Path
     create_run: Path
+    codemap_adapter: Path
     collect_diff: Path
     collect_pr: Path
     select_git_remote: Path
@@ -168,6 +169,7 @@ class Paths:
             run_py=calibration_dir / "run.py",
             write_result_py=shared_dir / "write-result.py",
             create_run=shared_dir / "create_run.py",
+            codemap_adapter=shared_dir / "codemap_adapter.py",
             collect_diff=shared_dir / ("collect_diff.py" if layout == "plugin" else "collect-diff.sh"),
             collect_pr=shared_dir / ("collect_pr.py" if layout == "plugin" else "collect-pr.sh"),
             select_git_remote=shared_dir / "select-git-remote.py",
@@ -689,7 +691,7 @@ def check_core_configs(run: CalibrationRun) -> None:
         "validate-artifacts.py",
     )
     helper_names += (
-        ("create_run.py", "run_gates.py", "collect_diff.py", "collect_pr.py")
+        ("create_run.py", "run_gates.py", "collect_diff.py", "collect_pr.py", "codemap_adapter.py")
         if run.paths.layout == "plugin"
         else ("run-gates.sh", "collect-diff.sh", "collect-pr.sh")
     )
@@ -910,6 +912,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
     }
     if run.paths.layout == "plugin":
         cli_paths["create-run"] = run.paths.create_run
+        cli_paths["codemap-adapter"] = run.paths.codemap_adapter
     if run.paths.codex_harness.exists():
         if run.paths.layout == "source":
             cli_paths["codex-harness"] = run.paths.codex_harness

@@ -1,4 +1,4 @@
-"""Contract test: log-tool-use.js appends one tools.jsonl record per Grep/Read/Glob call.
+"""Contract test: log-tool-use.py appends one tools.jsonl record per Grep/Read/Glob call.
 
 The PostToolUse hook (`log-tool-use.js`) is the raw grep/read-volume signal codemap's
 index-hygiene fixes aim to reduce. It must:
@@ -17,15 +17,13 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-_HOOK = Path(__file__).parent.parent.parent / "hooks" / "log-tool-use.js"
-
-pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
+_HOOK = Path(__file__).parent.parent.parent / "hooks" / "log-tool-use.py"
 
 
 def _run(payload: dict, cwd: Path, *, logging: str | None = None) -> subprocess.CompletedProcess:
@@ -37,7 +35,7 @@ def _run(payload: dict, cwd: Path, *, logging: str | None = None) -> subprocess.
     # this helper's default must re-enable it or every write-asserting case goes dark.
     env["CODEMAP_LOGGING"] = logging if logging is not None else "true"
     return subprocess.run(
-        ["node", str(_HOOK)],
+        [sys.executable, str(_HOOK)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
@@ -84,7 +82,7 @@ def test_session_shard_uses_seeded_session_id(tmp_path: Path) -> None:
     env.pop("CODEMAP_LOG_DIR", None)
     env["CODEMAP_LOGGING"] = "true"  # conftest autouse gate exports false suite-wide
     result = subprocess.run(
-        ["node", str(_HOOK)],
+        [sys.executable, str(_HOOK)],
         input=json.dumps({"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
         text=True,
         capture_output=True,

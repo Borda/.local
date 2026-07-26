@@ -87,8 +87,8 @@ Spawn **foundry:linting-expert** agent if mypy or ruff issues need non-trivial f
 **Post-change blast radius** (if codemap installed — soft check):
 
 ```bash
-if command -v scan-query >/dev/null 2>&1; then
-    scan-query rdeps <module> 2>/dev/null | head -20
+if command -v codemap-py >/dev/null 2>&1; then
+    codemap-py query rdeps <module> 2>/dev/null | head -20
     echo "^ review rdeps — changes here may affect callers"
 fi
 ```

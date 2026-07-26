@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """classify_breaking.py — label changed public symbols Breaking vs internal.
 
-Reads ``scan-query batch`` output (a JSON object with a ``batch`` array of
+Reads ``codemap-py query batch`` output (a JSON object with a ``batch`` array of
 ``fn-rdeps`` results) on stdin and classifies each queried symbol:
 
 - **Breaking**: at least one caller lives outside the symbol's own top-level
@@ -21,7 +21,7 @@ whole result set is marked ``query_complete: false`` so callers can flag the
 evidence as possibly-incomplete rather than trusting it as exhaustive.
 
 Usage:
-    scan-query batch queries.json | classify_breaking.py
+    codemap-py query batch queries.json | classify_breaking.py
     classify_breaking.py < batch-output.json
 
 Exit codes:
@@ -37,7 +37,7 @@ Output (stdout, JSON):
     }
 
 Caller pattern (classify-truth-check.md Breaking classification phase):
-    BATCH_JSON=$(scan-query batch "$QUERIES_FILE" 2>/dev/null)
+    BATCH_JSON=$(codemap-py query batch "$QUERIES_FILE" 2>/dev/null)
     echo "$BATCH_JSON" | classify_breaking.py > "$BREAKING_FILE"
 """
 
@@ -169,10 +169,10 @@ def _classify_one(entry: dict) -> dict:
 
 
 def classify(batch_output: dict) -> dict:
-    """Classify every symbol in a ``scan-query batch`` output.
+    """Classify every symbol in a ``codemap-py query batch`` output.
 
     Args:
-        batch_output: Parsed ``scan-query batch`` JSON — ``{batch: [...],
+        batch_output: Parsed ``codemap-py query batch`` JSON — ``{batch: [...],
             index: {...}}``.
 
     Returns:
@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     if effective_argv in (["-h"], ["--help"]):
         argparse.ArgumentParser(
             prog="classify_breaking.py",
-            description="Label changed public symbols Breaking vs internal (reads scan-query batch JSON on stdin).",
+            description="Label changed public symbols Breaking vs internal (reads codemap-py query batch JSON on stdin).",
         ).parse_args(["-h"])  # prints help, exits 0
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     raw = sys.stdin.read()

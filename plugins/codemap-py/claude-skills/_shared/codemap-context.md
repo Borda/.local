@@ -1,10 +1,10 @@
-<!-- file: codemap-context.md — consumers: bin/_injection_block.py injection block; develop/oss wrappers (plugins/{develop,oss}/skills/_shared/codemap-context.md) reference this contract by installed-plugin cache path -->
+<!-- file: codemap-context.md — consumers: develop/oss/foundry/research wrappers (plugins/cc_*/skills/_shared/codemap-context.md) reference this contract by installed-plugin cache path; provider→consumer wiring is the codemap-py.integration.v1 managed-block protocol -->
 
 # Codemap context contract — v2
 
 Plugin-agnostic structural-context contract. Consumer plugins (develop, oss, any) reference this file — never copy it. Wrappers add only per-agent query maps + flag surfaces + plugin-local batch/cache paths; query mechanics, evidence-line contract, completeness/staleness semantics, batch pre-flight, effort tiers live here once.
 
-> Contract version `v2` feeds injection version check. Keep in sync with `BLOCK_VERSION` in `bin/_injection_block.py` — bump both together when query set or evidence contract changes.
+> Contract version `v2` is the context-contract doc version — bump it when the query set or evidence contract changes. The provider→consumer wiring itself uses the `codemap-py.integration.v1` managed-block protocol (see `shared/integration-contract.md`), independent of this doc version.
 
 ## Target derivation — pluggable (consumer supplies)
 
@@ -62,7 +62,7 @@ if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
 fi
 ```
 
-> Injected loader block (`bin/_injection_block.py`) runs shorter inline variant (`central --top 3` + one derived query), points here for full map. `scan-query` not found or index missing → block emits nothing, callers fall back to normal exploration path.
+> Consumer wrappers run this batch pattern (or a shorter inline variant — `central --top 3` + one derived query — for quick tasks), pointing here for the full map. `scan-query` not found or index missing → the pre-flight emits nothing, callers fall back to normal exploration path.
 
 ## Evidence-line contract
 

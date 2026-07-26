@@ -297,6 +297,7 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
         "Optional SessionStart health diagnostic",
         "Built-in and inline role fallback",
         "Quality gates",
+        "Optional codemap-py structural-context integration",
     ]
     assert manifest["release_profile"] == "role-card-injected"
     assert manifest["features"] == {

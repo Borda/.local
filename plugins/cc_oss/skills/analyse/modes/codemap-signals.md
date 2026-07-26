@@ -6,7 +6,7 @@ Consumers: `modes/thread.md` (issue triage — stale-symbol check), `modes/vital
 
 ## Detect — sets `CM_ENABLED`
 
-Reuse oss shared detector — same helper review/resolve use. scan-query on PATH AND index for this project both required.
+Reuse oss shared detector — same helper review/resolve use. codemap-py query on PATH AND index for this project both required.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -18,10 +18,10 @@ IFS= read -r CM_ENABLED < "${TMPDIR:-/tmp}/analyse-codemap-enabled-${CSID}" 2>/d
 IFS= read -r CM_CURRENCY < "${TMPDIR:-/tmp}/analyse-codemap-currency-${CSID}" 2>/dev/null || CM_CURRENCY="no_index"
 ```
 
-`CM_ENABLED=false` → caller emits inline flag (see below) and skips every scan-query block. No AskUserQuestion — analyse is read-only triage; degrade silently-but-flagged per accept criterion. `CM_ENABLED=true` + `CM_CURRENCY=stale` → detector already printed a stale warning; proceed with stale data, caller notes "index stale — signals may miss recent code".
+`CM_ENABLED=false` → caller emits inline flag (see below) and skips every codemap-py query block. No AskUserQuestion — analyse is read-only triage; degrade silently-but-flagged per accept criterion. `CM_ENABLED=true` + `CM_CURRENCY=stale` → detector already printed a stale warning; proceed with stale data, caller notes "index stale — signals may miss recent code".
 
 **Inline flag when disabled** (caller prints once, in report + terminal):
-`> structural signals unavailable — codemap index absent (build via /codemap:scan-codebase, requires codemap plugin) or scan-query not installed`
+`> structural signals unavailable — codemap index absent (build via /codemap-py:scan-codebase, requires codemap plugin) or codemap-py query not installed`
 
 ## Signal A — stale-issue check (thread mode, issues/discussions only)
 
@@ -38,11 +38,11 @@ _CAND="${TMPDIR:-/tmp}/analyse-triage-candidates-${CSID}.txt"
 _BATCH="${TMPDIR:-/tmp}/analyse-triage-batch-${CSID}.json"
 if [ "$CM_ENABLED" = "true" ] && [ -s "$_CAND" ]; then
     _BATCH_LEN=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/build_triage_batch.py" "$_CAND" "$_BATCH" 2>/dev/null || echo 0)  # timeout: 5000
-    [ "${_BATCH_LEN:-0}" -gt 0 ] && scan-query batch "$_BATCH" 2>/dev/null  # timeout: 15000
+    [ "${_BATCH_LEN:-0}" -gt 0 ] && codemap-py query batch "$_BATCH" 2>/dev/null  # timeout: 15000
 fi
 ```
 
-> `build_triage_batch.py` maps each candidate to `rdeps` (module) or `find-symbol` (symbol) — extracted to `bin/` per plugin authoring policy (no inline heredoc in skill bodies). `CM_ENABLED=false` or no candidates → whole block no-ops; empty batch (`[]`) skips the scan-query call.
+> `build_triage_batch.py` maps each candidate to `rdeps` (module) or `find-symbol` (symbol) — extracted to `bin/` per plugin authoring policy (no inline heredoc in skill bodies). `CM_ENABLED=false` or no candidates → whole block no-ops; empty batch (`[]`) skips the codemap-py query call.
 
 **Interpret** each `batch[]` entry:
 - `rdeps` result with `"error": "module not indexed"` → module named in thread no longer indexed → **stale-issue candidate**. `suggestions[]` = likely rename target; surface as "module `X` not found — possibly renamed to `Y`".
@@ -84,7 +84,7 @@ fi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-[ "$CM_ENABLED" = "true" ] && scan-query coupled --top 30 --exclude-tests 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-coupled-${CSID}.json"  # timeout: 10000
+[ "$CM_ENABLED" = "true" ] && codemap-py query coupled --top 30 --exclude-tests 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-coupled-${CSID}.json"  # timeout: 10000
 ```
 
 Parse `coupled[]` (each has `name`, `dep_count`). Two PRs whose modules are both high-coupling (`dep_count` ≥ 20) but share no files → "PRs #A and #B touch tightly-coupled modules (`m1`/`m2`) — review together even though file sets differ." `query_complete: false` → append "(coupling scan partial)".
@@ -99,7 +99,7 @@ Populate the report template's `### Structural Constraints` block from index-wid
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 [ "$CM_ENABLED" = "true" ] || { echo "cm_central=[] cm_collision=0 cm_degraded=0"; }
 if [ "$CM_ENABLED" = "true" ]; then
-    scan-query central --top 5 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-central-${CSID}.json"  # timeout: 10000
+    codemap-py query central --top 5 2>/dev/null > "${TMPDIR:-/tmp}/analyse-cm-central-${CSID}.json"  # timeout: 10000
 fi
 ```
 

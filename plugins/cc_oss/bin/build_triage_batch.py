@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""build_triage_batch.py — turn thread-extracted identifiers into a scan-query batch spec.
+"""build_triage_batch.py — turn thread-extracted identifiers into a codemap-py query batch spec.
 
 consumers: analyse/modes/codemap-signals.md
 
 Reads a candidate file (one identifier per line, written by oss:analyse thread
-triage) and emits a JSON array of scan-query batch queries: dotted module-shaped
+triage) and emits a JSON array of codemap-py query batch queries: dotted module-shaped
 identifiers map to ``rdeps`` (with ``--exclude-tests``); bare symbol names map to
 an anchored ``find-symbol`` lookup. The resulting file is fed to
-``scan-query batch`` for a one-process existence check that flags stale symbols.
+``codemap-py query batch`` for a one-process existence check that flags stale symbols.
 Prints the number of queries written to stdout so the caller can skip the
-``scan-query`` call when the batch is empty — no second inline interpreter call.
+``codemap-py query`` call when the batch is empty — no second inline interpreter call.
 
 Usage:
     N=$(python build_triage_batch.py CANDIDATE_FILE OUT_FILE)
@@ -28,7 +28,7 @@ from pathlib import Path
 
 
 def build_queries(identifiers: list[str]) -> list[dict[str, object]]:
-    """Map extracted identifiers to scan-query batch entries.
+    """Map extracted identifiers to codemap-py query batch entries.
 
     A dotted identifier whose first segment is a valid Python name is treated as a
     module and existence-checked with ``rdeps``; anything else is treated as a bare
@@ -38,7 +38,7 @@ def build_queries(identifiers: list[str]) -> list[dict[str, object]]:
         identifiers: Candidate module/symbol names extracted from a thread.
 
     Returns:
-        List of ``{"cmd", "args"}`` dicts suitable for ``scan-query batch``.
+        List of ``{"cmd", "args"}`` dicts suitable for ``codemap-py query batch``.
 
     Examples:
         >>> build_queries(["a.b.c", "MyClass"])
@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="build_triage_batch.py",
-        description="Turn thread-extracted identifiers into a scan-query batch spec.",
+        description="Turn thread-extracted identifiers into a codemap-py query batch spec.",
     )
     # nargs="*" keeps the legacy exit-1-on-wrong-count contract (vs argparse's exit 2).
     parser.add_argument("paths", nargs="*", help="CANDIDATE_FILE OUT_FILE (2 paths).")

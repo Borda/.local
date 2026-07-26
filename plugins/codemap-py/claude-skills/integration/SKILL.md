@@ -18,10 +18,10 @@ Runtime adapter over the `codemap-py integrate` engine (`src/codemap_py/integrat
 can target Claude Code, Codex, or both; this skill never invokes the other runtime's model, only its
 native plugin-manager CLI.
 
-<!-- The engine reimplements in Python the health/index work the retired `check|init|demo` model shelled
-out to, so it supersedes the standalone helpers `bin/resolve_proj_index.py`, `bin/smoke_test_index.py`,
-and `bin/install_post_commit_hook.py`. They are retained (with their unit tests) as transitional
-machinery; their keep-or-remove decision lands in Phase 5 alongside the hook port. -->
+<!-- Phase 5 retired only `bin/install_post_commit_hook.py`: no shipped workflow used it and the README
+already states codemap-py ships no post-commit hook. `bin/resolve_proj_index.py` and
+`bin/smoke_test_index.py` remain load-bearing subprocess dependencies of live query-code and
+rename-refs flows; the integration engine does not supersede those helpers. -->
 
 
 Five modes, matching the pinned CLI surface exactly (never the retired `check|init|demo` model):

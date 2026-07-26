@@ -1,6 +1,6 @@
 """Tests for bin/detect_codemap.py — codemap availability detection.
 
-Covers: missing --prefix exit 2, --force-off, scan-query present/absent,
+Covers: missing --prefix exit 2, --force-off, codemap-py query present/absent,
 index present/absent, --strict mode errors, option overrides, env vars,
 and _resolve_proj() helper.
 """
@@ -36,12 +36,12 @@ class TestMain:
     def test_scan_query_present_index_present_writes_true(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """scan-query on PATH + index file exists → writes 'true', exits 0."""
+        """codemap-py query on PATH + index file exists → writes 'true', exits 0."""
         idx_dir = tmp_path / "idx"
         idx_dir.mkdir()
         (idx_dir / "myproj.json").write_text("{}")
         monkeypatch.setenv("TMPDIR", str(tmp_path))
-        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "myproj", "--idx-dir", str(idx_dir)])
         assert rc == 0
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
@@ -49,17 +49,17 @@ class TestMain:
     def test_scan_query_present_index_absent_writes_false(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """scan-query on PATH but no index file → writes 'false', exits 0."""
+        """codemap-py query on PATH but no index file → writes 'false', exits 0."""
         idx_dir = tmp_path / "idx"
         idx_dir.mkdir()
         monkeypatch.setenv("TMPDIR", str(tmp_path))
-        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "myproj", "--idx-dir", str(idx_dir)])
         assert rc == 0
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "false\n"
 
     def test_scan_query_absent_writes_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """scan-query not on PATH → writes 'false', exits 0."""
+        """codemap-py query not on PATH → writes 'false', exits 0."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "myproj", "--idx-dir", str(tmp_path / "idx")])
@@ -72,12 +72,12 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """--strict + scan-query absent → exit 1, install hint on stderr."""
+        """--strict + codemap-py query absent → exit 1, install hint on stderr."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         with mock.patch("detect_codemap.shutil.which", return_value=None):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(tmp_path), "--strict"])
         assert rc == 1
-        assert "claude plugin install codemap@borda-ai-rig" in capsys.readouterr().err
+        assert "claude plugin install codemap-py@borda-ai-rig" in capsys.readouterr().err
 
     def test_strict_scan_query_no_index_exits_1_with_build_hint(
         self,
@@ -85,14 +85,14 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """--strict + scan-query present + no index → exit 1, build-index hint on stderr."""
+        """--strict + codemap-py query present + no index → exit 1, build-index hint on stderr."""
         idx_dir = tmp_path / "idx"
         idx_dir.mkdir()
         monkeypatch.setenv("TMPDIR", str(tmp_path))
-        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(idx_dir), "--strict"])
         assert rc == 1
-        assert "/codemap:scan-codebase" in capsys.readouterr().err
+        assert "/codemap-py:scan-codebase" in capsys.readouterr().err
 
     def test_proj_override_used_as_index_slug(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """--proj overrides git-derived slug; index looked up as <proj>.json."""
@@ -100,7 +100,7 @@ class TestMain:
         idx_dir.mkdir()
         (idx_dir / "custom-proj.json").write_text("{}")
         monkeypatch.setenv("TMPDIR", str(tmp_path))
-        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "custom-proj", "--idx-dir", str(idx_dir)])
         assert rc == 0
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
@@ -111,7 +111,7 @@ class TestMain:
         custom_idx.mkdir()
         (custom_idx / "proj.json").write_text("{}")
         monkeypatch.setenv("TMPDIR", str(tmp_path))
-        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(custom_idx)])
         assert rc == 0
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
@@ -123,7 +123,7 @@ class TestMain:
         (idx_dir / "envproj.json").write_text("{}")
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         monkeypatch.setenv("CODEMAP_INDEX_DIR", str(idx_dir))
-        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/scan-query"):
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
             rc = detect_codemap.main(["--prefix", "test", "--proj", "envproj"])
         assert rc == 0
         assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"

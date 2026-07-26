@@ -7,7 +7,7 @@ Availability vars — set once before any cross-plugin dispatch; pass via env or
 ```bash
 OSS_AVAILABLE=$(find ~/.claude/plugins/cache -name "oss" -type d 2>/dev/null | head -1)  # timeout: 5000
 RESEARCH_AVAILABLE=$(find ~/.claude/plugins/cache -name "research" -type d 2>/dev/null | head -1)  # timeout: 5000
-CODEMAP_AVAILABLE=$(find ~/.claude/plugins/cache -name "codemap" -type d 2>/dev/null | head -1)  # timeout: 5000
+CODEMAP_AVAILABLE=$(find ~/.claude/plugins/cache -name "codemap-py" -type d 2>/dev/null | head -1)  # timeout: 5000
 DEVELOP_AVAILABLE=$(find ~/.claude/plugins/cache -name "develop" -type d 2>/dev/null | head -1)  # timeout: 5000
 ```
 

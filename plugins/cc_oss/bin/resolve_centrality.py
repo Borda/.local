@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""resolve_centrality.py — turn ``scan-query central`` output into a centrality map
+"""resolve_centrality.py — turn ``codemap-py query central`` output into a centrality map
 plus a file→canonical-module resolver for oss:resolve Step 8 Phase 3.
 
 Phase 3 orders whole worktree groups most-central-first (see
@@ -14,13 +14,13 @@ The earlier approach derived the plan module with a hand-rolled
 ``name``. The two disagree — notably ``pkg/__init__.py`` becomes ``pkg.__init__``
 by sed but ``pkg`` in codemap — so package-init items never matched and were
 mis-ordered with no error. This helper removes the divergence: both the map and
-the per-file resolution come from the **one** ``scan-query central`` payload, which
+the per-file resolution come from the **one** ``codemap-py query central`` payload, which
 carries ``name``, ``path`` and ``rdep_count`` per module. Files are matched to
 modules by path suffix (robust to a scan-root prefix on the index path), so the
 returned module name is always a real centrality key.
 
 Usage:
-    scan-query central --top 100000 | resolve_centrality.py --files a.py,b/c.py
+    codemap-py query central --top 100000 | resolve_centrality.py --files a.py,b/c.py
 
 Output (stdout, JSON):
     {"centrality": {name: rdep_count, ...},
@@ -77,7 +77,7 @@ def build_maps(central: dict[str, object], files: list[str]) -> dict[str, object
     """Build the centrality map and the file→module resolution from a central payload.
 
     Args:
-        central: Parsed ``scan-query central`` output — ``{"central": [{"name",
+        central: Parsed ``codemap-py query central`` output — ``{"central": [{"name",
             "rdep_count", "path"}, ...]}``.
         files: Repo-relative file paths to resolve to module names.
 

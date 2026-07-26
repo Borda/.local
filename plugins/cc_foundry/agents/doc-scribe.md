@@ -180,20 +180,20 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 <codemap_context>
 
-Codemap pre-flight — run if `scan-query` available + index exists; replaces manual Grep/Read scan for undocumented symbols (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight — run if `codemap-py query` available + index exists; replaces manual Grep/Read scan for undocumented symbols (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     if [ -n "$TARGET_MODULE" ]; then
-        scan-query undocumented "$TARGET_MODULE" 2>/dev/null
-        scan-query xrefs --broken "$TARGET_MODULE" 2>/dev/null
+        codemap-py query undocumented "$TARGET_MODULE" 2>/dev/null
+        codemap-py query xrefs --broken "$TARGET_MODULE" 2>/dev/null
     else
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
-            scan-query undocumented "$_MOD" 2>/dev/null
-            scan-query xrefs --broken "$_MOD" 2>/dev/null
+            codemap-py query undocumented "$_MOD" 2>/dev/null
+            codemap-py query xrefs --broken "$_MOD" 2>/dev/null
         done
     fi
 fi

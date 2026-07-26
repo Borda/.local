@@ -224,7 +224,7 @@ Permanent limitations — will not resolve by re-running. Emit only when applica
 - **Symbol collisions**: {N} name collisions in the index — rename/find-symbol precision reduced for those names. _(omit when 0)_
 - **Index degraded**: built in degraded mode — some structural signals approximate. _(omit unless degraded)_
 - **Index stale**: lags recent commits — structural figures may miss latest changes. _(omit unless stale)_
-- **Structural index unavailable**: blast-radius / collision signals not computed — codemap plugin absent or no index (build via `/codemap:scan-codebase`, requires codemap plugin). _(this bullet only, when codemap disabled)_
+- **Structural index unavailable**: blast-radius / collision signals not computed — codemap plugin absent or no index (build via `/codemap-py:scan-codebase`, requires codemap plugin). _(this bullet only, when codemap disabled)_
 
 _(Omit bullets that do not apply to this run.)_
 

@@ -12,11 +12,11 @@ Sources:
         ``src/`` strip yields nothing.
 
 Output:
-    Concatenated ``scan-query`` JSON blocks per module on stdout; ``coupled --top N`` appended
+    Concatenated ``codemap-py query`` JSON blocks per module on stdout; ``coupled --top N`` appended
     for find mode.
 
 Exit codes:
-    0 — success (including no-results; missing ``scan-query`` binary; missing index file).
+    0 — success (including no-results; missing ``codemap-py query`` binary; missing index file).
     1 — missing prerequisite (required CLI arg).
 """
 
@@ -215,16 +215,16 @@ def _find_py_files(target: str) -> list[str]:
 
 
 def _scan_query(args: list[str], timeout: int = 15) -> None:
-    """Invoke ``scan-query`` with given args; stream stdout; swallow non-zero exits."""
+    """Invoke ``codemap-py query`` with given args; stream stdout; swallow non-zero exits."""
     try:
         subprocess.run(  # noqa: S603 — fixed binary name + caller-controlled args.
-            ["scan-query", *args],
+            ["codemap-py", "query", *args],
             check=False,
             stderr=subprocess.DEVNULL,
             timeout=timeout,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        # scan-query missing or timed out — silent skip.
+        # codemap-py query missing or timed out — silent skip.
         return
 
 
@@ -232,7 +232,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse CLI args matching the bash interface (``--source=...`` and ``--source ...`` forms)."""
     parser = argparse.ArgumentParser(
         prog="codemap_scan.py",
-        description="Derive affected modules and emit scan-query rdeps + optional coupled output.",
+        description="Derive affected modules and emit codemap-py query rdeps + optional coupled output.",
         add_help=True,
     )
     parser.add_argument("--source", choices=("find", "diff"), default=None)
@@ -242,7 +242,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--timeout",
         type=int,
         default=15,
-        help="Subprocess timeout in seconds for git and scan-query calls (default: 15).",
+        help="Subprocess timeout in seconds for git and codemap-py query calls (default: 15).",
     )
     # Bash version silently ignored unrecognised positional tokens — mirror that.
     args, _unknown = parser.parse_known_args(argv)
@@ -264,8 +264,8 @@ def main(argv: list[str] | None = None) -> int:
         print("codemap_scan.py: --source=find|diff required", file=sys.stderr)
         return 1
 
-    # scan-query missing → silent skip (caller decides whether to warn).
-    if shutil.which("scan-query") is None:
+    # codemap-py query missing → silent skip (caller decides whether to warn).
+    if shutil.which("codemap-py") is None:
         return 0
 
     # Index file missing → silent exit 0.

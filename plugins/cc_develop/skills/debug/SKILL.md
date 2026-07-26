@@ -100,7 +100,7 @@ CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
     if [ "$CODEMAP_RAW" = "strict" ]; then
-        echo "! BLOCKED — codemap unavailable but --codemap (strict) passed; run /codemap:scan-codebase or install codemap plugin"
+        echo "! BLOCKED — codemap unavailable but --codemap (strict) passed; run /codemap-py:scan-codebase or install codemap plugin"
         exit 1
     fi
     CODEMAP_ENABLED=false
@@ -178,7 +178,7 @@ Collect all signals before forming any hypothesis.
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
 if [ "$CODEMAP_ENABLED" = "true" ]; then
-    scan-query central --top 5 2>/dev/null
+    codemap-py query central --top 5 2>/dev/null
 fi
 ```
 
@@ -186,8 +186,8 @@ After reading traceback or `$ARGUMENTS`, derive `TARGET_MODULE`: strip `src/`, `
 
 ```bash
 # timeout: 10000
-scan-query rdeps <TARGET_MODULE> 2>/dev/null
-scan-query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
+codemap-py query rdeps <TARGET_MODULE> 2>/dev/null
+codemap-py query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
 ```
 
 If codemap results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
@@ -402,15 +402,15 @@ cat "$_DEV_SHARED/premise-grounding.md"
 
 If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}` and re-run boundary contract block above before re-hypothesizing — keeps loop guard current so ruled-out cause not revisited.
 
-**Test impact (codemap) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `scan-query` availability (same gate as Step 1). `<SUSPECT>` is confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
+**Test impact (codemap) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `codemap-py query` availability (same gate as Step 1). `<SUSPECT>` is confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
 
 ```bash
 # timeout: 8000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
-if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1; then
+if [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1; then
     # SUSPECT resolved from Step 3 hypothesis — e.g. mypackage.auth::validate or mypackage.auth
-    scan-query test-impact "$SUSPECT" 2>/dev/null | tee ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}
+    codemap-py query test-impact "$SUSPECT" 2>/dev/null | tee ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}
 else
     rm -f ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}  # no query — fix falls back to its own live query
 fi

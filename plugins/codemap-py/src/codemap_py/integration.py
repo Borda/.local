@@ -80,17 +80,11 @@ BLOCK_SCHEMA_VERSION = 1
 _MANAGED_BEGIN_RE = re.compile(r"<!-- codemap-py:integration:begin v(\d+) sha256=([0-9a-f]{64}) -->\n")
 _MANAGED_END = "<!-- codemap-py:integration:end -->\n"
 
-# PROVISIONAL for Phase 4 — Phase 5 (shared/integration-contract.md) finalizes the real
-# per-consumer target files. Convention chosen here: each Claude consumer's own
-# `codemap-context.md` (already the file wrapping codemap-py's shared
-# `claude-skills/_shared/codemap-context.md` contract in cc_develop/cc_research today;
-# cc_foundry/cc_oss lack it yet — `apply`'s first-time wiring creates it there too, since the
-# target is only required to be an allowlisted *path*, not a pre-existing file). codex-rig has
-# no equivalent per-skill codemap wiring (it consumes codemap-py's public CLI/JSON protocol
-# directly, plan §8.4) so it gets a dedicated adapter file under its own `shared/` contract dir.
+# Finalized Phase 5 consumer target map. Each entry is an explicit, allowlisted
+# source-owned integration site; no runtime discovery or installed-cache mutation occurs.
 CONSUMER_MANAGED_FILE: dict[str, str] = {
     "foundry": "skills/_shared/codemap-context.md",
-    "oss": "skills/_shared/codemap-context.md",
+    "oss": "skills/_shared/codemap-gates.md",
     "develop": "skills/_shared/codemap-context.md",
     "research": "skills/_shared/codemap-context.md",
     "codex-rig": "shared/codemap-py-integration.md",
@@ -533,12 +527,13 @@ def _managed_block_status(content: str) -> str:
 
 
 def _managed_block_body(runtime: str, consumer: str, version: str | None) -> str:
-    """Return the plain-text body recording the provider identity wired against *consumer*."""
+    """Return the contract-bound managed body for one provider/consumer wiring."""
     return (
         f"Provider: {PROVIDER_NAME} {__version__}\n"
         f"Runtime: {runtime}\n"
         f"Consumer: {consumer} {version or 'unknown'}\n"
         f"Protocol: {PROTOCOL_VERSION}\n"
+        "Contract: shared/integration-contract.md\n"
         f"Updated: {_utc_now_iso()}\n"
     )
 
@@ -683,7 +678,7 @@ def _source_write_op(index: int, target: ConsumerTarget, root: Path) -> dict:
     """Build one in-file managed-block ``source_write`` op for *target*.
 
     The target file is an allowlisted, existing-or-creatable path from
-    :data:`CONSUMER_MANAGED_FILE` (provisional Phase 4 convention). Whether this op inserts
+    :data:`CONSUMER_MANAGED_FILE`. Whether this op inserts
     (no sentinel present, including an absent file) or replaces (sentinel already present) is
     decided here, at plan time, from the file's current content — :func:`_classify_mutation`
     re-derives the same decision at apply time and refuses on any disagreement (drift).

@@ -57,6 +57,11 @@ Required checks:
 - Do not advertise reverted changes as live features.
 - Call out security/dependency changes with source evidence.
 
+**Structural context (optional)**: for a Python package release, also probe codemap-py once for undocumented public
+surface and externally-uncalled modules: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category audit --out
+<run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal —
+continue with the checks above, using the persisted evidence as an additional readiness signal.
+
 Write `<run-directory>/release-readiness.md` with:
 
 - `SemVer`

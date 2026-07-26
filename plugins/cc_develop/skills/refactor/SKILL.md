@@ -191,11 +191,11 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")  # timeout: 3000
 REFACTOR_FILES=$(find <target> -name '*.py' -type f 2>/dev/null)
 AFFECTED_MODULES=$(echo "$REFACTOR_FILES" | sed 's|^\./||;s|^src/||;s|\.py$||;s|/|.|g' | grep . || echo "")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ] && [ -n "$AFFECTED_MODULES" ]; then
+if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ] && [ -n "$AFFECTED_MODULES" ]; then
     while IFS= read -r mod; do
-        scan-query rdeps "$mod" 2>/dev/null
+        codemap-py query rdeps "$mod" 2>/dev/null
     done <<< "$AFFECTED_MODULES"
-    scan-query coupled --top 10
+    codemap-py query coupled --top 10
 fi
 ```
 
@@ -399,7 +399,7 @@ For each change:
 1. One focused change (single responsibility per edit)
 2. Run affected tests (prefer targeted over full characterization suite):
    ```bash
-   scan-query test-impact "<changed_module>" 2>/dev/null
+   codemap-py query test-impact "<changed_module>" 2>/dev/null
    ```
    - Non-empty `pytest_cmd` → run those tests; surface `not_covered` caveat if present; fall back to full suite if all tests pass but feel incomplete
    - Empty or unavailable → full suite:

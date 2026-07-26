@@ -29,7 +29,7 @@ _CLAUDE_MANIFEST = (
 _CODEX_MANIFEST = b'{"name": "codemap-py", "version": "0.25.0", "skills": "./codex-skills/"}\n'
 _HOOKS_WIRING = (
     b'{"hooks": {"SessionStart": [{"hooks": [{"type": "command", '
-    b'"command": "node \\"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.js\\""}]}]}}\n'
+    b'"command": "python \\"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.py\\""}]}]}}\n'
 )
 
 # (relative path, bytes, executable) — a complete, closed, well-formed package.
@@ -44,7 +44,7 @@ _MEMBERS: dict[str, tuple[bytes, bool]] = {
     "claude-skills/_shared/codemap-context.md": (b"shared loader\n", False),
     "codex-skills/scan-codebase/SKILL.md": (b"---\nname: scan-codebase\n---\n", False),
     "hooks/claude-hooks.json": (_HOOKS_WIRING, False),
-    "hooks/seed-session.js": (b"// seed session\n", False),
+    "hooks/seed-session.py": (b"# seed session\n", False),
     "bin/scan-index": (b"#!/usr/bin/env python3\nprint('index')\n", True),
     "bin/_schema.py": (b"SCAN_VERSION = 11\n", False),
 }
@@ -210,9 +210,9 @@ def test_symlink_flagged(valid_package: Path) -> None:
 
 def test_missing_referenced_hook_helper_flagged(valid_package: Path) -> None:
     """A hook helper named by the wiring but absent from the package is flagged."""
-    _drop_member(valid_package, "hooks/seed-session.js")
+    _drop_member(valid_package, "hooks/seed-session.py")
     assert any(
-        "referenced hook helper missing: hooks/seed-session.js" == item for item in validate_findings(valid_package)
+        "referenced hook helper missing: hooks/seed-session.py" == item for item in validate_findings(valid_package)
     )
 
 

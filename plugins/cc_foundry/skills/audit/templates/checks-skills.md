@@ -372,7 +372,7 @@ else
       [ -f "$f" ] || continue
       skill_plugin=$(echo "$f" | cut -d/ -f2)
       # Find refs to other plugins in prose (backtick-wrapped /plugin:skill or /plugin:skill in plain text)
-      matches=$(grep -nE '`/[a-z]+:[a-z]|/oss:|/develop:|/research:|/codemap:|/foundry:' "$f" 2>/dev/null |
+      matches=$(grep -nE '`/[a-z]+:[a-z]|/oss:|/develop:|/research:|/codemap:|/codemap-py:|/foundry:' "$f" 2>/dev/null |
         grep -v "subagent_type\|#.*requires\|requires.*plugin\|plugin.*installed\|if.*plugin" |
         grep -v "$(echo "$skill_plugin" | sed 's/[^a-z]//g'):" || true)
       if [ -n "$matches" ]; then

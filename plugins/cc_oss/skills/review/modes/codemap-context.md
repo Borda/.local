@@ -15,20 +15,20 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || P
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 # $RUN_DIR created in Step 2; stage to TMPDIR, copied then
 CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/oss-review-codemap-context-${CLEAN_ARGS}-${CSID}.md"
-if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+if [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     codemap_available=true
     CHANGED_MODS=$(echo "$CHANGED_FILES" | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')
     {
         echo "## Structural Context (codemap)"
         echo
         echo "### Global blast-radius baseline"
-        scan-query --timeout 5 central --top 5 2>/dev/null
+        codemap-py query --timeout 5 central --top 5 2>/dev/null
         echo
         echo "### Change-set blast radius (diff-impact)"
         # PR diff is not in local git objects — feed the fetched diff text directly.
         # Restores function-level context (fn-rdeps per changed symbol, test-impact,
         # risk tiers) that the per-module battery below cannot provide (P1.2b).
-        gh pr diff $CLEAN_ARGS 2>/dev/null | scan-query --timeout 15 diff-impact --diff-file - 2>/dev/null
+        gh pr diff $CLEAN_ARGS 2>/dev/null | codemap-py query --timeout 15 diff-impact --diff-file - 2>/dev/null
         echo
         # while-read, NOT `for mod in $CHANGED_MODS`: zsh does not word-split unquoted
         # vars (SH_WORD_SPLIT off), so the for-loop passed the whole newline-joined
@@ -41,11 +41,11 @@ if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1 && [
         printf '%s\n' "$CHANGED_MODS" | while IFS= read -r mod; do
             [ -n "$mod" ] || continue
             echo "### Module: $mod"
-            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → risk tier
-            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock coverage (v4.1)
-            scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)
-            scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5)
-            scan-query --timeout 5 undocumented "$mod" 2>/dev/null  # doc coverage (v4.4)
+            codemap-py query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → risk tier
+            codemap-py query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock coverage (v4.1)
+            codemap-py query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)
+            codemap-py query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5)
+            codemap-py query --timeout 5 undocumented "$mod" 2>/dev/null  # doc coverage (v4.4)
             echo
         done
     } > "$CODEMAP_CONTEXT_STAGE"

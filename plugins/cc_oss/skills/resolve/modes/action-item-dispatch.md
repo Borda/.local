@@ -86,9 +86,9 @@ ITEM_DATA=$(jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl")  # t
 
 Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for commit scope and blast-radius lookup, `.change`/`.severity` for effort classification and agent routing.
 
-**Pre-loop blast-radius scan** — run once in main orchestrator before loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `scan-query` is a no-op.
+**Pre-loop blast-radius scan** — run once in main orchestrator before loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `codemap-py query` is a no-op.
 
-Each module's `rdeps` answer served from **review pre-flight cache** first (materialized in SKILL.md Step 8; contract in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache). `codemap_cache.py read` returns `{"reuse":true,...}` only when cached answer fresh against current index (matching `git_sha`, `scanned_at` not older); cache hit skips `scan-query` process entirely, so resolve after `/review` issues 0 duplicate pre-flight queries. Cache miss (`reuse:false`, no artifact, or oss helper absent) → query live, unchanged. Reused hits marked in artifact `delta.notes` so `codemap_cache.py report` can compute `reuse_ratio` as health metric.
+Each module's `rdeps` answer served from **review pre-flight cache** first (materialized in SKILL.md Step 8; contract in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache). `codemap_cache.py read` returns `{"reuse":true,...}` only when cached answer fresh against current index (matching `git_sha`, `scanned_at` not older); cache hit skips `codemap-py query` process entirely, so resolve after `/review` issues 0 duplicate pre-flight queries. Cache miss (`reuse:false`, no artifact, or oss helper absent) → query live, unchanged. Reused hits marked in artifact `delta.notes` so `codemap_cache.py report` can compute `reuse_ratio` as health metric.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -97,7 +97,7 @@ BLAST_RADIUS_CONTEXT=""
 IFS= read -r CODEMAP_CACHE_DIR < "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}" 2>/dev/null || CODEMAP_CACHE_DIR=""  # timeout: 3000
 _IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-').json"
 _CACHE_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py"
-if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
+if command -v codemap-py >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
     echo "→ Codemap pre-scan — caller context for selected action items:"
     for _id in $SELECTED_ITEMS; do
         _f=$(jq -r "select(.id == $_id) | .file // empty" "$IMPL_DIR/action-items.jsonl")  # timeout: 5000
@@ -114,7 +114,7 @@ if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" 
                 echo "  #${_id} ${_m} ← callers (cached, reused): $(echo "$_c" | tr '\n' ' ')"
             fi
         fi
-        [ -z "$_c" ] && _c=$(scan-query rdeps "$_m" 2>/dev/null | head -20)  # timeout: 10000
+        [ -z "$_c" ] && _c=$(codemap-py query rdeps "$_m" 2>/dev/null | head -20)  # timeout: 10000
         if [ -n "$_c" ]; then
             printf "  #%s %s ← callers: %s\n" "$_id" "$_m" "$(echo "$_c" | tr '\n' ' ')"
             BLAST_RADIUS_CONTEXT+="item #${_id} (${_m}) callers:"$'\n'"${_c}"$'\n\n'
@@ -188,16 +188,16 @@ Return ONLY compact JSON as your FINAL message (nothing after it):
 ```bash
 CODEMAP_MAPS="$IMPL_DIR/codemap-maps.json"; : > "$CODEMAP_MAPS"
 DEPS_MAP="$IMPL_DIR/codemap-deps.jsonl"; : > "$DEPS_MAP"
-if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
+if command -v codemap-py >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
     _FILES=$(for _id in $SELECTED_ITEMS; do
         jq -r "select(.id == $_id) | .file // empty" "$IMPL_DIR/action-items.jsonl"
     done | paste -sd, -)  # timeout: 5000
-    scan-query central --top 100000 2>/dev/null \
+    codemap-py query central --top 100000 2>/dev/null \
         | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_centrality.py" --files "$_FILES" > "$CODEMAP_MAPS" 2>/dev/null \
         || : > "$CODEMAP_MAPS"
     if [ -s "$CODEMAP_MAPS" ]; then
         for _m in $(python -c 'import json,sys; print(" ".join(sorted({v for v in json.load(open(sys.argv[1]))["file_module"].values() if v})))' "$CODEMAP_MAPS"); do
-            scan-query deps "$_m" 2>/dev/null \
+            codemap-py query deps "$_m" 2>/dev/null \
                 | python -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({d["module"]: d.get("direct_imports", [])}))' >> "$DEPS_MAP"  # timeout: 5000
         done
     fi
@@ -223,7 +223,7 @@ Group `SURVIVING_ITEMS` by `IMPL_AGENT` (routing table at top of this file; `--a
 
 (`foundry:challenger` never appears here — Phase 1 only, read-only, holds no file ownership.) For each contested file, reassign **every** item touching it to the single highest-ranked group in the contest — the item's original `IMPL_AGENT` routing is overridden by ownership, not by its own `change` value. Print `→ #<id> reassigned <from> → <to> (file overlap: <path>)` per reassignment so it's auditable.
 
-**Import-coupling merge** (soft — catches the *semantic* conflict the file-path tiebreak is blind to): file overlap only co-locates items editing the **same** file. Two items in **different** files still collide when one imports the other — item A renames a symbol in `pkg.auth`, item B edits `pkg.middleware` which imports it; both land, cherry-pick textually clean, code broken. Structural prep already captured the links: items A and B are **import-coupled** when one's module is in the other's `direct_imports` — B's module ∈ A's imports (or vice versa), reading `$IMPL_DIR/codemap-deps.jsonl` keyed by the module names in `codemap-maps.json`'s `file_module`. This uses forward `deps` (fan-out, bounded) rather than reverse `rdeps`, so recall is **not** truncated by the 20-caller display cap. After the file-overlap pass, for each import-coupled pair still split across two groups, reassign the lower-ranked item's group to the higher-ranked one (same specialist ranking above) so both land in one worktree and the specialist keeps them consistent. Print `→ #<id> reassigned <from> → <to> (import coupling: <mod> ↔ <mod>)`. This merge is **soft**, unlike file overlap: it yields to the 5-item cap below — if honoring it would push a group past 5, leave the pair split and rely on Phase 3's conflict fallback plus the blast-radius context already handed to each agent. Empty `codemap-deps.jsonl` (no scan-query / query failure) → no-op; file-overlap grouping stands.
+**Import-coupling merge** (soft — catches the *semantic* conflict the file-path tiebreak is blind to): file overlap only co-locates items editing the **same** file. Two items in **different** files still collide when one imports the other — item A renames a symbol in `pkg.auth`, item B edits `pkg.middleware` which imports it; both land, cherry-pick textually clean, code broken. Structural prep already captured the links: items A and B are **import-coupled** when one's module is in the other's `direct_imports` — B's module ∈ A's imports (or vice versa), reading `$IMPL_DIR/codemap-deps.jsonl` keyed by the module names in `codemap-maps.json`'s `file_module`. This uses forward `deps` (fan-out, bounded) rather than reverse `rdeps`, so recall is **not** truncated by the 20-caller display cap. After the file-overlap pass, for each import-coupled pair still split across two groups, reassign the lower-ranked item's group to the higher-ranked one (same specialist ranking above) so both land in one worktree and the specialist keeps them consistent. Print `→ #<id> reassigned <from> → <to> (import coupling: <mod> ↔ <mod>)`. This merge is **soft**, unlike file overlap: it yields to the 5-item cap below — if honoring it would push a group past 5, leave the pair split and rely on Phase 3's conflict fallback plus the blast-radius context already handed to each agent. Empty `codemap-deps.jsonl` (no codemap-py query / query failure) → no-op; file-overlap grouping stands.
 
 Re-derive group membership after all reassignments (file overlap + import coupling), **then** cap 5 items/group — same context ceiling the old file-affinity batching used; a specialist with more than 5 items splits into `ceil(N/5)` groups, **keeping every file's items together in the same sub-group** (never split one file's items across two sub-groups — would reintroduce the exact conflict this tiebreak exists to prevent). Each resulting sub-group is one worktree with its own `group` tag (reused in Phase 3's merge plan).
 
@@ -268,7 +268,7 @@ fi
 
 Build the cherry-pick plan in **original `SELECTED_ITEMS` priority order**, interleaved across specialist groups by item id — NOT grouped by specialist, so the base order matches severity ranking regardless of which group finished first. This global sort is safe because Phase 1/2 grouping preserved each specialist's internal relative order (stable partition) — sorting by original priority never reorders two items from the same specialist relative to each other. Each entry also carries its worktree `group` tag (from Phase 2) and its `module` — the **canonical codemap name** for the item's `.file`, read from `file_module` in `$IMPL_DIR/codemap-maps.json` (built in Structural prep), blank when unresolved. Never hand-derive it with a sed transform: codemap names a package `__init__.py` after the package (`pkg`, not `pkg.__init__`), so a sed guess silently mismatches the centrality keys and scores 0.
 
-**Centrality ordering** (lands the most foundational change first, so contract-defining commits precede their dependents): the `{module: rdep_count}` centrality map was already built once in Structural prep (`$IMPL_DIR/codemap-maps.json`, from a single authoritative `scan-query central` pass — not the 20-capped `BLAST_RADIUS_CONTEXT`, which saturates). Extract it to a file so the merge step can reorder **whole worktree groups** most-central-first. Safe precisely because the file-ownership tiebreak guarantees distinct groups touch disjoint files — reordering whole chains can't add a textual conflict, and commit order **within** a chain is never touched (chains may build on themselves). Missing maps (no `scan-query` / query failure) → flag omitted, plan applies in priority order unchanged.
+**Centrality ordering** (lands the most foundational change first, so contract-defining commits precede their dependents): the `{module: rdep_count}` centrality map was already built once in Structural prep (`$IMPL_DIR/codemap-maps.json`, from a single authoritative `codemap-py query central` pass — not the 20-capped `BLAST_RADIUS_CONTEXT`, which saturates). Extract it to a file so the merge step can reorder **whole worktree groups** most-central-first. Safe precisely because the file-ownership tiebreak guarantees distinct groups touch disjoint files — reordering whole chains can't add a textual conflict, and commit order **within** a chain is never touched (chains may build on themselves). Missing maps (no `codemap-py query` / query failure) → flag omitted, plan applies in priority order unchanged.
 
 ```bash
 CENTRALITY_FILE=""

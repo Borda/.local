@@ -44,6 +44,11 @@ Unsupported/ambiguous mode => fail with usage note, unless pasted evidence suppo
 Use `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `working-tree` into `<run-directory>/baseline`. Scan references
 separately; record failed diff collection.
 
+**Structural context (optional)**: for `local`/`ecosystem` scope naming a Python module or symbol, probe codemap-py once:
+`python PLUGIN_ROOT/shared/codemap_adapter.py context --category analysis [--target <qname>] --out <run-directory>/codemap-context.json`.
+Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the evidence above. Persist
+the result once here; step 05 specialist fan-out consumes `<run-directory>/codemap-context.json`, never a fresh query.
+
 ### 04: Gather evidence with a ledger. Write `<run-directory>/evidence.md` with one row per claim:
 
 ```markdown

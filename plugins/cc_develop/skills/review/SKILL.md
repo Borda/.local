@@ -253,23 +253,23 @@ IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSI
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     codemap_available=true
     # RUN_DIR not yet created (Step 2); stage here, copy to $RUN_DIR/codemap-context.md after mkdir
-    # scan-query on PATH guaranteed — codemap-resolve confirmed it
+    # codemap-py query on PATH guaranteed — codemap-resolve confirmed it
     CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md-${CSID}"
     BATCH_REQ="${TMPDIR:-/tmp}/dev-review-codemap-batch.json-${CSID}"
     # build_codemap_batch.py derives changed modules from git diff (src-layout mapping,
     # dir fallback) and writes one batch request: central + 5 pre-flight queries per
-    # module — one scan-query process, one shared coverage block, instead of N×5 spawns
+    # module — one codemap-py query process, one shared coverage block, instead of N×5 spawns
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/build_codemap_batch.py" "$BATCH_REQ"  # timeout: 5000
     {
         echo "## Structural Context (codemap)"
         echo
         echo "### Batched query results (one shared coverage block)"
-        scan-query --timeout 20 batch "$BATCH_REQ" 2>/dev/null
+        codemap-py query --timeout 20 batch "$BATCH_REQ" 2>/dev/null
         echo
         echo "### Change-set blast radius (diff-impact)"
         # function-level context the module batch cannot provide: fn-rdeps per changed
         # symbol (line-range mapped, methods included), unioned test-impact, risk tiers
-        scan-query --timeout 15 diff-impact 2>/dev/null
+        codemap-py query --timeout 15 diff-impact 2>/dev/null
     } > "$CODEMAP_CONTEXT_STAGE"
 fi
 echo "$codemap_available" > "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}"

@@ -26,8 +26,7 @@ for _p in (_BIN, _SRC):
         sys.path.insert(0, str(_p))
 
 import _index_identity  # noqa: E402  (needs the bin path insert above)
-import check_injection  # noqa: E402  (needs the bin path insert above)
-from codemap_py import graph  # noqa: E402  (needs the src path insert above)
+from codemap_py import graph, index_paths  # noqa: E402  (needs the src path insert above)
 
 
 def _seed_plugin_cache(home: Path, entries: dict[str, str]) -> Path:
@@ -92,22 +91,25 @@ def test_resolver_selects_codemap_py_when_both_cached(tmp_path: Path, monkeypatc
     home = tmp_path / "home"
     _seed_plugin_cache(home, {"codemap": "1.0.0", "codemap-py": "0.25.0"})
     monkeypatch.setenv("HOME", str(home))
-    resolved = check_injection.resolve_plugin_root(None)
+    # Path.home() reads USERPROFILE first on Windows (then HOMEDRIVE/HOMEPATH), so HOME alone
+    # leaves the resolver pointed at the real CI home and the seeded cache is never found.
+    monkeypatch.setenv("USERPROFILE", str(home))
+    resolved = index_paths.resolve_plugin_root(None)
     assert resolved is not None
     assert resolved.parent.name == "codemap-py"
     assert resolved.name == "0.25.0"
 
 
 def test_shipped_detect_dual_identity_fires_when_both_cached(tmp_path: Path) -> None:
-    """The shipped ``check_injection.detect_dual_identity`` names the violation when both coexist."""
+    """The shipped migration utility names the violation when both identities coexist."""
     cache_base = _seed_plugin_cache(tmp_path / "home", {"codemap": "1.0.0", "codemap-py": "0.25.0"})
-    assert check_injection.detect_dual_identity(cache_base) == "dual_plugin_identity"
+    assert index_paths.detect_dual_identity(cache_base) == "dual_plugin_identity"
 
 
 def test_shipped_detect_dual_identity_clean_when_only_renamed_cached(tmp_path: Path) -> None:
     """The shipped detector is silent when only codemap-py is cached."""
     cache_base = _seed_plugin_cache(tmp_path / "home", {"codemap-py": "0.25.0"})
-    assert check_injection.detect_dual_identity(cache_base) is None
+    assert index_paths.detect_dual_identity(cache_base) is None
 
 
 # --- .pyi migration: exactly one rebuild via file_shas drift, then stable reuse ----

@@ -49,12 +49,8 @@ runtime-discovered extension.
 The engine owns only marked blocks and generated adapter files listed in its versioned target map
 (§9.3) — inside allowlisted, version-controlled consumer source files (e.g.
 `plugins/cc_foundry/skills/_shared/codemap-context.md`,
-`plugins/cc_oss/skills/_shared/codemap-gates.md`, a Codex-Rig adapter module). This supersedes the
-retired installed-cache injection model (`bin/inject_codemap.py` / `bin/_injection_block.py`,
-whose init-write workflow is retired from the integration skill in Phase 4; the modules themselves
-are retained because migration/gate machinery still imports them, and their full removal is Phase 5
-legacy-cleanup work) — the marker idiom below reuses that model's
-proven sentinel + version-stamp pattern, but the target is always a checked-in source file, never
+`plugins/cc_oss/skills/_shared/codemap-gates.md`, a Codex-Rig adapter module). This replaces the
+removed installed-cache injection model: the marker idiom targets a checked-in source file, never
 an installed plugin cache path.
 
 Marker shape (HTML-comment sentinels bound the re-injectable region; content outside the sentinels

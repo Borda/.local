@@ -75,6 +75,7 @@
   "Bash(python -m pytest:*)",
   "Bash(python:*)",
   "Bash(ruff:*)",
+  "Bash(codemap-py:*)",
   "Bash(scan-query:*)",
   "Bash(sed:*)",
   "Bash(sort:*)",

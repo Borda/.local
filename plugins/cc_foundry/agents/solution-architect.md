@@ -60,32 +60,32 @@ Load design_artifacts from `${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/_sh
 
 Measure fan-in (importers) and fan-out (imports):
 
-- **Fan-in** (importers): prefer `scan-query rdeps <module>` when codemap index exists (requires `codemap` plugin) — catches aliased imports and star re-exports Grep misses; fallback: Grep tool (pattern `from mypackage.target import|import mypackage.target`, glob `**/*.py`, path `src/`, output mode `files_with_matches`)
-- **Fan-out** (imports): prefer `scan-query deps <module>` when index exists; fallback: Grep tool (pattern `^from |^import `, file `src/mypackage/target.py`, output mode `content`)
-- **Cross-module symbol refs**: `scan-query xrefs <module::symbol>` when codemap available — symbol-level cross-refs, not just import-level; fallback: Grep on symbol name
+- **Fan-in** (importers): prefer `codemap-py query rdeps <module>` when codemap index exists (requires `codemap` plugin) — catches aliased imports and star re-exports Grep misses; fallback: Grep tool (pattern `from mypackage.target import|import mypackage.target`, glob `**/*.py`, path `src/`, output mode `files_with_matches`)
+- **Fan-out** (imports): prefer `codemap-py query deps <module>` when index exists; fallback: Grep tool (pattern `^from |^import `, file `src/mypackage/target.py`, output mode `content`)
+- **Cross-module symbol refs**: `codemap-py query xrefs <module::symbol>` when codemap available — symbol-level cross-refs, not just import-level; fallback: Grep on symbol name
 - High fan-in = stability required; changes break many things.
 - High fan-out = fragile; breaks when dependencies change.
 
-> Codemap index check: `command -v scan-query >/dev/null 2>&1 && [ -f "${CODEMAP_INDEX_DIR:-.cache/codemap}/$(basename "$(git rev-parse --show-toplevel 2>/dev/null)").json" ]`. Run `/codemap:scan-codebase` first if absent.
+> Codemap index check: `command -v codemap-py >/dev/null 2>&1 && [ -f "${CODEMAP_INDEX_DIR:-.cache/codemap}/$(basename "$(git rev-parse --show-toplevel 2>/dev/null)").json" ]`. Run `/codemap-py:scan-codebase` first if absent.
 
 <codemap_context>
 
-Codemap pre-flight — run if `scan-query` available + index exists; provides structural coupling data before analysis (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight — run if `codemap-py query` available + index exists; provides structural coupling data before analysis (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    scan-query central --top 5 2>/dev/null  # blast-radius baseline; always run
+if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    codemap-py query central --top 5 2>/dev/null  # blast-radius baseline; always run
     if [ -n "$TARGET_MODULE" ]; then
-        scan-query rdeps "$TARGET_MODULE" 2>/dev/null   # fan-in
-        scan-query deps "$TARGET_MODULE" 2>/dev/null    # fan-out
-        [ -n "$TARGET_FN" ] && scan-query xrefs "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+        codemap-py query rdeps "$TARGET_MODULE" 2>/dev/null   # fan-in
+        codemap-py query deps "$TARGET_MODULE" 2>/dev/null    # fan-out
+        [ -n "$TARGET_FN" ] && codemap-py query xrefs "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
-            scan-query rdeps "$_MOD" 2>/dev/null
-            scan-query deps "$_MOD" 2>/dev/null
+            codemap-py query rdeps "$_MOD" 2>/dev/null
+            codemap-py query deps "$_MOD" 2>/dev/null
         done
     fi
 fi

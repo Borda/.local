@@ -46,6 +46,12 @@ Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`, collect `working-tre
 
 Add needed tool logs, CI excerpts, tracebacks, config, changed source. Absence of evidence ≠ evidence of absence.
 
+**Structural context (optional)**: when `scope` names a Python module/symbol, also probe codemap-py once for callers,
+coupling, and test impact: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category develop --target <qname>
+--out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`, absence/incompatibility is
+non-fatal — continue with the signals above. Persist the result once here, before hypothesis ranking; step 05
+specialist probes consume `<run-directory>/codemap-context.json`, never a fresh query.
+
 ### 04: Rank hypotheses in `<run-directory>/hypotheses.md`
 
 ```markdown

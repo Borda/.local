@@ -42,11 +42,11 @@ Gate — runs after Classify, before Audit changelog.
 For each in-scope change — prefer codemap (immune to false positives from comments/stubs):
 
 ```bash
-# codemap index (installed by /codemap:scan-codebase)
-CODEMAP_OK=$(scan-query list 2>/dev/null | wc -l)  # timeout: 5000
+# codemap index (installed by /codemap-py:scan-codebase)
+CODEMAP_OK=$(codemap-py query list 2>/dev/null | wc -l)  # timeout: 5000
 # non-zero = index loaded; else grep fallback
 
-scan-query find-symbol '^<symbol_name>$' 2>/dev/null  # timeout: 5000
+codemap-py query find-symbol '^<symbol_name>$' 2>/dev/null  # timeout: 5000
 
 # grep fallback: definition-pattern only — skips comments/stubs
 git grep -wl "def <symbol_name>\|class <symbol_name>" HEAD -- '*.py' 2>/dev/null || \
@@ -78,7 +78,7 @@ Gate — runs after Truth check, before Audit changelog. Labels each diff-derive
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload RANGE (Check 41: fresh shell)
 IFS= read -r RANGE < "${TMPDIR:-/tmp}/release-range-${CSID}" 2>/dev/null || RANGE=""
-CODEMAP_OK=$(scan-query list 2>/dev/null | wc -l)  # timeout: 5000
+CODEMAP_OK=$(codemap-py query list 2>/dev/null | wc -l)  # timeout: 5000
 # 0 = no index → skip this phase entirely (human Classify labels stand)
 ```
 
@@ -100,7 +100,7 @@ When `CODEMAP_OK` non-zero:
    IFS= read -r DATE < "${TMPDIR:-/tmp}/release-setup-${CSID}/DATE" 2>/dev/null || DATE=""
    BREAKING_FILE=".temp/release-breaking-$BRANCH-$DATE.json"
    mkdir -p .temp  # timeout: 5000
-   scan-query batch "$QUERIES_FILE" 2>/dev/null \
+   codemap-py query batch "$QUERIES_FILE" 2>/dev/null \
      | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/classify_breaking.py" > "$BREAKING_FILE"  # timeout: 15000
    echo "${BREAKING_FILE:-}" > "${TMPDIR:-/tmp}/release-breaking-file-${CSID}"
    ```

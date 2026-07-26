@@ -6,6 +6,25 @@ repository directory, and skill namespace change. Pre-`0.25.0` history was recor
 `codemap` under `plugins/codemap/` — see the repository git history for that line; it is
 not reproduced here.
 
+## 0.27.0
+
+- Port all six Claude hooks to stdlib-only Python: session seeding, exhaustive-query recording,
+  redundant-scan guard, preamble injection, skill-start telemetry, and tool-use telemetry. The
+  guard and recorder retain their shared per-session sentinel contract. The preamble uses an
+  atomic exclusive refresh lock and a platform-specific detached spawn; its Windows process-group
+  branch is acceptance-tested. Claude hook wiring now launches Python helpers; Codex still declares
+  no hook.
+- Remove the retired installed-cache injection implementation and its audit/tests. The integration
+  engine is the sole source-wiring path: `build_plan`/`apply_plan` write authenticated blocks only
+  at finalized checked-in targets. Migration utilities for plugin-root and dual-identity detection
+  now live in `codemap_py.index_paths`; the legacy post-commit installer is removed, while
+  `resolve_proj_index.py` and `smoke_test_index.py` remain live skill dependencies.
+- Finalize the engine target map: oss writes `skills/_shared/codemap-gates.md`; foundry, develop,
+  and research write `skills/_shared/codemap-context.md`; codex-rig writes
+  `shared/codemap-py-integration.md`. Root `sync.sh` stays the whole-repo aggregate installer;
+  retiring it to a `codemap-py integrate` exec adapter is deferred to a follow-up, since
+  `integrate` covers only the codemap-integration set, not sync.sh's full install scope.
+
 ## 0.26.0
 
 - Make the `integrate apply` engine byte-exact on Windows: `_atomic_write` now writes the managed block in binary mode so the on-disk bytes stay LF-only on every OS, matching the plan's expected post-state hash and the block's own embedded SHA-256 stamp (text-mode writes translated `\n` to `\r\n` on Windows, corrupting the self-authenticating marker and failing the post-write hash check); source-write rollback likewise restores the exact original bytes.

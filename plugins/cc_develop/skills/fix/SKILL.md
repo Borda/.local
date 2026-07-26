@@ -285,13 +285,13 @@ Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 # timeout: 6000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
-if [ "$CODEMAP_ENABLED" = "true" ] && [ -z "$TARGET_FN" ] && command -v scan-query >/dev/null 2>&1; then
+if [ "$CODEMAP_ENABLED" = "true" ] && [ -z "$TARGET_FN" ] && command -v codemap-py >/dev/null 2>&1; then
     DERIVED_FN=$(grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' "$DEV_DIR/checkpoint.md" 2>/dev/null | head -1)
     if [ -n "$DERIVED_FN" ]; then
         TARGET_FN="$DERIVED_FN"
         TARGET_MODULE="${DERIVED_FN%%::*}"
         export TARGET_FN TARGET_MODULE
-        scan-query --timeout 5 fn-rdeps "$TARGET_FN" --exclude-tests 2>/dev/null \
+        codemap-py query --timeout 5 fn-rdeps "$TARGET_FN" --exclude-tests 2>/dev/null \
             | tee "$DEV_DIR/fn-rdeps-output.txt" || true
     fi
 fi
@@ -518,10 +518,10 @@ Make minimal change to fix root cause:
 
    **Live query** — run only when no fresh handoff result was reused (`REUSED_PYTEST_CMD` empty):
    ```bash
-   scan-query test-impact "<changed_module::function or bare module>" 2>/dev/null
+   codemap-py query test-impact "<changed_module::function or bare module>" 2>/dev/null
    ```
    - Reused `REUSED_PYTEST_CMD` non-empty, OR live result non-empty `pytest_cmd` → use it instead of full `<test_dir>` run; surface `not_covered` caveat if present
-   - Result empty or `scan-query` absent → fall back to full directory below
+   - Result empty or `codemap-py query` absent → fall back to full directory below
 
    **Full suite fallback** (only when impact query returns empty or unavailable):
    ```bash

@@ -156,7 +156,7 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW") || {
-    echo "! BLOCKED — codemap-resolve failed (likely --codemap strict but codemap unavailable); run /codemap:scan-codebase or install codemap plugin"
+    echo "! BLOCKED — codemap-resolve failed (likely --codemap strict but codemap unavailable); run /codemap-py:scan-codebase or install codemap plugin"
     exit 1
 }
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}
@@ -337,8 +337,8 @@ echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn-${CSID}
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
 IFS= read -r TARGET_MODULE < "${TMPDIR:-/tmp}/dev-feature-target-module-${CSID}" 2>/dev/null || TARGET_MODULE=""   # re-derive — bash state lost between Bash() calls
-if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v scan-query >/dev/null 2>&1; then
-    scan-query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests 2>/dev/null || true
+if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v codemap-py >/dev/null 2>&1; then
+    codemap-py query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests 2>/dev/null || true
 fi
 ```
 
@@ -574,10 +574,10 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
 
    **Test impact (codemap)** — identify minimal test set first:
    ```bash
-   scan-query test-impact "<changed_module>" 2>/dev/null
+   codemap-py query test-impact "<changed_module>" 2>/dev/null
    ```
    - Non-empty `pytest_cmd` → run those tests first; surface `not_covered` caveat if present
-   - Empty or `scan-query` absent → fall back to full suite below
+   - Empty or `codemap-py query` absent → fall back to full suite below
 
    **Full suite fallback**:
    ```bash

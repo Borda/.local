@@ -9,6 +9,7 @@ contains it. Before creating or changing an invocation, run the relevant package
 - `python PLUGIN_ROOT/shared/run_gates.py --help`
 - `python PLUGIN_ROOT/shared/collect_diff.py --help`
 - `python PLUGIN_ROOT/shared/collect_pr.py --help`
+- `python PLUGIN_ROOT/shared/codemap_adapter.py --help` — optional structural-context probe; see `codemap-contract.md`
 - `python PLUGIN_ROOT/runtime/calibration/run.py --help`
 - `python PLUGIN_ROOT/runtime/calibration/run_live_ab.py --help`
 - `python PLUGIN_ROOT/runtime/calibration/score_behavioral.py --help`

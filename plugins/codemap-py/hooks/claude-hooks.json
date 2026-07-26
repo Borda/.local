@@ -5,11 +5,11 @@
       {
         "hooks": [
           {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/record-exhausted.js\"",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/record-exhausted.py\"",
             "type": "command"
           },
           {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.js\"",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.py\"",
             "type": "command"
           }
         ],
@@ -18,7 +18,7 @@
       {
         "hooks": [
           {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.js\"",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.py\"",
             "type": "command"
           }
         ],
@@ -29,7 +29,7 @@
       {
         "hooks": [
           {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-skill-start.js\"",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/log-skill-start.py\"",
             "type": "command"
           }
         ],
@@ -38,7 +38,7 @@
       {
         "hooks": [
           {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-redundant-scan.js\"",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-redundant-scan.py\"",
             "type": "command"
           }
         ],
@@ -49,7 +49,7 @@
       {
         "hooks": [
           {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.js\"",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.py\"",
             "type": "command"
           }
         ]
@@ -59,7 +59,7 @@
       {
         "hooks": [
           {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/inject-preamble.js\"",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/inject-preamble.py\"",
             "type": "command"
           }
         ]

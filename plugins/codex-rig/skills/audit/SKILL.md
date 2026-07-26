@@ -70,6 +70,12 @@ Run `rg -n` for `config_file|skills/|roles/|quality-gates|run_gates.py|write-res
 `.codex`, `.agents`, and the optional target. Write results to `<run-directory>/reference-scan.txt`; record missing
 inputs or command failure explicitly.
 
+**Structural context (optional)**: when the audited scope contains a Python package, also probe codemap-py once for
+undocumented public surface and externally-uncalled modules: `python PLUGIN_ROOT/shared/codemap_adapter.py context
+--category audit --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`,
+absence/incompatibility is non-fatal — continue with the reference scan above, using the persisted evidence as an
+additional signal, never a replacement for it.
+
 ### 06: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
 
 Run two separate `rg -n` argv scans: `delegat|specialist|spawn|role|\[agents\.` over existing `AGENTS.md` and

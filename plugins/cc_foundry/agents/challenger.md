@@ -47,20 +47,20 @@ Attack target across 6 dimensions:
 
 <codemap_context>
 
-Codemap pre-flight — run if `scan-query` available + index exists; provides blast-radius context before challenging (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight — run if `codemap-py query` available + index exists; provides blast-radius context before challenging (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    scan-query central --top 5 2>/dev/null  # always run; highest-blast modules = highest challenge priority
+if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    codemap-py query central --top 5 2>/dev/null  # always run; highest-blast modules = highest challenge priority
     if [ -n "$TARGET_MODULE" ]; then
-        scan-query rdeps "$TARGET_MODULE" 2>/dev/null
-        [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+        codemap-py query rdeps "$TARGET_MODULE" 2>/dev/null
+        [ -n "$TARGET_FN" ] && codemap-py query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
-            scan-query rdeps "$_MOD" 2>/dev/null
+            codemap-py query rdeps "$_MOD" 2>/dev/null
         done
     fi
 fi

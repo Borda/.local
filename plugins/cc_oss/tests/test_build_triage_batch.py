@@ -1,6 +1,6 @@
-"""Tests for ``bin/build_triage_batch.py`` — thread identifiers → scan-query batch spec.
+"""Tests for ``bin/build_triage_batch.py`` — thread identifiers → codemap-py query batch spec.
 
-The module maps extracted candidate identifiers to ``scan-query batch`` queries
+The module maps extracted candidate identifiers to ``codemap-py query batch`` queries
 (dotted modules → ``rdeps``, bare symbols → ``find-symbol``) and writes the JSON
 array to an output file for the oss:analyse stale-symbol check.
 """
@@ -63,7 +63,7 @@ def test_main_roundtrip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
 
 
 def test_main_empty_file_writes_empty_array(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Empty candidate file → out file is ``[]`` and stdout count is ``0`` (caller skips scan-query)."""
+    """Empty candidate file → out file is ``[]`` and stdout count is ``0`` (caller skips codemap-py query)."""
     cand = tmp_path / "cand.txt"
     cand.write_text("")
     out = tmp_path / "batch.json"

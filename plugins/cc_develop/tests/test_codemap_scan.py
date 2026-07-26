@@ -2,7 +2,7 @@
 
 Covers:
     - Pure module-derivation helpers (find/diff rules, flat-layout fallback).
-    - ``main()`` entry point: missing ``scan-query`` silent skip, missing index silent skip,
+    - ``main()`` entry point: missing ``codemap-py query`` silent skip, missing index silent skip,
       ``--source=find`` end-to-end with subprocess monkeypatching, ``--source=diff`` modes,
       bad-arg exit codes.
 """
@@ -95,7 +95,7 @@ def in_tmp_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _stub_scan_query_present(monkeypatch: pytest.MonkeyPatch, present: bool = True) -> None:
-    monkeypatch.setattr(cs.shutil, "which", lambda name: "/usr/bin/scan-query" if present else None)
+    monkeypatch.setattr(cs.shutil, "which", lambda name: "/usr/bin/codemap-py" if present else None)
 
 
 def _stub_git(monkeypatch: pytest.MonkeyPatch, project_name: str, diff_files: list[str] | None = None) -> None:
@@ -157,12 +157,12 @@ def test_main_find_mode_invokes_scan_query_per_module_and_coupled(
     rc = cs.main(["--source=find", "--target", "src/pkg", "--limit", "7"])
     assert rc == 0
 
-    # Each module → one scan-query rdeps call; plus one coupled --top N at end.
-    rdep_calls = [c for c in calls if c[:2] == ["scan-query", "rdeps"]]
-    coupled_calls = [c for c in calls if c[:2] == ["scan-query", "coupled"]]
-    rdep_modules = {c[2] for c in rdep_calls}
+    # Each module → one codemap-py query rdeps call; plus one coupled --top N at end.
+    rdep_calls = [c for c in calls if c[:3] == ["codemap-py", "query", "rdeps"]]
+    coupled_calls = [c for c in calls if c[:3] == ["codemap-py", "query", "coupled"]]
+    rdep_modules = {c[3] for c in rdep_calls}
     assert rdep_modules == {"pkg.a", "pkg.b"}
-    assert coupled_calls == [["scan-query", "coupled", "--top", "7"]]
+    assert coupled_calls == [["codemap-py", "query", "coupled", "--top", "7"]]
 
 
 def test_main_find_missing_target_returns_1(
@@ -193,10 +193,10 @@ def test_main_diff_mode_invokes_per_module(in_tmp_cwd: Path, monkeypatch: pytest
 
     rc = cs.main(["--source=diff", "--limit", "10"])
     assert rc == 0
-    modules = {c[2] for c in calls if c[:2] == ["scan-query", "rdeps"]}
+    modules = {c[3] for c in calls if c[:3] == ["codemap-py", "query", "rdeps"]}
     assert modules == {"pkg.a", "pkg.b"}
     # diff mode does NOT call coupled.
-    assert not any(c[:2] == ["scan-query", "coupled"] for c in calls)
+    assert not any(c[:3] == ["codemap-py", "query", "coupled"] for c in calls)
 
 
 def test_main_diff_flat_layout_fallback(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -213,7 +213,7 @@ def test_main_diff_flat_layout_fallback(in_tmp_cwd: Path, monkeypatch: pytest.Mo
 
     rc = cs.main(["--source=diff"])
     assert rc == 0
-    modules = sorted({c[2] for c in calls if c[:2] == ["scan-query", "rdeps"]})
+    modules = sorted({c[3] for c in calls if c[:3] == ["codemap-py", "query", "rdeps"]})
     assert modules == ["lib", "other"]
 
 

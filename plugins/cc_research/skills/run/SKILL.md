@@ -201,7 +201,7 @@ CODEMAP_RAW=auto
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-resolve" "$CODEMAP_RAW")
 if [ $? -ne 0 ]; then
-    [ "$CODEMAP_RAW" = "strict" ] && { echo "! BLOCKED — --codemap (strict) but codemap unavailable; run /codemap:scan-codebase or install codemap plugin"; exit 1; }
+    [ "$CODEMAP_RAW" = "strict" ] && { echo "! BLOCKED — --codemap (strict) but codemap unavailable; run /codemap-py:scan-codebase or install codemap plugin"; exit 1; }
     CODEMAP_ENABLED=false
 fi
 echo "$CODEMAP_ENABLED" > "${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}"

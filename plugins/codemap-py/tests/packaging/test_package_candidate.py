@@ -149,7 +149,7 @@ def test_package_omits_paths(package: Path, absent_rel: str) -> None:
         pytest.param("claude-skills/_shared/codemap-context.md", id="shared-doc"),
         pytest.param("codex-skills/query-code/SKILL.md", id="codex-skill"),
         pytest.param("hooks/claude-hooks.json", id="hook-manifest"),
-        pytest.param("hooks/inject-preamble.js", id="hook-js"),
+        pytest.param("hooks/inject-preamble.py", id="hook-python"),
         pytest.param("bin/scan-index", id="cli-alias"),
         pytest.param("bin/codemap-py", id="launcher"),
         pytest.param("scripts/codemap_py_cli.py", id="cli-script"),
@@ -163,17 +163,18 @@ def test_payload_includes_expected_members(package: Path, present_rel: str) -> N
     assert (package / present_rel).is_file()
 
 
-def test_all_six_hook_js_ship(package: Path) -> None:
-    """Exactly the six retained hook helpers ship (sentinel-read-allow removed)."""
-    js = sorted(p.name for p in (package / "hooks").glob("*.js"))
-    assert js == [
-        "guard-redundant-scan.js",
-        "inject-preamble.js",
-        "log-skill-start.js",
-        "log-tool-use.js",
-        "record-exhausted.js",
-        "seed-session.js",
+def test_all_six_python_hooks_ship(package: Path) -> None:
+    """Exactly the six retained Python hook helpers ship and no JavaScript remains."""
+    helpers = sorted(p.name for p in (package / "hooks").glob("*.py"))
+    assert helpers == [
+        "guard-redundant-scan.py",
+        "inject-preamble.py",
+        "log-skill-start.py",
+        "log-tool-use.py",
+        "record-exhausted.py",
+        "seed-session.py",
     ]
+    assert list((package / "hooks").glob("*.js")) == []
 
 
 @pytest.mark.parametrize(

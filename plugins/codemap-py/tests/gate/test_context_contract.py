@@ -14,11 +14,12 @@ a lone codemap install has no develop/oss tree next to it).
 
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
-import _injection_block as ib
-import inject_codemap as ic
 import pytest
+from codemap_py import integration
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent
 _PLUGINS_DIR = _PLUGIN_ROOT.parent
@@ -44,10 +45,10 @@ class TestContextContract:
         assert "# Codemap context contract — v2" in text
 
     def test_declares_cross_plugin_consumers(self):
-        """Consumer header names the injection block + wrapper consumers so it is not orphan-pruned."""
+        """Consumer header names the managed-block contract and wrapper consumers."""
         text = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
         assert "<!-- file: codemap-context.md" in text
-        assert "_injection_block.py" in text
+        assert "codemap-py.integration.v1" in text
 
     @pytest.mark.parametrize(
         "section",
@@ -80,9 +81,11 @@ class TestContextContract:
             assert state in text
 
     def test_block_reference_target_matches_contract(self):
-        """The injected block's reference line names exactly this shipped contract file."""
-        assert "claude-skills/_shared/codemap-context.md" in ib.BLOCK
-        assert _CONTEXT_CONTRACT.is_file()
+        """The managed block identifies the shipped integration contract."""
+        body = integration._managed_block_body("claude", "develop", "1.0.0")
+        rendered = integration._render_managed_block(body)
+        assert "Contract: shared/integration-contract.md" in rendered
+        assert (_PLUGIN_ROOT / "shared" / "integration-contract.md").is_file()
 
 
 class TestGatesContract:
@@ -191,30 +194,36 @@ class TestOssGatesWrapper:
         assert "Never break the load." in text
 
 
-def _make_fixture_plugin(root: Path) -> Path:
-    """Materialise a minimal plugin tree with one inject-worthy SKILL.md; return the plugin root."""
-    skill = root / "skills" / "demo" / "SKILL.md"
-    skill.parent.mkdir(parents=True, exist_ok=True)
-    # Body scores >=2 (python marker + bash block) → action "inject".
-    skill.write_text("import os\n\n```bash\nls\n```\n\n## Step 1\ndo the thing\n", encoding="utf-8")
-    return root
+def _commit_fixture(root: Path) -> None:
+    """Commit the fixture baseline so apply's dirty-overlap guard can run honestly."""
+    for args in (
+        ("init", "-q"),
+        ("config", "user.email", "t@t.t"),
+        ("config", "user.name", "t"),
+        ("add", "-A"),
+        ("commit", "-q", "-m", "baseline"),
+    ):
+        result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
+        assert result.returncode == 0, result.stderr
 
 
-class TestStrangerFixtureReferenceResolves:
-    """Injecting the block on a fresh project yields a reference line resolving to the shipped contract."""
+class TestStrangerFixtureManagedBlock:
+    """A fresh consumer uses the current plan/apply protocol, never legacy injection."""
 
-    def test_injected_reference_resolves_to_shipped_contract(self, tmp_path: Path):
-        """After apply, the block's contract reference names the file that exists in the codemap plugin."""
-        plugin_root = _make_fixture_plugin(tmp_path / "plugin")
-        empty_home = tmp_path / "home"  # hermetic — no real ~/.claude personal skills
-        empty_home.mkdir()
+    def test_apply_plan_writes_contract_bound_block(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Plan then apply writes the allowlisted oss gates block with the contract reference."""
+        root = tmp_path / "fixture"
+        manifest = root / "plugins" / "cc_oss" / ".claude-plugin" / "plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"name": "oss", "version": "1.0.0"}) + "\n", encoding="utf-8")
+        _commit_fixture(root)
+        monkeypatch.chdir(root)
 
-        report = ic.build_report(plugin_root, apply=True, project_root=plugin_root, home=empty_home)
-        assert report["summary"]["applied"] == 1
+        plan = integration.build_plan("claude", ["oss"], None, root / "plugins" / "codemap-py")
+        result = integration.apply_plan(
+            plan, plan["plan_sha256"], root / "plugins" / "codemap-py", tmp_path / "journal"
+        )
 
-        injected = (plugin_root / "skills" / "demo" / "SKILL.md").read_text(encoding="utf-8")
-        # The reference line the block injects points at the shipped contract file, which exists.
-        assert "claude-skills/_shared/codemap-context.md" in injected
-        resolved = _PLUGIN_ROOT / "claude-skills" / "_shared" / "codemap-context.md"
-        assert resolved.is_file()
-        assert "# Codemap context contract — v2" in resolved.read_text(encoding="utf-8")
+        assert result["state"] == "complete"
+        target = root / "plugins" / "cc_oss" / "skills" / "_shared" / "codemap-gates.md"
+        assert "Contract: shared/integration-contract.md" in target.read_text(encoding="utf-8")

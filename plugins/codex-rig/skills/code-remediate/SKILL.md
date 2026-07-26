@@ -93,6 +93,13 @@ If checkout starts dirty, conflicted, or partially merged, fail or ask cleanup b
 
 ### 04: Normalize Findings Before Editing
 
+**Structural context (optional)**: when `target_scope` names a Python module, also probe codemap-py once for
+changed-symbol/caller impact: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review [--target
+<qname>] --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`,
+absence/incompatibility is non-fatal — continue normalizing findings from `findings-input.txt` alone. Persist the
+result once here; specialist owners assigned in step 06 receive `<run-directory>/codemap-context.json` in their
+context pack, never a fresh query.
+
 Write `<run-directory>/action-items.md` starting with `## Review Item Resolution Table`, before prose. One row per ingested entry: all report findings, normalized report-origin review obligations, fetched online PR comments, PR reviews, review threads, unresolved review threads. If user supplied/requested report, include report items even if fresh PR evidence repeats them. Table is selectable-findings source; every `resolved` row needs resolution evidence. Never reduce ledger to changed/selected/unresolved/high-impact rows.
 
 For `mode=pr`, check every report/PR-review item against PR intent and changed diff before triage:

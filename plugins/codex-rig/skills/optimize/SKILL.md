@@ -70,6 +70,13 @@ For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code
 
 No fan-out for one small measured change with stable metric/guard. Never let specialist change metric/guard scripts unless explicitly in `scope_files` and measurement-integrity risk recorded.
 
+**Structural context (optional)**: when `scope_files` resolves to a Python module/symbol, also probe codemap-py once
+for callers, coupling, and test impact before the first iteration: `python PLUGIN_ROOT/shared/codemap_adapter.py
+context --category develop --target <qname> --out <run-directory>/codemap-context.json`. Per
+`../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the hypothesis above.
+Persist the result once here, before step 04 applies any change; any triggered specialist consumes
+`<run-directory>/codemap-context.json`, never a fresh query.
+
 Initialize machine-readable iteration log:
 
 Create an empty `<run-directory>/experiments.jsonl` with the filesystem tool before the first iteration.

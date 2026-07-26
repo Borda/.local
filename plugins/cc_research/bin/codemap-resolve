@@ -17,7 +17,7 @@ case "$MODE" in
 esac
 
 # auto or strict: probe binary + index
-if command -v scan-query >/dev/null 2>&1; then
+if command -v codemap-py >/dev/null 2>&1; then
   PROJ=$(basename "$(timeout 5 git rev-parse --show-toplevel 2>/dev/null || echo 'default')")
   # Strip any chars outside safe project-name set before path interpolation.
   PROJ=$(echo "$PROJ" | tr -cd 'a-zA-Z0-9._-')
@@ -32,7 +32,7 @@ if command -v scan-query >/dev/null 2>&1; then
       _REASON=$(python3  "$_CIC" --index-path "$INDEX" --field reason  2>/dev/null || echo "")
       echo "$_CURRENCY" > "$_CURRENCY_FILE"
       if [ "$_CURRENCY" = "stale" ]; then
-        printf "⚠ codemap: index is stale — %s\n  Run /codemap:scan-codebase to refresh it.\n" "$_REASON" >&2
+        printf "⚠ codemap: index is stale — %s\n  Run /codemap-py:scan-codebase to refresh it.\n" "$_REASON" >&2
       fi
     else
       echo "current" > "$_CURRENCY_FILE"
@@ -40,16 +40,16 @@ if command -v scan-query >/dev/null 2>&1; then
     echo "true"
   elif [ "$MODE" = "strict" ]; then
     echo "no_index" > "$_CURRENCY_FILE"
-    echo "! BREAKING — --codemap strict: index $INDEX not found. Run /codemap:scan-codebase first." >&2
+    echo "! BREAKING — --codemap strict: index $INDEX not found. Run /codemap-py:scan-codebase first." >&2
     exit 1
   else
     echo "no_index" > "$_CURRENCY_FILE"
-    printf "⚠ codemap: no index for project '%s' at %s\n  Run /codemap:scan-codebase to build it, then re-run this skill.\n" "$PROJ" "$INDEX" >&2
+    printf "⚠ codemap: no index for project '%s' at %s\n  Run /codemap-py:scan-codebase to build it, then re-run this skill.\n" "$PROJ" "$INDEX" >&2
     echo "false"
   fi
 elif [ "$MODE" = "strict" ]; then
   echo "no_index" > "$_CURRENCY_FILE"
-  echo "! BREAKING — --codemap strict: scan-query not found. Install codemap plugin." >&2
+  echo "! BREAKING — --codemap strict: codemap-py query not found. Install codemap plugin." >&2
   exit 1
 else
   echo "no_index" > "$_CURRENCY_FILE"

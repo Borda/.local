@@ -187,7 +187,7 @@ Skills use two gates at invocation time:
 | **`/develop:fix` blast-radius dead code** — TARGET_FN/TARGET_MODULE never set → only `central --top 5` ran → no per-bug caller impact                              | Verified working — `fn-rdeps` fires via `codemap-context.md` when `module::function` format supplied; `checkpoint.md` auto-derive covers free-text ARGUMENTS |
 | **`/develop:feature` blast-radius dead code** — same TARGET-unset defect as fix path                                                                               | Verified working — both TARGET_MODULE and TARGET_FN extracted; `fn-rdeps` fires via `codemap-context.md` when TARGET_FN set                                  |
 | **Silent degradation** — index missing → skills proceed at full token cost, no warning                                                                             | Fixed — `codemap-context.md` emits ⚠ warning to stderr when `scan-query` unavailable or index missing                                                        |
-| **`check_injection.py` blind spot** — health check detected marker comment presence only; could not catch TARGET-unset defect or missing `fn-rdeps` wiring         | Fixed — second audit layer added: `check_fn_rdeps_wiring()` now reports whether `fn-rdeps` wired in all required files                                       |
+| **Legacy injection audit blind spot** — cache marker checks could not catch TARGET-unset or missing `fn-rdeps` wiring                                              | Retired with installed-cache injection; `codemap-py integrate check` is now the source-wiring health surface                                                 |
 
 > Table above is the pre-Phase-4 audit history against the retired cache-injection model. Current wiring health for `foundry`, `oss`, `develop`, `research`, and `codex-rig` is reported live by `/codemap-py:integration check` — see [integration](#integration) below — not by re-running the historical fixes above.
 
@@ -197,18 +197,22 @@ ______________________________________________________________________
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin — same maintained product and SemVer history, new plugin identity starting at `0.25.0`.
 
-| Surface                | Value                                                                                                                                                                                                                                   |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product / plugin name  | `codemap-py`                                                                                                                                                                                                                            |
-| Canonical CLI          | `codemap-py index [args]` / `codemap-py query [args]` / `codemap-py doctor [--json]`                                                                                                                                                    |
-| Compatibility aliases  | `scan-index` → `codemap-py index`, `scan-query` → `codemap-py query` — kept through the whole `0.x` line, removed no earlier than `1.0.0`                                                                                               |
-| Claude skill namespace | `/codemap-py:<skill>`                                                                                                                                                                                                                   |
-| Codex skill namespace  | `$codemap-py:<skill>` — full parity roster (`codex-skills/`), same six skills, same truth claims as the Claude roster; differs only in invocation syntax and tool bindings                                                              |
-| Codex hooks            | None shipped in this release — no ambient index-status, telemetry, or redundant-scan-guard hooks on the Codex side yet (documented limitation, not an oversight); the Claude roster's `hooks/claude-hooks.json` has no Codex equivalent |
-| Project cache          | `.cache/codemap/` — unchanged by this rename; nothing is moved, merged, or rewritten                                                                                                                                                    |
-| Python requirement     | CPython `>=3.11,<3.15` (validated before `codemap_py` is imported; an unsupported interpreter exits `127` with actionable stderr, never a traceback)                                                                                    |
+| Surface                | Value                                                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product / plugin name  | `codemap-py`                                                                                                                                                                                              |
+| Canonical CLI          | `codemap-py index [args]` / `codemap-py query [args]` / `codemap-py doctor [--json]`                                                                                                                      |
+| Compatibility aliases  | `scan-index` → `codemap-py index`, `scan-query` → `codemap-py query` — kept through the whole `0.x` line, removed no earlier than `1.0.0`                                                                 |
+| Claude skill namespace | `/codemap-py:<skill>`                                                                                                                                                                                     |
+| Codex skill namespace  | `$codemap-py:<skill>` — full parity roster (`codex-skills/`), same six skills, same truth claims as the Claude roster; differs only in invocation syntax and tool bindings                                |
+| Codex hooks            | None shipped — no ambient index-status, telemetry, redundant-scan guard, or hook-seeded session ID on Codex; this is a documented limitation, while the Claude-only Python hooks remain optional adapters |
+| Project cache          | `.cache/codemap/` — unchanged by this rename; nothing is moved, merged, or rewritten                                                                                                                      |
+| Python requirement     | CPython `>=3.11,<3.15` (validated before `codemap_py` is imported; an unsupported interpreter exits `127` with actionable stderr, never a traceback)                                                      |
 
 > ! BREAKING — the Claude skill namespace changed from `/codemap:*` to `/codemap-py:*`. Renaming a single plugin manifest cannot keep the old namespace alive alongside the new one, so any saved prompt, alias, or automation invoking `/codemap:scan-codebase`-style triggers must be updated to `/codemap-py:scan-codebase`. `scan-index`/`scan-query`, `.cache/codemap/`, and every `CODEMAP_*` environment variable are unaffected by this rename and keep working exactly as before.
+
+### Platforms and limitations
+
+Windows, macOS, and Linux use the same stdlib-only Python core. The Claude hook helpers are Python and their stale-index refresh uses an atomic exclusive lock plus a detached background process on every supported platform; on Windows it starts the scan through Python in a new process group. Codex ships no hook manifest by design, so it has no prompt preamble, redundant-scan guard, or hook-seeded session correlation. Those automations are optional and never required for index, query, integration, migration, or rollback correctness.
 
 ### Exit codes
 
@@ -231,7 +235,7 @@ ______________________________________________________________________
 <summary><strong>Prerequisites</strong></summary>
 
 - Claude Code installed, working
-- Python 3 on PATH (standard library only — no `pip install`)
+- CPython `>=3.11,<3.15` on PATH (standard library only — no `pip install`)
 - Git (recommended — used for staleness detection, incremental rebuilds)
 
 </details>
@@ -243,18 +247,11 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install codemap-py@borda-ai-rig
 ```
 
-That's it. No build step. Scanner (`scan-index`) and query CLI (`scan-query`) plain Python scripts — run immediate.
+That's it. No build step and no manual plugin-cache path or shell `PATH` setup: use the namespaced Claude or Codex skills, which resolve the installed package root themselves.
 
-**Make scan-query available in your terminal (optional)**
+For a source checkout, run `python plugins/codemap-py/scripts/codemap_py_entry.py index|query|doctor`. Windows invokes this Python entrypoint directly; macOS and Linux may also use the POSIX `bin/codemap-py` launcher.
 
-Inside Claude Code sessions, `scan-query` and `scan-index` on PATH auto via plugin `bin/` directory. For regular terminal too, add to `~/.zshrc` or `~/.bashrc`:
-
-```bash
-CODEMAP_TOOLS=$(ls -d "$HOME/.claude/plugins/cache/borda-ai-rig/codemap-py"/*/bin 2>/dev/null | sort -V | tail -1)
-[ -n "$CODEMAP_TOOLS" ] && export PATH="$PATH:$CODEMAP_TOOLS"
-```
-
-Reload shell (`source ~/.zshrc`), `scan-query` available everywhere. Snippet always picks latest installed version — no version pins to maintain.
+**Codex:** install the same `codemap-py` package through the configured Codex marketplace, start a fresh Codex session, then use the `$codemap-py:*` six-skill roster. Codex deliberately has no hook declaration.
 
 <details>
 
@@ -264,7 +261,7 @@ Reload shell (`source ~/.zshrc`), `scan-query` available everywhere. Snippet alw
 claude plugin install codemap-py@borda-ai-rig
 ```
 
-Wiring lives in checked-in consumer source now, not the installed plugin cache — reinstalling never wipes it, so there's no re-injection step. Run `/codemap-py:integration check` afterward if you want to confirm everything still reports current.
+Wiring lives in checked-in consumer source now, not the installed plugin cache — reinstalling never wipes it, so there is no re-injection step. Run `/codemap-py:integration check` afterward if you want to confirm every installed consumer reports current.
 
 </details>
 
@@ -282,7 +279,7 @@ ______________________________________________________________________
 
 ## ⬆️ Upgrading from codemap
 
-`codemap-py` `0.25.0` is the direct successor to `codemap` `0.24.x` — same maintained product, new plugin identity. **Never run `codemap` and `codemap-py` in the same session** — close every old-plugin session before switching; the legacy plugin does not implement the new shared-index read/write gate and is rejected as a concurrent producer.
+`codemap-py` `0.27.0` is the direct successor to `codemap` `0.24.x` — same maintained product, new plugin identity. **Never run `codemap` and `codemap-py` in the same session** — close every old-plugin session before switching; the legacy plugin does not implement the new shared-index read/write gate and is rejected as a concurrent producer.
 
 1. Note the installed `codemap` version and confirm an immutable rollback tag/commit exists before touching anything.
 2. Update the plugin marketplace.
@@ -380,7 +377,7 @@ Gates catch every staleness path: `git pull`, branch switches, uncommitted edits
 
 ### 4 — Ambient index status (UserPromptSubmit hook)
 
-`UserPromptSubmit` hook fires every user message, injects one-line codemap-py status into Claude context when index exists at `.cache/codemap/<project>.json`. Index **absent**: hook silent for non-Python dirs (zero output, near-zero overhead); Python projects get once-per-session bootstrap prompt (below).
+Claude's `UserPromptSubmit` Python hook fires every user message, injects one-line codemap-py status into Claude context when an index exists at `.cache/codemap/<project>.json`. Index **absent**: hook silent for non-Python dirs (zero output, near-zero overhead); Python projects get once-per-session bootstrap prompt (below). Hooks are optional: declining them leaves indexing and queries fully usable.
 
 ```
 [codemap] .cache/codemap/rfdetr.json · 47 modules · current (git: f20fa19) · scanned: 2026-06-23
@@ -401,7 +398,7 @@ Complements per-skill SKILL.md injection — which handles dynamic per-PR `scan-
 
 Once `scan-query rdeps <module>` returns **`query_complete`** result (legacy alias `exhaustive`), import graph for that module complete and authoritative — re-grepping with `grep`/`rg` adds nothing but tokens. Benchmarks showed agents (weak tiers especially) ignoring "stop" instruction, looping verification greps, burning millions of input tokens at zero recall gain.
 
-Two hooks close this mechanical: `record-exhausted.js` (PostToolUse on Bash) notes each module returned complete this session (matches `query_complete: true` or legacy `exhaustive: true`); `guard-redundant-scan.js` (PreToolUse on Bash) then **denies** import-discovery greps (`grep`/`rg` for `import`/`from`) targeting already-complete module, points agent back to codemap-py result. Scope deliberate narrow and fail-open: only import-greps for already-complete module blocked (source reads via `cat`/`Read` never touched), only same session, any hook error allows call. Sessions never running codemap-py (no sentinel) unaffected. Disable by removing the `record-exhausted.js` and `guard-redundant-scan.js` entries from `hooks/claude-hooks.json`. codemap-py does not ship `sentinel-read-allow.js` — that shared auto-allow hook lives only in the `cc_foundry` plugin; without it installed, sentinel-read Bash compounds get an ordinary permission prompt instead of auto-allow (UX only, no functional change here).
+Two Python hooks close this mechanical: `record-exhausted.py` (PostToolUse on Bash) notes each module returned complete this session (matches `query_complete: true` or legacy `exhaustive: true`); `guard-redundant-scan.py` (PreToolUse on Bash) then **denies** import-discovery greps (`grep`/`rg` for `import`/`from`) targeting already-complete module, points agent back to codemap-py result. They share the same per-session exhausted sentinel. Scope deliberate narrow and fail-open: only import-greps for already-complete module blocked (source reads via `cat`/`Read` never touched), only same session, any hook error allows call. Sessions never running codemap-py (no sentinel) unaffected. Disable by removing the two Python hook entries from `hooks/claude-hooks.json`. codemap-py does not ship `sentinel-read-allow.js` — that shared auto-allow hook lives only in the `cc_foundry` plugin; without it installed, sentinel-read Bash compounds get an ordinary permission prompt instead of auto-allow (UX only, no functional change here).
 
 Because `query_complete` direction-scoped, guard only ever arms for `rdeps`/`fn-rdeps` (global-in) results, marked complete only when zero files degraded — false `complete` can never block exact grep that would surface hidden edge.
 
@@ -472,7 +469,7 @@ Maintainer/source-checkout operation: atomically updates the current-version **m
 
 `apply` refuses foreign/modified markers (a hash that doesn't match any version the engine generated), path escapes, symlinks, installed-cache roots, dirty working-tree overlap on the target file, and unverified product identity. Requires `--plan <artifact>` and `--approve <sha256>` matching the SHA-256 the plan just showed — the skill always prints the plan summary and SHA-256 in chat and calls `AskUserQuestion` for explicit confirmation before passing `--approve`; it never constructs or guesses the value on the user's behalf. `apply` leaves changes unstaged and uncommitted, and reports the native reinstall commands to run next — it never runs them itself.
 
-Because the managed block lives in checked-in source rather than an installed plugin cache, it survives every future `claude plugin install`/`codex plugin add` reinstall untouched — this supersedes the retired cache-injection model (`bin/inject_codemap.py`/`bin/_injection_block.py`), which had to re-inject after every reinstall. An end user installing immutable releases normally never needs `apply` — `check`, `sync`, and `demo` cover normal use; `apply` is how the maintainers keep the shipped consumer plugins wired ahead of a release.
+Because the managed block lives in checked-in source rather than an installed plugin cache, it survives every future `claude plugin install`/`codex plugin add` reinstall untouched. The retired cache-injection implementation is removed. An end user installing immutable releases normally never needs `apply` — `check`, `sync`, and `demo` cover normal use; `apply` is how the maintainers keep the shipped consumer plugins wired ahead of a release.
 
 ```text
 /codemap-py:integration apply --plan .reports/integrate/plan.json --approve 9f86d0...
@@ -832,15 +829,15 @@ All logs local to `.cache/codemap/logs/`, never leave machine.
 | ------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cli_<session>.jsonl`    | cli   | Every `scan-query` query and every `scan-index` build (core CLI tools)                                                                            |
 | `skills_<session>.jsonl` | skill | Every `/codemap-py:*` skill start (via PreToolUse hook)                                                                                           |
-| `tools_<session>.jsonl`  | tool  | Every `Grep` / `Read` / `Glob` call plus search-shaped `Bash` commands (`rg`/`grep` at a command position) via PostToolUse hook `log-tool-use.js` |
+| `tools_<session>.jsonl`  | tool  | Every `Grep` / `Read` / `Glob` call plus search-shaped `Bash` commands (`rg`/`grep` at a command position) via PostToolUse hook `log-tool-use.py` |
 
-Logs sharded per session: SessionStart hook (`seed-session.js`) seeds Claude Code session id into `$TMPDIR/codemap-<project>-session`, all layers append to `<layer>_<session>.jsonl`. CLI runs outside session (no seeded id) fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Per-session filenames keep concurrent sessions from interleaving appends.
+Logs sharded per session: SessionStart hook (`seed-session.py`) seeds Claude Code session id into `$TMPDIR/codemap-<project>-session`, all layers append to `<layer>_<session>.jsonl`. CLI runs outside session (no seeded id) fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Per-session filenames keep concurrent sessions from interleaving appends. Codex has no hook-seeded session ID, so session-wide hook/CLI joins are unavailable there.
 
 CLI records include: `cmd` (query subcommand, or `index` for `scan-index` build), plugin version `v` (from `.claude-plugin/plugin.json` — lets debrief split before/after across releases), optional `source` (from `CODEMAP_TELEMETRY_SOURCE`, e.g. `bench` for demo/benchmark runs so debrief separates scripted load from organic usage), full argv, result summary (query: count, method, exhaustive flag, `completeness_reason` veto slug, not_covered list, error; index: modules_indexed, degraded, incremental), timing_ms, stderr tail if any, exit code if non-zero.
 
 Skill records include: skill name, session UUID, intent (first 300 chars of args string).
 
-Tool records include: `tool` (`Grep`|`Read`|`Glob`|`Bash`), plugin version `v`, session UUID, `target` (Grep/Glob pattern or search path, Read file_path, Bash command truncated to 200 chars). Bash commands are logged only when search-shaped (`rg`/`grep`/`egrep`/`fgrep` at a command position, excluding `scan-query` wrappers) — in harness configs without native Grep/Glob tools all search volume flows through Bash, and without this row the grep-reduction baseline is unmeasurable. Measure raw grep/read volume per session — signal codemap-py context injection aims to reduce. The same hook nudges once per file per session: the 3rd Read of one non-test `.py` file prints a one-line hint that structural queries (`symbol --with-imports`, `rdeps`, `fn-rdeps`) may be cheaper. `log-tool-use.js` hook never reads `tool_response` (no parse of search/read output) — per-call cost sub-millisecond; opt out with `CODEMAP_LOGGING=false`.
+Tool records include: `tool` (`Grep`|`Read`|`Glob`|`Bash`), plugin version `v`, session UUID, `target` (Grep/Glob pattern or search path, Read file_path, Bash command truncated to 200 chars). Bash commands are logged only when search-shaped (`rg`/`grep`/`egrep`/`fgrep` at a command position, excluding `scan-query` wrappers) — in harness configs without native Grep/Glob tools all search volume flows through Bash, and without this row the grep-reduction baseline is unmeasurable. Measure raw grep/read volume per session — signal codemap-py context injection aims to reduce. The same hook nudges once per file per session: the 3rd Read of one non-test `.py` file prints a one-line hint that structural queries (`symbol --with-imports`, `rdeps`, `fn-rdeps`) may be cheaper. `log-tool-use.py` never reads `tool_response` (no parse of search/read output); opt out with `CODEMAP_LOGGING=false`.
 
 Debrief joins tool layer against cli layer measuring **avoidance events** (`bin/join_avoidance.py`): Grep/Read/Glob on module within time window (default 10 min) *after* `query_complete: true` answer already covered that module = leak — agent re-derived what index had answered. Join uses same word-boundary module matching as live `guard-redundant-scan.js` hook — offline rate measures exactly what online guard meant to deny. High avoidance rate = dead-chain signal: queries succeed, downstream behavior ignores them.
 
@@ -946,7 +943,7 @@ Index written to `.cache/codemap/<project>.json` at project root by default. Set
 export CODEMAP_INDEX_DIR="$HOME/.codemap-py-cache"
 ```
 
-With `CODEMAP_INDEX_DIR` set, index lands at `$CODEMAP_INDEX_DIR/<project>.json`. All skills and bin scripts respect variable auto.
+With `CODEMAP_INDEX_DIR` set, the index lands at `$CODEMAP_INDEX_DIR/<canonical-root-sha256>/<project>.json`; this keeps equal-basename projects isolated while preserving a matching legacy flat file as read-only compatibility input. All skills and bin scripts respect the same override; runtime identity never changes its path.
 
 Set `SCAN_NO_AUTOBUILD=1` to disable query-time auto-build: `/codemap-py:query-code` and `/codemap-py:test-impact` then use existing index exact as-is (no incremental refresh), refuse to build missing one — fail with message naming variable and manual `/codemap-py:scan-codebase` command. Useful in CI or benchmarks where build cost must stay out of measured query path.
 

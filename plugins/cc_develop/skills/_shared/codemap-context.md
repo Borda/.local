@@ -12,7 +12,7 @@ _CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/claude-sk
 
 Contract (`v2`) — follow §Batch pre-flight pattern (run with `TARGET_MODULE`/`TARGET_FN`), §Evidence-line contract, §Coverage metadata, §Targeted-edit pattern, §Effort-tier guidance.
 
-**Fallback when codemap plugin absent** (`$_CM_SHARED/codemap-context.md` missing): run only baseline `scan-query --timeout 5 central --top 5 2>/dev/null` plus, when target known, `scan-query --timeout 5 fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests 2>/dev/null`; treat any non-empty output as usable, skip evidence-line/completeness logic, proceed with file reads for rest. Never break load.
+**Fallback when codemap plugin absent** (`$_CM_SHARED/codemap-context.md` missing): run only baseline `codemap-py query --timeout 5 central --top 5 2>/dev/null` plus, when target known, `codemap-py query --timeout 5 fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests 2>/dev/null`; treat any non-empty output as usable, skip evidence-line/completeness logic, proceed with file reads for rest. Never break load.
 
 ## Per-agent query map (develop dimension)
 
@@ -25,7 +25,7 @@ Extends contract core map with develop's dimension queries:
 - `undocumented` — docstring gaps (doc-scribe)
 - `symbol --with-imports` — contract reading without re-reading file (all agents)
 
-Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap_evidence:` line at end reports retrieval reliability — agents may skip re-querying only when `completeness=exhaustive`. `scan-query` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap: scan-query unavailable or index missing — context reduced to central --top 5" `), then proceed.
+Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap-py` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap: codemap-py unavailable or index missing — context reduced to central --top 5" `), then proceed.
 
 ## Extended scan — multi-file / API changes (develop batch producer)
 
@@ -36,18 +36,18 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap_scan.py" --source=
 ```
 
 > Interpret: any `rdeps` output = external callers affected; `coupled` output = co-change pairs.
-> Fallback (specific known module): `scan-query rdeps <mod> --top 10 2>/dev/null || true`.
+> Fallback (specific known module): `codemap-py query rdeps <mod> --top 10 2>/dev/null || true`.
 
 ## Review-pipeline injection (oss:review, develop:review)
 
 Review orchestrators run v4 pre-flight queries **per changed module** before spawning dimension agents, persist structured output, pass to each agent as `CODEMAP_CONTEXT` so agent skips redundant file reads. Pre-flight queries (module-level only — a name-only changed-files list cannot supply the `module::fn` qnames `fn-rdeps`/`fn-blast` require; bare-module fn-* calls failed 100% in production, 2026-07 usage audit F1; fn-level returns once diff-hunk qname derivation lands — audit plan P1.2b):
 
 ```bash
-scan-query --timeout 5 rdeps       "$MODULE"            2>/dev/null  # importer count → risk tier
-scan-query --timeout 5 mock-rdeps  "$MODULE"            2>/dev/null  # mock coverage (v4.1)
-scan-query --timeout 5 uncovered   --top 20 "$MODULE"   2>/dev/null  # test gaps (v4.2)
-scan-query --timeout 5 xrefs --broken      "$MODULE"    2>/dev/null  # stale doc refs (v4.5)
-scan-query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage (v4.4)
+codemap-py query --timeout 5 rdeps       "$MODULE"            2>/dev/null  # importer count → risk tier
+codemap-py query --timeout 5 mock-rdeps  "$MODULE"            2>/dev/null  # mock coverage (v4.1)
+codemap-py query --timeout 5 uncovered   --top 20 "$MODULE"   2>/dev/null  # test gaps (v4.2)
+codemap-py query --timeout 5 xrefs --broken      "$MODULE"    2>/dev/null  # stale doc refs (v4.5)
+codemap-py query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage (v4.4)
 ```
 
 > Per-agent consumption:
@@ -73,7 +73,7 @@ Review runs per-changed-module pre-flight batch once (§Review-pipeline injectio
 **Writer/reader contract** (oss plugin ships `bin/codemap_cache.py`; gate on `oss` availability — consumer without it simply re-queries):
 
 ```bash
-# write — split a scan-query batch result into per-module artifacts (batch-producer side)
+# write — split a codemap-py query batch result into per-module artifacts (batch-producer side)
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py" write --batch "$BATCH_OUT" --index "$IDX" --cache-dir "$CACHE_DIR"
 # read — reuse verdict + cached answers for one module (consumer side)
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py" read  --module "$MOD" --index "$IDX" --cache-dir "$CACHE_DIR"

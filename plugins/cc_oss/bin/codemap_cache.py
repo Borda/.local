@@ -4,7 +4,7 @@
 consumers: resolve/SKILL.md, resolve/modes/action-item-dispatch.md, _shared/codemap-context.md
 
 Materializes the per-module structural-context artifacts that let ``oss:resolve``
-reuse the pre-flight ``scan-query`` answers ``develop:review``/``oss:review``
+reuse the pre-flight ``codemap-py query`` answers ``develop:review``/``oss:review``
 already computed, instead of re-issuing the same queries.
 
 Artifact shape (report §5.3) — one file per module at
@@ -35,7 +35,7 @@ Health metric: ``reuse_ratio`` = reused answers / total persisted answers,
 printed by the ``report`` command for telemetry.
 
 Subcommands:
-    write   Split a ``scan-query batch`` result into per-module artifacts.
+    write   Split a ``codemap-py query batch`` result into per-module artifacts.
     read    Emit a reuse verdict + cached answers for one module.
     report  Emit the aggregate ``reuse_ratio`` health metric for a cache dir.
 
@@ -57,7 +57,7 @@ import json
 import sys
 from pathlib import Path
 
-# scan-query batch emits one query per module in this order (mirrors
+# codemap-py query batch emits one query per module in this order (mirrors
 # develop/bin/build_codemap_batch.py PER_MODULE_QUERIES). Keyed here by the
 # query name the consumer reads back so a reorder on either side is caught.
 PER_MODULE_QUERIES: tuple[str, ...] = (
@@ -75,7 +75,7 @@ def _content_hash(answers: dict[str, object]) -> str:
     """Return a stable sha256 over the answer payload.
 
     Args:
-        answers: Mapping of query name to its ``scan-query`` result payload.
+        answers: Mapping of query name to its ``codemap-py query`` result payload.
 
     Returns:
         Hex sha256 of the canonically-serialized answers.
@@ -110,7 +110,7 @@ def _result_module(result: dict) -> str:
     of the form ``pkg.mod::Symbol`` — the module is the part before ``::``.
 
     Args:
-        result: One ``scan-query`` result payload from a batch item.
+        result: One ``codemap-py query`` result payload from a batch item.
 
     Returns:
         Dotted module name, or empty string when none can be derived.
@@ -125,7 +125,7 @@ def _result_module(result: dict) -> str:
 
 
 def _module_answers_from_batch(batch: dict) -> dict[str, dict[str, object]]:
-    """Group a ``scan-query batch`` result into per-module answer maps.
+    """Group a ``codemap-py query batch`` result into per-module answer maps.
 
     The batch is ``central`` followed by seven queries per module, emitted in
     the ``PER_MODULE_QUERIES`` order. Grouping keys on the module each result
@@ -133,7 +133,7 @@ def _module_answers_from_batch(batch: dict) -> dict[str, dict[str, object]]:
     arithmetic — robust to a missing ``central`` or a per-item parse error.
 
     Args:
-        batch: Decoded ``scan-query batch`` output (``{"batch": [...], ...}``).
+        batch: Decoded ``codemap-py query batch`` output (``{"batch": [...], ...}``).
 
     Returns:
         Mapping of dotted module name to ``{query_name: result_payload}``.
@@ -271,8 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="review→resolve codemap pre-flight cache.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_write = sub.add_parser("write", help="Split a scan-query batch into per-module artifacts.")
-    p_write.add_argument("--batch", required=True, help="Path to scan-query batch output JSON.")
+    p_write = sub.add_parser("write", help="Split a codemap-py query batch into per-module artifacts.")
+    p_write.add_argument("--batch", required=True, help="Path to codemap-py query batch output JSON.")
     p_write.add_argument("--index", required=True, help="Path to the codemap index JSON.")
     p_write.add_argument("--cache-dir", required=True, help="Directory to write per-module artifacts to.")
 

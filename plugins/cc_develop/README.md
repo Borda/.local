@@ -553,27 +553,27 @@ ______________________________________________________________________
 
 ### Dependencies by capability
 
-| Dependency       | Required    | Unlocks                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry` plugin | recommended | `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, others; quality stack shared file. Without foundry, all agents fall back to `general-purpose` with role-description prompts.                                                                                                                                                             |
-| `oss` plugin     | optional    | `oss:review` checklist used by `develop:review` Agent 1. `oss:*` skills never auto-invoked from develop flows — progressive review loop escalates to `/develop:review` on concern signal only; run `/oss:review` explicitly once PR exists.                                                                                                                                              |
-| `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                                                                                                                                                                         |
-| `codemap`        | optional    | `scan-query` for blast-radius, import graph, call-graph context. **Auto-enabled** in all skills when installed and index found; existing index incremental-refreshed (SHA-diff) automatically before use; silently skipped if absent (no full build mid-task — run `/codemap:scan-codebase` once). Install: `claude plugin install codemap@borda-ai-rig`, then `/codemap:scan-codebase`. |
-| `gh` CLI         | optional    | Used in `fix`, `debug`, `feature` when argument is GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to upstream repo (fork workflow).                                                                                                                                                                                                              |
+| Dependency       | Required    | Unlocks                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry` plugin | recommended | `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, others; quality stack shared file. Without foundry, all agents fall back to `general-purpose` with role-description prompts.                                                                                                                                                                            |
+| `oss` plugin     | optional    | `oss:review` checklist used by `develop:review` Agent 1. `oss:*` skills never auto-invoked from develop flows — progressive review loop escalates to `/develop:review` on concern signal only; run `/oss:review` explicitly once PR exists.                                                                                                                                                             |
+| `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                                                                                                                                                                                        |
+| `codemap-py`     | optional    | `codemap-py query` for blast-radius, import graph, call-graph context. **Auto-enabled** in all skills when installed and index found; existing index incremental-refreshed (SHA-diff) automatically before use; silently skipped if absent (no full build mid-task — run `/codemap-py:scan-codebase` once). Install: `claude plugin install codemap-py@borda-ai-rig`, then `/codemap-py:scan-codebase`. |
+| `gh` CLI         | optional    | Used in `fix`, `debug`, `feature` when argument is GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to upstream repo (fork workflow).                                                                                                                                                                                                                             |
 
-### Codemap behavior
+### Codemap-py behavior
 
-Codemap auto-enabled in all skills when plugin installed and index exists. No flag needed for default experience.
+Codemap-py auto-enabled in all skills when plugin installed and index exists. No flag needed for default experience.
 
-| State                              | Behavior                                |
-| ---------------------------------- | --------------------------------------- |
-| Installed + index found + no flag  | Auto-enabled                            |
-| Installed + no index + no flag     | AskUser: build index now? (Gate A)      |
-| Installed + stale index + no flag  | AskUser: rebuild now? (Gate B)          |
-| Not installed + no flag            | Silent skip                             |
-| Not installed + `--codemap`        | AskUser: install codemap? (strict mode) |
-| Installed + no index + `--codemap` | Fail with: build index first            |
-| Any state + `--no-codemap`         | Always disabled                         |
+| State                              | Behavior                                   |
+| ---------------------------------- | ------------------------------------------ |
+| Installed + index found + no flag  | Auto-enabled                               |
+| Installed + no index + no flag     | AskUser: build index now? (Gate A)         |
+| Installed + stale index + no flag  | AskUser: rebuild now? (Gate B)             |
+| Not installed + no flag            | Silent skip                                |
+| Not installed + `--codemap`        | AskUser: install codemap-py? (strict mode) |
+| Installed + no index + `--codemap` | Fail with: build index first               |
+| Any state + `--no-codemap`         | Always disabled                            |
 
 `--codemap` = **strict assertion** — useful in CI or to guarantee structural context always applied. `--no-codemap` skips codemap for specific run (e.g. non-Python submodule).
 
@@ -630,9 +630,9 @@ Same pattern in `/develop:fix` Step 2. Regression test passes on unfixed code �
 
 `feature`, `fix`, `refactor` write checkpoint file to `.developments/<timestamp>/checkpoint.md` after each major step. Re-running same skill command offers resume from last completed step.
 
-### scan-query warnings appearing in output
+### codemap-py query warnings appearing in output
 
-`codemap` optional. `scan-query` not on PATH → all codemap steps silently skipped. Plugin installed but index missing/stale → default (auto) mode prompts build/rebuild (Gate A/B); `--no-codemap` skips silently. Skill works fully without it. To enable codemap context, install `codemap` plugin, run `/codemap:scan-codebase`.
+`codemap-py` optional. `codemap-py` not on PATH → all codemap-py steps silently skipped. Plugin installed but index missing/stale → default (auto) mode prompts build/rebuild (Gate A/B); `--no-codemap` skips silently. Skill works fully without it. To enable codemap-py context, install the `codemap-py` plugin, run `/codemap-py:scan-codebase`.
 
 ______________________________________________________________________
 

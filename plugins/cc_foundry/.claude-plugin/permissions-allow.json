@@ -98,6 +98,7 @@
   "Bash(rm -f .temp/state/*)",
   "Bash(rsync:*)",
   "Bash(ruff:*)",
+  "Bash(codemap-py:*)",
   "Bash(scan-query:*)",
   "Bash(sed:*)",
   "Bash(sort:*)",

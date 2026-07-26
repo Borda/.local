@@ -1,4 +1,4 @@
-"""Contract test: record-exhausted.js writes the sentinel for REAL emitted commands.
+"""Contract test: record-exhausted.py writes the sentinel for REAL emitted commands.
 
 The PostToolUse hook (`record-exhausted.js`) must recognise every command shape that
 codemap skills actually emit — otherwise the exhausted-sentinel is never written and
@@ -18,13 +18,13 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
+import sys
 import subprocess
 from pathlib import Path
 
 import pytest
 
-_HOOK = Path(__file__).parent.parent.parent / "hooks" / "record-exhausted.js"
+_HOOK = Path(__file__).parent.parent.parent / "hooks" / "record-exhausted.py"
 
 # scan-query embeds the coverage block under `index`. It emits the forward `query_complete`
 # field and the legacy `exhaustive` alias byte-compatibly during the deprecation cycle.
@@ -40,8 +40,6 @@ _QUERY_COMPLETE_ONLY_RESPONSE = json.dumps(
     {"imported_by": ["pkg.a", "pkg.b"], "index": {"query_complete": True, "stale": False}}
 )
 
-pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
-
 
 def _run(command: str, response: str, session: str, tmp_path: Path) -> None:
     """Feed one PostToolUse(Bash) event through the hook with TMPDIR isolated to tmp_path."""
@@ -49,7 +47,7 @@ def _run(command: str, response: str, session: str, tmp_path: Path) -> None:
     # Node's os.tmpdir() uses TMPDIR on POSIX and TEMP/TMP on Windows.
     env = {**os.environ, "TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
     result = subprocess.run(
-        ["node", str(_HOOK)],
+        [sys.executable, str(_HOOK)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
@@ -105,6 +103,6 @@ def test_codemap_hooks_read_stdin_by_fd_for_windows() -> None:
     """Codemap hooks must not use POSIX-only /dev/stdin."""
     hooks_dir = _HOOK.parent
     offenders = [
-        path.name for path in sorted(hooks_dir.glob("*.js")) if "/dev/stdin" in path.read_text(encoding="utf-8")
+        path.name for path in sorted(hooks_dir.glob("*.py")) if "/dev/stdin" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []

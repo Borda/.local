@@ -79,6 +79,7 @@
   "Bash(python:*)",
   "Bash(rsync:*)",
   "Bash(ruff:*)",
+  "Bash(codemap-py:*)",
   "Bash(scan-query:*)",
   "Bash(sed:*)",
   "Bash(sort:*)",

@@ -62,6 +62,12 @@ For `scope=pr`, review evidence includes `pr.json`, `pr-routing.json`, `remote-s
 
 If `files.txt` and `untracked.txt` are empty with no explicit target, fail before gates. If `scope=pr` and `pr-error.txt` exists, fail with captured reason.
 
+**Structural context (optional)**: after the diff is collected, also probe codemap-py once for changed-symbol blast
+radius: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review --out <run-directory>/codemap-context.json`.
+Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with T1/T2 as scoped by `scope.txt`
+alone. Persist the diff-impact evidence once here; T2 specialist fan-out (step 04) includes
+`<run-directory>/codemap-context.json` in each triggered context pack, never a fresh per-specialist query.
+
 ### 03: T1 primary diff review. Read the changed files end-to-end from the local working tree or checked-out PR branch and identify findings before considering any fix or gate outcome
 
 Review axes, in order:

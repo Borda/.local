@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Build the review pre-flight ``scan-query batch`` request for changed modules.
+"""Build the review pre-flight ``codemap-py query batch`` request for changed modules.
 
 Derives changed modules from ``git diff HEAD --name-only`` (reusing the
 ``codemap_scan.py`` mapping: strip ``./``/``src/``/``.py``, ``/`` → ``.``, drop
 ``__init__``; directory fallback when the strip yields nothing) and writes one
 JSON array with ``central --top 5`` plus the five per-module pre-flight queries.
-One ``scan-query batch`` process then shares a single coverage block instead of
+One ``codemap-py query batch`` process then shares a single coverage block instead of
 paying the per-call spawn + coverage cost 5×N times.
 
 Extracted from an inline bash+python heredoc in the review SKILL — heredoc
@@ -57,7 +57,7 @@ def build_batch_request(modules: list[str]) -> list[dict[str, object]]:
         modules: Dotted module names derived from the diff (possibly empty).
 
     Returns:
-        List of ``{"cmd": ..., "args": [...]}`` items in scan-query batch order.
+        List of ``{"cmd": ..., "args": [...]}`` items in codemap-py query batch order.
 
     Examples:
         >>> req = build_batch_request(["pkg.mod"])
@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="build_codemap_batch.py",
-        description="Build the review pre-flight scan-query batch request for changed modules.",
+        description="Build the review pre-flight codemap-py query batch request for changed modules.",
     )
     # nargs="?" (not a plain required positional) so a missing path returns exit 1 — argparse's
     # own missing-required exit is 2, but callers and tests rely on the legacy exit-1 contract.

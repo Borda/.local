@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     proj = _resolve_proj(proj_override)
-    scan_query_available = shutil.which("scan-query") is not None
+    scan_query_available = shutil.which("codemap-py") is not None
     index_path = Path(idx_dir) / f"{proj}.json"
     index_found = index_path.exists()
 
@@ -132,20 +132,20 @@ def main(argv: list[str] | None = None) -> int:
             if not scan_query_available:
                 print(
                     "! --codemap passed but codemap plugin not installed.\n"
-                    "  Install: claude plugin install codemap@borda-ai-rig",
+                    "  Install: claude plugin install codemap-py@borda-ai-rig",
                     file=sys.stderr,
                 )
             else:
                 print(
                     f"! --codemap passed but no index found for project '{proj}'.\n"
-                    "  Build index: /codemap:scan-codebase (requires codemap plugin)",
+                    "  Build index: /codemap-py:scan-codebase (requires codemap-py plugin)",
                     file=sys.stderr,
                 )
             return 1
         if scan_query_available and not index_found:
             print(
-                f"⚠ codemap: no index for project '{proj}' at {index_path}\n"
-                "  Run /codemap:scan-codebase to build it, then re-run this skill.",
+                f"⚠ codemap-py: no index for project '{proj}' at {index_path}\n"
+                "  Run /codemap-py:scan-codebase to build it, then re-run this skill.",
             )
         currency_file.write_text("no_index\n")
         out_file.write_text("false\n")
@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if currency == "stale":
         print(
-            f"⚠ codemap: index is stale — {currency_reason}\n  Run /codemap:scan-codebase to refresh it.",
+            f"⚠ codemap-py: index is stale — {currency_reason}\n  Run /codemap-py:scan-codebase to refresh it.",
         )
 
     out_file.write_text("true\n")

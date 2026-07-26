@@ -24,7 +24,7 @@ def _caller(module: str, symbol: str = "f", path: str = "x.py") -> dict:
 
 
 def _batch(entries: list[dict], *, query_complete: bool = True) -> dict:
-    """Wrap ``fn-rdeps`` batch entries in a ``scan-query batch`` envelope."""
+    """Wrap ``fn-rdeps`` batch entries in a ``codemap-py query batch`` envelope."""
     return {"batch": entries, "index": {"query_complete": query_complete}}
 
 
@@ -114,7 +114,7 @@ def test_help_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_golden_invocation_stdin_pipe(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """Documented call site (``scan-query batch | classify_breaking.py``) — stdin-only, no argv."""
+    """Documented call site (``codemap-py query batch | classify_breaking.py``) — stdin-only, no argv."""
     entry = {"ok": True, "result": {"qname": "mypkg.core::Thing", "called_by": [_caller("app.svc")]}}
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_batch([entry]))))
     rc = cb.main([])
