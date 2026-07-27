@@ -66,6 +66,11 @@
     },
     {
       "mode": "0644",
+      "path": "roles/README.md",
+      "sha256": "d46878e74bd2c6e65667beed4bcbf4ad50ac778174b913d330666a34a407bd08"
+    },
+    {
+      "mode": "0644",
       "path": "roles/challenger/ROLE.md",
       "sha256": "803657d2996be24e36408304af3978ef3128442e064d085f35043769dbe8f9c6"
     },
@@ -228,6 +233,11 @@
       "mode": "0644",
       "path": "runtime/calibration/tasks.json",
       "sha256": "425dda8b2b116095a6bca2ea8efe81507b7fc5d8986733ca36605478953dea62"
+    },
+    {
+      "mode": "0644",
+      "path": "scripts/README.md",
+      "sha256": "8ea1df344ec5df7c3ba215690370ac794545340ca5efa44e534b9f9b1c9d8419"
     },
     {
       "mode": "0644",

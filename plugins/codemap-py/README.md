@@ -281,7 +281,7 @@ ______________________________________________________________________
 
 `codemap-py` `0.27.0` is the direct successor to `codemap` `0.24.x` — same maintained product, new plugin identity. **Never run `codemap` and `codemap-py` in the same session** — close every old-plugin session before switching; the legacy plugin does not implement the new shared-index read/write gate and is rejected as a concurrent producer.
 
-1. Note the installed `codemap` version and confirm an immutable rollback tag/commit exists before touching anything.
+1. Note the installed `codemap` version and confirm the immutable rollback source — commit `08e06b7a` (legacy `codemap` `0.24.1`) — before touching anything.
 2. Update the plugin marketplace.
 3. Uninstall `codemap` (or disable it only when evidence proves a disabled plugin's components cannot load).
 4. Close every Claude Code and Codex session that had `codemap` active.
@@ -298,7 +298,7 @@ No migration step deletes user data automatically; the project cache and any pri
 ### Rolling back
 
 1. Uninstall or disable `codemap-py` and close its sessions.
-2. Reinstall the old `codemap` release from the verified immutable tag/commit noted in step 1 above.
+2. Reinstall the old `codemap` release from the verified immutable rollback source — commit `08e06b7a` (legacy `codemap` `0.24.1`) — noted in step 1 above.
 3. Start a fresh session.
 4. Verify the old `/codemap:*` commands work again against the retained `.cache/codemap/` project cache — rollback never deletes or rewrites it.
 
