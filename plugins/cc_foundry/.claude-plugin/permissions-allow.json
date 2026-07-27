@@ -4,6 +4,7 @@
   "Bash(cat:*)",
   "Bash(cd:*)",
   "Bash(claude:*)",
+  "Bash(codemap-py:*)",
   "Bash(comm:*)",
   "Bash(cp:*)",
   "Bash(curl:*)",
@@ -98,7 +99,6 @@
   "Bash(rm -f .temp/state/*)",
   "Bash(rsync:*)",
   "Bash(ruff:*)",
-  "Bash(codemap-py:*)",
   "Bash(scan-query:*)",
   "Bash(sed:*)",
   "Bash(sort:*)",
@@ -130,8 +130,6 @@
   "Edit(.plans/**)",
   "Edit(.reports/**)",
   "Edit(.temp/**)",
-  "Glob(./**)",
-  "Glob(~/.claude/**)",
   "Grep(./**)",
   "Read(./**)",
   "Read(.claude/**/*.md)",
@@ -158,12 +156,5 @@
   "WebFetch(domain:scholar.google.com)",
   "WebFetch(domain:support.claude.com)",
   "WebFetch(domain:www.anthropic.com)",
-  "WebSearch",
-  "Write(.cache/**)",
-  "Write(.developments/**)",
-  "Write(.experiments/**)",
-  "Write(.notes/**)",
-  "Write(.plans/**)",
-  "Write(.reports/**)",
-  "Write(.temp/**)"
+  "WebSearch"
 ]

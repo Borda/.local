@@ -101,17 +101,15 @@
   "Bash(which:*)",
   "Bash(xargs:*)",
   "Edit(.claude/logs/**)",
-  "Glob(./**)",
-  "Glob(~/.claude/**)",
+  "Edit(.notes/**)",
+  "Edit(.plans/**)",
+  "Edit(.reports/**)",
+  "Edit(.temp/**)",
   "Grep(./**)",
   "Read(./**)",
   "Read(.claude/**/*.md)",
   "Read(.claude/*.md)",
   "Read(.claude/logs/**)",
   "Read(/tmp/**)",
-  "Read(~/.claude/**)",
-  "Write(.notes/**)",
-  "Write(.plans/**)",
-  "Write(.reports/**)",
-  "Write(.temp/**)"
+  "Read(~/.claude/**)"
 ]
