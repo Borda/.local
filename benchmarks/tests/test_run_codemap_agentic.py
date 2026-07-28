@@ -1007,6 +1007,96 @@ class TestCheckSembleMcp:
 
 
 # ===========================================================================
+# ModelRunner — _ARM_ALLOWED / _ARM_DISALLOWED (headless -p pre-approval)
+# ===========================================================================
+
+
+class TestArmToolPermissions:
+    """Each arm's primary discriminator must be pre-approved, else it is denied in -p mode.
+
+    Regression guard: the codemap/combined arms' primary tool is the /codemap:query-code Skill.
+    When it was missing from --allowedTools every codemap Skill call returned <tool_use_error>
+    (permission denied), the run fell back to grep, and the arm scored codemap_skill_errored —
+    silently unmeasurable. Both plugin namespaces (codemap, codemap-py) must be allowed since the
+    agent may invoke either.
+    """
+
+    @staticmethod
+    def _allowed(script_run_agentic: Any, arm: str) -> str:
+        """Return the --allowedTools value string for *arm* (empty when the arm has none)."""
+        flags = script_run_agentic.ModelRunner._ARM_ALLOWED.get(arm, [])
+        return flags[1] if len(flags) == 2 else ""
+
+    @pytest.mark.parametrize("arm", ["codemap", "combined"])
+    def test_skill_preapproved_for_skill_arms(self, script_run_agentic: Any, arm: str) -> None:
+        """codemap + combined arms pre-approve the /codemap:query-code Skill in both namespaces."""
+        allowed = self._allowed(script_run_agentic, arm)
+        assert "Skill(codemap:query-code)" in allowed
+        assert "Skill(codemap-py:query-code)" in allowed
+
+    @pytest.mark.parametrize("arm", ["codemap", "combined"])
+    def test_scan_query_still_preapproved(self, script_run_agentic: Any, arm: str) -> None:
+        """The scan-query CLI stays pre-approved alongside the Skill for the codemap/combined arms."""
+        assert "Bash(scan-query:*)" in self._allowed(script_run_agentic, arm)
+
+    def test_semble_arm_does_not_preapprove_skill(self, script_run_agentic: Any) -> None:
+        """semble arm must not pre-approve the Skill — it hard-blocks it as the control discriminator."""
+        assert "Skill(" not in self._allowed(script_run_agentic, "semble")
+        disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["semble"]
+        assert any("Skill" in tok for tok in disallowed)
+
+
+# ModelRunner — config isolation (--setting-sources / --plugin-dir / --mcp-config)
+# ===========================================================================
+
+
+class TestConfigIsolation:
+    """The subprocess excludes user config, then re-supplies each arm's tool under test.
+
+    Excluding user-level config (--setting-sources project,local) strips the caveman plugin,
+    foundry Re:Anchor, user CLAUDE.md and hooks so the agent's output is not shaped/inflated by the
+    operator's setup. It also drops the codemap plugin (needed for the Skill) and semble MCP, which
+    _arm_isolation_flags re-supplies per arm.
+    """
+
+    def test_base_cmd_excludes_user_config(self, script_run_agentic: Any) -> None:
+        """_CMD passes --setting-sources project,local so USER config never loads."""
+        cmd = script_run_agentic.ModelRunner._CMD
+        assert "--setting-sources" in cmd
+        assert cmd[cmd.index("--setting-sources") + 1] == "project,local"
+
+    def test_plain_arm_gets_no_extra_tools(self, script_run_agentic: Any) -> None:
+        """The control arm re-supplies nothing — no plugin, no MCP."""
+        assert script_run_agentic.ModelRunner._arm_isolation_flags("plain") == []
+
+    @pytest.mark.parametrize("arm", ["codemap", "combined"])
+    def test_skill_arms_load_codemap_plugin(self, script_run_agentic: Any, arm: str) -> None:
+        """codemap/combined re-supply the codemap plugin via --plugin-dir (Skill availability)."""
+        flags = script_run_agentic.ModelRunner._arm_isolation_flags(arm)
+        assert "--plugin-dir" in flags
+
+    @pytest.mark.parametrize("arm", ["semble", "combined"])
+    def test_semble_arms_load_semble_mcp_strictly(self, script_run_agentic: Any, arm: str) -> None:
+        """semble/combined re-supply the semble server via --mcp-config, restricted with --strict."""
+        flags = script_run_agentic.ModelRunner._arm_isolation_flags(arm)
+        assert "--mcp-config" in flags
+        assert "--strict-mcp-config" in flags
+
+    def test_semble_mcp_config_is_valid_stdio_server(self, script_run_agentic: Any) -> None:
+        """The reconstructed semble config is a valid stdio-server JSON for --mcp-config."""
+        import json
+
+        path = script_run_agentic.ModelRunner._semble_mcp_config_path()
+        cfg = json.loads(Path(path).read_text())
+        assert cfg["mcpServers"]["semble"]["command"] == "uvx"
+
+    def test_plain_arm_never_loads_semble_or_plugin(self, script_run_agentic: Any) -> None:
+        """Control arm must not gain the codemap plugin or semble — isolation keeps it a true baseline."""
+        flags = script_run_agentic.ModelRunner._arm_isolation_flags("plain")
+        assert "--plugin-dir" not in flags
+        assert "--mcp-config" not in flags
+
+
 # ModelRunner — _system_prompt (pure string builder)
 # ===========================================================================
 

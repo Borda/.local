@@ -116,9 +116,9 @@ _SELF_CONSISTENCY_KEY = "self_consistency"
 _INDEX_META_KEYS = ("scan_version", "scanned_at", "git_sha", "project", "scan_root")
 
 MODELS: dict[str, str] = {
-    "haiku": "claude-haiku-4-5-20251001",
-    "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-8",
+    "haiku": "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-5",
+    "opus": "claude-opus-5",
 }
 _MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
 
@@ -130,7 +130,13 @@ _TIER_OPUS = "opus"
 
 ARMS = ("plain", "codemap")
 
-_CMD = ["claude", "-p", "--verbose", "--output-format", "stream-json"]
+# --setting-sources project,local excludes USER-level config from the benchmark subprocess:
+# the caveman plugin, the foundry Re:Anchor rules (box header + ▓ footer), user CLAUDE.md, and
+# user hooks. Those shaped the agent's output (markdown/backtick decoration, footer prose) and
+# inflated tokens equally on both arms — noise, not signal. scan-query still reaches the codemap
+# arm via PATH (_subprocess_env), and the plain arm needs no plugins, so both arms run clean.
+# Subscription auth is unaffected (auth is not a setting source). Applied to both arms identically.
+_CMD = ["claude", "-p", "--verbose", "--output-format", "stream-json", "--setting-sources", "project,local"]
 
 _ARM_DISALLOWED: dict[str, list[str]] = {
     # plain: also block scan-query via Bash so the control arm can't use the index
@@ -1278,7 +1284,7 @@ def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
         42
         >>> _extract_int("nothing here", [r"(\\d+) caller"])
     """
-    text = re.sub(r"\*+", " ", text)  # strip bold markers before matching
+    text = re.sub(r"[*`]+", " ", text)  # strip bold (*) and inline-code (`) markers before matching
     for pat in patterns:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
@@ -1365,8 +1371,10 @@ def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
     expected_start = gt["start_line"]
     qname = gt["qualified_name"]
 
-    # Strip markdown bold markers only — NOT underscores (would destroy start_line key)
-    cleaned = re.sub(r"\*{1,2}", "", output_text)
+    # Strip markdown bold (*) and inline-code (`) markers — but NOT underscores (would destroy the
+    # start_line key). Agents routinely format the value as `start_line: ``213`` ` (backticks), which
+    # left a backtick between the colon and the first digit and defeated every pattern below → !parse.
+    cleaned = re.sub(r"[*`]+", "", output_text)
 
     got_start: Optional[int] = None
 
@@ -1401,7 +1409,8 @@ def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
             got_start = int(m.group(1))
 
     correct = got_start is not None and abs(got_start - expected_start) <= 5
-    # metric_got/metric_expected is a line-number ratio printed as `recall=` diagnostic — not a recall metric
+    # metric_got/metric_expected are raw line numbers (diagnostics in scoring_detail);
+    # the recall column derives from `correct` via _effective_recall, not this ratio.
     return BenchQuality(
         scored=True,
         correct=correct,
@@ -3136,27 +3145,40 @@ def _run_correct_symbol(run: BenchRun) -> str:
 
 
 def _effective_recall(run: Optional[BenchRun]) -> Optional[float]:
-    """Recall value for summary — mirrors per-run log fallback logic.
+    """Recall value in [0, 1] for summary display.
 
-    Returns recall directly when set; falls back to metric_got/metric_expected
-    for evaluators that don't populate the recall field (symbol_extraction,
-    code_quality, count-based review_assistance).
+    Returns the true recall when an evaluator sets it. Evaluators that score by
+    line tolerance or count (symbol_extraction, code_quality, count-based
+    review_assistance) never populate ``recall``; for those the 0-1 signal is
+    binary correctness over the task's ground truth — 1.0 when the answer landed
+    within tolerance, 0.0 otherwise (a scored-but-failed extraction is a genuine
+    miss, not an unknown). The former ``metric_got / metric_expected`` fallback
+    is a raw line-number / count ratio that can exceed 1.0, so it is *not* recall
+    and must not wear the recall label; the raw values remain in scoring_detail
+    for diagnostics.
 
     Args:
         run: A completed benchmark run, or None.
 
     Returns:
-        Recall as a float, or None when not computable.
+        Recall as a float in [0, 1], or None when the run was not scored or its
+        answer could not be parsed (extraction_failed) — parse failures are a
+        separate signal from a wrong-but-parsed answer (which scores 0.0).
+
+    Examples:
+        >>> _effective_recall(None) is None
+        True
     """
     if run is None or not run.quality.scored:
         return None
     if run.quality.extraction_failed:
+        # Parse failure — the harness could not extract an answer from the output.
+        # This is a parser-coverage signal, NOT evaluation degradation, so it is
+        # kept out of the recall metric (surfaced separately with a distinct sign).
         return None
     if run.quality.recall is not None:
         return run.quality.recall
-    if run.quality.metric_got is not None and run.quality.metric_expected:
-        return run.quality.metric_got / run.quality.metric_expected
-    return None
+    return 1.0 if run.quality.correct else 0.0
 
 
 def _safe_ratio(num: Optional[float], den: Optional[float]) -> float:
@@ -3506,7 +3528,10 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
         )
 
     for arm in ("plain", "codemap"):
-        arm_runs = [r for r in runs if r.arm == arm and r.quality.scored and not r.quality.extraction_failed]
+        # Denominator matches canonical accuracy (L801) and _arm_extracted: scored, parsed, and
+        # NOT budget-cut. Timeout-incomplete runs get scored on partial output but must be excluded
+        # here too, else the per-arm % counts a run the headline verdict drops.
+        arm_runs = [r for r in runs if r.arm == arm and _arm_extracted(r)]
         extraction_failed_runs = [r for r in runs if r.arm == arm and r.quality.extraction_failed]
         incomplete_runs = [r for r in runs if r.arm == arm and r.incomplete]
         contaminated_runs = [r for r in runs if r.arm == arm and r.error == "contaminated"]
@@ -3829,24 +3854,22 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         tok = run.input_tokens
         tok_str = f"{tok / 1_000_000:.1f}M" if tok >= 1_000_000 else f"{tok // 1000:3d}k"
         _eff = _effective_recall(run)
-        if not run.quality.scored:
-            q_str = "?"
-        elif run.quality.extraction_failed:
-            q_str = "?"
-        elif _eff is not None:
-            q_str = f"^{_eff:.3f}" if _eff > 1.0 else f"{_eff:.3f}"
+        # Three distinct states, never conflated:
+        #   number  — scored & parsed: recall in [0, 1] (0.000 = wrong answer, real miss)
+        #   !parse  — scored but answer unparsable: parser-coverage issue, NOT degradation
+        #   ?       — not scored (task type not evaluable)
+        if _eff is not None:
+            q_str = f"{_eff:.3f}"
+        elif run.quality.scored and run.quality.extraction_failed:
+            q_str = "!parse"
         else:
-            q_str = "n/a"
-        if run.skill_counts:
-            _sk_parts = ",".join(f"{k}:{v:2d}" for k, v in sorted(run.skill_counts.items()))
-            _sk_str = f"Sk={_sk_parts}"
-        else:
-            _sk_str = "Sk= 0"
-        tool_summary = (
-            f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d} {_sk_str}"
-        )
+            q_str = "?"
+        # Sk (Skill-tool calls) omitted from the terminal line: the codemap arm queries
+        # scan-query via Bash (counted in SQ), never the Skill tool, so it is always 0 here.
+        # The raw skill_counts field is still recorded in the results JSONL if it ever fires.
+        tool_summary = f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d}"
         log_fn(
-            f"  {status}{correct} {task['id']}\t{arm}\ttok={tok_str}\tt={run.elapsed_s / 60:.1f}m\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
+            f"  {status}{correct} {task['id']}\t{arm}\ttok={tok_str} t={run.elapsed_s / 60:.1f}m\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
         )
         return run
 

@@ -12,6 +12,43 @@ Empirical validation for the `codemap` plugin — three independent benchmarks. 
 
 Run **Query** first — validates the index before spending LLM tokens on agentic runs.
 
+## Full run (copy-paste a.k.a run-all)
+
+One command — refresh the index, smoke-check the harness, then run all three benchmarks across every model tier:
+
+```bash
+bash benchmarks/run-all.sh
+```
+
+Modes: `run-all.sh smoke` (cheap check only), `run-all.sh full` (skip smoke), `run-all.sh refresh` (rebuild the target index only). Override the target with `REPO=/path/to/clone bash benchmarks/run-all.sh` — it **must own its `.git`** (bench uses git provenance + patch archive/restore; the `.sandbox` copy has none, so git there resolves to the parent repo).
+
+The default (`all`) mode **halts before the full suite if the smoke check finds an errored or crashed codemap run** (e.g. the `/codemap:query` skill returns `<tool_use_error>`) — so a broken codemap path never burns the full multi-tier spend. It scans the smoke output for hard-error markers because the runners exit `0` even on a benchmark-level failure.
+
+<details>
+<summary>Manual equivalent — paste-safe, no inline <code>#</code> comments (interactive zsh does not strip them and passes them as args)</summary>
+
+```bash
+cd ~/Workspace/Borda.local
+REPO=~/Workspace/pytorch-lightning-master
+CM=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/bin/codemap-py | head -1)
+
+"$CM" index --root "$REPO"
+python benchmarks/run-codemap-cli.py --repo-path "$REPO" --report
+python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model haiku
+python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model sonnet
+python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model opus
+python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
+```
+
+</details>
+
+- **Order**: refresh index → query (gates the index, no LLM) → real-codebase → agentic. Per-benchmark options live in each section's **Quick start** below.
+- **Scale**: real-codebase = 54 × 2 × 3 = 324 model runs; agentic = 16 × 4 × 3 = 192. ~500+ agent invocations — hours of wall time and real token cost. That is why the script smoke-checks first.
+- **Model tiers** (`MODELS` map in each runner): `haiku` → `claude-haiku-4-5`, `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`.
+- **Agentic arms**: the `semble` / `combined` arms need the semble MCP configured; without it, add `--arm codemap` to run the structural arm only.
+- **Cheaper option**: swap the three bench lines for the tiered strategy (`--tiered`, see [Cost profiles](#cost-profiles)) — full suite on haiku, dev subset on sonnet, only cross-tier disagreements on opus.
+- **Results** land in `benchmarks/results/` — `code-<date>.md`, `bench-<model>-<ts>.jsonl`, and agentic JSON (`.md` with `--report`).
+
 ## Contents
 
 - [Agentic benchmark](#agentic-benchmark-run-codemap-agenticpy) — 4-arm, import-graph navigation, semble support

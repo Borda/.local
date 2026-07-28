@@ -217,6 +217,8 @@ class TestExtractInt:
             ("UNIQUE CALLERS: 15", [r"(\d+) caller", r"unique callers:\s*(\d+)"], 15),
             # Bold markers are replaced by spaces; use whitespace-tolerant pattern.
             ("**42** callers", [r"(\d+)\s+caller"], 42),
+            # Backticked value — inline-code markers replaced by spaces (same as bold).
+            ("`25` undocumented functions", [r"(\d+)\s+undocumented"], 25),
             ("total: 100", [r"total[:\s]+(\d+)"], 100),
         ],
     )
@@ -606,6 +608,8 @@ class TestEvaluateSymbol:
             ("start_line: 94", 100, False),  # just outside -5
             ("Lines 100-110 of the file", 100, True),  # range pattern fallback
             ("starts at line 100 in the file", 100, True),  # "starts at line N"
+            ("start_line: `100`", 100, True),  # backticked value (markdown inline code)
+            ("file_path: `x.py`  start_line: `104`  end_line: `110`", 100, True),  # full backticked format
         ],
     )
     def test_correct_when_start_line_within_tolerance(
@@ -629,6 +633,20 @@ class TestEvaluateSymbol:
         """Markdown bold markers around start_line are ignored by the parser."""
         task = _se_task(start_line=200)
         result = script_run_bench._evaluate_symbol(task, "**start_line**: 200")
+        assert result.correct is True
+
+    def test_backtick_wrapped_value_parsed_not_failed(self, script_run_bench: Any) -> None:
+        """Regression: a backtick between the colon and the digit must not defeat extraction.
+
+        Real observed output (SE-05) was ``start_line: `213` `` — the backtick left the digit
+        one char past ``[:\\s]+`` and every pattern missed it, scoring !parse. Inline-code markers
+        are now stripped alongside bold, so the value parses.
+        """
+        task = _se_task(start_line=213)
+        result = script_run_bench._evaluate_symbol(
+            task, "file_path: `src/x.py`  \nstart_line: `213`  \nend_line: `222`"
+        )
+        assert result.extraction_failed is False
         assert result.correct is True
 
     def test_metric_expected_set_to_ground_truth_start(self, script_run_bench: Any) -> None:
@@ -1637,7 +1655,7 @@ class TestBuildSystemPrompt:
 
 
 class TestEffectiveRecall:
-    """Recall accessor with metric_got/expected fallback for count-based evaluators."""
+    """Recall accessor: true recall when set, else binary correctness in [0, 1]."""
 
     def test_returns_recall_field_when_set(self, script_run_bench: Any) -> None:
         """Returns quality.recall directly when it is populated."""
@@ -1646,30 +1664,31 @@ class TestEffectiveRecall:
         assert script_run_bench._effective_recall(run) == pytest.approx(0.85)
 
     def test_returns_none_for_unscored_run(self, script_run_bench: Any) -> None:
-        """Returns None when the run's quality was not scored."""
+        """Returns None only when the run's quality was not scored."""
         run = _make_run(script_run_bench)
         run.quality = script_run_bench.BenchQuality(scored=False)
         assert script_run_bench._effective_recall(run) is None
 
-    def test_returns_none_for_extraction_failed(self, script_run_bench: Any) -> None:
-        """Returns None when extraction_failed=True (no metric extracted)."""
+    def test_extraction_failed_returns_none_not_zero(self, script_run_bench: Any) -> None:
+        """Parse failure is a separate signal → None (excluded from recall), never a 0.0 miss."""
         run = _make_run(script_run_bench)
-        run.quality = script_run_bench.BenchQuality(scored=True, extraction_failed=True)
+        run.quality = script_run_bench.BenchQuality(scored=True, correct=False, extraction_failed=True)
         assert script_run_bench._effective_recall(run) is None
 
-    def test_fallback_to_ratio_when_recall_none(self, script_run_bench: Any) -> None:
-        """Falls back to metric_got/metric_expected when recall is None."""
+    def test_correct_line_task_scores_one(self, script_run_bench: Any) -> None:
+        """Line/count evaluators (no recall field) score 1.0 when correct within tolerance."""
         run = _make_run(script_run_bench)
-        run.quality = script_run_bench.BenchQuality(scored=True, recall=None, metric_got=8, metric_expected=10)
-        result = script_run_bench._effective_recall(run)
-        assert result == pytest.approx(0.8)
+        run.quality = script_run_bench.BenchQuality(scored=True, correct=True, metric_got=100, metric_expected=98)
+        assert script_run_bench._effective_recall(run) == pytest.approx(1.0)
+
+    def test_wrong_but_parsed_line_scores_zero_not_ratio(self, script_run_bench: Any) -> None:
+        """A parsed-but-wrong line number (got≫expected) is a real miss → 0.0, never a ratio above 1.0."""
+        run = _make_run(script_run_bench)
+        run.quality = script_run_bench.BenchQuality(
+            scored=True, correct=False, extraction_failed=False, metric_got=1116, metric_expected=1024
+        )
+        assert script_run_bench._effective_recall(run) == pytest.approx(0.0)
 
     def test_returns_none_when_none_run(self, script_run_bench: Any) -> None:
         """Returns None for a None run argument."""
         assert script_run_bench._effective_recall(None) is None
-
-    def test_returns_none_when_metric_expected_zero(self, script_run_bench: Any) -> None:
-        """Returns None when metric_expected is 0 (falsy denominator)."""
-        run = _make_run(script_run_bench)
-        run.quality = script_run_bench.BenchQuality(scored=True, recall=None, metric_got=0, metric_expected=0)
-        assert script_run_bench._effective_recall(run) is None

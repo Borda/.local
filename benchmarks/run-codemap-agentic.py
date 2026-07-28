@@ -241,9 +241,9 @@ RESULTS_DIR = Path("benchmarks/results")
 
 # Model tiers: short name → full model ID (ascending capability / cost)
 MODELS: dict[str, str] = {
-    "haiku": "claude-haiku-4-5-20251001",
-    "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-8",
+    "haiku": "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-5",
+    "opus": "claude-opus-5",
 }
 
 # Per-model wall-clock timeout (seconds). Opus needs more time for complex reasoning.
@@ -1078,8 +1078,24 @@ class ModelRunner:
     nothing else needs them.
     """
 
-    # Base claude CLI invocation
-    _CMD = ["claude", "-p", "--verbose", "--output-format", "stream-json", "--max-turns", "40"]
+    # Base claude CLI invocation.
+    # --setting-sources project,local excludes USER-level config (caveman plugin, foundry Re:Anchor
+    # box+▓ footer, user CLAUDE.md, user hooks) so the agent's output is not shaped/inflated by the
+    # operator's personal setup — identical isolation on every arm. Excluding user also drops the
+    # codemap plugin and semble MCP, so they are re-supplied per arm via --plugin-dir / --mcp-config
+    # in _arm_isolation_flags (the tools under test must survive isolation). Subscription auth is
+    # not a setting source, so it is unaffected.
+    _CMD = [
+        "claude",
+        "-p",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--max-turns",
+        "40",
+        "--setting-sources",
+        "project,local",
+    ]
     # Tools counted as exploration overhead
     EXPLORATION_TOOLS = {"Grep", "Glob", "Bash", "Skill", "mcp__semble__search", "mcp__semble__find_related"}
     # Tools blocked per arm via --disallowed-tools to enforce mutual exclusion
@@ -1094,11 +1110,22 @@ class ModelRunner:
         "combined": [],
     }
 
-    # Tools pre-approved per arm via --allowedTools (semble/combined need MCP pre-approved in -p mode)
+    # Tools pre-approved per arm via --allowedTools. In headless -p mode a tool the arm relies
+    # on MUST be pre-approved here or it is permission-denied (returns <tool_use_error>). The
+    # codemap/combined arms' PRIMARY discriminator is the /codemap:query-code Skill, so the Skill
+    # tool itself must be pre-approved — without it every codemap Skill call was denied and the
+    # run fell back to grep (codemap_skill_errored), making the arm unmeasurable. Both the codemap
+    # and codemap-py plugin namespaces are allowed because the agent may invoke either; the skill's
+    # own internal Bash/Read calls are governed by its allowed-tools frontmatter, not this list, so
+    # pre-approving the Skill alone is sufficient (verified end-to-end).
+    _CODEMAP_SKILLS = "Skill(codemap:query-code),Skill(codemap-py:query-code)"
     _ARM_ALLOWED: dict[str, list[str]] = {
-        "codemap": ["--allowedTools", "Bash(scan-query:*)"],
+        "codemap": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
         "semble": ["--allowedTools", "mcp__semble__search,mcp__semble__find_related"],
-        "combined": ["--allowedTools", "Bash(scan-query:*),mcp__semble__search,mcp__semble__find_related"],
+        "combined": [
+            "--allowedTools",
+            f"Bash(scan-query:*),mcp__semble__search,mcp__semble__find_related,{_CODEMAP_SKILLS}",
+        ],
     }
 
     # Arm system prompts -------------------------------------------------------
@@ -1377,10 +1404,12 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         system_prompt = self._system_prompt(task.skill or task.type, arm)
         disallow_flags = self._ARM_DISALLOWED.get(arm, [])
         allow_flags = self._ARM_ALLOWED.get(arm, [])
+        iso_flags = self._arm_isolation_flags(arm)  # re-supply tools dropped by user-config exclusion
         cmd = [
             *self._CMD,
             "--model",
             self.model_id,
+            *iso_flags,
             *disallow_flags,
             *allow_flags,
             "--system-prompt",
@@ -1503,6 +1532,59 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             source = self.repo_path / ".cache" / sub
             if source.is_dir():
                 shutil.copytree(source, cwd / ".cache" / sub, symlinks=True)
+
+    # Semble MCP definition, re-supplied under isolation (excluding user config drops the user's
+    # semble server). Mirrors `claude mcp get semble` — a local stdio server, no auth/env.
+    _SEMBLE_MCP: dict = {"mcpServers": {"semble": {"command": "uvx", "args": ["--from", "semble[mcp]", "semble"]}}}
+
+    @staticmethod
+    def _codemap_plugin_dir() -> Optional[str]:
+        """Return the newest installed codemap-py plugin root, or None when not found.
+
+        Under --setting-sources project,local the plugin is not auto-loaded, so the codemap/combined
+        arms load it explicitly via --plugin-dir to keep the /codemap:query-code Skill available.
+
+        Returns:
+            Absolute path to the plugin root (the dir holding .claude-plugin/), or None.
+        """
+        cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap-py"
+        manifests = sorted(cache.glob("*/.claude-plugin"), reverse=True)  # latest version first
+        return str(manifests[0].parent) if manifests else None
+
+    @classmethod
+    def _semble_mcp_config_path(cls) -> str:
+        """Write the reconstructed semble MCP config once and return its path.
+
+        Returns:
+            Path to a JSON file suitable for ``--mcp-config`` describing the semble stdio server.
+        """
+        import tempfile
+
+        path = Path(tempfile.gettempdir()) / "codemap-bench-semble-mcp.json"
+        if not path.exists():
+            path.write_text(json.dumps(cls._SEMBLE_MCP))
+        return str(path)
+
+    @classmethod
+    def _arm_isolation_flags(cls, arm: str) -> list[str]:
+        """Return the per-arm flags that re-supply the tools under test after user config is excluded.
+
+        codemap/combined get the codemap plugin (--plugin-dir) for the Skill; semble/combined get the
+        semble server (--mcp-config, --strict-mcp-config). plain gets nothing — it is the control.
+
+        Args:
+            arm: Benchmark arm (plain / codemap / semble / combined).
+
+        Returns:
+            Flag list to splice into the claude command for *arm*.
+        """
+        flags: list[str] = []
+        plugin_dir = cls._codemap_plugin_dir()
+        if arm in ("codemap", "combined") and plugin_dir:
+            flags += ["--plugin-dir", plugin_dir]
+        if arm in ("semble", "combined"):
+            flags += ["--mcp-config", cls._semble_mcp_config_path(), "--strict-mcp-config"]
+        return flags
 
     @staticmethod
     def _subprocess_env(arm: str = "") -> dict[str, str]:
