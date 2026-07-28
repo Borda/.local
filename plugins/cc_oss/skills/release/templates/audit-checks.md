@@ -65,23 +65,23 @@ Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 
 | Check                 | Status | Detail |
 |-----------------------|--------|--------|
-| Working tree          | ✅ Clean / ⚠️ N files | [filenames if dirty] |
-| CI (last 5 runs)      | ✅ Passing / ❌ N failing | [failing job names] |
-| Blocking issues       | ✅ None / ❌ N open | [#N title] |
-| Open PRs (main)       | ✅ None / ⚠️ N open | [PR titles] |
-| README aligned        | ✅ / ⚠️ Review needed | [reason if flagged] |
-| CHANGELOG entry       | ✅ Present / ❌ Missing | [section name or "add [Unreleased]"] |
-| Version consistent    | ✅ / ⚠️ Mismatch | [files and values] |
-| Dependency CVEs       | ✅ Clean / ⚠️ N vulns | [package names] |
-| Scheduled removals    | ✅ All removed / ❌ N still present | [symbol names with `remove_in` version] |
-| Doc proportionality   | ✅ / ⚠️ N features undertreated | [feature names — no dedicated section / no example / thin coverage] |
+| Working tree          | ✓ Clean / ⚠ N files | [filenames if dirty] |
+| CI (last 5 runs)      | ✓ Passing / ✗ N failing | [failing job names] |
+| Blocking issues       | ✓ None / ✗ N open | [#N title] |
+| Open PRs (main)       | ✓ None / ⚠ N open | [PR titles] |
+| README aligned        | ✓ / ⚠ Review needed | [reason if flagged] |
+| CHANGELOG entry       | ✓ Present / ✗ Missing | [section name or "add [Unreleased]"] |
+| Version consistent    | ✓ / ⚠ Mismatch | [files and values] |
+| Dependency CVEs       | ✓ Clean / ⚠ N vulns | [package names] |
+| Scheduled removals    | ✓ All removed / ✗ N still present | [symbol names with `remove_in` version] |
+| Doc proportionality   | ✓ / ⚠ N features undertreated | [feature names — no dedicated section / no example / thin coverage] |
 
 ### Verdict
 **READY** — no blockers. Run `/release prepare <version>` to write artifacts.
 — or —
 **NEEDS_ATTENTION** — N items before release:
-- ❌ [blocking item]
-- ⚠️ [recommended item]
+- ✗ [blocking item]
+- ⚠ [recommended item]
 
 ### Next steps
 [e.g., "resolve open PRs → re-run `/release audit v1.3.0` to verify → `/release prepare v1.3.0`"]

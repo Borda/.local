@@ -56,10 +56,10 @@ git -C "$REPO_ROOT" grep -n "^def <symbol>\|^class <symbol>\|    def <symbol>\| 
 ```
 
 **Outcomes per symbol**:
-- Absent from HEAD → ✅ correctly removed
-- Still present AND OVERDUE → ❌ **CRITICAL** — add to Phase B findings table as:
-  `| Scheduled removal overdue | ❌ \`<symbol>\` still present (remove_in="V.W") | <file:line> | critical |`
-- `$TARGET` not set → surface OVERDUE candidates as informational (`⚠️ remove_in="V.W" scheduled but target version unknown`)
+- Absent from HEAD → ✓ correctly removed
+- Still present AND OVERDUE → ✗ **CRITICAL** — add to Phase B findings table as:
+  `| Scheduled removal overdue | ✗ \`<symbol>\` still present (remove_in="V.W") | <file:line> | critical |`
+- `$TARGET` not set → surface OVERDUE candidates as informational (`⚠ remove_in="V.W" scheduled but target version unknown`)
 
 ### Phase B: Readiness checks
 

@@ -170,7 +170,7 @@ cat "$_OSS_ANALYSE/modes/codemap-signals.md"  # timeout: 5000
 
 Run its **Detect** block, then **Signal A** (loaded above). From thread body + comments, extract candidate identifiers (dotted modules + backtick/import/traceback symbols, project-internal only, cap 8), write them one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates-${CSID}.txt` before running Signal A's batch fence. Run existence-check, set `STALE_ISSUE`. When `STALE_ISSUE=true`: list missing identifiers + suggested renames under `### Analysis`, add `stale-symbols` to `### Suggested Labels`. When `CM_ENABLED=false`: emit one-line inline flag from codemap-signals.md into report (don't block).
 
-Status mapping: `reproduced` → ✅ · `not_reproduced` → ❌ · `partial` → ⚠ · `missing_context` → ⚠ (add missing detail) · `HAS_REPRO=false` → 🔍 No Example · PR → ⏭ Skipped
+Status mapping: `reproduced` → ✓ · `not_reproduced` → ✗ · `partial` → ⚠ · `missing_context` → ⚠ (add missing detail) · `HAS_REPRO=false` → 🔍 No Example · PR → ⏭ Skipped
 
 Produce:
 
@@ -178,8 +178,8 @@ Produce:
 ---
 Thread #[number] — [title]
 Type:        [Issue / Pull Request / Discussion]
-Repro:       [✅ Reproduced | ❌ Could Not Reproduce | ⚠ Partial | 🔍 No Example | ⏭ Skipped (PR)]
-Sensitive:   [🔴 Found: <comma-separated flag names, no values> | ✅ None]
+Repro:       [✓ Reproduced | ✗ Could Not Reproduce | ⚠ Partial | ? No Example | ⏭ Skipped (PR)]
+Sensitive:   [✗ Found: <comma-separated flag names, no values> | ✓ None]
 Priority:    [Critical / High / Medium / Low]
 Action:      [most important next step]
 → saved to [skill-specific path]

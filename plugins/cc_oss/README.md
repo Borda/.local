@@ -409,7 +409,7 @@ Flag mark = output produced only when flag passed. ¹ Full guide when breaking c
 - `minor` bump proposed but no new public API added → should be `patch`
 - Version string not `MAJOR.MINOR.PATCH` format
 
-**Breaking-change classification** (codemap-gated): after truth check, each diff-derived public symbol run through `fn-rdeps --exclude-tests`. Symbol with caller outside own top-level package → labelled **Breaking**, moved to ⚠️ Breaking Changes with external call sites cited; symbol whose callers all inside own package stays under human label. Affected call-site list drafted into migration guide — downstream consumers see exactly what to change. Requires codemap v3 index — no index → phase skipped, human classification stands. Partial coverage (`query_complete:false`) surfaces evidence as possibly-incomplete, never drops it.
+**Breaking-change classification** (codemap-gated): after truth check, each diff-derived public symbol run through `fn-rdeps --exclude-tests`. Symbol with caller outside own top-level package → labelled **Breaking**, moved to ⚠ Breaking Changes with external call sites cited; symbol whose callers all inside own package stays under human label. Affected call-site list drafted into migration guide — downstream consumers see exactly what to change. Requires codemap v3 index — no index → phase skipped, human classification stands. Partial coverage (`query_complete:false`) surfaces evidence as possibly-incomplete, never drops it.
 
 **CHANGELOG section ordering** (strict, enforced):
 

@@ -21,7 +21,7 @@ Ask up to **5 distillation questions** to narrow open branches into single direc
 
 Start with these (adapt based on tree content):
 
-1. "Which open branch best captures the core direction you want to pursue?" — list each open branch as lettered option. Note: if tree was saved and this branch does not already have ✅ status in file, it should be updated to `resolved — chosen in distillation` in tree file; do not re-save file here — spec file written in D3 will reflect accepted direction.
+1. "Which open branch best captures the core direction you want to pursue?" — list each open branch as lettered option. Note: if tree was saved and this branch does not already have ✓ status in file, it should be updated to `resolved — chosen in distillation` in tree file; do not re-save file here — spec file written in D3 will reflect accepted direction.
 2. "Should any remaining open branches be combined with chosen direction, or are they separate concerns?"
 3. "What is the single most important success criterion for this idea?"
 4–5. Ask additional questions based on gaps in open threads section or unresolved tensions between branches

@@ -352,7 +352,7 @@ Want manual structure exploration — `/codemap-py:query-code` there. Most users
 
 ______________________________________________________________________
 
-## ✅ Best-practice integration
+## ✓ Best-practice integration
 
 ______________________________________________________________________
 

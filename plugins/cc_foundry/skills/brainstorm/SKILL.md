@@ -311,7 +311,7 @@ Assemble tree state and write to `.plans/blueprint/YYYY-MM-DD-<slug>.md` using W
 ## Resolved branches
 
 - Branch N accepted: <reason/decision note>
-[One bullet per ✅ resolved branch.]
+[One bullet per ✓ resolved branch.]
 
 ## Open threads
 

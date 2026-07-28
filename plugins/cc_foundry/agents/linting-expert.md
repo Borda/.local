@@ -364,10 +364,10 @@ For general reviews, apply same discipline: report direct violations (parameter 
    - For targeted reviews, scope findings per `<output_format>` rules.
 5. Run mypy on the source root: `mypy src/` if `src/` directory exists, else `mypy .` (or detect target from `pyproject.toml [tool.mypy] files/packages`) — fix type errors from most to least impactful
 6. For suppression (`# type: ignore`, `# noqa`): always add comment explaining why.
-   - ✅ Missing third-party stubs: `# type: ignore[import-untyped]`
-   - ✅ Known false positive: `# noqa: B008 — intentional`
-   - ✅ Generated code that can't be modified
-   - ❌ Never: real type errors, S-rule security findings, or whole-file suppressions in production code
+   - ✓ Missing third-party stubs: `# type: ignore[import-untyped]`
+   - ✓ Known false positive: `# noqa: B008 — intentional`
+   - ✓ Generated code that can't be modified
+   - ✗ Never: real type errors, S-rule security findings, or whole-file suppressions in production code
 7. Configure per-file ignores for test files + generated code
 8. Install pre-commit hooks so issues don't creep back in
 9. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md` (available post `/foundry:setup`).

@@ -263,7 +263,7 @@ Cross-reference commit bodies against PR descriptions — canonical source of tr
 
 **Detect revert pairs**: scan `git log $RANGE --no-merges --format="%H %s"` for subjects beginning with `Revert "`. For each: extract original subject, search range for matching commit. Both found → `REVERT_SET` pair (net effect zero).
 
-Record all `REVERT_SET` pairs before Classify. Commits in `REVERT_SET` excluded from standard sections; collected for 🔄 Reverted. If only revert is in range (original predates range) → classify as ❌ Removed (or ⚠️ Breaking Changes if API surface changed without prior deprecation) — NOT 🔄 Reverted; net user effect is non-zero.
+Record all `REVERT_SET` pairs before Classify. Commits in `REVERT_SET` excluded from standard sections; collected for 🔄 Reverted. If only revert is in range (original predates range) → classify as ✗ Removed (or ⚠ Breaking Changes if API surface changed without prior deprecation) — NOT 🔄 Reverted; net user effect is non-zero.
 
 ## Explore codebase
 
@@ -310,7 +310,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
 cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
 ```
-Follow above (Truth check section) and execute. Gate: runs after Classify, before Audit changelog. Verifies 🚀 Added / ⚠️ Breaking Changes / 🌱 Changed symbols exist in HEAD via codemap or grep fallback. Max 3 loop iterations.
+Follow above (Truth check section) and execute. Gate: runs after Classify, before Audit changelog. Verifies 🚀 Added / ⚠ Breaking Changes / 🌱 Changed symbols exist in HEAD via codemap or grep fallback. Max 3 loop iterations.
 
 ## Breaking-change classification
 
@@ -321,7 +321,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
 cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
 ```
-Follow above (Breaking-change classification section) and execute. Codemap-gated (skips without a v3 index). For each diff-derived public symbol, `fn-rdeps --exclude-tests` labels it Breaking (caller outside its own package) or internal; Breaking symbols move to ⚠️ Breaking Changes with caller evidence, and `migration_lines` feed the Draft migration guide as `breaking_callers` findings.
+Follow above (Breaking-change classification section) and execute. Codemap-gated (skips without a v3 index). For each diff-derived public symbol, `fn-rdeps --exclude-tests` labels it Breaking (caller outside its own package) or internal; Breaking symbols move to ⚠ Breaking Changes with caller evidence, and `migration_lines` feed the Draft migration guide as `breaking_callers` findings.
 
 ## Validate migration docs
 
@@ -346,7 +346,7 @@ MIGRATION_DOC=$(find "$REPO_ROOT" -maxdepth 3 \( \
 
 Skip entirely when `$MIGRATION_DOC` empty — no migration/upgrade docs exist in project.
 
-**When found**: for every classified item in ⚠️ Breaking Changes, 🗑️ Deprecated, and ❌ Removed — verify present and described in `$MIGRATION_DOC`. "Present" = migration doc contains symbol name or semantically equivalent reference with upgrade instructions.
+**When found**: for every classified item in ⚠ Breaking Changes, 🗑️ Deprecated, and ✗ Removed — verify present and described in `$MIGRATION_DOC`. "Present" = migration doc contains symbol name or semantically equivalent reference with upgrade instructions.
 
 Check each item:
 ```bash
@@ -356,7 +356,7 @@ grep -i "<symbol_or_key>" "$MIGRATION_DOC" 2>/dev/null  # timeout: 3000
 **Outcomes**:
 - Found with upgrade path → `✓ <symbol> covered`
 - Found but no upgrade path → `[SHALLOW] <symbol> in <doc> — present but missing upgrade instructions`
-- Not found → `[MISSING-MIGRATION] <symbol> — ⚠️ Breaking/🗑️ Deprecated but absent from <doc>`
+- Not found → `[MISSING-MIGRATION] <symbol> — ⚠ Breaking/🗑️ Deprecated but absent from <doc>`
 
 Collect all findings as `migration_gaps` list. Zero findings → migration doc complete. Report before proceeding.
 
@@ -420,7 +420,7 @@ Pick top 3–5 most significant changes from Classify. Ranking: breaking changes
 
 ## Draft migration guide
 
-Always produce. No breaking changes → single line "No breaking changes in this release." Deprecations/removals → show before→after code examples. State in preamble: API deprecated in prior release and now removed → ❌ Removed (not Breaking).
+Always produce. No breaking changes → single line "No breaking changes in this release." Deprecations/removals → show before→after code examples. State in preamble: API deprecated in prior release and now removed → ✗ Removed (not Breaking).
 
 If `migration_gaps` non-empty (from Validate migration docs): for each `[MISSING-MIGRATION]` item, add dedicated section covering that symbol with before→after example. For each `[SHALLOW]` item, expand existing coverage to add concrete upgrade instructions.
 

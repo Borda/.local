@@ -77,7 +77,7 @@ Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gat
 ## Release prepare: $VERSION
 
 ### Audit
-Reproduce the full Phase-1 readiness table verbatim — the `| Check | Status | Detail |` markdown table from audit-checks.md with ALL check rows (Working tree, CI, Blocking issues, Open PRs, README aligned, CHANGELOG entry, Version consistent, Dependency CVEs, Scheduled removals, Doc proportionality) and their Status glyphs (`✅`/`⚠️`/`❌`). "Condensed" applies to the Detail column only (trim verbose detail) — never to row count. Do NOT replace this table with a finding-bullet digest, and do NOT substitute a different table (e.g. a `File | Status` artifacts box).
+Reproduce the full Phase-1 readiness table verbatim — the `| Check | Status | Detail |` markdown table from audit-checks.md with ALL check rows (Working tree, CI, Blocking issues, Open PRs, README aligned, CHANGELOG entry, Version consistent, Dependency CVEs, Scheduled removals, Doc proportionality) and their Status glyphs (`✓`/`⚠`/`✗`). "Condensed" applies to the Detail column only (trim verbose detail) — never to row count. Do NOT replace this table with a finding-bullet digest, and do NOT substitute a different table (e.g. a `File | Status` artifacts box).
 [any warnings carried forward]
 
 ### Written (documentation artifacts — complementary to the release, not the release itself)

@@ -44,7 +44,7 @@ Expand `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>`, `<$ADVERSARIAL_DIR>` to litera
 1. Read `$ADVERSARIAL_DIR/adversarial-review.md` from spawned reviewer
 2. **Critical or high findings present**: fix every claim in draft contradicted by HEAD (remove unverified API names, correct wrong descriptions, remove symbols absent from codebase); re-spawn adversarial reviewer on updated draft; repeat until zero critical/high findings or 3 total iterations reached
 3. **After max 3 iterations with persistent critical/high findings**: surface remaining findings to user, stop — don't hand over draft with known false claims
-4. **Medium or low findings**: append as `> ⚠️ Reviewer notes: <summary>` to response; these don't block handover
+4. **Medium or low findings**: append as `> ⚠ Reviewer notes: <summary>` to response; these don't block handover
 5. **0 critical/high findings**: proceed to Polish
 
 Log each fix: `[CORRECTED] <original claim> → <what changed and why>`.
