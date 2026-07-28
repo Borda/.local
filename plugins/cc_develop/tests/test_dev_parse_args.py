@@ -382,6 +382,23 @@ class TestWriteSkillFiles:
         assert (tmp_path / "dev-refactor-repo-shared").read_text() == ""
         assert (tmp_path / "dev-upstream-shared").read_text() == ""
 
+    @pytest.mark.parametrize("skill", ["feature", "fix", "refactor", "debug", "review"])
+    def test_worktree_flag_enabled_persisted(self, skill: str, tmp_path: Path):
+        """Worktree-capable skills: --worktree persists 'true' to its per-skill sentinel (legacy=None → no legacy file)."""
+        write_skill_files(skill, "--worktree do the thing", tmp_dir=tmp_path)
+        assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "true"
+
+    @pytest.mark.parametrize("skill", ["feature", "fix", "refactor", "debug", "review"])
+    def test_worktree_flag_absent_defaults_false(self, skill: str, tmp_path: Path):
+        """Worktree-capable skills: absent --worktree defaults the sentinel to 'false'."""
+        write_skill_files(skill, "do the thing", tmp_dir=tmp_path)
+        assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "false"
+
+    def test_worktree_not_registered_for_plan(self):
+        """plan is analysis-only (never edits) — it must not register --worktree."""
+        flags = {spec.flag for spec, _legacy in SKILL_SPECS["plan"]}
+        assert "worktree" not in flags
+
 
 # ---------------------------------------------------------------------------
 # main() — argparse gate + both call shapes preserved

@@ -1,0 +1,68 @@
+<!-- file: worktree-isolation.md — consumers: plugins/cc_oss/skills/{review,resolve}/SKILL.md -->
+
+# Worktree isolation (`--worktree`) — oss
+
+Opt-in. Offload the run into an isolated git worktree so the caller's working tree + branch are never touched. Gated on `WT_ENABLED=true`; flag absent → run in main tree as today.
+
+Base = current `HEAD` (deterministic). Do NOT lean on `EnterWorktree(name=…)` alone — its default `worktree.baseRef` is `fresh` (branches from `origin/<default>`), wrong base. Create off `HEAD` explicitly, enter by `path`.
+
+## §Enter
+
+Run right after flag parsing, before any checkout / agent spawn / report dir creation.
+
+1. Gate:
+
+```bash
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r WT_ENABLED < "${TMPDIR:-/tmp}/oss-<skill>-worktree-${CSID}" 2>/dev/null; [ "$WT_ENABLED" = "true" ] || WT_ENABLED=false
+```
+
+`WT_ENABLED` != `true` → skip this file.
+
+2. Guard already-in-worktree (`git rev-parse --git-common-dir` ≠ `.git`) → warn `⚠ already in worktree — --worktree no-op`, continue.
+3. Create off HEAD + persist main-tree root (for §Deliverable / restore), then enter:
+
+```bash
+# timeout: 15000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+git rev-parse --show-toplevel > "${TMPDIR:-/tmp}/oss-<skill>-orig-root-${CSID}"
+WT=".claude/worktrees/oss-<skill>-<slug>"      # slug: PR number, or report basename
+git worktree add -b "oss-<skill>-<slug>" "$WT" HEAD   # branch off HEAD, not origin/default
+```
+
+> `add` fails `already exists` → append a disambiguator, retry once.
+
+4. `EnterWorktree(path=".claude/worktrees/oss-<skill>-<slug>")` — session CWD now the worktree.
+
+## §review — read-only, report to main tree
+
+`oss:review` produces a report; write the **final** report under the main tree so its printed path + follow-up gate stay valid:
+
+```bash
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _ORIG_ROOT < "${TMPDIR:-/tmp}/oss-review-orig-root-${CSID}" 2>/dev/null || _ORIG_ROOT="$(pwd)"
+```
+
+Prefix `REPORT_DIR` with `$_ORIG_ROOT` (absolute). `$RUN_DIR` (`.temp/`) handoffs may stay in the worktree. Review reads the PR diff as usual (`gh pr diff` is remote — CWD-independent).
+
+## §resolve — wrap the whole run above its existing isolation
+
+`oss:resolve` mutates a PR branch and **pushes to the contributor fork** (its real deliverable is remote — reachable regardless of local worktree). Entering the session worktree **before** Step 4 `gh pr checkout` means the checkout, Phase-2 per-specialist `git worktree`s, cherry-pick merge-back, and push all happen off the isolated worktree; the caller's main tree + branch never change.
+
+Composition facts (verified against `resolve/modes/action-item-dispatch.md`):
+- **Mutex path** derives from git-common-dir + branch. Worktrees share the common-dir, so the lock is identical inside the session worktree → a second concurrent resolve on the same PR branch is still blocked. No regression.
+- **Phase-2 specialist worktrees** register on the same common-dir (siblings, not nested) and branch from `resolve-base-sha` (the PR HEAD after checkout) exactly as before.
+- **Step 11 caller-branch restore** becomes a harmless no-op — the main tree was never switched.
+- **Push** targets the same remote fork; unaffected by CWD.
+
+Enter is the only addition; do not alter checkout, mutex, fingerprint, or push logic.
+
+## §Exit
+
+End of run, after gates/push:
+
+1. `git branch --show-current` (from worktree CWD).
+2. `ExitWorktree(action="keep")` — returns session to original dir, leaves worktree + branch on disk. Never `remove`, never auto-merge. (`path`-entered worktrees are never auto-removed.)
+3. Surface a `Worktree` block: `path` · `branch` · note (review: `merge if you want the report's companion edits`; resolve: `commits already pushed to the fork — worktree is disposable, remove with \`git worktree remove\` when done`).

@@ -203,17 +203,18 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag                  | Description                                                                                                                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                  |
-| `--plan <path>`       | Read classification, scope, approach from existing plan file                                                                                                                               |
-| `--team`              | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope |
-| `--no-codemap`        | Disable codemap even if available                                                                                                                                                          |
-| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                     |
-| `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust own scoping)                                                                                                                     |
-| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                           |
-| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                  |
-| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                  |
+| Flag                  | Description                                                                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                                                      |
+| `--plan <path>`       | Read classification, scope, approach from existing plan file                                                                                                                                                                   |
+| `--team`              | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope                                     |
+| `--worktree`          | Run the whole skill in an isolated git worktree (`.claude/worktrees/`) on a new branch — you review + merge (never auto-merged). Codemap index is per-worktree, so parallel runs never race one index. Composes with `--team`. |
+| `--no-codemap`        | Disable codemap even if available                                                                                                                                                                                              |
+| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                                                         |
+| `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust own scoping)                                                                                                                                                         |
+| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                                               |
+| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                                                      |
+| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                                                      |
 
 **Workflow**:
 
@@ -257,15 +258,16 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag                  | Description                                                                                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`). |
-| `--plan <path>`       | Read scope and approach from existing plan file                                                                           |
-| `--diagnosis <path>`  | Read confirmed root cause from `/develop:debug` output file; skips Step 1 analysis entirely                               |
-| `--team`              | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating distinct root-cause hypothesis independently                |
-| `--no-challenge`      | Skip challenger adversarial gate entirely                                                                                 |
-| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                 |
-| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                 |
+| Flag                  | Description                                                                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                                                      |
+| `--plan <path>`       | Read scope and approach from existing plan file                                                                                                                                                                                |
+| `--diagnosis <path>`  | Read confirmed root cause from `/develop:debug` output file; skips Step 1 analysis entirely                                                                                                                                    |
+| `--team`              | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating distinct root-cause hypothesis independently                                                                                                                     |
+| `--worktree`          | Run the whole skill in an isolated git worktree (`.claude/worktrees/`) on a new branch — you review + merge (never auto-merged). Codemap index is per-worktree, so parallel runs never race one index. Composes with `--team`. |
+| `--no-challenge`      | Skip challenger adversarial gate entirely                                                                                                                                                                                      |
+| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                                                      |
+| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                                                      |
 
 **Workflow**:
 
@@ -313,17 +315,18 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag                  | Description                                                                                                                                                        |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when refactor context tied to upstream issue in fork. Parsed for consistency; refactor has no issue-fetch step by default. |
-| `--plan <path>`       | Read scope and approach from existing plan file                                                                                                                    |
-| `--team`              | Spawn `foundry:sw-engineer` (refactoring) + `foundry:qa-specialist` (characterization tests) parallel. Use when target is directory or spans multiple modules      |
-| `--no-codemap`        | Disable codemap even if available                                                                                                                                  |
-| `--codemap`           | Strict codemap — fail if index missing                                                                                                                             |
-| `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                 |
-| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                   |
-| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                          |
-| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                          |
+| Flag                  | Description                                                                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when refactor context tied to upstream issue in fork. Parsed for consistency; refactor has no issue-fetch step by default.                                                             |
+| `--plan <path>`       | Read scope and approach from existing plan file                                                                                                                                                                                |
+| `--team`              | Spawn `foundry:sw-engineer` (refactoring) + `foundry:qa-specialist` (characterization tests) parallel. Use when target is directory or spans multiple modules                                                                  |
+| `--worktree`          | Run the whole skill in an isolated git worktree (`.claude/worktrees/`) on a new branch — you review + merge (never auto-merged). Codemap index is per-worktree, so parallel runs never race one index. Composes with `--team`. |
+| `--no-codemap`        | Disable codemap even if available                                                                                                                                                                                              |
+| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                                                         |
+| `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                                                                             |
+| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                                               |
+| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                                                      |
+| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                                                      |
 
 **Workflow**:
 
@@ -376,6 +379,7 @@ ______________________________________________________________________
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--repo <owner/repo>`  | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                                                                       |
 | `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating distinct root-cause hypothesis independently. Use when root cause unclear after initial analysis, or failure spans 3+ modules                                                     |
+| `--worktree`           | Run the investigation in an isolated git worktree (base: HEAD) so reproduction attempts never touch main sources. Diagnosis file is written to the **main tree** so `/develop:fix` can read it.                                                 |
 | `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures, no local repro. |
 | `--codemap`            | Strict codemap — fail if index missing (auto-enabled when installed)                                                                                                                                                                            |
 | `--no-codemap`         | Disable codemap even if available                                                                                                                                                                                                               |
@@ -423,14 +427,15 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag               | Description                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------- |
-| `--no-challenge`   | Skip challenger adversarial gate                                                                          |
-| `--challenge`      | Force challenger gate even on small change auto-skip would otherwise skip                                 |
-| `--codemap`        | Strict codemap — fail if index missing                                                                    |
-| `--no-codemap`     | Disable codemap even if available                                                                         |
-| `--semble`         | Enable semble semantic search context                                                                     |
-| `--keep "<items>"` | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill |
+| Flag               | Description                                                                                                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--no-challenge`   | Skip challenger adversarial gate                                                                                                                                                               |
+| `--challenge`      | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                      |
+| `--codemap`        | Strict codemap — fail if index missing                                                                                                                                                         |
+| `--no-codemap`     | Disable codemap even if available                                                                                                                                                              |
+| `--semble`         | Enable semble semantic search context                                                                                                                                                          |
+| `--worktree`       | Run the review in an isolated git worktree (base: HEAD) so no agent can mutate main sources. Report is written to the **main tree**; reviews committed HEAD (uncommitted changes not visible). |
+| `--keep "<items>"` | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                      |
 
 **Workflow**:
 
@@ -546,6 +551,21 @@ Add `--team` to any code-changing skill. Spawns parallel specialist agents explo
 /develop:feature "add streaming response support" --team
 /develop:fix "memory leak in batch inference" --team
 ```
+
+### Isolated runs — `--worktree`
+
+Add `--worktree` to run the **entire** skill inside a fresh git worktree under `.claude/worktrees/` on a new branch **based off your current `HEAD`** (via `git worktree add HEAD` + the harness `EnterWorktree`/`ExitWorktree` tools — not `origin/<default>`). The main working tree is never touched; on completion the skill leaves the worktree + branch on disk and reports the path/branch — **you** review and merge (never auto-merged). Uncommitted working-tree changes do not transfer into a worktree — commit or stash first if the run must see them.
+
+Available on: `feature`, `fix`, `refactor` (all work stays in the worktree); and opt-in on the read-only `debug` + `review` (isolation guards sources, but the diagnosis/report deliverable is written to the **main tree** so downstream skills + your review can reach it). Not on `plan` (analysis-only, never edits).
+
+```text
+/develop:fix "off-by-one in token expiry" --worktree
+/develop:refactor src/loader.py "extract batching" --worktree --team
+```
+
+- **Codemap alignment** — because the session CWD moves into the worktree, the codemap index resolves per-worktree (`<worktree>/.cache/codemap/…`). Each run owns its own ephemeral index, so any number of parallel `--worktree` runs never share or race one index; `.cache/` is gitignored so a worktree index never merges back. After you merge the branch, the main index is flagged stale on the next prompt and refreshes once.
+- **Composes with `--team`** — the orchestrator worktree is the integration point; `--team` teammates keep their own per-agent isolation and merge into the orchestrator's worktree branch.
+- Not offered on `debug` (diagnosis handoff), `plan`, or `review` (read-only).
 
 ______________________________________________________________________
 

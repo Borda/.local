@@ -1,9 +1,9 @@
 ---
 name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file. TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: \"debug this failure\", \"why is X broken\", \"find the root cause of <error>\", \"investigate this CI failure\". SKIP when: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project."
-argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap] [--keep \"<items>\"]"
+argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--worktree] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap] [--keep \"<items>\"]"
 effort: high
-allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 disable-model-invocation: true
 ---
 
@@ -90,6 +90,25 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
 # URL normalization + log fetching: §URL Normalization in ci-log-extract.md
 ```
 
+## Worktree isolation
+
+> loads: worktree-isolation.md
+
+When `--worktree` set, run the investigation in an isolated git worktree so reproduction attempts (repro scripts, temp edits) can never mutate the main sources — **before** codemap detection or Step 1.
+
+```bash
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r WORKTREE_ENABLED < "${TMPDIR:-/tmp}/dev-debug-worktree-${CSID}" 2>/dev/null; [ "$WORKTREE_ENABLED" = "true" ] || WORKTREE_ENABLED=false
+```
+
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/worktree-isolation.md"
+```
+
+`WORKTREE_ENABLED=true` → follow §Enter (base off HEAD, `EnterWorktree(path=…)`). **Read-only skill** — obey §Deliverable: the diagnosis file is written to the **main tree** (`$_ORIG_ROOT`) at Step 4 so `/develop:fix` can read it. Else skip — run in main tree.
+
 **Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-debug-codemap-${CSID}` (per-skill) and `${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}` (legacy) by flag-parsing block above (via `dev_parse_args.py --skill debug --write-files`). Read per-skill path, then normalize via `codemap-resolve`:
 
 ```bash
@@ -125,7 +144,7 @@ cat "$_DEV_SHARED/ci-log-extract.md"
 ```
 Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--team\`, \`--worktree\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Mode selection** — debug runs in one of two mutually-exclusive modes; set explicitly before any Step:
 
@@ -440,10 +459,14 @@ Evidence: <key signals that confirmed the hypothesis>
 **Write diagnosis to file** before handing off — enables `/develop:fix` to skip Step 1 analysis via `--diagnosis <path>`:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 SLUG=$(echo "$ARGUMENTS" | tr ' ' '\n' | grep -v '^--' | grep -v '^[0-9]\+$' | head -4 | tr '\n' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | sed 's/-$//'); [ -z "$SLUG" ] && SLUG="unnamed-$(date +%s)"
 # grep -v strips bare numeric tokens (e.g. CI run IDs) — avoids filenames like debug_12345678.md
-DIAG_FILE=".plans/active/debug_${SLUG}.md"
-mkdir -p .plans/active
+# Deliverable lands in the MAIN tree: in --worktree mode the orig-root sentinel (written at §Enter) points there so /develop:fix can read it; absent → $(pwd)  # worktree-isolation.md §Deliverable
+IFS= read -r _DIAG_BASE < "${TMPDIR:-/tmp}/dev-debug-orig-root-${CSID}" 2>/dev/null || _DIAG_BASE="$(pwd)"
+[ -n "$_DIAG_BASE" ] || _DIAG_BASE="$(pwd)"
+DIAG_FILE="$_DIAG_BASE/.plans/active/debug_${SLUG}.md"
+mkdir -p "$_DIAG_BASE/.plans/active"
 ```
 
 Write `$DIAG_FILE` with this structure:
@@ -487,6 +510,8 @@ fi
 ```
 
 Hand off: `-> /develop:fix --diagnosis $DIAG_FILE`. Root cause already known — fix's Step 1 analysis complete.
+
+**Worktree exit** — if `WORKTREE_ENABLED=true`: the diagnosis file already lives in the main tree (§Deliverable). Follow `worktree-isolation.md` §Exit — capture branch, call `ExitWorktree(action="keep")`, append the `Worktree` block to the report. The follow-up `/develop:fix` then runs in the main tree against the main-tree `$DIAG_FILE`. Never auto-merge.
 
 ## Final Report
 

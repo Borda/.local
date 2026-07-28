@@ -271,10 +271,11 @@ Without `foundry`, Tier 2 falls back to general-purpose agents with role descrip
 
 **Flags:**
 
-| Flag               | Effect                                                                                                                                    |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `--reply`          | After consolidation, `oss:shepherd` drafts welcoming two-part PR comment (positive framing first, then specific actionable asks)          |
-| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions) |
+| Flag               | Effect                                                                                                                                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reply`          | After consolidation, `oss:shepherd` drafts welcoming two-part PR comment (positive framing first, then specific actionable asks)                                                                                              |
+| `--worktree`       | Opt-in. Run the review in an isolated git worktree (base: HEAD) so no dimension agent can mutate main sources. Report is written to the **main tree**; you review + merge. PR-review mode only (not `--reply`/direct-report). |
+| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions)                                                                                     |
 
 ______________________________________________________________________
 
@@ -335,9 +336,10 @@ Every resolve cycle closes with parallel `foundry:linting-expert` + `foundry:qa-
 
 **Flags:**
 
-| Flag               | Effect                                                                                                                                    |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions) |
+| Flag               | Effect                                                                                                                                                                                                                                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--worktree`       | Opt-in. Wrap the whole run in an isolated git worktree (base: HEAD) entered before `gh pr checkout`, so the checkout, per-specialist worktrees, and cherry-picks never touch your main tree/branch. Commits still push to the fork as usual; the local worktree is disposable. Composes with resolve's existing per-specialist isolation. |
+| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions)                                                                                                                                                                                                 |
 
 **Output location:** `.reports/resolve/<timestamp>/`
 

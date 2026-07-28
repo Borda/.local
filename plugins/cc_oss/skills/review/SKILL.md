@@ -1,8 +1,8 @@
 ---
 name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design. TRIGGER when: user provides a GitHub PR number (e.g. 42, #42) and asks to review/audit/check it, or provides a saved review-report path with --reply to draft a contributor-facing comment; phrases: 'review PR 123', 'audit this pull request', 'look at PR #42', 'draft a reply for this review report'. SKIP: local file or current git diff review (use /develop:review (requires 'develop' plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use /oss:analyse)."
-argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble] [--keep \"<items>\"]"
-allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble] [--worktree] [--keep \"<items>\"]"
+allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 model: sonnet
 effort: high
 ---
@@ -107,6 +107,7 @@ Parse `$ARGUMENTS` flags first (applied directly — no subprocess) — this set
 | `--no-codemap` | `CODEMAP_FORCE_OFF` | `true` | `false` |
 | `--codemap` | `CODEMAP_STRICT` | `true` | `false` |
 | `--semble` | `SEMBLE_ENABLED` | `true` | `false` |
+| `--worktree` | `WT_ENABLED` | `true` | `false` |
 | `--keep "<items>"` | `KEEP_ITEMS` | value string | `""` |
 
 `CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed (including `--keep "<items>"` and its quoted value), leading whitespace stripped, leading `#` stripped.
@@ -222,7 +223,17 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/nu
 
 If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Worktree isolation** — when `WT_ENABLED=true` **and** this is a PR review (not `--reply` / direct-report `.md` mode): run the review in an isolated git worktree so no dimension agent can mutate main sources. Load and follow the oss worktree protocol (§Enter now, §review deliverable routing, §Exit at the follow-up gate):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)"  # timeout: 5000
+[ -f "$_OSS_SHARED/worktree-isolation.md" ] && cat "$_OSS_SHARED/worktree-isolation.md"  # timeout: 5000
+```
+
+`WT_ENABLED=true` → follow §Enter (base off HEAD, `EnterWorktree(path=…)`) before Step 1; the report is routed to the main tree (§review). Else skip — run in main tree.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -358,7 +369,10 @@ RUN_DIR=".temp/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR" # timeout: 5000
 # persisted so agents resolve via cat; hand-typing caused leading-dot drops → stray temp/review/ dirs
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"
-REPORT_DIR=".reports/review/$TIMESTAMP"
+# Deliverable → main tree (worktree-isolation.md §review): --worktree writes the orig-root sentinel at §Enter; absent → pwd. Keeps the report + follow-up path reachable outside the worktree. RUN_DIR above stays worktree-local.
+IFS= read -r _REPORT_BASE < "${TMPDIR:-/tmp}/oss-review-orig-root-${CSID}" 2>/dev/null || _REPORT_BASE="$(pwd)"
+[ -n "$_REPORT_BASE" ] || _REPORT_BASE="$(pwd)"
+REPORT_DIR="$_REPORT_BASE/.reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR" # timeout: 5000
 echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/oss-review-report-dir-${CSID}"  # persist for contract-write
 ```
@@ -620,6 +634,8 @@ Follow above. File absent → warn: "codex-delegation criteria not found — ver
 Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't rewrite output file.
 
 ## Step 7: Reply gate — STOP CHECK
+
+**Worktree exit** — if `WT_ENABLED=true` and a worktree was entered at Step 0: the report already lives in the main tree (§review). Follow `worktree-isolation.md` §Exit — capture branch, call `ExitWorktree(action="keep")`, append the `Worktree` block. Exit **before** the follow-up gate so any follow-up runs in the main tree. Never auto-merge.
 
 **Hard gate**: check "Step 5b: Print report header" task status before anything else in this step. Not `completed` → the header table has not actually been printed yet — go back and do it now (see Step 5), then mark the task `completed`, before calling `AskUserQuestion` below.
 
