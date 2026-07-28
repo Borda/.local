@@ -55,7 +55,7 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 
 1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content**
 2. Print to terminal in order:
-   1. **Header** — plain ASCII verdict line; no Unicode box-drawing chars (`─`, `═`, `│`, `┌` etc.); use `·` as separator: `verdict: NEEDS_WORK · findings: 8 · critical: 0 · high: 2 · medium: 4 · low: 2 · confidence: 0.88`
+   1. **Header** — plain ASCII verdict line; no Unicode box-drawing chars (`─`, `═`, `│`, `┌` etc.); use `·` as separator: `verdict: ⚠ NEEDS_WORK · findings: 8 · critical: 0 · high: 2 · medium: 4 · low: 2 · confidence: 0.88` (verdict word prefixed with its symbol — see §Reporting Findings)
    2. **Report path** — `→ <filepath>`
    3. **Executive summary** — prose: 2–3 sentence overview + each critical/high finding listed; omit medium/low detail unless ≤2 total findings
    4. **Follow-up gate** — invoke `AskUserQuestion` as final step; skip when background agent or inside another skill's pipeline
@@ -78,4 +78,5 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 Fix: <concrete action to resolve>
 ```
 
+- Severity/verdict markers: `!` = critical (standalone alert-block prefix only, e.g. `! BREAKING`) · `✗` = blocked/rejected · `⚠` = warnings/needs-attention · `✓` = pass/approved · hint = fix hint — prefix the verdict word wherever printed; `!` never appears as a table-cell symbol, only as the alert-block prefix
 - Terminal colors: RED = critical · YELLOW = warnings · GREEN = pass · CYAN = fix hint

@@ -121,7 +121,7 @@ Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write ac
 
 1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full evidence coverage, ultra-caveman compressed** (see §Prose Compression — "full" means no dropped findings, not verbose prose) — **execute the Write tool call; do not narrate intent and proceed without calling it** — this Write step never skipped; pipeline/background mode only exempts AskUserQuestion gate (step 2.iv), not this Write step. This is a **distinct, additional Write call** — writing to any other path (e.g. run-directory response file, report file) does not satisfy this step. Two writes expected: one to `.temp/output-*.md` (this step) and any other file writes for task.
 2. Print to terminal in this order:
-   1. **YAML header table** — render `---` metadata block from top of report file as simple two-column Markdown table (`Field | Value`, one row per key, long values wrap in cell) — never print raw YAML verbatim (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: NEEDS_WORK · findings: 8 · ...`
+   1. **YAML header table** — render `---` metadata block from top of report file as simple two-column Markdown table (`Field | Value`, one row per key, long values wrap in cell) — never print raw YAML verbatim (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: ⚠ NEEDS_WORK · findings: 8 · ...` (verdict word prefixed with its symbol — see §Reporting Findings)
    2. **Report path** — `→ <filepath>`
    3. **Executive summary** — prose: 2–3 sentence overview + each critical/high finding listed individually; omit medium/low detail unless ≤2 total findings
    4. **Follow-up gate** — invoke `AskUserQuestion` as final step; skip when: spawned via `Agent()` tool, running inside another skill's pipeline, or prompt explicitly states background/pipeline mode — when in doubt, invoke
@@ -163,7 +163,7 @@ Date:       [YYYY-MM-DD]
 Scope:      [what was analyzed — file paths, topic, PR#, run-id, etc.]
 Focus:      [aspect examined — "quality audit" / "SOTA research" / "code review" / etc.]
 Agents:     [agent names that contributed — comma-separated]
-Outcome:    [verdict — APPROVED | READY | NEEDS_ATTENTION | BLOCKED | etc.]
+Outcome:    [verdict — ✓ APPROVED | ✓ READY | ⚠ NEEDS_ATTENTION | ✗ BLOCKED | etc.]
 Confidence: [score] — [key gaps]
 Next steps: [recommended follow-up skill invocation]
 Path:       → .reports/<skill>/<timestamp>/<name>.md
@@ -182,11 +182,13 @@ After required fields, add **skill-specific fields** relevant to report type (e.
 | Scope | [what was analyzed] |
 | Focus | [aspect examined] |
 | Agents | [agent names] |
-| Outcome | [verdict] |
+| Outcome | [✓/⚠/✗ verdict] |
 | Confidence | [score] — [key gaps] |
 | Next steps | [recommended follow-up] |
 | Path | → .reports/<skill>/<timestamp>/<name>.md |
 ```
+
+_Outcome legend: `✓` = approved/ready/clean · `⚠` = needs-attention/needs-work · `✗` = blocked/rejected. Distinct from `!`, which is reserved for standalone alert blocks (`! BREAKING`, `**! BLOCKED**`) — see §Reporting Findings._
 
 ## Reporting Findings
 
@@ -199,6 +201,6 @@ After required fields, add **skill-specific fields** relevant to report type (e.
 Fix: <concrete action to resolve>
 ```
 
-- Severity markers: `!` = critical · `⚠` = warnings · `✓` = pass · hint = fix hint
+- Severity markers: `!` = critical (standalone alert-block prefix only, e.g. `! BREAKING`) · `⚠` = warnings · `✓` = pass · hint = fix hint. Outcome/verdict tables use `✗` for blocked/rejected instead (§Report File Format) — `!` never appears as a table-cell symbol, only as the alert-block prefix
 - **Block merge integrity**: after merging two blocks (combining e.g. `<antipatterns>` + `<quality_checks>` into one), diff combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops
 - **Deferred work must appear in delivered artifact**: if any analysis, rubric definition, or implementation is deferred, approximated, or left incomplete, document it explicitly in output file — "Phase 2 / requires X / not yet implemented" notes must appear in artifact, not only in conversation

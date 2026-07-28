@@ -713,7 +713,14 @@ Report template (loaded above) — use for section structure.
 - `Commit`: short SHA (7 chars); `—` when `COMMIT_MODE=stage`
 - For `location: discussion` rows append `· thread (no GH resolve)` to Status — no GitHub Resolve button exists for PR main-thread comments
 
-Include `### Challenge Log` section in report — one row per item: id · evidence verdict · suggestion verdict · resolution (as-suggested / self-resolved / rejected). Omit section when `--no-challenge`.
+Include `### Challenge Log` section in report, columns: `#` | `Finding` | `Evidence` | `Suggestion` | `Resolution`. Every cell must be self-contained — reader gets full context from that row alone, never by cross-referencing another row or recalling earlier conversation:
+
+- `Finding`: one-line gist of the reviewer's comment (from `finding` in `CHALLENGE_LOG`) — what was actually flagged, not just its id
+- `Evidence`: verdict + reason on one line, e.g. `VALID — <evidence_why>` or `REJECT — <evidence_why>`. Never print bare `VALID`/`REJECT` with no reason
+- `Suggestion`: verdict + reason, same rule, e.g. `VALID — <suggestion_why>` or `REJECT — <suggestion_why>`; `—` for rows with `evidence=REJECT` (suggestion never evaluated)
+- `Resolution`: concrete outcome, never a bare label. `detail=pending-impl:<id>` → backfill before printing: look up that id's `Commit` SHA in the Action Items table above and run `git log -1 --format=%s <sha>` for the one-line summary of what was actually changed; render as `as-suggested: <that summary>`. `detail=<alternative text>` (self-resolved rows) → render as `self-resolved: <alternative text>`. `detail=<evidence_why>` (rejected rows) → render as `rejected: <evidence_why>`. If a commit lookup fails, state `as-suggested: (commit summary unavailable, see commit <sha>)` — never fall back to printing the bare word `as-suggested` alone
+
+Omit section when `--no-challenge`.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"

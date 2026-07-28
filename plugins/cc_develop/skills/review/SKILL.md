@@ -103,7 +103,8 @@ After Step 1 completes (scope and `TARGET` known), create these tasks **before a
 - **"Step 2: Codex co-review"** — create before Step 2 (skip task if Codex unavailable); mark `in_progress` before Codex spawn; mark `completed` when codex seed extracted (or timed out)
 - **"Step 3: Spawn review agents"** — mark `in_progress` before agents launch; mark `completed` when all agent output files collected (or health-monitoring cutoff reached)
 - **"Step 4: Cross-validate critical findings"** — mark `in_progress` before verifier spawns; mark `completed` when all verdicts received; **skip task creation when no critical/blocking findings exist after Step 3**
-- **"Step 5: Consolidate findings"** — mark `in_progress` before spawning consolidator; mark `completed` before printing terminal block (per task-lifecycle.md: `TaskUpdate(completed)` BEFORE long output)
+- **"Step 5: Consolidate findings"** — mark `in_progress` before spawning consolidator; mark `completed` when consolidator returns its JSON envelope (Write to `review-report.md` done) — **do NOT mark completed for the terminal print, that's a separate task below**
+- **"Step 5b: Print report header"** — created **blockedBy** "Step 5: Consolidate findings"; mark `in_progress` immediately after the consolidator's envelope returns; mark `completed` only once the `---` header table has actually appeared in this response's output (not merely queued/intended). The consolidator's JSON envelope is a routing signal for the orchestrator, never a substitute for reading `$REPORT_DIR/review-report.md` and printing its header. **The follow-up gate's `AskUserQuestion` must not fire while this task is `pending`/`in_progress`** — a sibling skill (oss:review, identical consolidator+print architecture) had an incident where the hard-enforced tool call (`AskUserQuestion`) fired correctly while this prose-only print step got silently dropped; the dedicated task exists specifically to make the print step as trackable/enforceable as the tool calls around it.
 
 ## Flag parsing
 
@@ -551,7 +552,9 @@ Embed the cat'd content (not the path) into consolidator spawn prompt as output 
 
 After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CONFIDENCE** to that agent's findings section, state gap explicitly. Never silently drop uncertain findings.
 
-Print terminal block (universal rule — quality-gates.md §Report File Format): read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–15, up to and including closing `---`) and print verbatim as FIRST content of reply. Append `→ saved to $REPORT_DIR/review-report.md`. Report file already contains block — no separate prepend needed. Omit `╔═╗` Re:Anchor box.
+TaskUpdate "Step 5b: Print report header" → `in_progress`.
+
+**MANDATORY, not optional narration** — the consolidator's returned JSON envelope is a routing signal only; it is never printed to the user and never satisfies this step. Perform, in this exact order, in this same turn, before any other Step 5/6 text: (1) read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–15, up to and including closing `---`) via the Read tool; (2) print it verbatim as FIRST content of reply; (3) append `→ saved to $REPORT_DIR/review-report.md`; (4) TaskUpdate "Step 5b: Print report header" → `completed` — only after the block has actually appeared in this response, never before. Report file already contains block — no separate prepend needed. Omit `╔═╗` Re:Anchor box.
 
 ```bash
 # Compaction contract — boundary 2: after consolidation, before follow-up (compaction-contract.md §Lifecycle)
@@ -592,6 +595,8 @@ _FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shar
 Apply delegation criteria defined there (when found).
 
 Print `### Codex Delegation` section to terminal only when tasks actually delegated — omit entirely if nothing delegated.
+
+**Hard gate**: check "Step 5b: Print report header" task status before anything below. Not `completed` → the header table has not actually been printed yet — go back and do it now (see Step 5), then mark the task `completed`, before calling `AskUserQuestion` below.
 
 **Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "What next?"

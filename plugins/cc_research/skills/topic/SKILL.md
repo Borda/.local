@@ -54,7 +54,7 @@ cat "$_RESEARCH_SHARED/agent-resolution.md"
 - status `deleted` if orphaned / no longer relevant
 - keep `in_progress` only if genuinely continuing
 
-**Task tracking**: per CLAUDE.md, create tasks (TaskCreate) for each major phase — paper collection, researcher analysis, report generation. Mark in_progress/completed throughout.
+**Task tracking**: per CLAUDE.md, create tasks (TaskCreate) for each major phase — paper collection, researcher analysis, report generation. Mark in_progress/completed throughout. Always create **"Print report header"** as its own task (all paths — single-agent Step 3, `--team`, `plan`) — `in_progress` right after the report file is written (by the lead directly, or by a spawned consolidator's returned envelope); `completed` only once the `---` header has actually appeared in this response. This task exists because a sibling skill (oss:review) had an incident where a report was written correctly but the terminal print step got silently skipped while the hard-enforced `AskUserQuestion` fired anyway — tracking the print as its own task makes it as trackable as the tool calls around it. The shared `## Follow-up gate` below must not fire while this task is `pending`/`in_progress`.
 
 ## Step 1: Understand the codebase context
 
@@ -229,7 +229,9 @@ while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((CO
 
 Write full report to `$REPORT_OUT` using Write tool (resolved by counter-suffix loop above) — **do not print full report to terminal**.
 
-Print compact terminal summary:
+TaskUpdate "Print report header" → `in_progress`.
+
+Print compact terminal summary — MANDATORY, do this in the same turn as the write above, then TaskUpdate "Print report header" → `completed` only once it has actually appeared in this response:
 
 ```text
 ---
@@ -259,7 +261,7 @@ cat "$_TEAM_MODE"  # timeout: 5000
 
 Follow `modes/team.md` (loaded above) and execute its workflow.
 
-**Mandatory termination gate**: after `modes/team.md` returns (consolidation complete, report written), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for team mode; reaching end of team workflow without invoking it is protocol violation.
+**Mandatory termination gate**: after `modes/team.md` returns (consolidation complete, report written, header printed per its own mandatory print step, "Print report header" task `completed`), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for team mode; reaching end of team workflow without invoking it is protocol violation.
 
 ## Plan Mode — only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode)
 
@@ -274,9 +276,11 @@ cat "$_PLAN_MODE"  # timeout: 5000
 
 Follow `modes/plan.md` (loaded above) and execute its workflow.
 
-**Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for plan mode; reaching end of plan workflow without invoking it is protocol violation.
+**Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written, compact terminal summary printed per its own `Print compact terminal summary` step, "Print report header" task `completed`), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for plan mode; reaching end of plan workflow without invoking it is protocol violation.
 
 ## Follow-up gate
+
+**Hard gate**: check "Print report header" task status before anything else here. Not `completed` → the report header has not actually been printed yet — go back and do it now (Step 3 / team.md / plan.md, whichever path ran), then mark the task `completed`, before calling `AskUserQuestion` below.
 
 ```bash
 rm -f .temp/state/skill-contract.md  # clear contract — topic research complete (compaction-contract.md §Lifecycle)  # timeout: 5000

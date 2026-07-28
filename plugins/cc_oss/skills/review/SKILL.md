@@ -92,7 +92,8 @@ Create these tasks **before** starting Step 1 (in order, all at once):
 - **"Step 2: Agent launch"** — TaskUpdate(in_progress) before spawning agents; TaskUpdate(completed) when all Agent() calls issued
 - **"Step 3: Post-agent checks"** — TaskUpdate(in_progress) before post-agent checks run; TaskUpdate(completed) when all agent output files collected (or timed out); per task-lifecycle.md: TaskUpdate BEFORE long output blocks
 - **"Step 4: Cross-validate critical findings"** — TaskUpdate(in_progress) before spawning verifier agents; TaskUpdate(completed) when all verdicts received; **TaskUpdate(deleted) when no critical/blocking findings exist after Step 3** (always created upfront)
-- **"Step 5: Consolidate findings"** — TaskUpdate(in_progress) before spawning consolidator; TaskUpdate(completed) before printing terminal block (per task-lifecycle.md: before long output)
+- **"Step 5: Consolidate findings"** — TaskUpdate(in_progress) before spawning consolidator; TaskUpdate(completed) when consolidator returns its one-liner (Write to `review-report.md` done) — **do NOT mark completed for the terminal print, that's a separate task below**
+- **"Step 5b: Print report header"** — created **blockedBy** "Step 5: Consolidate findings"; TaskUpdate(in_progress) immediately after the consolidator's one-liner returns; TaskUpdate(completed) only once the `---` header table has actually appeared in this response's output (not merely queued/intended). The consolidator's one-liner (`verdict=... | findings=N | file=<path>`) is NOT this table — it is a routing signal for the orchestrator, never a substitute for reading `$REPORT_DIR/review-report.md` and printing its header. **Step 7a's `AskUserQuestion` must not fire while this task is `pending`/`in_progress`** — a real skip incident showed the hard-enforced tool call (`AskUserQuestion`) firing correctly while this prose-only print step got silently dropped; the dedicated task exists specifically to make the print step as trackable/enforceable as the tool calls around it.
 - **"Step 8: Contributor reply draft"** — create only when REPLY_MODE=true, before spawning oss:shepherd; TaskUpdate(in_progress) immediately after creation; TaskUpdate(completed) when shepherd output written
 
 ## Step 0: Parse flags and content-type pre-classification
@@ -575,9 +576,17 @@ Do NOT read agent finding files inline — floods main context (~16–32K tokens
 
 After parsing confidence: agent < 0.7 → prepend **⚠ LOW CONFIDENCE** to findings section, state gap explicitly. Never drop uncertain findings.
 
-Print terminal block: read the `---` header from top of `$REPORT_DIR/review-report.md` (all fields from opening `---` up to and including closing `---` — `Title:`, `Date:`, `PR Type:`, `Scope:`, `Focus:`, `Agents:`, `CI:`, `Outcome:`, `Summary:`, `Confidence:`, `Next steps:`, `Path:`), append `→ saved to $REPORT_DIR/review-report.md`, print to terminal.
+TaskUpdate "Step 5b: Print report header" → `in_progress`.
 
-This `---` block IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule). **Review-specific rendering caveat**: wrap the printed block in a ` ```text ` fence so the literal `---` delimiters survive — bare, a renderer parses the leading `---` as YAML frontmatter and the closing `---` under `Path:` as a setext heading, mangling the header. Print all 12 fields verbatim; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading.
+**MANDATORY, not optional narration** — the consolidator's returned one-liner is a routing signal only; it is never printed to the user and never satisfies this step. Perform, in this exact order, in this same turn, before any other Step 5/6/7 text:
+1. Read `$REPORT_DIR/review-report.md` (Read tool).
+2. Extract every field from the opening `---` up to and including the closing `---` — `Title:`, `Date:`, `PR Type:`, `Scope:`, `Focus:`, `Agents:`, `CI:`, `Outcome:`, `Summary:`, `Confidence:`, `Next steps:`, `Path:`.
+3. Print that block to the terminal, append `→ saved to $REPORT_DIR/review-report.md`.
+4. TaskUpdate "Step 5b: Print report header" → `completed` — only after the block has actually appeared in this response, never before.
+
+This `---` block IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule). **Review-specific rendering caveat**: wrap the printed block in a ` ```text ` fence so the literal `---` delimiters survive — bare, a renderer parses the leading `---` as YAML frontmatter and the closing `---` under `Path:` as a setext heading, mangling the header. Print all 12 fields verbatim; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading, and still mark the task `completed` (the fallback line satisfies the step).
+
+**Known failure mode this guards against**: a prior run spawned the consolidator, received its one-liner, and jumped straight to Step 7's `AskUserQuestion` + confidence block — skipping this print entirely, even though `AskUserQuestion` itself (a hard tool call) fired correctly. The task above exists so this step is exactly as trackable as the tool calls around it — do not treat "Step 5: Consolidate findings" completing as covering this step; they are separate tasks for this reason.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -611,6 +620,8 @@ Follow above. File absent → warn: "codex-delegation criteria not found — ver
 Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't rewrite output file.
 
 ## Step 7: Reply gate — STOP CHECK
+
+**Hard gate**: check "Step 5b: Print report header" task status before anything else in this step. Not `completed` → the header table has not actually been printed yet — go back and do it now (see Step 5), then mark the task `completed`, before calling `AskUserQuestion` below.
 
 **Confidence block ownership**: `REPLY_MODE=true` → block in Step 8. `REPLY_MODE=false` → block in Step 7b.
 

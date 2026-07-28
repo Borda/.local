@@ -19,7 +19,7 @@ IMPL_AGENT="codex:codex-rescue"
 # set in Step 3b (pr-intelligence subagent); idempotent if already set
 [ -z "$IMPL_DIR" ] && IMPL_DIR=$(mktemp -d)  # timeout: 3000
 mkdir -p "$IMPL_DIR"  # timeout: 3000
-CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
+CHALLENGE_LOG=()  # per-item records: id|finding|evidence|evidence_why|suggestion|suggestion_why|resolution|detail — rationale/detail text carried through to Step 11 report, never dropped
 ```
 
 **Concurrency guard — mutex + HEAD fingerprint** (Phase 2 holds worktrees open for the slowest specialist's whole runtime — minutes — so an external write to the branch, or a second resolve run, is far likelier to land mid-flight than under the old per-item design). The lock path is deterministic (recompute anytime from the git-common-dir + branch); the base SHA is a point-in-time value, so persist it to a tmpfile — shell vars don't survive between Step 8's separate bash calls:
@@ -148,7 +148,7 @@ Implement directly if the issue clearly exists. Return ONLY compact JSON as your
 ```
 
 Parse JSON:
-- **DONE** → mark item resolved; stage/commit per `COMMIT_MODE`; append to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=VALID resolution=codex-direct`; skip Phase 1+2; proceed to next item
+- **DONE** → mark item resolved; stage/commit per `COMMIT_MODE`; append to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=VALID evidence_why=<Codex reason> suggestion=VALID suggestion_why=<Codex reason> resolution=codex-direct detail=<Codex reason>`; skip Phase 1+2; proceed to next item
 - **UNCERTAIN** → fall through to Phase 1+2 (normal challenge + implementation flow)
 
 When `CODEX_AVAILABLE=false` OR `ITEM_EFFORT!=medium`: skip Codex routing; use Phase 1+2 directly.
@@ -205,11 +205,11 @@ fi
 ```
 
 Parse each group's per-item verdict array — same granularity as a single-item challenge, never relaxed by grouping:
-- `evidence=REJECT` → print `⊘ #<id> evidence rejected: <evidence_rationale>`; set type `[challenged:reject]`; append to `CHALLENGE_LOG`; drop from `SURVIVING_ITEMS`
+- `evidence=REJECT` → print `⊘ #<id> evidence rejected: <evidence_rationale>`; set type `[challenged:reject]`; append to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=REJECT evidence_why=<evidence_rationale> suggestion=— suggestion_why=— resolution=rejected detail=<evidence_rationale>`; drop from `SURVIVING_ITEMS`
 - `evidence=VALID` + `suggestion=VALID` → `SUGGESTION_VERDICT[id]=VALID`; use original suggestion for implementation
 - `evidence=VALID` + `suggestion=REJECT` → `SUGGESTION_VERDICT[id]=REJECT`; self-resolve using `alternative` as guidance
 
-Append every item's verdict to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>`. Items with `evidence=VALID` form `SURVIVING_ITEMS`.
+Append every surviving item's verdict to `CHALLENGE_LOG`: `id=<id> finding=<full_comment_text, truncate ~80 chars> evidence=VALID evidence_why=<evidence_rationale> suggestion=<VALID|REJECT> suggestion_why=<suggestion_rationale> resolution=<as-suggested|self-resolved> detail=<when suggestion=REJECT: the `alternative` text — this is what actually gets implemented instead; when suggestion=VALID: leave as `pending-impl:<id>`, Step 11 backfills it from the item's actual commit summary once Phase 2 lands, so the report never prints a bare label with no stated content>`. Items with `evidence=VALID` form `SURVIVING_ITEMS`.
 
 ### Phase 2: Implementation — parallel, one worktree per specialist
 

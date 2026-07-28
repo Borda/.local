@@ -47,3 +47,7 @@ SPAWN_DATE="$(date -u +%Y-%m-%d)"  # timeout: 3000
 mkdir -p .temp  # timeout: 3000
 ```
 For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.reports/research/topic-<SPAWN_BRANCH>-<SPAWN_DATE>.md` (substitute pre-computed values from bash block above). Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
+
+TaskUpdate "Print report header" → `in_progress`.
+
+**MANDATORY, not optional narration** — the consolidator's returned JSON is a routing signal only; it is never printed to the user and never satisfies this step. The consolidator wrote the full report to `<file>` (from its envelope) but printed nothing itself. Before returning control to SKILL.md's `## Follow-up gate`: (1) Read `<file>` (Read tool); (2) print its `---` header block verbatim as FIRST content of the reply; (3) append `→ saved to <file>`; (4) TaskUpdate "Print report header" → `completed` — only after the block has actually appeared in this response, never before. SKILL.md's Follow-up gate must not fire while this task is `pending`/`in_progress`.
