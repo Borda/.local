@@ -223,7 +223,7 @@ ______________________________________________________________________
 4. **TDD implementation loop** (`foundry:sw-engineer`): tests pass one at a time, full suite after each change to catch regressions.
 5. **Review and close gaps**: 5-axis quality scan (correctness, readability, architecture, security, performance) → fix loop, max 3 cycles.
 6. **Documentation** (`foundry:doc-scribe`): Google-style docstrings, CHANGELOG entry, README updates if public API changed.
-7. **Quality stack**: lint/format (ruff) → type check (mypy) → full test suite → blast-radius check (codemap) → Codex pre-pass → progressive review loop.
+7. **Quality stack**: lint/format (ruff) → type check (mypy) → full test suite → blast-radius check (codemap-py) → Codex pre-pass → progressive review loop.
 
 **Realistic example**:
 
@@ -388,7 +388,7 @@ ______________________________________________________________________
 1. **Understand the symptom** (`foundry:sw-engineer`): reads full tracebacks, recent git changes near failing code, traces call path entry point → failure site. GitHub issue number → fetches full issue + comments (upstream if `--repo`).
 2. **Pattern analysis**: finds 2-3 similar working code paths, compares exhaustively against broken path — input, environment, call order, conditional branches, None/empty guards.
 3. **Hypothesis and gate**: states root cause explicitly with supporting + contradicting evidence and confidence (high / medium / low). Presents hypothesis, waits for confirmation before proceeding. Low confidence → targeted probe (minimal script, added assertion) for missing signal. Codemap enabled → one-time `test-impact` query on confirmed suspect module/function.
-4. **Hand off to fix**: writes diagnosis file to `.plans/active/debug_<slug>.md`, emits `-> /develop:fix --diagnosis <path>`. Fix's Step 1 pre-answered by diagnosis. Test-impact result (with index timestamp) written under `## Test Impact (codemap)` section — `/develop:fix` reuses it (test-impact runs once across debug→fix flow), re-queries only if index moved or result stale.
+4. **Hand off to fix**: writes diagnosis file to `.plans/active/debug_<slug>.md`, emits `-> /develop:fix --diagnosis <path>`. Fix's Step 1 pre-answered by diagnosis. Test-impact result (with index timestamp) written under `## Test Impact (codemap-py)` section — `/develop:fix` reuses it (test-impact runs once across debug→fix flow), re-queries only if index moved or result stale.
 
 **Debug is investigation-only** — no code changes. Fix happens in separate auditable session with own regression test gate.
 

@@ -1,6 +1,6 @@
 <!-- file: codemap-context.md — consumers: research/skills/run, verify -->
 
-**Structural context (codemap)** — run only when caller sets `CODEMAP_ENABLED=true`; skip if flag absent.
+**Structural context (codemap-py)** — run only when caller sets `CODEMAP_ENABLED=true`; skip if flag absent.
 
 Callers may pre-set `TARGET_MODULE` (dotted) and `TARGET_FN` (bare function name) before reading this file — typically module/function the experiment or verification edits. Both empty → only global `central` baseline runs.
 
@@ -31,4 +31,4 @@ fi
 > - `rdeps --top 10` — modules importing the edited target; risk tier by count: `>=5` HIGH, `1–4` MODERATE, `0` LOW
 > - `uncovered --top 20` — public symbols in the target module with no test coverage
 
-Prepend `## Structural Context (codemap)` block with this output to relevant agent spawn prompt. `codemap-py` not found or index missing: emit ⚠ stderr warning, proceed with file-read context. Codemap is primary navigation tool — don't grep/Read to re-verify what it already returned.
+Prepend `## Structural Context (codemap-py)` block with this output to relevant agent spawn prompt. `codemap-py` not found or index missing: emit ⚠ stderr warning, proceed with file-read context. codemap-py is primary navigation tool — don't grep/Read to re-verify what it already returned.

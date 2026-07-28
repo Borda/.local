@@ -139,11 +139,11 @@ CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
     if [ "$CODEMAP_RAW" = "strict" ]; then
-        echo "! codemap unavailable but --codemap (strict) passed — aborting"
+        echo "! codemap-py unavailable but --codemap (strict) passed — aborting"
         exit 1
     fi
-    # auto/off: soft degrade — continues without codemap
-    echo "⚠ codemap unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
+    # auto/off: soft degrade — continues without codemap-py
+    echo "⚠ codemap-py unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
     CODEMAP_ENABLED=false
 fi
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled-${CSID}
@@ -199,7 +199,7 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ] && [ -
 fi
 ```
 
-Include `## Scope & Reusability (codemap)` block in foundry:sw-engineer spawn prompt. If `rdeps` returns callers **outside** refactoring scope: flag explicitly — those callers must update or refactoring silently breaks public contract. If `CODEMAP_ENABLED=false` and scope is multi-file: skip silently.
+Include `## Scope & Reusability (codemap-py)` block in foundry:sw-engineer spawn prompt. If `rdeps` returns callers **outside** refactoring scope: flag explicitly — those callers must update or refactoring silently breaks public contract. If `CODEMAP_ENABLED=false` and scope is multi-file: skip silently.
 
 Spawn **foundry:sw-engineer** agent to analyze code and identify:
 

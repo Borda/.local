@@ -572,7 +572,7 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
 5. **Run demo/test — confirm it passes**
 6. **Run affected tests** (prefer targeted over full suite):
 
-   **Test impact (codemap)** — identify minimal test set first:
+   **Test impact (codemap-py)** — identify minimal test set first:
    ```bash
    codemap-py query test-impact "<changed_module>" 2>/dev/null
    ```

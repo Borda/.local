@@ -4,7 +4,7 @@
 <!-- Input: CODEMAP_ENABLED, CHANGED_FILES, CLEAN_ARGS, _IDX -->
 <!-- Output: codemap_available, $CODEMAP_CONTEXT_STAGE; persists both to TMPDIR for Step 2 -->
 
-### Structural context + review pre-flight (codemap — only if `CODEMAP_ENABLED=true`)
+### Structural context + review pre-flight (codemap-py — only if `CODEMAP_ENABLED=true`)
 
 **Skip entire section if `CODEMAP_ENABLED=false`** — sets `codemap_available=false` for downstream agent prompts; agents fall back to file reads.
 
@@ -19,7 +19,7 @@ if [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1 && [
     codemap_available=true
     CHANGED_MODS=$(echo "$CHANGED_FILES" | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')
     {
-        echo "## Structural Context (codemap)"
+        echo "## Structural Context (codemap-py)"
         echo
         echo "### Global blast-radius baseline"
         codemap-py query --timeout 5 central --top 5 2>/dev/null
@@ -57,10 +57,10 @@ echo "$CODEMAP_CONTEXT_STAGE"  > "${TMPDIR:-/tmp}/oss-review-codemap-context-sta
 `codemap_available=true`: Step 2 copies `$CODEMAP_CONTEXT_STAGE` to `$RUN_DIR/codemap-context.md` after `$RUN_DIR` is created. Every dimension-agent spawn prompt in Step 2 must then include a literal block (substituted from `$RUN_DIR/codemap-context.md`):
 
 ```text
-## Structural Context (codemap, codemap_available=true)
+## Structural Context (codemap-py, codemap_available=true)
 <content of $RUN_DIR/codemap-context.md>
 
-Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`, trust codemap output; skip redundant Grep/Read on same data. Fall back to file reads only when codemap output empty for symbol needed or verifying specific finding.
+Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`, trust codemap-py output; skip redundant Grep/Read on same data. Fall back to file reads only when codemap-py output empty for symbol needed or verifying specific finding.
 ```
 
 `codemap_available=false`: omit the block; agents proceed with current file-read behaviour.

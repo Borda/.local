@@ -126,7 +126,7 @@ _(Repeat for each group. If no duplicate groups found: "No obvious duplicates de
 
 ### Open-PR Overlap
 
-Merge-conflict / duplicate-effort candidates among open PRs (Signal B). Direct = shared changed files; Structural = tightly-coupled modules touched by different PRs (codemap). Emit only when candidates found:
+Merge-conflict / duplicate-effort candidates among open PRs (Signal B). Direct = shared changed files; Structural = tightly-coupled modules touched by different PRs (codemap-py). Emit only when candidates found:
 
 - **PRs #A and #B** — direct: both touch `path/to/file` → conflict/duplicate candidate.
 - **PRs #A and #C** — structural: touch coupled modules `m1`/`m2` (no shared files) → review together.
@@ -218,7 +218,7 @@ Permanent limitations — will not resolve by re-running. Emit only when applica
 - **Adversarial review skipped**: Agent tool unavailable — skill was invoked without Agent capability (e.g. direct Bash execution, restricted context). Adversarial review is mandatory; re-run via `/oss:analyse vitality` in a full Claude Code session.
 - **Axis 5 SAST — inference only**: no SAST workflow file detected; SAST signal inferred from config files or naming patterns — one additional inference step reduces confidence. Add a dedicated SAST workflow to resolve.
 
-**Structural (codemap)** — populated from `central --top 5` + index coverage when codemap available; single "unavailable" bullet otherwise:
+**Structural (codemap-py)** — populated from `central --top 5` + index coverage when codemap-py available; single "unavailable" bullet otherwise:
 
 - **Highest blast radius**: `{module}` ({N} reverse-deps) — changes here ripple widest; weight review effort accordingly. _(top 1–5 modules)_
 - **Symbol collisions**: {N} name collisions in the index — rename/find-symbol precision reduced for those names. _(omit when 0)_

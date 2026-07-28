@@ -524,7 +524,7 @@ fi
 <!-- branch: codex-cap — only when codex agent AND N>8 items; adds 1 call (max 5 if user proceeds; worst case = item-select + commit-mode + codex-cap + push-auth + post-pr) -->
 If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
 
-**Structural context (codemap — if `CODEMAP_ENABLED=true`)**: before reading action-item-dispatch.md, query blast radius of modules affected by selected items:
+**Structural context (codemap-py — if `CODEMAP_ENABLED=true`)**: before reading action-item-dispatch.md, query blast radius of modules affected by selected items:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -536,7 +536,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
 fi
 ```
 
-If codemap output returned: prepend `## Structural Context (codemap)` block to each implementation agent prompt in action-item-dispatch.md — blast radius, top callers, coupling pairs.
+If codemap-py output returned: prepend `## Structural Context (codemap-py)` block to each implementation agent prompt in action-item-dispatch.md — blast radius, top callers, coupling pairs.
 
 **Review pre-flight cache** — reuse the per-module codemap answers `/review` already computed, so the Step 8 blast-radius scan issues 0 duplicate pre-flight queries when a fresh review artifact exists (contract + artifact shape in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache; requires `develop`/`oss` codemap wiring). Locate the latest review run-dir and materialize the per-module cache once, before the per-item loop:
 

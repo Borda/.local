@@ -1,6 +1,6 @@
 <!-- file: codemap-context.md — consumers: plugins/cc_develop/skills/{plan,fix,feature,refactor,review}/SKILL.md, plugins/cc_oss/skills/review/SKILL.md -->
 
-**Structural context (codemap)** — run only when caller sets `CODEMAP_ENABLED=true`; skip if flag absent. Callers may pre-set `TARGET_MODULE` (dotted) and `TARGET_FN` (bare function name) before reading this file; both empty → only global `central` baseline runs.
+**Structural context (codemap-py)** — run only when caller sets `CODEMAP_ENABLED=true`; skip if flag absent. Callers may pre-set `TARGET_MODULE` (dotted) and `TARGET_FN` (bare function name) before reading this file; both empty → only global `central` baseline runs.
 
 **Wrapper** — query mechanics, batch pre-flight bash, evidence-line contract, completeness/staleness semantics, coverage-metadata rules, targeted-edit pattern, and effort tiers live in codemap-shipped contract. Resolve and read it:
 
@@ -25,7 +25,7 @@ Extends contract core map with develop's dimension queries:
 - `undocumented` — docstring gaps (doc-scribe)
 - `symbol --with-imports` — contract reading without re-reading file (all agents)
 
-Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap-py` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap: codemap-py unavailable or index missing — context reduced to central --top 5" `), then proceed.
+Results returned: prepend `## Structural Context (codemap-py)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap-py` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap-py: codemap-py unavailable or index missing — context reduced to central --top 5" `), then proceed.
 
 ## Extended scan — multi-file / API changes (develop batch producer)
 

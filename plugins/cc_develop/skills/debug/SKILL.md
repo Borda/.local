@@ -171,7 +171,7 @@ Poll each independently every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:
 
 Collect all signals before forming any hypothesis.
 
-**Structural context (codemap — only if `CODEMAP_ENABLED=true`)**: if index available, run before codebase exploration to pre-load blast-radius context for failing module:
+**Structural context (codemap-py — only if `CODEMAP_ENABLED=true`)**: if index available, run before codebase exploration to pre-load blast-radius context for failing module:
 
 ```bash
 # timeout: 10000
@@ -190,7 +190,7 @@ codemap-py query rdeps <TARGET_MODULE> 2>/dev/null
 codemap-py query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
 ```
 
-If codemap results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
+If codemap-py results returned: prepend `## Structural Context (codemap-py)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
 
 **Issue-number mode first** — if `$ARGUMENTS` is issue number, fetch issue body and extract test path BEFORE invoking pytest:
 
@@ -402,7 +402,7 @@ cat "$_DEV_SHARED/premise-grounding.md"
 
 If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}` and re-run boundary contract block above before re-hypothesizing — keeps loop guard current so ruled-out cause not revisited.
 
-**Test impact (codemap) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `codemap-py query` availability (same gate as Step 1). `<SUSPECT>` is confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
+**Test impact (codemap-py) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `codemap-py query` availability (same gate as Step 1). `<SUSPECT>` is confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
 
 ```bash
 # timeout: 8000
@@ -476,7 +476,7 @@ if [ -s "$TI_FILE" ] && ! grep -q '"error"' "$TI_FILE"; then
     IDX_SCANNED_AT=$(grep -o '"scanned_at"[[:space:]]*:[[:space:]]*"[^"]*"' "$_IDX" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
     {
         echo ""
-        echo "## Test Impact (codemap)"
+        echo "## Test Impact (codemap-py)"
         echo "<!-- reused by /develop:fix Step 3 when index_scanned_at still matches the live index and stale != true -->"
         echo "- index_scanned_at: ${IDX_SCANNED_AT:-unknown}"
         echo '```json'

@@ -240,7 +240,7 @@ Skip optional agents by classification:
 - FEATURE/MIXED → spawn all agents
 - **Small-diff challenger skip** (any classification) — unless `--challenge` was passed (`CHALLENGE_FORCED=true`): diff is single file, <50 lines changed, and introduces no new public API / exported symbol → also skip Agent 7 (challenger). Multi-file, ≥50 lines, or any new public API → challenger runs. `--no-challenge` (`CHALLENGE_ENABLED=false`) disables Agent 7 entirely regardless.
 
-### Structural context + review pre-flight (codemap — only if `CODEMAP_ENABLED=true`)
+### Structural context + review pre-flight (codemap-py — only if `CODEMAP_ENABLED=true`)
 
 **Skip entire section if `CODEMAP_ENABLED=false`** — sets `codemap_available=false` for downstream agent prompts; agents fall back to file reads.
 
@@ -261,7 +261,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
     # module — one codemap-py query process, one shared coverage block, instead of N×5 spawns
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/build_codemap_batch.py" "$BATCH_REQ"  # timeout: 5000
     {
-        echo "## Structural Context (codemap)"
+        echo "## Structural Context (codemap-py)"
         echo
         echo "### Batched query results (one shared coverage block)"
         codemap-py query --timeout 20 batch "$BATCH_REQ" 2>/dev/null
@@ -279,7 +279,7 @@ Codemap context propagation in Step 3:
 
 - `codemap_available=true` → copy `$CODEMAP_CONTEXT_STAGE` to `$RUN_DIR/codemap-context.md` once `$RUN_DIR` exists (Step 2). Every dimension-agent spawn prompt (Agents 1–6) must include a literal block:
   ```text
-  ## Structural Context (codemap, codemap_available=true)
+  ## Structural Context (codemap-py, codemap_available=true)
   <content of $RUN_DIR/codemap-context.md>
 
   Read this section first. The results are a single `batch` JSON array: each entry has `cmd` (the query) and `result` (its payload), keyed by `index`; one shared `index` coverage block covers the whole batch. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken` entries, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when a query's `result` is empty for a symbol you need or when verifying a specific finding.
@@ -428,7 +428,7 @@ Launch agents simultaneously with Agent tool (security augmentation folded into 
 
 > "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-name>.md` using the Write tool — where `<agent-name>` is e.g. `sw-engineer`, `qa-specialist`, `perf-optimizer`, `doc-scribe`, `linting-expert`, `solution-architect`. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2,\"low\":0},\"file\":\"$RUN_DIR/<agent-name>.md\",\"confidence\":0.88}`"
 
-**Codemap context preamble (substituted by orchestrator)**: rehydrate `IFS= read -r codemap_available < "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}" 2>/dev/null || codemap_available=false`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
+**Codemap-py context preamble (substituted by orchestrator)**: rehydrate `IFS= read -r codemap_available < "${TMPDIR:-/tmp}/dev-review-codemap-available-${CSID}" 2>/dev/null || codemap_available=false`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with `## Structural Context (codemap-py, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
 
 **Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions. `codemap_available=true`: read `rdeps` first (importer list per changed module) — skip importer-walk Reads on listed modules; verify only when needed for a specific finding.
 

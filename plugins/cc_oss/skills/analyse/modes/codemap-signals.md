@@ -56,7 +56,7 @@ Set `STALE_ISSUE=true` when ≥1 candidate is a stale-issue hit; list the missin
 Open PRs touching overlapping code are merge-conflict or duplicate-effort risks. Two layers
 
 1. **Direct overlap** (no codemap needed) — pairwise intersection of changed-file lists. Shared file(s) between two open PRs → conflict/duplicate candidate.
-2. **Structural overlap** (codemap) — two PRs touch *different* files that map to *tightly coupled* modules → hidden-conflict candidate the file-name intersection misses.
+2. **Structural overlap** (codemap-py) — two PRs touch *different* files that map to *tightly coupled* modules → hidden-conflict candidate the file-name intersection misses.
 
 **Bounded fetch** — `open_prs` from gh-scraper carries no `files` field; fetch changed-file name-lists here, but only when the open-PR count is small enough to stay within rate limits:
 
