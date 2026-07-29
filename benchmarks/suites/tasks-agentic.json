@@ -1,12 +1,13 @@
 {
   "repo": {
-    "default_path": "/Users/jirka/Workspace/pytorch-lightning-master",
+    "git_tag": "2.6.5",
+    "local_path": ".sandbox/pytorch-lightning",
     "name": "pytorch-lightning",
     "namespace": [
       "lightning",
       "examples"
     ],
-    "owner": "Lightning-AI"
+    "url": "https://github.com/Lightning-AI/pytorch-lightning"
   },
   "tasks": [
     {

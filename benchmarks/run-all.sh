@@ -8,24 +8,43 @@
 #   bash benchmarks/run-all.sh refresh      # rebuild the target codemap index only
 #   REPO=/path/to/clone bash benchmarks/run-all.sh   # override the target repo
 #
-# Target repo MUST own its .git (bench uses git provenance + patch archive/restore).
-# Do NOT point this at .sandbox/pytorch-lightning-master — it has no .git and git
-# calls there resolve to the parent Borda repo.
+# Target repo is PINNED to a git tag ($PL_TAG) and lives in-project at .sandbox/pytorch-lightning
+# — a real clone that owns its .git (bench needs git provenance + patch archive/restore). It is
+# HARD-RESET to the tag before every run so drift and leftover patch-task edits never leak across
+# runs. Override with REPO=/path/to/clone (must own .git; only the managed .sandbox clone is auto-
+# reset — an overridden REPO is used as-is, never force-reset, to protect your working tree).
 set -euo pipefail
-
-REPO="${REPO:-$HOME/Workspace/pytorch-lightning-master}"
-MODE="${1:-all}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [ ! -d "$REPO/.git" ]; then
-  echo "ERROR: \$REPO ($REPO) has no .git — bench needs a real clone. Set REPO to a git clone." >&2
-  exit 1
-fi
-echo "→ target repo: $REPO ($(git -C "$REPO" rev-parse --short HEAD))"
+PL_TAG="${PL_TAG:-2.6.5}"
+PL_URL="${PL_URL:-https://github.com/Lightning-AI/pytorch-lightning.git}"
+REPO="${REPO:-$ROOT/.sandbox/pytorch-lightning}"
+MODE="${1:-all}"
+
+ensure_repo() {
+  # Clone the pinned tag if the managed sandbox clone is missing, then hard-reset it to the tag so
+  # every run starts from a pristine tree. Only the default .sandbox clone is managed; a
+  # user-overridden REPO is checked for .git but never reset (protects uncommitted work).
+  if [ "$REPO" = "$ROOT/.sandbox/pytorch-lightning" ]; then
+    if [ ! -d "$REPO/.git" ]; then
+      echo "== clone pytorch-lightning @ $PL_TAG into .sandbox =="
+      rm -rf "$REPO"
+      git clone --depth 1 --branch "$PL_TAG" "$PL_URL" "$REPO"
+    fi
+    echo "== reset .sandbox clone to $PL_TAG (pristine baseline) =="
+    git -C "$REPO" reset --hard "$PL_TAG"
+    git -C "$REPO" clean -fd
+  elif [ ! -d "$REPO/.git" ]; then
+    echo "ERROR: \$REPO ($REPO) has no .git — bench needs a real clone at tag $PL_TAG." >&2
+    exit 1
+  fi
+  echo "→ target repo: $REPO ($(git -C "$REPO" rev-parse --short HEAD))"
+}
 
 refresh() {
+  ensure_repo
   echo "== 0. REFRESH codemap index (full rebuild) =="
   local cm
   cm="$(ls -td "$HOME"/.claude/plugins/cache/borda-ai-rig/codemap-py/*/bin/codemap-py 2>/dev/null | head -1)"
@@ -80,7 +99,10 @@ full() {
 
   echo "== 2. REAL-CODEBASE (LLM) — 54 tasks x 2 arms, per tier =="
   for m in haiku sonnet opus; do
-    echo "   -- model: $m --"
+    printf '\n\n'
+    echo "################################################################"
+    echo "##  REAL-CODEBASE  ·  model tier: $m"
+    echo "################################################################"
     _step_full python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model "$m"
   done
 

@@ -1,26 +1,34 @@
 # Codemap Benchmarks
 
-Empirical validation for the `codemap` plugin — three independent benchmarks. The real-codebase benchmark is **repo-agnostic**: swap `tasks-bench.json` (which ships a `repo` header with name, namespace, and default clone path) to run against any Python codebase. Reference results use `pytorch-lightning-master`.
+Empirical validation for the `codemap` plugin — three independent benchmarks. The real-codebase benchmark is **repo-agnostic**: swap `tasks-bench.json` (which ships a `repo` header with name, namespace, and default clone path) to run against any Python codebase. Reference results use `pytorch-lightning` pinned at tag `2.6.5` (auto-cloned to `.sandbox/pytorch-lightning`).
+
+## Provider-parity expansion
+
+The `codemap-provider-parity-v1-b0-r3` review candidate reuses the same canonical task objects and prompts for Claude and Codex and locks structural sample/sandbox execution to PyTorch Lightning tag `2.6.5` (commit `be98784a1a03581b7051a355ae1084fd352d7cea`). Future provider adapters will implement three shared arm meanings: **A plain** (Codemap inaccessible), **B auto** (available; use optional), and **C required** (at least one Codemap structural investigation). The provider-neutral library lives in `provider_parity_contracts.py`; it locks task/prompt identity, arm semantics, evaluator dispatch, headline exclusions, and repetition-preserving pair construction. It does not generate tasks, run benchmarks, invoke models, or implement provider transport.
+
+B1 does not route either provider runner through the library and contains no model results. The existing Claude runners and historical two-/four-arm results remain legacy behavior until B2 migration; the Codex runner is reserved for B3. The structural confirmatory population has 45 independently scored tasks. `RV-05`, `CQ-02`, RI, static-reference, self-consistency, and unscoreable rows remain separately labelled diagnostics as defined in `results/manifests/provider-parity-v1.md`. Do not run the r3 suite against `master` or another tag: target-dependent ground truth is valid only for the locked `2.6.5` tree.
 
 ## Benchmark overview
 
-| Benchmark                                                     | Script                   | LLM | Arms                                    | Tasks                                                                  | Primary question                                                                                      |
-| ------------------------------------------------------------- | ------------------------ | --- | --------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [Agentic](#agentic-benchmark-run-codemap-agenticpy)           | `run-codemap-agentic.py` | Yes | 4 (plain / codemap / semble / combined) | 16 import-graph tasks                                                  | Does codemap/semble reduce exploration overhead vs grep?                                              |
-| [Real-codebase](#real-codebase-benchmark-run-codemap-benchpy) | `run-codemap-bench.py`   | Yes | 2 (plain / codemap)                     | 54 tasks — 10 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR) | Does scan-query reduce token cost and improve structural recall on pre-implementation research tasks? |
-| [Query](#query-benchmark-run-codemap-scan-querypy)            | `run-codemap-cli.py`     | No  | —                                       | 7 suites (C / A / L / I / S / H / X)                                   | Is scan-query correct, complete, and fast enough?                                                     |
+| Benchmark                                                     | Script                   | LLM | Arms                                    | Tasks                                                                       | Primary question                                                                                      |
+| ------------------------------------------------------------- | ------------------------ | --- | --------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [Agentic](#agentic-benchmark-run-codemap-agenticpy)           | `run-codemap-agentic.py` | Yes | 4 (plain / codemap / semble / combined) | 16 import-graph tasks                                                       | Does codemap/semble reduce exploration overhead vs grep?                                              |
+| [Real-codebase](#real-codebase-benchmark-run-codemap-benchpy) | `run-codemap-bench.py`   | Yes | 2 (plain / codemap)                     | 60 tasks — 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) | Does scan-query reduce token cost and improve structural recall on pre-implementation research tasks? |
+| [Query](#query-benchmark-run-codemap-scan-querypy)            | `run-codemap-cli.py`     | No  | —                                       | 7 suites (C / A / L / I / S / H / X)                                        | Is scan-query correct, complete, and fast enough?                                                     |
 
 Run **Query** first — validates the index before spending LLM tokens on agentic runs.
 
 ## Full run (copy-paste a.k.a run-all)
 
-One command — refresh the index, smoke-check the harness, then run all three benchmarks across every model tier:
+One command — clone/reset the pinned target, rebuild the index, smoke-check the harness, then run all three benchmarks across every model tier:
 
 ```bash
 bash benchmarks/run-all.sh
 ```
 
-Modes: `run-all.sh smoke` (cheap check only), `run-all.sh full` (skip smoke), `run-all.sh refresh` (rebuild the target index only). Override the target with `REPO=/path/to/clone bash benchmarks/run-all.sh` — it **must own its `.git`** (bench uses git provenance + patch archive/restore; the `.sandbox` copy has none, so git there resolves to the parent repo).
+The target is **pinned** to pytorch-lightning tag `2.6.5` (the hardcoded ground truth is version-specific — the GT would silently mis-score against any other tree) and lives in-project at `.sandbox/pytorch-lightning`, a real clone that owns its `.git`. It is **hard-reset to the tag before every run** (`git reset --hard 2.6.5 && git clean -fd`) so drift and leftover patch-task edits never leak across runs; the clone is created on first run if missing. Change the pin with `PL_TAG=<tag> bash benchmarks/run-all.sh` — then re-materialize the GT (`python benchmarks/generate-tasks-bench.py --update`). Override the whole target with `REPO=/path/to/clone` — an overridden REPO must own its `.git`, is used as-is, and is **never force-reset** (protects your working tree).
+
+Modes: `run-all.sh smoke` (cheap check only), `run-all.sh full` (skip smoke), `run-all.sh refresh` (clone/reset the pinned repo + rebuild the index only).
 
 The default (`all`) mode **halts before the full suite if the smoke check finds an errored or crashed codemap run** (e.g. the `/codemap:query` skill returns `<tool_use_error>`) — so a broken codemap path never burns the full multi-tier spend. It scans the smoke output for hard-error markers because the runners exit `0` even on a benchmark-level failure.
 
@@ -29,7 +37,9 @@ The default (`all`) mode **halts before the full suite if the smoke check finds 
 
 ```bash
 cd ~/Workspace/Borda.local
-REPO=~/Workspace/pytorch-lightning-master
+REPO=.sandbox/pytorch-lightning
+[ -d "$REPO/.git" ] || git clone --depth 1 --branch 2.6.5 https://github.com/Lightning-AI/pytorch-lightning.git "$REPO"
+git -C "$REPO" reset --hard 2.6.5 && git -C "$REPO" clean -fd
 CM=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/bin/codemap-py | head -1)
 
 "$CM" index --root "$REPO"
@@ -43,7 +53,7 @@ python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
 </details>
 
 - **Order**: refresh index → query (gates the index, no LLM) → real-codebase → agentic. Per-benchmark options live in each section's **Quick start** below.
-- **Scale**: real-codebase = 54 × 2 × 3 = 324 model runs; agentic = 16 × 4 × 3 = 192. ~500+ agent invocations — hours of wall time and real token cost. That is why the script smoke-checks first.
+- **Scale**: real-codebase = 55 × 2 × 3 = 330 model runs; agentic = 16 × 4 × 3 = 192. ~500+ agent invocations — hours of wall time and real token cost. That is why the script smoke-checks first.
 - **Model tiers** (`MODELS` map in each runner): `haiku` → `claude-haiku-4-5`, `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`.
 - **Agentic arms**: the `semble` / `combined` arms need the semble MCP configured; without it, add `--arm codemap` to run the structural arm only.
 - **Cheaper option**: swap the three bench lines for the tiered strategy (`--tiered`, see [Cost profiles](#cost-profiles)) — full suite on haiku, dev subset on sonnet, only cross-tier disagreements on opus.
@@ -52,7 +62,7 @@ python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
 ## Contents
 
 - [Agentic benchmark](#agentic-benchmark-run-codemap-agenticpy) — 4-arm, import-graph navigation, semble support
-- [Real-codebase benchmark](#real-codebase-benchmark-run-codemap-benchpy) — 10 task series, structural navigation on pytorch-lightning
+- [Real-codebase benchmark](#real-codebase-benchmark-run-codemap-benchpy) — 11 task series, structural navigation on pytorch-lightning
 - [Query benchmark](#query-benchmark-run-codemap-scan-querypy) — scan-query correctness and latency, no LLM
 - [Results](#results)
 
@@ -61,11 +71,12 @@ python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
 
 | File                           | Purpose                                                                                                                                                                                                   |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider_parity_contracts.py` | Provider-neutral B1 contracts for canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                                       |
 | `run-codemap-agentic.py`       | 4-arm agentic benchmark — measures how much structural context (codemap / semble / combined) reduces Claude's exploration overhead                                                                        |
 | `run-codemap-bench.py`         | Real-codebase benchmark — measures scan-query accuracy and token efficiency across 10 structural navigation task types; **repo-agnostic**, driven by `tasks-bench.json` `repo` header                     |
 | `run-codemap-cli.py`           | Query-level benchmark — measures scan-query correctness, coverage, and latency against a real repo                                                                                                        |
 | `suites/tasks-agentic.json`    | 16 blast-radius navigation tasks (BA-01–BA-16), 4 difficulty tiers, used by the agentic benchmark                                                                                                         |
-| `suites/tasks-bench.json`      | 54 tasks across 10 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR) + `repo` header (name, namespace, default path) — swap to benchmark a different codebase                                      |
+| `suites/tasks-bench.json`      | 60 tasks across 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) + `repo` header (name, namespace, default path) — swap to benchmark a different codebase                                 |
 | `suites/tasks-code.json`       | 15 code-level tasks used by the scan-query benchmark                                                                                                                                                      |
 | `suites/tasks-patch.json`      | 5 end-to-end patch tasks (PT-01–PT-05) — failing test → minimal fix → test pass; requires `--patch` flag and sandbox harness                                                                              |
 | `suites/tasks-readcrop.json`   | 6 read-crop tasks (RC-01–RC-06) — symbol-contract extraction; scored by keyword recall; headline metric is `tool_result_tokens` (codemap `symbol` extraction vs whole-file Read)                          |
@@ -220,20 +231,21 @@ Two arms run the same tasks:
 
 ### Task series
 
-54 tasks in `tasks-bench.json`, ten series:
+60 tasks in `tasks-bench.json`, eleven series:
 
-| Series | Type                   | Tasks        | What the agent must find                                                                                                                                                                                                                                         |
-| ------ | ---------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SE     | `symbol_extraction`    | SE-01..SE-05 | Source file line range for a named symbol                                                                                                                                                                                                                        |
-| FN     | `fn_call_graph`        | FN-01..FN-05 | Unique caller count for a function (static call graph)                                                                                                                                                                                                           |
-| RV     | `review_assistance`    | RV-01..RV-05 | Doc-gap counts, rdep counts, coverage gaps for code review                                                                                                                                                                                                       |
-| CQ     | `code_quality`         | CQ-01..CQ-05 | Coupling, broken xrefs, combined doc+coverage health                                                                                                                                                                                                             |
-| BR     | `develop_blast_radius` | BR-01..BR-08 | Caller recall ≥70% before modifying a function; developer workflow framing; calibratable via `/foundry:calibrate`. **n=8** — report accuracy as fractions. BR-06..BR-08 GT = fn-rdeps AST callers. Codemap arm uses `scan-query` via Bash PATH (not Skill tool). |
-| DG     | `debug_from_trace`     | DG-01..DG-06 | Root-cause function + file from a traceback or log line                                                                                                                                                                                                          |
-| FT     | `feature_scaffolding`  | FT-01..FT-05 | Which files to create or modify for a described new feature                                                                                                                                                                                                      |
-| RI     | `real_issue`           | RI-01..RI-05 | Files relevant to a real GitHub issue (recall ≥ 0.70)                                                                                                                                                                                                            |
-| DI     | `diff_impact`          | DI-01..DI-06 | Blast radius of a *staged* change: production callers (recall ≥ 0.70) + test modules to re-run (recall ≥ 0.70). Runner stages the change around both arms then reverts (refuses on a dirty tree). GT = pre-change AST caller oracle + test-import oracle.        |
-| GR     | `graph_*`              | GR-01..GR-04 | Graph queries: `central` top-N most-imported (set overlap ≥ 0.70), `path` A→B shortest import chain (unique-path pairs only), `fn-blast` depth-2 transitive callers (recall ≥ 0.70). GT = AST central / path / fn-blast oracles.                                 |
+| Series | Type                   | Tasks        | What the agent must find                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------ | ---------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SE     | `symbol_extraction`    | SE-01..SE-05 | Source file line range for a named symbol                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| FN     | `fn_call_graph`        | FN-01..FN-05 | Unique caller count for a function (static call graph)                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| RV     | `review_assistance`    | RV-01..RV-05 | Doc-gap counts, rdep counts, coverage gaps for code review                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| CQ     | `code_quality`         | CQ-01..CQ-05 | Coupling, broken xrefs, combined doc+coverage health                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| BR     | `develop_blast_radius` | BR-01..BR-09 | Caller recall ≥70% before modifying a function; developer workflow framing; calibratable via `/foundry:calibrate`. **n=9** — report accuracy as fractions. BR-06..BR-08 GT = fn-rdeps AST callers. BR-09 is a **high caller-fan-in** stratum member (`fanin_tier: "high"`, `profiles: ["fanin"]`) — `MisconfigurationException`, fan-in 102 (~2.8× the prior BR ceiling of 37); GT = qualified AST caller oracle. Codemap arm uses `scan-query` via Bash PATH (not Skill tool). |
+| DG     | `debug_from_trace`     | DG-01..DG-06 | Root-cause function + file from a traceback or log line                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| FT     | `feature_scaffolding`  | FT-01..FT-05 | Which files to create or modify for a described new feature                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| RI     | `real_issue`           | RI-01..RI-05 | Files relevant to a real GitHub issue (recall ≥ 0.70)                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| DI     | `diff_impact`          | DI-01..DI-06 | Blast radius of a *staged* change: production callers (recall ≥ 0.70) + test modules to re-run (recall ≥ 0.70). Runner stages the change around both arms then reverts (refuses on a dirty tree). GT = pre-change AST caller oracle + test-import oracle.                                                                                                                                                                                                                       |
+| GR     | `graph_*`              | GR-01..GR-04 | Graph queries: `central` top-N most-imported (set overlap ≥ 0.70), `path` A→B shortest import chain (unique-path pairs only), `fn-blast` depth-2 transitive callers (recall ≥ 0.70). GT = AST central / path / fn-blast oracles.                                                                                                                                                                                                                                                |
+| MB     | `module_blast_radius`  | MB-01..MB-05 | Import fan-in: enumerate the modules that IMPORT a target module (its rdeps) — the module-level reverse of BR's per-function callers. Importer recall ≥ 0.70; module names matched by ≥2-component dotted form (never a bare leaf). Fan-in stratum (`profiles: ["fanin"]`) over import hubs. GT = AST importer oracle (`_module_importers_via_ast`), test modules excluded.                                                                                                     |
 
 **SE — Symbol extraction.** Asks the agent to locate where a named symbol is defined and report its start line — the foundation of every "go-to-definition" and "find references" workflow in real development. Plain agents must grep the repo and read candidate files to confirm the match, which burns tokens and still fails when symbol names are ambiguous across modules or appear in strings. A codemap index stores each symbol's qualified name and source range directly, so a single `scan-query symbols` lookup returns the canonical location without reading any source file.
 
@@ -249,6 +261,8 @@ Two arms run the same tasks:
 
 **GR — Graph navigation.** Three whole-graph queries a developer runs before a cross-cutting change: `central` (the top-N most-imported modules — where a breaking change hurts most; GT `_central_via_ast`, set overlap ≥ 0.70), `path` (a shortest import chain A→B — how two modules are coupled; GT `_import_path_via_ast`, scored on ordered-chain match, and pairs are chosen where `_shortest_path_is_unique` so the oracle path is the only valid answer), and `fn-blast` (the depth-2 transitive caller closure of a function — the indirect blast radius; GT `_fn_blast_via_ast`, recall ≥ 0.70). Plain agents must build the import graph by hand across dozens of reads; the codemap `central` / `path` / `fn-blast` subcommands answer each from the pre-built graph in one call.
 
+**MB — Module blast radius.** Asks the agent to enumerate every module that IMPORTS a target module — its import fan-in (reverse dependencies). This is the module-level reverse of BR's per-function caller enumeration: before changing a widely-imported hub (an exceptions module, a shared types module), a developer needs the set of modules that would be affected. The five MB tasks target import hubs in `pytorch-lightning` (`utilities.exceptions`, `fabric.utilities.types`, `utilities.rank_zero`, `fabric.utilities.imports`, `trainer.states`), each imported by dozens of production modules. Plain agents must grep every `import`/`from` statement across the tree and dedupe by module, missing re-export aliases and relative imports; the codemap `rdeps` subcommand returns the AST-derived importer list directly. Ground truth is the AST importer oracle (`_module_importers_via_ast`, the reverse of `_central_via_ast`) with test modules excluded; correctness is importer recall ≥ 0.70, and a candidate module counts only via a ≥2-component dotted form (a bare leaf name never scores).
+
 ### Quick start
 
 ```bash
@@ -258,7 +272,7 @@ pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 # 2. Build index once
 python plugins/codemap-py/bin/scan-index --root ./<repo-dir>
 
-# 3. Run all 54 tasks, both arms, haiku model
+# 3. Run all 60 tasks, both arms, haiku model
 python benchmarks/run-codemap-bench.py \
     --repo-path ./<repo-dir> \
     --run-all --model haiku
@@ -279,7 +293,7 @@ python benchmarks/run-codemap-bench.py \
 
 | Flag                              | Default       | Description                                                                                                                                                                                              |
 | --------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--repo-path PATH`                | auto          | Path to repo clone (default: `repo.default_path` from `tasks-bench.json`)                                                                                                                                |
+| `--repo-path PATH`                | auto          | Path to repo clone (default: `repo.local_path` from `tasks-bench.json`)                                                                                                                                  |
 | `--index-path PATH`               | auto          | Override index; checks `.cache/codemap/` then `.cache/scan/`                                                                                                                                             |
 | `--tasks "['SE-01','FN-02',...]"` | all           | Run specific task IDs (Python list literal — e.g. `"['SE-01','FN-02']"`)                                                                                                                                 |
 | `--task-type TYPE`                | all           | Filter by type: `symbol_extraction`, `fn_call_graph`, `review_assistance`, `code_quality`, `develop_blast_radius`, `debug_from_trace`, `feature_scaffolding`, `real_issue`                               |
@@ -323,9 +337,9 @@ Results written to `results/bench-<model>-<YYYYMMDD-HHMMSS>.jsonl`. Each per-tas
 
 ### Cost profiles
 
-The full matrix (54 tasks × 2 arms × 3 model tiers) is expensive. Three cost levers trade coverage for spend; when none are passed the runner behaves exactly as before.
+The full matrix (60 tasks × 2 arms × 3 model tiers) is expensive. Three cost levers trade coverage for spend; when none are passed the runner behaves exactly as before.
 
-- **dev** (`--profile dev`) — haiku-only, a stratified ~12-task subset with ≥1 task per series (SE/FN/RV/CQ/BR/DG/FT + DI/GR, RI skipped). Purpose: a fast regression signal that a change did not break the runner or a series. Subset membership is declared per task in `tasks-bench.json` via a `"profiles": ["dev"]` tag, not hardcoded in the runner, so it can be re-stratified without a code change. The dev subset excludes the self-consistency tasks so its accuracy stays clean.
+- **dev** (`--profile dev`) — haiku-only, a stratified ~12-task subset with ≥1 task per series (SE/FN/RV/CQ/BR/DG/FT + DI/GR, RI skipped; the MB fan-in stratum is likewise out of the dev subset). Purpose: a fast regression signal that a change did not break the runner or a series. Subset membership is declared per task in `tasks-bench.json` via a `"profiles": ["dev"]` tag, not hardcoded in the runner, so it can be re-stratified without a code change. The dev subset excludes the self-consistency tasks so its accuracy stays clean.
 
 - **release** (`--profile release`) — the full matrix, including the RI (real_issue) series. RI is gated to release (or an explicit `--tasks`/`--task-type` selection) because those runs are ~2M-token outliers — the plain arm greps the whole tree — and would dominate the cost of a routine run.
 
@@ -454,13 +468,13 @@ ______________________________________________________________________
 
 ### Task series
 
-The benchmark covers 54 tasks across 10 series:
+The benchmark covers 60 tasks across 11 series:
 
 | Series           | Type                        | What it measures                                     | Evaluator                                          |
 | ---------------- | --------------------------- | ---------------------------------------------------- | -------------------------------------------------- |
 | **SE** (5 tasks) | Symbol extraction           | Find file + line range of a function/class           | Line-tolerance (±5 lines)                          |
 | **FN** (5 tasks) | Call graph count            | How many unique functions call target X              | Name-recall ≥ 0.70 against GT caller list          |
-| **BR** (8 tasks) | Blast radius (caller list)  | Which specific functions call target X               | Recall ≥ 0.70 against GT caller list               |
+| **BR** (9 tasks) | Blast radius (caller list)  | Which specific functions call target X               | Recall ≥ 0.70 against GT caller list               |
 | **RV** (5 tasks) | Review assistance           | Caller count for a function in a code review context | Integer extraction with ±10% tolerance             |
 | **CQ** (5 tasks) | Code quality                | Undocumented / uncovered / unhealthy module metrics  | Recall ≥ 0.70 against GT metric                    |
 | **DG** (6 tasks) | Debug from trace            | Identify root-cause file + function from traceback   | Recall ≥ 0.70 against GT symbols                   |
@@ -483,9 +497,9 @@ Scoring is independent per arm. Token ratio = `codemap_input_tokens / plain_inpu
 - **Symbol tasks (SE)**: GT from reading source directly (file path + AST line range).
 - **Call-graph tasks (FN, BR, RV) — 2026-07-03**: authoritative `fn_callers` GT is validated against an independent AST oracle (`_callers_via_ast` in `generate-tasks-bench.py`); the `scan-query fn-rdeps` result is kept as `fn_callers_scan` diagnostic. Oracle-vs-tool divergence prints a loud warning listing divergent qnames — divergence signals a potential plugin bug and is never auto-overwritten. fn-rdeps `count` == unique deduped callers (the plugin also emits an explicit `unique_caller_count` alias since codemap 0.15.0).
 - **Diff-impact / graph tasks (DI, GR)**: ground truth is AST-oracle-only by construction — `_callers_via_ast` + `_test_modules_importing_via_ast` (DI), `_central_via_ast` / `_import_path_via_ast` / `_fn_blast_via_ast` (GR). scan-query is never consulted for their GT (it is the tool the codemap arm invokes). New tasks ship with `gt_pending: true` when the target repo is absent at authoring time; `generate-tasks-bench.py --update` computes and writes their GT deterministically against the target repo and clears the flag. The `path` series requires a *unique* shortest path (`_shortest_path_is_unique`) so the oracle answer is unambiguous.
-- **Quality tasks (CQ)**: `undocumented` GT validated against an independent AST docstring walker; `uncovered` and `xrefs` GT remain scan-query-derived (circular) pending independent oracles — refreshing them requires the explicit `--update-from-tool` flag.
-- **`--update` semantics (2026-07-03)**: default `--update` refreshes GT from the AST oracle only; scan-query-derived fields refresh only behind `--update-from-tool`, which prints a circularity warning + oracle diff before writing. Known gap: the AST oracle emits `src.`-prefixed module paths that diverge from the scan-query namespace on a real clone — normalize before regenerating GT against pytorch-lightning (see `.plans/active/todo_benchmarks-review-fixes.md`).
-- **Residual circularity note (CQ uncovered / xrefs)**: those two metrics still measure index-assisted agreement, not independent correctness. SE-series GT is source-file derived and was never circular; FN/BR/RV are now oracle-anchored.
+- **Quality tasks (CQ)**: `CQ-01` undocumented GT uses an independent AST docstring oracle. `CQ-02` uncovered GT uses a documented simple-name AST approximation and is diagnostic. `CQ-03`–`CQ-05` remain self-consistency diagnostics and are excluded from headline correctness.
+- **`--update` semantics (2026-07-29)**: default `--update` refreshes independent AST-oracle fields only; scan-query-derived diagnostic fields refresh only behind `--update-from-tool`, which prints a circularity warning and oracle diff before writing. Namespace normalization is applied before comparing or writing qualified names.
+- **Residual oracle limits**: `RV-05` and `CQ-02` use an approximate uncovered oracle; RI uses offline/static issue evidence and `RI-05` is unscoreable. SE, FN/BR, RV-01–04, DG/FT, DI/GR, and MB use the independent or source-anchored classifications recorded in the locked provider-parity manifest.
 
 ### Known limitations
 
@@ -520,7 +534,7 @@ Scoring is independent per arm. Token ratio = `codemap_input_tokens / plain_inpu
 - Tasks sampled from real developer activity (issues, PRs, maintenance logs)
 - Code quality judgment or review quality beyond structural metrics
 
-`tasks-bench.json` contains 54 tasks across 10 series: structural research (SE / FN / RV / CQ / BR), debug trace analysis (DG), feature scaffolding (FT), real GitHub issues (RI), staged diff-impact (DI), and graph queries (GR). Core series model the pre-implementation structural research phase; DG/FT/RI cover broader developer workflows; DI/GR add staged-change blast radius and whole-graph navigation. No tasks require a code output or a test run — the DI series stages a synthetic change but reverts it after both arms and never asks for a patch.
+`tasks-bench.json` contains 60 tasks across 11 series: structural research (SE / FN / RV / CQ / BR), debug trace analysis (DG), feature scaffolding (FT), real GitHub issues (RI), staged diff-impact (DI), graph queries (GR), and module import fan-in (MB). Core series model the pre-implementation structural research phase; DG/FT/RI cover broader developer workflows; DI/GR/MB add staged-change blast radius, whole-graph navigation, and module-level reverse-import blast radius. No tasks require a code output or a test run — the DI series stages a synthetic change but reverts it after both arms and never asks for a patch.
 
 ### Extensions
 
@@ -566,9 +580,32 @@ python benchmarks/run-codemap-agentic.py \
 
 ### Multi-model results: real-codebase benchmark
 
+#### Latest — 2026-07-29 (39 tasks × 2 arms × 3 tiers)
+
+Full summary + per-task reading: [`results/bench-summary-2026-07-29.md`](results/bench-summary-2026-07-29.md). **codemap v0.27.0** · models `claude-haiku-4-5` / `claude-sonnet-5` / `claude-opus-5` · symmetric-prompt harness (post 2026-07-03 fairness overhaul). Single run (n=1); DI/GR series (10 tasks) skipped pending ground truth. Sources: `bench-{haiku,sonnet,opus}-20260729-*.jsonl`. Ratios reported as **median / mean** of the per-task codemap/plain distribution.
+
+**Two value axes — read separately, never blended.** (1) **Reliability/quality**: safety-grade + structural recall — codemap **13/13 safety-grade every tier** vs plain 8/13 → 12/13 → 13/13; the primary proposition, holds up-tier. (2) **Economy (cost/tokens/time)**: read at *matched caller fan-in* — the win grows with fan-in (cost 0.35× haiku / 0.54× opus on high-fan-in tasks); raw median token ratio is a *secondary, caveated* number that → 1 as models get terser. Accuracy Δ is a saturation-sensitive tie-breaker, not a headline.
+
+| Tier      | Plain accuracy | Codemap accuracy | Δ accuracy  | Safety-grade plain | Safety-grade codemap | Token× med / mean | Cost× med / mean |
+| --------- | -------------- | ---------------- | ----------- | ------------------ | -------------------- | ----------------- | ---------------- |
+| Haiku 4.5 | 66.7% (24/36)  | 91.7% (33/36)    | **+25 pp**  | 8/13               | 13/13                | **0.57 / 0.65**   | 0.81 / 0.73      |
+| Sonnet 5  | 82.4% (28/34)  | 94.3% (33/35)    | **+12 pp**  | 12/13              | 13/13                | **0.82 / 0.93**   | 0.97 / 0.91      |
+| Opus 5    | 88.6% (31/35)  | 80.6% (29/36)    | **−8 pp ⚠** | 13/13              | 13/13                | 0.83 / 0.96       | 0.95 / 0.91      |
+
+Per-workflow codemap accuracy: query (n=28) 92.0 / 95.8 / 84.0%; debug (n=6) 100 / 100 / 100%; feature (n=5) 80 / 80 / **40% ⚠** (haiku / sonnet / opus).
+
+> **⚠ The opus codemap figures are deflated by two harness bugs found in a post-run audit** — do not cite opus codemap −8 pp as a result. (1) The count-extraction regex (`run-codemap-bench.py:1422`) grabs the first stray number in verbose codemap prose (RV-02/opus answered "65 modules", correct, but the regex read "0 symbols" → recall 0.000). (2) `codemap query methods used` (`:2975`) silently drops the method on non-pure-JSON tool output, so "index-lookup only" is a parse artifact — opus actually ran `rdeps` in ~17 runs. See the report's scoring banner + the bug list below. **RESOLVED (2026-07-29):** fixes landed; a 2-repeat opus re-run on the fixed scorer shows opus codemap = plain **100% / 100%** with codemap *better* on tail-recall (fewer missed callers, fewer turns) — the −8 pp was pure artifact, and the "codemap short-circuits opus" (anchoring) hypothesis is refuted 0/14. See the report's "Opus anchoring probe" section.
+
+**Reading it**: codemap's lift is inversely proportional to model strength — biggest where native navigation is weakest (Haiku +25 pp, Sonnet +12 pp). The opus row shows codemap −8 pp **as measured**, but that is mostly the scoring artifact above (below-plain recalls on RV-02/CQ-03 are count-regex false-fails, not real misses); there is no per-model skill routing (both arms share one symmetric prompt), so the residual gap is model behavior, not a plugin defect. Token savings are real at Haiku, near break-even by Opus (fixed index-injection overhead); codemap is faster on wall-clock at every tier (median time× 0.81 / 0.95 / 0.92). Query benchmark (no LLM) verdict **PARTIAL** (26/32); agentic run was **interrupted** and is not reportable this cycle.
+
+**Why the gains look smaller than June 22 — comparability**: the drop in token savings (June 0.22–0.38× → July 0.57–0.83×) is **confounded** and cannot be attributed to the 5-series models alone. Three things changed at once between the two runs: (a) the **harness fairness overhaul** — June ran under codemap-favoring steering (codemap arm capped at 3 calls + forbidden to verify, plain arm coached toward more grepping), which by the README's own note made June ratios *upper bounds*; removing it raises the ratio toward 1.0 independent of model; (b) **model version** (Sonnet 4.6→5, Opus 4.6→5) — newer models navigate code better unaided, so the plain-arm denominator shrinks and the ratio rises even with codemap unchanged; (c) **codemap version** (pre-v0.13.2 → v0.27.0). To isolate the model-version effect you must hold the harness constant — run 4.6-era and 5-era models under the *current* fair harness. What *is* clean is the **within-July up-tier shrink** (0.57 → 0.82 → 0.83, one harness + one codemap version, only the tier varies): codemap injects a roughly fixed index blob while the plain arm's exploration cost falls as models strengthen → ratio → 1. So token savings are structurally largest where the plain baseline is most wasteful (weak models); on strong models the value proposition shifts from tokens to **structural recall / safety-grade** (8/13 → 13/13 at Haiku), which holds at every tier.
+
+<details>
+<summary><strong>Past experiments (pre-2026-07-03, stale)</strong> — June-22 real-codebase + older agentic runs, kept for history. Predate the fairness overhaul; not comparable with the latest above. Click to expand.</summary>
+
 > **⚠ Stale (2026-07-03)**: all results below predate the fairness overhaul (symmetric arm prompts, AST-oracle ground truth, real C1/C2 metrics). Token ratios and FN/BR/RV/CQ accuracy were measured under codemap-favoring prompt steering and partially circular GT — treat as upper bounds; re-run pending.
 
-Results — June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master.
+Results — June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master. **Models** `claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-opus-4-6` · **codemap version not recorded in these result lines** (predates the v0.13.2 agentic run; ~mid-June 2026) · **codemap-favoring steering harness** (not comparable with the July run above — see comparability note).
 
 | Model      | Plain accuracy | Codemap accuracy | Accuracy lift | Safety-grade plain | Safety-grade codemap | Token ratio (median) | Token ratio range |
 | ---------- | -------------- | ---------------- | ------------- | ------------------ | -------------------- | -------------------- | ----------------- |
@@ -745,3 +782,5 @@ Results above include all three arms. Combined arm excluded from default "all" r
 ### Previous: agentic benchmark — 2026-04-29
 
 `results/agentic-2026-04-29.md` — pytorch-lightning, 4 arms × 3 models × 8 tasks = 96 runs.
+
+</details>

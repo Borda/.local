@@ -1,6 +1,7 @@
 {
   "repo": {
-    "default_path": "pytorch-lightning-master",
+    "git_tag": "2.6.5",
+    "local_path": ".sandbox/pytorch-lightning",
     "name": "pytorch-lightning",
     "namespace": [
       "lightning",
@@ -77,10 +78,10 @@
         }
       ],
       "ground_truth": {
-        "end_line": 1131,
+        "end_line": 1125,
         "module": "lightning.pytorch.trainer.trainer",
         "qualified_name": "Trainer._run_stage",
-        "start_line": 1116
+        "start_line": 1110
       },
       "id": "SE-03",
       "primary_module": "lightning.pytorch.trainer.trainer",
@@ -335,8 +336,45 @@
         }
       ],
       "ground_truth": {
+        "ast_divergence": {
+          "ast_only": [
+            "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn.backward_fn"
+          ],
+          "scan_caller_count": 12,
+          "scan_only": [
+            "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn"
+          ]
+        },
         "exclude_tests": true,
         "fn_callers": [
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_end",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_start",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_end",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_start",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn.backward_fn",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._training_step",
+          "lightning.pytorch.loops.optimization.manual::_ManualOptimization.advance",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_end",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_start",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._predict_step",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop.advance"
+        ],
+        "fn_callers_ast_loose": [
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_end",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_start",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_end",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_start",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn.backward_fn",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._training_step",
+          "lightning.pytorch.loops.optimization.manual::_ManualOptimization.advance",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_end",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_start",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._predict_step",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop.advance"
+        ],
+        "fn_callers_scan": [
           "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step",
           "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_end",
           "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_start",
@@ -352,6 +390,7 @@
         ],
         "note": "static edges only (import/local/self-resolved); dynamic dispatch excluded by design",
         "raw_caller_count": 12,
+        "scan_caller_count": 12,
         "unique_caller_count": 12
       },
       "id": "FN-04",
@@ -419,7 +458,7 @@
       "sub_questions": [
         {
           "ground_truth": {
-            "count": 11
+            "count": 7
           },
           "id": "q1",
           "match": "integer_extract",
@@ -429,12 +468,12 @@
           "ground_truth": {
             "symbols": [
               "LightningModule",
-              "LightningModule.fabric",
-              "LightningModule.trainer",
-              "LightningModule.optimizers",
               "LightningModule.automatic_optimization",
               "LightningModule.example_input_array",
-              "LightningModule.strict_loading"
+              "LightningModule.fabric",
+              "LightningModule.optimizers",
+              "LightningModule.strict_loading",
+              "LightningModule.trainer"
             ]
           },
           "id": "q2",
@@ -547,25 +586,25 @@
       "sub_questions": [
         {
           "ground_truth": {
-            "count": 20
+            "count": 11
           },
           "id": "q1",
           "match": "integer_extract",
-          "prompt": "How many symbols in `lightning.pytorch.utilities.model_summary.model_summary` are not covered by tests? Report the integer count."
+          "prompt": "Under the benchmark's independent AST oracle, how many symbols in `lightning.pytorch.utilities.model_summary.model_summary` are not covered by tests? Report the integer count."
         },
         {
           "ground_truth": {
             "symbols": [
               "LayerSummary",
-              "get_human_readable_count",
-              "ModelSummary.summarize",
-              "ModelSummary.named_modules",
-              "ModelSummary.flop_counts"
+              "LayerSummary.detach_hook",
+              "LayerSummary.in_size",
+              "LayerSummary.layer_type",
+              "LayerSummary.num_parameters"
             ]
           },
           "id": "q2",
           "match": "symbol_name_set",
-          "prompt": "Name the first 5 uncovered symbols in `lightning.pytorch.utilities.model_summary.model_summary` (as listed by the uncovered command)."
+          "prompt": "Name the lexicographically first 5 uncovered symbols in `lightning.pytorch.utilities.model_summary.model_summary` under the benchmark's independent AST oracle."
         }
       ],
       "type": "review_assistance",
@@ -585,15 +624,29 @@
       ],
       "ground_truth": {
         "check": "undocumented",
-        "undocumented_count": 11,
+        "undocumented_count": 7,
+        "undocumented_count_scan": 11,
         "undocumented_symbols": [
           "LightningModule",
+          "LightningModule.automatic_optimization",
+          "LightningModule.example_input_array",
           "LightningModule.fabric",
+          "LightningModule.optimizers",
+          "LightningModule.strict_loading",
+          "LightningModule.trainer"
+        ],
+        "undocumented_symbols_scan": [
+          "LightningModule",
+          "LightningModule.fabric",
+          "LightningModule.trainer",
           "LightningModule.trainer",
           "LightningModule.optimizers",
           "LightningModule.automatic_optimization",
           "LightningModule.example_input_array",
-          "LightningModule.strict_loading"
+          "LightningModule.fabric",
+          "LightningModule.strict_loading",
+          "LightningModule.optimizers",
+          "LightningModule.optimizers"
         ]
       },
       "id": "CQ-01",
@@ -621,8 +674,22 @@
       ],
       "ground_truth": {
         "check": "uncovered",
-        "uncovered_count": 20,
+        "uncovered_count": 11,
+        "uncovered_count_scan": 25,
         "uncovered_symbols": [
+          "LayerSummary",
+          "LayerSummary.detach_hook",
+          "LayerSummary.in_size",
+          "LayerSummary.layer_type",
+          "LayerSummary.num_parameters",
+          "LayerSummary.out_size",
+          "ModelSummary.flop_counts",
+          "ModelSummary.training_modes",
+          "get_formatted_model_size",
+          "get_human_readable_count",
+          "parse_batch_shape"
+        ],
+        "uncovered_symbols_scan": [
           "LayerSummary",
           "get_human_readable_count",
           "ModelSummary.summarize",
@@ -647,8 +714,8 @@
       },
       "id": "CQ-02",
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
-      "prompt": "Run a test coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. Identify all public symbols not covered by tests and report the total count.",
-      "self_consistency": true,
+      "prompt": "Run the benchmark's independent AST coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. Identify all public symbols the AST oracle classifies as not covered by tests and report the total count.",
+      "self_consistency": false,
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
@@ -673,10 +740,9 @@
       },
       "id": "CQ-03",
       "primary_module": null,
-      "profiles": [
-        "dev"
-      ],
+      "profiles": [],
       "prompt": "Identify the top 5 most coupled (highest total dependency count) modules in the codebase. For each module, report its name and its total dependency count (dep_count).",
+      "self_consistency": true,
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
@@ -697,11 +763,11 @@
         "broken_count": 2,
         "broken_targets": [
           {
-            "line": 1106,
+            "line": 1100,
             "target": "lightning.pytorch.trainer.trainer::_call_teardown_hook"
           },
           {
-            "line": 1206,
+            "line": 1200,
             "target": "lightning.pytorch.trainer.trainer::print"
           }
         ],
@@ -942,8 +1008,45 @@
         }
       ],
       "ground_truth": {
+        "ast_divergence": {
+          "ast_only": [
+            "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn.backward_fn"
+          ],
+          "scan_caller_count": 12,
+          "scan_only": [
+            "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn"
+          ]
+        },
         "exclude_tests": true,
         "fn_callers": [
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_end",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_start",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_end",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_start",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn.backward_fn",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._training_step",
+          "lightning.pytorch.loops.optimization.manual::_ManualOptimization.advance",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_end",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_start",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._predict_step",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop.advance"
+        ],
+        "fn_callers_ast_loose": [
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_end",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_start",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_end",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.on_run_start",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._make_backward_fn.backward_fn",
+          "lightning.pytorch.loops.optimization.automatic::_AutomaticOptimization._training_step",
+          "lightning.pytorch.loops.optimization.manual::_ManualOptimization.advance",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_end",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._on_predict_start",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._predict_step",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop.advance"
+        ],
+        "fn_callers_scan": [
           "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step",
           "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_end",
           "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_start",
@@ -959,6 +1062,7 @@
         ],
         "note": "static edges only (import/local/self-resolved); dynamic dispatch excluded by design",
         "raw_caller_count": 12,
+        "scan_caller_count": 12,
         "unique_caller_count": 12
       },
       "id": "BR-04",
@@ -1070,8 +1174,57 @@
         }
       ],
       "ground_truth": {
+        "ast_divergence": {
+          "ast_only": [
+            "lightning.pytorch.loops.utilities::_no_grad_context._decorator"
+          ],
+          "scan_caller_count": 18,
+          "scan_only": [
+            "lightning.pytorch.loops.utilities::_no_grad_context"
+          ]
+        },
         "exclude_tests": true,
         "fn_callers": [
+          "lightning.fabric.strategies.ddp::DDPStrategy.barrier",
+          "lightning.fabric.strategies.ddp::DDPStrategy.broadcast",
+          "lightning.fabric.strategies.fsdp::FSDPStrategy.barrier",
+          "lightning.fabric.strategies.fsdp::FSDPStrategy.broadcast",
+          "lightning.fabric.strategies.model_parallel::ModelParallelStrategy.barrier",
+          "lightning.fabric.strategies.model_parallel::ModelParallelStrategy.broadcast",
+          "lightning.fabric.utilities.distributed::_InfiniteBarrier.__enter__",
+          "lightning.fabric.utilities.distributed::_all_gather_ddp_if_available",
+          "lightning.fabric.utilities.distributed::_destroy_dist_connection",
+          "lightning.fabric.utilities.distributed::_sync_ddp_if_available",
+          "lightning.pytorch.loops.utilities::_no_grad_context._decorator",
+          "lightning.pytorch.strategies.ddp::DDPStrategy.barrier",
+          "lightning.pytorch.strategies.ddp::DDPStrategy.broadcast",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.barrier",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.broadcast",
+          "lightning.pytorch.strategies.model_parallel::ModelParallelStrategy.barrier",
+          "lightning.pytorch.strategies.model_parallel::ModelParallelStrategy.broadcast",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_ResultCollection._get_cache"
+        ],
+        "fn_callers_ast_loose": [
+          "lightning.fabric.strategies.ddp::DDPStrategy.barrier",
+          "lightning.fabric.strategies.ddp::DDPStrategy.broadcast",
+          "lightning.fabric.strategies.fsdp::FSDPStrategy.barrier",
+          "lightning.fabric.strategies.fsdp::FSDPStrategy.broadcast",
+          "lightning.fabric.strategies.model_parallel::ModelParallelStrategy.barrier",
+          "lightning.fabric.strategies.model_parallel::ModelParallelStrategy.broadcast",
+          "lightning.fabric.utilities.distributed::_InfiniteBarrier.__enter__",
+          "lightning.fabric.utilities.distributed::_all_gather_ddp_if_available",
+          "lightning.fabric.utilities.distributed::_destroy_dist_connection",
+          "lightning.fabric.utilities.distributed::_sync_ddp_if_available",
+          "lightning.pytorch.loops.utilities::_no_grad_context._decorator",
+          "lightning.pytorch.strategies.ddp::DDPStrategy.barrier",
+          "lightning.pytorch.strategies.ddp::DDPStrategy.broadcast",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.barrier",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.broadcast",
+          "lightning.pytorch.strategies.model_parallel::ModelParallelStrategy.barrier",
+          "lightning.pytorch.strategies.model_parallel::ModelParallelStrategy.broadcast",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_ResultCollection._get_cache"
+        ],
+        "fn_callers_scan": [
           "lightning.fabric.strategies.ddp::DDPStrategy.barrier",
           "lightning.fabric.strategies.ddp::DDPStrategy.broadcast",
           "lightning.fabric.strategies.fsdp::FSDPStrategy.barrier",
@@ -1094,6 +1247,7 @@
         "gt_source": "fn-rdeps",
         "note": "GT = fn-rdeps AST callers (direct, excluding tests); grep cross-check confirmed no false positives but grep missed 4 same-file callers in distributed.py (lines 177/240/301/421) so intersection was lossy",
         "raw_caller_count": 18,
+        "scan_caller_count": 18,
         "unique_caller_count": 18
       },
       "id": "BR-07",
@@ -1135,6 +1289,131 @@
       "primary_fn": "lightning.fabric.utilities.seed::reset_seed",
       "primary_module": "lightning.fabric.utilities.seed",
       "prompt": "You are modifying `reset_seed` in `lightning.fabric.utilities.seed` to change how seeds are reset after distributed setup. Before making any changes, enumerate all production callers to understand the blast radius. For each caller, state in one sentence how a change in seed-reset behaviour would affect that call site. Format callers as `module::function`. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
+    },
+    {
+      "difficulty": "extreme",
+      "fanin_tier": "high",
+      "ground_truth": {
+        "exclude_tests": true,
+        "fn_callers": [
+          "lightning.fabric.accelerators.registry::_AcceleratorRegistry.register",
+          "lightning.fabric.utilities.data::_get_dataloader_init_args_and_kwargs",
+          "lightning.fabric.utilities.data::_reinstantiate_wrapped_cls",
+          "lightning.fabric.utilities.device_parser::_check_unique",
+          "lightning.fabric.utilities.device_parser::_parse_gpu_ids",
+          "lightning.fabric.utilities.device_parser::_sanitize_gpu_ids",
+          "lightning.pytorch.accelerators.cpu::CPUAccelerator.setup_device",
+          "lightning.pytorch.accelerators.cuda::CUDAAccelerator.setup_device",
+          "lightning.pytorch.accelerators.mps::MPSAccelerator.setup_device",
+          "lightning.pytorch.callbacks.batch_size_finder::BatchSizeFinder.setup",
+          "lightning.pytorch.callbacks.device_stats_monitor::DeviceStatsMonitor.setup",
+          "lightning.pytorch.callbacks.early_stopping::EarlyStopping.__init__",
+          "lightning.pytorch.callbacks.finetuning::BackboneFinetuning.on_fit_start",
+          "lightning.pytorch.callbacks.gradient_accumulation_scheduler::GradientAccumulationScheduler.__init__",
+          "lightning.pytorch.callbacks.lr_monitor::LearningRateMonitor.__init__",
+          "lightning.pytorch.callbacks.lr_monitor::LearningRateMonitor._check_duplicates_and_update_name",
+          "lightning.pytorch.callbacks.lr_monitor::LearningRateMonitor.on_train_start",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.__init_monitor_mode",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.__validate_init_configuration",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_topk_checkpoint",
+          "lightning.pytorch.callbacks.prediction_writer::BasePredictionWriter.__init__",
+          "lightning.pytorch.callbacks.pruning::ModelPruning.__init__",
+          "lightning.pytorch.callbacks.pruning::ModelPruning.sanitize_parameters_to_prune",
+          "lightning.pytorch.callbacks.stochastic_weight_avg::StochasticWeightAveraging.__init__",
+          "lightning.pytorch.callbacks.stochastic_weight_avg::StochasticWeightAveraging.on_fit_start",
+          "lightning.pytorch.callbacks.stochastic_weight_avg::StochasticWeightAveraging.setup",
+          "lightning.pytorch.callbacks.timer::Timer.__init__",
+          "lightning.pytorch.cli::LightningArgumentParser.add_lightning_class_args",
+          "lightning.pytorch.cli::LightningCLI._add_configure_optimizers_method_to_model",
+          "lightning.pytorch.core.hooks::DataHooks.predict_dataloader",
+          "lightning.pytorch.core.hooks::DataHooks.test_dataloader",
+          "lightning.pytorch.core.hooks::DataHooks.train_dataloader",
+          "lightning.pytorch.core.hooks::DataHooks.val_dataloader",
+          "lightning.pytorch.core.module::LightningModule._verify_is_manual_optimization",
+          "lightning.pytorch.core.module::LightningModule.clip_gradients",
+          "lightning.pytorch.core.module::LightningModule.log",
+          "lightning.pytorch.core.module::LightningModule.to_tensorrt",
+          "lightning.pytorch.core.optimizer::LightningOptimizer.step",
+          "lightning.pytorch.core.optimizer::_configure_optimizers",
+          "lightning.pytorch.core.optimizer::_configure_schedulers_automatic_opt",
+          "lightning.pytorch.core.optimizer::_validate_optimizers_attached",
+          "lightning.pytorch.core.optimizer::_validate_scheduler_api",
+          "lightning.pytorch.loggers.wandb::WandbLogger.__init__",
+          "lightning.pytorch.loops.fetchers::_DataFetcher.combined_loader",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.__init__",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.setup_data",
+          "lightning.pytorch.loops.optimization.automatic::ClosureResult.from_training_step_output",
+          "lightning.pytorch.loops.optimization.closure::AbstractClosure.consume_result",
+          "lightning.pytorch.loops.optimization.manual::ManualResult.from_training_step_output",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop.return_predictions",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop.__init__",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop._update_learning_rates",
+          "lightning.pytorch.plugins.precision.amp::MixedPrecision.__init__",
+          "lightning.pytorch.plugins.precision.amp::MixedPrecision.optimizer_step",
+          "lightning.pytorch.plugins.precision.deepspeed::DeepSpeedPrecision.optimizer_step",
+          "lightning.pytorch.plugins.precision.fsdp::FSDPPrecision.clip_grad_by_norm",
+          "lightning.pytorch.plugins.precision.fsdp::FSDPPrecision.mixed_precision_config",
+          "lightning.pytorch.plugins.precision.xla::XLAPrecision.optimizer_step",
+          "lightning.pytorch.profilers.pytorch::PyTorchProfiler.__init__",
+          "lightning.pytorch.profilers.pytorch::PyTorchProfiler._init_kineto",
+          "lightning.pytorch.serve.servable_module_validator::ServableModuleValidator.on_train_start",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.__init__",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._format_batch_size_and_grad_accum_config",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._format_config",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._init_optimizers",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._load_config",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.init_deepspeed",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.load_checkpoint",
+          "lightning.pytorch.trainer.configuration_validator::__verify_eval_loop_configuration",
+          "lightning.pytorch.trainer.configuration_validator::__verify_manual_optimization_support",
+          "lightning.pytorch.trainer.configuration_validator::__verify_train_val_loop_configuration",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._check_config_and_set_final_flags",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._check_device_config_and_set_final_flags",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._choose_gpu_accelerator_backend",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._choose_strategy",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._lazy_init_strategy",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._set_parallel_devices_and_init_accelerator",
+          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._configure_checkpoint_callbacks",
+          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._configure_progress_bar",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector.restore_loops",
+          "lightning.pytorch.trainer.connectors.data_connector::_DataConnector.on_trainer_init",
+          "lightning.pytorch.trainer.connectors.data_connector::_parse_num_batches",
+          "lightning.pytorch.trainer.connectors.logger_connector.fx_validator::_FxValidator.check_logging",
+          "lightning.pytorch.trainer.connectors.logger_connector.fx_validator::_FxValidator.check_logging_levels",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_Metadata.__post_init__",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_Metadata._parse_reduce_fx",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_ResultCollection.log",
+          "lightning.pytorch.trainer.setup::_determine_batch_limits",
+          "lightning.pytorch.trainer.setup::_init_debugging_flags",
+          "lightning.pytorch.trainer.setup::_init_profiler",
+          "lightning.pytorch.trainer.setup::_parse_time_interval_seconds",
+          "lightning.pytorch.trainer.trainer::Trainer.__init__",
+          "lightning.pytorch.trainer.trainer::Trainer._fit_impl",
+          "lightning.pytorch.trainer.trainer::Trainer._predict_impl",
+          "lightning.pytorch.trainer.trainer::Trainer._test_impl",
+          "lightning.pytorch.trainer.trainer::Trainer._validate_impl",
+          "lightning.pytorch.tuner.lr_finder::_LRFinder._exchange_scheduler",
+          "lightning.pytorch.tuner.lr_finder::_LRFinder.plot",
+          "lightning.pytorch.tuner.tuning::Tuner.lr_find",
+          "lightning.pytorch.tuner.tuning::_check_tuner_configuration",
+          "lightning.pytorch.utilities.data::_get_dataloader_init_args_and_kwargs",
+          "lightning.pytorch.utilities.data::extract_batch_size"
+        ],
+        "gt_source": "ast-caller-oracle",
+        "note": "high caller-fan-in stratum (fan-in 102, ~2.8x the prior BR ceiling of 37); GT = qualified AST caller oracle (_walk_caller_sets: direct callers, excluding tests) \u2014 the same authoritative computation generate-tasks-bench.py --update writes. MisconfigurationException is defined in lightning.fabric.utilities.exceptions and re-exported by lightning.pytorch.utilities.exceptions; callers span both packages.",
+        "raw_caller_count": 102,
+        "unique_caller_count": 102
+      },
+      "id": "BR-09",
+      "primary_fn": "lightning.fabric.utilities.exceptions::MisconfigurationException",
+      "primary_module": "lightning.fabric.utilities.exceptions",
+      "profiles": [
+        "fanin"
+      ],
+      "prompt": "You are about to change the constructor of `MisconfigurationException` in `lightning.fabric.utilities.exceptions` (re-exported as `lightning.pytorch.utilities.exceptions`) \u2014 for example, to require a structured error code. Before making any changes, perform a blast-radius assessment: list every production function that raises or otherwise instantiates `MisconfigurationException`. Report callers as `module::function` qualified names and exclude test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
       "type": "develop_blast_radius",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
@@ -1251,7 +1530,7 @@
       "ground_truth": {
         "file": "src/lightning/pytorch/trainer/trainer.py",
         "function": "_run_stage",
-        "start_line": 1116
+        "start_line": 1110
       },
       "id": "DG-06",
       "primary_module": "lightning.pytorch.trainer.trainer",
@@ -1383,6 +1662,13 @@
       "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21632",
       "primary_module": "lightning.pytorch.trainer.connectors.callback_connector",
       "prompt": "No way to silence the `litmodels` advertisement\n\n### Bug description\n\nRunning `trainer.fit` with default checkpointing currently prints\n```\n\ud83d\udca1 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.\n``` \n\nThis advertisement is displayed even if `litmodels` is installed, but not used.\n\nI don't need any \"cloud uploads and versioning\". In fact, I am often working with proprietary models and restricted data. I sincerely hope that this \"tip\" isn't suggesting that `lightning` is going to automatically upload anything anywhere (whether I have this `litmodels` package installed or not).\n\nPlease, do one of the following (in order of personal preference):\n1) remove this advertisement\n2) only show this advertisement when appropriate (perhaps, if you detect that the user does have `litmodels` installed or is already using some \"cloud\"-related stuff)\n3) provide a way to silence this advertisement\n\n### What version are you seeing the problem on?\n\nv2.5",
+      "provenance": {
+        "changed_file_count": 5,
+        "merge_commit_sha": "0a6021195378fc3803db141bfc2aaa734615493e",
+        "pr_head_sha": "c572f7af44ab625ce0505eae0488d27419543b86",
+        "selection": "non_test_python_files",
+        "source": "github_pull_request_files"
+      },
       "scoreable": true,
       "source": "real_issue",
       "type": "real_issue",
@@ -1407,6 +1693,13 @@
       "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21758",
       "primary_module": "lightning.pytorch.callbacks.lr_finder",
       "prompt": "`LearningRateFinder` fails due to missing `weights_only` parameter in checkpoint restore\n\n### Bug description\n\n  ## Summary\n`LearningRateFinder` fails when restoring its internally created temporary checkpoint because it does not expose or forward a `weights_only` parameter.  \nSince PyTorch \u2265 2.6 defaults to `weights_only=True` for `torch.load`, Lightning attempts a *weights\u2011only* load on a checkpoint that contains full module objects, causing an `UnpicklingError`.\n\nManual checkpoint loading works correctly when `weights_only=False` is explicitly passed.\n\nThis makes `lr_find()` unusable for any model whose checkpoint includes non\u2011trivial Python objects (e.g., custom modules).\n\n---\n\n ## Environment\n- PyTorch: 2.12.x\n- Lightning: 2.4.x\n- Python: 3.11\n- OS: Windows (Jupyter environment)",
+      "provenance": {
+        "changed_file_count": 4,
+        "merge_commit_sha": "fe6b1cc4e80ae0396e2e404c16e6b6968ad5437e",
+        "pr_head_sha": "2946e168295ad4ece855d12385a559843a43f30a",
+        "selection": "non_test_python_files",
+        "source": "github_pull_request_files"
+      },
       "scoreable": true,
       "source": "real_issue",
       "type": "real_issue",
@@ -1429,6 +1722,13 @@
       "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21743",
       "primary_module": "lightning.fabric.utilities.throughput",
       "prompt": "FLOPs numbers are inconsistent\n\n### Bug description\n\nThe FLOPs numbers in [throughput.py](https://github.com/Lightning-AI/pytorch-lightning/blob/master/src/lightning/fabric/utilities/throughput.py) for H100 and H200 GPUs have some inconsistencies that have caused me some confusion when switching between GPU types: \n\n- all H200 and the H100 NVL GPU seem to be using sparse FLOPs numbers \n- the H100 SXM and PCIE models seem to using dense FLOPs, see: https://resources.nvidia.com/en-us-gpu-resources/h100-datasheet-24306\n\nI think it would be good to standardize on one and also document the behaviour as there's a factor 2 difference between the two.\n\n### What version are you seeing the problem on?\n\nmaster",
+      "provenance": {
+        "changed_file_count": 3,
+        "merge_commit_sha": "4f87061a526214cde3427686b06ea617c170e9ca",
+        "pr_head_sha": "b6528750b66b819d890ede4ec1801bd6e3d15199",
+        "selection": "non_test_python_files",
+        "source": "github_pull_request_files"
+      },
       "scoreable": true,
       "source": "real_issue",
       "type": "real_issue",
@@ -1452,6 +1752,13 @@
       "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21746",
       "primary_module": "lightning.fabric.strategies.ddp",
       "prompt": "AccumulateGrad Warning\n\n### Bug description\n\nI get an AccumulateGrad warning when training with Fabric which doesn't happen with plain PyTorch. Not sure what is happening exactly, the current workaround is to disable the warning with `torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False)`.\n\nThis is on Lightning 2.6.1\n\n### What version are you seeing the problem on?\n\nmaster\n\n### How to reproduce the bug\n\n```python\nfrom __future__ import annotations\n\nimport torch\nfrom lightning_fabric import Fabric\nfrom pytorch_lightning.demos.boring_classes import BoringModel, RandomDataset\nfrom torch.utils.data import DataLoader\n\nimport warnings\nwarnings.filterwarnings(message=\".*AccumulateGrad.*\", action=\"error\")\n\ndef main() -> None:\n    batch_size = 32\n    accumulation_steps = 2\n    max_steps = 20\n    fabric = Fabric(accelerator=\"auto\", devices=\"auto\")\n    fabric.launch()\n    model = BoringModel()\n    optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-3)\n    model, optimizer = fabric.setup(model, optimizer)\n```",
+      "provenance": {
+        "changed_file_count": 5,
+        "merge_commit_sha": "35e56ef93582c60c8ec5ca2bf1025e7c414d6bb6",
+        "pr_head_sha": "5b7bb7c819052b7146ed7fa1dcfcd619ca8d9375",
+        "selection": "non_test_python_files",
+        "source": "github_pull_request_files"
+      },
       "scoreable": true,
       "source": "real_issue",
       "type": "real_issue",
@@ -1477,6 +1784,13 @@
       "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/11795",
       "primary_module": "pytorch_lightning.accelerators.cpu",
       "prompt": "Improved control of device stats callbacks\n\n## Proposed refactor\nSeparate device stats monitoring into separate callbacks per-device, but sub-class from `DeviceStatsMonitor`. This preserves the desired change from #9032 to consolidate the interface, but also allows for fine-grained control.\n\n### Motivation\nWith #9032, all the accelerators were combined under a single `DeviceStatsMonitor` callback. This consolidated the API, but it also removed fine-grained control. For instance, the `GPUStatsMonitor` that is now being deprecated used to provide fine-grained control over the `nvidia-smi` stats that were tracked.\n\nHowever, the new interface defaults to using torch memory stats (which provide less info than nvidia-smi).\n\nRegardless of whether GPU stats are changed to default to `nvidia-smi`, the user no longer has control over what metrics are monitored. The proposed refactor would allow users to use `CPUStatsMonitor`, `GPUStatsMonitor`, etc. as before, while also keeping the consolidated `DeviceStatsMonitor` API.",
+      "provenance": {
+        "changed_file_count": 9,
+        "merge_commit_sha": "3f78c4ca7a89fed8f79d9015e9510f0a0dcc46b5",
+        "pr_head_sha": "a052a384f8a16f343f7e008ebd9e1ea1796dc513",
+        "selection": "non_test_python_files",
+        "source": "github_pull_request_files"
+      },
       "scoreable": false,
       "source": "real_issue",
       "type": "real_issue",
@@ -1486,13 +1800,108 @@
     {
       "difficulty": "medium",
       "ground_truth": {
-        "fn_callers": [],
-        "gt_pending": true,
+        "fn_callers": [
+          "lightning.fabric.connector::_Connector._check_and_init_precision",
+          "lightning.fabric.connector::_Connector._check_strategy_and_fallback",
+          "lightning.fabric.connector::_convert_precision_to_unified_args",
+          "lightning.fabric.fabric::Fabric._move_model_to_device",
+          "lightning.fabric.fabric::Fabric.call",
+          "lightning.fabric.fabric::Fabric.no_backward_sync",
+          "lightning.fabric.loggers.csv_logs::_ExperimentWriter._check_log_dir_exists",
+          "lightning.fabric.loggers.tensorboard::TensorBoardLogger.log_graph",
+          "lightning.fabric.plugins.environments.slurm::SLURMEnvironment._validate_srun_used",
+          "lightning.fabric.plugins.environments.torchelastic::TorchElasticEnvironment.main_address",
+          "lightning.fabric.plugins.environments.torchelastic::TorchElasticEnvironment.main_port",
+          "lightning.fabric.plugins.precision.fsdp::FSDPPrecision.mixed_precision_config",
+          "lightning.fabric.plugins.precision.transformer_engine::_convert_layers",
+          "lightning.fabric.strategies.deepspeed::_validate_state_keys",
+          "lightning.fabric.strategies.fsdp::FSDPStrategy.setup_module",
+          "lightning.fabric.strategies.fsdp::_setup_activation_checkpointing",
+          "lightning.fabric.strategies.xla_fsdp::XLAFSDPStrategy.load_checkpoint",
+          "lightning.fabric.strategies.xla_fsdp::XLAFSDPStrategy.setup_module",
+          "lightning.fabric.utilities.data::has_len",
+          "lightning.fabric.utilities.init::_materialize_distributed_module",
+          "lightning.fabric.utilities.seed::seed_everything",
+          "lightning.fabric.utilities.throughput::get_available_flops",
+          "lightning.pytorch.callbacks.batch_size_finder::BatchSizeFinder.setup",
+          "lightning.pytorch.callbacks.early_stopping::EarlyStopping._validate_condition_metric",
+          "lightning.pytorch.callbacks.finetuning::BaseFinetuning.filter_on_optimizer",
+          "lightning.pytorch.callbacks.gradient_accumulation_scheduler::GradientAccumulationScheduler.on_train_start",
+          "lightning.pytorch.callbacks.lr_monitor::LearningRateMonitor.on_train_start",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.__warn_if_dir_not_empty",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.on_train_batch_end",
+          "lightning.pytorch.callbacks.progress.progress_bar::ProgressBar.get_metrics",
+          "lightning.pytorch.callbacks.stochastic_weight_avg::StochasticWeightAveraging.on_train_epoch_start",
+          "lightning.pytorch.callbacks.throughput_monitor::ThroughputMonitor._update",
+          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.on_load_checkpoint",
+          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.setup",
+          "lightning.pytorch.cli::LightningCLI._instantiate_trainer",
+          "lightning.pytorch.cli::LightningCLI.parse_arguments",
+          "lightning.pytorch.cli::_get_short_description",
+          "lightning.pytorch.core.module::LightningModule.configure_optimizers",
+          "lightning.pytorch.core.module::LightningModule.log",
+          "lightning.pytorch.core.module::LightningModule.training_step",
+          "lightning.pytorch.core.optimizer::_configure_schedulers_automatic_opt",
+          "lightning.pytorch.core.optimizer::_configure_schedulers_manual_opt",
+          "lightning.pytorch.core.optimizer::_init_optimizers_and_lr_schedulers",
+          "lightning.pytorch.core.optimizer::_validate_optim_conf",
+          "lightning.pytorch.core.saving::_load_from_checkpoint",
+          "lightning.pytorch.core.saving::_load_state",
+          "lightning.pytorch.core.saving::load_hparams_from_tags_csv",
+          "lightning.pytorch.core.saving::load_hparams_from_yaml",
+          "lightning.pytorch.loggers.mlflow::MLFlowLogger.log_metrics",
+          "lightning.pytorch.loggers.tensorboard::TensorBoardLogger.__init__",
+          "lightning.pytorch.loggers.tensorboard::TensorBoardLogger.log_graph",
+          "lightning.pytorch.loggers.wandb::WandbLogger.experiment",
+          "lightning.pytorch.loops.fit_loop::_FitLoop._warn_if_modules_in_eval_mode",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.setup_data",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop._update_learning_rates",
+          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop.reset",
+          "lightning.pytorch.loops.utilities::_parse_loop_limits",
+          "lightning.pytorch.loops.utilities::_select_data_fetcher",
+          "lightning.pytorch.plugins.precision.fsdp::FSDPPrecision.mixed_precision_config",
+          "lightning.pytorch.profilers.pytorch::PyTorchProfiler.stop.on_trace_ready",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.init_deepspeed",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.lightning_restore_optimizer",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy._setup_model",
+          "lightning.pytorch.trainer.call::_call_callbacks_on_load_checkpoint",
+          "lightning.pytorch.trainer.configuration_validator::__verify_train_val_loop_configuration",
+          "lightning.pytorch.trainer.configuration_validator::__warn_dataloader_iter_limitations",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._check_and_init_precision",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_set_torch_flags",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector._parse_ckpt_path",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector._select_ckpt_path",
+          "lightning.pytorch.trainer.connectors.data_connector::_DataConnector._resolve_sampler",
+          "lightning.pytorch.trainer.connectors.data_connector::_process_dataloader",
+          "lightning.pytorch.trainer.connectors.data_connector::_resolve_overfit_batches",
+          "lightning.pytorch.trainer.connectors.data_connector::_worker_check",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_ResultMetric._wrap_compute.wrapped_func",
+          "lightning.pytorch.trainer.setup::_log_device_info",
+          "lightning.pytorch.trainer.trainer::Trainer.init_module",
+          "lightning.pytorch.tuner.batch_size_scaling::_scale_batch_size",
+          "lightning.pytorch.tuner.lr_finder::_lr_find",
+          "lightning.pytorch.utilities.data::_dataloader_init_kwargs_resolve_sampler",
+          "lightning.pytorch.utilities.data::has_len_all_ranks",
+          "lightning.pytorch.utilities.imports::_try_import_module",
+          "lightning.pytorch.utilities.migration.migration::_drop_apex_amp_state",
+          "lightning.pytorch.utilities.migration.migration::_migrate_model_checkpoint_save_on_train_epoch_end_default",
+          "lightning.pytorch.utilities.migration.utils::migrate_checkpoint",
+          "lightning.pytorch.utilities.model_summary.model_summary::ModelSummary.__init__",
+          "lightning.pytorch.utilities.parsing::clean_namespace",
+          "lightning.pytorch.utilities.parsing::save_hyperparameters"
+        ],
+        "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
-        "note": "GT computed by generate-tasks-bench.py --update against the target repo (pre-change AST caller oracle + test-import oracle); pending until repo present.",
-        "test_module_count": 0,
-        "test_modules": [],
-        "unique_caller_count": 0
+        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
+        "test_module_count": 5,
+        "test_modules": [
+          "tests_fabric.conftest",
+          "tests_fabric.utilities.test_rank_zero",
+          "tests_fabric.utilities.test_warnings",
+          "tests_pytorch.conftest",
+          "tests_pytorch.models.test_torchscript"
+        ],
+        "unique_caller_count": 88
       },
       "id": "DI-01",
       "primary_fn": "lightning.fabric.utilities.rank_zero::rank_zero_warn",
@@ -1516,13 +1925,41 @@
     {
       "difficulty": "medium",
       "ground_truth": {
-        "fn_callers": [],
-        "gt_pending": true,
+        "fn_callers": [
+          "lightning.fabric.loggers.csv_logs::CSVLogger.__init__",
+          "lightning.fabric.loggers.csv_logs::_ExperimentWriter.__init__",
+          "lightning.fabric.loggers.tensorboard::TensorBoardLogger.__init__",
+          "lightning.fabric.plugins.environments.lsf::LSFEnvironment._read_hosts",
+          "lightning.fabric.plugins.io.torch_io::TorchCheckpointIO.load_checkpoint",
+          "lightning.fabric.plugins.io.torch_io::TorchCheckpointIO.remove_checkpoint",
+          "lightning.fabric.plugins.io.torch_io::TorchCheckpointIO.save_checkpoint",
+          "lightning.fabric.plugins.io.xla::XLACheckpointIO.save_checkpoint",
+          "lightning.fabric.strategies.xla_fsdp::XLAFSDPStrategy.save_checkpoint",
+          "lightning.fabric.utilities.cloud_io::_load",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.__init_ckpt_dir",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.setup",
+          "lightning.pytorch.cli::SaveConfigCallback.setup",
+          "lightning.pytorch.core.module::LightningModule.to_torchscript",
+          "lightning.pytorch.core.saving::load_hparams_from_tags_csv",
+          "lightning.pytorch.core.saving::load_hparams_from_yaml",
+          "lightning.pytorch.core.saving::save_hparams_to_tags_csv",
+          "lightning.pytorch.core.saving::save_hparams_to_yaml",
+          "lightning.pytorch.loggers.litlogger::LitLogger.__init__",
+          "lightning.pytorch.profilers.advanced::AdvancedProfiler._dump_stats",
+          "lightning.pytorch.profilers.profiler::Profiler._prepare_streams",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector._parse_ckpt_path"
+        ],
+        "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
-        "note": "GT computed by generate-tasks-bench.py --update against the target repo (pre-change AST caller oracle + test-import oracle); pending until repo present.",
-        "test_module_count": 0,
-        "test_modules": [],
-        "unique_caller_count": 0
+        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
+        "test_module_count": 4,
+        "test_modules": [
+          "tests_fabric.utilities.test_cloud_io",
+          "tests_pytorch.checkpointing.test_model_checkpoint",
+          "tests_pytorch.models.test_torchscript",
+          "tests_pytorch.trainer.test_trainer"
+        ],
+        "unique_caller_count": 22
       },
       "id": "DI-02",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
@@ -1543,13 +1980,44 @@
     {
       "difficulty": "hard",
       "ground_truth": {
-        "fn_callers": [],
-        "gt_pending": true,
+        "fn_callers": [
+          "examples.fabric.build_your_own_trainer.trainer::MyCustomTrainer.val_loop",
+          "lightning.pytorch.callbacks.gradient_accumulation_scheduler::GradientAccumulationScheduler.on_train_start",
+          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.setup",
+          "lightning.pytorch.cli::LightningCLI._add_configure_optimizers_method_to_model",
+          "lightning.pytorch.cli::SaveConfigCallback.__init__",
+          "lightning.pytorch.core.optimizer::_validate_scheduler_api",
+          "lightning.pytorch.core.saving::_load_state",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._on_evaluation_model_train",
+          "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop.setup_data",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.setup_data",
+          "lightning.pytorch.plugins.precision.deepspeed::DeepSpeedPrecision.backward",
+          "lightning.pytorch.serve.servable_module_validator::ServableModuleValidator.on_train_start",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.init_deepspeed",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.setup",
+          "lightning.pytorch.strategies.model_parallel::ModelParallelStrategy.setup",
+          "lightning.pytorch.trainer.call::_call_configure_model",
+          "lightning.pytorch.trainer.configuration_validator::__verify_configure_model_configuration",
+          "lightning.pytorch.trainer.configuration_validator::__verify_eval_loop_configuration",
+          "lightning.pytorch.trainer.configuration_validator::__verify_train_val_loop_configuration",
+          "lightning.pytorch.trainer.connectors.callback_connector::_validate_callbacks_list",
+          "lightning.pytorch.trainer.connectors.data_connector::_DataConnector.prepare_data",
+          "lightning.pytorch.trainer.connectors.data_connector::_DataHookSelector.get_instance",
+          "lightning.pytorch.trainer.connectors.data_connector::_DataLoaderSource.is_defined",
+          "lightning.pytorch.trainer.connectors.data_connector::_check_dataloader_iterable",
+          "lightning.pytorch.trainer.trainer::Trainer.enable_validation",
+          "lightning.pytorch.trainer.trainer::Trainer.init_module"
+        ],
+        "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
-        "note": "GT computed by generate-tasks-bench.py --update against the target repo (pre-change AST caller oracle + test-import oracle); pending until repo present.",
-        "test_module_count": 0,
-        "test_modules": [],
-        "unique_caller_count": 0
+        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
+        "test_module_count": 3,
+        "test_modules": [
+          "parity_pytorch.models",
+          "tests_pytorch.models.test_hooks",
+          "tests_pytorch.utilities.test_model_helpers"
+        ],
+        "unique_caller_count": 26
       },
       "id": "DI-03",
       "primary_fn": "lightning.pytorch.utilities.model_helpers::is_overridden",
@@ -1570,13 +2038,39 @@
     {
       "difficulty": "medium",
       "ground_truth": {
-        "fn_callers": [],
-        "gt_pending": true,
+        "fn_callers": [
+          "lightning.fabric.strategies.ddp::DDPStrategy.barrier",
+          "lightning.fabric.strategies.ddp::DDPStrategy.broadcast",
+          "lightning.fabric.strategies.fsdp::FSDPStrategy.barrier",
+          "lightning.fabric.strategies.fsdp::FSDPStrategy.broadcast",
+          "lightning.fabric.strategies.model_parallel::ModelParallelStrategy.barrier",
+          "lightning.fabric.strategies.model_parallel::ModelParallelStrategy.broadcast",
+          "lightning.fabric.utilities.distributed::_InfiniteBarrier.__enter__",
+          "lightning.fabric.utilities.distributed::_all_gather_ddp_if_available",
+          "lightning.fabric.utilities.distributed::_destroy_dist_connection",
+          "lightning.fabric.utilities.distributed::_sync_ddp_if_available",
+          "lightning.pytorch.loops.utilities::_no_grad_context._decorator",
+          "lightning.pytorch.strategies.ddp::DDPStrategy.barrier",
+          "lightning.pytorch.strategies.ddp::DDPStrategy.broadcast",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.barrier",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.broadcast",
+          "lightning.pytorch.strategies.model_parallel::ModelParallelStrategy.barrier",
+          "lightning.pytorch.strategies.model_parallel::ModelParallelStrategy.broadcast",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_ResultCollection._get_cache"
+        ],
+        "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
-        "note": "GT computed by generate-tasks-bench.py --update against the target repo (pre-change AST caller oracle + test-import oracle); pending until repo present.",
-        "test_module_count": 0,
-        "test_modules": [],
-        "unique_caller_count": 0
+        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
+        "test_module_count": 6,
+        "test_modules": [
+          "tests_fabric.conftest",
+          "tests_fabric.strategies.test_xla",
+          "tests_fabric.utilities.test_distributed",
+          "tests_pytorch.conftest",
+          "tests_pytorch.strategies.test_ddp_integration",
+          "tests_pytorch.trainer.connectors.test_data_connector"
+        ],
+        "unique_caller_count": 18
       },
       "id": "DI-04",
       "primary_fn": "lightning.fabric.utilities.distributed::_distributed_is_initialized",
@@ -1597,13 +2091,53 @@
     {
       "difficulty": "hard",
       "ground_truth": {
-        "fn_callers": [],
-        "gt_pending": true,
+        "fn_callers": [
+          "examples.pytorch.domain_templates.computer_vision_fine_tuning::TransferLearningModel.configure_optimizers",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_monitor_checkpoint",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._update_best_and_save",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.on_exception",
+          "lightning.pytorch.callbacks.stochastic_weight_avg::StochasticWeightAveraging.on_train_epoch_start",
+          "lightning.pytorch.callbacks.timer::Timer._check_time_remaining",
+          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.on_load_checkpoint",
+          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.on_save_checkpoint",
+          "lightning.pytorch.loops.fit_loop::_FitLoop.done",
+          "lightning.pytorch.overrides.distributed::_register_ddp_comm_hook",
+          "lightning.pytorch.strategies.ddp::DDPStrategy.teardown",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._initialize_deepspeed_train",
+          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._load_config",
+          "lightning.pytorch.strategies.fsdp::FSDPStrategy.setup",
+          "lightning.pytorch.trainer.call::_call_and_handle_interrupt",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._check_and_init_precision",
+          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._set_devices_flag_if_auto_passed",
+          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._attach_model_callbacks",
+          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._configure_model_summary_callback",
+          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._configure_timer_callback",
+          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._maybe_show_litmodels_tip",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector.resume_end",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector.resume_start",
+          "lightning.pytorch.trainer.connectors.logger_connector.logger_connector::_LoggerConnector.configure_logger",
+          "lightning.pytorch.trainer.connectors.signal_connector::_SignalConnector._slurm_sigusr_handler_fn",
+          "lightning.pytorch.trainer.setup::_determine_batch_limits",
+          "lightning.pytorch.trainer.setup::_init_debugging_flags",
+          "lightning.pytorch.trainer.setup::_log_device_info",
+          "lightning.pytorch.trainer.trainer::Trainer.__init__",
+          "lightning.pytorch.trainer.trainer::Trainer._run",
+          "lightning.pytorch.trainer.trainer::Trainer.estimated_stepping_batches",
+          "lightning.pytorch.tuner.batch_size_scaling::_adjust_batch_size",
+          "lightning.pytorch.tuner.batch_size_scaling::_run_binsearch_scaling",
+          "lightning.pytorch.tuner.batch_size_scaling::_run_power_scaling"
+        ],
+        "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
-        "note": "GT computed by generate-tasks-bench.py --update against the target repo (pre-change AST caller oracle + test-import oracle); pending until repo present.",
-        "test_module_count": 0,
-        "test_modules": [],
-        "unique_caller_count": 0
+        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
+        "test_module_count": 4,
+        "test_modules": [
+          "tests_pytorch.callbacks.test_device_stats_monitor",
+          "tests_pytorch.conftest",
+          "tests_pytorch.loggers.test_logger",
+          "tests_pytorch.plugins.test_cluster_integration"
+        ],
+        "unique_caller_count": 34
       },
       "id": "DI-05",
       "primary_fn": "lightning.pytorch.utilities.rank_zero::rank_zero_info",
@@ -1624,13 +2158,27 @@
     {
       "difficulty": "medium",
       "ground_truth": {
-        "fn_callers": [],
-        "gt_pending": true,
+        "fn_callers": [
+          "lightning.fabric.fabric::Fabric.to_device",
+          "lightning.fabric.strategies.launchers.multiprocessing::_MultiProcessingLauncher._wrapping_function",
+          "lightning.fabric.strategies.launchers.xla::_XLALauncher._wrapping_function",
+          "lightning.fabric.strategies.strategy::Strategy.batch_to_device",
+          "lightning.fabric.utilities.apply_func::convert_to_tensors",
+          "lightning.fabric.utilities.optimizer::_optimizer_to_device",
+          "lightning.fabric.wrappers::_FabricDataLoader.__iter__",
+          "lightning.pytorch.loops.prediction_loop::_PredictionLoop._predict_step",
+          "lightning.pytorch.strategies.launchers.multiprocessing::_MultiProcessingLauncher._wrapping_function",
+          "lightning.pytorch.strategies.launchers.xla::_XLALauncher._wrapping_function",
+          "lightning.pytorch.strategies.strategy::Strategy.batch_to_device"
+        ],
+        "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
-        "note": "GT computed by generate-tasks-bench.py --update against the target repo (pre-change AST caller oracle + test-import oracle); pending until repo present.",
-        "test_module_count": 0,
-        "test_modules": [],
-        "unique_caller_count": 0
+        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
+        "test_module_count": 1,
+        "test_modules": [
+          "tests_fabric.utilities.test_apply_func"
+        ],
+        "unique_caller_count": 11
       },
       "id": "DI-06",
       "primary_fn": "lightning.fabric.utilities.apply_func::move_data_to_device",
@@ -1651,12 +2199,64 @@
     {
       "difficulty": "medium",
       "ground_truth": {
-        "central_modules": [],
-        "central_ranked": [],
+        "central_modules": [
+          "lightning.pytorch",
+          "lightning.fabric.utilities.types",
+          "lightning.pytorch.utilities.rank_zero",
+          "lightning.pytorch.utilities.exceptions",
+          "lightning.fabric.utilities.imports",
+          "lightning.fabric.plugins",
+          "lightning.fabric.utilities.rank_zero",
+          "lightning.pytorch.utilities.model_helpers",
+          "lightning.pytorch.trainer.states",
+          "lightning.fabric.strategies"
+        ],
+        "central_ranked": [
+          [
+            "lightning.pytorch",
+            94
+          ],
+          [
+            "lightning.fabric.utilities.types",
+            70
+          ],
+          [
+            "lightning.pytorch.utilities.rank_zero",
+            61
+          ],
+          [
+            "lightning.pytorch.utilities.exceptions",
+            49
+          ],
+          [
+            "lightning.fabric.utilities.imports",
+            32
+          ],
+          [
+            "lightning.fabric.plugins",
+            29
+          ],
+          [
+            "lightning.fabric.utilities.rank_zero",
+            28
+          ],
+          [
+            "lightning.pytorch.utilities.model_helpers",
+            27
+          ],
+          [
+            "lightning.pytorch.trainer.states",
+            24
+          ],
+          [
+            "lightning.fabric.strategies",
+            23
+          ]
+        ],
         "exclude_tests": true,
-        "gt_pending": true,
+        "gt_pending": false,
         "gt_source": "ast-central-oracle",
-        "note": "GT computed by --update (AST central oracle, in-degree ranking); pending until repo present.",
+        "note": "GT independently computed against the locked target tree by --update (AST central oracle, in-degree ranking).",
         "top": 10
       },
       "id": "GR-01",
@@ -1673,11 +2273,15 @@
       "difficulty": "medium",
       "ground_truth": {
         "exclude_tests": true,
-        "gt_pending": true,
+        "gt_pending": false,
         "gt_source": "ast-path-oracle",
-        "import_path": null,
+        "import_path": [
+          "lightning.pytorch.trainer.trainer",
+          "lightning.pytorch.utilities.rank_zero",
+          "lightning.fabric.utilities.rank_zero"
+        ],
         "note": "GT computed by --update (AST shortest-path oracle); author must pick a pair whose shortest path is unique (path_is_unique==true) once the repo is present.",
-        "path_is_unique": false,
+        "path_is_unique": true,
         "source": "lightning.pytorch.trainer.trainer",
         "target": "lightning.fabric.utilities.rank_zero"
       },
@@ -1691,12 +2295,44 @@
     {
       "difficulty": "hard",
       "ground_truth": {
-        "blast_callers": [],
-        "blast_count": 0,
+        "blast_callers": [
+          "lightning.fabric.loggers.csv_logs::CSVLogger.__init__",
+          "lightning.fabric.loggers.csv_logs::_ExperimentWriter.__init__",
+          "lightning.fabric.loggers.tensorboard::TensorBoardLogger.__init__",
+          "lightning.fabric.plugins.environments.lsf::LSFEnvironment._get_main_address",
+          "lightning.fabric.plugins.environments.lsf::LSFEnvironment._get_node_rank",
+          "lightning.fabric.plugins.environments.lsf::LSFEnvironment._read_hosts",
+          "lightning.fabric.plugins.io.torch_io::TorchCheckpointIO.load_checkpoint",
+          "lightning.fabric.plugins.io.torch_io::TorchCheckpointIO.remove_checkpoint",
+          "lightning.fabric.plugins.io.torch_io::TorchCheckpointIO.save_checkpoint",
+          "lightning.fabric.plugins.io.xla::XLACheckpointIO.save_checkpoint",
+          "lightning.fabric.strategies.xla_fsdp::XLAFSDPStrategy.save_checkpoint",
+          "lightning.fabric.utilities.cloud_io::_load",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.__init__",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.__init_ckpt_dir",
+          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.setup",
+          "lightning.pytorch.cli::SaveConfigCallback.setup",
+          "lightning.pytorch.core.module::LightningModule.to_torchscript",
+          "lightning.pytorch.core.saving::_load_from_checkpoint",
+          "lightning.pytorch.core.saving::load_hparams_from_tags_csv",
+          "lightning.pytorch.core.saving::load_hparams_from_yaml",
+          "lightning.pytorch.core.saving::save_hparams_to_tags_csv",
+          "lightning.pytorch.core.saving::save_hparams_to_yaml",
+          "lightning.pytorch.loggers.csv_logs::ExperimentWriter.log_hparams",
+          "lightning.pytorch.loggers.litlogger::LitLogger.__init__",
+          "lightning.pytorch.loggers.tensorboard::TensorBoardLogger.save",
+          "lightning.pytorch.profilers.advanced::AdvancedProfiler._dump_stats",
+          "lightning.pytorch.profilers.advanced::AdvancedProfiler.summary",
+          "lightning.pytorch.profilers.profiler::Profiler._prepare_streams",
+          "lightning.pytorch.profilers.profiler::Profiler.describe",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector._parse_ckpt_path",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector._select_ckpt_path"
+        ],
+        "blast_count": 31,
         "depth": 2,
-        "gt_pending": true,
+        "gt_pending": false,
         "gt_source": "ast-fn-blast-oracle",
-        "note": "GT computed by --update (AST fn-blast oracle, depth-N closure); pending until repo present."
+        "note": "GT independently computed against the locked target tree by --update (AST fn-blast oracle, depth-N closure)."
       },
       "id": "GR-03",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
@@ -1713,18 +2349,436 @@
     {
       "difficulty": "medium",
       "ground_truth": {
-        "central_modules": [],
-        "central_ranked": [],
+        "central_modules": [
+          "lightning.pytorch",
+          "lightning.fabric.utilities.types",
+          "lightning.pytorch.utilities.rank_zero",
+          "lightning.pytorch.utilities.exceptions",
+          "lightning.fabric.utilities.imports",
+          "lightning.fabric.plugins",
+          "lightning.fabric.utilities.rank_zero",
+          "lightning.pytorch.utilities.model_helpers",
+          "lightning.pytorch.trainer.states",
+          "lightning.fabric.strategies",
+          "lightning.fabric.utilities.distributed",
+          "lightning.pytorch.utilities.types",
+          "lightning.pytorch.callbacks.callback",
+          "lightning.pytorch.callbacks",
+          "lightning.fabric.accelerators.xla"
+        ],
+        "central_ranked": [
+          [
+            "lightning.pytorch",
+            94
+          ],
+          [
+            "lightning.fabric.utilities.types",
+            70
+          ],
+          [
+            "lightning.pytorch.utilities.rank_zero",
+            61
+          ],
+          [
+            "lightning.pytorch.utilities.exceptions",
+            49
+          ],
+          [
+            "lightning.fabric.utilities.imports",
+            32
+          ],
+          [
+            "lightning.fabric.plugins",
+            29
+          ],
+          [
+            "lightning.fabric.utilities.rank_zero",
+            28
+          ],
+          [
+            "lightning.pytorch.utilities.model_helpers",
+            27
+          ],
+          [
+            "lightning.pytorch.trainer.states",
+            24
+          ],
+          [
+            "lightning.fabric.strategies",
+            23
+          ],
+          [
+            "lightning.fabric.utilities.distributed",
+            23
+          ],
+          [
+            "lightning.pytorch.utilities.types",
+            23
+          ],
+          [
+            "lightning.pytorch.callbacks.callback",
+            19
+          ],
+          [
+            "lightning.pytorch.callbacks",
+            18
+          ],
+          [
+            "lightning.fabric.accelerators.xla",
+            17
+          ]
+        ],
         "exclude_tests": true,
-        "gt_pending": true,
+        "gt_pending": false,
         "gt_source": "ast-central-oracle",
-        "note": "GT computed by --update (AST central oracle, in-degree ranking); pending until repo present.",
+        "note": "GT independently computed against the locked target tree by --update (AST central oracle, in-degree ranking).",
         "top": 15
       },
       "id": "GR-04",
       "prompt": "List the 15 most-imported modules in the codebase (the modules imported by the most other modules). Put them under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
       "scoreable": true,
       "type": "graph_central",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "exclude_tests": true,
+        "gt_pending": false,
+        "gt_source": "ast-importers-oracle",
+        "importer_count": 49,
+        "importers": [
+          "lightning.pytorch.accelerators.cpu",
+          "lightning.pytorch.accelerators.cuda",
+          "lightning.pytorch.accelerators.mps",
+          "lightning.pytorch.callbacks.batch_size_finder",
+          "lightning.pytorch.callbacks.device_stats_monitor",
+          "lightning.pytorch.callbacks.early_stopping",
+          "lightning.pytorch.callbacks.finetuning",
+          "lightning.pytorch.callbacks.gradient_accumulation_scheduler",
+          "lightning.pytorch.callbacks.lr_finder",
+          "lightning.pytorch.callbacks.lr_monitor",
+          "lightning.pytorch.callbacks.model_checkpoint",
+          "lightning.pytorch.callbacks.prediction_writer",
+          "lightning.pytorch.callbacks.pruning",
+          "lightning.pytorch.callbacks.stochastic_weight_avg",
+          "lightning.pytorch.callbacks.timer",
+          "lightning.pytorch.cli",
+          "lightning.pytorch.core.hooks",
+          "lightning.pytorch.core.module",
+          "lightning.pytorch.core.optimizer",
+          "lightning.pytorch.loggers.wandb",
+          "lightning.pytorch.loops.evaluation_loop",
+          "lightning.pytorch.loops.fetchers",
+          "lightning.pytorch.loops.fit_loop",
+          "lightning.pytorch.loops.optimization.automatic",
+          "lightning.pytorch.loops.optimization.closure",
+          "lightning.pytorch.loops.optimization.manual",
+          "lightning.pytorch.loops.prediction_loop",
+          "lightning.pytorch.loops.training_epoch_loop",
+          "lightning.pytorch.plugins.precision.amp",
+          "lightning.pytorch.plugins.precision.deepspeed",
+          "lightning.pytorch.plugins.precision.fsdp",
+          "lightning.pytorch.plugins.precision.xla",
+          "lightning.pytorch.profilers.pytorch",
+          "lightning.pytorch.serve.servable_module_validator",
+          "lightning.pytorch.strategies.ddp",
+          "lightning.pytorch.strategies.deepspeed",
+          "lightning.pytorch.trainer.call",
+          "lightning.pytorch.trainer.configuration_validator",
+          "lightning.pytorch.trainer.connectors.accelerator_connector",
+          "lightning.pytorch.trainer.connectors.callback_connector",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector",
+          "lightning.pytorch.trainer.connectors.data_connector",
+          "lightning.pytorch.trainer.connectors.logger_connector.fx_validator",
+          "lightning.pytorch.trainer.connectors.logger_connector.result",
+          "lightning.pytorch.trainer.setup",
+          "lightning.pytorch.trainer.trainer",
+          "lightning.pytorch.tuner.lr_finder",
+          "lightning.pytorch.tuner.tuning",
+          "lightning.pytorch.utilities.data"
+        ]
+      },
+      "id": "MB-01",
+      "primary_module": "lightning.pytorch.utilities.exceptions",
+      "profiles": [
+        "fanin"
+      ],
+      "prompt": "You are about to change `lightning.pytorch.utilities.exceptions` (re-exported as `lightning.fabric.utilities.exceptions`). Before making any changes, perform a module-level blast-radius assessment: enumerate every production module that IMPORTS `lightning.pytorch.utilities.exceptions` (its import fan-in / reverse dependencies). Exclude test modules. Report the importer modules under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
+      "scoreable": true,
+      "type": "module_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "exclude_tests": true,
+        "gt_pending": false,
+        "gt_source": "ast-importers-oracle",
+        "importer_count": 70,
+        "importers": [
+          "lightning.fabric.fabric",
+          "lightning.fabric.loggers.csv_logs",
+          "lightning.fabric.loggers.tensorboard",
+          "lightning.fabric.plugins.collectives.collective",
+          "lightning.fabric.plugins.collectives.single_device",
+          "lightning.fabric.plugins.collectives.torch_collective",
+          "lightning.fabric.plugins.io.checkpoint_io",
+          "lightning.fabric.plugins.io.torch_io",
+          "lightning.fabric.plugins.io.xla",
+          "lightning.fabric.plugins.precision.amp",
+          "lightning.fabric.plugins.precision.bitsandbytes",
+          "lightning.fabric.plugins.precision.deepspeed",
+          "lightning.fabric.plugins.precision.fsdp",
+          "lightning.fabric.plugins.precision.precision",
+          "lightning.fabric.plugins.precision.xla",
+          "lightning.fabric.strategies.deepspeed",
+          "lightning.fabric.strategies.fsdp",
+          "lightning.fabric.strategies.model_parallel",
+          "lightning.fabric.strategies.parallel",
+          "lightning.fabric.strategies.single_device",
+          "lightning.fabric.strategies.single_xla",
+          "lightning.fabric.strategies.strategy",
+          "lightning.fabric.strategies.xla",
+          "lightning.fabric.strategies.xla_fsdp",
+          "lightning.fabric.utilities.apply_func",
+          "lightning.fabric.utilities.cloud_io",
+          "lightning.fabric.utilities.device_parser",
+          "lightning.fabric.utilities.distributed",
+          "lightning.fabric.utilities.init",
+          "lightning.fabric.utilities.load",
+          "lightning.fabric.utilities.optimizer",
+          "lightning.fabric.utilities.spike",
+          "lightning.fabric.wrappers",
+          "lightning.pytorch.accelerators.accelerator",
+          "lightning.pytorch.accelerators.cpu",
+          "lightning.pytorch.accelerators.cuda",
+          "lightning.pytorch.accelerators.mps",
+          "lightning.pytorch.accelerators.xla",
+          "lightning.pytorch.callbacks.model_checkpoint",
+          "lightning.pytorch.callbacks.on_exception_checkpoint",
+          "lightning.pytorch.core.datamodule",
+          "lightning.pytorch.core.module",
+          "lightning.pytorch.core.optimizer",
+          "lightning.pytorch.core.saving",
+          "lightning.pytorch.loggers.csv_logs",
+          "lightning.pytorch.loggers.litlogger",
+          "lightning.pytorch.loggers.tensorboard",
+          "lightning.pytorch.loggers.wandb",
+          "lightning.pytorch.loops.training_epoch_loop",
+          "lightning.pytorch.plugins.precision.amp",
+          "lightning.pytorch.plugins.precision.deepspeed",
+          "lightning.pytorch.plugins.precision.fsdp",
+          "lightning.pytorch.plugins.precision.precision",
+          "lightning.pytorch.plugins.precision.xla",
+          "lightning.pytorch.strategies.ddp",
+          "lightning.pytorch.strategies.deepspeed",
+          "lightning.pytorch.strategies.fsdp",
+          "lightning.pytorch.strategies.launchers.multiprocessing",
+          "lightning.pytorch.strategies.model_parallel",
+          "lightning.pytorch.strategies.single_device",
+          "lightning.pytorch.strategies.single_xla",
+          "lightning.pytorch.strategies.strategy",
+          "lightning.pytorch.strategies.xla",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector",
+          "lightning.pytorch.trainer.trainer",
+          "lightning.pytorch.utilities.combined_loader",
+          "lightning.pytorch.utilities.deepspeed",
+          "lightning.pytorch.utilities.migration.utils",
+          "lightning.pytorch.utilities.model_registry",
+          "lightning.pytorch.utilities.types"
+        ]
+      },
+      "id": "MB-02",
+      "primary_module": "lightning.fabric.utilities.types",
+      "profiles": [
+        "fanin"
+      ],
+      "prompt": "You are about to change `lightning.fabric.utilities.types`. Before making any changes, perform a module-level blast-radius assessment: enumerate every production module that IMPORTS `lightning.fabric.utilities.types` (its import fan-in / reverse dependencies). Exclude test modules. Report the importer modules under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
+      "scoreable": true,
+      "type": "module_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "exclude_tests": true,
+        "gt_pending": false,
+        "gt_source": "ast-importers-oracle",
+        "importer_count": 60,
+        "importers": [
+          "lightning.pytorch._graveyard.tpu",
+          "lightning.pytorch.callbacks.batch_size_finder",
+          "lightning.pytorch.callbacks.early_stopping",
+          "lightning.pytorch.callbacks.finetuning",
+          "lightning.pytorch.callbacks.gradient_accumulation_scheduler",
+          "lightning.pytorch.callbacks.lr_monitor",
+          "lightning.pytorch.callbacks.model_checkpoint",
+          "lightning.pytorch.callbacks.progress.progress_bar",
+          "lightning.pytorch.callbacks.progress.tqdm_progress",
+          "lightning.pytorch.callbacks.pruning",
+          "lightning.pytorch.callbacks.stochastic_weight_avg",
+          "lightning.pytorch.callbacks.throughput_monitor",
+          "lightning.pytorch.callbacks.timer",
+          "lightning.pytorch.callbacks.weight_averaging",
+          "lightning.pytorch.cli",
+          "lightning.pytorch.core.module",
+          "lightning.pytorch.core.optimizer",
+          "lightning.pytorch.core.saving",
+          "lightning.pytorch.loggers.comet",
+          "lightning.pytorch.loggers.csv_logs",
+          "lightning.pytorch.loggers.mlflow",
+          "lightning.pytorch.loggers.tensorboard",
+          "lightning.pytorch.loggers.wandb",
+          "lightning.pytorch.loops.fit_loop",
+          "lightning.pytorch.loops.optimization.automatic",
+          "lightning.pytorch.loops.training_epoch_loop",
+          "lightning.pytorch.loops.utilities",
+          "lightning.pytorch.overrides.distributed",
+          "lightning.pytorch.plugins.precision.deepspeed",
+          "lightning.pytorch.plugins.precision.double",
+          "lightning.pytorch.profilers.advanced",
+          "lightning.pytorch.profilers.pytorch",
+          "lightning.pytorch.serve.servable_module_validator",
+          "lightning.pytorch.strategies.ddp",
+          "lightning.pytorch.strategies.deepspeed",
+          "lightning.pytorch.strategies.fsdp",
+          "lightning.pytorch.strategies.launchers.multiprocessing",
+          "lightning.pytorch.strategies.launchers.xla",
+          "lightning.pytorch.strategies.model_parallel",
+          "lightning.pytorch.strategies.xla",
+          "lightning.pytorch.trainer.call",
+          "lightning.pytorch.trainer.configuration_validator",
+          "lightning.pytorch.trainer.connectors.accelerator_connector",
+          "lightning.pytorch.trainer.connectors.callback_connector",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector",
+          "lightning.pytorch.trainer.connectors.data_connector",
+          "lightning.pytorch.trainer.connectors.logger_connector.logger_connector",
+          "lightning.pytorch.trainer.connectors.logger_connector.result",
+          "lightning.pytorch.trainer.connectors.signal_connector",
+          "lightning.pytorch.trainer.setup",
+          "lightning.pytorch.trainer.trainer",
+          "lightning.pytorch.tuner.batch_size_scaling",
+          "lightning.pytorch.tuner.lr_finder",
+          "lightning.pytorch.utilities",
+          "lightning.pytorch.utilities.data",
+          "lightning.pytorch.utilities.imports",
+          "lightning.pytorch.utilities.migration.migration",
+          "lightning.pytorch.utilities.migration.utils",
+          "lightning.pytorch.utilities.model_summary.model_summary",
+          "lightning.pytorch.utilities.parsing"
+        ]
+      },
+      "id": "MB-03",
+      "primary_module": "lightning.pytorch.utilities.rank_zero",
+      "profiles": [
+        "fanin"
+      ],
+      "prompt": "You are about to change `lightning.pytorch.utilities.rank_zero`. Before making any changes, perform a module-level blast-radius assessment: enumerate every production module that IMPORTS `lightning.pytorch.utilities.rank_zero` (its import fan-in / reverse dependencies). Exclude test modules. Report the importer modules under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
+      "scoreable": true,
+      "type": "module_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "exclude_tests": true,
+        "gt_pending": false,
+        "gt_source": "ast-importers-oracle",
+        "importer_count": 33,
+        "importers": [
+          "lightning.fabric.connector",
+          "lightning.fabric.plugins.environments.slurm",
+          "lightning.fabric.plugins.precision.amp",
+          "lightning.fabric.strategies.ddp",
+          "lightning.fabric.strategies.deepspeed",
+          "lightning.fabric.strategies.fsdp",
+          "lightning.fabric.strategies.launchers.multiprocessing",
+          "lightning.fabric.strategies.model_parallel",
+          "lightning.fabric.utilities.apply_func",
+          "lightning.fabric.utilities.consolidate_checkpoint",
+          "lightning.fabric.utilities.device_dtype_mixin",
+          "lightning.fabric.utilities.distributed",
+          "lightning.fabric.utilities.load",
+          "lightning.fabric.utilities.logger",
+          "lightning.fabric.utilities.registry",
+          "lightning.fabric.utilities.seed",
+          "lightning.fabric.utilities.spike",
+          "lightning.fabric.utilities.testing._runif",
+          "lightning.pytorch.callbacks.progress.rich_progress",
+          "lightning.pytorch.core.module",
+          "lightning.pytorch.demos.mnist_datamodule",
+          "lightning.pytorch.plugins.precision.amp",
+          "lightning.pytorch.profilers.pytorch",
+          "lightning.pytorch.strategies.ddp",
+          "lightning.pytorch.strategies.deepspeed",
+          "lightning.pytorch.strategies.fsdp",
+          "lightning.pytorch.strategies.model_parallel",
+          "lightning.pytorch.trainer.connectors.accelerator_connector",
+          "lightning.pytorch.trainer.connectors.logger_connector.result",
+          "lightning.pytorch.trainer.connectors.signal_connector",
+          "lightning.pytorch.utilities.migration.utils",
+          "lightning.pytorch.utilities.model_registry",
+          "lightning.pytorch.utilities.model_summary.model_summary"
+        ]
+      },
+      "id": "MB-04",
+      "primary_module": "lightning.fabric.utilities.imports",
+      "profiles": [
+        "fanin"
+      ],
+      "prompt": "You are about to change `lightning.fabric.utilities.imports`. Before making any changes, perform a module-level blast-radius assessment: enumerate every production module that IMPORTS `lightning.fabric.utilities.imports` (its import fan-in / reverse dependencies). Exclude test modules. Report the importer modules under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
+      "scoreable": true,
+      "type": "module_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "exclude_tests": true,
+        "gt_pending": false,
+        "gt_source": "ast-importers-oracle",
+        "importer_count": 24,
+        "importers": [
+          "lightning.pytorch.callbacks.early_stopping",
+          "lightning.pytorch.callbacks.model_checkpoint",
+          "lightning.pytorch.callbacks.throughput_monitor",
+          "lightning.pytorch.callbacks.timer",
+          "lightning.pytorch.loops.evaluation_loop",
+          "lightning.pytorch.loops.fit_loop",
+          "lightning.pytorch.loops.prediction_loop",
+          "lightning.pytorch.loops.training_epoch_loop",
+          "lightning.pytorch.loops.utilities",
+          "lightning.pytorch.strategies.ddp",
+          "lightning.pytorch.strategies.deepspeed",
+          "lightning.pytorch.strategies.fsdp",
+          "lightning.pytorch.strategies.launchers.multiprocessing",
+          "lightning.pytorch.strategies.launchers.xla",
+          "lightning.pytorch.strategies.model_parallel",
+          "lightning.pytorch.strategies.single_xla",
+          "lightning.pytorch.strategies.strategy",
+          "lightning.pytorch.strategies.xla",
+          "lightning.pytorch.trainer.call",
+          "lightning.pytorch.trainer.configuration_validator",
+          "lightning.pytorch.trainer.connectors.checkpoint_connector",
+          "lightning.pytorch.trainer.connectors.data_connector",
+          "lightning.pytorch.trainer.trainer",
+          "lightning.pytorch.utilities.data"
+        ]
+      },
+      "id": "MB-05",
+      "primary_module": "lightning.pytorch.trainer.states",
+      "profiles": [
+        "fanin"
+      ],
+      "prompt": "You are about to change `lightning.pytorch.trainer.states`. Before making any changes, perform a module-level blast-radius assessment: enumerate every production module that IMPORTS `lightning.pytorch.trainer.states` (its import fan-in / reverse dependencies). Exclude test modules. Report the importer modules under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
+      "scoreable": true,
+      "type": "module_blast_radius",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
     }

@@ -98,10 +98,10 @@ Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-inde
 ## Quick start
 
     # Full benchmark + markdown report (C/A/L/Q always run; S/H/X when tasks-bench.json present)
-    python benchmarks/run-codemap-cli.py --repo-path ./pytorch-lightning-master --report
+    python benchmarks/run-codemap-cli.py --repo-path .sandbox/pytorch-lightning --report
 
     # Verify task modules exist in the index; non-default index via --index-path /path/to/index.json
-    python benchmarks/run-codemap-cli.py --verify-tasks --repo-path ./pytorch-lightning-master
+    python benchmarks/run-codemap-cli.py --verify-tasks --repo-path .sandbox/pytorch-lightning
 
 ## Where the benchmark fits in the full flow
 
@@ -155,7 +155,6 @@ import json
 import os
 import platform
 import re
-import shutil
 import statistics
 import subprocess
 import sys
@@ -168,9 +167,23 @@ from pathlib import Path
 import fire
 import pandas as pd
 
+# benchmarks/ is not a package; make the sibling _utilities module importable
+# regardless of how this script is launched (direct path, symlink, or any cwd).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _utilities import TASKS_BENCH_FILE as OSS_TASKS_FILE  # noqa: E402
+from _utilities import (  # noqa: E402
+    extract_import_targets,
+    find_codemap_bin,
+    git_toplevel,
+    make_progress,
+    resolve_relative_base,
+    unwrap_tasks,
+)
+from _utilities import resolve_index_path as _util_resolve_index_path  # noqa: E402
+
 try:
     from rich.console import Console
-    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
     _console: Console | None = Console()
     _IS_RICH_AVAILABLE = True
@@ -296,7 +309,7 @@ class ScanResult:
 # ---- CONFIG ----
 
 TASKS_FILE = Path(__file__).parent / "suites" / "tasks-code.json"
-OSS_TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
+# OSS_TASKS_FILE (tasks-bench.json) now imported from _utilities as TASKS_BENCH_FILE.
 
 THRESHOLDS = {
     # Coverage gap suite (C): structural completeness of cold grep vs codemap
@@ -375,7 +388,7 @@ def load_oss_tasks(type_filter: str | None = None) -> list[dict]:
         return []
     with OSS_TASKS_FILE.open() as f:
         parsed = json.load(f)
-    raw: list[dict] = parsed["tasks"] if isinstance(parsed, dict) else parsed
+    raw: list[dict] = unwrap_tasks(parsed)
     if type_filter:
         raw = [t for t in raw if t.get("type") == type_filter]
     return raw
@@ -599,29 +612,7 @@ def count_cold_calls_path(repo_path: Path, frm: str, to: str) -> int:
 # ---- WARM QUERIES ----
 
 
-def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
-    """Locate a codemap CLI binary (scan-query or scan-index) on PATH or in the plugin directory.
-
-    Checks ``PATH`` first via :func:`shutil.which`.  Falls back to
-    ``<plugin_root>/plugins/codemap-py/bin/<name>`` when ``plugin_root`` is given.
-
-    Args:
-        name: Binary name to locate (e.g. ``"scan-query"`` or ``"scan-index"``).
-        plugin_root: Root of the plugin repository.  When provided and the binary
-            is not on ``PATH``, the function checks the local plugin ``bin/``
-            directory.
-
-    Returns:
-        Resolved :class:`~pathlib.Path` to the binary, or ``None`` when not found.
-    """
-    which = shutil.which(name)
-    if which:
-        return Path(which)
-    if plugin_root:
-        candidate = plugin_root / "plugins" / "codemap-py" / "bin" / name
-        if candidate.exists():
-            return candidate
-    return None
+# find_codemap_bin now imported from _utilities (shared with generate-tasks-bench).
 
 
 def run_scan_query_result(scan_query_bin: Path, args: list[str], index_path: Path, repo_path: Path) -> ScanResult:
@@ -821,13 +812,8 @@ def _resolve_relative(base_package: str, level: int, module: str | None) -> str:
         >>> _resolve_relative("pkg.rel", 1, None)
         'pkg.rel'
     """
-    parts = base_package.split(".") if base_package else []
-    if level > 1:
-        parts = parts[: len(parts) - (level - 1)]
-    base = ".".join(parts)
-    if module:
-        return f"{base}.{module}" if base else module
-    return base
+    # escape_to_none=False keeps this lane's permissive contract (str, no over-ascend guard).
+    return resolve_relative_base(base_package, level, module, escape_to_none=False)
 
 
 def _imported_names_from_source(source: str, base_package: str) -> set[str]:
@@ -847,21 +833,9 @@ def _imported_names_from_source(source: str, base_package: str) -> set[str]:
     Raises:
         SyntaxError: If ``source`` cannot be parsed.
     """
-    tree = ast.parse(source)
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                names.add(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            base = _resolve_relative(base_package, node.level, node.module) if node.level else (node.module or "")
-            if base:
-                names.add(base)
-            for alias in node.names:
-                if alias.name == "*":
-                    continue
-                names.add(f"{base}.{alias.name}" if base else alias.name)
-    return names
+    # symbol_when_bare=True keeps this lane's permissive contract: record symbol names when a
+    # relative import resolves to an empty base (matches the historical _resolve_relative path).
+    return extract_import_targets(ast.parse(source), package=base_package, symbol_when_bare=True)
 
 
 def file_imports_module(file_path: Path, target_module: str, repo_root: Path) -> bool:
@@ -2597,7 +2571,7 @@ def resolve_repo_path(arg: str | None) -> Path | None:
     Resolution order:
     1. ``arg`` when provided and is an existing directory.
     2. ``$PYTORCH_LIGHTNING_PATH`` environment variable.
-    3. ``./pytorch-lightning`` relative to the current working directory.
+    3. ``.sandbox/pytorch-lightning`` — the pinned in-project clone (run from project root).
 
     Args:
         arg: Value of the ``--repo-path`` CLI flag, or ``None``.
@@ -2618,7 +2592,7 @@ def resolve_repo_path(arg: str | None) -> Path | None:
         if p.is_dir():
             return p
         log(f"WARN: $PYTORCH_LIGHTNING_PATH={env_path} is not a directory")
-    local = Path("pytorch-lightning")
+    local = Path(".sandbox/pytorch-lightning")
     if local.is_dir():
         return local
     log("ERROR: cannot find pytorch-lightning repo. Provide --repo-path or set $PYTORCH_LIGHTNING_PATH")
@@ -2641,22 +2615,8 @@ def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
         :class:`~pathlib.Path` to the index file (may not exist yet when unbuilt;
         callers must check :meth:`~pathlib.Path.exists`).
     """
-    if arg:
-        return Path(arg)
-    stems = [repo_path.name, repo_path.name.replace("-master", ""), repo_path.name.replace("-main", "")]
-    # Check both canonical locations: new (.cache/codemap/) then legacy (.cache/scan/)
-    for cache_subdir in (".cache/codemap", ".cache/scan"):
-        d = repo_path / cache_subdir
-        for stem in stems:
-            p = d / f"{stem}.json"
-            if p.exists():
-                return p
-        if d.exists():
-            jsons = sorted(d.glob("*.json"))
-            if jsons:
-                return jsons[0]
-    bare = repo_path.name.replace("-master", "").replace("-main", "")
-    return repo_path / ".cache" / "codemap" / f"{bare}.json"
+    # missing="bare": return a constructed path (never raise) — this lane may run pre-build.
+    return _util_resolve_index_path(repo_path, arg or None, strip_suffixes=True, missing="bare")
 
 
 # ---- SUITE S — SYMBOL LOOKUP ----
@@ -3673,11 +3633,7 @@ def run_correctness_uncovered_xrefs(scan_query_bin: Path, scan_index_bin: Path |
 
 def _resolve_plugin_root() -> Path | None:
     """Return the git top-level directory as the plugin root, or None when unavailable."""
-    try:
-        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=5)
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    return Path(r.stdout.strip()) if r.returncode == 0 else None
+    return git_toplevel()
 
 
 # Lowest index scan_version the self-consistency track (S/H/X) needs: the X suite's
@@ -3752,13 +3708,7 @@ def _run_all_suites(suites: list[tuple[str, object]], use_progress: bool) -> lis
     """
     all_results: list[ScenarioResult] = []
     if use_progress and _IS_RICH_AVAILABLE and _console is not None:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=_console,
-        ) as progress:
+        with make_progress(_console) as progress:
             bar = progress.add_task("Benchmark", total=len(suites))
             for label, run_fn in suites:
                 progress.update(bar, description=label)

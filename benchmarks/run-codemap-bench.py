@@ -53,7 +53,6 @@ import shlex
 import statistics
 import subprocess
 import sys
-import threading
 import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field, fields
@@ -63,7 +62,22 @@ from typing import Any, Optional
 import fire
 import pandas as pd
 from rich.console import Console as _Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+
+# benchmarks/ is not a package; make the sibling _utilities module importable
+# regardless of how this script is launched (direct path, symlink, or any cwd).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _utilities import (  # noqa: E402
+    MODELS,
+    RESULTS_DIR,
+    codemap_bin_on_path,
+    resolve_index_path,
+)
+from _utilities import MODEL_TIMEOUT  # noqa: E402
+from _utilities import TASKS_BENCH_FILE as TASKS_FILE  # noqa: E402
+from _utilities import fmt_time, fmt_tok  # noqa: E402
+from _utilities import gt_is_pending  # noqa: E402
+from _utilities import make_progress, parse_result_usage, stream_claude  # noqa: E402
 
 _USE_COLOR = sys.stdout.isatty()
 _GREEN = "\033[32m" if _USE_COLOR else ""
@@ -76,9 +90,8 @@ _console = _Console()
 # Constants
 # ---------------------------------------------------------------------------
 
-TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
+# TASKS_FILE, RESULTS_DIR now come from _utilities (shared across runners).
 PATCH_TASKS_FILE = Path(__file__).parent / "suites" / "tasks-patch.json"
-RESULTS_DIR = Path("benchmarks/results")
 
 # Synthetic task type assigned to tasks loaded via --tasks-file that carry a `skill`
 # field instead of a `type` field (e.g. tasks-code.json). No evaluator is registered for
@@ -115,12 +128,7 @@ _SELF_CONSISTENCY_KEY = "self_consistency"
 # the fingerprint stays cheap to compute without loading the whole (large) index body.
 _INDEX_META_KEYS = ("scan_version", "scanned_at", "git_sha", "project", "scan_root")
 
-MODELS: dict[str, str] = {
-    "haiku": "claude-haiku-4-5",
-    "sonnet": "claude-sonnet-5",
-    "opus": "claude-opus-5",
-}
-_MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
+# MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-codemap-agentic).
 
 # Tiered protocol (release companion). Each tier runs a progressively smaller task set:
 #   haiku  → full suite         sonnet → dev-tagged subset        opus → disagreement adjudication
@@ -162,7 +170,7 @@ _ARM_ALLOWED: dict[str, list[str]] = {
 
 _REPO_NAME: str = "the repository"
 _REPO_NAMESPACE: list[str] = ["lightning", "examples"]
-_REPO_DEFAULT_PATH: str | None = None
+_REPO_LOCAL_PATH: str | None = None
 
 
 class SandboxError(Exception):
@@ -381,63 +389,24 @@ def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: s
 # ---------------------------------------------------------------------------
 
 
-def _find_codemap_bin(plugin_root: Path | None) -> Path | None:
-    """Locate scan-query binary.
-
-    Args:
-        plugin_root: Project root containing plugins/codemap-py/bin/.
-
-    Returns:
-        Path to scan-query, or None if not found.
-    """
-    import shutil
-
-    which = shutil.which("scan-query")
-    if which:
-        return Path(which)
-    if plugin_root:
-        cand = plugin_root / "plugins" / "codemap-py" / "bin" / "scan-query"
-        if cand.exists():
-            return cand
-    return None
-
-
 def _resolve_index(repo_path: Path, explicit: Path | None = None) -> Path:
-    """Resolve the codemap index path.
+    """Resolve the codemap index path (raises on miss; validates an explicit path).
+
+    Thin adapter over :func:`_utilities.resolve_index_path`: ``-master``/``-main`` stems,
+    ``.cache/codemap/`` before ``.cache/scan/``, resolved paths, ``FileNotFoundError`` on a
+    miss, and an explicit path must be an existing file.
 
     Args:
         repo_path: Root of the cloned repository.
-        explicit: Explicit --index-path argument; returned as-is when provided.
+        explicit: Explicit --index-path argument; validated and returned when provided.
 
     Returns:
         Path to the index JSON file.
 
     Raises:
-        FileNotFoundError: When no index can be found.
+        FileNotFoundError: When no index can be found, or an explicit path is not a file.
     """
-    if explicit:
-        resolved = explicit.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(f"Explicit index not found: {resolved}")
-        return resolved
-    for cache_dir in (".cache/codemap", ".cache/scan"):
-        d = repo_path / cache_dir
-        if not d.is_dir():
-            continue
-        candidates = [repo_path / cache_dir / f"{repo_path.name}.json"]
-        for stem in (repo_path.name.replace("-master", ""), repo_path.name.replace("-main", "")):
-            candidates.append(repo_path / cache_dir / f"{stem}.json")
-        for c in candidates:
-            if c.exists():
-                return c.resolve()
-        jsons = sorted(d.glob("*.json"))
-        if jsons:
-            return jsons[0].resolve()
-    raise FileNotFoundError(
-        f"No codemap index found under {repo_path}/.cache/{{codemap,scan}}/.\n"
-        "Build it first:\n"
-        f"  python plugins/codemap-py/bin/scan-index --root {repo_path}"
-    )
+    return resolve_index_path(repo_path, explicit, strip_suffixes=True, missing="raise", require_explicit_file=True)
 
 
 def _normalize_external_task(task: dict) -> dict:
@@ -869,30 +838,7 @@ class TaskSelection:
     model: str
 
 
-def _gt_is_pending(task: dict) -> bool:
-    """Return True when a task's ground truth is an unresolved placeholder.
-
-    A ``gt_pending`` task was authored without the target repo present, so its ``ground_truth`` —
-    and any ``stage`` find-anchors — are placeholders that must be materialized by
-    ``generate-tasks-bench.py --update`` against the target repo before the task can be staged or
-    scored. Running one as-is stages a stale anchor (which now skips) and scores against stale
-    callers. The runner honours the same flag the generator's validator does.
-
-    Args:
-        task: A task dict from a suite file.
-
-    Returns:
-        True when ``task["ground_truth"].get("gt_pending")`` is truthy.
-
-    Examples:
-        >>> _gt_is_pending({"ground_truth": {"gt_pending": True}})
-        True
-        >>> _gt_is_pending({"ground_truth": {"gt_pending": False}})
-        False
-        >>> _gt_is_pending({})
-        False
-    """
-    return bool(task.get("ground_truth", {}).get("gt_pending"))
+# gt_is_pending now imported from _utilities (shared with generate-tasks-bench).
 
 
 def _base_task_list(sel: TaskSelection) -> Optional[list[dict]]:
@@ -953,11 +899,7 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
     Returns:
         Environment dict for subprocess.Popen.
     """
-    env = os.environ.copy()
-    plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap-py"
-    bin_dirs = sorted(plugin_cache.glob("*/bin"), reverse=True)
-    if bin_dirs:
-        env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")
+    env = codemap_bin_on_path(os.environ.copy())
     env["CODEMAP_INDEX"] = str(index_path)
     env["CODEMAP_ENABLED"] = "true"
     env["CODEMAP_LOGGING"] = "false"
@@ -1128,6 +1070,49 @@ def _parse_batch_subcommands(command: str) -> list[str]:
     return subs
 
 
+def _embedded_json_objects(raw: str) -> list[dict]:
+    """Return every JSON object embedded in *raw*, tolerating surrounding prose or trailing text.
+
+    A scan-query ``tool_result`` is sometimes wrapped in a prose preamble, truncated, or
+    concatenated with other output, so ``json.loads`` over the whole string raises and its index
+    metadata is silently lost (empirically ~16/17 codemap runs recorded no ``index.method`` despite
+    running ``rdeps``, producing a false "index-lookup only" signal). This scans for each ``{`` and
+    uses :meth:`json.JSONDecoder.raw_decode` — which decodes one value and ignores whatever follows —
+    to recover each object regardless of what surrounds it.
+
+    Args:
+        raw: A ``tool_result`` text payload (pure JSON, prose+JSON, or concatenated objects).
+
+    Returns:
+        Each successfully decoded top-level JSON object, in order of appearance (non-object
+        JSON values such as bare arrays or numbers are skipped).
+
+    Examples:
+        >>> _embedded_json_objects('prefix {"index": {"method": "rdeps"}} tail')
+        [{'index': {'method': 'rdeps'}}]
+        >>> _embedded_json_objects('{"a": 1}{"b": 2}')
+        [{'a': 1}, {'b': 2}]
+        >>> _embedded_json_objects('no json here')
+        []
+    """
+    decoder = json.JSONDecoder()
+    objects: list[dict] = []
+    i, n = 0, len(raw)
+    while i < n:
+        if raw[i] != "{":
+            i += 1
+            continue
+        try:
+            obj, end = decoder.raw_decode(raw, i)
+        except json.JSONDecodeError:
+            i += 1
+            continue
+        if isinstance(obj, dict):
+            objects.append(obj)
+        i = max(end, i + 1)  # skip past the decoded span so inner braces are not re-scanned
+    return objects
+
+
 # Per-task turn cap (review M-6). Applied IDENTICALLY to both arms so the token_ratio headline is not
 # perturbed by an asymmetric ceiling. The former code gave the plain arm max(80, callers*4) turns but
 # the codemap arm only max(80, callers*2): the plain arm could then burn more turns — and thus more
@@ -1178,8 +1163,8 @@ def _max_turns_for_task(task: dict) -> int:
 
 _EVAL_VER_NAME_RECALL = "v5"  # _evaluate_develop_br (v5: drop .md file-dump M-10; precision-tighten fuzzy tiers M-11)
 _EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
-_EVAL_VER_REVIEW = "v3"  # _evaluate_rv — v3: structured-block + stem-blocklist matching (review H-1)
-_EVAL_VER_OSS = "v1"  # _evaluate_oss
+_EVAL_VER_REVIEW = "v4"  # _evaluate_rv — v4: count branch scoped to answer region (count-fragility fix)
+_EVAL_VER_OSS = "v2"  # _evaluate_oss — v2: count extraction scoped to answer region (count-fragility fix)
 _EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching (review H-1)
 _EVAL_VER_FEATURE = "v2"  # _evaluate_feature — v2: structured-block + stem-blocklist matching (review H-1)
 _EVAL_VER_REAL_ISSUE = "v2"  # _evaluate_real_issue — v2: path-with-parent matching in answer block (review H-1)
@@ -1194,6 +1179,10 @@ _STEM_BLOCKLIST: frozenset[str] = frozenset({"trainer", "utils", "core", "types"
 # AT OR AFTER the earliest such heading so exploration prose before the final answer cannot score.
 _ANSWER_LABELS_FILES: tuple[str, ...] = ("files", "root cause", "root-cause", "answer")
 _ANSWER_LABELS_SYMBOLS: tuple[str, ...] = ("symbols", "undocumented", "uncovered", "answer")
+# Conclusion-only headings for numeric/count answers. Deliberately generic (no early working-section
+# nouns like "importers"/"callers") so _answer_region anchors on the FINAL answer, not an exploratory
+# heading — a stray count in exploration ("0 symbols of its own") must never outrank the conclusion.
+_ANSWER_LABELS_COUNT: tuple[str, ...] = ("answer", "conclusion", "summary", "result", "total")
 
 
 def _answer_region(output_text: str, labels: tuple[str, ...]) -> tuple[str, bool]:
@@ -1320,6 +1309,42 @@ def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
             except (IndexError, ValueError):
                 continue
     return None
+
+
+def _extract_count_answer_first(
+    output_text: str, patterns: list[str], labels: tuple[str, ...] = _ANSWER_LABELS_COUNT
+) -> Optional[int]:
+    """Extract an integer count, preferring the structured answer/conclusion region.
+
+    :func:`_extract_int` returns the first pattern that matches *anywhere*, so on verbose codemap
+    output a stray number in exploration ("0 symbols of its own") can outrank the real answer
+    ("65 importers"). This scopes extraction to the answer region (:func:`_answer_region`) first and
+    only falls back to the full text when that region yields no count — so it never reduces
+    extraction success versus a full-text scan, it only prefers the conclusion when one carries a
+    count. When no answer heading is present the region *is* the full text (``degraded``), so the
+    single region scan already covers everything and the fallback is skipped.
+
+    Args:
+        output_text: The agent's full response text.
+        patterns: Ordered regex patterns passed through to :func:`_extract_int`.
+        labels: Answer-heading labels for :func:`_answer_region` (conclusion markers by default).
+
+    Returns:
+        The extracted integer, or ``None`` when neither the answer region nor the full text matches.
+
+    Examples:
+        >>> pats = [r"(\\d+)\\s+(?:symbol|method)", r"(\\d+)\\s+importers?"]
+        >>> _extract_count_answer_first("has 0 symbols\\n## Answer\\n65 importers\\n", pats)
+        65
+        >>> _extract_count_answer_first("no answer heading, just 7 methods here", pats)
+        7
+        >>> _extract_count_answer_first("nothing numeric to find", pats)
+    """
+    region, degraded = _answer_region(output_text, labels)
+    got = _extract_int(region, patterns)
+    if got is None and not degraded:
+        got = _extract_int(output_text, patterns)
+    return got
 
 
 def _extract_names(text: str) -> list[str]:
@@ -1535,8 +1560,10 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
             },
         )
 
-    # No symbol list — count extraction from sq0.
-    got_count = _extract_int(output_text, _count_patterns)
+    # No symbol list — count extraction from sq0. Prefer the answer/conclusion region so a stray
+    # count in exploratory prose (the RV-02 "0 symbols of its own" false-fail) cannot outrank the
+    # real answer ("65 importers"); fall back to the full text only when the region has no count.
+    got_count = _extract_count_answer_first(output_text, _count_patterns)
     if got_count is None:
         list_items = re.findall(r"^\s*[-*•]\s+\S", output_text, re.MULTILINE)
         if list_items:
@@ -1572,7 +1599,9 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
         expected = gt.get("top_dep_count", 0)
         # Anchor to number immediately before "dep" — avoids forward-scan into summary totals.
         # dep_count field name first (structured output), then "N dep*" literal.
-        got = _extract_int(
+        # Answer-region-scoped (count-fragility fix): prefer the count in the conclusion over a
+        # stray dep count in exploratory prose; falls back to full text when the region has none.
+        got = _extract_count_answer_first(
             output_text,
             [
                 r"dep_count[:\s=]+(\d+)",
@@ -1604,10 +1633,10 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
             got = sum(1 for name in short_names if name in output_text)
             if got == 0:
                 # Fallback: prose extraction when model didn't name symbols
-                got_prose = _extract_int(output_text, [r"(\d+)\s+broken", r"broken[:\s]+(\d+)"])
+                got_prose = _extract_count_answer_first(output_text, [r"(\d+)\s+broken", r"broken[:\s]+(\d+)"])
                 got = got_prose
         else:
-            got = _extract_int(output_text, [r"(\d+)\s+broken", r"broken[:\s]+(\d+)", r"(\d+)\s+xref"])
+            got = _extract_count_answer_first(output_text, [r"(\d+)\s+broken", r"broken[:\s]+(\d+)", r"(\d+)\s+xref"])
         correct = got == expected
         return BenchQuality(
             scored=True,
@@ -1629,7 +1658,7 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
 
     if check in ("undocumented", "combined_health"):
         expected = gt.get("undocumented_count", 0)
-        got = _extract_int(
+        got = _extract_count_answer_first(
             output_text,
             [
                 r"(\d+)\s+undocumented",
@@ -1654,7 +1683,7 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
 
     if check == "uncovered":
         expected = gt.get("uncovered_count", 0)
-        got = _extract_int(
+        got = _extract_count_answer_first(
             output_text,
             [
                 r"(\d+)\s+uncovered",
@@ -1766,6 +1795,9 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
     recall = true_positives / max(len(expected_set), 1)
     correct = recall >= 0.70
 
+    # Tail-recall diagnostics only — does not affect the recall scalar or the 0.70 threshold above.
+    matched_callers, missed_callers = _split_matched_missed(expected_set, found_qualnames)
+
     return BenchQuality(
         scored=True,
         correct=correct,
@@ -1783,6 +1815,8 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
             "threshold": 0.70,
             "method": "recall",
             "safety_grade": recall >= 0.90,
+            "matched_callers": matched_callers,
+            "missed_callers": missed_callers,
         },
     )
 
@@ -2216,6 +2250,39 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
 
 _DI_RECALL_THRESHOLD = 0.70  # caller recall AND test-file recall must each clear this for DI correctness
 _GR_RECALL_THRESHOLD = 0.70  # central set-overlap / fn-blast recall threshold
+_MB_RECALL_THRESHOLD = 0.70  # module_blast_radius importer (import fan-in) recall threshold
+
+# Tail-recall instrumentation (additive diagnostics only): matched/missed name lists are recorded in
+# scoring_detail so a run's exact hit/miss split can be inspected without re-scoring. They never feed
+# the recall scalar or the pass threshold. Lists are sorted and bounded to keep the JSONL line small on
+# high-fan-in tasks (hundreds of callers/importers); the count fields carry the untruncated totals.
+_TAIL_LIST_CAP = 50
+
+
+def _split_matched_missed(expected: set[str], found: set[str]) -> tuple[list[str], list[str]]:
+    """Return ``(matched, missed)`` sorted, each bounded to :data:`_TAIL_LIST_CAP` names (tail-recall).
+
+    Additive diagnostics for the caller / importer recall evaluators: the intersection is the matched
+    set, the difference is the missed set. Both are sorted for stable output and truncated to the cap so
+    a high-fan-in task does not bloat the result line — the evaluator's own count fields remain the
+    authoritative totals.
+
+    Args:
+        expected: Ground-truth qualified names.
+        found: Names matched in the agent output.
+
+    Returns:
+        ``(matched, missed)`` — sorted name lists, each at most :data:`_TAIL_LIST_CAP` long.
+
+    Examples:
+        >>> _split_matched_missed({"a", "b", "c"}, {"a", "c"})
+        (['a', 'c'], ['b'])
+        >>> _split_matched_missed({"x"}, set())
+        ([], ['x'])
+    """
+    matched = sorted(expected & found)[:_TAIL_LIST_CAP]
+    missed = sorted(expected - found)[:_TAIL_LIST_CAP]
+    return matched, missed
 
 
 def _module_mentioned(module: str, output_text: str) -> bool:
@@ -2464,6 +2531,57 @@ def _evaluate_graph_fn_blast(task: dict, output_text: str) -> BenchQuality:
     )
 
 
+def _evaluate_module_blast_radius(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate a ``module_blast_radius`` task: importer (import fan-in) recall ≥ 0.70 (review MB).
+
+    The reverse relation of the develop_br per-function caller recall, at module granularity: given a
+    target module, the agent enumerates the modules that IMPORT it (its rdeps). Correctness is the
+    fraction of ground-truth importers named in the output, matched by :func:`_module_mentioned` — an
+    exact dotted name or a ≥2-component dotted suffix, NEVER a bare single-component leaf. Extraction-
+    failure handling mirrors :func:`_evaluate_develop_br`: when not a single importer is named the run
+    is flagged ``extraction_failed`` and excluded from the accuracy denominator upstream.
+
+    Args:
+        task: Task dict; reads ``ground_truth.importers`` (dotted module names).
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality with recall = importer recall; correct when recall ≥ 0.70.
+    """
+    gt = task["ground_truth"]
+    expected_importers: list[str] = gt.get("importers", [])
+    if not expected_importers:
+        return BenchQuality(scored=False)
+
+    expected_set = set(expected_importers)
+    found = {m for m in expected_set if _module_mentioned(m, output_text)}
+    hits = len(found)
+    recall = hits / max(len(expected_set), 1)
+    correct = recall >= _MB_RECALL_THRESHOLD
+
+    # Tail-recall diagnostics only — does not affect the recall scalar or the threshold above.
+    matched_importers, missed_importers = _split_matched_missed(expected_set, found)
+
+    return BenchQuality(
+        scored=True,
+        correct=correct,
+        metric_expected=len(expected_set),
+        metric_got=hits,
+        recall=round(recall, 3),
+        extraction_failed=hits == 0,
+        evaluator_used="_evaluate_module_blast_radius",
+        extracted_metric=sorted(found),
+        scoring_detail={
+            "metric_expected": len(expected_set),
+            "metric_got": hits,
+            "threshold": _MB_RECALL_THRESHOLD,
+            "method": "recall",
+            "matched_importers": matched_importers,
+            "missed_importers": missed_importers,
+        },
+    )
+
+
 _EVALUATORS = {
     "symbol_extraction": _evaluate_symbol,
     "fn_call_graph": _evaluate_develop_br,  # name-recall, not count-tolerance: callers are enumerated, not counted
@@ -2477,6 +2595,7 @@ _EVALUATORS = {
     "graph_central": _evaluate_graph_central,
     "graph_path": _evaluate_graph_path,
     "graph_fn_blast": _evaluate_graph_fn_blast,
+    "module_blast_radius": _evaluate_module_blast_radius,
 }
 
 
@@ -2981,50 +3100,31 @@ class BenchRunner:
                 with live subprocess state for sub-progress displays.
         """
         pending: dict[str, float] = {}
-        t0 = time.monotonic()
-        _upd: list[float] = [0.0]  # last update timestamp (list so inner scope can mutate)
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=str(self.repo_path),
-                env=self._env(arm),
-            )
-            kill_timer = threading.Timer(self.timeout, proc.kill)
-            kill_timer.start()
-            try:
-                assert proc.stdout is not None
-                for raw in proc.stdout:
-                    ts = time.monotonic()
-                    line = raw.strip()
-                    if not line:
-                        continue
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    self._handle(event, result, pending, ts)
-                    if update_fn is not None and ts - _upd[0] >= 0.5:
-                        update_fn(ts - t0, result)
-                        _upd[0] = ts
-                stderr_out = proc.stderr.read() if proc.stderr else ""
-                proc.wait(timeout=10)
-                if not result.success and not result.error and stderr_out:
-                    result.error = stderr_out.strip()[:300]
-            finally:
-                kill_timer.cancel()
-            if proc.returncode and proc.returncode < 0 and not result.error:
-                result.error = f"timeout ({self.timeout}s)"
-                result.incomplete = True
-        except subprocess.TimeoutExpired:
+
+        def _on_event(event: dict, ts: float) -> None:
+            self._handle(event, result, pending, ts)
+
+        outcome = stream_claude(
+            cmd,
+            timeout=self.timeout,
+            cwd=self.repo_path,
+            env=self._env(arm),
+            on_event=_on_event,
+            update_fn=(lambda elapsed: update_fn(elapsed, result)) if update_fn is not None else None,
+        )
+        # Map mechanics onto the run, preserving this lane's error precedence and the incomplete flag:
+        # stderr (on a non-success run) → timeout (marks incomplete) → any unexpected exception.
+        result.elapsed_s = outcome.elapsed_s
+        if not result.success and not result.error and outcome.stderr:
+            result.error = outcome.stderr.strip()[:300]
+        if outcome.returncode is not None and outcome.returncode < 0 and not result.error:
             result.error = f"timeout ({self.timeout}s)"
             result.incomplete = True
-        except Exception as exc:  # noqa: BLE001
-            result.error = str(exc)[:300]
-        finally:
-            result.elapsed_s = time.monotonic() - t0
+        if outcome.exc_timeout:
+            result.error = f"timeout ({self.timeout}s)"
+            result.incomplete = True
+        if outcome.error and not result.error:
+            result.error = outcome.error
 
     @staticmethod
     def _extract_codemap_meta(block: dict, result: "BenchRun") -> None:
@@ -3047,18 +3147,20 @@ class BenchRunner:
             for cb in content:
                 if isinstance(cb, dict) and cb.get("type") == "text":
                     texts.append(cb.get("text", ""))
+        # Scan for the scan-query JSON object even when it is embedded in prose, truncated, or
+        # concatenated — requiring the whole tool_result to be pure JSON silently dropped index
+        # metadata (~16/17 codemap runs recorded no method despite running rdeps).
         for raw in texts:
-            try:
-                parsed = json.loads(raw)
-                idx = parsed.get("index", {})
+            for parsed in _embedded_json_objects(raw):
+                idx = parsed.get("index")
+                if not isinstance(idx, dict):
+                    continue
                 method = idx.get("method", "")
                 if method and method not in result.codemap_methods:
                     result.codemap_methods.append(method)
                 for nc in idx.get("not_covered", []):
                     if nc not in result.codemap_not_covered:
                         result.codemap_not_covered.append(nc)
-            except (json.JSONDecodeError, AttributeError):
-                pass
 
     @staticmethod
     def _record_tool_use(name: str, inp: dict, result: BenchRun) -> None:
@@ -3139,20 +3241,15 @@ class BenchRunner:
                     self._extract_codemap_meta(block, result)
 
         elif etype == "result":
-            subtype = event.get("subtype", "")
-            usage = event.get("usage", {})
-            result.input_tokens = (
-                usage.get("input_tokens", 0)
-                + usage.get("cache_creation_input_tokens", 0)
-                + usage.get("cache_read_input_tokens", 0)
-            )
-            result.output_tokens = usage.get("output_tokens", 0)
-            # Anthropic's own cost for this run — current prices, cache-aware, per model. When the
-            # result event carries no total_cost_usd the $ column is omitted (in/out tokens still show).
-            result.cost_usd = event.get("total_cost_usd", 0.0) or 0.0
-            result.success = subtype == "success"
+            # Anthropic's own cost (total_cost_usd) is captured here — current prices, cache-aware,
+            # per model. When the result event omits it the $ column is dropped (in/out tokens remain).
+            u = parse_result_usage(event)
+            result.input_tokens = u.input_tokens
+            result.output_tokens = u.output_tokens
+            result.cost_usd = u.cost_usd
+            result.success = u.success
             if not result.success and not result.error:
-                result.error = subtype
+                result.error = u.subtype
 
 
 # ---------------------------------------------------------------------------
@@ -3337,7 +3434,7 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
     """Print a per-workflow_type breakdown of token ratio and accuracy.
 
     Groups runs by :func:`_workflow_type_of`. For each workflow type, reports
-    the median codemap/plain token ratio (computed per task that has both arms)
+    the median and mean codemap/plain token ratio (computed per task that has both arms)
     and the codemap-arm accuracy over scored, completed runs.
 
     Args:
@@ -3350,7 +3447,7 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
         return
 
     print("\nPer-workflow_type breakdown:")
-    hdr = f"  {'workflow_type':<22}  {'n_tasks':>7}  {'tok× (med)':>10}  {'cm_acc':>10}"
+    hdr = f"  {'workflow_type':<22}  {'n_tasks':>7}  {'tok× (med)':>10}  {'tok× (mean)':>11}  {'cm_acc':>10}"
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
     for wf in sorted(by_wf):
@@ -3366,6 +3463,7 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
             if plain and codemap and plain.input_tokens:
                 ratios.append(codemap.input_tokens / plain.input_tokens)
         ratio_str = f"{statistics.median(ratios):>10.2f}" if ratios else f"{'n/a':>10}"
+        ratio_mean_str = f"{statistics.mean(ratios):>11.2f}" if ratios else f"{'n/a':>11}"
 
         # Headline accuracy excludes self-consistency (index-derived GT) runs — same rule as the
         # top-level per-arm accuracy, so the per-workflow_type figure stays consistent with it.
@@ -3384,7 +3482,7 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
         else:
             acc_str = f"{'n/a':>10}"
         n_tasks = len(by_task)
-        print(f"  {wf:<22}  {n_tasks:>7}  {ratio_str}  {acc_str}")
+        print(f"  {wf:<22}  {n_tasks:>7}  {ratio_str}  {ratio_mean_str}  {acc_str}")
 
 
 def _arm_extracted(run: Optional[BenchRun]) -> bool:
@@ -3513,7 +3611,7 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
         print("No runs to summarise.")
         return
 
-    print(f"\n{'=' * 64}")
+    print(f"\n\n{'=' * 64}")
     print(f"  Codemap benchmark — model={model}")
     print(f"{'=' * 64}")
 
@@ -3576,10 +3674,10 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
             f"Time ratio   (codemap/plain):  median={statistics.median(time_ratios):.2f}  mean={statistics.mean(time_ratios):.2f}  [{min(time_ratios):.2f}–{max(time_ratios):.2f}]"
         )
         print(
-            f"  plain   median={statistics.median(plain_times) / 60:.1f}m  mean={statistics.mean(plain_times) / 60:.1f}m"
+            f"  plain   median={fmt_time(statistics.median(plain_times))}  mean={fmt_time(statistics.mean(plain_times))}"
         )
         print(
-            f"  codemap median={statistics.median(codemap_times) / 60:.1f}m  mean={statistics.mean(codemap_times) / 60:.1f}m"
+            f"  codemap median={fmt_time(statistics.median(codemap_times))}  mean={fmt_time(statistics.mean(codemap_times))}"
         )
 
     for arm in ("plain", "codemap"):
@@ -3717,7 +3815,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         tiered: Tiered protocol (release companion): run haiku full, sonnet on the dev subset, and
             opus only on haiku/sonnet disagreements. Select the tier via ``--model`` per invocation.
     """
-    global _REPO_NAME, _REPO_NAMESPACE, _REPO_DEFAULT_PATH
+    global _REPO_NAME, _REPO_NAMESPACE, _REPO_LOCAL_PATH
 
     if profile is not None and profile not in _PROFILES:
         print(f"ERROR: --profile must be one of {_PROFILES}, got {profile!r}")
@@ -3752,7 +3850,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         _REPO_NAME = repo_meta["name"]
     if repo_meta.get("namespace"):
         _REPO_NAMESPACE = list(repo_meta["namespace"])
-    _REPO_DEFAULT_PATH = repo_meta.get("default_path")
+    _REPO_LOCAL_PATH = repo_meta.get("local_path")
 
     # Append tasks from any --tasks-file; scoreable depends on whether ground_truth is present.
     external_ids: list[str] = []
@@ -3798,8 +3896,8 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     # Resolve repo path
     if not repo_path:
         _cands: list[Path] = []
-        if _REPO_DEFAULT_PATH:
-            _cands.append(Path(_REPO_DEFAULT_PATH))
+        if _REPO_LOCAL_PATH:
+            _cands.append(Path(_REPO_LOCAL_PATH))  # header local_path = .sandbox/pytorch-lightning (run from root)
         for cand in _cands:
             if cand.is_dir():
                 repo_path = cand
@@ -3856,14 +3954,14 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     # expected callers were authored without this target repo, so staging and scoring are unreliable
     # until `generate-tasks-bench.py --update` materialises them. The generator's validator already
     # honours this flag; the runner must too, or a stale DI anchor derails the run (review: DI crash).
-    pending = [t for t in task_list if _gt_is_pending(t)]
+    pending = [t for t in task_list if gt_is_pending(t)]
     if pending:
         ids = ", ".join(t["id"] for t in pending)
         print(
             f"⊘ Skipping {len(pending)} task(s) with pending ground truth — run "
             f"`generate-tasks-bench.py --update` against the target repo to materialise them: {ids}"
         )
-        task_list = [t for t in task_list if not _gt_is_pending(t)]
+        task_list = [t for t in task_list if not gt_is_pending(t)]
     if not task_list:
         print("No runnable tasks after excluding pending ground truth.")
         sys.exit(1)
@@ -3874,7 +3972,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     # Build runner
     model_short = model
     model_id = MODELS[model_short]
-    run_timeout = timeout or _MODEL_TIMEOUT[model_short]
+    run_timeout = timeout or MODEL_TIMEOUT[model_short]
     resume_cache = _load_resume_cache(RESULTS_DIR) if resume else None
     runner = BenchRunner(
         model_short=model_short,
@@ -3885,6 +3983,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         resume_cache=resume_cache,
     )
 
+    print(f"\n{'─' * 64}")
+    print(f"  ▶ RUN START — model={model_short}")
+    print(f"{'─' * 64}")
     print(f"Codemap benchmark: {len(task_list)} tasks × {len(arms_to_run)} arm(s) × model={model_short}")
     print(f"  index: {index_path}")
     print(f"  repo:  {repo_path}")
@@ -3898,6 +3999,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     print("  DG  debug_from_trace      — identify fn + file from traceback/log (word-boundary match)")
     print("  FT  feature_scaffolding   — identify files to create/modify for a feature (word-boundary match)")
     print("  RI  real_issue            — reproduce + locate files for a GitHub issue (recall ≥ 0.70)")
+    print("  MB  module_blast_radius   — enumerate modules that import a target (importer recall ≥ 0.70)")
     print()
 
     runs: list[BenchRun] = []
@@ -3922,13 +4024,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         runs.append(run)
         status = "✓" if run.success else "✗"
         correct = _run_correct_symbol(run)
-        tok = run.input_tokens
-        tok_str = f"{tok / 1_000_000:.1f}M" if tok >= 1_000_000 else f"{tok // 1000:3d}k"
-        # in/out token split plus Anthropic's own per-run cost. The $ is omitted (in/out only)
-        # when the run carried no total_cost_usd — no hand-maintained price table to go stale.
-        _out = run.output_tokens
-        out_str = f"{_out / 1000:.1f}k" if _out >= 1000 else f"{_out:>4d}"
-        cost_str = f" ${run.cost_usd:.4f}" if run.cost_usd else ""
+        # in/out token split (k/M via shared fmt_tok) plus Anthropic's own per-run cost. The $ is
+        # omitted (in/out only) when the run carried no total_cost_usd — no price table to go stale.
+        cost_str = f" ${run.cost_usd:.3f}" if run.cost_usd else ""
         _eff = _effective_recall(run)
         # Three distinct states, never conflated:
         #   number  — scored & parsed: recall in [0, 1] (0.000 = wrong answer, real miss)
@@ -3945,7 +4043,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         # The raw skill_counts field is still recorded in the results JSONL if it ever fires.
         tool_summary = f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d}"
         log_fn(
-            f"  {status}{correct} {task['id']}\t{arm}\tin={tok_str} out={out_str}{cost_str}\tt={run.elapsed_s / 60:.1f}m\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
+            f"  {status}{correct} {task['id']}\t{arm}\ttok: in={fmt_tok(run.input_tokens):>6} out={fmt_tok(run.output_tokens):>6}{cost_str} time={fmt_time(run.elapsed_s)}\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
         )
         return run
 
@@ -3962,7 +4060,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
             progress.update(
                 sub_id,
                 completed=run.turn_count,
-                description=f"  {elapsed / 60:.1f}m calls={calls} {tool_live}",
+                description=f"  {fmt_time(elapsed)} calls={calls} {tool_live}",
             )
 
         return _update
@@ -4004,13 +4102,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         else:
             _run_arms()
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        console=_console,
-    ) as progress:
+    with make_progress(_console) as progress:
         total = len(combos)
         outer = progress.add_task("running", total=total)
         done = 1

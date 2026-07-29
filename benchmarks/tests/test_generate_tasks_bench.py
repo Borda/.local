@@ -745,7 +745,10 @@ class TestValidateRv:
         task = self._task([{"id": "sq1", "match": "integer_extract", "ground_truth": {"count": 3}}])
         payload = {"count": 3, "called_by": []}
 
-        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+        with (
+            patch.object(script_gen_bench, "_rv_ast_value", return_value=(3, True, None)),
+            patch.object(script_gen_bench, "run_scan_query", return_value=payload),
+        ):
             ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is True
@@ -759,7 +762,10 @@ class TestValidateRv:
         task = self._task([{"id": "sq1", "match": "integer_extract", "ground_truth": {"count": 10}}])
         payload = {"count": 7, "called_by": []}
 
-        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+        with (
+            patch.object(script_gen_bench, "_rv_ast_value", return_value=(7, True, None)),
+            patch.object(script_gen_bench, "run_scan_query", return_value=payload),
+        ):
             ok, _, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is False
@@ -776,7 +782,10 @@ class TestValidateRv:
         )
         payload = {"undocumented": [{"qualified_name": "A"}, {"qualified_name": "B"}]}
 
-        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+        with (
+            patch.object(script_gen_bench, "_rv_ast_value", return_value=(["A", "B"], True, None)),
+            patch.object(script_gen_bench, "run_scan_query", return_value=payload),
+        ):
             ok, _, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is True
@@ -792,7 +801,10 @@ class TestValidateRv:
         )
         payload = {"undocumented": [{"qualified_name": "A"}]}
 
-        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+        with (
+            patch.object(script_gen_bench, "_rv_ast_value", return_value=(["A"], True, None)),
+            patch.object(script_gen_bench, "run_scan_query", return_value=payload),
+        ):
             ok, _, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is False
@@ -811,18 +823,38 @@ class TestValidateRv:
         assert live_gt is None
         assert "expected_queries" in reason
 
-    def test_returns_none_when_scan_query_fails(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (False, None, reason) when the scan-query call returns None.
+    def test_passes_when_diagnostic_scan_query_fails(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Keeps independent validation usable when diagnostic scan-query fails.
 
-        Scenario: binary failure; all sub-question checks are skipped.
+        Scenario: AST derives the expected caller count while the queried tool is
+        unavailable. The tool cannot become a ground-truth dependency.
         """
         task = self._task([{"id": "sq1", "match": "integer_extract", "ground_truth": {"count": 1}}])
 
-        with patch.object(script_gen_bench, "run_scan_query", return_value=None):
-            ok, live_gt, _ = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+        with (
+            patch.object(script_gen_bench, "_rv_ast_value", return_value=(1, True, None)),
+            patch.object(script_gen_bench, "run_scan_query", return_value=None),
+        ):
+            ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert live_gt == {"sq1": {"count": 1}}
+        assert reason == ""
+
+    def test_fails_closed_when_ast_source_is_unavailable(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Rejects tool-derived fallback when an independent RV source is absent."""
+        task = self._task([{"id": "sq1", "match": "integer_extract", "ground_truth": {"count": 3}}])
+        payload = {"count": 3, "called_by": []}
+
+        with (
+            patch.object(script_gen_bench, "_rv_ast_value", return_value=(None, False, None)),
+            patch.object(script_gen_bench, "run_scan_query", return_value=payload),
+        ):
+            ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is False
         assert live_gt is None
+        assert "independent AST source is unavailable" in reason
 
 
 # ===========================================================================
@@ -951,6 +983,45 @@ class TestValidateOss:
 
         assert ok is True
         assert reason == ""
+
+    def test_uncovered_allows_top_limited_scan_payload(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Keeps the AST oracle authoritative when scan-query returns a capped list.
+
+        Scenario: ``uncovered --top 1`` reports the full total but returns one
+        displayed symbol.  The payload is coherent when the requested top limit
+        equals the returned list length; rejecting it prevents the independent
+        oracle from validating otherwise valid benchmark ground truth.
+        """
+        task = {
+            **self._task_uncovered(1, ["orphan"]),
+            "expected_queries": [{"cmd": "uncovered", "args": ["--top", "1"]}],
+        }
+        self._write_uncovered(tmp_path, ["orphan"], ["used"])
+        payload = {"total": 3, "uncovered": [{"qualified_name": "orphan"}]}
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+            ok, live_gt, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt["uncovered_count"] == 1
+        assert live_gt["uncovered_count_scan"] == 3
+
+    def test_uncovered_rejects_incomplete_top_limited_scan_payload(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Rejects a capped response that returns fewer rows than its declared cap."""
+        task = {
+            **self._task_uncovered(1, ["orphan"]),
+            "expected_queries": [{"cmd": "uncovered", "args": ["--top", "2"]}],
+        }
+        self._write_uncovered(tmp_path, ["orphan"], ["used"])
+        payload = {"total": 3, "uncovered": [{"qualified_name": "orphan"}]}
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+            ok, live_gt, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt is None
+        assert reason == "uncovered total conflicts with symbol count"
 
     def test_uncovered_fails_on_symbol_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Returns failure when the AST oracle's uncovered set differs from GT.
@@ -1394,6 +1465,110 @@ class TestQualifiedCallerOracle:
         qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg.foo::func", tmp_path)
         assert qualified == {"pkg.bar::use_target"}
 
+    def test_bare_call_imported_from_external_module_is_not_credited(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Excludes a bare call whose import binding targets a different module.
+
+        Scenario: a project calls an external ``is_overridden`` after importing
+        it directly.  Matching its spelling alone would corrupt the canonical
+        caller set for the in-repository function with the same name.
+        """
+        (tmp_path / "caller.py").write_text(
+            "from external.helpers import is_overridden\n\n\ndef use_external():\n    is_overridden()\n"
+        )
+
+        qualified, loose, err = script_gen_bench._walk_caller_sets("pkg.model_helpers::is_overridden", tmp_path)
+
+        assert err is None
+        assert qualified == set()
+        assert loose == {"caller::use_external"}
+
+    def test_bare_call_imported_from_target_module_is_credited(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Credits a bare call when its import binding is the target module.
+
+        Scenario: a direct ``from pkg.model_helpers import is_overridden``
+        import is an unambiguous reference to the target despite not using a
+        module-qualified receiver.
+        """
+        (tmp_path / "caller.py").write_text(
+            "from pkg.model_helpers import is_overridden\n\n\ndef use_target():\n    is_overridden()\n"
+        )
+
+        qualified, _loose, err = script_gen_bench._walk_caller_sets("pkg.model_helpers::is_overridden", tmp_path)
+
+        assert err is None
+        assert qualified == {"caller::use_target"}
+
+    def test_bare_call_imported_through_one_hop_target_reexport_is_credited(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Credits a target re-export but excludes the same name from an external module.
+
+        Scenario: a package re-exports its target function once, then consumers
+        import that facade.  The source resolver must follow the in-repository
+        re-export while preserving the external-import exclusion.
+        """
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "model_helpers.py").write_text("def is_overridden():\n    pass\n")
+        (package / "exports.py").write_text("from pkg.model_helpers import is_overridden\n")
+        (tmp_path / "target_user.py").write_text(
+            "from pkg.exports import is_overridden\n\n\ndef use_target_reexport():\n    is_overridden()\n"
+        )
+        (tmp_path / "external_user.py").write_text(
+            "from external.helpers import is_overridden\n\n\ndef use_external():\n    is_overridden()\n"
+        )
+
+        qualified, loose, err = script_gen_bench._walk_caller_sets("pkg.model_helpers::is_overridden", tmp_path)
+
+        assert err is None
+        assert qualified == {"target_user::use_target_reexport"}
+        assert loose == {"external_user::use_external", "target_user::use_target_reexport"}
+
+    def test_unbound_bare_call_preserves_local_fallback(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Preserves the conservative fallback for a bare call with no import binding.
+
+        Scenario: local same-module calls are unresolved statically but remain
+        valid caller candidates; import awareness must not erase them.
+        """
+        (tmp_path / "caller.py").write_text("def use_local():\n    is_overridden()\n")
+
+        qualified, _loose, err = script_gen_bench._walk_caller_sets("pkg.model_helpers::is_overridden", tmp_path)
+
+        assert err is None
+        assert qualified == {"caller::use_local"}
+
+    def test_function_local_external_import_does_not_suppress_sibling_local_call(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Applies an external import binding only inside its lexical function."""
+        (tmp_path / "caller.py").write_text(
+            "def use_external():\n"
+            "    from external.helpers import is_overridden\n"
+            "    is_overridden()\n\n"
+            "def use_local():\n"
+            "    is_overridden()\n"
+        )
+
+        qualified, loose, err = script_gen_bench._walk_caller_sets("pkg.model_helpers::is_overridden", tmp_path)
+
+        assert err is None
+        assert qualified == {"caller::use_local"}
+        assert loose == {"caller::use_external", "caller::use_local"}
+
+    def test_alias_of_different_target_symbol_is_not_credited(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Rejects an alias whose module matches but original symbol does not."""
+        (tmp_path / "caller.py").write_text(
+            "from pkg.model_helpers import other as is_overridden\n\ndef use_other():\n    is_overridden()\n"
+        )
+
+        qualified, loose, err = script_gen_bench._walk_caller_sets("pkg.model_helpers::is_overridden", tmp_path)
+
+        assert err is None
+        assert qualified == set()
+        assert loose == {"caller::use_other"}
+
     def test_emitted_module_paths_carry_no_src_prefix(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """A caller under a `src/` layout is emitted in the repo namespace, not with a `src.` prefix.
 
@@ -1440,6 +1615,310 @@ class TestQualifiedCallerOracle:
 
         assert qualified == {"pkg.sub.mod::src_caller", "flatpkg.mod::flat_caller"}
         assert all(not c.startswith("src.") for c in qualified)
+
+
+# ===========================================================================
+# Provider-neutral generator validators added for B0 oracle remediation
+# ===========================================================================
+
+
+class TestValidateReviewAssistanceAst:
+    """Contract: supported review commands obtain ground truth from AST, not scan-query."""
+
+    def _task(self, cmd: str, args: list[str], match: str, ground_truth: dict[str, Any]) -> dict[str, Any]:
+        """Build one review task/sub-question for an AST oracle contract."""
+        return {
+            "type": "review_assistance",
+            "expected_queries": [{"cmd": cmd, "args": args}],
+            "sub_questions": [{"id": "sq", "match": match, "ground_truth": ground_truth}],
+        }
+
+    def test_undocumented_uses_ast_over_conflicting_scan_payload(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Uses the AST symbol set even when the scan diagnostic disagrees."""
+        (tmp_path / "m.py").write_text("def public():\n    pass\n")
+        task = self._task("undocumented", [], "symbol_name_set", {"symbols": ["public"]})
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value={"total": 0, "undocumented": []}):
+            ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == {"sq": {"symbols": ["public"]}}
+
+    def test_uncovered_uses_ast_over_conflicting_scan_payload(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Uses the AST uncovered set even when scan-query omits the symbol."""
+        (tmp_path / "m.py").write_text("def orphan():\n    pass\n")
+        task = self._task("uncovered", [], "symbol_name_set", {"symbols": ["orphan"]})
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value={"total": 0, "uncovered": []}):
+            ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == {"sq": {"symbols": ["orphan"]}}
+
+    def test_rdeps_uses_ast_over_conflicting_scan_payload(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Counts direct module importers from the AST rather than scan output."""
+        (tmp_path / "hub.py").write_text("value = 1\n")
+        (tmp_path / "consumer.py").write_text("import hub\n")
+        task = self._task("rdeps", ["hub"], "integer_extract", {"count": 1})
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value={"imported_by": []}):
+            ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == {"sq": {"count": 1}}
+
+    def test_fn_rdeps_uses_ast_over_conflicting_scan_payload(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Counts qualified callers from the AST rather than scan output."""
+        (tmp_path / "m.py").write_text("def target():\n    pass\n\n\ndef caller():\n    target()\n")
+        task = self._task("fn-rdeps", ["m::target"], "integer_extract", {"count": 1})
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value={"count": 0, "called_by": []}):
+            ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == {"sq": {"count": 1}}
+
+    @pytest.mark.parametrize(
+        "cmd,source,expected_symbols",
+        [
+            ("undocumented", "def alpha():\n    pass\n\n\ndef beta():\n    pass\n", ["alpha"]),
+            ("uncovered", "def alpha():\n    pass\n\n\ndef beta():\n    pass\n", ["alpha"]),
+        ],
+    )
+    def test_ast_symbol_commands_count_full_set_but_cap_symbol_results(
+        self,
+        script_gen_bench: Any,
+        tmp_path: Path,
+        cmd: str,
+        source: str,
+        expected_symbols: list[str],
+    ) -> None:
+        """Uses full AST cardinality for counts and requested cardinality for symbols.
+
+        Scenario: the independent oracle finds two symbols.  A count question
+        must receive ``2``; a symbol-set question with one stored symbol must
+        receive only its requested first canonical symbol, matching the review
+        task's intentional result cap.
+        """
+        (tmp_path / "m.py").write_text(source)
+        conflicting_scan_payload = {cmd: [], "total": 0}
+        count_task = self._task(cmd, [], "integer_extract", {"count": 2})
+        symbols_task = self._task(cmd, [], "symbol_name_set", {"symbols": expected_symbols})
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value=conflicting_scan_payload):
+            count_ok, count_gt, count_reason = script_gen_bench._validate_rv(
+                count_task, MagicMock(), tmp_path / "idx.json", tmp_path
+            )
+            symbols_ok, symbols_gt, symbols_reason = script_gen_bench._validate_rv(
+                symbols_task, MagicMock(), tmp_path / "idx.json", tmp_path
+            )
+
+        assert count_ok is True
+        assert count_reason == ""
+        assert count_gt == {"sq": {"count": 2}}
+        assert symbols_ok is True
+        assert symbols_reason == ""
+        assert symbols_gt == {"sq": {"symbols": expected_symbols}}
+
+    @pytest.mark.parametrize(
+        "task,expected",
+        [
+            (
+                {
+                    "type": "review_assistance",
+                    "expected_queries": [{"cmd": "rdeps", "args": ["m"]}],
+                },
+                True,
+            ),
+            (
+                {
+                    "type": "review_assistance",
+                    "expected_queries": [{"cmd": "unsupported", "args": []}],
+                },
+                False,
+            ),
+            (
+                {
+                    "type": "debug_from_trace",
+                },
+                True,
+            ),
+        ],
+    )
+    def test_refresh_is_oracle_backed_only_for_supported_review_commands(
+        self, script_gen_bench: Any, task: dict[str, Any], expected: bool
+    ) -> None:
+        """Allows plain refresh only when every review answer has an AST oracle."""
+        assert script_gen_bench._update_is_oracle_backed(task) is expected
+
+
+class TestValidateWorkflowTaskFamilies:
+    """Contract: debug, feature, and real-issue tasks have offline canonical validators."""
+
+    def test_debug_requires_exact_safe_path_qualified_symbol_and_line(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Accepts only the exact AST anchor requested by a debug task."""
+        source = tmp_path / "src" / "pkg" / "mod.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("class Anchor:\n    def locate(self):\n        pass\n")
+        task = {
+            "type": "debug_from_trace",
+            "primary_module": "pkg.mod",
+            "symbol_name": "Anchor.locate",
+            "ground_truth": {"file": "src/pkg/mod.py", "function": "locate", "start_line": 2},
+        }
+
+        ok, live_gt, reason = script_gen_bench._validate_debug(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == task["ground_truth"]
+
+    @pytest.mark.parametrize(
+        "ground_truth,reason_fragment",
+        [
+            ({"file": "../outside.py", "function": "locate", "start_line": 2}, "safe"),
+        ],
+    )
+    def test_debug_rejects_noncanonical_anchor(
+        self,
+        script_gen_bench: Any,
+        tmp_path: Path,
+        ground_truth: dict[str, Any],
+        reason_fragment: str,
+    ) -> None:
+        """Rejects an incorrect line or a path that escapes the target repository."""
+        source = tmp_path / "src" / "pkg" / "mod.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("class Anchor:\n    def locate(self):\n        pass\n")
+        task = {
+            "type": "debug_from_trace",
+            "primary_module": "pkg.mod",
+            "symbol_name": "Anchor.locate",
+            "ground_truth": ground_truth,
+        }
+
+        ok, live_gt, reason = script_gen_bench._validate_debug(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt is None
+        assert reason_fragment in reason
+
+    def test_debug_wrong_line_returns_independent_live_gt_for_update(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Returns the AST line so a target-version relock can refresh stale debug GT."""
+        source = tmp_path / "src" / "pkg" / "mod.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("class Anchor:\n    def locate(self):\n        pass\n")
+        task = {
+            "type": "debug_from_trace",
+            "primary_module": "pkg.mod",
+            "symbol_name": "Anchor.locate",
+            "ground_truth": {"file": "src/pkg/mod.py", "function": "locate", "start_line": 3},
+        }
+
+        ok, live_gt, reason = script_gen_bench._validate_debug(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt == {"file": "src/pkg/mod.py", "function": "locate", "start_line": 2}
+        assert "start_line" in reason
+
+    def test_feature_requires_exact_safe_file_and_entry_point(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Accepts a feature extension point only when its AST definition exists."""
+        source = tmp_path / "src" / "pkg" / "feature.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("class Extension:\n    def hook(self):\n        pass\n")
+        task = {
+            "type": "feature_scaffolding",
+            "primary_module": "pkg.feature",
+            "ground_truth": {"primary_file": "src/pkg/feature.py", "entry_point": "Extension.hook"},
+        }
+
+        ok, live_gt, reason = script_gen_bench._validate_feature(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == task["ground_truth"]
+
+    def test_feature_rejects_missing_entry_point(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Rejects a feature task whose declared extension point does not exist."""
+        source = tmp_path / "src" / "pkg" / "feature.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("class Extension:\n    def hook(self):\n        pass\n")
+        task = {
+            "type": "feature_scaffolding",
+            "primary_module": "pkg.feature",
+            "ground_truth": {"primary_file": "src/pkg/feature.py", "entry_point": "Extension.missing"},
+        }
+
+        ok, live_gt, reason = script_gen_bench._validate_feature(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt is None
+        assert "entry_point" in reason
+
+    def _real_issue_task(self, scoreable: bool, files_changed: list[str]) -> dict[str, Any]:
+        """Build a canonical real-issue task with immutable offline provenance."""
+        return {
+            "type": "real_issue",
+            "issue_number": 42,
+            "issue_url": "https://github.com/example/project/issues/42",
+            "pr_number": 43,
+            "pr_url": "https://github.com/example/project/pull/43",
+            "scoreable": scoreable,
+            "note": "legacy paths intentionally unscoreable" if not scoreable else None,
+            "ground_truth": {"file_count": len(files_changed), "files_changed": files_changed},
+            "provenance": {
+                "source": "github_pull_request_files",
+                "pr_head_sha": "a" * 40,
+                "merge_commit_sha": "b" * 40,
+                "changed_file_count": len(files_changed) + 1,
+                "selection": "non_test_python_files",
+            },
+        }
+
+    def test_real_issue_validates_scoreable_paths_and_locked_provenance(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Accepts an applicable historical issue with safe paths and immutable provenance."""
+        source = tmp_path / "src" / "pkg" / "fix.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("value = 1\n")
+        task = self._real_issue_task(True, ["src/pkg/fix.py"])
+
+        ok, live_gt, reason = script_gen_bench._validate_real_issue(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == task["ground_truth"]
+
+    def test_real_issue_preserves_explicitly_unscoreable_historical_paths(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Allows a documented legacy task whose verified paths do not exist in this checkout."""
+        task = self._real_issue_task(False, ["legacy/pkg/fix.py"])
+
+        ok, live_gt, reason = script_gen_bench._validate_real_issue(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert live_gt == task["ground_truth"]
+
+    def test_real_issue_rejects_missing_scoreable_path(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Rejects a scoreable issue when its canonical changed path is absent locally."""
+        task = self._real_issue_task(True, ["src/pkg/missing.py"])
+
+        ok, live_gt, reason = script_gen_bench._validate_real_issue(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt is None
+        assert "does not exist" in reason
 
 
 # ===========================================================================
@@ -1681,9 +2160,9 @@ class TestMainUnitBehavior:
     def test_main_exits_when_no_repo_path(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
-        """main() exits 1 when no --repo-path and no default_path in tasks file.
+        """main() exits 1 when no --repo-path and no local_path in tasks file.
 
-        Scenario: tasks file has no repo.default_path; user forgot --repo-path.
+        Scenario: tasks file has no repo.local_path; user forgot --repo-path.
         """
         tasks_file = tmp_path / "tasks.json"
         tasks_file.write_text(json.dumps({"repo": {}, "tasks": []}))
@@ -1750,13 +2229,12 @@ class TestMainUnitBehavior:
                 script_gen_bench.main(repo_path=str(tmp_path))
         assert exc_info.value.code == 1
 
-    def test_main_skips_unknown_task_type(
+    def test_main_fails_closed_on_unknown_task_type(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ) -> None:
-        """main() prints SKIP for tasks with an unrecognised type field.
+        """main() prints SKIP and exits nonzero for an unrecognised type.
 
-        Scenario: task list contains a type not in VALIDATORS; main continues
-        rather than crashing.
+        Scenario: a missing validator must not produce a green canonical B0 run.
         """
         tasks_file = tmp_path / "tasks.json"
         tasks_file.write_text(
@@ -1778,12 +2256,91 @@ class TestMainUnitBehavior:
             patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
             patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
         ):
-            # Should not raise or exit 1 for unknown type alone
-            script_gen_bench.main(repo_path=str(tmp_path))
+            with pytest.raises(SystemExit) as exc_info:
+                script_gen_bench.main(repo_path=str(tmp_path))
 
         out = capsys.readouterr().out
+        assert exc_info.value.code == 1
         assert "SKIP" in out
         assert "X-01" in out
+
+    def test_main_update_aborts_on_unknown_task_type(
+        self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Fails update mode without rewriting a suite that contains a SKIP."""
+        tasks_file = tmp_path / "tasks.json"
+        original = json.dumps(
+            {
+                "repo": {"name": "fixture"},
+                "tasks": [{"id": "X-01", "type": "unknown_type", "ground_truth": {}}],
+            }
+        )
+        tasks_file.write_text(original)
+        monkeypatch.setattr(script_gen_bench, "TASKS_FILE", tasks_file)
+        fake_sq = tmp_path / "scan-query"
+        fake_sq.write_text("#!/bin/sh")
+        fake_index = tmp_path / "index.json"
+        fake_index.write_text("{}")
+
+        with (
+            patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
+            patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            script_gen_bench.main(repo_path=str(tmp_path), update=True)
+
+        assert exc_info.value.code == 1
+        assert tasks_file.read_text() == original
+        assert "Update aborted" in capsys.readouterr().out
+
+    def test_main_reports_pass_fail_skip_counts_separately(
+        self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Reports each terminal validation state without treating a skip as a pass.
+
+        Scenario: one supported task passes, another fails, and an unknown task
+        skips.  The human-facing summary must preserve the exact distribution
+        rather than deriving passes from ``total - failures``.
+        """
+        tasks_file = tmp_path / "tasks.json"
+        tasks_file.write_text(
+            json.dumps(
+                {
+                    "repo": {},
+                    "tasks": [
+                        {"id": "P-01", "type": "passing", "ground_truth": {}},
+                        {"id": "F-01", "type": "failing", "ground_truth": {}},
+                        {"id": "S-01", "type": "unknown", "ground_truth": {}},
+                    ],
+                }
+            )
+        )
+        monkeypatch.setattr(script_gen_bench, "TASKS_FILE", tasks_file)
+        fake_sq = tmp_path / "scan-query"
+        fake_sq.write_text("#!/bin/sh")
+        fake_index = tmp_path / "index.json"
+        fake_index.write_text("{}")
+
+        with (
+            patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
+            patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
+            patch.object(
+                script_gen_bench,
+                "VALIDATORS",
+                {
+                    "passing": lambda *_args: (True, {}, ""),
+                    "failing": lambda *_args: (False, {}, "intentional failure"),
+                },
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            script_gen_bench.main(repo_path=str(tmp_path))
+
+        assert exc_info.value.code == 1
+        out = capsys.readouterr().out
+        assert "1/3 passed" in out
+        assert "1 failed" in out
+        assert "1 skipped" in out
 
     def test_main_filters_by_task_id(
         self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

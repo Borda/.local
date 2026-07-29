@@ -115,7 +115,7 @@ reducing tool call count, elapsed time, and context consumption.
 
   A run is marked success=False when any of these occur:
     timeout          — claude subprocess exceeded its per-model wall-clock limit
-                       (haiku 210 s / sonnet 420 s / opus 600 s; see _MODEL_TIMEOUT)
+                       (haiku 210 s / sonnet 420 s / opus 600 s; see MODEL_TIMEOUT)
     non-zero exit    — claude returned a non-success subtype in the result event; stderr is captured as error
     codemap no-call  — codemap arm completed without ever invoking the Skill tool; this means the agent fell
                        back to grep/bash entirely, defeating the purpose of the codemap arm
@@ -216,7 +216,6 @@ import re
 import statistics
 import subprocess
 import sys
-import threading
 import time
 from collections import defaultdict
 from collections.abc import Iterator
@@ -229,25 +228,36 @@ import fire
 import pandas as pd
 
 from rich.console import Console as _Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+
+# benchmarks/ is not a package; make the sibling _utilities module importable
+# regardless of how this script is launched (direct path, symlink, or any cwd).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _utilities import (  # noqa: E402
+    MODELS,
+    RESULTS_DIR,
+    codemap_bin_on_path,
+    extract_import_targets,
+    iter_py_files,
+    make_progress,
+    module_from_init_chain,
+    parse_result_usage,
+    resolve_index_path,
+    stream_claude,
+    unwrap_tasks,
+)
+from _utilities import MODEL_TIMEOUT  # noqa: E402
+from _utilities import fmt_time, fmt_tok  # noqa: E402
+
+# Re-exported for call-site/test compatibility (tests reference it via this module's namespace).
+from _utilities import resolve_relative_base  # noqa: E402,F401
 
 _console = _Console()
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-RESULTS_DIR = Path("benchmarks/results")
-
-# Model tiers: short name → full model ID (ascending capability / cost)
-MODELS: dict[str, str] = {
-    "haiku": "claude-haiku-4-5",
-    "sonnet": "claude-sonnet-5",
-    "opus": "claude-opus-5",
-}
-
-# Per-model wall-clock timeout (seconds). Opus needs more time for complex reasoning.
-_MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
+# RESULTS_DIR, MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-codemap-bench).
 
 # Cost is the fair cross-arm metric because arms differ in how many tokens they burn to reach the
 # same answer. We use Anthropic's own per-run total_cost_usd (captured from the stream-json result
@@ -277,6 +287,9 @@ def run_cost_usd(r: "BenchmarkRun") -> float:
         0.0
     """
     return getattr(r, "cost_usd", 0.0) or 0.0
+
+
+# fmt_tok now imported from _utilities (shared with run-codemap-bench).
 
 
 # ---------------------------------------------------------------------------
@@ -451,14 +464,14 @@ def count_tokens(text: str) -> int:
 def find_index(repo_path: Path, explicit: Optional[Path]) -> Path:
     """Locate the pre-built codemap index for the target repo.
 
-    Checks ``.cache/codemap/`` first, then ``.cache/scan/``. Within each directory,
-    prefers ``<repo_name>.json``; falls back to the lexicographically first ``*.json`` file.
-    The index is built once by ``scan-index`` and is excluded from benchmark timing; this
-    function only validates it exists before any run starts.
+    Thin adapter over :func:`_utilities.resolve_index_path`: exact ``<repo_name>.json``
+    match (no ``-master``/``-main`` stripping), ``.cache/codemap/`` before ``.cache/scan/``,
+    resolved paths, and a raise on miss. The index is built once by ``scan-index`` and
+    excluded from benchmark timing; this only validates it exists before any run starts.
 
     Args:
         repo_path: Root of the repository to benchmark.
-        explicit: Caller-supplied index path; returned as-is (resolved) when provided.
+        explicit: Caller-supplied index path; returned resolved when provided.
 
     Returns:
         Resolved absolute path to the located index file.
@@ -467,20 +480,7 @@ def find_index(repo_path: Path, explicit: Optional[Path]) -> Path:
         FileNotFoundError: If no index is found under ``.cache/codemap/`` or ``.cache/scan/``
             and ``explicit`` was not provided.
     """
-    if explicit:
-        return explicit.resolve()
-    for cache_dir in (repo_path / ".cache" / "codemap", repo_path / ".cache" / "scan"):
-        preferred = cache_dir / f"{repo_path.name}.json"
-        if preferred.exists():
-            return preferred.resolve()
-        candidates = sorted(cache_dir.glob("*.json"))
-        if candidates:
-            return candidates[0].resolve()
-    raise FileNotFoundError(
-        f"No codemap index found in {repo_path / '.cache'}.\n"
-        f"Build it first (one-time, not measured):\n"
-        f"  python plugins/codemap-py/bin/scan-index --root {repo_path}"
-    )
+    return resolve_index_path(repo_path, explicit, strip_suffixes=False, missing="raise")
 
 
 def check_semble_mcp() -> None:
@@ -571,27 +571,28 @@ def _iter_py_files(root: Path) -> Iterator[Path]:
     Yields:
         Absolute paths to candidate Python source files.
     """
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _SKIP_DIR_PARTS]
-        for name in filenames:
-            if name.endswith(".py"):
-                yield Path(dirpath) / name
+    yield from iter_py_files(root, skip=_SKIP_DIR_PARTS)
 
 
 def _derive_module_name(py_path: Path, root: Path) -> Optional[str]:
-    """Derive the dotted module name of a file from its ``__init__.py`` package chain.
+    """Derive the dotted module name of a file in scan-index's namespace.
 
-    Walks parent directories upward while each contains an ``__init__.py`` to find the source
-    root, then joins the remaining path components. Works for both src-layout and flat layouts
-    without consulting the codemap index (fully independent ground-truth derivation).
+    A file inside a package (its parent holds an ``__init__.py``) is named via its ``__init__.py``
+    chain (:func:`module_from_init_chain`, scan-index Strategy 2). A loose file with no package parent
+    is named by its path relative to *root* (separators → dots, ``.py`` dropped) — the same way
+    scan-index (``path_to_module``) names a file outside any ``__init__`` chain
+    (``examples.pytorch.domain_templates.imagenet``, not the bare stem ``imagenet``). Aligning the two
+    keeps the AST oracle and the scan-index oracle in one namespace, so a loose importer no longer
+    fires both ``missing_in_index`` and ``missing_in_ast`` as a spurious ``gt-divergence`` (review C-5).
 
     Args:
         py_path: Absolute path to a ``.py`` file inside ``root``.
-        root: Repository root (used only as a walk boundary).
+        root: Scan root the loose-file dotted name is taken relative to.
 
     Returns:
-        Dotted module name (e.g. ``lightning.pytorch.trainer.trainer``); ``__init__.py`` files
-        resolve to their package name. ``None`` when no name can be derived.
+        Dotted module name (e.g. ``lightning.pytorch.trainer.trainer`` for an in-package file,
+        ``examples.pytorch.domain_templates.imagenet`` for a loose file). ``None`` when no name can
+        be derived.
 
     Examples:
         >>> import tempfile, pathlib
@@ -600,48 +601,27 @@ def _derive_module_name(py_path: Path, root: Path) -> Optional[str]:
         ...     _ = (r / "pkg").mkdir()
         ...     _ = (r / "pkg" / "__init__.py").write_text("")
         ...     _ = (r / "pkg" / "mod.py").write_text("")
-        ...     _derive_module_name(r / "pkg" / "mod.py", r)
-        'pkg.mod'
+        ...     _ = (r / "examples").mkdir()
+        ...     _ = (r / "examples" / "demo.py").write_text("")
+        ...     (
+        ...         _derive_module_name(r / "pkg" / "mod.py", r),
+        ...         _derive_module_name(r / "examples" / "demo.py", r),
+        ...     )
+        ('pkg.mod', 'examples.demo')
     """
-    parts: list[str] = []
-    if py_path.stem != "__init__":
-        parts.append(py_path.stem)
-    directory = py_path.parent
-    while (directory / "__init__.py").exists() and directory != directory.parent:
-        parts.append(directory.name)
-        directory = directory.parent
-    if not parts:
-        return None
-    parts.reverse()
-    return ".".join(parts)
+    # In-package file: name via the __init__ chain (scan-index Strategy 2), unchanged.
+    if (py_path.parent / "__init__.py").exists():
+        return module_from_init_chain(py_path) or None
+    # Loose file (no package parent): name relative to the scan root — matches how scan-index names
+    # files outside any __init__ chain, so both oracles share one namespace instead of the bare stem.
+    try:
+        rel_dotted = ".".join(py_path.relative_to(root).with_suffix("").parts)
+    except ValueError:
+        return module_from_init_chain(py_path) or None
+    return rel_dotted or None
 
 
-def _resolve_relative_base(package: str, level: int, module: Optional[str]) -> Optional[str]:
-    """Resolve a relative ``from`` import to its absolute base module.
-
-    Args:
-        package: Dotted package containing the importing module (its ``__package__``).
-        level: Number of leading dots (1 = current package, 2 = parent, ...).
-        module: Text after the dots (``from ..a.b import x`` → ``"a.b"``); ``None`` for
-            ``from . import x``.
-
-    Returns:
-        Absolute dotted base module, or ``None`` when the level walks above the package root.
-
-    Examples:
-        >>> _resolve_relative_base("a.b", 1, "c")
-        'a.b.c'
-        >>> _resolve_relative_base("a.b.c", 2, "u") is None  # regular module's package is a.b
-        False
-    """
-    base_parts = package.split(".") if package else []
-    ascend = level - 1
-    if ascend > len(base_parts):
-        return None
-    kept = base_parts[: len(base_parts) - ascend] if ascend else base_parts
-    if module:
-        kept = kept + module.split(".")
-    return ".".join(kept) if kept else None
+# resolve_relative_base now imported from _utilities (shared with run-codemap-cli).
 
 
 def _extract_import_targets(tree: ast.Module, package: str, all_modules: set[str]) -> set[str]:
@@ -660,22 +640,8 @@ def _extract_import_targets(tree: ast.Module, package: str, all_modules: set[str
     Returns:
         Set of internal dotted module names the file depends on.
     """
-    targets: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name in all_modules:
-                    targets.add(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            base = node.module if node.level == 0 else _resolve_relative_base(package, node.level, node.module)
-            if not base:
-                continue
-            if base in all_modules:
-                targets.add(base)
-            for alias in node.names:
-                if alias.name != "*" and f"{base}.{alias.name}" in all_modules:
-                    targets.add(f"{base}.{alias.name}")
-    return targets
+    # keep=all_modules filters to internal modules; default resolve+credit matches this lane.
+    return extract_import_targets(tree, package=package, keep=all_modules)
 
 
 def _scan_repo_importers(root: Path) -> dict[str, set[str]]:
@@ -1587,11 +1553,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         Returns:
             A copy of the process environment with PATH (and, for structural arms, the opt-out).
         """
-        env = os.environ.copy()
-        plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap-py"
-        bin_dirs = sorted(plugin_cache.glob("*/bin"), reverse=True)  # latest version first
-        if bin_dirs:
-            env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")
+        env = codemap_bin_on_path(os.environ.copy())
         if arm in ("codemap", "combined"):
             env["SCAN_NO_AUTOBUILD"] = "1"
         return env
@@ -1626,51 +1588,29 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         pending_codemap_ids: set[str] = set()  # all codemap skill calls (for erec corpus)
         pending_rdeps_ids: set[str] = set()  # codemap rdeps calls specifically (for sc)
         pending_semble_ids: set[str] = set()  # all semble MCP calls (for erec corpus)
-        t_start = time.monotonic()
-        _last_update = 0.0
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=str(cwd if cwd is not None else self.repo_path),
-                env=self._subprocess_env(arm),
-            )
-            kill_timer = threading.Timer(self.timeout, proc.kill)
-            kill_timer.start()
-            try:
-                assert proc.stdout is not None
-                for raw_line in proc.stdout:
-                    ts = time.monotonic()
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    self._handle_event(
-                        event, result, pending, pending_codemap_ids, pending_rdeps_ids, pending_semble_ids, ts
-                    )
-                    if update_fn and (ts - _last_update) >= 0.5:
-                        update_fn(ts - t_start, result)
-                        _last_update = ts
-                stderr_out = proc.stderr.read() if proc.stderr else ""
-                proc.wait(timeout=10)
-                if not result.success and not result.error and stderr_out:
-                    result.error = stderr_out.strip()[:300]
-            finally:
-                kill_timer.cancel()
-            if proc.returncode and proc.returncode < 0 and not result.error:
-                result.error = f"timeout ({self.timeout}s)"
-        except subprocess.TimeoutExpired:
-            proc.kill()
+
+        def _on_event(event: dict, ts: float) -> None:
+            self._handle_event(event, result, pending, pending_codemap_ids, pending_rdeps_ids, pending_semble_ids, ts)
+
+        outcome = stream_claude(
+            cmd,
+            timeout=self.timeout,
+            cwd=cwd if cwd is not None else self.repo_path,
+            env=self._subprocess_env(arm),
+            on_event=_on_event,
+            update_fn=(lambda elapsed: update_fn(elapsed, result)) if update_fn else None,
+        )
+        # Map mechanics onto the run, preserving this lane's error precedence:
+        # stderr (on a non-success run) → timeout → any unexpected exception.
+        result.elapsed_s = outcome.elapsed_s
+        if not result.success and not result.error and outcome.stderr:
+            result.error = outcome.stderr.strip()[:300]
+        if outcome.returncode is not None and outcome.returncode < 0 and not result.error:
             result.error = f"timeout ({self.timeout}s)"
-        except Exception as exc:  # noqa: BLE001
-            result.error = str(exc)[:300]
-        finally:
-            result.elapsed_s = time.monotonic() - t_start
+        if outcome.exc_timeout:
+            result.error = f"timeout ({self.timeout}s)"
+        if outcome.error and not result.error:
+            result.error = outcome.error
 
     def _handle_event(
         self,
@@ -1755,18 +1695,15 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             if any(b.get("type") == "tool_result" for b in event.get("message", {}).get("content", [])):
                 result.last_tool_text_offset = len(result.output_text)
         elif etype == "result":
-            usage = event.get("usage", {})
-            # input_tokens is only the uncached portion; sum all parts for real context usage
-            result.cache_creation_tokens = usage.get("cache_creation_input_tokens", 0)
-            result.cache_read_tokens = usage.get("cache_read_input_tokens", 0)
-            result.input_tokens = usage.get("input_tokens", 0) + result.cache_creation_tokens + result.cache_read_tokens
-            result.output_tokens = usage.get("output_tokens", 0)
-            # Anthropic's own cost for this run — current prices, cache-aware, per model.
-            result.cost_usd = event.get("total_cost_usd", 0.0) or 0.0
-            subtype = event.get("subtype", "")
-            result.success = subtype == "success"
+            u = parse_result_usage(event)
+            result.cache_creation_tokens = u.cache_creation_tokens
+            result.cache_read_tokens = u.cache_read_tokens
+            result.input_tokens = u.input_tokens
+            result.output_tokens = u.output_tokens
+            result.cost_usd = u.cost_usd
+            result.success = u.success
             if not result.success:
-                result.error_type = subtype  # e.g. "error_max_turns", "error_non_zero_exit"
+                result.error_type = u.subtype  # e.g. "error_max_turns", "error_non_zero_exit"
 
     def _on_tool_use(
         self,
@@ -2038,7 +1975,7 @@ class Report:
     ]
 
     @staticmethod
-    def _fmt_tokens(v: float) -> str:
+    def fmt_tokens(v: float) -> str:
         return f"{v / 1000:.1f}k"
 
     @staticmethod
@@ -2069,9 +2006,9 @@ class Report:
     _METRICS = [
         ("elapsed_s", "Elapsed (s)", _fmt_s),
         ("cost_usd", "Cost ($)", _fmt_usd),
-        ("input_tokens", "Input tokens (k)", _fmt_tokens),
+        ("input_tokens", "Input tokens (k)", fmt_tokens),
         ("tool_calls", "Tool calls", _fmt_int),
-        ("tool_result_tokens", "Tool result tokens (k)", _fmt_tokens),
+        ("tool_result_tokens", "Tool result tokens (k)", fmt_tokens),
         ("tool_elapsed_s", "Tool time (s)", _fmt_s),
     ]
 
@@ -2335,7 +2272,7 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
     cost_part = f"${_cost:6.3f}" if _cost else "   $—  "  # omit $ when total_cost_usd absent
     return (
         f"[{run_n:0{len(str(total_runs))}}/{total_runs}] {task_num} ({difficulty}) | {model_short:<6} | {arm:<8}"
-        f" | time={result.elapsed_s:5.1f}s | {cost_part} | in={result.input_tokens / 1000:5.1f}k out={result.output_tokens:4} | calls={result.tools.total:3}"
+        f" | time={fmt_time(result.elapsed_s):>6} | {cost_part} | tok: in={fmt_tok(result.input_tokens):>6} out={fmt_tok(result.output_tokens):>6} | calls={result.tools.total:3}"
         f" (Gp={tc.grep:2}; Gb={tc.glob:2}; Bh={tc.bash:2}; Sk={tc.skill:2}; Sm={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2}; idx={tc.index_reads:2})"
         f"{quality_suffix}"
         f"{error_suffix}{degenerate_note}"
@@ -2403,7 +2340,7 @@ class Benchmark:
         metadata: dict,
         update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
     ) -> BenchmarkRun:
-        runner = ModelRunner(model_short, model_id, self.repo_path, timeout=_MODEL_TIMEOUT.get(model_short, 300))
+        runner = ModelRunner(model_short, model_id, self.repo_path, timeout=MODEL_TIMEOUT.get(model_short, 300))
         result = runner.run(task, arm, update_fn=update_fn)
         # Build corpora for v2 quality scoring.
         # erec uses agent-text only — tool outputs excluded so codemap arm erec measures
@@ -2508,13 +2445,7 @@ class Benchmark:
     def run(self, metadata: dict) -> list[BenchmarkRun]:
         """Execute all benchmark runs and return the accumulated results."""
         total_runs = len(self.tasks) * len(self.arms) * len(self.models) * self.repeat
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=_console,
-        ) as progress:
+        with make_progress(_console) as progress:
             outer = progress.add_task("running", total=total_runs)
             for run_n, (task, model_short, model_id, arm, _) in enumerate(self._iter_combos(), start=1):
                 sub = progress.add_task(f"  {task.id} | {model_short} | {arm}", total=None)
@@ -2528,7 +2459,7 @@ class Benchmark:
                         tool_live = f"B={run.tools.bash} G={run.tools.grep} Sk={run.tools.skill} Sm={run.tools.semble}"
                         progress.update(
                             sub_id,
-                            description=f"  {elapsed / 60:.1f}m calls={calls} {tool_live}",
+                            description=f"  {fmt_time(elapsed)} calls={calls} {tool_live}",
                         )
 
                     return _update
@@ -2643,7 +2574,7 @@ def main(
         sys.exit(f"Tasks file not found: {tasks_file}")
     with tasks_file.open() as f:
         raw = json.load(f)
-        task_list = raw["tasks"] if isinstance(raw, dict) else raw
+        task_list = unwrap_tasks(raw)
         all_tasks: list[Task] = [
             Task(
                 id=t["id"],

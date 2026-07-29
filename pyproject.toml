@@ -35,16 +35,25 @@ line-length = 120
 extend-exclude = [
   ".experiments/",                         # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
   "plugins/codemap-py/tests/data/corpus/", # frozen-grammar fixtures — intentional post-3.11 syntax, parse-errors under py310 target
+  "site/",                                 # MkDocs build output — generated, not source
 ]
 format = {}
 
 [tool.codespell]
 # ignore-words-list: real words codespell misflags — "derails" (not "details")
 ignore-words-list = "derails"
+skip = "./site,./.git"  # MkDocs build output + git internals — generated, not source
 
 [tool.pytest]
 ini_options.testpaths = [ "benchmarks", "plugins" ]
-ini_options.norecursedirs = [ "*.egg", ".*", "build", "dist", "node_modules" ]
+ini_options.norecursedirs = [
+  "*.egg",
+  ".*",
+  "build",
+  "dist",
+  "node_modules",
+  "site",
+]
 ini_options.addopts = [
   "--import-mode=importlib",
   "--color=yes",

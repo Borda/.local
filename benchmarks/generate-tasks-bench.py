@@ -15,7 +15,7 @@ Usage:
     python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update
 
 Requirements:
-    - repo clone with a pre-built codemap index (see tasks-bench.json "repo.default_path")
+    - repo clone with a pre-built codemap index (see tasks-bench.json "repo.local_path")
     - scan-query on PATH or at plugins/codemap-py/bin/scan-query
 """
 
@@ -25,7 +25,6 @@ import ast
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -33,7 +32,15 @@ from typing import Any
 
 import fire
 
-TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
+# benchmarks/ is not a package; make the sibling _utilities module importable
+# regardless of how this script is launched (direct path, symlink, or any cwd).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _utilities import TASKS_BENCH_FILE as TASKS_FILE  # noqa: E402
+from _utilities import find_codemap_bin, git_toplevel, prune_walk_dirs, walk_py_modules  # noqa: E402
+from _utilities import gt_is_pending  # noqa: E402
+from _utilities import module_from_init_chain  # noqa: E402
+from _utilities import resolve_index_path as _util_resolve_index_path  # noqa: E402
 
 # Test-file / test-directory detection — mirrors scan-index ``_TEST_PATH_RE`` so the AST oracle
 # excludes the same test modules scan-query does (review N1). Matched against repo-relative paths.
@@ -81,7 +88,7 @@ def _detect_src_root(repo: Path) -> Path:
 
     Applies scan-index ``detect_src_root`` Strategy 1 (pyproject/setup.cfg ``where = [...]``) then
     Strategy 3 (``<repo>/src`` when it exists without an ``__init__.py``); returns *repo* otherwise.
-    Strategy 2 (the ``__init__.py`` chain) is applied per file by :func:`_module_from_init_chain`, so
+    Strategy 2 (the ``__init__.py`` chain) is applied per file by :func:`module_from_init_chain`, so
     it is intentionally omitted here — a loose module has no package chain to walk.
 
     Args:
@@ -108,47 +115,14 @@ def _detect_src_root(repo: Path) -> Path:
     return repo
 
 
-def _module_from_init_chain(fpath: Path) -> str:
-    """Derive a dotted module name by walking the file's ``__init__.py`` package chain (Strategy 2).
-
-    Ascends from *fpath* while each parent directory is a package (contains ``__init__.py``),
-    collecting package names; the walk stops at the first non-package ancestor — naturally the
-    ``src/`` directory in a src-layout repo or the repo root in a flat layout. Mirrors scan-index
-    ``detect_src_root`` Strategy 2, so the emitted name carries no ``src.`` prefix.
-
-    Args:
-        fpath: Absolute path to a ``.py`` file whose parent directory is a package.
-
-    Returns:
-        Dotted module name; an ``__init__.py`` file resolves to its package name.
-
-    Examples:
-        >>> import tempfile
-        >>> from pathlib import Path
-        >>> with tempfile.TemporaryDirectory() as d:
-        ...     r = Path(d)
-        ...     _ = (r / "pkg").mkdir()
-        ...     _ = (r / "pkg" / "__init__.py").write_text("")
-        ...     _ = (r / "pkg" / "mod.py").write_text("")
-        ...     _module_from_init_chain(r / "pkg" / "mod.py")
-        'pkg.mod'
-    """
-    parts: list[str] = []
-    if fpath.stem != "__init__":
-        parts.append(fpath.stem)
-    directory = fpath.parent
-    while (directory / "__init__.py").exists() and directory != directory.parent:
-        parts.append(directory.name)
-        directory = directory.parent
-    parts.reverse()
-    return ".".join(parts)
+# module_from_init_chain now imported from _utilities (shared with run-codemap-agentic).
 
 
 def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
     """Derive the dotted module name of *fpath* in scan-query's namespace (review N1).
 
     A file inside a package (its parent holds an ``__init__.py``) is named by its ``__init__.py``
-    chain (:func:`_module_from_init_chain`, scan-index Strategy 2); a loose module is named relative
+    chain (:func:`module_from_init_chain`, scan-index Strategy 2); a loose module is named relative
     to *src_root* (scan-index Strategy 1/3), which strips a ``src/`` layout prefix. Both branches emit
     the repo namespace with no ``src.`` prefix, so callers are directly comparable to scan-query — for
     any repo layout, with no hardcoded namespace list.
@@ -173,7 +147,7 @@ def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
         'pkg.mod'
     """
     if (fpath.parent / "__init__.py").exists():
-        return _module_from_init_chain(fpath)
+        return module_from_init_chain(fpath)
     base = src_root if fpath.is_relative_to(src_root) else repo
     return ".".join(fpath.relative_to(base).with_suffix("").parts)
 
@@ -181,28 +155,14 @@ def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
 # ---- BINARY RESOLUTION ----
 
 
-def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
-    """Locate a codemap CLI binary by PATH lookup or plugin directory fallback.
-
-    Args:
-        name: Binary name to find (e.g. "scan-query").
-        plugin_root: Optional project root containing plugins/codemap-py/bin/.
-
-    Returns:
-        Resolved path or None if not found.
-    """
-    which = shutil.which(name)
-    if which:
-        return Path(which)
-    if plugin_root:
-        candidate = plugin_root / "plugins" / "codemap-py" / "bin" / name
-        if candidate.exists():
-            return candidate
-    return None
+# find_codemap_bin now imported from _utilities (shared with run-codemap-cli).
 
 
 def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
     """Resolve the codemap index path, checking both .cache/codemap/ and .cache/scan/.
+
+    Thin adapter over :func:`_utilities.resolve_index_path` (``missing="bare"`` — never
+    raises; may return a not-yet-built path).
 
     Args:
         arg: Explicit --index-path argument; if given, returned as-is.
@@ -211,23 +171,7 @@ def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
     Returns:
         Path to the index JSON (may not exist yet).
     """
-    if arg:
-        return Path(arg)
-    repo_name = repo_path.name
-    stems = [repo_name, repo_name.replace("-master", ""), repo_name.replace("-main", "")]
-    for stem in stems:
-        for cache_dir in (".cache/codemap", ".cache/scan"):
-            p = repo_path / cache_dir / f"{stem}.json"
-            if p.exists():
-                return p
-    for cache_dir in (".cache/codemap", ".cache/scan"):
-        d = repo_path / cache_dir
-        if d.exists():
-            jsons = sorted(d.glob("*.json"))
-            if jsons:
-                return jsons[0]
-    bare = repo_name.replace("-master", "").replace("-main", "")
-    return repo_path / ".cache" / "codemap" / f"{bare}.json"
+    return _util_resolve_index_path(repo_path, arg or None, strip_suffixes=True, missing="bare")
 
 
 # ---- SCAN-QUERY RUNNER ----
@@ -357,9 +301,12 @@ class _QualifiedCallFinder(ast.NodeVisitor):
         target_class: Simple name of the class defining the target method, or None for a
             module-level function target.
         target_simple: Simple name of the target function or method.
+        target_module: Dotted module defining the target function.
         target_module_tail: Last component of the TARGET's module — used to resolve a
             module-level-function attribute call ``mod.func()``. None when unknown.
         rel_module: Structurally derived dotted module path of the file being walked (no ``src.`` prefix).
+        bare_imports: Mapping of lexical scopes to direct-import bindings. Each
+            binding records the source module and original imported name.
         callers: Mutable set accumulating ``"<module>::<scope>"`` caller strings.
     """
 
@@ -367,16 +314,21 @@ class _QualifiedCallFinder(ast.NodeVisitor):
         self,
         target_class: str | None,
         target_simple: str,
+        target_module: str,
         target_module_tail: str | None,
         rel_module: str,
+        bare_imports: dict[tuple[str, ...], dict[str, tuple[str, str]]],
         callers: set[str],
     ) -> None:
         self._target_class = target_class
         self._target_simple = target_simple
+        self._target_module = target_module
         self._target_module_tail = target_module_tail
         self._rel_module = rel_module
+        self._bare_imports = bare_imports
         self._callers = callers
         self._scope_stack: list[str] = []
+        self._scope_kinds: list[str] = []
         self._class_stack: list[str] = []
 
     def _scope(self) -> str:
@@ -384,17 +336,36 @@ class _QualifiedCallFinder(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._scope_stack.append(node.name)
+        self._scope_kinds.append("function")
         self.generic_visit(node)
+        self._scope_kinds.pop()
         self._scope_stack.pop()
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self._scope_stack.append(node.name)
+        self._scope_kinds.append("class")
         self._class_stack.append(node.name)
         self.generic_visit(node)
         self._class_stack.pop()
+        self._scope_kinds.pop()
         self._scope_stack.pop()
+
+    def _bare_import_binding(self, name: str) -> tuple[str, str] | None:
+        """Resolve the nearest lexical direct-import binding for *name*."""
+        inner_function_seen = False
+        for end in range(len(self._scope_stack), 0, -1):
+            kind = self._scope_kinds[end - 1]
+            if kind == "function":
+                inner_function_seen = True
+            # Function bodies do not close over an enclosing class namespace.
+            if kind == "class" and inner_function_seen:
+                continue
+            binding = self._bare_imports.get(tuple(self._scope_stack[:end]), {}).get(name)
+            if binding is not None:
+                return binding
+        return self._bare_imports.get((), {}).get(name)
 
     def _receiver_class(self, recv: ast.expr) -> str | None:
         """Resolve the class simple name of an attribute-call receiver, or None when ambiguous."""
@@ -414,7 +385,15 @@ class _QualifiedCallFinder(ast.NodeVisitor):
         """Return True when *node* is a call to the target that resolves to the target's qualname."""
         func = node.func
         if isinstance(func, ast.Name):
-            return func.id == self._target_simple
+            if func.id != self._target_simple:
+                return False
+            # A direct import binds the bare name to its source module.  Credit only the
+            # target module; an unresolved name deliberately keeps the local-call fallback.
+            binding = self._bare_import_binding(func.id)
+            if binding is None:
+                return True
+            bound_module, imported_name = binding
+            return bound_module == self._target_module and imported_name == self._target_simple
         if isinstance(func, ast.Attribute) and func.attr == self._target_simple:
             if self._target_class is None:
                 # Module-level function accessed as `<module>.func()`: credit only when the receiver
@@ -429,6 +408,85 @@ class _QualifiedCallFinder(ast.NodeVisitor):
         if self._scope_stack and self._credits(node):
             self._callers.add(f"{self._rel_module}::{self._scope()}")
         self.generic_visit(node)
+
+
+class _BareImportCollector(ast.NodeVisitor):
+    """Collect direct-import bindings by Python lexical scope."""
+
+    def __init__(self, rel_module: str) -> None:
+        self.bindings: dict[tuple[str, ...], dict[str, tuple[str, str]]] = {}
+        self._package_parts = rel_module.split(".")[:-1]
+        self._scope: list[str] = []
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if not node.module:
+            return
+        if node.level:
+            keep = max(0, len(self._package_parts) - node.level + 1)
+            source_module = ".".join([*self._package_parts[:keep], node.module])
+        else:
+            source_module = node.module
+        scope_bindings = self.bindings.setdefault(tuple(self._scope), {})
+        for alias in node.names:
+            scope_bindings[alias.asname or alias.name] = (source_module, alias.name)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+
+def _bare_import_modules(tree: ast.Module, rel_module: str) -> dict[tuple[str, ...], dict[str, tuple[str, str]]]:
+    """Return resolved direct-import bindings grouped by lexical scope."""
+    collector = _BareImportCollector(rel_module)
+    collector.visit(tree)
+    return collector.bindings
+
+
+def _is_direct_reexport(
+    repo: Path, source_module: str, target_module: str, name: str, cache: dict[tuple[str, str, str], bool]
+) -> bool:
+    """Return whether *source_module* directly re-exports *name* from *target_module*."""
+    key = (source_module, target_module, name)
+    if key in cache:
+        return cache[key]
+    package_parts = source_module.split(".")[:-1]
+    source_paths = [
+        candidate
+        for base in (repo, repo / "src")
+        for candidate in (
+            base.joinpath(*source_module.split(".")).with_suffix(".py"),
+            base.joinpath(*source_module.split(".")) / "__init__.py",
+        )
+        if candidate.is_file()
+    ]
+    for path in source_paths:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"), filename=str(path))
+        except (OSError, SyntaxError):
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            if node.level:
+                keep = max(0, len(package_parts) - node.level + 1)
+                imported_module = ".".join([*package_parts[:keep], node.module])
+            else:
+                imported_module = node.module
+            if imported_module == target_module and any(
+                alias.name == name and (alias.asname or alias.name) == name for alias in node.names
+            ):
+                cache[key] = True
+                return True
+    cache[key] = False
+    return False
 
 
 def _walk_caller_sets(primary_fn: str, repo: Path) -> tuple[set[str], set[str], str | None]:
@@ -470,22 +528,31 @@ def _walk_caller_sets(primary_fn: str, repo: Path) -> tuple[set[str], set[str], 
     src_root = _detect_src_root(repo)
     qualified: set[str] = set()
     loose: set[str] = set()
-    for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
-        for fname in files:
-            if not fname.endswith(".py"):
+    reexport_cache: dict[tuple[str, str, str], bool] = {}
+    for fpath, _rel, tree in walk_py_modules(repo, keep=lambda rel: not _TEST_PATH_RE.search(rel)):
+        rel_module = _module_name_for(fpath, repo, src_root)
+        _CallFinder(target_simple, rel_module, loose).visit(tree)
+        bare_imports = _bare_import_modules(tree, rel_module)
+        for scope_bindings in bare_imports.values():
+            binding = scope_bindings.get(target_simple)
+            if binding is None:
                 continue
-            fpath = Path(root) / fname
-            rel_path = str(fpath.relative_to(repo)).replace(os.sep, "/")
-            if _TEST_PATH_RE.search(rel_path):
-                continue
-            try:
-                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
-            except SyntaxError:
-                continue
-            rel_module = _module_name_for(fpath, repo, src_root)
-            _CallFinder(target_simple, rel_module, loose).visit(tree)
-            _QualifiedCallFinder(target_class, target_simple, target_module_tail, rel_module, qualified).visit(tree)
+            bound_module, imported_name = binding
+            if (
+                imported_name == target_simple
+                and bound_module != target_module
+                and _is_direct_reexport(repo, bound_module, target_module, target_simple, reexport_cache)
+            ):
+                scope_bindings[target_simple] = (target_module, target_simple)
+        _QualifiedCallFinder(
+            target_class,
+            target_simple,
+            target_module,
+            target_module_tail,
+            rel_module,
+            bare_imports,
+            qualified,
+        ).visit(tree)
 
     return qualified, loose, None
 
@@ -582,7 +649,7 @@ def _resolve_module_files(repo: Path, module: str | None) -> tuple[list[Path], s
         return [], f"module {module!r} not resolvable under {repo}/ or {repo}/src/"
     files: list[Path] = []
     for root, dirs, names in os.walk(repo):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
+        prune_walk_dirs(dirs)
         for name in names:
             if name.endswith(".py") and not name.startswith("test_") and not name.endswith("_test.py"):
                 files.append(Path(root) / name)
@@ -727,20 +794,8 @@ def _collect_test_references(repo: Path) -> set[str]:
         file (matched by :data:`_TEST_PATH_RE`).
     """
     refs: set[str] = set()
-    for root, dirs, names in os.walk(repo):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
-        for name in names:
-            if not name.endswith(".py"):
-                continue
-            fpath = Path(root) / name
-            rel = str(fpath.relative_to(repo)).replace(os.sep, "/")
-            if not _TEST_PATH_RE.search(rel):
-                continue
-            try:
-                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
-            except SyntaxError:
-                continue
-            _TestRefFinder(refs).visit(tree)
+    for _fpath, _rel, tree in walk_py_modules(repo, keep=lambda rel: bool(_TEST_PATH_RE.search(rel))):
+        _TestRefFinder(refs).visit(tree)
     return refs
 
 
@@ -815,6 +870,11 @@ def _module_imports(tree: ast.Module) -> set[str]:
         >>> sorted(_module_imports(ast.parse(src)))
         ['a.b', 'c.d']
     """
+    # Deliberately a byte-for-byte mirror of scan-index ``extract_imports`` (scanner.py): both test
+    # ``node.module`` truthiness only, IGNORING ``node.level``, so ``from ..pkg import x`` yields
+    # "pkg". Do NOT replace with _utilities.extract_import_targets — that helper resolves relatives
+    # and would drop multi-dot targets, diverging the AST oracle from scan-query. See guard test
+    # TestImportGraphPrimitives.test_module_imports_not_interchangeable_with_shared_helper.
     imports: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -855,20 +915,10 @@ def _build_import_graph(repo: Path, exclude_tests: bool = True) -> dict[str, set
     """
     src_root = _detect_src_root(repo)
     raw: dict[str, set[str]] = {}
-    for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
-        for fname in files:
-            if not fname.endswith(".py"):
-                continue
-            fpath = Path(root) / fname
-            rel_path = str(fpath.relative_to(repo)).replace(os.sep, "/")
-            if exclude_tests and _TEST_PATH_RE.search(rel_path):
-                continue
-            try:
-                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
-            except SyntaxError:
-                continue
-            raw[_module_name_for(fpath, repo, src_root)] = _module_imports(tree)
+    for fpath, _rel, tree in walk_py_modules(
+        repo, keep=(lambda rel: not _TEST_PATH_RE.search(rel)) if exclude_tests else None
+    ):
+        raw[_module_name_for(fpath, repo, src_root)] = _module_imports(tree)
     in_repo = set(raw)
     return {mod: {tgt for tgt in tgts if tgt in in_repo} for mod, tgts in raw.items()}
 
@@ -906,6 +956,42 @@ def _central_via_ast(repo: Path, top: int, exclude_tests: bool = True) -> list[t
             in_degree[target] = in_degree.get(target, 0) + 1
     ranked = sorted(in_degree.items(), key=lambda item: (-item[1], item[0]))
     return ranked[:top]
+
+
+def _module_importers_via_ast(repo: Path, module: str, exclude_tests: bool = True) -> tuple[set[str], str | None]:
+    """Return the repo modules that import *module* — its import fan-in (module blast radius, review MB).
+
+    Independent AST oracle for the reverse relation of :func:`_central_via_ast`: where ``central`` ranks
+    modules by in-degree, this enumerates the *rdeps* (importers) of a single target module. A module *A*
+    is an importer of *M* iff *M* is a direct import target of *A* (``import M`` or ``from M import ...``)
+    over the in-repo import graph (:func:`_build_import_graph`). The target module itself is never counted
+    as its own importer. When ``exclude_tests`` is True the graph omits test modules, so a ``tests.*``
+    module never appears among the importers — matching ``rdeps --exclude-tests`` semantics.
+
+    Args:
+        repo: Repository root directory.
+        module: Dotted name of the target module whose importers are enumerated.
+        exclude_tests: When True, exclude test modules from the graph (matches ``rdeps --exclude-tests``).
+
+    Returns:
+        ``(importer_module_names, error_reason)`` — error is None on success (an empty set is a valid
+        answer for a module nothing imports).
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "hub.py").write_text("x = 1\\n")
+        ...     _ = (repo / "a.py").write_text("import hub\\n")
+        ...     _ = (repo / "b.py").write_text("import hub\\n")
+        ...     mods, err = _module_importers_via_ast(repo, "hub")
+        >>> sorted(mods), err
+        (['a', 'b'], None)
+    """
+    graph = _build_import_graph(repo, exclude_tests=exclude_tests)
+    importers = {mod for mod, targets in graph.items() if module in targets and mod != module}
+    return importers, None
 
 
 def _import_path_via_ast(repo: Path, source: str, target: str, exclude_tests: bool = True) -> list[str] | None:
@@ -1078,21 +1164,9 @@ def _test_modules_importing_via_ast(repo: Path, module: str) -> tuple[set[str], 
     """
     src_root = _detect_src_root(repo)
     found: set[str] = set()
-    for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
-        for fname in files:
-            if not fname.endswith(".py"):
-                continue
-            fpath = Path(root) / fname
-            rel_path = str(fpath.relative_to(repo)).replace(os.sep, "/")
-            if not _TEST_PATH_RE.search(rel_path):
-                continue
-            try:
-                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
-            except SyntaxError:
-                continue
-            if module in _module_imports(tree):
-                found.add(_module_name_for(fpath, repo, src_root))
+    for fpath, _rel, tree in walk_py_modules(repo, keep=lambda rel: bool(_TEST_PATH_RE.search(rel))):
+        if module in _module_imports(tree):
+            found.add(_module_name_for(fpath, repo, src_root))
     return found, None
 
 
@@ -1227,6 +1301,89 @@ def _extract_rv_value(cmd: str, data: dict, match_type: str, count_hint: int = 0
     return names[:count_hint] if count_hint else names
 
 
+def _query_module_arg(args: list[Any]) -> str | None:
+    """Return the module positional argument while skipping known option values."""
+    skip_next = False
+    for raw_arg in args:
+        arg = str(raw_arg)
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--top":
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        return arg
+    return None
+
+
+def _query_top_limit(args: list[Any]) -> int | None:
+    """Return a positive ``--top`` limit, or None when no limit is present."""
+    for index, raw_arg in enumerate(args):
+        arg = str(raw_arg)
+        if arg == "--top" and index + 1 < len(args):
+            value = str(args[index + 1])
+        elif arg.startswith("--top="):
+            value = arg.partition("=")[2]
+        else:
+            continue
+        try:
+            limit = int(value)
+        except ValueError:
+            return None
+        return limit if limit > 0 else None
+    return None
+
+
+_RV_AST_COMMANDS: frozenset[str] = frozenset({"undocumented", "uncovered", "rdeps", "fn-rdeps"})
+
+
+def _rv_ast_value(cmd: str, args: list[Any], repo: Path) -> tuple[Any, bool, str | None]:
+    """Compute one review-query answer from an independent AST oracle.
+
+    Args:
+        cmd: Supported review command.
+        args: Command arguments from the task's expected query.
+        repo: Target repository root.
+
+    Returns:
+        ``(value, available, error)``. ``available`` is False only when a
+        legacy fixture has no source for the requested target, allowing its
+        scan-query compatibility fallback; real target repositories use AST.
+    """
+    positional = _query_module_arg(args)
+    if cmd == "rdeps":
+        if not positional:
+            return None, False, "rdeps needs a module argument"
+        module = positional
+        graph = _build_import_graph(repo, exclude_tests="--exclude-tests" in args)
+        if module not in graph:
+            return None, False, None
+        importers, error = _module_importers_via_ast(repo, module, exclude_tests="--exclude-tests" in args)
+        return len(importers), error is None, error
+    if cmd == "fn-rdeps":
+        if not positional or "::" not in positional:
+            return None, False, "fn-rdeps needs module::qualname"
+        primary_fn = positional
+        if primary_fn.split("::", 1)[0] not in _build_import_graph(repo, exclude_tests=True):
+            return None, False, None
+        callers, error = _callers_via_ast(primary_fn, repo)
+        return len(callers), error is None, error
+    if cmd in ("undocumented", "uncovered"):
+        module = positional
+        files, error = _resolve_module_files(repo, module)
+        if error:
+            return None, False, error
+        if not files:
+            return None, False, None
+        values, error = (
+            _undocumented_via_ast(repo, module) if cmd == "undocumented" else _uncovered_via_ast(repo, module)
+        )
+        return sorted(values), error is None, error
+    return None, False, f"unsupported review command {cmd!r}"
+
+
 def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
     """Validate review_assistance task ground truth.
 
@@ -1245,12 +1402,17 @@ def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
     if not expected_queries:
         return False, None, "no expected_queries defined"
 
-    # Run the first expected_query (one scan-query call covers all sub-questions for RV tasks)
+    # One expected query supplies every current sub-question.  Its AST result is
+    # authoritative; scan-query remains a diagnostic because it is the tool under test.
     q = expected_queries[0]
     cmd = q["cmd"]
-    data = run_scan_query(sq, [cmd] + q.get("args", []), index, repo)
-    if data is None:
-        return False, None, f"scan-query {cmd} returned None"
+    args = q.get("args", [])
+    ast_value, ast_available, ast_error = _rv_ast_value(cmd, args, repo)
+    if ast_error is not None:
+        return False, None, ast_error
+    data = run_scan_query(sq, [cmd] + args, index, repo)
+    if not ast_available:
+        return False, None, f"independent AST source is unavailable for review command {cmd!r}"
 
     live_gt: dict[str, Any] = {}
     problems: list[str] = []
@@ -1261,7 +1423,7 @@ def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
         expected_gt = sq_item["ground_truth"]
 
         if match_type == "integer_extract":
-            live_val = _extract_rv_value(cmd, data, "integer_extract")
+            live_val = len(ast_value) if isinstance(ast_value, list) else ast_value
             expected_val = expected_gt.get("count", 0)
             live_gt[sq_id] = {"count": live_val}
             if live_val != expected_val:
@@ -1270,7 +1432,7 @@ def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
         elif match_type == "symbol_name_set":
             expected_symbols = expected_gt.get("symbols", [])
             n = len(expected_symbols)
-            live_names = _extract_rv_value(cmd, data, "symbol_name_set", count_hint=n)
+            live_names = list(ast_value)[:n] if n else list(ast_value)
             live_gt[sq_id] = {"symbols": live_names}
             expected_set = set(expected_symbols)
             live_set = set(live_names)
@@ -1283,6 +1445,20 @@ def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
                 if extra:
                     parts.append(f"extra: {extra[:3]}")
                 problems.append(f"{sq_id} symbol_name_set: {', '.join(parts)}")
+
+    if data is not None:
+        scan_value = _extract_rv_value(
+            cmd, data, "symbol_name_set" if isinstance(ast_value, list) else "integer_extract"
+        )
+        if isinstance(ast_value, list):
+            _warn_ast_divergence(
+                task.get("id", "?"),
+                f"review {cmd}",
+                sorted(set(ast_value) - set(scan_value)),
+                sorted(set(scan_value) - set(ast_value)),
+            )
+        elif ast_available and scan_value != ast_value:
+            _warn_ast_divergence(task.get("id", "?"), f"review {cmd} count", [str(ast_value)], [str(scan_value)])
 
     return (not problems), live_gt, "; ".join(problems)
 
@@ -1436,7 +1612,7 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             return False, None, "undocumented total conflicts with symbol count"
         if check == "undocumented":
             # AST oracle is authoritative (review C-2) — scan-query is the tool under test.
-            module = next((a for a in q.get("args", []) if not str(a).startswith("-")), None)
+            module = _query_module_arg(q.get("args", []))
             undoc_problems, undoc_err = _validate_undocumented_ast(
                 task, gt, module, scan_count, scan_syms, repo, live_gt
             )
@@ -1465,11 +1641,13 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             return False, None, "uncovered result contains non-object entries"
         scan_count = data.get("total", 0)
         scan_syms = [e.get("qualified_name", "") for e in data.get("uncovered", [])]
-        if scan_count != len(scan_syms):
+        top_limit = _query_top_limit(q.get("args", []))
+        expected_scan_symbols = min(scan_count, top_limit) if top_limit is not None else scan_count
+        if len(scan_syms) != expected_scan_symbols:
             return False, None, "uncovered total conflicts with symbol count"
         if check == "uncovered":
             # AST oracle is authoritative (review C-2 remainder) — scan-query is the tool under test.
-            module = next((a for a in q.get("args", []) if not str(a).startswith("-")), None)
+            module = _query_module_arg(q.get("args", []))
             uncov_problems, uncov_err = _validate_uncovered_ast(task, gt, module, scan_count, scan_syms, repo, live_gt)
             if uncov_err:
                 return False, None, uncov_err
@@ -1582,28 +1760,7 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
 # rather than failing on the empty placeholder.
 
 
-def _gt_is_pending(task: dict) -> bool:
-    """Return True when a task carries an unresolved ``gt_pending`` placeholder.
-
-    A ``gt_pending`` task was authored without a target repo present, so its ``ground_truth`` holds
-    empty placeholders. Validators treat such tasks as *always-compute* under ``--update`` (never a
-    hard validation failure) and clear the flag once real oracle GT is written.
-
-    Args:
-        task: Task dict from tasks-bench.json.
-
-    Returns:
-        True when ``task["ground_truth"].get("gt_pending")`` is truthy.
-
-    Examples:
-        >>> _gt_is_pending({"ground_truth": {"gt_pending": True}})
-        True
-        >>> _gt_is_pending({"ground_truth": {"gt_pending": False}})
-        False
-        >>> _gt_is_pending({"ground_truth": {}})
-        False
-    """
-    return bool(task.get("ground_truth", {}).get("gt_pending"))
+# gt_is_pending now imported from _utilities (shared with run-codemap-bench).
 
 
 def _validate_diff_impact(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
@@ -1648,7 +1805,7 @@ def _validate_diff_impact(task: dict, sq: Path, index: Path, repo: Path) -> tupl
         "gt_source": "ast-caller-oracle + test-import-oracle",
         "gt_pending": False,
     }
-    if _gt_is_pending(task):
+    if gt_is_pending(task):
         return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
 
     problems = _diff_problems(gt, live_gt)
@@ -1703,13 +1860,60 @@ def _validate_graph_central(task: dict, sq: Path, index: Path, repo: Path) -> tu
         "gt_source": "ast-central-oracle",
         "gt_pending": False,
     }
-    if _gt_is_pending(task):
+    if gt_is_pending(task):
         return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
     if set(gt.get("central_modules", [])) != set(modules):
         return (
             False,
             live_gt,
             f"central_modules mismatch: expected {gt.get('central_modules', [])[:3]}, got {modules[:3]}",
+        )
+    return True, live_gt, ""
+
+
+def _validate_module_blast_radius(
+    task: dict, sq: Path, index: Path, repo: Path
+) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate a ``module_blast_radius`` task: importers (import fan-in) of a target module (review MB).
+
+    Independent AST oracle (:func:`_module_importers_via_ast`) — the reverse relation of BR's per-function
+    callers, at module granularity: which repo modules import ``primary_module``. Ground truth is
+    AST-only (scan-query is never consulted), so it refreshes under a plain --update alongside the
+    caller-graph / graph series. ``sq``/``index`` are unused (kept for the uniform validator signature).
+
+    Args:
+        task: Task dict; reads ``primary_module`` and ``ground_truth.exclude_tests`` (default True).
+        sq: Path to scan-query (unused — GT is AST-only).
+        index: Path to codemap index (unused).
+        repo: Repo root directory.
+
+    Returns:
+        (ok, live_ground_truth, failure_reason).
+    """
+    del sq, index  # GT is AST-oracle-only; scan-query never consulted for module-blast-radius GT.
+    gt = task.get("ground_truth", {})
+    module = task.get("primary_module", "")
+    if not module:
+        return False, None, "module_blast_radius task needs a `primary_module`"
+    exclude_tests = bool(gt.get("exclude_tests", True))
+    importers, ierr = _module_importers_via_ast(repo, module, exclude_tests=exclude_tests)
+    if ierr is not None:
+        return False, None, f"importer oracle failed: {ierr}"
+    importer_list = sorted(importers)
+    live_gt: dict[str, Any] = {
+        "exclude_tests": exclude_tests,
+        "importers": importer_list,
+        "importer_count": len(importer_list),
+        "gt_source": "ast-importers-oracle",
+        "gt_pending": False,
+    }
+    if gt_is_pending(task):
+        return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
+    if set(gt.get("importers", [])) != set(importer_list):
+        return (
+            False,
+            live_gt,
+            f"importers mismatch: expected {len(gt.get('importers', []))}, got {len(importer_list)}",
         )
     return True, live_gt, ""
 
@@ -1748,7 +1952,7 @@ def _validate_graph_path(task: dict, sq: Path, index: Path, repo: Path) -> tuple
         "gt_source": "ast-path-oracle",
         "gt_pending": False,
     }
-    if _gt_is_pending(task):
+    if gt_is_pending(task):
         return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
     if gt.get("import_path") != path:
         return False, live_gt, f"import_path mismatch: expected {gt.get('import_path')}, got {path}"
@@ -1784,7 +1988,7 @@ def _validate_graph_fn_blast(task: dict, sq: Path, index: Path, repo: Path) -> t
         "gt_source": "ast-fn-blast-oracle",
         "gt_pending": False,
     }
-    if _gt_is_pending(task):
+    if gt_is_pending(task):
         return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
     if set(gt.get("blast_callers", [])) != set(blast_list):
         return (
@@ -1793,6 +1997,159 @@ def _validate_graph_fn_blast(task: dict, sq: Path, index: Path, repo: Path) -> t
             f"blast_callers mismatch: expected {len(gt.get('blast_callers', []))}, got {len(blast_list)}",
         )
     return True, live_gt, ""
+
+
+def _safe_repo_file(repo: Path, relative_path: Any) -> tuple[Path | None, str | None]:
+    """Resolve one canonical repository-relative file without allowing traversal.
+
+    Args:
+        repo: Repository root directory.
+        relative_path: Candidate task path.
+
+    Returns:
+        ``(path, error)`` where ``path`` is safe and repository-relative.
+    """
+    if not isinstance(relative_path, str) or not relative_path:
+        return None, "path must be a non-empty string"
+    raw = Path(relative_path)
+    if raw.is_absolute() or ".." in raw.parts:
+        return None, f"path is not safe: {relative_path!r}"
+    root = repo.resolve()
+    candidate = (root / raw).resolve()
+    if not candidate.is_relative_to(root):
+        return None, f"path is not safe: {relative_path!r}"
+    return candidate, None
+
+
+class _DefinitionFinder(ast.NodeVisitor):
+    """Record function and method qualified names with their definition lines."""
+
+    def __init__(self) -> None:
+        self.definitions: dict[str, int] = {}
+        self._scope: list[str] = []
+
+    def _visit_definition(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        qname = ".".join([*self._scope, node.name])
+        self.definitions[qname] = node.lineno
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_definition(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_definition(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+
+def _definitions_in_file(path: Path) -> tuple[dict[str, int] | None, str | None]:
+    """Return AST definition names and lines for one Python source file."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"), filename=str(path))
+    except (OSError, SyntaxError) as exc:
+        return None, f"cannot parse {path}: {exc}"
+    finder = _DefinitionFinder()
+    finder.visit(tree)
+    return finder.definitions, None
+
+
+def _validate_debug(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate a debug trace anchor against its local AST definition."""
+    del sq, index
+    gt = task.get("ground_truth", {})
+    path, error = _safe_repo_file(repo, gt.get("file"))
+    if error:
+        return False, None, error
+    if path is None or not path.is_file():
+        return False, None, f"debug file does not exist: {gt.get('file')!r}"
+    definitions, error = _definitions_in_file(path)
+    if error:
+        return False, None, error
+    symbol = task.get("symbol_name", "")
+    function = gt.get("function")
+    expected_line = gt.get("start_line")
+    if task.get("primary_module") != _module_name_for(path, repo, _detect_src_root(repo)):
+        return False, None, "debug primary_module does not match file"
+    if not isinstance(symbol, str) or not isinstance(function, str) or symbol.split(".")[-1] != function:
+        return False, None, "debug function does not match symbol_name"
+    live_line = definitions.get(symbol)
+    if live_line is None:
+        return False, None, f"debug symbol does not exist: {symbol!r}"
+    live_gt = {**gt, "start_line": live_line}
+    if live_line != expected_line:
+        return False, live_gt, f"debug start_line: expected {expected_line}, got {live_line}"
+    return True, live_gt, ""
+
+
+def _validate_feature(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate a feature task's extension point against the local source AST."""
+    del sq, index
+    gt = task.get("ground_truth", {})
+    path, error = _safe_repo_file(repo, gt.get("primary_file"))
+    if error:
+        return False, None, error
+    if path is None or not path.is_file():
+        return False, None, f"feature primary_file does not exist: {gt.get('primary_file')!r}"
+    definitions, error = _definitions_in_file(path)
+    if error:
+        return False, None, error
+    if task.get("primary_module") != _module_name_for(path, repo, _detect_src_root(repo)):
+        return False, None, "feature primary_module does not match file"
+    entry_point = gt.get("entry_point")
+    if not isinstance(entry_point, str) or entry_point not in definitions:
+        return False, None, f"feature entry_point does not exist: {entry_point!r}"
+    return True, gt, ""
+
+
+def _validate_real_issue(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate offline real-issue provenance and current-checkout applicability."""
+    del sq, index
+    gt = task.get("ground_truth", {})
+    files = gt.get("files_changed")
+    if not isinstance(files, list) or any(not isinstance(path, str) for path in files):
+        return False, None, "real_issue files_changed must be a list of paths"
+    if gt.get("file_count") != len(files) or len(set(files)) != len(files):
+        return False, None, "real_issue file_count or files_changed is incoherent"
+    issue_number = task.get("issue_number")
+    pr_number = task.get("pr_number")
+    if not isinstance(issue_number, int) or issue_number <= 0 or not isinstance(pr_number, int) or pr_number <= 0:
+        return False, None, "real_issue issue_number and pr_number must be positive integers"
+    if not str(task.get("issue_url", "")).endswith(f"/issues/{issue_number}"):
+        return False, None, "real_issue issue_url does not match issue_number"
+    if not str(task.get("pr_url", "")).endswith(f"/pull/{pr_number}"):
+        return False, None, "real_issue pr_url does not match pr_number"
+    provenance = task.get("provenance")
+    if not isinstance(provenance, dict):
+        return False, None, "real_issue needs locked provenance"
+    if provenance.get("source") != "github_pull_request_files":
+        return False, None, "real_issue provenance source is invalid"
+    for key in ("pr_head_sha", "merge_commit_sha"):
+        value = provenance.get(key)
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+            return False, None, f"real_issue provenance {key} is not a SHA"
+    if not isinstance(provenance.get("changed_file_count"), int) or provenance["changed_file_count"] < len(files):
+        return False, None, "real_issue provenance changed_file_count is invalid"
+    if provenance.get("selection") != "non_test_python_files":
+        return False, None, "real_issue provenance selection is invalid"
+    scoreable = task.get("scoreable")
+    if not isinstance(scoreable, bool):
+        return False, None, "real_issue scoreable must be a boolean"
+    if not scoreable and not isinstance(task.get("note"), str):
+        return False, None, "unscoreable real_issue needs a historical-path note"
+    for relative_path in files:
+        path, error = _safe_repo_file(repo, relative_path)
+        if error:
+            return False, None, error
+        if not relative_path.endswith(".py") or _TEST_PATH_RE.search(relative_path):
+            return False, None, f"real_issue selection includes non-production Python path: {relative_path!r}"
+        if scoreable and (path is None or not path.is_file()):
+            return False, None, f"scoreable real_issue path does not exist: {relative_path!r}"
+    return True, gt, ""
 
 
 VALIDATORS = {
@@ -1805,6 +2162,10 @@ VALIDATORS = {
     "graph_central": _validate_graph_central,
     "graph_path": _validate_graph_path,
     "graph_fn_blast": _validate_graph_fn_blast,
+    "module_blast_radius": _validate_module_blast_radius,
+    "debug_from_trace": _validate_debug,
+    "feature_scaffolding": _validate_feature,
+    "real_issue": _validate_real_issue,
 }
 
 
@@ -1817,7 +2178,7 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
     Args:
         task_type: One of "symbol_extraction", "fn_call_graph", "develop_blast_radius",
             "review_assistance", "code_quality", "diff_impact", "graph_central", "graph_path",
-            or "graph_fn_blast".
+            "graph_fn_blast", or "module_blast_radius".
         live_gt: Computed ground truth (scan-query output for legacy types; AST oracle for the
             diff-impact / graph series).
         existing_gt: Existing ground_truth from the task file (for fields not recomputed).
@@ -1827,10 +2188,10 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
     """
     if task_type == "symbol_extraction":
         return {**existing_gt, **live_gt}
-    if task_type in ("fn_call_graph", "develop_blast_radius"):
+    if task_type in ("fn_call_graph", "develop_blast_radius", "debug_from_trace"):
         return {**existing_gt, **live_gt}
-    if task_type in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast"):
-        # AST-oracle-only GT (review DI/GR); live_gt already carries the cleared gt_pending flag.
+    if task_type in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast", "module_blast_radius"):
+        # AST-oracle-only GT (review DI/GR/MB); live_gt already carries the cleared gt_pending flag.
         return {**existing_gt, **live_gt}
     if task_type == "review_assistance":
         # live_gt is {sq_id: {count: N} | {symbols: [...]}}
@@ -1853,6 +2214,8 @@ _ORACLE_BACKED_TYPES: frozenset[str] = frozenset(
         "graph_central",
         "graph_path",
         "graph_fn_blast",
+        "module_blast_radius",
+        "debug_from_trace",
     }
 )
 
@@ -1863,10 +2226,11 @@ _ORACLE_BACKED_CQ_CHECKS: frozenset[str] = frozenset({"undocumented", "uncovered
 def _update_is_oracle_backed(task: dict) -> bool:
     """Return True when this task's refreshed ground truth is AST-oracle-derived, not circular.
 
-    Oracle-backed: fn_call_graph / develop_blast_radius (qualified AST caller oracle) and the
-    ``undocumented`` (AST docstring oracle) and ``uncovered`` (AST test-reference oracle) code_quality
-    checks. Everything else — symbol line ranges, review_assistance, coupled / xrefs_broken /
-    combined_health — is refreshed from scan-query output and is therefore circular (review C-3).
+    Oracle-backed: fn_call_graph / develop_blast_radius (qualified AST caller oracle), review-assistance
+    tasks whose every command has an AST oracle, and the ``undocumented`` (AST docstring oracle) and
+    ``uncovered`` (AST test-reference oracle) code_quality checks. Everything else — symbol line ranges,
+    coupled / xrefs_broken / combined_health, and historical real_issue provenance — is scan-query-derived
+    or static and therefore not refreshable under a plain update.
 
     Examples:
         >>> _update_is_oracle_backed({"type": "fn_call_graph"})
@@ -1877,12 +2241,15 @@ def _update_is_oracle_backed(task: dict) -> bool:
         True
         >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "xrefs_broken"}})
         False
-        >>> _update_is_oracle_backed({"type": "review_assistance"})
-        False
+        >>> _update_is_oracle_backed({"type": "review_assistance", "expected_queries": [{"cmd": "rdeps"}]})
+        True
     """
     ttype = task.get("type", "")
     if ttype in _ORACLE_BACKED_TYPES:
         return True
+    if ttype == "review_assistance":
+        queries = task.get("expected_queries", [])
+        return bool(queries) and all(query.get("cmd") in _RV_AST_COMMANDS for query in queries)
     return ttype == "code_quality" and task.get("ground_truth", {}).get("check") in _ORACLE_BACKED_CQ_CHECKS
 
 
@@ -1980,15 +2347,9 @@ def main(
     """
 
     # Resolve plugin root for binary lookup
-    try:
-        import subprocess as _sp
+    plugin_root = git_toplevel()
 
-        r = _sp.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=5)
-        plugin_root = Path(r.stdout.strip()) if r.returncode == 0 else None
-    except (subprocess.TimeoutExpired, OSError):
-        plugin_root = None
-
-    # Load tasks first — repo header provides default_path for fallback discovery
+    # Load tasks first — repo header provides local_path for fallback discovery
     try:
         with TASKS_FILE.open() as f:
             _raw = json.load(f)
@@ -2009,8 +2370,8 @@ def main(
     if repo_path:
         repo_path = Path(repo_path)
     else:
-        _default_path = repo_meta.get("default_path")
-        _cands = [Path(_default_path)] if _default_path else []
+        _local_path = repo_meta.get("local_path")
+        _cands = [Path(_local_path)] if _local_path else []
         for candidate in _cands:
             if candidate.is_dir():
                 repo_path = candidate
@@ -2041,6 +2402,8 @@ def main(
 
     # Validate each task
     failed: list[str] = []
+    passed: list[str] = []
+    skipped: list[str] = []
     updated_tasks: list[dict] = []
 
     # Loop variable is `entry`, NOT `task` — `task` holds the --task filter (a str | None) and
@@ -2053,6 +2416,7 @@ def main(
 
         if validator is None:
             print(f"  SKIP  {task_id}: unknown type {task_type!r}")
+            skipped.append(task_id)
             updated_tasks.append(entry)
             continue
 
@@ -2060,6 +2424,7 @@ def main(
 
         if ok:
             print(f"  PASS  {task_id}")
+            passed.append(task_id)
             updated_tasks.append(entry)
         else:
             print(f"  FAIL  {task_id}: {reason}")
@@ -2076,8 +2441,10 @@ def main(
                 updated_tasks.append(entry)
 
     if update:
+        if skipped:
+            print("\nUpdate aborted: every task type must have a validator")
         # Only write the full file when no --task filter was given (`task` is the filter, str | None).
-        if task is None:
+        elif task is None:
             with TASKS_FILE.open("w") as f:
                 if _tasks_wrapper is not None:
                     out = {**_tasks_wrapper, "tasks": updated_tasks}
@@ -2090,12 +2457,17 @@ def main(
             print(f"\nSingle-task mode: updated task {task!r} not written (omit --task to write full file)")
 
     total = len(tasks)
-    passed = total - len(failed)
-    print(f"\n{passed}/{total} passed")
+    print(f"\n{len(passed)}/{total} passed")
+    if failed:
+        print(f"{len(failed)} failed")
+    if skipped:
+        print(f"{len(skipped)} skipped")
     if failed:
         print(f"Failed: {', '.join(failed)}")
-        if not update:
-            sys.exit(1)
+    if skipped:
+        print(f"Skipped: {', '.join(skipped)}")
+    if skipped or (failed and not update):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

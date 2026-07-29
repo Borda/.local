@@ -783,6 +783,24 @@ class TestEvaluateRv:
         result = script_run_bench._evaluate_rv(task, "found 30 undocumented symbols")
         assert result.correct is False
 
+    def test_count_path_prefers_answer_region_over_stray_prose(self, script_run_bench: Any) -> None:
+        """Count path: a stray count in exploration must not outrank the answer-region count.
+
+        Regression for the RV-02 false-fail: exploration said "0 symbols of its own" while the
+        conclusion said "65 importers" (expected 64). First-match-anywhere extraction grabbed the
+        0 (recall 0.000); answer-region scoping must instead score the conclusion's 65 as correct.
+        """
+        task = self._rv_task_count(64)
+        text = (
+            "Exploring the module — it has 0 symbols of its own but is widely imported.\n\n"
+            "## Answer\n"
+            "65 importers depend on this module.\n"
+        )
+        result = script_run_bench._evaluate_rv(task, text)
+        assert result.metric_got == 65
+        assert result.correct is True
+        assert result.extraction_failed is False
+
     def test_symbol_recall_path_correct_at_threshold(self, script_run_bench: Any) -> None:
         """Symbol-recall path: correct when ≥70% of expected symbols appear in output."""
         syms = [f"lightning.pytorch.mod::Cls.method{i}" for i in range(10)]
@@ -828,6 +846,27 @@ class TestEvaluateRv:
         text = " ".join(s.split(".")[-1] for s in syms[:4])
         result = script_run_bench._evaluate_rv(task, text)
         assert result.extraction_failed is False
+
+
+# ===========================================================================
+# _extract_codemap_meta (scan-query index telemetry)
+# ===========================================================================
+
+
+class TestExtractCodemapMeta:
+    """BenchRunner._extract_codemap_meta: recover scan-query index metadata from tool_result text."""
+
+    def test_index_metadata_recovered_from_prose_wrapped_json(self, script_run_bench: Any) -> None:
+        """Method and not_covered are recovered when the scan-query JSON is embedded in prose.
+
+        Regression: json.loads over the whole tool_result raised on any prose preamble/trailer,
+        silently dropping index.method (~16/17 codemap runs recorded no method despite rdeps).
+        """
+        result = _make_run(script_run_bench, arm="codemap")
+        block = {"content": 'some prose\n{"index": {"method": "rdeps", "not_covered": ["x"]}}\ntrailing'}
+        script_run_bench.BenchRunner._extract_codemap_meta(block, result)
+        assert result.codemap_methods == ["rdeps"]
+        assert result.codemap_not_covered == ["x"]
 
 
 # ===========================================================================

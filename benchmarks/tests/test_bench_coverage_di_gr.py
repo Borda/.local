@@ -13,6 +13,7 @@ No LLM calls, no benchmark execution — every test is pure AST / regex / git-po
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 from pathlib import Path
@@ -91,6 +92,25 @@ class TestDiGrTaskSchema:
         assert len(gr) == 4
         assert {t["type"] for t in gr} == {"graph_central", "graph_path", "graph_fn_blast"}
 
+    def test_has_five_mb_tasks(self, tasks: list[dict]) -> None:
+        mb = [t for t in tasks if t["id"].startswith("MB-")]
+        assert len(mb) == 5
+        assert all(t["type"] == "module_blast_radius" for t in mb)
+
+    def test_mb_tasks_have_materialized_importer_gt(self, tasks: list[dict]) -> None:
+        """MB tasks ship materialized (non-pending, non-empty) importer ground truth."""
+        mb = [t for t in tasks if t["id"].startswith("MB-")]
+        assert mb
+        for t in mb:
+            gt = t["ground_truth"]
+            assert gt.get("gt_pending") is False, t["id"]
+            assert gt["importers"], t["id"]
+            assert gt["importer_count"] == len(gt["importers"]), t["id"]
+            assert t.get("workflow_type") == "query", t["id"]
+            assert t["primary_module"], t["id"]
+            # Test modules must never appear among production importers.
+            assert not any(m.startswith("tests.") for m in gt["importers"]), t["id"]
+
     def test_di_tasks_have_stage_spec_and_primary_fn(self, tasks: list[dict]) -> None:
         for t in (t for t in tasks if t["id"].startswith("DI-")):
             assert "::" in t["primary_fn"], t["id"]
@@ -99,11 +119,11 @@ class TestDiGrTaskSchema:
                 assert edit.get("file"), t["id"]
                 assert ("append" in edit) or ("find" in edit and "replace" in edit), t["id"]
 
-    def test_new_tasks_are_gt_pending(self, tasks: list[dict]) -> None:
-        """Target repo is absent at authoring time — every new task ships gt_pending=true."""
+    def test_di_gr_tasks_have_materialized_gt(self, tasks: list[dict]) -> None:
+        """The locked target materializes every DI/GR independent-oracle answer."""
         new = [t for t in tasks if t["id"].startswith(("DI-", "GR-"))]
         assert new
-        assert all(t["ground_truth"].get("gt_pending") is True for t in new)
+        assert all(t["ground_truth"].get("gt_pending") is False for t in new)
 
     def test_graph_path_task_declares_source_and_target(self, tasks: list[dict]) -> None:
         gp = [t for t in tasks if t["type"] == "graph_path"]
@@ -200,20 +220,82 @@ class TestGraphValidators:
         assert live["blast_callers"] == ["b::caller"]
 
 
-class TestGtPending:
-    """_gt_is_pending helper + oracle-backed registration."""
+class TestImportGraphPrimitives:
+    """AST import-graph oracle primitives — GT-critical, must mirror scan-index semantics.
 
-    def test_gt_is_pending_true_false(self, script_gen_bench: Any) -> None:
-        assert script_gen_bench._gt_is_pending({"ground_truth": {"gt_pending": True}}) is True
-        assert script_gen_bench._gt_is_pending({"ground_truth": {"gt_pending": False}}) is False
-        assert script_gen_bench._gt_is_pending({"ground_truth": {}}) is False
+    ``_module_imports`` and ``_build_import_graph`` feed every graph_central / graph_path /
+    graph_fn_blast ground truth. They intentionally reproduce scan-index ``extract_imports``
+    (scanner.py:723) rather than resolve relatives properly, so the AST oracle agrees with what
+    scan-query returns for the same repo. These lock that contract before any refactor.
+    """
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            pytest.param("import a.b\n", {"a.b"}, id="import-dotted"),
+            pytest.param("import a.b as c\n", {"a.b"}, id="import-alias-keeps-real-name"),
+            pytest.param("from c.d import e\n", {"c.d"}, id="from-import-module"),
+            pytest.param("import a\nimport b\n", {"a", "b"}, id="two-imports"),
+            pytest.param("from . import f\n", set(), id="bare-relative-skipped"),
+            pytest.param("from .foo import x\n", {"foo"}, id="level1-relative-kept-as-absolute"),
+            pytest.param("from ..pkg.sub import y\n", {"pkg.sub"}, id="multidot-relative-level-ignored"),
+        ],
+    )
+    def test_module_imports_mirrors_scan_index(self, script_gen_bench: Any, source: str, expected: set[str]) -> None:
+        """_module_imports collects import targets on node.module truthiness, ignoring node.level."""
+        assert script_gen_bench._module_imports(ast.parse(source)) == expected
+
+    def test_module_imports_not_interchangeable_with_shared_helper(
+        self, script_gen_bench: Any, script_utilities: Any
+    ) -> None:
+        """Guard: the shared helper resolves relatives and so DROPS multi-dot targets the oracle keeps.
+
+        Pins why _module_imports cannot be replaced by _utilities.extract_import_targets — swapping
+        would silently diverge the AST oracle from scan-index on any multi-dot relative import.
+        """
+        tree = ast.parse("from ..pkg import x\n")
+        assert script_gen_bench._module_imports(tree) == {"pkg"}
+        shared = script_utilities.extract_import_targets(tree, package="", credit_submodules=False)
+        assert shared == set()
+        assert script_gen_bench._module_imports(tree) != shared
+
+    def test_build_import_graph_edges_and_test_exclusion(self, script_gen_bench: Any, mini_repo: Path) -> None:
+        """Edges point to in-repo import targets; test modules are excluded by default."""
+        graph = script_gen_bench._build_import_graph(mini_repo)
+        assert graph["a"] == set()
+        assert graph["b"] == {"a"}
+        assert graph["c"] == {"b"}
+        assert not any("test_a" in key for key in graph)
+
+    def test_build_import_graph_drops_external_targets(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Stdlib / third-party import targets are filtered out — only in-repo modules remain as edges."""
+        repo = tmp_path / "extrepo"
+        repo.mkdir()
+        (repo / "m.py").write_text("import os\nimport json\nimport a\n")
+        (repo / "a.py").write_text("x = 1\n")
+        graph = script_gen_bench._build_import_graph(repo)
+        assert graph["m"] == {"a"}
+
+    def test_build_import_graph_include_tests(self, script_gen_bench: Any, mini_repo: Path) -> None:
+        """exclude_tests=False keeps test modules as graph nodes."""
+        graph = script_gen_bench._build_import_graph(mini_repo, exclude_tests=False)
+        assert any("test_a" in key for key in graph)
+
+
+class TestGtPending:
+    """gt_is_pending helper + oracle-backed registration."""
+
+    def testgt_is_pending_true_false(self, script_gen_bench: Any) -> None:
+        assert script_gen_bench.gt_is_pending({"ground_truth": {"gt_pending": True}}) is True
+        assert script_gen_bench.gt_is_pending({"ground_truth": {"gt_pending": False}}) is False
+        assert script_gen_bench.gt_is_pending({"ground_truth": {}}) is False
 
     def test_new_types_are_oracle_backed(self, script_gen_bench: Any) -> None:
-        for ttype in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast"):
+        for ttype in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast", "module_blast_radius"):
             assert script_gen_bench._update_is_oracle_backed({"type": ttype}) is True
 
     def test_new_types_registered_in_validators(self, script_gen_bench: Any) -> None:
-        for ttype in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast"):
+        for ttype in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast", "module_blast_radius"):
             assert ttype in script_gen_bench.VALIDATORS
 
 
@@ -442,7 +524,7 @@ class TestRunnerRegistration:
     """New evaluators + diff_impact type are wired into the runner."""
 
     def test_evaluators_registered(self, script_run_bench: Any) -> None:
-        for ttype in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast"):
+        for ttype in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast", "module_blast_radius"):
             assert ttype in script_run_bench._EVALUATORS
 
     def test_diff_impact_type_constant(self, script_run_bench: Any) -> None:
@@ -452,3 +534,173 @@ class TestRunnerRegistration:
         prompt = script_run_bench._build_system_prompt("codemap", "r", "/repo", "/idx.json")
         for token in ("central", "path <source>", "fn-blast", "diff-impact", "batch"):
             assert token in prompt, token
+
+
+# ---------------------------------------------------------------------------
+# Module blast radius (MB) — import fan-in oracle / validator / evaluator
+# ---------------------------------------------------------------------------
+
+
+class TestModuleImportersOracle:
+    """_module_importers_via_ast enumerates the reverse-import relation (importers of a module)."""
+
+    def test_importers_of_a_module(self, script_gen_bench: Any, mini_repo: Path) -> None:
+        # Graph: c imports b imports a → a's importer is b; b's importer is c.
+        importers, err = script_gen_bench._module_importers_via_ast(mini_repo, "a")
+        assert err is None
+        assert importers == {"b"}
+
+    def test_importers_exclude_tests_by_default(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A test module importing the target is dropped when exclude_tests is on (rdeps parity)."""
+        repo = tmp_path / "r"
+        repo.mkdir()
+        (repo / "hub.py").write_text("x = 1\n")
+        (repo / "a.py").write_text("import hub\n")
+        tests = repo / "tests"
+        tests.mkdir()
+        (tests / "test_hub.py").write_text("import hub\n")
+        importers, _err = script_gen_bench._module_importers_via_ast(repo, "hub", exclude_tests=True)
+        assert importers == {"a"}
+        with_tests, _e2 = script_gen_bench._module_importers_via_ast(repo, "hub", exclude_tests=False)
+        assert any("test_hub" in m for m in with_tests)
+
+    def test_empty_when_nothing_imports(self, script_gen_bench: Any, mini_repo: Path) -> None:
+        """A module nothing imports yields an empty set (valid answer, not an error)."""
+        importers, err = script_gen_bench._module_importers_via_ast(mini_repo, "c")
+        assert err is None
+        assert importers == set()
+
+
+class TestModuleBlastRadiusValidator:
+    """_validate_module_blast_radius computes AST importer GT independent of scan-query."""
+
+    def test_computes_importers(self, script_gen_bench: Any, mini_repo: Path) -> None:
+        task = {
+            "type": "module_blast_radius",
+            "id": "MB-x",
+            "primary_module": "a",
+            "ground_truth": {"gt_pending": True, "importers": [], "importer_count": 0},
+        }
+        ok, live, reason = script_gen_bench._validate_module_blast_radius(task, None, None, mini_repo)
+        assert ok is False  # gt_pending → not-ok, but oracle GT computed
+        assert live["importers"] == ["b"]
+        assert live["importer_count"] == 1
+        assert live["gt_pending"] is False
+        assert "computed" in reason
+
+    def test_pending_flag_cleared_when_gt_matches(self, script_gen_bench: Any, mini_repo: Path) -> None:
+        task = {
+            "type": "module_blast_radius",
+            "id": "MB-x",
+            "primary_module": "a",
+            "ground_truth": {"gt_pending": False, "importers": ["b"], "importer_count": 1},
+        }
+        ok, _live, reason = script_gen_bench._validate_module_blast_radius(task, None, None, mini_repo)
+        assert ok is True, reason
+
+    def test_rejects_missing_primary_module(self, script_gen_bench: Any, mini_repo: Path) -> None:
+        task = {"type": "module_blast_radius", "id": "MB-x", "ground_truth": {}}
+        ok, live, reason = script_gen_bench._validate_module_blast_radius(task, None, None, mini_repo)
+        assert ok is False and live is None and "primary_module" in reason
+
+
+class TestModuleBlastRadiusEvaluator:
+    """_evaluate_module_blast_radius: importer recall ≥ 0.70, ≥2-component match, extraction-fail."""
+
+    def _task(self) -> dict:
+        return {
+            "type": "module_blast_radius",
+            "id": "MB-x",
+            "ground_truth": {
+                "importers": ["lightning.pytorch.a", "lightning.pytorch.b", "lightning.fabric.c"],
+                "importer_count": 3,
+            },
+        }
+
+    def test_full_recall_is_correct(self, script_run_bench: Any) -> None:
+        out = "## Modules\nlightning.pytorch.a\nlightning.pytorch.b\nlightning.fabric.c\n"
+        q = script_run_bench._evaluate_module_blast_radius(self._task(), out)
+        assert q.correct is True
+        assert q.recall == 1.0
+        assert q.scoring_detail["threshold"] == 0.70
+
+    def test_partial_recall_below_threshold_fails(self, script_run_bench: Any) -> None:
+        out = "## Modules\nlightning.pytorch.a\n"  # 1/3 = 0.33
+        q = script_run_bench._evaluate_module_blast_radius(self._task(), out)
+        assert q.correct is False
+        assert q.recall == pytest.approx(1 / 3, abs=0.01)
+
+    def test_extraction_failure_when_none_named(self, script_run_bench: Any) -> None:
+        q = script_run_bench._evaluate_module_blast_radius(self._task(), "no modules named here")
+        assert q.extraction_failed is True
+        assert q.recall == 0.0
+
+    def test_empty_gt_not_scored(self, script_run_bench: Any) -> None:
+        task = {"type": "module_blast_radius", "id": "MB-x", "ground_truth": {"importers": []}}
+        assert script_run_bench._evaluate_module_blast_radius(task, "anything").scored is False
+
+    def test_bare_leaf_does_not_match(self, script_run_bench: Any) -> None:
+        """A bare single-component leaf (`states`) must NOT count — only ≥2-component dotted forms."""
+        task = {
+            "type": "module_blast_radius",
+            "id": "MB-x",
+            "ground_truth": {"importers": ["lightning.pytorch.trainer.states"], "importer_count": 1},
+        }
+        # Only the bare leaf appears — must be rejected by the ≥2-component matcher.
+        q_leaf = script_run_bench._evaluate_module_blast_radius(task, "it uses states internally")
+        assert q_leaf.recall == 0.0
+        # A ≥2-component dotted suffix is accepted.
+        q_suffix = script_run_bench._evaluate_module_blast_radius(task, "imported by trainer.states")
+        assert q_suffix.recall == 1.0
+
+    def test_matched_missed_importers_populated(self, script_run_bench: Any) -> None:
+        out = "## Modules\nlightning.pytorch.a\nlightning.fabric.c\n"  # missing lightning.pytorch.b
+        q = script_run_bench._evaluate_module_blast_radius(self._task(), out)
+        assert q.scoring_detail["matched_importers"] == ["lightning.fabric.c", "lightning.pytorch.a"]
+        assert q.scoring_detail["missed_importers"] == ["lightning.pytorch.b"]
+
+
+class TestDevelopBrTailRecall:
+    """_evaluate_develop_br records matched/missed caller lists without changing the recall scalar."""
+
+    def _task(self) -> dict:
+        return {
+            "type": "develop_blast_radius",
+            "id": "BR-x",
+            "ground_truth": {
+                "fn_callers": ["lightning.a::Foo.bar", "lightning.b::Baz.qux"],
+                "unique_caller_count": 2,
+            },
+        }
+
+    def test_matched_and_missed_populated(self, script_run_bench: Any) -> None:
+        out = "## Callers\nlightning.a::Foo.bar\n"  # names only the first caller
+        q = script_run_bench._evaluate_develop_br(self._task(), out)
+        assert q.scoring_detail["matched_callers"] == ["lightning.a::Foo.bar"]
+        assert q.scoring_detail["missed_callers"] == ["lightning.b::Baz.qux"]
+
+    def test_recall_scalar_unchanged_by_instrumentation(self, script_run_bench: Any) -> None:
+        """Tail-recall lists are additive: the recall value still reflects true positives / expected."""
+        out = "## Callers\nlightning.a::Foo.bar\nlightning.b::Baz.qux\n"
+        q = script_run_bench._evaluate_develop_br(self._task(), out)
+        assert q.recall == 1.0
+        assert q.scoring_detail["threshold"] == 0.70
+
+    def test_scoring_detail_serialises_via_asdict(self, script_run_bench: Any) -> None:
+        """matched/missed lists survive asdict serialisation into the JSONL result line."""
+        from dataclasses import asdict
+
+        out = "## Callers\nlightning.a::Foo.bar\n"
+        q = script_run_bench._evaluate_develop_br(self._task(), out)
+        detail = asdict(q)["scoring_detail"]
+        assert "matched_callers" in detail and "missed_callers" in detail
+
+    def test_turn_count_serialises(self, script_run_bench: Any) -> None:
+        """BenchRun.turn_count already serialises via asdict (tail-recall diagnostics companion)."""
+        from dataclasses import asdict
+
+        run = script_run_bench.BenchRun(
+            arm="codemap", task_id="BR-x", task_type="develop_blast_radius", model="haiku", success=True
+        )
+        run.turn_count = 7
+        assert asdict(run)["turn_count"] == 7

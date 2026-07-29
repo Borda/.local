@@ -1571,6 +1571,18 @@ class TestDeriveModuleName:
         init.write_text("")
         assert script_run_agentic._derive_module_name(init, tmp_path) == "pkg.sub"
 
+    def test_loose_file_uses_path_relative_dotted_name(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """A loose file with no __init__.py in its chain is named path-relative, not the bare stem.
+
+        Scenario: examples/pytorch/x.py (no package parent) resolves to 'examples.pytorch.x' — the
+        same dotted name scan-index derives — so the AST oracle and the index oracle share one
+        namespace and stop emitting spurious gt-divergence lines for the module (review C-5).
+        """
+        (tmp_path / "examples" / "pytorch").mkdir(parents=True)
+        loose = tmp_path / "examples" / "pytorch" / "x.py"
+        loose.write_text("")
+        assert script_run_agentic._derive_module_name(loose, tmp_path) == "examples.pytorch.x"
+
 
 class TestResolveRelativeBase:
     @pytest.mark.parametrize(
@@ -1585,12 +1597,12 @@ class TestResolveRelativeBase:
     def test_relative_resolution(
         self, script_run_agentic: Any, package: str, level: int, module: Any, expected: Any
     ) -> None:
-        """_resolve_relative_base resolves dotted relative imports against the package.
+        """resolve_relative_base resolves dotted relative imports against the package.
 
         Scenario: each documented relative form (current package, parent, over-ascend) must
         map to the correct absolute base or None when it walks above the root.
         """
-        assert script_run_agentic._resolve_relative_base(package, level, module) == expected
+        assert script_run_agentic.resolve_relative_base(package, level, module) == expected
 
 
 class TestScanRepoImporters:

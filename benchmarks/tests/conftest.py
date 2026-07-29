@@ -24,12 +24,22 @@ def _load_module(module_name: str, filename: str):
     Returns:
         The loaded module with all public symbols accessible.
     """
+    # The runners import their sibling `_utilities` module by bare name; at runtime their own
+    # directory is sys.path[0], but spec_from_file_location does not add it, so ensure it here.
+    if str(BENCHMARKS_DIR) not in sys.path:
+        sys.path.insert(0, str(BENCHMARKS_DIR))
     path = BENCHMARKS_DIR / filename
     spec = importlib.util.spec_from_file_location(module_name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+@pytest.fixture(scope="session")
+def script_utilities():
+    """Loaded shared _utilities module."""
+    return _load_module("benchmarks_utilities", "_utilities.py")
 
 
 @pytest.fixture(scope="session")
@@ -157,13 +167,13 @@ def sample_repo(tmp_path_factory: pytest.TempPathFactory, scan_index_binary: Pat
 def pytorch_lightning_repo() -> Path:
     """Path to a pytorch-lightning checkout; skips if not found.
 
-    Checks ``PL_REPO_PATH`` env var first, then
-    ``~/Workspace/pytorch-lightning-master`` as a dev-machine default.
+    Checks ``PL_REPO_PATH`` env var first, then the pinned in-project clone
+    ``.sandbox/pytorch-lightning`` (created by ``run-all.sh``).
 
     Returns:
         Absolute path to the pytorch-lightning repository root.
     """
-    default = Path.home() / "Workspace" / "pytorch-lightning-master"
+    default = Path(__file__).resolve().parents[2] / ".sandbox" / "pytorch-lightning"
     repo = Path(os.environ.get("PL_REPO_PATH", str(default)))
     if not repo.exists():
         pytest.skip(f"pytorch-lightning repo not found at {repo}; set PL_REPO_PATH env var")

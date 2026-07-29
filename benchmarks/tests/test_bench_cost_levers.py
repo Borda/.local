@@ -593,20 +593,20 @@ class TestSelfConsistencyExclusion:
 
 
 class TestSelfConsistencyInSuite:
-    """The shipped suite tags exactly the uncovered/xrefs CQ tasks."""
+    """The shipped suite tags tool-derived CQ tasks as self-consistency."""
 
     @pytest.fixture(scope="class")
     @staticmethod
     def tasks() -> list[dict]:
         return json.loads(SUITE.read_text())["tasks"]
 
-    def test_tagged_tasks_are_cq_uncovered_xrefs(self, tasks: list[dict]) -> None:
-        """CQ-02 (uncovered), CQ-04 (xrefs), CQ-05 (combined incl. uncovered) are demoted."""
+    def test_tagged_tasks_are_tool_derived_cq_diagnostics(self, tasks: list[dict]) -> None:
+        """Coupled, xrefs, and combined tool-derived answers are demoted."""
         sc = {t["id"] for t in tasks if t.get("self_consistency")}
-        assert sc == {"CQ-02", "CQ-04", "CQ-05"}
+        assert sc == {"CQ-03", "CQ-04", "CQ-05"}
 
-    def test_coupled_and_undocumented_not_demoted(self, tasks: list[dict]) -> None:
-        """CQ-01 (undocumented) and CQ-03 (coupled) keep headline status — not index-circular."""
+    def test_independent_cq_tasks_are_not_mislabelled_self_consistency(self, tasks: list[dict]) -> None:
+        """CQ-01 is independent; CQ-02 is approximate independent, not self-consistency."""
         by_id = {t["id"]: t for t in tasks}
         assert not by_id["CQ-01"].get("self_consistency")
-        assert not by_id["CQ-03"].get("self_consistency")
+        assert not by_id["CQ-02"].get("self_consistency")
