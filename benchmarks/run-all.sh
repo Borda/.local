@@ -67,18 +67,25 @@ smoke() {
   echo "→ smoke OK — codemap path healthy"
 }
 
+# In the full suite one runner crashing (or exiting non-zero on failed runs) must NOT abort the
+# whole batch — later tiers/steps are independent and worth finishing. Each step is wrapped so its
+# failure logs a warning and continues. Only smoke() hard-gates (it decides whether full runs at all).
+_step_full() {  # $@ = command; run it, warn-and-continue on non-zero instead of aborting under set -e
+  "$@" || echo "⚠ step exited $? — continuing the full suite: $*" >&2
+}
+
 full() {
   echo "== 1. QUERY (no LLM) — gates the index =="
-  python benchmarks/run-codemap-cli.py --repo-path "$REPO" --report
+  _step_full python benchmarks/run-codemap-cli.py --repo-path "$REPO" --report
 
   echo "== 2. REAL-CODEBASE (LLM) — 54 tasks x 2 arms, per tier =="
   for m in haiku sonnet opus; do
     echo "   -- model: $m --"
-    python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model "$m"
+    _step_full python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model "$m"
   done
 
   echo "== 3. AGENTIC (LLM) — 16 tasks x 4 arms x 3 tiers =="
-  python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
+  _step_full python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
 }
 
 case "$MODE" in

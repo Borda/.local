@@ -38,6 +38,10 @@ extend-exclude = [
 ]
 format = {}
 
+[tool.codespell]
+# ignore-words-list: real words codespell misflags — "derails" (not "details")
+ignore-words-list = "derails"
+
 [tool.pytest]
 ini_options.testpaths = [ "benchmarks", "plugins" ]
 ini_options.norecursedirs = [ "*.egg", ".*", "build", "dist", "node_modules" ]

@@ -249,51 +249,34 @@ MODELS: dict[str, str] = {
 # Per-model wall-clock timeout (seconds). Opus needs more time for complex reasoning.
 _MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
 
-# Fixed USD price table per million tokens, keyed by short tier (NOT exact model id) so a
-# 4.6 vs 4.8 swap does not perturb cross-run cost comparisons. List prices — edit here to
-# track Anthropic changes; cache_read = 0.1x input, cache_write = 1.25x input (standard ratios).
-# Cost is the fair cross-arm metric because arms differ in how many tokens they burn to reach
-# the same answer. Under `claude -p` the codemap skill sub-model never spawns, so every token —
-# including skill/scan-query work — bills at the arm's own tier; there is no separate cheaper
-# haiku skill-model layer. Cost still separates arms by token volume, not by a per-layer rate mix.
-PRICES: dict[str, dict[str, float]] = {
-    "haiku": {"input": 1.00, "output": 5.00, "cache_read": 0.10, "cache_write": 1.25},
-    "sonnet": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
-    "opus": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
-}
+# Cost is the fair cross-arm metric because arms differ in how many tokens they burn to reach the
+# same answer. We use Anthropic's own per-run total_cost_usd (captured from the stream-json result
+# event) — current prices, cache-aware, per model, with no local price table to drift out of date
+# (an earlier hand-maintained table silently carried Opus 4.1 prices after the models moved to 5).
+# A run with no result event (crash/timeout) keeps cost_usd = 0.0 and its $ column is omitted.
 
 
 def run_cost_usd(r: "BenchmarkRun") -> float:
-    """Cache-aware USD cost of one run from the fixed PRICES table.
+    """Return the run's captured USD cost (Anthropic's total_cost_usd), or 0.0 when unavailable.
 
-    ``input_tokens`` stores the summed context (uncached + cache_creation + cache_read); when the
-    cache breakdown was captured (new runs) cost is billed per component, otherwise the whole sum
-    falls back to the full input price — an upper bound flagged in the report Limitations.
+    The cost comes straight from the stream-json ``result`` event's ``total_cost_usd`` — current
+    list prices, cache-aware, per model — so there is no local price table to drift. A run that
+    produced no result event (crash/timeout) keeps ``cost_usd = 0.0``, and callers omit the $ column.
 
     Args:
-        r: Completed benchmark run with token counts and a short model tier.
+        r: Completed benchmark run.
 
     Returns:
-        Estimated cost in USD.
+        The run's cost in USD, or 0.0 when the result event carried no total_cost_usd.
 
     Examples:
         >>> from types import SimpleNamespace as N
-        >>> round(run_cost_usd(N(model="haiku", input_tokens=1_000_000, output_tokens=0,
-        ...     cache_read_tokens=0, cache_creation_tokens=0)), 2)
-        1.0
+        >>> run_cost_usd(N(cost_usd=0.42))
+        0.42
+        >>> run_cost_usd(N(cost_usd=0.0))
+        0.0
     """
-    p = PRICES.get(r.model)
-    if not p:
-        return 0.0
-    cache_read = getattr(r, "cache_read_tokens", 0) or 0
-    cache_write = getattr(r, "cache_creation_tokens", 0) or 0
-    uncached = max(r.input_tokens - cache_read - cache_write, 0)
-    return (
-        uncached * p["input"]
-        + cache_write * p["cache_write"]
-        + cache_read * p["cache_read"]
-        + r.output_tokens * p["output"]
-    ) / 1_000_000
+    return getattr(r, "cost_usd", 0.0) or 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +390,7 @@ class BenchmarkRun:
     tool_result_tokens: int = 0  # tiktoken estimate of tool result content
     cache_read_tokens: int = 0  # cache-hit input tokens (billed ~0.1x) — for cache-aware cost
     cache_creation_tokens: int = 0  # cache-write input tokens (billed ~1.25x)
+    cost_usd: float = 0.0  # Anthropic's total_cost_usd for this run (current prices); 0.0 if absent
     # Timing metrics (stored in seconds)
     elapsed_s: float = 0.0
     tool_elapsed_s: float = 0.0  # time inside tool execution only
@@ -1777,6 +1761,8 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             result.cache_read_tokens = usage.get("cache_read_input_tokens", 0)
             result.input_tokens = usage.get("input_tokens", 0) + result.cache_creation_tokens + result.cache_read_tokens
             result.output_tokens = usage.get("output_tokens", 0)
+            # Anthropic's own cost for this run — current prices, cache-aware, per model.
+            result.cost_usd = event.get("total_cost_usd", 0.0) or 0.0
             subtype = event.get("subtype", "")
             result.success = subtype == "success"
             if not result.success:
@@ -2345,9 +2331,11 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
         degenerate_note = " ⚑degenerate?"
     task_num = task.id.lstrip("T")
     difficulty = task.difficulty
+    _cost = run_cost_usd(result)
+    cost_part = f"${_cost:6.3f}" if _cost else "   $—  "  # omit $ when total_cost_usd absent
     return (
         f"[{run_n:0{len(str(total_runs))}}/{total_runs}] {task_num} ({difficulty}) | {model_short:<6} | {arm:<8}"
-        f" | time={result.elapsed_s:5.1f}s | ${run_cost_usd(result):6.3f} | tok={result.input_tokens / 1000:5.1f}k | calls={result.tools.total:3}"
+        f" | time={result.elapsed_s:5.1f}s | {cost_part} | in={result.input_tokens / 1000:5.1f}k out={result.output_tokens:4} | calls={result.tools.total:3}"
         f" (Gp={tc.grep:2}; Gb={tc.glob:2}; Bh={tc.bash:2}; Sk={tc.skill:2}; Sm={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2}; idx={tc.index_reads:2})"
         f"{quality_suffix}"
         f"{error_suffix}{degenerate_note}"

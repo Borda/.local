@@ -262,6 +262,7 @@ class BenchRun:
     workflow_type: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+    cost_usd: float = 0.0  # Anthropic's total_cost_usd for this run (current prices); 0.0 if absent
     elapsed_s: float = 0.0
     error: str = ""
     tool_log: list[str] = field(default_factory=list)
@@ -866,6 +867,32 @@ class TaskSelection:
     profile: Optional[str]
     tiered: bool
     model: str
+
+
+def _gt_is_pending(task: dict) -> bool:
+    """Return True when a task's ground truth is an unresolved placeholder.
+
+    A ``gt_pending`` task was authored without the target repo present, so its ``ground_truth`` —
+    and any ``stage`` find-anchors — are placeholders that must be materialized by
+    ``generate-tasks-bench.py --update`` against the target repo before the task can be staged or
+    scored. Running one as-is stages a stale anchor (which now skips) and scores against stale
+    callers. The runner honours the same flag the generator's validator does.
+
+    Args:
+        task: A task dict from a suite file.
+
+    Returns:
+        True when ``task["ground_truth"].get("gt_pending")`` is truthy.
+
+    Examples:
+        >>> _gt_is_pending({"ground_truth": {"gt_pending": True}})
+        True
+        >>> _gt_is_pending({"ground_truth": {"gt_pending": False}})
+        False
+        >>> _gt_is_pending({})
+        False
+    """
+    return bool(task.get("ground_truth", {}).get("gt_pending"))
 
 
 def _base_task_list(sel: TaskSelection) -> Optional[list[dict]]:
@@ -2561,7 +2588,14 @@ class DiffImpactStager:
 
     def __enter__(self) -> "DiffImpactStager":
         self._assert_clean()
-        self._apply()
+        try:
+            self._apply()
+        except Exception:
+            # A later edit's anchor may be missing (stale spec vs repo drift) after earlier edits
+            # already wrote to disk. __exit__ does NOT run when __enter__ raises, so revert here or
+            # the target tree is left partially modified and every subsequent DI task sees a dirty tree.
+            self.revert()
+            raise
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
@@ -3113,6 +3147,9 @@ class BenchRunner:
                 + usage.get("cache_read_input_tokens", 0)
             )
             result.output_tokens = usage.get("output_tokens", 0)
+            # Anthropic's own cost for this run — current prices, cache-aware, per model. When the
+            # result event carries no total_cost_usd the $ column is omitted (in/out tokens still show).
+            result.cost_usd = event.get("total_cost_usd", 0.0) or 0.0
             result.success = subtype == "success"
             if not result.success and not result.error:
                 result.error = subtype
@@ -3218,6 +3255,9 @@ class TaskRatioRow:
     plain_elapsed_s: float | None
     codemap_elapsed_s: float | None
     time_ratio: float | None
+    plain_cost: float | None
+    codemap_cost: float | None
+    cost_ratio: float | None  # codemap $ / plain $ — price-accurate cross-arm comparison
 
 
 def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
@@ -3246,6 +3286,10 @@ def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
         plain_elapsed = plain.elapsed_s if plain else None
         codemap_elapsed = codemap.elapsed_s if codemap else None
         time_ratio = _safe_ratio(codemap_elapsed, plain_elapsed)
+        # Price-accurate cross-arm cost from each run's captured total_cost_usd (None when absent).
+        plain_cost = plain.cost_usd if plain and plain.cost_usd else None
+        codemap_cost = codemap.cost_usd if codemap and codemap.cost_usd else None
+        cost_ratio = _safe_ratio(codemap_cost, plain_cost)
         rows.append(
             TaskRatioRow(
                 task_id=task_id,
@@ -3260,6 +3304,9 @@ def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
                 plain_elapsed_s=plain_elapsed,
                 codemap_elapsed_s=codemap_elapsed,
                 time_ratio=time_ratio,
+                plain_cost=plain_cost,
+                codemap_cost=codemap_cost,
+                cost_ratio=cost_ratio,
             )
         )
     return pd.DataFrame([asdict(r) for r in rows])
@@ -3471,7 +3518,7 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
     print(f"{'=' * 64}")
 
     # Build display table manually to support colored Δrecall column.
-    hdr = f"{'task_id':<9}  {'plain_tok':>9}  {'cm_tok':>9}  {'tok×':>5}  {'plain_t':>7}  {'cm_t':>7}  {'t×':>5}  {'Δrecall':>9}"
+    hdr = f"{'task_id':<9}  {'plain_tok':>9}  {'cm_tok':>9}  {'tok×':>5}  {'$×':>5}  {'plain_t':>7}  {'cm_t':>7}  {'t×':>5}  {'Δrecall':>9}"
     print(hdr)
     print("-" * len(hdr))
     for _, row in df.iterrows():
@@ -3479,6 +3526,7 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
         ptok = f"{int(row['plain_tok']):>9,}" if pd.notna(row["plain_tok"]) else f"{'n/a':>9}"
         ctok = f"{int(row['codemap_tok']):>9,}" if pd.notna(row["codemap_tok"]) else f"{'n/a':>9}"
         tratio = f"{row['ratio']:>5.2f}" if pd.notna(row["ratio"]) else f"{'n/a':>5}"
+        cratio = f"{row['cost_ratio']:>5.2f}" if pd.notna(row.get("cost_ratio", float("nan"))) else f"{'n/a':>5}"
         pt = f"{row['plain_elapsed_s'] / 60:>6.1f}m" if pd.notna(row["plain_elapsed_s"]) else f"{'n/a':>7}"
         ct = f"{row['codemap_elapsed_s'] / 60:>6.1f}m" if pd.notna(row["codemap_elapsed_s"]) else f"{'n/a':>7}"
         trm = f"{row['time_ratio']:>5.2f}" if pd.notna(row.get("time_ratio", float("nan"))) else f"{'n/a':>5}"
@@ -3503,13 +3551,20 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
             recall_col = f"{'pl:' + f'{pr:.2f}':>9}"
         else:
             recall_col = f"{'n/a':>9}"
-        print(f"{tid:<9}  {ptok}  {ctok}  {tratio}  {pt}  {ct}  {trm}  {recall_col}")
+        print(f"{tid:<9}  {ptok}  {ctok}  {tratio}  {cratio}  {pt}  {ct}  {trm}  {recall_col}")
 
     valid = df.dropna(subset=["ratio"])
     if not valid.empty:
         ratios = valid["ratio"].tolist()
         print(
             f"\nToken ratio (codemap/plain):  median={statistics.median(ratios):.2f}  mean={statistics.mean(ratios):.2f}  [{min(ratios):.2f}–{max(ratios):.2f}]"
+        )
+
+    valid_c = df.dropna(subset=["cost_ratio"])
+    if not valid_c.empty:
+        cost_ratios = valid_c["cost_ratio"].tolist()
+        print(
+            f"Cost ratio  (codemap/plain):  median={statistics.median(cost_ratios):.2f}  mean={statistics.mean(cost_ratios):.2f}  [{min(cost_ratios):.2f}–{max(cost_ratios):.2f}]  (price-accurate)"
         )
 
     valid_t = df.dropna(subset=["time_ratio"])
@@ -3797,6 +3852,22 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         print("No tasks matched.")
         sys.exit(1)
 
+    # Exclude tasks whose ground truth is still a placeholder (gt_pending): their stage anchors and
+    # expected callers were authored without this target repo, so staging and scoring are unreliable
+    # until `generate-tasks-bench.py --update` materialises them. The generator's validator already
+    # honours this flag; the runner must too, or a stale DI anchor derails the run (review: DI crash).
+    pending = [t for t in task_list if _gt_is_pending(t)]
+    if pending:
+        ids = ", ".join(t["id"] for t in pending)
+        print(
+            f"⊘ Skipping {len(pending)} task(s) with pending ground truth — run "
+            f"`generate-tasks-bench.py --update` against the target repo to materialise them: {ids}"
+        )
+        task_list = [t for t in task_list if not _gt_is_pending(t)]
+    if not task_list:
+        print("No runnable tasks after excluding pending ground truth.")
+        sys.exit(1)
+
     # Determine arms
     arms_to_run = list(ARMS) if arm == "all" else [arm]
 
@@ -3853,6 +3924,11 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         correct = _run_correct_symbol(run)
         tok = run.input_tokens
         tok_str = f"{tok / 1_000_000:.1f}M" if tok >= 1_000_000 else f"{tok // 1000:3d}k"
+        # in/out token split plus Anthropic's own per-run cost. The $ is omitted (in/out only)
+        # when the run carried no total_cost_usd — no hand-maintained price table to go stale.
+        _out = run.output_tokens
+        out_str = f"{_out / 1000:.1f}k" if _out >= 1000 else f"{_out:>4d}"
+        cost_str = f" ${run.cost_usd:.4f}" if run.cost_usd else ""
         _eff = _effective_recall(run)
         # Three distinct states, never conflated:
         #   number  — scored & parsed: recall in [0, 1] (0.000 = wrong answer, real miss)
@@ -3869,7 +3945,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         # The raw skill_counts field is still recorded in the results JSONL if it ever fires.
         tool_summary = f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d}"
         log_fn(
-            f"  {status}{correct} {task['id']}\t{arm}\ttok={tok_str} t={run.elapsed_s / 60:.1f}m\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
+            f"  {status}{correct} {task['id']}\t{arm}\tin={tok_str} out={out_str}{cost_str}\tt={run.elapsed_s / 60:.1f}m\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
         )
         return run
 
@@ -3938,14 +4014,18 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         total = len(combos)
         outer = progress.add_task("running", total=total)
         done = 1
+        _dirty_skips: list[tuple[str, str]] = []  # DI tasks skipped (un-stageable), reported after the run
         for task in task_list:
             try:
                 _run_task_arms(task, progress, outer, done, total)
             except DirtyTreeError as exc:
-                # Refuse the diff-impact series rather than risk clobbering the user's own edits;
-                # abort loudly so no partial/contaminated DI results are recorded.
-                progress.console.print(f"[red]! DI series refused (dirty target tree): {exc}[/red]")
-                raise
+                # This diff-impact task could not stage its synthetic change — either the tree is
+                # dirty, or a find-anchor is stale vs the current target repo. The stager already
+                # reverted any partial edit (see __enter__), so skip THIS task and continue: one
+                # un-stageable task must never abort the whole run or discard the summary and the
+                # results already gathered for every other task.
+                progress.console.print(f"[yellow]⚠ skipped DI task {task['id']} (cannot stage): {exc}[/yellow]")
+                _dirty_skips.append((task["id"], str(exc)))
             done += len(arms_to_run)
 
     _print_summary(runs, model_short)
@@ -3953,6 +4033,13 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     if not no_save:
         out = _save_results(runs, model_short)
         print(f"\nResults → {out}")
+
+    if _dirty_skips:
+        print(
+            f"\n{len(_dirty_skips)} diff-impact task(s) skipped — could not stage (dirty tree or stale find-anchor vs the target repo):"
+        )
+        for tid, why in _dirty_skips:
+            print(f"  {tid}: {why}")
 
     failed = [r for r in runs if not r.success]
     if failed:

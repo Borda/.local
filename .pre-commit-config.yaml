@@ -79,7 +79,10 @@ repos:
     hooks:
       - id: codespell
         name: ✏️ codespell
+        # ignore-words-list lives in pyproject.toml [tool.codespell]; tomli lets the
+        # isolated hook env parse pyproject on Python <3.11 (3.11+ uses stdlib tomllib).
         args: ["--write-changes"]
+        additional_dependencies: ["tomli"]
 
   - repo: https://github.com/executablebooks/mdformat
     rev: 1.0.0

@@ -249,6 +249,25 @@ class TestQualityScore:
 # ===========================================================================
 
 
+class TestRunCostUsd:
+    """run_cost_usd returns the captured total_cost_usd — no local price table to drift."""
+
+    def _run(self, script_run_agentic: Any, **kw: Any) -> Any:
+        """Build a BenchmarkRun with the required fields plus overrides."""
+        base = dict(arm="codemap", task_id="BA-01", task_type="fix", model="opus", success=True)
+        base.update(kw)
+        return script_run_agentic.BenchmarkRun(**base)
+
+    def test_returns_captured_cost(self, script_run_agentic: Any) -> None:
+        """The run's captured cost_usd is returned verbatim, independent of model/token counts."""
+        run = self._run(script_run_agentic, cost_usd=0.1234, input_tokens=999_999, output_tokens=5_000)
+        assert script_run_agentic.run_cost_usd(run) == pytest.approx(0.1234)
+
+    def test_zero_when_cost_absent(self, script_run_agentic: Any) -> None:
+        """No captured cost → 0.0, so callers omit the $ column rather than inventing a price."""
+        assert script_run_agentic.run_cost_usd(self._run(script_run_agentic)) == 0.0
+
+
 class TestBenchmarkRun:
     def test_required_fields_stored(self, script_run_agentic: Any) -> None:
         """BenchmarkRun stores the four required positional fields.

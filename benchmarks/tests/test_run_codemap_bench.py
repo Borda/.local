@@ -254,6 +254,76 @@ class TestExtractInt:
 
 
 # ===========================================================================
+# cost accounting — captured total_cost_usd
+# ===========================================================================
+
+
+class TestCostAccounting:
+    """The $ metric comes from each run's captured total_cost_usd, not a local price table."""
+
+    def test_cost_usd_defaults_to_zero(self, script_run_bench: Any) -> None:
+        """A run with no captured cost carries cost_usd 0.0 (so the $ column is omitted)."""
+        assert _make_run(script_run_bench).cost_usd == 0.0
+
+    def test_cost_ratio_is_codemap_over_plain(self, script_run_bench: Any) -> None:
+        """The ratio table's cost_ratio is the price-accurate codemap $ / plain $."""
+        plain = _make_run(script_run_bench, arm="plain", task_id="SE-01", cost_usd=0.10)
+        codemap = _make_run(script_run_bench, arm="codemap", task_id="SE-01", cost_usd=0.04)
+        df = script_run_bench._token_ratio_table([plain, codemap])
+        row = df[df["task_id"] == "SE-01"].iloc[0]
+        assert row["cost_ratio"] == pytest.approx(0.4)
+
+    def test_cost_ratio_nan_when_a_cost_is_missing(self, script_run_bench: Any) -> None:
+        """A missing cost (0.0) yields NaN cost_ratio — never a bogus number from a zero denominator."""
+        import math
+
+        plain = _make_run(script_run_bench, arm="plain", task_id="SE-02", cost_usd=0.0)
+        codemap = _make_run(script_run_bench, arm="codemap", task_id="SE-02", cost_usd=0.04)
+        df = script_run_bench._token_ratio_table([plain, codemap])
+        row = df[df["task_id"] == "SE-02"].iloc[0]
+        assert math.isnan(row["cost_ratio"])
+
+
+# ===========================================================================
+# DiffImpactStager — resilience
+# ===========================================================================
+
+
+class TestDiffImpactStagerResilience:
+    """A failed stage must leave no residue: __enter__ reverts partial edits before raising."""
+
+    @staticmethod
+    def _git_repo(tmp_path: Any) -> Any:
+        """Create a minimal committed git repo with two source files."""
+        import subprocess
+
+        repo = tmp_path / "repo"
+        (repo / "pkg").mkdir(parents=True)
+        (repo / "pkg" / "a.py").write_text("def foo():\n    return 1\n")
+        (repo / "pkg" / "b.py").write_text("def bar():\n    return 2\n")
+        for args in (
+            ["init", "-q"],
+            ["add", "-A"],
+            ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+        ):
+            subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+        return repo
+
+    def test_enter_reverts_partial_apply_on_missing_anchor(self, script_run_bench: Any, tmp_path: Any) -> None:
+        """First edit applies, second edit's anchor is absent → raise AND revert the first (no residue)."""
+        repo = self._git_repo(tmp_path)
+        stage = [
+            {"file": "pkg/a.py", "append": "\n# staged change\n"},
+            {"file": "pkg/b.py", "find": "def does_not_exist(", "replace": "def x("},
+        ]
+        stager = script_run_bench.DiffImpactStager(repo, stage)
+        with pytest.raises(script_run_bench.DirtyTreeError):
+            stager.__enter__()
+        # a.py was written by the first edit; __enter__ must have reverted it before propagating.
+        assert (repo / "pkg" / "a.py").read_text() == "def foo():\n    return 1\n"
+
+
+# ===========================================================================
 # _int_close
 # ===========================================================================
 
