@@ -61,14 +61,15 @@ def test_adapter_result_uses_the_shared_provenance_schema(
 def test_agentic_loader_rejects_a_known_id_with_tampered_task_bytes(tmp_path: Path, script_run_agentic: Any) -> None:
     """A manifest task ID cannot authorize changed task or prompt bytes.
 
-    Prevents current-revision results from inheriting an r3 policy after their
-    prompt changed. Unknown IDs are already rejected; this covers the distinct
-    known-ID/mismatched-hash path.
+    Prevents current-revision results from inheriting a
+    `codemap-provider-parity-v1-b0-r3` policy after their prompt changed.
+    Unknown IDs are already rejected; this covers the distinct known-ID and
+    mismatched-hash path.
     """
     raw_suite = json.loads(AGENTIC_SUITE_PATH.read_text(encoding="utf-8"))
     tasks = raw_suite["tasks"] if isinstance(raw_suite, dict) else raw_suite
     task = next(item for item in tasks if item["id"] == "BA-01").copy()
-    task["prompt"] = f"{task['prompt']}\nTampered after the r3 lock."
+    task["prompt"] = f"{task['prompt']}\nTampered after the codemap-provider-parity-v1-b0-r3 lock."
     suite_path = tmp_path / "tampered-agentic-suite.json"
     suite_path.write_text(json.dumps([task]), encoding="utf-8")
 

@@ -132,12 +132,12 @@ def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_
         assert "sandbox_workspace_write" not in treatment_text
 
 
-def test_r6_manifest_locks_exact_treatment_python_runtime() -> None:
+def test_active_manifest_locks_exact_treatment_python_runtime() -> None:
     """Prevent another paid treatment from discovering or choosing its own Python."""
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     runtime = manifest["codex_permission_profiles"]["treatment_runtime"]
 
-    assert manifest["experiment_revision"] == "codemap-provider-parity-v1-b0-r6"
+    assert manifest["experiment_revision"]
     assert runtime == {
         "environment": {"CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"},
         "required_major_minor": [3, 11],
@@ -320,7 +320,7 @@ def test_permission_profile_verification_fails_closed_when_codex_rejects_the_pro
 def test_real_codex_profile_denies_source_and_auth_but_allows_coordination(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
-    """The installed Codex sandbox must enforce the exact r6 treatment boundary."""
+    """The installed Codex sandbox must enforce the active treatment boundary."""
     repo_path = tmp_path / "target"
     index_path = repo_path / ".cache" / "codemap" / "target.json"
     index_path.parent.mkdir(parents=True)
@@ -338,7 +338,7 @@ def test_real_codex_profile_denies_source_and_auth_but_allows_coordination(
         script_run_codex._cleanup_coordination_root(home.coordination_path)
         home.cleanup()
 
-    assert not any(repo_path.glob(".codex-r6-deny-*"))
+    assert not any(repo_path.glob(".codex-parity-deny-*"))
     assert index_path.read_text(encoding="utf-8") == "{}"
 
 
@@ -1156,11 +1156,18 @@ def test_main_rejects_missing_or_existing_output_before_model_execution(
 def test_main_rejects_unreviewed_implementation_revision_before_reserving_output(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Paid execution cannot mix the new runner with the frozen prior manifest."""
+    """Paid execution cannot use a manifest that does not hash the active runner."""
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
-        json.dumps({"experiment_revision": "codemap-provider-parity-v1-b0-r6"}),
+        json.dumps(
+            {
+                "experiment_revision": "prior-fixture-revision",
+                "implementation_contract": {
+                    "artifact_sha256": {"run_codex_structural": "0" * 64},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path: [task])
@@ -1172,7 +1179,7 @@ def test_main_rejects_unreviewed_implementation_revision_before_reserving_output
     )
     output_path = tmp_path / "unreviewed.jsonl"
 
-    with pytest.raises(ValueError, match="paid execution requires a reviewed"):
+    with pytest.raises(ValueError, match="manifest locked to this runner"):
         script_run_codex.main(
             repo_path=tmp_path,
             model=script_run_codex.PARITY_CODEX_MODEL,
@@ -1211,7 +1218,7 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
             )
 
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
-    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda: None)
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
     output_path = tmp_path / "smoke.jsonl"
 
     script_run_codex.main(
@@ -1228,7 +1235,7 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
         for task in tasks
         for repetition in range(1, 4)
         for arm in core.deterministic_arm_order(
-            script_run_codex.PARITY_EXPERIMENT_REVISION,
+            script_run_codex._read_manifest_revision(),
             "codex",
             script_run_codex.PARITY_CODEX_MODEL,
             task["id"],
@@ -1343,7 +1350,7 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
         for task_id in pilot_ids
         for repetition in range(1, repetitions + 1)
         for arm in core.deterministic_arm_order(
-            script_run_codex.PARITY_EXPERIMENT_REVISION,
+            script_run_codex._read_manifest_revision(),
             "codex",
             "gpt-5.6-luna",
             task_id,

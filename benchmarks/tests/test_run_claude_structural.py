@@ -119,7 +119,7 @@ class TestProviderParityIntegration:
     def test_canonical_result_stamps_the_locked_policy_and_provenance(
         self, script_run_bench: Any, tmp_path: Path
     ) -> None:
-        """Explicit canonical arms receive r4 task, suite, evaluator, envelope, and arm-contract identity."""
+        """Canonical arms receive codemap-provider-parity-v1-b0-r4 task and contract identity."""
         tasks, policies = script_run_bench._load_primary_parity_contract()
         task = next(task for task in tasks if task["id"] == "FN-02")
         runner = script_run_bench.BenchRunner(
@@ -148,7 +148,7 @@ class TestProviderParityIntegration:
         assert result.scoreable is True
 
     def test_canonical_task_hash_mismatch_fails_before_execution(self, script_run_bench: Any, tmp_path: Path) -> None:
-        """A known task ID with changed task bytes cannot enter an r4 canonical run."""
+        """Changed task bytes cannot enter a codemap-provider-parity-v1-b0-r4 canonical run."""
         tasks, policies = script_run_bench._load_primary_parity_contract()
         task = next(task for task in tasks if task["id"] == "FN-02").copy()
         task["prompt"] = f"{task['prompt']} tampered"
@@ -464,17 +464,17 @@ class TestBenchRun:
 
     def test_tool_log_independent_per_instance(self, script_run_bench: Any) -> None:
         """tool_log must be an independent list per BenchRun, not shared state."""
-        r1 = _make_run(script_run_bench)
-        r2 = _make_run(script_run_bench)
-        r1.tool_log.append("Bash: foo")
-        assert r2.tool_log == []
+        first_run = _make_run(script_run_bench)
+        second_run = _make_run(script_run_bench)
+        first_run.tool_log.append("Bash: foo")
+        assert second_run.tool_log == []
 
     def test_skill_counts_independent_per_instance(self, script_run_bench: Any) -> None:
         """skill_counts dict must be independent per instance (no shared mutable default)."""
-        r1 = _make_run(script_run_bench)
-        r2 = _make_run(script_run_bench)
-        r1.skill_counts["fix"] = 1
-        assert "fix" not in r2.skill_counts
+        first_run = _make_run(script_run_bench)
+        second_run = _make_run(script_run_bench)
+        first_run.skill_counts["fix"] = 1
+        assert "fix" not in second_run.skill_counts
 
     def test_quality_defaults_to_unscored(self, script_run_bench: Any) -> None:
         """quality field must default to an unscored BenchQuality object."""

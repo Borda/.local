@@ -191,7 +191,7 @@ class TestArmContracts:
 
     def test_arm_order_is_revision_bound_and_rejects_invalid_coordinates(self) -> None:
         """One block has a stable complete order that changes with experiment identity."""
-        r6_order = core.deterministic_arm_order(
+        runtime_revision_order = core.deterministic_arm_order(
             "codemap-provider-parity-v1-b0-r6",
             "codex",
             "gpt-5.6-luna",
@@ -199,9 +199,9 @@ class TestArmContracts:
             1,
         )
 
-        assert r6_order == ("C_required", "A_plain", "B_auto")
-        assert set(r6_order) == set(core.ARM_CONTRACTS)
-        assert r6_order != core.deterministic_arm_order(
+        assert runtime_revision_order == ("C_required", "A_plain", "B_auto")
+        assert set(runtime_revision_order) == set(core.ARM_CONTRACTS)
+        assert runtime_revision_order != core.deterministic_arm_order(
             "codemap-provider-parity-v1-b0-r5",
             "codex",
             "gpt-5.6-luna",
@@ -209,13 +209,13 @@ class TestArmContracts:
             1,
         )
         with pytest.raises(ValueError, match="repetition"):
-            core.deterministic_arm_order("r4", "codex", "model", "FN-02", 0)
+            core.deterministic_arm_order("codemap-provider-parity-v1-b0-r4", "codex", "model", "FN-02", 0)
 
     def test_arm_order_includes_reasoning_effort_in_the_model_stratum(self) -> None:
         """Effort drift must change the randomized block identity."""
         high = [
             core.deterministic_arm_order(
-                "r7",
+                "effort-aware-revision",
                 "codex",
                 "gpt-5.6-luna",
                 f"T-{index}",
@@ -226,7 +226,7 @@ class TestArmContracts:
         ]
         medium = [
             core.deterministic_arm_order(
-                "r7",
+                "effort-aware-revision",
                 "codex",
                 "gpt-5.6-luna",
                 f"T-{index}",
@@ -238,7 +238,7 @@ class TestArmContracts:
 
         assert high == [
             core.deterministic_arm_order(
-                "r7",
+                "effort-aware-revision",
                 "codex",
                 "gpt-5.6-luna",
                 f"T-{index}",
@@ -278,12 +278,12 @@ class TestArmContracts:
         """The suite must expose named structural-capability strata."""
         assert core.capability_strata(task) == expected
 
-    def test_r5_changes_only_transport_control_not_locked_benchmark_inputs(self) -> None:
-        """The r5 profile relock must preserve every r4 suite, task, and prompt identity."""
-        r5_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r5.json")
-        r5 = json.loads(r5_path.read_text(encoding="utf-8"))
-        r4_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r4.json")
-        r4 = json.loads(r4_path.read_text(encoding="utf-8"))
+    def test_profile_revision_changes_only_transport_control_not_locked_benchmark_inputs(self) -> None:
+        """The profile relock preserves codemap-provider-parity-v1-b0-r4 input identities."""
+        profile_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r5.json")
+        profile_manifest = json.loads(profile_manifest_path.read_text(encoding="utf-8"))
+        base_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r4.json")
+        base_manifest = json.loads(base_manifest_path.read_text(encoding="utf-8"))
 
         def locked_identities(manifest: dict[str, Any]) -> list[tuple[str, str, list[tuple[str, str, str]]]]:
             return [
@@ -295,19 +295,20 @@ class TestArmContracts:
                 for suite in manifest["suites"]
             ]
 
-        assert locked_identities(r5) == locked_identities(r4)
-        assert r5["target_source"] == r4["target_source"]
-        assert r5["index"] == r4["index"]
-        assert r5["arms"].keys() == r4["arms"].keys()
-        for arm in r5["arms"]:
-            assert r5["arms"][arm]["contract"] == r4["arms"][arm]["contract"]
-            assert r5["arms"][arm]["contract_sha256"] == r4["arms"][arm]["contract_sha256"]
+        assert locked_identities(profile_manifest) == locked_identities(base_manifest)
+        assert profile_manifest["target_source"] == base_manifest["target_source"]
+        assert profile_manifest["index"] == base_manifest["index"]
+        assert profile_manifest["arms"].keys() == base_manifest["arms"].keys()
+        for arm in profile_manifest["arms"]:
+            assert profile_manifest["arms"][arm]["contract"] == base_manifest["arms"][arm]["contract"]
+            assert profile_manifest["arms"][arm]["contract_sha256"] == base_manifest["arms"][arm]["contract_sha256"]
 
-    def test_r6_changes_only_treatment_runtime_not_locked_benchmark_inputs(self) -> None:
-        """The r6 runtime relock must preserve all r5 experimental inputs except runtime."""
-        r6 = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-        r5_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r5.json")
-        r5 = json.loads(r5_path.read_text(encoding="utf-8"))
+    def test_runtime_revision_changes_only_treatment_runtime_not_locked_benchmark_inputs(self) -> None:
+        """The runtime relock preserves codemap-provider-parity-v1-b0-r5 inputs except runtime."""
+        runtime_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r6.json")
+        runtime_manifest = json.loads(runtime_manifest_path.read_text(encoding="utf-8"))
+        profile_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r5.json")
+        profile_manifest = json.loads(profile_manifest_path.read_text(encoding="utf-8"))
 
         def locked_identities(manifest: dict[str, Any]) -> list[tuple[str, str, list[tuple[str, str, str]]]]:
             return [
@@ -319,21 +320,27 @@ class TestArmContracts:
                 for suite in manifest["suites"]
             ]
 
-        assert locked_identities(r6) == locked_identities(r5)
-        assert r6["target_source"] == r5["target_source"]
-        assert r6["index"] == r5["index"]
-        assert r6["arms"] == r5["arms"]
-        assert r6["preregistered_cells"] == r5["preregistered_cells"]
-        assert r6["codex_permission_profiles"]["plain"] == r5["codex_permission_profiles"]["plain"]
-        assert r6["codex_permission_profiles"]["treatment"] == r5["codex_permission_profiles"]["treatment"]
+        assert locked_identities(runtime_manifest) == locked_identities(profile_manifest)
+        assert runtime_manifest["target_source"] == profile_manifest["target_source"]
+        assert runtime_manifest["index"] == profile_manifest["index"]
+        assert runtime_manifest["arms"] == profile_manifest["arms"]
+        assert runtime_manifest["preregistered_cells"] == profile_manifest["preregistered_cells"]
+        assert (
+            runtime_manifest["codex_permission_profiles"]["plain"]
+            == profile_manifest["codex_permission_profiles"]["plain"]
+        )
+        assert (
+            runtime_manifest["codex_permission_profiles"]["treatment"]
+            == profile_manifest["codex_permission_profiles"]["treatment"]
+        )
 
-    def test_r6_manifest_locks_split_profiles_runtime_and_structural_only_runner(self) -> None:
+    def test_active_manifest_locks_split_profiles_runtime_and_structural_only_runner(self) -> None:
         """The active manifest must describe the exact tested Codex permission/runtime boundary."""
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         profiles = manifest["codex_permission_profiles"]
 
-        assert manifest["experiment_revision"] == "codemap-provider-parity-v1-b0-r6"
-        assert manifest["status"] == "r6_manifest_review_required_before_paid_smoke"
+        assert manifest["experiment_revision"]
+        assert manifest["status"].endswith("_manifest_review_required_before_paid_smoke")
         assert profiles["plain"]["extends"] == ":read-only"
         assert profiles["plain"]["write_roots"] == []
         assert profiles["plain"]["filesystem_overrides"]["<locked-index-parent>"] == "deny"
@@ -349,7 +356,7 @@ class TestArmContracts:
             "scope": ["B_auto", "C_required"],
         }
         assert manifest["execution_controls"]["codex_transport"] == (
-            "run-codex-structural.py; no Codex agentic adapter is registered in r6"
+            "run-codex-structural.py; no Codex agentic adapter is registered for the active manifest"
         )
 
 

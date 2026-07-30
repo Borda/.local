@@ -41,7 +41,7 @@ def _result_line(
     arm: str,
     model: str,
     *,
-    repo_sha: str = "r0",
+    repo_sha: str = "repo-sha-fixture",
     index_sha: str = "i0",
     task_hash: str = "t0",
     correct: bool = True,
@@ -153,7 +153,7 @@ class TestResumeCache:
         results = tmp_path / "results"
         _write_jsonl(results, "bench-haiku-1.jsonl", [_result_line("SE-01", "plain", "haiku")])
         cache = script_run_bench._load_resume_cache(results)
-        key = ("SE-01", "plain", "haiku", "r0", "i0", "t0")
+        key = ("SE-01", "plain", "haiku", "repo-sha-fixture", "i0", "t0")
         assert key in cache
 
     def test_load_resume_cache_missing_dir_is_empty(self, script_run_bench: Any, tmp_path: Path) -> None:
@@ -166,7 +166,7 @@ class TestResumeCache:
         results.mkdir()
         (results / "bench-haiku-x.jsonl").write_text("not json\n" + json.dumps(_result_line("SE-01", "plain", "haiku")))
         cache = script_run_bench._load_resume_cache(results)
-        assert ("SE-01", "plain", "haiku", "r0", "i0", "t0") in cache
+        assert ("SE-01", "plain", "haiku", "repo-sha-fixture", "i0", "t0") in cache
 
     def test_later_file_wins_on_key_collision(self, script_run_bench: Any, tmp_path: Path) -> None:
         """When two files hold the same key, the lexically-later file's line wins."""
@@ -174,7 +174,7 @@ class TestResumeCache:
         _write_jsonl(results, "bench-haiku-1.jsonl", [_result_line("SE-01", "plain", "haiku", correct=False)])
         _write_jsonl(results, "bench-haiku-2.jsonl", [_result_line("SE-01", "plain", "haiku", correct=True)])
         cache = script_run_bench._load_resume_cache(results)
-        assert cache[("SE-01", "plain", "haiku", "r0", "i0", "t0")]["quality"]["correct"] is True
+        assert cache[("SE-01", "plain", "haiku", "repo-sha-fixture", "i0", "t0")]["quality"]["correct"] is True
 
     def test_run_from_cached_marks_resumed(self, script_run_bench: Any) -> None:
         """A reconstructed run copies known fields, rebuilds quality, and flags resumed."""
@@ -209,7 +209,7 @@ class TestRunnerResume:
             resume_cache=cache,
         )
         # Pin provenance so the resume key is deterministic without a real repo/index.
-        runner.repo_sha = "r0"
+        runner.repo_sha = "repo-sha-fixture"
         runner.index_sha = "i0"
         return runner
 
@@ -217,7 +217,7 @@ class TestRunnerResume:
         """A matching cache entry is reused (resumed=True) and _execute is never called."""
         task = _task("SE-01")
         task_hash = script_run_bench._task_hash(task)
-        key = ("SE-01", "plain", "haiku", "r0", "i0", task_hash)
+        key = ("SE-01", "plain", "haiku", "repo-sha-fixture", "i0", task_hash)
         cached = _result_line("SE-01", "plain", "haiku", task_hash=task_hash, correct=True)
         cached["task_type"] = "symbol_extraction"
         runner = self._runner(script_run_bench, tmp_path, {key: cached})
@@ -229,7 +229,7 @@ class TestRunnerResume:
         run = runner.run(task, "plain")
         assert run.resumed is True
         assert run.quality.correct is True
-        assert run.repo_sha == "r0" and run.index_sha == "i0" and run.task_hash == task_hash
+        assert run.repo_sha == "repo-sha-fixture" and run.index_sha == "i0" and run.task_hash == task_hash
 
     def test_resume_miss_executes_and_stamps_provenance(self, script_run_bench: Any, tmp_path: Path) -> None:
         """A cache miss runs _execute, then stamps provenance + self_consistency on the result."""
@@ -246,7 +246,7 @@ class TestRunnerResume:
         run = runner.run(task, "plain")
         assert run.resumed is False
         assert run.self_consistency is True
-        assert run.repo_sha == "r0" and run.index_sha == "i0"
+        assert run.repo_sha == "repo-sha-fixture" and run.index_sha == "i0"
         assert run.task_hash == script_run_bench._task_hash(task)
 
     def test_no_cache_never_resumes(self, script_run_bench: Any, tmp_path: Path) -> None:
@@ -262,7 +262,7 @@ class TestRunnerResume:
             index_path=tmp_path / "idx.json",
             timeout=10,
         )
-        runner.repo_sha, runner.index_sha = "r0", "i0"
+        runner.repo_sha, runner.index_sha = "repo-sha-fixture", "i0"
         runner._execute = lambda *_a, **_k: sentinel  # type: ignore[method-assign]
         run = runner.run(task, "plain")
         assert run.resumed is False
@@ -391,30 +391,30 @@ class TestSelectTasksIntegration:
     def test_run_all_default_drops_ri(self, script_run_bench: Any, tmp_path: Path) -> None:
         """--all with no profile drops RI (gated) but keeps the rest."""
         sel = self._selection(script_run_bench)
-        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "r0", "i0")}
+        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "repo-sha-fixture", "i0")}
         assert got == {"SE-01", "SE-02"}
 
     def test_release_profile_keeps_ri(self, script_run_bench: Any, tmp_path: Path) -> None:
         """--profile release keeps RI in the full matrix."""
         sel = self._selection(script_run_bench, profile="release")
-        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "r0", "i0")}
+        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "repo-sha-fixture", "i0")}
         assert got == {"SE-01", "SE-02", "RI-01"}
 
     def test_dev_profile_selects_tagged_subset(self, script_run_bench: Any, tmp_path: Path) -> None:
         """--profile dev narrows to the dev-tagged subset."""
         sel = self._selection(script_run_bench, profile="dev")
-        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "r0", "i0")}
+        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "repo-sha-fixture", "i0")}
         assert got == {"SE-01"}
 
     def test_no_selector_returns_none(self, script_run_bench: Any, tmp_path: Path) -> None:
         """No selector (no --tasks/--type/--all/subset) returns None so main() can error."""
         sel = self._selection(script_run_bench, run_all=False)
-        assert script_run_bench._select_tasks(sel, tmp_path, "r0", "i0") is None
+        assert script_run_bench._select_tasks(sel, tmp_path, "repo-sha-fixture", "i0") is None
 
     def test_explicit_ids_keep_ri(self, script_run_bench: Any, tmp_path: Path) -> None:
         """Explicit --tasks selection opts RI back in even without release."""
         sel = self._selection(script_run_bench, run_all=False, ids={"RI-01"})
-        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "r0", "i0")}
+        got = {t["id"] for t in script_run_bench._select_tasks(sel, tmp_path, "repo-sha-fixture", "i0")}
         assert got == {"RI-01"}
 
 
@@ -436,12 +436,12 @@ class TestTieredSelection:
 
     def test_haiku_tier_is_full(self, script_run_bench: Any, tasks: list[dict], tmp_path: Path) -> None:
         """The haiku tier runs every candidate task."""
-        got = {t["id"] for t in script_run_bench._tiered_tasks(tasks, "haiku", tmp_path, "r0", "i0")}
+        got = {t["id"] for t in script_run_bench._tiered_tasks(tasks, "haiku", tmp_path, "repo-sha-fixture", "i0")}
         assert got == {"SE-01", "SE-02", "FN-01"}
 
     def test_sonnet_tier_is_dev_subset(self, script_run_bench: Any, tasks: list[dict], tmp_path: Path) -> None:
         """The sonnet tier runs only the dev-tagged subset."""
-        got = {t["id"] for t in script_run_bench._tiered_tasks(tasks, "sonnet", tmp_path, "r0", "i0")}
+        got = {t["id"] for t in script_run_bench._tiered_tasks(tasks, "sonnet", tmp_path, "repo-sha-fixture", "i0")}
         assert got == {"SE-01", "SE-02"}
 
     def test_opus_tier_selects_disagreements(self, script_run_bench: Any, tasks: list[dict], tmp_path: Path) -> None:
@@ -464,14 +464,14 @@ class TestTieredSelection:
                 _result_line("SE-02", "plain", "sonnet", correct=True),
             ],
         )
-        got = {t["id"] for t in script_run_bench._tiered_tasks(tasks, "opus", results, "r0", "i0")}
+        got = {t["id"] for t in script_run_bench._tiered_tasks(tasks, "opus", results, "repo-sha-fixture", "i0")}
         assert got == {"SE-01"}
 
     def test_opus_tier_empty_without_prior_results(
         self, script_run_bench: Any, tasks: list[dict], tmp_path: Path
     ) -> None:
         """With no prior-tier results, opus adjudication selects nothing."""
-        got = script_run_bench._tiered_tasks(tasks, "opus", tmp_path, "r0", "i0")
+        got = script_run_bench._tiered_tasks(tasks, "opus", tmp_path, "repo-sha-fixture", "i0")
         assert got == []
 
     def test_opus_tier_respects_provenance(self, script_run_bench: Any, tasks: list[dict], tmp_path: Path) -> None:
@@ -479,7 +479,7 @@ class TestTieredSelection:
         results = tmp_path / "results"
         _write_jsonl(results, "bench-haiku-1.jsonl", [_result_line("SE-01", "plain", "haiku", repo_sha="OTHER")])
         _write_jsonl(results, "bench-sonnet-1.jsonl", [_result_line("SE-01", "plain", "sonnet", correct=False)])
-        got = script_run_bench._tiered_tasks(tasks, "opus", results, "r0", "i0")
+        got = script_run_bench._tiered_tasks(tasks, "opus", results, "repo-sha-fixture", "i0")
         assert got == []
 
 
@@ -497,7 +497,7 @@ class TestCorrectByTask:
                 _result_line("SE-01", "codemap", "haiku", correct=False),
             ],
         )
-        got = script_run_bench._correct_by_task(results, "haiku", "r0", "i0")
+        got = script_run_bench._correct_by_task(results, "haiku", "repo-sha-fixture", "i0")
         assert got == {"SE-01": False}
 
     def test_filters_by_model_and_provenance(self, script_run_bench: Any, tmp_path: Path) -> None:
@@ -512,14 +512,14 @@ class TestCorrectByTask:
                 _result_line("SE-03", "plain", "haiku", correct=True),  # kept
             ],
         )
-        got = script_run_bench._correct_by_task(results, "haiku", "r0", "i0")
+        got = script_run_bench._correct_by_task(results, "haiku", "repo-sha-fixture", "i0")
         assert got == {"SE-03": True}
 
     def test_unscored_lines_excluded(self, script_run_bench: Any, tmp_path: Path) -> None:
         """Lines with scored=False don't contribute a verdict."""
         results = tmp_path / "results"
         _write_jsonl(results, "bench-h.jsonl", [_result_line("SE-01", "plain", "haiku", scored=False)])
-        assert script_run_bench._correct_by_task(results, "haiku", "r0", "i0") == {}
+        assert script_run_bench._correct_by_task(results, "haiku", "repo-sha-fixture", "i0") == {}
 
 
 # ===========================================================================

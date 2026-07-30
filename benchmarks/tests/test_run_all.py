@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -12,7 +13,8 @@ import pytest
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SCRIPT = BENCHMARKS_DIR / "run-all.sh"
 LEGACY_SCRIPT = BENCHMARKS_DIR / "run-all-claude.sh"
-R6_APPROVAL = "codemap-provider-parity-v1-b0-r6"
+ACTIVE_MANIFEST = BENCHMARKS_DIR / "results" / "manifests" / "provider-parity-v1.json"
+ACTIVE_MANIFEST_SHA = hashlib.sha256(ACTIVE_MANIFEST.read_bytes()).hexdigest()
 LOCKED_INDEX_SHA = "b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045"
 
 
@@ -42,13 +44,15 @@ def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         'printf "fixture-head\\n"',
     )
     _write_executable(
-        bin_dir / "python",
+        bin_dir / "python3",
         'printf "python %s\\n" "$*" >> "$CALL_LOG"',
     )
     _write_executable(
         bin_dir / "shasum",
         f"""if [ "$(sed -n '1p' "$3")" = "locked-index" ]; then
   printf "{LOCKED_INDEX_SHA}  %s\\n" "$3"
+elif [ "$3" = "{ACTIVE_MANIFEST}" ]; then
+  printf "{ACTIVE_MANIFEST_SHA}  %s\\n" "$3"
 else
   printf "%064d  %s\\n" 0 "$3"
 fi""",
@@ -60,7 +64,7 @@ fi""",
         "CALL_LOG": str(call_log),
         "CODEX_AUTH_SOURCE": str(auth_source),
         "CODEX_OUTPUT_PATH": str(tmp_path / "codex-results.jsonl"),
-        "CODEX_PAID_APPROVAL": R6_APPROVAL,
+        "CODEX_PAID_APPROVAL": ACTIVE_MANIFEST_SHA,
         "REPO": str(repo),
     }
     return env, call_log

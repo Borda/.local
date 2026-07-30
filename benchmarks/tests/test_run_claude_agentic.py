@@ -8,8 +8,8 @@ requires a real codemap index on disk is guarded with
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,7 @@ import pytest
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 AGENTIC_SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-agentic.json"
 PARITY_MANIFEST_PATH = BENCHMARKS_DIR / "results" / "manifests" / "provider-parity-v1.json"
+ACTIVE_REVISION = json.loads(PARITY_MANIFEST_PATH.read_text(encoding="utf-8"))["experiment_revision"]
 
 
 # ===========================================================================
@@ -150,7 +151,7 @@ class TestProviderParityTaskIntegration:
     def test_legacy_loader_preserves_unlocked_custom_suite_support(
         self, tmp_path: Path, script_run_agentic: Any
     ) -> None:
-        """Legacy arms may still consume a valid custom task suite without claiming r3 provenance."""
+        """Legacy arms may consume a custom suite without claiming codemap-provider-parity-v1-b0-r3 provenance."""
         suite_path = tmp_path / "custom-agentic-suite.json"
         suite_path.write_text(
             json.dumps([{"id": "CUSTOM-01", "type": "fix", "prompt": "Inspect the failure."}]),
@@ -178,7 +179,7 @@ class TestProviderParityTaskIntegration:
         tasks = script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
         task = next(item for item in tasks if item.id == "BA-01")
 
-        assert task.experiment_revision == "codemap-provider-parity-v1-b0-r6"
+        assert task.experiment_revision == ACTIVE_REVISION
         assert task.task_hash == "81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f"
         assert task.prompt_hash == "6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479"
         assert task.oracle_class == "independent"
@@ -295,7 +296,7 @@ class TestProviderParityTaskIntegration:
     def test_legacy_arm_keeps_legacy_revision_while_explicit_canonical_arm_gets_locked_revision(
         self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
     ) -> None:
-        """A legacy label is never upgraded merely because its task carries an r4 policy internally."""
+        """A legacy label is not upgraded from an internal codemap-provider-parity-v1-b0-r4 policy."""
         task = next(
             item
             for item in script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
@@ -475,7 +476,7 @@ class TestProviderParityTaskIntegration:
             type="fix",
             prompt="p",
             primary_module="lightning.pytorch.callbacks.timer",
-            experiment_revision="codemap-provider-parity-v1-b0-r6",
+            experiment_revision="fixture-revision",
             task_hash="task-hash",
             prompt_hash="prompt-hash",
             oracle_class="independent",
@@ -540,7 +541,7 @@ class TestProviderParityTaskIntegration:
             type="fix",
             prompt="p",
             primary_module="lightning.pytorch.callbacks.timer",
-            experiment_revision="codemap-provider-parity-v1-b0-r6",
+            experiment_revision="fixture-revision",
             task_hash="task-hash",
             prompt_hash="prompt-hash",
             oracle_class="independent",
@@ -2708,15 +2709,15 @@ class TestTop10InDegree:
 
     @pytest.fixture()
     def gt(self, script_run_agentic: Any, tmp_path: Path) -> Any:
-        """Index with 11 rdeps: r1..r10 imported once each, r11 imported by nobody but high dep_count."""
+        """Index with 11 reverse deps: reverse1..reverse10 imported once; reverse11 has high dep_count."""
         modules: list[dict] = [{"name": "app.target", "direct_imports": [], "dep_count": 0, "status": "ok"}]
         for i in range(1, 11):
-            modules.append({"name": f"app.r{i}", "direct_imports": ["app.target"], "status": "ok"})
-            # one importer for app.r{i} → in-degree 1
-            modules.append({"name": f"imp.r{i}", "direct_imports": [f"app.r{i}"], "status": "ok"})
-        # r11 is a rdep with a huge out-degree (dep_count) but ZERO in-degree — nobody imports it.
+            modules.append({"name": f"app.reverse{i}", "direct_imports": ["app.target"], "status": "ok"})
+            # One importer for each reverse dependency gives it in-degree 1.
+            modules.append({"name": f"imp.reverse{i}", "direct_imports": [f"app.reverse{i}"], "status": "ok"})
+        # reverse11 has huge out-degree but zero in-degree: nobody imports it.
         modules.append(
-            {"name": "app.r11", "direct_imports": ["app.target", "x.a", "x.b"], "dep_count": 999, "status": "ok"}
+            {"name": "app.reverse11", "direct_imports": ["app.target", "x.a", "x.b"], "dep_count": 999, "status": "ok"}
         )
         index_file = tmp_path / "idx.json"
         index_file.write_text(json.dumps(_minimal_index(modules)))
@@ -2726,13 +2727,13 @@ class TestTop10InDegree:
     def test_high_in_degree_kept_and_high_out_degree_dropped(self, gt: Any) -> None:
         """The zero-in-degree / high-dep_count rdep is dropped; an in-degree≥1 rdep is kept.
 
-        Scenario: 11 rdeps trim to 10. Ranking by in-degree drops app.r11 (imported by nobody);
+        Scenario: 11 rdeps trim to 10. Ranking by in-degree drops app.reverse11 (imported by nobody);
         ranking by the old dep_count axis would have kept it and dropped a real central module.
         """
         top10 = gt.top10_expected["X"]
         assert len(top10) == 10
-        assert "app.r1" in top10
-        assert "app.r11" not in top10
+        assert "app.reverse1" in top10
+        assert "app.reverse11" not in top10
 
 
 # ===========================================================================

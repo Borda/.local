@@ -111,7 +111,7 @@ path. This invokes the model and creates the JSONL file exclusively:
       --model gpt-5.6-luna \\
       --task-id FN-02 \\
       --arm all \\
-      --output-path benchmarks/results/codex-fn02-r6.jsonl
+      --output-path benchmarks/results/codex-fn02-post-pilot.jsonl
 
 Use ``--arm A_plain``, ``--arm B_auto``, or ``--arm C_required`` for a single
 arm. ``--arm all`` uses the manifest's deterministic arm ordering.
@@ -121,7 +121,7 @@ on every JSONL row. Repeat ``--task-id`` to select the immutable pilot subset.
 ## Requirements
 
   - Python 3.10+ and the benchmark dependency group
-  - Codex CLI >=0.138.0; r6 permission profiles were validated with 0.145.0
+  - Codex CLI >=0.138.0; the active permission profiles were validated with 0.145.0
   - A clean target at PyTorch Lightning tag ``2.6.5`` and its locked index
   - The local plugin marketplace root for B/C
   - For authenticated execution, a user-owned regular ``auth.json`` with mode
@@ -131,7 +131,7 @@ on every JSONL row. Repeat ``--task-id`` to select the immutable pilot subset.
 
 The run fails closed before a model call when the manifest, target, task,
 prompt, index, plugin, provided authentication, or permission-profile contract
-differs from r6. It also rejects dirty targets, symlinked or hard-linked
+differs from the active manifest. It also rejects dirty targets, symlinked or hard-linked
 protected paths, credential/index exposure to A, missing index access for B/C,
 or a broad coordination write surface.
 
@@ -192,7 +192,6 @@ from provider_parity_contracts import (  # noqa: E402
 
 
 PARITY_MANIFEST_PATH = Path(__file__).parent / "results" / "manifests" / "provider-parity-v1.json"
-PARITY_EXPERIMENT_REVISION = "codemap-provider-parity-v1-b0-r7"
 ARMS = tuple(ARM_CONTRACTS)
 PARITY_CODEX_MODEL = "gpt-5.6-luna"
 PARITY_CODEX_REASONING_EFFORT = "high"
@@ -326,16 +325,36 @@ def _validate_codex_stratum(model: str, reasoning_effort: str) -> None:
         raise ValueError(f"Codex provider-parity reasoning effort must be {PARITY_CODEX_REASONING_EFFORT}")
 
 
-def _validate_execution_manifest(manifest_path: Path = PARITY_MANIFEST_PATH) -> None:
-    """Require a reviewed manifest for the exact implementation revision."""
+def _manifest_revision(manifest: Mapping[str, Any]) -> str:
+    """Return a non-empty experiment identity from an active manifest."""
+    revision = manifest.get("experiment_revision")
+    if not isinstance(revision, str) or not revision:
+        raise ValueError("provider-parity execution manifest has no experiment revision")
+    return revision
+
+
+def _read_manifest_revision(manifest_path: Path = PARITY_MANIFEST_PATH) -> str:
+    """Read the active experiment identity for planning fixture or real tasks."""
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        revision = manifest["experiment_revision"]
-    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        return _manifest_revision(manifest)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("provider-parity execution manifest is unavailable or malformed") from exc
-    if revision != PARITY_EXPERIMENT_REVISION:
+
+
+def _validate_execution_manifest(manifest_path: Path = PARITY_MANIFEST_PATH) -> None:
+    """Require an active manifest locked to the exact runner implementation."""
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        revision = _manifest_revision(manifest)
+        expected_runner_sha = manifest["implementation_contract"]["artifact_sha256"]["run_codex_structural"]
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("provider-parity execution manifest is unavailable or malformed") from exc
+    actual_runner_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    if expected_runner_sha != actual_runner_sha:
         raise ValueError(
-            f"paid execution requires a reviewed {PARITY_EXPERIMENT_REVISION} manifest; found {revision!r}"
+            f"paid execution requires a manifest locked to this runner; "
+            f"revision {revision!r} records {expected_runner_sha!r}, found {actual_runner_sha!r}"
         )
 
 
@@ -747,7 +766,7 @@ def _shell_environment(home: ArmHome) -> dict[str, str]:
 
 
 def _write_permission_config(home: ArmHome, arm: str, index_path: Path | None) -> Path:
-    """Write the exact r6 permission profile into one disposable Codex home."""
+    """Write the active permission profile into one disposable Codex home."""
     if arm not in ARM_CONTRACTS:
         raise ValueError(f"unknown benchmark arm {arm!r}")
     profile = _PLAIN_PERMISSION_PROFILE if arm == "A_plain" else _CODEMAP_PERMISSION_PROFILE
@@ -918,7 +937,7 @@ def _verify_locked_codemap_python(
     ):
         raise ValueError("locked CODEMAP_PYTHON must be an executable absolute file")
     if required_major_minor != (3, 11) or scope != ["B_auto", "C_required"]:
-        raise ValueError("provider-parity treatment runtime contract does not match r6")
+        raise ValueError("provider-parity treatment runtime contract does not match the active manifest")
 
     code, stdout, stderr = _invoke_plugin_command(
         [python_path, "--version"],
@@ -975,7 +994,7 @@ def _verify_permission_profile(
     if code != 0:
         raise ValueError(f"Codex permission profile is unsupported or rejected: {error[:200]}")
 
-    source_probe = repo_path / f".codex-r6-deny-{uuid4().hex}"
+    source_probe = repo_path / f".codex-parity-deny-{uuid4().hex}"
     write_script = "from pathlib import Path; import sys; Path(sys.argv[1]).write_bytes(b'probe')"
     code, _stdout, _stderr = _invoke_plugin_command(
         [*sandbox_prefix, write_script, str(source_probe)],
@@ -1013,7 +1032,7 @@ def _verify_permission_profile(
             raise ValueError(f"Codemap permission profile denied locked-index reads: {error[:200]}")
 
     if home.coordination_path is not None:
-        coordination_probe = home.coordination_path / f".codex-r6-allow-{uuid4().hex}"
+        coordination_probe = home.coordination_path / f".codex-parity-allow-{uuid4().hex}"
         code, _stdout, error = _invoke_plugin_command(
             [*sandbox_prefix, write_script, str(coordination_probe)],
             home.env,
@@ -1177,6 +1196,7 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
     raw_tasks = load_task_suite(tasks_path)
     policies = load_task_policies(manifest_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    experiment_revision = _manifest_revision(manifest)
     manifest_rows = {task["id"]: task for suite in manifest.get("suites", []) for task in suite.get("tasks", [])}
     task_ids = [task["id"] for task in raw_tasks]
     matching_suites = [
@@ -1197,9 +1217,11 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
     loaded: list[dict[str, Any]] = []
     for task in raw_tasks:
         policy: TaskPolicy = policies[task["id"]]
+        if policy.experiment_revision != experiment_revision:
+            raise ValueError(f"task policy revision mismatch for {task['id']!r}")
         item = dict(task)
         item[_PROVENANCE_KEY] = {
-            "experiment_revision": PARITY_EXPERIMENT_REVISION,
+            "experiment_revision": experiment_revision,
             "task_hash": canonical_task_hash(task),
             "prompt_hash": prompt_hash(task),
             "suite_hash": suite_hash,
@@ -1226,7 +1248,7 @@ class CodexRun:
     quality_components: dict[str, float] = field(default_factory=dict)
     repetition: int = 1
     success: bool = False
-    experiment_revision: str = PARITY_EXPERIMENT_REVISION
+    experiment_revision: str = ""
     parity_arm: str = ""
     task_hash: str = ""
     prompt_hash: str = ""
@@ -1452,9 +1474,7 @@ class CodexRunner:
         run.prompt_hash = str(expected_prompt_hash or raw_prompt_hash)
         run.suite_hash = str(metadata.get("suite_hash", task.get("suite_hash", "")))
         run.suite_raw_hash = str(metadata.get("suite_raw_hash", task.get("suite_raw_hash", "")))
-        run.experiment_revision = str(
-            metadata.get("experiment_revision", task.get("experiment_revision", PARITY_EXPERIMENT_REVISION))
-        )
+        run.experiment_revision = str(metadata.get("experiment_revision", task.get("experiment_revision", "")))
         run.oracle_class = str(metadata.get("oracle_class", task.get("oracle_class", "unknown")))
         run.headline_eligible_v1 = bool(metadata.get("headline_eligible_v1", task.get("headline_eligible_v1", False)))
         run.repo_sha = _repo_sha(self.repo_path)
@@ -1622,6 +1642,12 @@ def main(
     if repetitions < 1:
         raise ValueError("--repetitions must be a positive integer")
     tasks = load_tasks_with_provenance(tasks_path)
+    if not tasks:
+        raise ValueError("locked task suite must contain at least one task")
+    provenance = tasks[0].get(_PROVENANCE_KEY, {})
+    experiment_revision = (
+        str(provenance.get("experiment_revision", "")) if isinstance(provenance, Mapping) else ""
+    ) or _read_manifest_revision(PARITY_MANIFEST_PATH)
     if task_ids:
         if len(task_ids) != len(set(task_ids)):
             raise ValueError("--task-id values must be unique")
@@ -1635,7 +1661,7 @@ def main(
             raise ValueError("non-dry Codex runs require --output-path")
         if output_path.exists():
             raise FileExistsError(output_path)
-        _validate_execution_manifest()
+        _validate_execution_manifest(PARITY_MANIFEST_PATH)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("x", encoding="utf-8"):
             pass
@@ -1655,7 +1681,7 @@ def main(
     task_arms = {
         (task["id"], repetition): (
             deterministic_arm_order(
-                PARITY_EXPERIMENT_REVISION,
+                experiment_revision,
                 "codex",
                 model,
                 task["id"],

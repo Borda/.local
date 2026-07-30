@@ -1275,7 +1275,7 @@ def _embedded_json_objects(raw: str) -> list[dict]:
     return objects
 
 
-# Legacy per-task turn cap. Canonical r4 provider-parity arms rely exclusively on the shared
+# Legacy per-task turn cap. Canonical `codemap-provider-parity-v1-b0-r4` arms rely exclusively on the shared
 # wall-clock budget because Codex has no equivalent public turn-cap control. The old structural
 # experiment keeps its existing task-sensitive cap unchanged for historical comparability.
 _TURN_FLOOR_DEFAULT = 40
@@ -1290,7 +1290,7 @@ def _max_turns_for_task(task: dict) -> int:
     Caller-enumeration tasks (``develop_blast_radius``, ``fn_call_graph``) scale the cap with the
     ground-truth unique-caller count so a task with many callers gets more head-room; every other
     task type uses a flat floor. The value does not depend on the arm — the plain and the codemap arm
-    receive the same cap for a given task. Canonical r4 provider-parity runs omit this CLI flag and
+    receive the same cap for a given task. Canonical `codemap-provider-parity-v1-b0-r4` runs omit this CLI flag and
     instead use their shared wall-clock budget.
 
     Args:
