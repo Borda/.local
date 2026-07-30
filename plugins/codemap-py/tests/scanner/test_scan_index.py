@@ -14,6 +14,7 @@ Fixture layout:
 from __future__ import annotations
 
 import ast
+import errno
 import json
 import subprocess
 import sys
@@ -41,6 +42,30 @@ _parse_file = _scanner_mod._parse_file
 _dedup_modules = _graph_mod._dedup_modules
 _dedup_key = _graph_mod._dedup_key
 _replace_index = _graph_mod._replace_index
+
+
+def test_scan_falls_back_to_serial_when_process_pool_is_forbidden(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A sandbox-level pool EPERM must retain deterministic scan behavior."""
+    (tmp_path / "module.py").write_text("def answer():\n    return 42\n", encoding="utf-8")
+
+    class ForbiddenPool:
+        """Reject process-pool construction like the managed sandbox."""
+
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(_graph_mod, "ProcessPoolExecutor", ForbiddenPool)
+    monkeypatch.setattr(_graph_mod.sys, "platform", "darwin")
+
+    result = _graph_mod.scan(tmp_path)
+
+    assert [module["name"] for module in result["modules"]] == ["module"]
+    assert result["modules"][0]["status"] == "ok"
+    assert "process pool unavailable (EPERM); parsing serially" in capsys.readouterr().err
 
 
 def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):

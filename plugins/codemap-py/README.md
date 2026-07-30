@@ -65,8 +65,8 @@ On pytorch-lightning (646 modules), plain-arm agents hit 300-second hard timeout
 Wiring into `/develop` and `/oss` ships pre-built — nothing to run first. Run `/develop:refactor auth.py` — before spawning any agent, skill silent runs:
 
 ```bash
-scan-query central --top 5         # which modules are highest risk overall?
-scan-query rdeps mypackage.auth    # what breaks if auth changes?
+codemap-py query --compact central --top 5         # highest risk overall
+codemap-py query --compact rdeps mypackage.auth    # what breaks if auth changes?
 ```
 
 Output prepended to agent spawn prompt as structural context. Agent starts refactor knowing full blast radius — no cold exploration, no mid-refactor surprise that `middleware.py` also imports `auth`. Across benchmark runs on pytorch-lightning, codemap-py cuts tool calls 50–80% while improving structural-recall metrics on import-graph tasks.
@@ -123,7 +123,7 @@ Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0
 
 Benchmarks above measure **discovery phase** — enumerating callers, assessing blast radius before code written. `fix_multicaller` suite extends coverage to **edit phase**: real signature change where all callers must update in one pass.
 
-**Benchmark scope**: 7 tasks in `benchmarks/run-codemap-agentic.py` across two families. Both use archive/restore isolation — demo codebase copied per arm run, agent edits copy, `diff -ru` captured against original. No git required; original codebase never mutated.
+**Benchmark scope**: 7 tasks in `benchmarks/run-claude-agentic.py` across two families. Both use archive/restore isolation — demo codebase copied per arm run, agent edits copy, `diff -ru` captured against original. No git required; original codebase never mutated.
 
 | Family                          | Tasks                          | What it tests                                                                 | Scored by                                           |
 | ------------------------------- | ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------- |
@@ -136,12 +136,12 @@ Only public Claude Code plugin benchmark measuring edit-phase caller coverage �
 
 ```bash
 # Fix-multicaller: the codemap-py vs plain edit-assist test
-python benchmarks/run-codemap-agentic.py \
+python benchmarks/run-claude-agentic.py \
     --repo-path /path/to/pytorch-lightning/src/lightning \
     --tasks "['FM-01','FM-02','FM-03']" --run-all --model haiku --report
 
 # Fix-single: validates the archive/restore isolation mechanism
-python benchmarks/run-codemap-agentic.py \
+python benchmarks/run-claude-agentic.py \
     --repo-path /path/to/pytorch-lightning/src/lightning \
     --tasks "['FS-01','FS-02','FS-03','FS-04']" --run-all --model haiku
 ```
@@ -591,11 +591,11 @@ ______________________________________________________________________
 
 **Trigger**: `/codemap-py:query-code <subcommand> [args]`
 
-**Auto-invokes when:** user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "blast radius of". No prior index needed — Step 0 pre-flight builds one auto when missing, incremental-refreshes when present, before querying.
+**Auto-invokes when:** user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "blast radius of".
 
-Queries index. Step 0 keeps fresh (full build via `/codemap-py:scan-codebase` if missing, `scan-index --incremental` if present) — queries run against current index. Python files change mid-task — stale warning may still appear on stderr; results still returned so agent can refresh, retry.
+The skill runs the selected query first instead of paying for an unconditional freshness probe. In normal mode the CLI may perform its bounded incremental self-heal. Python files can still change mid-task; stale results carry explicit completeness metadata.
 
-When Step 0 builds, prints one line — `[codemap] index built in <N>s` — build cost visible, separable from query time. Set `SCAN_NO_AUTOBUILD=1` to opt out of auto-building entirely: present index queried as-is, no refresh; missing index makes Step 0 stop with clear message pointing at `/codemap-py:scan-codebase`, no silent build.
+Set `SCAN_NO_AUTOBUILD=1` to disable implicit writes: an existing index is queried exactly as-is, with no refresh or self-heal, and a missing index fails with structured guidance pointing at `/codemap-py:scan-codebase`. An explicit user-requested `codemap-py index` remains allowed.
 
 #### Module-level queries
 
@@ -654,6 +654,7 @@ Use `module::function` format for qualified names, e.g. `mypackage.auth::validat
 | `--with-imports`     | `symbol`                                                                         | Include module-level import block alongside each symbol's source                                                                                                                                          |
 | `--root <path>`      | all commands                                                                     | Override project root for **file-path resolution only** — no re-scan, no index re-target. Disagreeing with index `scan_root` yields `root_mismatch: true` + `query_complete: false` (see scan_root below) |
 | `--index <path>`     | all commands                                                                     | Explicit index file; bypasses auto-discovery. Must resolve inside CWD or git root, else exits `{"error": "index path outside project root"}`                                                              |
+| `--compact`          | all commands                                                                     | Emit compact coverage metadata without truncating primary findings or counts                                                                                                                              |
 | `--verbose-coverage` | all commands                                                                     | Force full coverage block on every query, disabling once-per-session diet (see [coverage diet](#coverage-block-diet))                                                                                     |
 
 #### Common patterns
@@ -697,7 +698,7 @@ Use `module::function` format for qualified names, e.g. `mypackage.auth::validat
 
 ```bash
 echo '[{"cmd":"rdeps","args":["myproject.auth"]},{"cmd":"fn-blast","args":["myproject.db::fetch_user"]}]' \
-    | scan-query batch -
+    | codemap-py query --compact batch -
 ```
 
 Response shape: `{"batch": [{"ok": bool, "index": N, "cmd": "...", "result": {...}}, ...], "count": N, "index": <shared coverage block>}`. Request that fails parse or errors yields per-item `{"ok": false, ...}` object — one bad query never aborts batch. `batch` cannot nest inside `batch`. This is the form `/develop:review` and `/oss:review` pre-flight uses to collect every per-module query in one call.
@@ -945,7 +946,7 @@ export CODEMAP_INDEX_DIR="$HOME/.codemap-py-cache"
 
 With `CODEMAP_INDEX_DIR` set, the index lands at `$CODEMAP_INDEX_DIR/<canonical-root-sha256>/<project>.json`; this keeps equal-basename projects isolated while preserving a matching legacy flat file as read-only compatibility input. All skills and bin scripts respect the same override; runtime identity never changes its path.
 
-Set `SCAN_NO_AUTOBUILD=1` to disable query-time auto-build: `/codemap-py:query-code` and `/codemap-py:test-impact` then use existing index exact as-is (no incremental refresh), refuse to build missing one — fail with message naming variable and manual `/codemap-py:scan-codebase` command. Useful in CI or benchmarks where build cost must stay out of measured query path.
+Set `SCAN_NO_AUTOBUILD=1` to disable implicit query-time writes: `/codemap-py:query-code` and `/codemap-py:test-impact` use an existing index exactly as-is (no refresh or self-heal) and fail with structured manual-build guidance when it is missing. Explicit `codemap-py index` remains available when the user deliberately requests a build. Useful in CI or benchmarks where build cost must stay out of the measured query path.
 
 Directory gitignored by default in borda-ai-rig artifact layout. Project name derived from `basename $(git rev-parse --show-toplevel)` — directory name of git root.
 

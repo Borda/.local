@@ -6,6 +6,10 @@ repository directory, and skill namespace change. Pre-`0.25.0` history was recor
 `codemap` under `plugins/codemap/` — see the repository git history for that line; it is
 not reproduced here.
 
+## 0.27.1
+
+- Harden frozen structural queries and compact coverage output while preserving complete-result metadata.
+
 ## 0.27.0
 
 - Port all six Claude hooks to stdlib-only Python: session seeding, exhaustive-query recording,

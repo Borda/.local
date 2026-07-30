@@ -435,6 +435,15 @@ def load_index(path: Path) -> dict:
         path: filesystem path to the index JSON file.
     """
     if not path.exists():
+        if _autobuild_disabled():
+            _die_json(
+                {
+                    "error": "Index not found while SCAN_NO_AUTOBUILD=1 requires an existing frozen index.",
+                    "path": str(path),
+                    "fix": "Run /codemap-py:scan-codebase before querying, then retry.",
+                },
+                _EXIT_NOT_INDEXED,
+            )
         _exit_error(f"Index not found at {path}. Run /codemap-py:scan-codebase first.")
     index_size = path.stat().st_size
     if index_size > _MAX_INDEX_SIZE_BYTES:
@@ -489,12 +498,23 @@ _HEAL_MAX_CHANGED_FILES = 50  # skip heal when more than this many .py files cha
 _HEAL_TIMEOUT_S = 10  # hard wall-clock cap on the incremental scan subprocess
 
 
-def _get_current_file_shas() -> dict[str, str]:
-    """Return {relative_path: blob_sha} for tracked, non-excluded .py files, or {} if unavailable.
+def _autobuild_disabled() -> bool:
+    """Return whether the caller requires queries to use the existing index exactly as-is.
 
-    F4: drops paths matched by the user's pyproject / .codemapignore exclusions so this
-    set matches the ``file_shas`` scan-index wrote — otherwise an excluded tracked ``.py``
-    (e.g. a vendored tree) shows as "added" and forces the index permanently stale.
+    ``SCAN_NO_AUTOBUILD=1`` is used by isolated benchmark and CI environments
+    so index refresh work cannot leak into measured query cost. Only the
+    documented value ``"1"`` opts out; an unset or malformed value preserves
+    the interactive self-heal default.
+    """
+    return os.environ.get("SCAN_NO_AUTOBUILD") == "1"
+
+
+def _get_current_file_shas() -> dict[str, str]:
+    """Return tracked source blob SHAs using the scanner's exact file-set contract.
+
+    Includes ``.py``, ``.pyi``, ``.rst``, and ``docs/**/*.md`` because each can
+    affect the index. Drops user-excluded paths so this set matches the
+    ``file_shas`` written by scan-index.
 
     Uses ``_match_exclusion`` only (NOT SKIP_DIRS): scan-index's git-blob ``file_shas``
     path (``_git_file_hashes``) filters solely by user exclusions and keeps SKIP_DIR files
@@ -503,7 +523,7 @@ def _get_current_file_shas() -> dict[str, str]:
     """
     try:
         output = subprocess.check_output(
-            ["git", "ls-files", "-s", "--", "*.py"],
+            ["git", "ls-files", "-s", "--", "*.py", "*.pyi", "*.rst", "docs/**/*.md"],
             text=True,
             stderr=subprocess.DEVNULL,
             timeout=_GIT_TIMEOUT_S,
@@ -1235,6 +1255,7 @@ def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
 
 _SESSION_MARKER_TTL_MS = 30 * 60 * 1000  # 30 min — matches the hook writer's guard
 _verbose_coverage: bool = False  # set from --verbose-coverage in main(); forces full block
+_force_compact_coverage: bool = False  # set from --compact in main(); opt-in coverage diet
 _coverage_full_keys = (
     "total_modules",
     "total_symbols",
@@ -1324,6 +1345,8 @@ def _should_compact_coverage() -> bool:
     same-session marker exists, and the full block was already emitted earlier this
     session. Any failure of those conditions → full block (fail-verbose).
     """
+    if _force_compact_coverage:
+        return True
     if _verbose_coverage:
         return False
     session_id = _read_session_marker()
@@ -4456,7 +4479,7 @@ def _add_composite_subparsers(sub: argparse._SubParsersAction) -> None:
 
 
 def _add_global_flags(parser: argparse.ArgumentParser) -> None:
-    """Register top-level flags shared by every subcommand: --index, --root, --timeout, --no-heal, --verbose-coverage."""
+    """Register flags shared by every query subcommand."""
     parser.add_argument("--index", metavar="PATH", help="Explicit path to the index JSON (auto-discovered if omitted).")
     parser.add_argument(
         "--root",
@@ -4485,6 +4508,12 @@ def _add_global_flags(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=False,
         help="Always emit the full coverage block, even after the first query of a session (disables the diet).",
+    )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        default=False,
+        help="Emit compact coverage metadata without truncating command results.",
     )
 
 
@@ -4550,9 +4579,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
-    global _CMD, _verbose_coverage  # noqa: PLW0603
+    global _CMD, _force_compact_coverage, _verbose_coverage  # noqa: PLW0603
     _CMD = args.command
     _verbose_coverage = args.verbose_coverage
+    _force_compact_coverage = args.compact
     _reject_multiline_args(args)
 
     if args.timeout > 0 and hasattr(signal, "SIGALRM"):
@@ -4566,7 +4596,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     index_path = _resolve_index_path(args)
     index = load_index(index_path)
-    if not args.no_heal:
+    if not _autobuild_disabled() and not args.no_heal:
         # refresh a stale index inline (bounded) so the answer reflects the
         # current tree — e.g. an edge added by a just-committed change is visible.
         index = maybe_self_heal(index, index_path, _resolve_project_root(args.root, index))

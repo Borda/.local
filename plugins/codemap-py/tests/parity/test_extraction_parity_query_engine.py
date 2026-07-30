@@ -362,9 +362,9 @@ def _error_suffix(stderr: str) -> str:
 class TestOldVsNewBinParity:
     """Golden pre-extraction ``scan-query`` vs. the current thin launcher.
 
-    Both share the ``scan-query`` argv[0] basename, so every byte — including
-    argparse usage/error banners — is asserted identical; this is the primary
-    extraction regression gate.
+    Both share the ``scan-query`` argv[0] basename, so success payloads and
+    stable error semantics are asserted identical. Additive post-extraction
+    flags may legitimately expand argparse's usage banner.
     """
 
     @pytest.mark.parametrize("case", _QUERY_CASES)
@@ -394,12 +394,13 @@ class TestOldVsNewBinParity:
         assert old.stderr == new.stderr
 
     def test_unknown_subcommand_matches_golden(self, old_scan_query: Path, built_project: Path) -> None:
-        """An invalid subcommand produces the same argparse usage error old-vs-new."""
+        """An invalid subcommand preserves its error despite additive flags."""
         old = _run_old(old_scan_query, ["totally-bogus-cmd"], built_project)
         new = _run_new_bin(["totally-bogus-cmd"], built_project)
         assert old.returncode == new.returncode == 2
         assert old.stdout == new.stdout == ""
-        assert old.stderr == new.stderr
+        assert _error_suffix(old.stderr) == _error_suffix(new.stderr)
+        assert "[--compact]" in new.stderr
 
     def test_missing_required_arg_matches_golden(self, old_scan_query: Path, built_project: Path) -> None:
         """A subcommand missing its required positional errors identically old-vs-new."""

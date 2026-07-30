@@ -182,6 +182,32 @@ class TestSelfHeal:
         assert data["index"]["query_complete"] is False
 
 
+def test_fresh_index_with_stub_and_docs_is_not_falsely_stale(
+    tmp_path: Path, scan_index: Path, scan_query: Path
+) -> None:
+    """Query staleness must compare every source kind hashed by the scanner."""
+    root = tmp_path / "documented"
+    root.mkdir()
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t.t")
+    _git(root, "config", "user.name", "t")
+    (root / "module.py").write_text("def public():\n    return 1\n")
+    (root / "module.pyi").write_text("def public() -> int: ...\n")
+    (root / "guide.rst").write_text("Guide\n=====\n")
+    docs = root / "docs"
+    docs.mkdir()
+    (docs / "reference.md").write_text("# Reference\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "documented")
+    _scan(scan_index, root)
+    index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+
+    data = _query(scan_query, root, index_path, "--no-heal", "central", "--top", "5")
+
+    assert data["index"]["stale"] is False
+    assert data["index"]["query_complete"] is True
+
+
 class TestHealBound:
     """The heal is bounded: a large change set falls back to the stale-honest result."""
 
