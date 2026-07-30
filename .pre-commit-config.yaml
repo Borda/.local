@@ -14,6 +14,9 @@ ci:
   skip: [lychee, gitlint] # lychee: no binary in CI; gitlint: commit-msg stage, not run in CI
   # submodules: true
 
+# Never lint/format the MkDocs build output — generated, gitignored, not source.
+exclude: ^site/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

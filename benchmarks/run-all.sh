@@ -1,32 +1,46 @@
 #!/usr/bin/env bash
-# Full codemap benchmark run — query + real-codebase + agentic, all model tiers.
+# Provider-neutral benchmark batch entrypoint.
 #
 # Usage:
-#   bash benchmarks/run-all.sh              # refresh index, smoke check, then the full suite
-#   bash benchmarks/run-all.sh smoke        # refresh index + smoke check only (cheap, no big spend)
-#   bash benchmarks/run-all.sh full         # refresh index, skip smoke, go straight to the full suite
-#   bash benchmarks/run-all.sh refresh      # rebuild the target codemap index only
-#   REPO=/path/to/clone bash benchmarks/run-all.sh   # override the target repo
+#   bash benchmarks/run-all.sh smoke   # validate lock + query + no-model Claude/Codex preflights
+#   bash benchmarks/run-all.sh claude  # validate lock + preflight + full Claude batches
+#   bash benchmarks/run-all.sh codex   # validate lock + preregistered paid Codex FN-02 A/B/C smoke
 #
-# Target repo is PINNED to a git tag ($PL_TAG) and lives in-project at .sandbox/pytorch-lightning
-# — a real clone that owns its .git (bench needs git provenance + patch archive/restore). It is
-# HARD-RESET to the tag before every run so drift and leftover patch-task edits never leak across
-# runs. Override with REPO=/path/to/clone (must own .git; only the managed .sandbox clone is auto-
-# reset — an overridden REPO is used as-is, never force-reset, to protect your working tree).
+# The Codex mode fails before setup unless the caller supplies the exact r6
+# approval token, a private auth source, and a new output path. No mode runs
+# when the argument is missing or unknown. This entrypoint never rebuilds the
+# frozen parity index because scanner timestamps would invalidate its byte hash.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
-
-PL_TAG="${PL_TAG:-2.6.5}"
+PL_TAG="2.6.5"
 PL_URL="${PL_URL:-https://github.com/Lightning-AI/pytorch-lightning.git}"
 REPO="${REPO:-$ROOT/.sandbox/pytorch-lightning}"
-MODE="${1:-all}"
+INDEX_PATH="$REPO/.cache/codemap/$(basename "$REPO").json"
+MODE="${1:-}"
+R6_REVISION="codemap-provider-parity-v1-b0-r6"
+LOCKED_INDEX_SHA="b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045"
+
+usage() {
+  echo "usage: bash benchmarks/run-all.sh {smoke | claude | codex}" >&2
+}
+
+if [ "$#" -ne 1 ]; then
+  usage
+  exit 2
+fi
+case "$MODE" in
+  smoke | claude | codex) ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
+
+cd "$ROOT"
 
 ensure_repo() {
-  # Clone the pinned tag if the managed sandbox clone is missing, then hard-reset it to the tag so
-  # every run starts from a pristine tree. Only the default .sandbox clone is managed; a
-  # user-overridden REPO is checked for .git but never reset (protects uncommitted work).
+  # Only the managed sandbox is reset. An overridden REPO is never mutated.
   if [ "$REPO" = "$ROOT/.sandbox/pytorch-lightning" ]; then
     if [ ! -d "$REPO/.git" ]; then
       echo "== clone pytorch-lightning @ $PL_TAG into .sandbox =="
@@ -36,86 +50,145 @@ ensure_repo() {
     echo "== reset .sandbox clone to $PL_TAG (pristine baseline) =="
     git -C "$REPO" reset --hard "$PL_TAG"
     git -C "$REPO" clean -fd
-  elif [ ! -d "$REPO/.git" ]; then
-    echo "ERROR: \$REPO ($REPO) has no .git — bench needs a real clone at tag $PL_TAG." >&2
+  elif ! git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "ERROR: \$REPO ($REPO) is not a Git worktree at tag $PL_TAG." >&2
     exit 1
   fi
   echo "→ target repo: $REPO ($(git -C "$REPO" rev-parse --short HEAD))"
 }
 
-refresh() {
+prepare_locked_inputs() {
   ensure_repo
-  echo "== 0. REFRESH codemap index (full rebuild) =="
-  local cm
-  cm="$(ls -td "$HOME"/.claude/plugins/cache/borda-ai-rig/codemap-py/*/bin/codemap-py 2>/dev/null | head -1)"
-  if [ -z "$cm" ]; then
-    echo "ERROR: codemap-py bin not found under ~/.claude/plugins/cache/" >&2
+  echo "== VALIDATE frozen parity index =="
+  if [ ! -f "$INDEX_PATH" ]; then
+    echo "ERROR: locked parity index is missing: $INDEX_PATH" >&2
     exit 1
   fi
-  "$cm" index --root "$REPO"
+  if command -v shasum >/dev/null 2>&1; then
+    index_sha="$(shasum -a 256 "$INDEX_PATH" | awk '{print $1}')"
+  elif command -v sha256sum >/dev/null 2>&1; then
+    index_sha="$(sha256sum "$INDEX_PATH" | awk '{print $1}')"
+  else
+    echo "ERROR: shasum or sha256sum is required to validate the locked parity index." >&2
+    exit 1
+  fi
+  if [ "$index_sha" != "$LOCKED_INDEX_SHA" ]; then
+    echo "ERROR: locked parity index SHA-256 mismatch: expected $LOCKED_INDEX_SHA, got $index_sha" >&2
+    exit 1
+  fi
+  echo "→ locked index: $INDEX_PATH ($index_sha)"
 }
 
-# Hard-error markers a healthy codemap run never prints. The runners exit 0 even when a
-# codemap run errors (e.g. the /codemap:query skill returns <tool_use_error>), so `set -e`
-# alone will NOT catch it — we scan the captured smoke output for these instead.
-_SMOKE_ERROR_RE='codemap_skill_errored|skill_blocked|_errored|SandboxError|sandbox_error|Traceback \(most recent call last\)|^ERROR:'
+query_check() {
+  echo "== QUERY (no model) =="
+  python benchmarks/run-cli.py --repo-path "$REPO"
+}
+
+claude_preflight() {
+  echo "== CLAUDE PREFLIGHT (no model) =="
+  python benchmarks/run-claude-structural.py \
+    --repo-path "$REPO" \
+    --tasks "['FN-02']" \
+    --arm all \
+    --model haiku \
+    --dry-run
+  python benchmarks/run-claude-agentic.py \
+    --repo-path "$REPO" \
+    --tasks "['BA-01']" \
+    --arm A_plain \
+    --model haiku \
+    --dry-run
+}
+
+codex_preflight() {
+  echo "== CODEX PREFLIGHT (no model) =="
+  python benchmarks/run-codex-structural.py \
+    --repo-path "$REPO" \
+    --tasks-path benchmarks/suites/tasks-bench.json \
+    --index-path "$INDEX_PATH" \
+    --marketplace-root "$ROOT" \
+    --model gpt-5.6-luna \
+    --task-id FN-02 \
+    --arm all \
+    --dry-run
+}
 
 smoke() {
-  echo "== SMOKE (cheap harness check) =="
-  local log
-  log="$(mktemp "${TMPDIR:-/tmp}/codemap-smoke-XXXXXX")"  # tmpdir-exempt: mktemp template already unique
-  local crashed=0
-
-  # Run each check; tee so the user still sees live output, capture for post-scan.
-  # `if ! …` suppresses errexit so a crash is recorded, not aborted mid-scan.
-  _step() { echo "→ $*"; if ! "$@" 2>&1 | tee -a "$log"; then crashed=1; fi; }
-  _step python benchmarks/run-codemap-cli.py --repo-path "$REPO"
-  _step python benchmarks/run-codemap-bench.py --repo-path "$REPO" --tasks "['SE-01']" --arm codemap --model haiku
-  _step python benchmarks/run-codemap-agentic.py "$REPO" --tasks "['BA-01']" --model haiku
-
-  # Gate: hold the full suite if any codemap run crashed or printed a hard-error marker.
-  if [ "$crashed" -ne 0 ] || grep -Eq "$_SMOKE_ERROR_RE" "$log"; then
-    echo "" >&2
-    echo "! BLOCKED — smoke found errored/crashed codemap runs; NOT proceeding to the full suite." >&2
-    echo "  Matched markers:" >&2
-    grep -En "$_SMOKE_ERROR_RE" "$log" | sed 's/^/    /' >&2 || true
-    echo "  Full smoke log: $log" >&2
-    exit 1
-  fi
-  rm -f "$log"
-  echo "→ smoke OK — codemap path healthy"
+  query_check
+  claude_preflight
+  codex_preflight
+  echo "→ smoke OK: query command completed; Claude/Codex no-model preflights passed"
 }
 
-# In the full suite one runner crashing (or exiting non-zero on failed runs) must NOT abort the
-# whole batch — later tiers/steps are independent and worth finishing. Each step is wrapped so its
-# failure logs a warning and continues. Only smoke() hard-gates (it decides whether full runs at all).
-_step_full() {  # $@ = command; run it, warn-and-continue on non-zero instead of aborting under set -e
-  "$@" || echo "⚠ step exited $? — continuing the full suite: $*" >&2
+_step_full() {
+  # Paid Claude cells are independent; preserve later evidence after one failure.
+  "$@" || echo "⚠ step exited $?; continuing the Claude batch: $*" >&2
 }
 
-full() {
-  echo "== 1. QUERY (no LLM) — gates the index =="
-  _step_full python benchmarks/run-codemap-cli.py --repo-path "$REPO" --report
-
-  echo "== 2. REAL-CODEBASE (LLM) — 54 tasks x 2 arms, per tier =="
-  for m in haiku sonnet opus; do
-    printf '\n\n'
-    echo "################################################################"
-    echo "##  REAL-CODEBASE  ·  model tier: $m"
-    echo "################################################################"
-    _step_full python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model "$m"
+claude() {
+  query_check
+  claude_preflight
+  echo "== CLAUDE STRUCTURAL (paid model runs) =="
+  for model in haiku sonnet opus; do
+    _step_full python benchmarks/run-claude-structural.py \
+      --repo-path "$REPO" \
+      --run-all \
+      --model "$model"
   done
 
-  echo "== 3. AGENTIC (LLM) — 16 tasks x 4 arms x 3 tiers =="
-  _step_full python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
+  echo "== CLAUDE AGENTIC (paid model runs) =="
+  _step_full python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
+}
+
+require_codex_paid_inputs() {
+  if [ "${CODEX_PAID_APPROVAL:-}" != "$R6_REVISION" ]; then
+    echo "ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=$R6_REVISION" >&2
+    exit 2
+  fi
+  if [ -z "${CODEX_AUTH_SOURCE:-}" ] || [ ! -f "$CODEX_AUTH_SOURCE" ]; then
+    echo "ERROR: paid Codex mode requires CODEX_AUTH_SOURCE pointing to a private auth.json." >&2
+    exit 2
+  fi
+  if [ -z "${CODEX_OUTPUT_PATH:-}" ]; then
+    echo "ERROR: paid Codex mode requires a new CODEX_OUTPUT_PATH." >&2
+    exit 2
+  fi
+  if [ -e "$CODEX_OUTPUT_PATH" ]; then
+    echo "ERROR: CODEX_OUTPUT_PATH already exists: $CODEX_OUTPUT_PATH" >&2
+    exit 2
+  fi
+}
+
+codex() {
+  query_check
+  codex_preflight
+  echo "== CODEX FN-02 r6 A/B/C SMOKE (paid model runs) =="
+  python benchmarks/run-codex-structural.py \
+    --repo-path "$REPO" \
+    --tasks-path benchmarks/suites/tasks-bench.json \
+    --index-path "$INDEX_PATH" \
+    --marketplace-root "$ROOT" \
+    --auth-source "$CODEX_AUTH_SOURCE" \
+    --model gpt-5.6-luna \
+    --task-id FN-02 \
+    --arm all \
+    --output-path "$CODEX_OUTPUT_PATH"
 }
 
 case "$MODE" in
-  refresh) refresh ;;
-  smoke)   refresh; smoke ;;
-  full)    refresh; full ;;
-  all)     refresh; smoke; full ;;
-  *) echo "unknown mode '$MODE' (use: refresh | smoke | full | all)" >&2; exit 2 ;;
+  smoke)
+    prepare_locked_inputs
+    smoke
+    ;;
+  claude)
+    prepare_locked_inputs
+    claude
+    ;;
+  codex)
+    require_codex_paid_inputs
+    prepare_locked_inputs
+    codex
+    ;;
 esac
 
 echo "→ done. Results in benchmarks/results/"

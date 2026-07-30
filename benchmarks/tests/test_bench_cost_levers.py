@@ -1,6 +1,6 @@
 """Tests for the cost-lever layer of the codemap LLM benchmark runner.
 
-Covers the four cost levers added to run-codemap-bench.py, all without any LLM call or
+Covers the four cost levers in run-claude-structural.py without any LLM call or
 benchmark execution — every test drives the pure selection / provenance / aggregation
 helpers directly, or writes synthetic JSONL result fixtures:
 

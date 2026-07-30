@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Codemap skill benchmark — agent exploration cost with vs without structural context.
+"""Claude-only Codemap skill benchmark for agent exploration cost.
 
 ## What this measures
 
-Three arms run the same import-graph navigation tasks:
+Four legacy arms run the same import-graph navigation tasks:
 
   plain    — developer with a minimal fix/feature/refactor/review skill; discovers structure via
              Grep / Glob / Bash
@@ -98,10 +98,10 @@ reducing tool call count, elapsed time, and context consumption.
   python plugins/codemap-py/bin/scan-index --root /path/to/repo
 
   # 2. Run all tasks across all model tiers
-  python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo --all --report
+  python benchmarks/run-claude-agentic.py --repo-path /path/to/repo --all --report
 
   # 3. Spot-check one task in plain arm only
-  python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo \\
+  python benchmarks/run-claude-agentic.py --repo-path /path/to/repo \\
       --tasks T01 --arm plain --model haiku
 
 ## Requirements
@@ -210,6 +210,8 @@ reducing tool call count, elapsed time, and context consumption.
 """
 
 import ast
+import hashlib
+import inspect
 import json
 import os
 import re
@@ -244,20 +246,31 @@ from _utilities import (  # noqa: E402
     parse_result_usage,
     resolve_index_path,
     stream_claude,
-    unwrap_tasks,
 )
 from _utilities import MODEL_TIMEOUT  # noqa: E402
 from _utilities import fmt_time, fmt_tok  # noqa: E402
 
 # Re-exported for call-site/test compatibility (tests reference it via this module's namespace).
 from _utilities import resolve_relative_base  # noqa: E402,F401
+from provider_parity_contracts import (  # noqa: E402
+    ARM_CONTRACTS,
+    PARITY_TIMEOUT_SECONDS,
+    canonical_task_hash,
+    load_task_policies,
+    load_task_suite,
+    prompt_hash,
+    semantic_suite_hash,
+)
 
 _console = _Console()
+
+PARITY_MANIFEST_PATH = Path(__file__).resolve().parent / "results" / "manifests" / "provider-parity-v1.json"
+LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-# RESULTS_DIR, MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-codemap-bench).
+# RESULTS_DIR, MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-claude-structural).
 
 # Cost is the fair cross-arm metric because arms differ in how many tokens they burn to reach the
 # same answer. We use Anthropic's own per-run total_cost_usd (captured from the stream-json result
@@ -289,7 +302,7 @@ def run_cost_usd(r: "BenchmarkRun") -> float:
     return getattr(r, "cost_usd", 0.0) or 0.0
 
 
-# fmt_tok now imported from _utilities (shared with run-codemap-bench).
+# fmt_tok now imported from _utilities (shared with run-claude-structural).
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +383,8 @@ class ToolCounts:
     blocked: int = 0  # tool_use events that returned <tool_use_error> (permission-denied or disallowed)
     bash_for_imports: int = 0  # bash calls matching import-discovery patterns (grep/rg for import)
     index_reads: int = 0  # bash calls that read .cache/codemap/ or .cache/scan/ index files directly
+    scan_query: int = 0  # Bash calls that invoke scan-query; diagnostic subset of bash
+    codemap: int = 0  # Codemap Skill calls; diagnostic subset of skill
 
     @property
     def total(self) -> int:
@@ -396,6 +411,22 @@ class BenchmarkRun:
     task_type: str
     model: str  # short tier name: haiku / sonnet / opus
     success: bool
+    experiment_revision: str = ""
+    parity_arm: str | None = None
+    codemap_compliant: bool | None = None
+    task_hash: str = ""
+    prompt_hash: str = ""
+    suite_hash: str = ""
+    suite_raw_hash: str = ""
+    evaluator_id: str = ""
+    evaluator_hash: str = ""
+    envelope_hash: str = ""
+    arm_contract_hash: str = ""
+    repo_sha: str = ""
+    index_sha: str = ""
+    oracle_class: str = ""
+    headline_eligible_v1: bool = False
+    scoreable: bool = True
     tools: ToolCounts = field(default_factory=ToolCounts)
     # Token metrics
     input_tokens: int = 0
@@ -443,11 +474,240 @@ class Task:
     expected_patch_keywords: list[str] = field(default_factory=list)  # fix tasks: strings expected in diff +lines
     expected_files: list[str] = field(default_factory=list)  # fix tasks: file-path fragments expected in diff
     test_target: str = ""  # fix tasks: pytest node id/path run on the post-edit sandbox for a correctness signal
+    experiment_revision: str = ""
+    task_hash: str = ""
+    prompt_hash: str = ""
+    suite_hash: str = ""
+    suite_raw_hash: str = ""
+    oracle_class: str = ""
+    headline_eligible_v1: bool = False
+    scoreable: bool = True
+
+
+def parity_arm_identity(arm: str) -> str | None:
+    """Return a canonical A/B/C arm only when that arm was explicitly executed.
+
+    Legacy agentic labels have different historical no-call semantics, so they
+    intentionally remain unlabelled rather than being retroactively mapped.
+    """
+    return arm if arm in ARM_CONTRACTS else None
+
+
+def _locked_manifest_tasks(manifest_path: Path) -> tuple[dict[str, dict], list[dict]]:
+    """Return manifest task rows and suites after structural validation."""
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"experiment manifest {manifest_path} is not valid JSON: {exc}") from exc
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("suites"), list):
+        raise ValueError(f"experiment manifest {manifest_path} requires a suites list")
+
+    task_rows: dict[str, dict] = {}
+    suites: list[dict] = []
+    for suite_index, suite in enumerate(manifest["suites"]):
+        if not isinstance(suite, dict) or not isinstance(suite.get("tasks"), list):
+            raise ValueError(f"experiment manifest {manifest_path} suite {suite_index} requires a tasks list")
+        suites.append(suite)
+        for task_index, task_row in enumerate(suite["tasks"]):
+            task_id = task_row.get("id") if isinstance(task_row, dict) else None
+            if not isinstance(task_id, str) or not task_id:
+                raise ValueError(
+                    f"experiment manifest {manifest_path} suite {suite_index} task {task_index} requires an id"
+                )
+            if task_id in task_rows:
+                raise ValueError(f"experiment manifest {manifest_path} contains duplicate task id {task_id!r}")
+            task_rows[task_id] = task_row
+    return task_rows, suites
+
+
+def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MANIFEST_PATH) -> list[Task]:
+    """Load agentic tasks with immutable shared policy and canonical identity.
+
+    Args:
+        tasks_path: Raw agentic suite path.
+        manifest_path: Locked provider-parity manifest defining task policy.
+
+    Returns:
+        Agentic task projections carrying the shared revision, hash, and policy fields.
+
+    Raises:
+        ValueError: If a task is missing from the locked policy manifest.
+    """
+    raw_suite_hash = hashlib.sha256(tasks_path.read_bytes()).hexdigest()
+    raw_tasks = load_task_suite(tasks_path)
+    manifest_tasks, manifest_suites = _locked_manifest_tasks(manifest_path)
+    policies = load_task_policies(manifest_path)
+    for raw_task in raw_tasks:
+        task_id = raw_task["id"]
+        if task_id not in policies:
+            raise ValueError(f"no locked task policy for {task_id!r}")
+        manifest_task = manifest_tasks.get(task_id)
+        if manifest_task is None:
+            raise ValueError(f"no locked manifest task for {task_id!r}")
+        if canonical_task_hash(raw_task) != manifest_task.get("canonical_task_sha256"):
+            raise ValueError(f"task hash mismatch for {task_id!r}")
+        if prompt_hash(raw_task) != manifest_task.get("prompt_sha256"):
+            raise ValueError(f"prompt hash mismatch for {task_id!r}")
+    raw_task_ids = [task["id"] for task in raw_tasks]
+    matching_suites = [
+        suite for suite in manifest_suites if [task.get("id") for task in suite["tasks"]] == raw_task_ids
+    ]
+    if len(matching_suites) != 1:
+        raise ValueError("ordered task IDs do not match exactly one locked manifest suite")
+    suite_hash = semantic_suite_hash(raw_tasks)
+    loaded: list[Task] = []
+    for raw_task in raw_tasks:
+        task_id = raw_task["id"]
+        actual_task_hash = canonical_task_hash(raw_task)
+        actual_prompt_hash = prompt_hash(raw_task)
+        policy = policies[task_id]
+        loaded.append(
+            Task(
+                id=task_id,
+                type=raw_task["type"],
+                prompt=raw_task["prompt"],
+                primary_module=raw_task.get("primary_module", ""),
+                difficulty=raw_task.get("difficulty", "unknown"),
+                skill=raw_task.get("skill", ""),
+                symbol=raw_task.get("symbol", ""),
+                expected_keywords=raw_task.get("expected_keywords", []),
+                requires_reset=raw_task.get("requires_reset", False),
+                codebase_module=raw_task.get("codebase_module", ""),
+                expected_patch_keywords=raw_task.get("expected_patch_keywords", []),
+                expected_files=raw_task.get("expected_files", []),
+                test_target=raw_task.get("test_target", ""),
+                experiment_revision=policy.experiment_revision,
+                task_hash=actual_task_hash,
+                prompt_hash=actual_prompt_hash,
+                suite_hash=suite_hash,
+                suite_raw_hash=raw_suite_hash,
+                oracle_class=policy.oracle_class,
+                headline_eligible_v1=policy.headline_eligible_v1,
+                scoreable=policy.scoreable,
+            )
+        )
+    return loaded
+
+
+def load_legacy_tasks(tasks_path: Path) -> list[Task]:
+    """Load an unlocked legacy suite without assigning canonical parity provenance."""
+    raw_tasks = load_task_suite(tasks_path)
+    suite_hash = semantic_suite_hash(raw_tasks)
+    suite_raw_hash = hashlib.sha256(tasks_path.read_bytes()).hexdigest()
+    return [
+        Task(
+            id=raw_task["id"],
+            type=raw_task["type"],
+            prompt=raw_task["prompt"],
+            primary_module=raw_task.get("primary_module", ""),
+            difficulty=raw_task.get("difficulty", "unknown"),
+            skill=raw_task.get("skill", ""),
+            symbol=raw_task.get("symbol", ""),
+            expected_keywords=raw_task.get("expected_keywords", []),
+            requires_reset=raw_task.get("requires_reset", False),
+            codebase_module=raw_task.get("codebase_module", ""),
+            expected_patch_keywords=raw_task.get("expected_patch_keywords", []),
+            expected_files=raw_task.get("expected_files", []),
+            test_target=raw_task.get("test_target", ""),
+            task_hash=canonical_task_hash(raw_task),
+            prompt_hash=prompt_hash(raw_task),
+            suite_hash=suite_hash,
+            suite_raw_hash=suite_raw_hash,
+        )
+        for raw_task in raw_tasks
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+
+def _sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest of a concrete benchmark input file."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _repository_fingerprint(repo_path: Path) -> str:
+    """Return the checked-out commit SHA, with a deterministic non-git test fallback."""
+    completed = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode == 0 and completed.stdout.strip():
+        return completed.stdout.strip()
+    return hashlib.sha256(str(repo_path.resolve()).encode("utf-8")).hexdigest()
+
+
+def _validate_parity_runtime(
+    repo_path: Path,
+    index_path: Path,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+) -> None:
+    """Reject a canonical agentic run outside the locked target and index."""
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"experiment manifest {manifest_path} is not valid JSON: {exc}") from exc
+
+    target = manifest["target_source"]
+    if _repository_fingerprint(repo_path) != target["commit"]:
+        raise ValueError(f"canonical run requires target commit {target['commit']}")
+    tree = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", "HEAD^{tree}"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if tree.returncode != 0 or tree.stdout.strip() != target["tree"]:
+        raise ValueError(f"canonical run requires target tree {target['tree']}")
+    status = subprocess.run(
+        ["git", "-C", str(repo_path), "status", "--porcelain"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if status.returncode != 0 or status.stdout.strip():
+        raise ValueError("canonical run requires a clean target worktree")
+
+    expected_index = manifest["index"]
+    if _sha256_file(index_path) != expected_index["raw_sha256"]:
+        raise ValueError("canonical run requires the locked index bytes")
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("canonical run index is not valid JSON") from exc
+    for index_field in ("git_sha", "scan_version"):
+        if index.get(index_field) != expected_index[index_field]:
+            raise ValueError(f"canonical run index {index_field} does not match the locked manifest")
+    if len(index.get("modules", [])) != expected_index["module_count"]:
+        raise ValueError("canonical run index module count does not match the locked manifest")
+
+
+def _invokes_scan_query(command: str) -> bool:
+    """Return whether a shell command executes scan-query at a command boundary."""
+    boundary = r"(?:^|&&|\|\||;|\|)\s*"
+    environment = r"(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+    return re.search(rf"{boundary}{environment}(?:\S*/)?scan-query(?:\s|$)", command) is not None
+
+
+def _codemap_use_attempted(tools: ToolCounts) -> bool:
+    """Return whether telemetry contains a Codemap Skill or scan-query attempt."""
+    return tools.codemap > 0 or tools.scan_query > 0
+
+
+def _evaluator_provenance(task_type: str) -> tuple[str, str]:
+    """Identify the actual task-family scorer and hash its implementation source."""
+    if task_type == "read_crop":
+        evaluator = score_read_crop
+    elif task_type in ("fix_single", "fix_multicaller"):
+        evaluator = score_fix
+    else:
+        evaluator = GroundTruth.score
+    evaluator_id = f"{evaluator.__module__}.{evaluator.__qualname__}"
+    return evaluator_id, hashlib.sha256(inspect.getsource(evaluator).encode("utf-8")).hexdigest()
 
 
 def count_tokens(text: str) -> int:
@@ -621,7 +881,7 @@ def _derive_module_name(py_path: Path, root: Path) -> Optional[str]:
     return rel_dotted or None
 
 
-# resolve_relative_base now imported from _utilities (shared with run-codemap-cli).
+# resolve_relative_base now imported from _utilities (shared with run-cli).
 
 
 def _extract_import_targets(tree: ast.Module, package: str, all_modules: set[str]) -> set[str]:
@@ -1041,8 +1301,6 @@ class ModelRunner:
         "--verbose",
         "--output-format",
         "stream-json",
-        "--max-turns",
-        "40",
         "--setting-sources",
         "project,local",
     ]
@@ -1055,8 +1313,14 @@ class ModelRunner:
     # semble blocks the Skill tool, plain blocks both structural entry points.
     _ARM_DISALLOWED: dict[str, list[str]] = {
         "codemap": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
+        "B_auto": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
+        "C_required": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
         "semble": ["--disallowed-tools", "Skill"],
         "plain": ["--disallowed-tools", "Skill,mcp__semble__search,mcp__semble__find_related"],
+        "A_plain": [
+            "--disallowed-tools",
+            "Skill,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*)",
+        ],
         "combined": [],
     }
 
@@ -1071,6 +1335,8 @@ class ModelRunner:
     _CODEMAP_SKILLS = "Skill(codemap:query-code),Skill(codemap-py:query-code)"
     _ARM_ALLOWED: dict[str, list[str]] = {
         "codemap": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
+        "B_auto": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
+        "C_required": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
         "semble": ["--allowedTools", "mcp__semble__search,mcp__semble__find_related"],
         "combined": [
             "--allowedTools",
@@ -1158,6 +1424,8 @@ Invocation:
 Grep, Glob, Bash, and Read remain available.
 
 If /codemap:query-code returns <tool_use_error>, run one Grep/Bash fallback for the same query."""
+
+    _C_REQUIRED_SUPPLEMENT = "\n\nYou must use Codemap at least once for structural investigation."
 
     _SEMBLE_SUPPLEMENT = """
 
@@ -1284,24 +1552,32 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         if task_type == "fix_single":
             supplement = {
                 "codemap": self._FIXSINGLE_CODEMAP,
+                "B_auto": self._FIXSINGLE_CODEMAP,
+                "C_required": self._FIXSINGLE_CODEMAP + self._C_REQUIRED_SUPPLEMENT,
                 "semble": self._FIXSINGLE_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._FIXSINGLE_PLAIN)
             return self._FIXSINGLE_BASE + supplement + self._EFFICIENCY
         if task_type == "fix_multicaller":
             supplement = {
                 "codemap": self._FIXMULTI_CODEMAP,
+                "B_auto": self._FIXMULTI_CODEMAP,
+                "C_required": self._FIXMULTI_CODEMAP + self._C_REQUIRED_SUPPLEMENT,
                 "semble": self._FIXMULTI_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._FIXMULTI_PLAIN)
             return self._FIXMULTI_BASE + supplement + self._EFFICIENCY
         if task_type == "read_crop":
             supplement = {
                 "codemap": self._READCROP_CODEMAP,
+                "B_auto": self._READCROP_CODEMAP,
+                "C_required": self._READCROP_CODEMAP + self._C_REQUIRED_SUPPLEMENT,
                 "semble": self._READCROP_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._READCROP_PLAIN)
             return self._READCROP_BASE + supplement + self._EFFICIENCY
         base = self._PLAIN_SKILLS.get(task_type, self._PLAIN_SKILLS["fix"])
-        if arm == "codemap":
+        if arm in ("codemap", "B_auto"):
             supplement = self._CODEMAP_SUPPLEMENT
+        elif arm == "C_required":
+            supplement = self._CODEMAP_SUPPLEMENT + self._C_REQUIRED_SUPPLEMENT
         elif arm == "semble":
             supplement = self._SEMBLE_SUPPLEMENT.format(repo_path=self.repo_path)
         elif arm == "combined":
@@ -1355,8 +1631,12 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         disallow_flags = self._ARM_DISALLOWED.get(arm, [])
         allow_flags = self._ARM_ALLOWED.get(arm, [])
         iso_flags = self._arm_isolation_flags(arm)  # re-supply tools dropped by user-config exclusion
+        # Codex has no equivalent public turn cap, so canonical parity arms use only the shared
+        # wall-clock budget. Legacy agentic labels keep their original fixed 40-turn control.
+        turn_flags = [] if parity_arm_identity(arm) else ["--max-turns", "40"]
         cmd = [
             *self._CMD,
+            *turn_flags,
             "--model",
             self.model_id,
             *iso_flags,
@@ -1395,7 +1675,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 # repo-name-derived index file (<repo>.json) resolves unchanged (git is absent →
                 # resolve_proj_index falls back to the CWD basename). Plain and semble arms are
                 # left index-free — plain for isolation, semble because it never queries the index.
-                if arm in ("codemap", "combined"):
+                if arm in ("codemap", "combined", "B_auto", "C_required"):
                     self._seed_index_cache(cwd)
                 yield cwd
                 if task.requires_reset:
@@ -1530,7 +1810,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         """
         flags: list[str] = []
         plugin_dir = cls._codemap_plugin_dir()
-        if arm in ("codemap", "combined") and plugin_dir:
+        if arm in ("codemap", "combined", "B_auto", "C_required") and plugin_dir:
             flags += ["--plugin-dir", plugin_dir]
         if arm in ("semble", "combined"):
             flags += ["--mcp-config", cls._semble_mcp_config_path(), "--strict-mcp-config"]
@@ -1554,7 +1834,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             A copy of the process environment with PATH (and, for structural arms, the opt-out).
         """
         env = codemap_bin_on_path(os.environ.copy())
-        if arm in ("codemap", "combined"):
+        if arm in ("codemap", "combined", "B_auto", "C_required"):
             env["SCAN_NO_AUTOBUILD"] = "1"
         return env
 
@@ -1638,6 +1918,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                     skill_str = block.get("input", {}).get("skill", "")
                     args_str = block.get("input", {}).get("args", "")
                     if "codemap" in skill_str:
+                        result.tools.codemap += 1
                         pending_codemap_ids.add(tool_id)
                         if "rdeps" in args_str or "rdeps" in skill_str:
                             pending_rdeps_ids.add(tool_id)
@@ -1726,6 +2007,8 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             pending[tool_id] = ts
         if name == "Bash":
             cmd = inp.get("command", "")
+            if _invokes_scan_query(cmd):
+                result.tools.scan_query += 1
             # Patterns typical of manual import graph discovery (not file-reading)
             if re.search(r"\b(grep|rg)\b.*\bimport\b|\bgrep\b.*\bfrom\b|\bimport\b.*-r\b", cmd):
                 result.tools.bash_for_imports += 1
@@ -2319,6 +2602,8 @@ class Benchmark:
         self.arms = arms
         self.models = models
         self.repo_path = repo_path
+        self.repo_sha = _repository_fingerprint(repo_path)
+        self.index_sha = _sha256_file(index_path)
         self.output_path = output_path
         self.log_path = log_path
         self.repeat = max(1, repeat)
@@ -2340,8 +2625,40 @@ class Benchmark:
         metadata: dict,
         update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
     ) -> BenchmarkRun:
-        runner = ModelRunner(model_short, model_id, self.repo_path, timeout=MODEL_TIMEOUT.get(model_short, 300))
+        run_timeout = PARITY_TIMEOUT_SECONDS if parity_arm_identity(arm) else MODEL_TIMEOUT.get(model_short, 300)
+        runner = ModelRunner(model_short, model_id, self.repo_path, timeout=run_timeout)
         result = runner.run(task, arm, update_fn=update_fn)
+        result.parity_arm = parity_arm_identity(arm)
+        result.experiment_revision = task.experiment_revision if result.parity_arm else LEGACY_EXPERIMENT_REVISION
+        if result.parity_arm == "C_required":
+            result.codemap_compliant = _codemap_use_attempted(result.tools)
+        result.task_hash = task.task_hash
+        result.prompt_hash = task.prompt_hash
+        result.suite_hash = task.suite_hash
+        result.suite_raw_hash = task.suite_raw_hash
+        result.evaluator_id, result.evaluator_hash = _evaluator_provenance(task.type)
+        result.envelope_hash = hashlib.sha256(
+            runner._system_prompt(task.skill or task.type, arm).encode("utf-8")
+        ).hexdigest()
+        result.arm_contract_hash = (
+            ARM_CONTRACTS[result.parity_arm]["contract_sha256"]
+            if result.parity_arm
+            else hashlib.sha256(
+                json.dumps(
+                    {
+                        "allowed": ModelRunner._ARM_ALLOWED.get(arm, []),
+                        "arm": arm,
+                        "disallowed": ModelRunner._ARM_DISALLOWED.get(arm, []),
+                    },
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+        result.repo_sha = self.repo_sha
+        result.index_sha = self.index_sha
+        result.oracle_class = task.oracle_class
+        result.headline_eligible_v1 = task.headline_eligible_v1
+        result.scoreable = task.scoreable
         # Build corpora for v2 quality scoring.
         # erec uses agent-text only — tool outputs excluded so codemap arm erec measures
         # agent comprehension, not whether the skill echoed the list back. The semble chunk
@@ -2429,7 +2746,7 @@ class Benchmark:
         # Plain arm isolation check: flag any run that read the codemap index JSON via Bash.
         # Currently low-yield (agents usually guess the wrong home-dir path) but the vector is
         # real — a single correct path read hands the agent the full index for free.
-        if result.arm == "plain" and result.tools.index_reads > 0:
+        if result.arm in ("plain", "A_plain") and result.tools.index_reads > 0:
             result.error_type = "plain_index_contamination"
             result.error = (
                 f"plain arm read .cache/codemap/ or .cache/scan/ index via Bash "
@@ -2569,30 +2886,16 @@ def main(
     if not run_all and not tasks and not arm and not dry_run:
         sys.exit("Specify --run_all to run everything, or narrow with --tasks / --arm.")
 
+    arms = [arm] if arm else ["plain", "codemap", "semble"]
+    canonical_requested = any(candidate in ARM_CONTRACTS for candidate in arms)
+
     # ── Load tasks ────────────────────────────────────────────────────────
     if not tasks_file.exists():
         sys.exit(f"Tasks file not found: {tasks_file}")
-    with tasks_file.open() as f:
-        raw = json.load(f)
-        task_list = unwrap_tasks(raw)
-        all_tasks: list[Task] = [
-            Task(
-                id=t["id"],
-                type=t["type"],
-                prompt=t["prompt"],
-                primary_module=t.get("primary_module", ""),
-                difficulty=t.get("difficulty", "unknown"),
-                skill=t.get("skill", ""),
-                symbol=t.get("symbol", ""),
-                expected_keywords=t.get("expected_keywords", []),
-                requires_reset=t.get("requires_reset", False),
-                codebase_module=t.get("codebase_module", ""),
-                expected_patch_keywords=t.get("expected_patch_keywords", []),
-                expected_files=t.get("expected_files", []),
-                test_target=t.get("test_target", ""),
-            )
-            for t in task_list
-        ]
+    try:
+        all_tasks = load_tasks_with_provenance(tasks_file) if canonical_requested else load_legacy_tasks(tasks_file)
+    except ValueError as exc:
+        sys.exit(str(exc))
     if tasks:
         all_tasks = [t for t in all_tasks if t.id in tasks]
     if not all_tasks:
@@ -2602,9 +2905,13 @@ def main(
     repo_path = repo_path.resolve()
     index_path = find_index(repo_path, index)
 
-    arms = [arm] if arm else ["plain", "codemap", "semble"]
     if not arm:
         print("[→ note:        'all' excludes 'combined' — run with --arm combined to include it]")
+    if canonical_requested:
+        try:
+            _validate_parity_runtime(repo_path, index_path)
+        except (OSError, ValueError) as exc:
+            sys.exit(str(exc))
 
     if "semble" in arms or "combined" in arms:
         check_semble_mcp()
@@ -2647,6 +2954,9 @@ def main(
 
     metadata = {
         "date": datetime.now(timezone.utc).isoformat(),
+        "experiment_revision": (
+            all_tasks[0].experiment_revision if canonical_requested else LEGACY_EXPERIMENT_REVISION
+        ),
         "models": model_names,
         "repo": str(repo_path),
         "index": str(index_path),

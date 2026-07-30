@@ -115,7 +115,7 @@ def _detect_src_root(repo: Path) -> Path:
     return repo
 
 
-# module_from_init_chain now imported from _utilities (shared with run-codemap-agentic).
+# module_from_init_chain now imported from _utilities (shared with run-claude-agentic).
 
 
 def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
@@ -155,7 +155,7 @@ def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
 # ---- BINARY RESOLUTION ----
 
 
-# find_codemap_bin now imported from _utilities (shared with run-codemap-cli).
+# find_codemap_bin now imported from _utilities (shared with run-cli).
 
 
 def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
@@ -1760,7 +1760,7 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
 # rather than failing on the empty placeholder.
 
 
-# gt_is_pending now imported from _utilities (shared with run-codemap-bench).
+# gt_is_pending now imported from _utilities (shared with run-claude-structural).
 
 
 def _validate_diff_impact(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:

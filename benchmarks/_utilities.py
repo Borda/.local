@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared helpers for the benchmark runners and task generators.
 
-Anything used by two or more of ``run-codemap-*.py`` / ``generate-tasks-*.py`` lives here so
+Anything used by two or more of ``run-*.py`` / ``generate-tasks-*.py`` lives here so
 there is a single source of truth. The scripts have hyphenated filenames (not importable as
 modules), so each imports this module by sibling name — their own directory is already on
 ``sys.path`` at runtime, and ``tests/conftest.py`` puts it there for the test loader.

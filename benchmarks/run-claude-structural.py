@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Codemap real-codebase benchmark — agentic runner for SE / FN / RV / CQ / BR / DG / FT / RI task series.
+"""Claude-only Codemap structural benchmark across all real-code task series.
 
 ## What this measures
 
@@ -17,6 +17,9 @@ Task types:
   DG — debug_from_trace    (root-cause function + file from a traceback)
   FT — feature_scaffolding (files to create or modify for a new feature)
   RI — real_issue          (files relevant to a real GitHub issue)
+  DI — diff_impact         (callers and tests affected by a staged change)
+  GR — graph_reasoning     (centrality, paths, and transitive function impact)
+  MB — module_blast_radius (importer recall for a changed module)
 
 Primary metric:
   token_ratio = codemap_input_tokens / plain_input_tokens per task (lower = better for codemap)
@@ -30,10 +33,10 @@ Secondary:
   python plugins/codemap-py/bin/scan-index --root ./<repo-dir>
 
   # Run all tasks, both arms, haiku model
-  python benchmarks/run-codemap-bench.py --repo-path ./<repo-dir> --run-all
+  python benchmarks/run-claude-structural.py --repo-path ./<repo-dir> --run-all
 
   # Single task, codemap arm only
-  python benchmarks/run-codemap-bench.py --repo-path ./<repo-dir> \\
+  python benchmarks/run-claude-structural.py --repo-path ./<repo-dir> \\
       --tasks "['SE-01']" --arm codemap --model haiku
 
 ## Requirements
@@ -46,6 +49,7 @@ Secondary:
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -55,6 +59,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Optional
@@ -78,6 +83,19 @@ from _utilities import TASKS_BENCH_FILE as TASKS_FILE  # noqa: E402
 from _utilities import fmt_time, fmt_tok  # noqa: E402
 from _utilities import gt_is_pending  # noqa: E402
 from _utilities import make_progress, parse_result_usage, stream_claude  # noqa: E402
+from provider_parity_contracts import (  # noqa: E402
+    ARM_CONTRACTS,
+    EvaluationResult,
+    EvaluatorRegistry,
+    PARITY_TIMEOUT_SECONDS,
+    TaskPolicy,
+    capability_strata,
+    canonical_task_hash,
+    load_task_policies,
+    load_task_suite,
+    prompt_hash,
+    semantic_suite_hash,
+)
 
 _USE_COLOR = sys.stdout.isatty()
 _GREEN = "\033[32m" if _USE_COLOR else ""
@@ -128,7 +146,7 @@ _SELF_CONSISTENCY_KEY = "self_consistency"
 # the fingerprint stays cheap to compute without loading the whole (large) index body.
 _INDEX_META_KEYS = ("scan_version", "scanned_at", "git_sha", "project", "scan_root")
 
-# MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-codemap-agentic).
+# MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-claude-agentic).
 
 # Tiered protocol (release companion). Each tier runs a progressively smaller task set:
 #   haiku  → full suite         sonnet → dev-tagged subset        opus → disagreement adjudication
@@ -137,6 +155,22 @@ _TIER_SONNET = "sonnet"
 _TIER_OPUS = "opus"
 
 ARMS = ("plain", "codemap")
+PARITY_ARMS = tuple(ARM_CONTRACTS)
+PARITY_ARM_BY_LEGACY_ARM: dict[str, str] = {}
+PARITY_MANIFEST_FILE = Path(__file__).parent / "results" / "manifests" / "provider-parity-v1.json"
+LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
+_PARITY_MANIFEST = json.loads(PARITY_MANIFEST_FILE.read_text(encoding="utf-8"))
+_PRIMARY_SUITE_MANIFEST = next(
+    suite for suite in _PARITY_MANIFEST["suites"] if suite["path"] == "benchmarks/suites/tasks-bench.json"
+)
+PRIMARY_SUITE_RAW_HASH = hashlib.sha256(TASKS_FILE.read_bytes()).hexdigest()
+PRIMARY_SUITE_HASH = semantic_suite_hash(load_task_suite(TASKS_FILE))
+_PRIMARY_TASK_IDENTITIES = {
+    task["id"]: (task["canonical_task_sha256"], task["prompt_sha256"]) for task in _PRIMARY_SUITE_MANIFEST["tasks"]
+}
+_PRIMARY_TASK_IDS = tuple(_PRIMARY_TASK_IDENTITIES)
+_PARITY_TASK_POLICIES = load_task_policies(PARITY_MANIFEST_FILE)
+PARITY_EXPERIMENT_REVISION = next(iter(_PARITY_TASK_POLICIES.values())).experiment_revision
 
 # --setting-sources project,local excludes USER-level config from the benchmark subprocess:
 # the caveman plugin, the foundry Re:Anchor rules (box header + ▓ footer), user CLAUDE.md, and
@@ -159,9 +193,23 @@ _ARM_DISALLOWED: dict[str, list[str]] = {
         "--disallowed-tools",
         "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(python3:*),Bash(python:*)",
     ],
+    "A_plain": [
+        "--disallowed-tools",
+        "Skill,Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*),Bash(python3:*),Bash(python:*)",
+    ],
+    "B_auto": [
+        "--disallowed-tools",
+        "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(python3:*),Bash(python:*)",
+    ],
+    "C_required": [
+        "--disallowed-tools",
+        "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(python3:*),Bash(python:*)",
+    ],
 }
 _ARM_ALLOWED: dict[str, list[str]] = {
     "codemap": ["--allowedTools", "Bash(scan-query:*)"],
+    "B_auto": ["--allowedTools", "Bash(scan-query:*)"],
+    "C_required": ["--allowedTools", "Bash(scan-query:*)"],
 }
 
 # ---------------------------------------------------------------------------
@@ -226,6 +274,13 @@ class BenchQuality:
     scoring_detail: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class _BenchEvaluationResult(EvaluationResult):
+    """Shared evaluation result that retains the Claude-specific score diagnostics."""
+
+    bench_quality: BenchQuality = field(default_factory=BenchQuality)
+
+
 @dataclass
 class BenchRun:
     """Result of a single benchmark run (one task × arm × model).
@@ -258,6 +313,8 @@ class BenchRun:
         repo_sha: Provenance — repo HEAD SHA when the run executed; "unknown" on failure.
         index_sha: Provenance — fingerprint of the index head-meta (see ``_index_sha``).
         task_hash: Provenance — sha256 of the canonical task JSON (see ``_task_hash``).
+        suite_hash: Provenance — versioned semantic hash of ordered task contracts.
+        suite_raw_hash: Audit-only SHA-256 of the source suite file bytes.
         resumed: True when this line was reused from a prior results file via ``--resume``
             (the claude subprocess was not re-executed for this tuple).
     """
@@ -268,6 +325,8 @@ class BenchRun:
     model: str
     success: bool
     workflow_type: str = ""
+    capability_strata: tuple[str, ...] = ()
+    quality_components: dict[str, float] = field(default_factory=dict)
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0  # Anthropic's total_cost_usd for this run (current prices); 0.0 if absent
@@ -295,7 +354,21 @@ class BenchRun:
     self_consistency: bool = False  # ground truth derived from the queried index; excluded from headline accuracy
     repo_sha: str = "unknown"  # provenance: repo HEAD when the run executed (git rev-parse; "unknown" on failure)
     index_sha: str = "unknown"  # provenance: fingerprint of the index head-meta (see _index_sha)
-    task_hash: str = "unknown"  # provenance: sha256 of the canonical task JSON (see _task_hash)
+    task_hash: str | None = None  # provenance: sha256 of the canonical task JSON (see _task_hash)
+    prompt_hash: str | None = None
+    prompt_sha256: str | None = None  # compatibility alias for prompt_hash
+    suite_hash: str | None = None
+    suite_raw_hash: str | None = None
+    evaluator_id: str | None = None
+    evaluator_hash: str | None = None
+    envelope_hash: str | None = None
+    arm_contract_hash: str = ""
+    experiment_revision: str = LEGACY_EXPERIMENT_REVISION
+    parity_arm: str = ""
+    compliance: bool | None = None  # C_required usage evidence, separate from task quality
+    oracle_class: str = "unknown"
+    headline_eligible_v1: bool = False
+    scoreable: bool = False
     resumed: bool = False  # True when this line was reused from a prior results file via --resume (not re-executed)
 
 
@@ -354,6 +427,13 @@ Subcommands:
   diff-impact [--base REF]               — structural blast radius of the current git change set
   batch [FILE|-]                         — run many queries in one process (reads a JSON array of {{cmd, args}})"""
 
+_C_REQUIRED_USE = "\n\nYou must use Codemap at least once for structural investigation; other tools remain allowed."
+
+
+def _transport_arm(arm: str) -> str:
+    """Return the legacy transport setup that implements one arm label."""
+    return {"A_plain": "plain", "B_auto": "codemap", "C_required": "codemap"}.get(arm, arm)
+
 
 def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: str) -> str:
     """Assemble the system prompt for one arm from the shared neutral wrapper.
@@ -365,7 +445,7 @@ def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: s
     confounding the token-ratio headline (review C-1).
 
     Args:
-        arm: "plain" or "codemap".
+        arm: Legacy ``plain``/``codemap`` or canonical A/B/C arm label.
         repo_name: Human-readable repository name for framing.
         repo_path: Absolute path to the repository root (the agent cwd).
         index_path: Path to the pre-built codemap index (codemap arm only; ignored for plain).
@@ -380,7 +460,10 @@ def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: s
         >>> "scan-query" in _build_system_prompt("codemap", "demo", "/repo", "/x.json")
         True
     """
-    tools_section = _PLAIN_TOOLS if arm == "plain" else _CODEMAP_TOOLS.format(index_path=index_path)
+    transport_arm = _transport_arm(arm)
+    tools_section = _PLAIN_TOOLS if transport_arm == "plain" else _CODEMAP_TOOLS.format(index_path=index_path)
+    if arm == "C_required":
+        tools_section += _C_REQUIRED_USE
     return _SHARED_SYSTEM_TEMPLATE.format(repo_name=repo_name, repo_path=repo_path, tools_section=tools_section)
 
 
@@ -577,8 +660,87 @@ def _task_hash(task: dict) -> str:
         >>> _task_hash({"id": "SE-01", "prompt": "p"}) == _task_hash({"prompt": "p", "id": "SE-01"})
         True
     """
-    payload = json.dumps(task, sort_keys=True, default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return canonical_task_hash(task)
+
+
+def _prompt_hash(task: dict) -> str:
+    """Return the locked UTF-8 prompt hash for one raw benchmark task.
+
+    Args:
+        task: Raw task loaded from a benchmark suite.
+
+    Returns:
+        Hexadecimal SHA-256 digest of the task prompt.
+    """
+    return prompt_hash(task)
+
+
+def _load_primary_parity_contract() -> tuple[list[dict[str, Any]], Mapping[str, TaskPolicy]]:
+    """Load the primary raw suite and its revision-bound shared task policies.
+
+    Returns:
+        Raw primary task objects and immutable policies from the locked manifest.
+    """
+    tasks = load_task_suite(TASKS_FILE)
+    if tuple(task["id"] for task in tasks) != _PRIMARY_TASK_IDS:
+        raise ValueError("primary suite task order does not match the locked manifest")
+    for task in tasks:
+        _validate_canonical_task(task)
+    if semantic_suite_hash(tasks) != PRIMARY_SUITE_HASH:
+        raise ValueError("primary semantic suite hash changed after initialization")
+    return tasks, _PARITY_TASK_POLICIES
+
+
+def _validate_primary_runtime(repo_path: Path, index_path: Path) -> None:
+    """Reject a canonical run outside the manifest's locked target and index.
+
+    Args:
+        repo_path: Candidate target repository root.
+        index_path: Candidate Codemap index for that target.
+
+    Raises:
+        ValueError: If the repository, worktree, index bytes, or index metadata differ
+            from the locked primary parity inputs.
+    """
+    target = _PARITY_MANIFEST["target_source"]
+    expected_commit = target["commit"]
+    if _repo_sha(repo_path) != expected_commit:
+        raise ValueError(f"canonical run requires target commit {expected_commit}")
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(repo_path), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("canonical run could not verify target worktree cleanliness") from exc
+    if status.returncode != 0 or status.stdout.strip():
+        raise ValueError("canonical run requires a clean target worktree")
+
+    expected_index = _PARITY_MANIFEST["index"]
+    if hashlib.sha256(index_path.read_bytes()).hexdigest() != expected_index["raw_sha256"]:
+        raise ValueError("canonical run requires the locked index bytes")
+    try:
+        index_meta = json.loads(index_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("canonical run index is not valid JSON") from exc
+    for index_field in ("git_sha", "scan_version"):
+        if index_meta.get(index_field) != expected_index[index_field]:
+            raise ValueError(f"canonical run index {index_field} does not match the locked manifest")
+
+
+def _validate_canonical_task(task: Mapping[str, Any]) -> None:
+    """Reject a known primary task whose locked task or prompt identity changed."""
+    task_id = task.get("id")
+    expected = _PRIMARY_TASK_IDENTITIES.get(task_id) if isinstance(task_id, str) else None
+    if expected is None:
+        raise ValueError(f"no locked primary task identity for {task_id!r}")
+    task_hash, expected_prompt_hash = expected
+    if canonical_task_hash(task) != task_hash:
+        raise ValueError(f"task hash mismatch for {task_id!r}")
+    if prompt_hash(task) != expected_prompt_hash:
+        raise ValueError(f"prompt hash mismatch for {task_id!r}")
 
 
 def _resume_key(line: dict) -> tuple:
@@ -1113,15 +1275,9 @@ def _embedded_json_objects(raw: str) -> list[dict]:
     return objects
 
 
-# Per-task turn cap (review M-6). Applied IDENTICALLY to both arms so the token_ratio headline is not
-# perturbed by an asymmetric ceiling. The former code gave the plain arm max(80, callers*4) turns but
-# the codemap arm only max(80, callers*2): the plain arm could then burn more turns — and thus more
-# input tokens — on exactly the high-caller tasks, deflating the codemap/plain ratio in codemap's
-# favour precisely where it matters most. The cap only BOUNDS the loop (each arm still consumes only
-# the turns it needs), so the generous 4x multiplier — matching the former plain budget — is chosen:
-# a tighter shared cap would push the plain arm to `incomplete` on the most-caller tasks and silently
-# drop them from the comparison. An asymmetric plain-needs-more-reads variant, if wanted, belongs in a
-# separately reported sensitivity run — the primary token_ratio must be measured under equal caps.
+# Legacy per-task turn cap. Canonical r4 provider-parity arms rely exclusively on the shared
+# wall-clock budget because Codex has no equivalent public turn-cap control. The old structural
+# experiment keeps its existing task-sensitive cap unchanged for historical comparability.
 _TURN_FLOOR_DEFAULT = 40
 _TURN_FLOOR_CALLER = 80
 _TURN_PER_CALLER = 4
@@ -1129,13 +1285,13 @@ _CALLER_TASK_TYPES: frozenset[str] = frozenset({"develop_blast_radius", "fn_call
 
 
 def _max_turns_for_task(task: dict) -> int:
-    """Return the per-task ``--max-turns`` cap, identical for both arms (review M-6).
+    """Return the legacy per-task ``--max-turns`` cap.
 
     Caller-enumeration tasks (``develop_blast_radius``, ``fn_call_graph``) scale the cap with the
     ground-truth unique-caller count so a task with many callers gets more head-room; every other
     task type uses a flat floor. The value does not depend on the arm — the plain and the codemap arm
-    receive the same cap for a given task, so neither is handed extra turns (and thus extra input
-    tokens) on the tasks that dominate the token-ratio headline.
+    receive the same cap for a given task. Canonical r4 provider-parity runs omit this CLI flag and
+    instead use their shared wall-clock budget.
 
     Args:
         task: Task dict from tasks-bench.json; reads ``type`` and ``ground_truth.unique_caller_count``.
@@ -2599,6 +2755,89 @@ _EVALUATORS = {
 }
 
 
+def _wrap_bench_evaluator(
+    evaluator: Callable[[Mapping[str, Any], str], BenchQuality],
+) -> Callable[[Mapping[str, Any], str], EvaluationResult]:
+    """Adapt one detailed Claude evaluator to the provider-neutral result contract.
+
+    Args:
+        evaluator: Existing evaluator that returns the detailed Claude score object.
+
+    Returns:
+        A shared evaluator result that preserves that exact detailed score.
+    """
+
+    def evaluate(task: Mapping[str, Any], output_text: str) -> EvaluationResult:
+        """Evaluate one response once and package its normalized and detailed scores."""
+        quality = evaluator(task, output_text)
+        quality_score = quality.recall if quality.scored and quality.recall is not None else float(quality.correct)
+        if not quality.scored:
+            quality_score = None
+        components: dict[str, float] = {}
+        if quality.scored and quality.recall is not None:
+            components["recall"] = float(quality.recall)
+        for name in ("caller_recall", "test_recall"):
+            value = quality.scoring_detail.get(name)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                components[name] = float(value)
+        return _BenchEvaluationResult(
+            scored=quality.scored,
+            correct=quality.correct,
+            quality_score=quality_score,
+            components=components,
+            bench_quality=quality,
+        )
+
+    return evaluate
+
+
+_SHARED_EVALUATORS = EvaluatorRegistry(
+    {task_type: _wrap_bench_evaluator(evaluator) for task_type, evaluator in _EVALUATORS.items()}
+)
+
+
+def _evaluate_shared_task(
+    task: Mapping[str, Any], output_text: str, *, registry: EvaluatorRegistry | None = None
+) -> BenchQuality:
+    """Score one task through the shared registry and retain Claude diagnostics.
+
+    Args:
+        task: Raw scoreable task definition.
+        output_text: Claude response text.
+        registry: Test-only replacement registry; uses the locked runner registry by default.
+
+    Returns:
+        The exact detailed score produced by the one shared evaluator invocation.
+
+    Raises:
+        TypeError: If a scoreable task's registry result lacks Claude diagnostics.
+        ValueError: If a scoreable task type is not registered.
+    """
+    result = (registry or _SHARED_EVALUATORS).evaluate(task, output_text)
+    if not isinstance(result, _BenchEvaluationResult):
+        raise TypeError("shared evaluator did not return Claude benchmark diagnostics")
+    return result.bench_quality
+
+
+def _evaluator_provenance(task: Mapping[str, Any]) -> tuple[str, str]:
+    """Return the exact evaluator identity and source hash for one task contract."""
+    if task.get("scoreable") is False:
+        evaluator_id = "unscored"
+        return evaluator_id, hashlib.sha256(b"scoreable=false bypass").hexdigest()
+    task_type = task.get("type")
+    evaluator = _EVALUATORS.get(task_type) if isinstance(task_type, str) else None
+    if evaluator is None:
+        raise ValueError(f"unknown evaluator for scoreable task type {task_type!r}")
+    evaluator_id = evaluator.__name__
+    source = inspect.getsource(evaluator).encode("utf-8")
+    return evaluator_id, hashlib.sha256(evaluator_id.encode("utf-8") + b"\n" + source).hexdigest()
+
+
+def _arm_contract_hash(arm: str) -> str:
+    """Return the locked semantic arm hash for canonical arms only."""
+    return ARM_CONTRACTS[arm]["contract_sha256"] if arm in ARM_CONTRACTS else ""
+
+
 # ---------------------------------------------------------------------------
 # Diff-impact staging (review DI)
 # ---------------------------------------------------------------------------
@@ -2913,6 +3152,7 @@ class BenchRunner:
         resume_cache: When non-None, a prior-results cache (see :func:`_load_resume_cache`);
             a matching (task, arm, model, repo_sha, index_sha, task_hash) tuple is reused
             instead of re-executing the claude subprocess. None disables resume (default).
+        task_policies: Locked task policies used to stamp current-revision parity provenance.
     """
 
     def __init__(
@@ -2923,6 +3163,9 @@ class BenchRunner:
         index_path: Path,
         timeout: int = 300,
         resume_cache: Optional[dict[tuple, dict]] = None,
+        task_policies: Mapping[str, TaskPolicy] | None = None,
+        suite_hash: str | None = None,
+        suite_raw_hash: str | None = None,
     ) -> None:
         self.model_short = model_short
         self.model_id = model_id
@@ -2930,6 +3173,9 @@ class BenchRunner:
         self.index_path = index_path
         self.timeout = timeout
         self.resume_cache = resume_cache
+        self.task_policies = task_policies
+        self.suite_hash = suite_hash
+        self.suite_raw_hash = suite_raw_hash
         # Provenance stamped on every run so results can be matched on a later --resume pass.
         self.repo_sha = _repo_sha(repo_path)
         self.index_sha = _index_sha(index_path)
@@ -2945,7 +3191,30 @@ class BenchRunner:
         result.repo_sha = self.repo_sha
         result.index_sha = self.index_sha
         result.task_hash = task_hash
+        result.prompt_hash = _prompt_hash(task)
+        result.prompt_sha256 = result.prompt_hash
+        result.suite_hash = self.suite_hash
+        result.suite_raw_hash = self.suite_raw_hash
+        result.evaluator_id, result.evaluator_hash = _evaluator_provenance(task)
+        envelope = _build_system_prompt(result.arm, _REPO_NAME, str(self.repo_path), str(self.index_path))
+        result.envelope_hash = hashlib.sha256(envelope.encode("utf-8")).hexdigest()
+        result.arm_contract_hash = _arm_contract_hash(result.arm)
         result.self_consistency = bool(task.get(_SELF_CONSISTENCY_KEY))
+        result.scoreable = task.get("scoreable") is not False
+        if result.arm not in ARM_CONTRACTS:
+            result.experiment_revision = LEGACY_EXPERIMENT_REVISION
+            result.parity_arm = ""
+            result.oracle_class = "legacy"
+            result.headline_eligible_v1 = False
+            return
+        policy = self.task_policies.get(result.task_id) if self.task_policies is not None else None
+        if policy is None:
+            raise ValueError(f"no locked task policy for canonical task {result.task_id!r}")
+        result.experiment_revision = policy.experiment_revision
+        result.parity_arm = result.arm
+        result.oracle_class = policy.oracle_class
+        result.headline_eligible_v1 = policy.headline_eligible_v1
+        result.scoreable = policy.scoreable
 
     def run(self, task: dict, arm: str, update_fn: Optional[Any] = None) -> BenchRun:
         """Run one task in one arm; parse stream-json for metrics.
@@ -2964,10 +3233,22 @@ class BenchRunner:
             BenchRun with all metrics filled.
         """
         task_hash = _task_hash(task)
+        if arm in ARM_CONTRACTS:
+            if self.suite_hash != PRIMARY_SUITE_HASH:
+                raise ValueError("canonical run requires the locked primary suite hash")
+            _validate_canonical_task(task)
         if self.resume_cache is not None:
             key = (task["id"], arm, self.model_short, self.repo_sha, self.index_sha, task_hash)
             cached = self.resume_cache.get(key)
-            if cached is not None:
+            expected_revision = PARITY_EXPERIMENT_REVISION if arm in ARM_CONTRACTS else LEGACY_EXPERIMENT_REVISION
+            expected_contract_hash = _arm_contract_hash(arm)
+            cached_revision = cached.get("experiment_revision", LEGACY_EXPERIMENT_REVISION) if cached else None
+            cached_contract_hash = cached.get("arm_contract_hash", "") if cached else None
+            if (
+                cached is not None
+                and cached_revision == expected_revision
+                and cached_contract_hash == expected_contract_hash
+            ):
                 run = _run_from_cached(cached)
                 self._stamp_provenance(run, task, task_hash)
                 return run
@@ -2992,12 +3273,12 @@ class BenchRunner:
         system = _build_system_prompt(arm, _REPO_NAME, str(self.repo_path), str(self.index_path))
         disallow_flags = _ARM_DISALLOWED.get(arm, [])
         allow_flags = _ARM_ALLOWED.get(arm, [])
-        # Per-task max-turns cap — identical for both arms (review M-6); see _max_turns_for_task.
-        max_turns = _max_turns_for_task(task)
+        # Codex has no equivalent public turn cap, so parity arms use only their shared wall clock.
+        # Legacy labels retain their exact historical per-task cap.
+        turn_flags = [] if arm in ARM_CONTRACTS else ["--max-turns", str(_max_turns_for_task(task))]
         cmd = [
             *_CMD,
-            "--max-turns",
-            str(max_turns),
+            *turn_flags,
             "--model",
             self.model_id,
             *disallow_flags,
@@ -3009,6 +3290,7 @@ class BenchRunner:
         # workflow_type groups tasks at a coarser level than task_type; default to task_type
         # so legacy task files (no workflow_type field) still group sensibly.
         workflow_type = task.get("workflow_type") or task["type"]
+        task_capability_strata = capability_strata(task)
         result = BenchRun(
             arm=arm,
             task_id=task["id"],
@@ -3016,6 +3298,7 @@ class BenchRunner:
             model=self.model_short,
             success=False,
             workflow_type=workflow_type,
+            capability_strata=task_capability_strata,
         )
         _MAX_RETRIES = 2
         for attempt in range(_MAX_RETRIES + 1):
@@ -3026,6 +3309,7 @@ class BenchRunner:
                 model=self.model_short,
                 success=False,
                 workflow_type=workflow_type,
+                capability_strata=task_capability_strata,
             )
             self._stream(cmd, result, arm, update_fn=update_fn)
             if result.input_tokens == 0 and result.output_tokens == 0 and attempt < _MAX_RETRIES:
@@ -3045,9 +3329,11 @@ class BenchRunner:
             # accuracy denominator.
             result.quality = BenchQuality(scored=False)
         else:
-            evaluator = _EVALUATORS.get(task["type"])
-            if evaluator is not None:
-                result.quality = evaluator(task, result.output_text)
+            shared_evaluation = _SHARED_EVALUATORS.evaluate(task, result.output_text)
+            if not isinstance(shared_evaluation, _BenchEvaluationResult):
+                raise TypeError("shared evaluator did not return Claude benchmark diagnostics")
+            result.quality = shared_evaluation.bench_quality
+            result.quality_components = shared_evaluation.components
             # Contamination guards:
             #  - plain arm: detect codemap binary OR prebuilt-index access that bypassed the disallow
             #    list — either invoked via python3 path instead of bare scan-query, or a raw
@@ -3058,13 +3344,15 @@ class BenchRunner:
             #    benchmark results) which would let the agent copy the expected answer.
             _ANSWER_MARKERS = ("tasks-bench", "benchmarks/results", "/benchmarks/")
             _log_contaminated = any(marker in entry for entry in result.tool_log for marker in _CONTAMINATION_MARKERS)
-            if arm == "plain" and (result.contamination_hits > 0 or _log_contaminated):
+            if _transport_arm(arm) == "plain" and (result.contamination_hits > 0 or _log_contaminated):
                 result.error = "contaminated"
                 result.quality = BenchQuality(scored=False)
             elif any(marker in entry for entry in result.tool_log for marker in _ANSWER_MARKERS):
                 result.error = "answer_file_read"
                 result.quality = BenchQuality(scored=False)
 
+        if arm == "C_required":
+            result.compliance = result.scan_query_calls > 0
         return result
 
     def _env(self, arm: str) -> dict[str, str]:
@@ -3076,7 +3364,7 @@ class BenchRunner:
         Returns:
             Dict suitable for subprocess.Popen env argument.
         """
-        if arm == "plain":
+        if _transport_arm(arm) == "plain":
             env = os.environ.copy()
             env.pop("CODEMAP_INDEX", None)
             env.pop("CODEMAP_ENABLED", None)
@@ -3190,7 +3478,7 @@ class BenchRunner:
                     for inner in _parse_batch_subcommands(cmd):
                         result.scan_query_subcommands[inner] = result.scan_query_subcommands.get(inner, 0) + 1
             # review H-2: count index/binary access on the FULL command (plain arm only).
-            if result.arm == "plain" and _is_contaminating_access(cmd):
+            if _transport_arm(result.arm) == "plain" and _is_contaminating_access(cmd):
                 result.contamination_hits += 1
             result.tool_log.append(f"Bash: {cmd[:80]}")
         elif name == "Read":
@@ -3198,7 +3486,7 @@ class BenchRunner:
             file_path = inp.get("file_path", "")
             # review H-2: a plain-arm Read of the prebuilt index is contamination; check the FULL
             # untruncated path before it is clipped for the display log.
-            if result.arm == "plain" and _is_contaminating_access(file_path):
+            if _transport_arm(result.arm) == "plain" and _is_contaminating_access(file_path):
                 result.contamination_hits += 1
             result.tool_log.append(f"Read: {file_path[:60]}")
         elif name == "Skill":
@@ -3237,7 +3525,7 @@ class BenchRunner:
                     continue
                 tool_id = block.get("tool_use_id", "")
                 pending.pop(tool_id, None)
-                if result.arm == "codemap":
+                if _transport_arm(result.arm) == "codemap":
                     self._extract_codemap_meta(block, result)
 
         elif etype == "result":
@@ -3793,6 +4081,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     resume: bool = False,
     profile: str = None,
     tiered: bool = False,
+    dry_run: bool = False,
 ) -> None:
     """Entry point: load tasks, run selected arms, print summary.
 
@@ -3814,6 +4103,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
             ``release`` (full matrix incl. RI). Absent → current behavior, unchanged.
         tiered: Tiered protocol (release companion): run haiku full, sonnet on the dev subset, and
             opus only on haiku/sonnet disagreements. Select the tier via ``--model`` per invocation.
+        dry_run: Validate the locked inputs and print canonical A/B/C planned cells without Claude execution.
     """
     global _REPO_NAME, _REPO_NAMESPACE, _REPO_LOCAL_PATH
 
@@ -3830,20 +4120,21 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     if index_path is not None:
         index_path = Path(index_path)
 
-    # Load tasks first — repo header provides identity for evaluators and fallback path
+    # Load raw tasks first — legacy arms intentionally remain usable when a later
+    # parity revision no longer matches this checked-out source suite.
     try:
         with TASKS_FILE.open() as f:
             _raw = json.load(f)
-    except (json.JSONDecodeError, OSError) as exc:
+        all_tasks = load_task_suite(TASKS_FILE)
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
         print(f"ERROR: cannot read {TASKS_FILE}: {exc}")
         sys.exit(1)
+    task_policies: Mapping[str, TaskPolicy] | None = None
 
     if isinstance(_raw, dict):
         repo_meta = _raw.get("repo", {})
-        all_tasks: list[dict] = _raw.get("tasks", [])
     else:
         repo_meta = {}
-        all_tasks = _raw
 
     # Populate repo identity globals from header (evaluators consume these)
     if repo_meta.get("name"):
@@ -3966,13 +4257,40 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         print("No runnable tasks after excluding pending ground truth.")
         sys.exit(1)
 
-    # Determine arms
-    arms_to_run = list(ARMS) if arm == "all" else [arm]
+    # Determine arms. Dry runs intentionally plan the current canonical A/B/C matrix;
+    # normal runs retain the historical legacy defaults until a caller selects A/B/C.
+    allowed_arms = {*ARMS, *PARITY_ARMS}
+    arms_to_run = list(PARITY_ARMS) if dry_run and arm == "all" else (list(ARMS) if arm == "all" else [arm])
+    invalid_arms = sorted(set(arms_to_run) - allowed_arms)
+    if invalid_arms:
+        print(f"ERROR: unsupported arm labels: {invalid_arms}")
+        sys.exit(1)
+
+    canonical_requested = dry_run or any(arm_name in ARM_CONTRACTS for arm_name in arms_to_run)
+    if canonical_requested:
+        try:
+            _, task_policies = _load_primary_parity_contract()
+            _validate_primary_runtime(repo_path, index_path)
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: cannot start canonical parity run: {exc}")
+            sys.exit(1)
+
+    if dry_run:
+        for task in task_list:
+            for arm_name in arms_to_run:
+                print(f"PLAN\t{task['id']}\t{arm_name}")
+        return
 
     # Build runner
     model_short = model
     model_id = MODELS[model_short]
-    run_timeout = timeout or MODEL_TIMEOUT[model_short]
+    run_timeout = (
+        timeout
+        if timeout is not None
+        else PARITY_TIMEOUT_SECONDS
+        if canonical_requested
+        else MODEL_TIMEOUT[model_short]
+    )
     resume_cache = _load_resume_cache(RESULTS_DIR) if resume else None
     runner = BenchRunner(
         model_short=model_short,
@@ -3981,6 +4299,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         index_path=index_path,
         timeout=run_timeout,
         resume_cache=resume_cache,
+        task_policies=task_policies,
+        suite_hash=PRIMARY_SUITE_HASH if canonical_requested else None,
+        suite_raw_hash=PRIMARY_SUITE_RAW_HASH if canonical_requested else None,
     )
 
     print(f"\n{'─' * 64}")

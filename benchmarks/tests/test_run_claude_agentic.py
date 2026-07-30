@@ -1,4 +1,4 @@
-"""Tests for benchmarks/run-codemap-agentic.py public API.
+"""Tests for benchmarks/run-claude-agentic.py public API.
 
 Scope: black-box testing of public classes and functions against documented
 contracts.  No live ``claude`` subprocess is launched.  Any test that
@@ -9,12 +9,18 @@ requires a real codemap index on disk is guarded with
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
+AGENTIC_SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-agentic.json"
+PARITY_MANIFEST_PATH = BENCHMARKS_DIR / "results" / "manifests" / "provider-parity-v1.json"
 
 
 # ===========================================================================
@@ -136,6 +142,519 @@ class TestTask:
         """
         task = script_run_agentic.Task(id="X01", type=task_type, prompt="p")
         assert task.type == task_type
+
+
+class TestProviderParityTaskIntegration:
+    """Agentic task/result provenance must be supplied by the shared B1 contract."""
+
+    def test_legacy_loader_preserves_unlocked_custom_suite_support(
+        self, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """Legacy arms may still consume a valid custom task suite without claiming r3 provenance."""
+        suite_path = tmp_path / "custom-agentic-suite.json"
+        suite_path.write_text(
+            json.dumps([{"id": "CUSTOM-01", "type": "fix", "prompt": "Inspect the failure."}]),
+            encoding="utf-8",
+        )
+
+        tasks = script_run_agentic.load_legacy_tasks(suite_path)
+
+        assert [task.id for task in tasks] == ["CUSTOM-01"]
+        assert tasks[0].experiment_revision == ""
+        assert tasks[0].task_hash
+        assert tasks[0].prompt_hash
+        assert tasks[0].suite_hash
+        assert tasks[0].suite_raw_hash
+
+    def test_validate_parity_runtime_rejects_wrong_repository(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """Canonical agentic runs cannot use a repository outside the locked target commit."""
+        with pytest.raises(ValueError, match="target commit"):
+            script_run_agentic._validate_parity_runtime(tmp_path, tmp_index)
+
+    def test_load_tasks_with_provenance_matches_shared_manifest_policy(self, script_run_agentic: Any) -> None:
+        """The agentic loader keeps raw task identity and attaches its locked policy revision."""
+        tasks = script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
+        task = next(item for item in tasks if item.id == "BA-01")
+
+        assert task.experiment_revision == "codemap-provider-parity-v1-b0-r6"
+        assert task.task_hash == "81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f"
+        assert task.prompt_hash == "6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479"
+        assert task.oracle_class == "independent"
+        assert task.headline_eligible_v1 is False
+        assert task.scoreable is True
+
+    def test_load_tasks_with_provenance_uses_the_locked_semantic_suite_hash(self, script_run_agentic: Any) -> None:
+        """The loaded suite fingerprint tracks ordered task and prompt identity, not wrappers."""
+        task = next(
+            item
+            for item in script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
+            if item.id == "BA-01"
+        )
+
+        raw_tasks = script_run_agentic.load_task_suite(AGENTIC_SUITE_PATH)
+        assert task.suite_hash == script_run_agentic.semantic_suite_hash(raw_tasks)
+        assert task.suite_raw_hash == hashlib.sha256(AGENTIC_SUITE_PATH.read_bytes()).hexdigest()
+
+    def test_load_tasks_with_provenance_rejects_known_task_with_tampered_prompt(
+        self, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """A known ID cannot retain its policy after canonical task/prompt bytes change."""
+        raw_suite = json.loads(AGENTIC_SUITE_PATH.read_text(encoding="utf-8"))
+        raw_tasks = raw_suite["tasks"] if isinstance(raw_suite, dict) else raw_suite
+        task = next(item for item in raw_tasks if item["id"] == "BA-01").copy()
+        task["prompt"] = f"{task['prompt']}\nTampered after the lock."
+        suite_path = tmp_path / "tampered-agentic-suite.json"
+        suite_path.write_text(json.dumps([task]), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="(task|prompt).*hash|hash.*(task|prompt)"):
+            script_run_agentic.load_tasks_with_provenance(suite_path, PARITY_MANIFEST_PATH)
+
+    def test_load_tasks_with_provenance_rejects_task_missing_from_manifest_policy(
+        self, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """A task cannot run under an absent policy or silently receive inferred eligibility."""
+        suite_path = tmp_path / "unknown-task.json"
+        suite_path.write_text(json.dumps([{"id": "unknown", "type": "fix", "prompt": "p"}]))
+
+        with pytest.raises(ValueError, match="policy"):
+            script_run_agentic.load_tasks_with_provenance(suite_path, PARITY_MANIFEST_PATH)
+
+    @pytest.mark.parametrize(
+        ("arm", "expected"),
+        [
+            pytest.param("plain", None, id="legacy-plain-is-not-relabelled"),
+            pytest.param("codemap", None, id="legacy-codemap-is-not-relabelled"),
+            pytest.param("A_plain", "A_plain", id="canonical-plain"),
+            pytest.param("B_auto", "B_auto", id="canonical-auto"),
+            pytest.param("C_required", "C_required", id="canonical-required"),
+        ],
+    )
+    def test_parity_arm_identity_never_relabels_legacy_agentic_results(
+        self, script_run_agentic: Any, arm: str, expected: str | None
+    ) -> None:
+        """Only explicitly requested A/B/C runs receive a canonical parity-arm identity."""
+        assert script_run_agentic.parity_arm_identity(arm) == expected
+
+    def test_auto_and_required_arms_have_distinct_no_call_semantics(
+        self, script_run_agentic: Any, tmp_path: Path
+    ) -> None:
+        """B_auto exposes Codemap without required use; C_required records the required-use instruction."""
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path)
+
+        assert "Skill(codemap:query-code)" in script_run_agentic.ModelRunner._ARM_ALLOWED["B_auto"][1]
+        assert "Skill(codemap:query-code)" in script_run_agentic.ModelRunner._ARM_ALLOWED["C_required"][1]
+        assert "must use Codemap at least once" not in runner._system_prompt("fix", "B_auto")
+        assert "must use Codemap at least once" in runner._system_prompt("fix", "C_required")
+
+    def test_run_single_copies_task_provenance_to_provider_native_result(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """Shared hashes/policy fields survive beside legacy Claude-native telemetry in snapshots."""
+        task = next(
+            item
+            for item in script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
+            if item.id == "BA-01"
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["plain"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+        native_result = script_run_agentic.BenchmarkRun(
+            arm="plain", task_id=task.id, task_type=task.type, model="haiku", success=False
+        )
+
+        with patch.object(script_run_agentic.ModelRunner, "run", return_value=native_result):
+            result = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "plain",
+                1,
+                1,
+                print_fn=lambda _text: None,
+                metadata={"experiment_revision": task.experiment_revision},
+            )
+
+        assert result.experiment_revision == "legacy-unversioned"
+        assert result.parity_arm is None
+        assert result.task_hash == task.task_hash
+        assert result.prompt_hash == task.prompt_hash
+        assert result.oracle_class == task.oracle_class
+        assert result.headline_eligible_v1 is task.headline_eligible_v1
+        assert result.scoreable is task.scoreable
+        assert result.input_tokens == 0
+        assert result.tools.total == 0
+
+    def test_legacy_arm_keeps_legacy_revision_while_explicit_canonical_arm_gets_locked_revision(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """A legacy label is never upgraded merely because its task carries an r4 policy internally."""
+        task = next(
+            item
+            for item in script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
+            if item.id == "BA-01"
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["plain", "A_plain"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+
+        def native_result(_task: Any, arm: str, **_kwargs: Any) -> Any:
+            return script_run_agentic.BenchmarkRun(
+                arm=arm, task_id=task.id, task_type=task.type, model="haiku", success=False
+            )
+
+        with patch.object(script_run_agentic.ModelRunner, "run", side_effect=native_result):
+            legacy = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "plain",
+                1,
+                2,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+            canonical = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "A_plain",
+                2,
+                2,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        assert legacy.experiment_revision == "legacy-unversioned"
+        assert legacy.parity_arm is None
+        assert canonical.experiment_revision == task.experiment_revision
+        assert canonical.parity_arm == "A_plain"
+
+    @pytest.mark.parametrize(
+        ("arm", "expected_timeout"),
+        [
+            pytest.param("plain", 210, id="legacy-model-default"),
+            pytest.param("A_plain", 600, id="canonical-shared-default"),
+        ],
+    )
+    def test_run_single_selects_shared_timeout_only_for_parity_arms(
+        self,
+        tmp_index: Path,
+        tmp_path: Path,
+        script_run_agentic: Any,
+        arm: str,
+        expected_timeout: int,
+    ) -> None:
+        """Canonical agentic cells use the provider-neutral timeout without altering legacy cells."""
+        task = next(
+            item
+            for item in script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
+            if item.id == "BA-01"
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=[arm],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+        observed: dict[str, int] = {}
+
+        class FixtureRunner:
+            """Record construction policy while supplying a deterministic native result."""
+
+            _ARM_ALLOWED = script_run_agentic.ModelRunner._ARM_ALLOWED
+            _ARM_DISALLOWED = script_run_agentic.ModelRunner._ARM_DISALLOWED
+
+            def __init__(
+                self,
+                _model_short: str,
+                _model_id: str,
+                _repo_path: Path,
+                *,
+                timeout: int,
+            ) -> None:
+                observed["timeout"] = timeout
+
+            def run(self, selected_task: Any, selected_arm: str, **_kwargs: Any) -> Any:
+                return script_run_agentic.BenchmarkRun(
+                    arm=selected_arm,
+                    task_id=selected_task.id,
+                    task_type=selected_task.type,
+                    model="haiku",
+                    success=False,
+                )
+
+            def _system_prompt(self, _task_type: str, _arm: str) -> str:
+                return "fixture envelope"
+
+        with patch.object(script_run_agentic, "ModelRunner", FixtureRunner):
+            benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                arm,
+                1,
+                1,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        assert observed == {"timeout": expected_timeout}
+
+    def test_explicit_canonical_result_stamps_complete_common_provenance(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """A canonical result has concrete suite/evaluator/envelope/arm/repo/index provenance."""
+        task = next(
+            item
+            for item in script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
+            if item.id == "BA-01"
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["A_plain"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+        native_result = script_run_agentic.BenchmarkRun(
+            arm="A_plain", task_id=task.id, task_type=task.type, model="haiku", success=False
+        )
+
+        with patch.object(script_run_agentic.ModelRunner, "run", return_value=native_result):
+            result = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "A_plain",
+                1,
+                1,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        for field in (
+            "task_hash",
+            "prompt_hash",
+            "suite_hash",
+            "evaluator_id",
+            "evaluator_hash",
+            "envelope_hash",
+            "arm_contract_hash",
+            "repo_sha",
+            "index_sha",
+        ):
+            value = getattr(result, field)
+            assert isinstance(value, str) and value
+        assert result.arm_contract_hash == "936a684f5b4bb6211669633a17d2a12980b24f2de43b265bbc28ef09d9a65ba7"
+
+    def test_auto_no_call_remains_valid_while_required_no_call_is_separate_compliance_failure(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """B_auto preserves scoring on no-call; C_required records a use-compliance failure without erasing it."""
+        task = script_run_agentic.Task(
+            id="BA-01",
+            type="fix",
+            prompt="p",
+            primary_module="lightning.pytorch.callbacks.timer",
+            experiment_revision="codemap-provider-parity-v1-b0-r6",
+            task_hash="task-hash",
+            prompt_hash="prompt-hash",
+            oracle_class="independent",
+            headline_eligible_v1=False,
+            scoreable=True,
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["B_auto", "C_required"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+
+        def no_call_result(_task: Any, arm: str, **_kwargs: Any) -> Any:
+            return script_run_agentic.BenchmarkRun(
+                arm=arm, task_id="BA-01", task_type="fix", model="haiku", success=True
+            )
+
+        with (
+            patch.object(script_run_agentic.ModelRunner, "run", side_effect=no_call_result),
+            patch.object(benchmark.gt, "score", return_value=script_run_agentic.QualityScore(scored=True)),
+        ):
+            auto = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "B_auto",
+                1,
+                2,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+            required = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "C_required",
+                2,
+                2,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        assert auto.success is True
+        assert auto.parity_arm == "B_auto"
+        assert auto.codemap_compliant is None
+        assert required.success is True
+        assert required.error == ""
+        assert required.quality.scored is True
+        assert required.parity_arm == "C_required"
+        assert required.codemap_compliant is False
+
+    def test_required_scan_query_call_satisfies_codemap_compliance(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """C-required credits its approved scan-query path without requiring a Skill call too."""
+        task = script_run_agentic.Task(
+            id="BA-01",
+            type="fix",
+            prompt="p",
+            primary_module="lightning.pytorch.callbacks.timer",
+            experiment_revision="codemap-provider-parity-v1-b0-r6",
+            task_hash="task-hash",
+            prompt_hash="prompt-hash",
+            oracle_class="independent",
+            headline_eligible_v1=False,
+            scoreable=True,
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["C_required"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+        native_result = script_run_agentic.BenchmarkRun(
+            arm="C_required",
+            task_id=task.id,
+            task_type=task.type,
+            model="haiku",
+            success=True,
+            tools=script_run_agentic.ToolCounts(bash=1, scan_query=1),
+        )
+
+        with (
+            patch.object(script_run_agentic.ModelRunner, "run", return_value=native_result),
+            patch.object(benchmark.gt, "score", return_value=script_run_agentic.QualityScore(scored=True)),
+        ):
+            result = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "C_required",
+                1,
+                1,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        assert result.tools.skill == 0
+        assert result.tools.scan_query == 1
+        assert result.codemap_compliant is True
+
+    def test_scan_query_detection_requires_an_executable_command_boundary(self, script_run_agentic: Any) -> None:
+        """Telemetry credits direct or chained execution but not text that merely mentions the tool."""
+        assert script_run_agentic._invokes_scan_query("scan-query symbol Trainer")
+        assert script_run_agentic._invokes_scan_query("cd /repo && /plugin/bin/scan-query rdeps module")
+        assert not script_run_agentic._invokes_scan_query("echo scan-query symbol Trainer")
+
+    def test_required_compliance_credits_only_codemap_entry_points(self, script_run_agentic: Any) -> None:
+        """An unrelated Skill call cannot satisfy C; Codemap Skill or scan-query can."""
+        assert not script_run_agentic._codemap_use_attempted(script_run_agentic.ToolCounts(skill=1))
+        assert script_run_agentic._codemap_use_attempted(script_run_agentic.ToolCounts(skill=1, codemap=1))
+        assert script_run_agentic._codemap_use_attempted(script_run_agentic.ToolCounts(bash=1, scan_query=1))
+
+    def test_bash_scan_query_event_updates_agentic_telemetry(self, tmp_path: Path, script_run_agentic: Any) -> None:
+        """A provider-native Bash event records both its tool class and Codemap invocation."""
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path)
+        result = script_run_agentic.BenchmarkRun(
+            arm="C_required",
+            task_id="BA-01",
+            task_type="fix",
+            model="haiku",
+            success=True,
+        )
+        runner._on_tool_use(
+            {
+                "type": "tool_use",
+                "name": "Bash",
+                "id": "tool-1",
+                "input": {"command": "scan-query symbol Trainer"},
+            },
+            result,
+            {},
+            1.0,
+        )
+
+        assert result.tools.bash == 1
+        assert result.tools.scan_query == 1
+
+    def test_skill_events_distinguish_codemap_from_other_skills(self, tmp_path: Path, script_run_agentic: Any) -> None:
+        """Provider telemetry retains total Skill calls while counting only Codemap for compliance."""
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path)
+        result = script_run_agentic.BenchmarkRun(
+            arm="C_required",
+            task_id="BA-01",
+            task_type="fix",
+            model="haiku",
+            success=True,
+        )
+        event = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Skill",
+                        "id": "codemap-call",
+                        "input": {"skill": "codemap-py:query-code", "args": "rdeps module"},
+                    },
+                    {
+                        "type": "tool_use",
+                        "name": "Skill",
+                        "id": "other-call",
+                        "input": {"skill": "develop", "args": ""},
+                    },
+                ]
+            },
+        }
+
+        runner._handle_event(event, result, {}, set(), set(), set(), 1.0)
+
+        assert result.tools.skill == 2
+        assert result.tools.codemap == 1
 
 
 # ===========================================================================
@@ -1064,6 +1583,11 @@ class TestArmToolPermissions:
         disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["semble"]
         assert any("Skill" in tok for tok in disallowed)
 
+    def test_canonical_plain_explicitly_blocks_scan_query(self, script_run_agentic: Any) -> None:
+        """A_plain keeps Codemap inaccessible even when scan-query already exists on the host PATH."""
+        disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["A_plain"]
+        assert "Bash(scan-query:*)" in disallowed[1]
+
 
 # ModelRunner — config isolation (--setting-sources / --plugin-dir / --mcp-config)
 # ===========================================================================
@@ -1083,6 +1607,36 @@ class TestConfigIsolation:
         cmd = script_run_agentic.ModelRunner._CMD
         assert "--setting-sources" in cmd
         assert cmd[cmd.index("--setting-sources") + 1] == "project,local"
+
+    @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_required"])
+    def test_canonical_commands_omit_fixed_turn_cap_while_legacy_keeps_40(
+        self, script_run_agentic: Any, tmp_path: Path, arm: str
+    ) -> None:
+        """Canonical agentic cells use wall-clock control; legacy cells retain the fixed 40-turn cap."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        runner = script_run_agentic.ModelRunner("haiku", "fixture-model", repo, timeout=600)
+        task = script_run_agentic.Task(id="fixture", type="fix", prompt="answer")
+        commands: dict[str, list[str]] = {}
+
+        def capture_command(
+            _self: Any,
+            cmd: list[str],
+            result: Any,
+            update_fn: Any = None,
+            cwd: Any = None,
+            arm: str = "",
+        ) -> None:
+            commands[arm] = cmd
+            result.input_tokens = 1
+
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", capture_command):
+            runner.run(task, arm)
+            runner.run(task, "plain")
+
+        assert "--max-turns" not in commands[arm]
+        legacy = commands["plain"]
+        assert legacy[legacy.index("--max-turns") + 1] == "40"
 
     def test_plain_arm_gets_no_extra_tools(self, script_run_agentic: Any) -> None:
         """The control arm re-supplies nothing — no plugin, no MCP."""

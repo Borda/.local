@@ -1,4 +1,4 @@
-"""Tests for the deterministic correctness suites (D/B/R/K/U) in run-codemap-cli.py.
+"""Tests for the deterministic correctness suites (D/B/R/K/U) in run-cli.py.
 
 These suites build self-contained fixture repos in a tmp dir with KNOWN ground truth
 and assert the user-visible scan-query CLI contract as a product acceptance check.
@@ -127,7 +127,7 @@ def _bins(script_run_cli: Any, scan_query_binary: Path, scan_index_binary: Path)
     """Return (scan_query_bin, scan_index_bin) resolved via the runner's own finder.
 
     Args:
-        script_run_cli: Loaded run-codemap-cli module.
+        script_run_cli: Loaded run-cli module.
         scan_query_binary: scan-query path fixture (also asserts it exists).
         scan_index_binary: scan-index path fixture (also asserts it exists).
 
@@ -161,7 +161,7 @@ class TestSuitesRunGreen:
         """Each suite builds its fixture and reports a single passing correctness scenario.
 
         Args:
-            script_run_cli: Loaded run-codemap-cli module.
+            script_run_cli: Loaded run-cli module.
             scan_query_binary: scan-query path fixture.
             scan_index_binary: scan-index path fixture.
             suite_attr: Name of the ``run_correctness_*`` function under test.
@@ -192,7 +192,7 @@ class TestSuitesRunGreen:
         """With scan-index absent every suite skips (returns no scenarios), never crashing.
 
         Args:
-            script_run_cli: Loaded run-codemap-cli module.
+            script_run_cli: Loaded run-cli module.
             scan_query_binary: scan-query path fixture.
             suite_attr: Name of the ``run_correctness_*`` function under test.
         """

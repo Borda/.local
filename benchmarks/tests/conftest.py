@@ -44,20 +44,20 @@ def script_utilities():
 
 @pytest.fixture(scope="session")
 def script_run_agentic():
-    """Loaded run-codemap-agentic module."""
-    return _load_module("run_codemap_agentic", "run-codemap-agentic.py")
+    """Load the Claude-only agentic runner."""
+    return _load_module("run_claude_agentic", "run-claude-agentic.py")
 
 
 @pytest.fixture(scope="session")
 def script_run_bench():
-    """Loaded run-codemap-bench module."""
-    return _load_module("run_codemap_bench", "run-codemap-bench.py")
+    """Load the Claude-only structural runner."""
+    return _load_module("run_claude_structural", "run-claude-structural.py")
 
 
 @pytest.fixture(scope="session")
 def script_run_cli():
-    """Loaded run-codemap-cli module."""
-    return _load_module("run_codemap_cli", "run-codemap-cli.py")
+    """Loaded run-cli module."""
+    return _load_module("run_cli", "run-cli.py")
 
 
 @pytest.fixture(scope="session")

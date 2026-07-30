@@ -1,36 +1,71 @@
 # Codemap Benchmarks
 
-Empirical validation for the `codemap` plugin — three independent benchmarks. The real-codebase benchmark is **repo-agnostic**: swap `tasks-bench.json` (which ships a `repo` header with name, namespace, and default clone path) to run against any Python codebase. Reference results use `pytorch-lightning` pinned at tag `2.6.5` (auto-cloned to `.sandbox/pytorch-lightning`).
+Empirical validation for the `codemap` plugin. Provider ownership is explicit in every LLM runner name: `claude` and `codex` identify provider-exclusive transport, while `cli`, `generate`, and `provider_parity_contracts` are provider-neutral. The structural benchmark is **repo-agnostic**: swap `tasks-bench.json` (which ships a `repo` header with name, namespace, and default clone path) to run against any Python codebase. Reference results use `pytorch-lightning` pinned at tag `2.6.5` (auto-cloned to `.sandbox/pytorch-lightning`).
 
 ## Provider-parity expansion
 
-The `codemap-provider-parity-v1-b0-r3` review candidate reuses the same canonical task objects and prompts for Claude and Codex and locks structural sample/sandbox execution to PyTorch Lightning tag `2.6.5` (commit `be98784a1a03581b7051a355ae1084fd352d7cea`). Future provider adapters will implement three shared arm meanings: **A plain** (Codemap inaccessible), **B auto** (available; use optional), and **C required** (at least one Codemap structural investigation). The provider-neutral library lives in `provider_parity_contracts.py`; it locks task/prompt identity, arm semantics, evaluator dispatch, headline exclusions, and repetition-preserving pair construction. It does not generate tasks, run benchmarks, invoke models, or implement provider transport.
+Revision `codemap-provider-parity-v1-b0-r6` reuses the same canonical task objects and prompts for Claude and Codex, locks structural sample/sandbox execution to PyTorch Lightning tag `2.6.5` (commit `be98784a1a03581b7051a355ae1084fd352d7cea`), and locks the Codex treatment runtime to `CODEMAP_PYTHON=/opt/homebrew/bin/python3.11`. The provider-neutral library lives in `provider_parity_contracts.py`; it locks task/prompt identity, arm semantics, evaluator dispatch, headline exclusions, and repetition-preserving pair construction. It does not generate tasks, run benchmarks, invoke models, or implement provider transport.
 
-B1 does not route either provider runner through the library and contains no model results. The existing Claude runners and historical two-/four-arm results remain legacy behavior until B2 migration; the Codex runner is reserved for B3. The structural confirmatory population has 45 independently scored tasks. `RV-05`, `CQ-02`, RI, static-reference, self-consistency, and unscoreable rows remain separately labelled diagnostics as defined in `results/manifests/provider-parity-v1.md`. Do not run the r3 suite against `master` or another tag: target-dependent ground truth is valid only for the locked `2.6.5` tree.
+**B2 Claude adapter migration.** Both Claude runners now route explicit canonical arms through the shared contracts:
+
+- **`A_plain`** — Codemap is absent and inaccessible.
+- **`B_auto`** — Codemap is available; the model may use it, and no-call is valid.
+- **`C_required`** — Codemap is available and must be used at least once; no-call is recorded as a separate compliance failure while task scoring remains independent.
+
+Canonical runs load the locked task/prompt/evaluator policy and fail closed unless the target commit/tree, clean worktree, and index bytes/metadata match the manifest; result records carry task, suite, evaluator, envelope, arm-contract, repository, and index provenance. Legacy labels (`plain`, `codemap`, `semble`, `combined`) retain their historical behavior and remain `legacy-unversioned`; they are not retroactively mapped to A/B/C. `--dry-run` prints the selected plan without invoking Claude or writing model results; the real-code runner's default `--arm all` plan is A/B/C and validates the locked inputs, while the agentic runner validates them when a canonical arm is selected.
+
+**B3 Codex structural adapter and r6 controls.** `run-codex-structural.py` executes structural A/B/C cells through noninteractive `codex exec --json --ephemeral`, retains raw native events, normalizes usage/tool/error/compliance fields, and reuses the exact Claude structural evaluator registry. It does not run `tasks-agentic.json`; Codex agentic support needs a separate evaluator and ground-truth contract before a runner is added. Each cell gets an isolated `CODEX_HOME`: A uses a no-write profile without the Codemap plugin and explicitly denies the shared locked index directory; B/C use a separate profile that permits writes only to the locked index's `.index-rw` coordination directory. Both profiles extend `:read-only`, deny reads of the copied `auth.json`, disable network, and inherit no shell environment. B/C additionally receive the exact locked Python 3.11 runtime after an executable/version probe; A receives no Codemap runtime. The canonical command omits legacy `--sandbox` because that flag disables permission profiles.
+
+**B4 review gate.** r6 retains r5’s split profiles and adds one fail-closed treatment runtime assignment. The r5 paid smoke is historical/excluded because B/C selected different interpreters. Review r6 before another paid FN-02 smoke; never pool the r5 rows with r6. The unified no-model smoke completed, but its separate query-quality diagnostic remains `PARTIAL` (14/18 primary scenarios); that diagnostic is not represented as a full query-quality pass.
+
+Existing Claude result snapshots are historical legacy evidence. The structural confirmatory population has 45 independently scored tasks. `RV-05`, `CQ-02`, RI, static-reference, self-consistency, and unscoreable rows remain separately labelled diagnostics as defined in `results/manifests/provider-parity-v1.md`. Do not run r4 against `master` or another tag: target-dependent ground truth is valid only for the locked `2.6.5` tree.
+
+### Entrypoint ownership
+
+| Ownership        | Entrypoint                      | Role                                                                     |
+| ---------------- | ------------------------------- | ------------------------------------------------------------------------ |
+| Claude only      | `run-claude-structural.py`      | Structural and real-code A/B/C plus legacy Claude arms                   |
+| Claude only      | `run-claude-agentic.py`         | Agentic Claude/semble comparison plus canonical Claude arms              |
+| Codex only       | `run-codex-structural.py`       | Canonical structural Codex A/B/C transport                               |
+| Provider-neutral | `run-all.sh`                    | Safe dispatcher for smoke, Claude, or Codex batch workflows              |
+| Provider-neutral | `run-cli.py`                    | Deterministic scan/query correctness and performance; no model           |
+| Provider-neutral | `provider_parity_contracts.py`  | Shared task, arm, scoring, provenance, and pairing library; not a runner |
+| Provider-neutral | `generate-tasks-bench.py`       | Validates or refreshes shared structural oracle fields                   |
+| Provider-neutral | `generate-tasks-real-issues.py` | Refreshes shared real-issue task evidence                                |
+
+Archived manifests retain historical consumer labels from before this rename. Current r6 execution uses only the concise names above; no compatibility launchers remain.
 
 ## Benchmark overview
 
-| Benchmark                                                     | Script                   | LLM | Arms                                    | Tasks                                                                       | Primary question                                                                                      |
-| ------------------------------------------------------------- | ------------------------ | --- | --------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [Agentic](#agentic-benchmark-run-codemap-agenticpy)           | `run-codemap-agentic.py` | Yes | 4 (plain / codemap / semble / combined) | 16 import-graph tasks                                                       | Does codemap/semble reduce exploration overhead vs grep?                                              |
-| [Real-codebase](#real-codebase-benchmark-run-codemap-benchpy) | `run-codemap-bench.py`   | Yes | 2 (plain / codemap)                     | 60 tasks — 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) | Does scan-query reduce token cost and improve structural recall on pre-implementation research tasks? |
-| [Query](#query-benchmark-run-codemap-scan-querypy)            | `run-codemap-cli.py`     | No  | —                                       | 7 suites (C / A / L / I / S / H / X)                                        | Is scan-query correct, complete, and fast enough?                                                     |
+| Benchmark                                                      | Provider         | Script                     | LLM | Arms                       | Tasks                                                                       | Primary question                                                                                      |
+| -------------------------------------------------------------- | ---------------- | -------------------------- | --- | -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [Agentic](#agentic-benchmark-run-claude-agenticpy)             | Claude           | `run-claude-agentic.py`    | Yes | Legacy 4; parity 3 (A/B/C) | 16 import-graph tasks                                                       | Does codemap/semble reduce exploration overhead vs grep?                                              |
+| [Structural](#real-codebase-benchmark-run-claude-structuralpy) | Claude           | `run-claude-structural.py` | Yes | Legacy 2; parity 3 (A/B/C) | 60 tasks — 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) | Does scan-query reduce token cost and improve structural recall on pre-implementation research tasks? |
+| Provider parity                                                | Codex            | `run-codex-structural.py`  | Yes | Parity 3 (A/B/C)           | Locked structural `tasks-bench.json` tasks                                  | Does Codemap provide an objective within-Codex advantage under the same shared contracts?             |
+| [Query](#query-benchmark-run-clipy)                            | Provider-neutral | `run-cli.py`               | No  | —                          | Deterministic query/correctness suites                                      | Is scan-query correct, complete, and fast enough?                                                     |
 
 Run **Query** first — validates the index before spending LLM tokens on agentic runs.
 
-## Full run (copy-paste a.k.a run-all)
+## Unified batch entrypoint
 
-One command — clone/reset the pinned target, rebuild the index, smoke-check the harness, then run all three benchmarks across every model tier:
+`run-all.sh` is the only batch orchestrator. It requires exactly one mode and does nothing when the argument is missing or unknown:
 
 ```bash
-bash benchmarks/run-all.sh
+bash benchmarks/run-all.sh smoke
+bash benchmarks/run-all.sh claude
+CODEX_PAID_APPROVAL=codemap-provider-parity-v1-b0-r6 \
+    CODEX_AUTH_SOURCE=/private/path/to/auth.json \
+    CODEX_OUTPUT_PATH=benchmarks/results/codex-fn02-r6.jsonl \
+    bash benchmarks/run-all.sh codex
 ```
 
-The target is **pinned** to pytorch-lightning tag `2.6.5` (the hardcoded ground truth is version-specific — the GT would silently mis-score against any other tree) and lives in-project at `.sandbox/pytorch-lightning`, a real clone that owns its `.git`. It is **hard-reset to the tag before every run** (`git reset --hard 2.6.5 && git clean -fd`) so drift and leftover patch-task edits never leak across runs; the clone is created on first run if missing. Change the pin with `PL_TAG=<tag> bash benchmarks/run-all.sh` — then re-materialize the GT (`python benchmarks/generate-tasks-bench.py --update`). Override the whole target with `REPO=/path/to/clone` — an overridden REPO must own its `.git`, is used as-is, and is **never force-reset** (protects your working tree).
+Modes:
 
-Modes: `run-all.sh smoke` (cheap check only), `run-all.sh full` (skip smoke), `run-all.sh refresh` (clone/reset the pinned repo + rebuild the index only).
+- `smoke` — validate the frozen r6 index, run the deterministic query check, and execute Claude and Codex dry-run/preflight paths. It invokes no model.
+- `claude` — validate the frozen index and preflight, then run the existing paid Claude structural tiers and agentic batch.
+- `codex` — validate the frozen index and preflight, then run only the preregistered paid FN-02/Codex/Luna/repetition-1 A/B/C smoke in deterministic `C_required → A_plain → B_auto` order. It fails before setup unless the exact r6 approval token, a private auth source, and a nonexistent output path are supplied.
 
-The default (`all`) mode **halts before the full suite if the smoke check finds an errored or crashed codemap run** (e.g. the `/codemap:query` skill returns `<tool_use_error>`) — so a broken codemap path never burns the full multi-tier spend. It scans the smoke output for hard-error markers because the runners exit `0` even on a benchmark-level failure.
+The target is pinned to PyTorch Lightning tag `2.6.5`; the hardcoded ground truth and r6 manifest reject every other tree. The managed `.sandbox/pytorch-lightning` clone is reset to that tag before each mode. `REPO=/path/to/clone` may select an external clone, but the script never resets an override and canonical preflight still requires the locked clean commit and exact frozen-index SHA-256. The batch entrypoint never rebuilds the index: scanner timestamps change its bytes and would invalidate the r6 evidence lock. The Codex structural runner accepts repeated `--task-id` values and `--repetitions N`; every result row records `provider`, `task_id`, `repetition`, and `arm`. The locked exploratory pilot is six tasks × three repetitions × three arms = 54 cells.
 
 <details>
 <summary>Manual equivalent — paste-safe, no inline <code>#</code> comments (interactive zsh does not strip them and passes them as args)</summary>
@@ -40,19 +75,19 @@ cd ~/Workspace/Borda.local
 REPO=.sandbox/pytorch-lightning
 [ -d "$REPO/.git" ] || git clone --depth 1 --branch 2.6.5 https://github.com/Lightning-AI/pytorch-lightning.git "$REPO"
 git -C "$REPO" reset --hard 2.6.5 && git -C "$REPO" clean -fd
-CM=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/bin/codemap-py | head -1)
+CM=plugins/codemap-py/bin/codemap-py
 
 "$CM" index --root "$REPO"
-python benchmarks/run-codemap-cli.py --repo-path "$REPO" --report
-python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model haiku
-python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model sonnet
-python benchmarks/run-codemap-bench.py --repo-path "$REPO" --run-all --model opus
-python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
+python benchmarks/run-cli.py --repo-path "$REPO" --report
+python benchmarks/run-claude-structural.py --repo-path "$REPO" --run-all --model haiku
+python benchmarks/run-claude-structural.py --repo-path "$REPO" --run-all --model sonnet
+python benchmarks/run-claude-structural.py --repo-path "$REPO" --run-all --model opus
+python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 ```
 
 </details>
 
-- **Order**: refresh index → query (gates the index, no LLM) → real-codebase → agentic. Per-benchmark options live in each section's **Quick start** below.
+- **Order**: validate frozen index → query (gates the index, no LLM) → real-codebase → agentic. Per-benchmark options live in each section's **Quick start** below.
 - **Scale**: real-codebase = 55 × 2 × 3 = 330 model runs; agentic = 16 × 4 × 3 = 192. ~500+ agent invocations — hours of wall time and real token cost. That is why the script smoke-checks first.
 - **Model tiers** (`MODELS` map in each runner): `haiku` → `claude-haiku-4-5`, `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`.
 - **Agentic arms**: the `semble` / `combined` arms need the semble MCP configured; without it, add `--arm codemap` to run the structural arm only.
@@ -61,32 +96,36 @@ python benchmarks/run-codemap-agentic.py "$REPO" --run-all --report
 
 ## Contents
 
-- [Agentic benchmark](#agentic-benchmark-run-codemap-agenticpy) — 4-arm, import-graph navigation, semble support
-- [Real-codebase benchmark](#real-codebase-benchmark-run-codemap-benchpy) — 11 task series, structural navigation on pytorch-lightning
-- [Query benchmark](#query-benchmark-run-codemap-scan-querypy) — scan-query correctness and latency, no LLM
+- [Agentic benchmark](#agentic-benchmark-run-claude-agenticpy) — Claude-only 4-arm import-graph navigation with semble support
+- [Real-codebase benchmark](#real-codebase-benchmark-run-claude-structuralpy) — Claude-only structural navigation on pytorch-lightning
+- [Query benchmark](#query-benchmark-run-clipy) — provider-neutral scan-query correctness and latency, no LLM
 - [Results](#results)
 
 <details>
 <summary><strong>Files</strong></summary>
 
-| File                           | Purpose                                                                                                                                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider_parity_contracts.py` | Provider-neutral B1 contracts for canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                                       |
-| `run-codemap-agentic.py`       | 4-arm agentic benchmark — measures how much structural context (codemap / semble / combined) reduces Claude's exploration overhead                                                                        |
-| `run-codemap-bench.py`         | Real-codebase benchmark — measures scan-query accuracy and token efficiency across 10 structural navigation task types; **repo-agnostic**, driven by `tasks-bench.json` `repo` header                     |
-| `run-codemap-cli.py`           | Query-level benchmark — measures scan-query correctness, coverage, and latency against a real repo                                                                                                        |
-| `suites/tasks-agentic.json`    | 16 blast-radius navigation tasks (BA-01–BA-16), 4 difficulty tiers, used by the agentic benchmark                                                                                                         |
-| `suites/tasks-bench.json`      | 60 tasks across 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) + `repo` header (name, namespace, default path) — swap to benchmark a different codebase                                 |
-| `suites/tasks-code.json`       | 15 code-level tasks used by the scan-query benchmark                                                                                                                                                      |
-| `suites/tasks-patch.json`      | 5 end-to-end patch tasks (PT-01–PT-05) — failing test → minimal fix → test pass; requires `--patch` flag and sandbox harness                                                                              |
-| `suites/tasks-readcrop.json`   | 6 read-crop tasks (RC-01–RC-06) — symbol-contract extraction; scored by keyword recall; headline metric is `tool_result_tokens` (codemap `symbol` extraction vs whole-file Read)                          |
-| `suites/tasks-fix-single.json` | 4 fix-single tasks (FS-01–FS-04) — single-file bug fix with archive/restore isolation; scored by diff keyword recall (`erec`)                                                                             |
-| `suites/tasks-fix-multi.json`  | 3 fix-multicaller tasks (FM-01–FM-03) — signature change + caller update across files; codemap `fn-rdeps` finds all callers before editing; scored by diff keyword recall (`erec`) + file recall (`rrec`) |
-| `results/`                     | JSON snapshots and markdown reports from past runs                                                                                                                                                        |
+| File                            | Ownership        | Purpose                                                                                                                                                           |
+| ------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider_parity_contracts.py`  | Provider-neutral | Canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                                 |
+| `run-claude-agentic.py`         | Claude           | Agentic benchmark measuring how Codemap/semble structural context changes Claude exploration                                                                      |
+| `run-claude-structural.py`      | Claude           | Repo-agnostic structural benchmark driven by the `tasks-bench.json` repository header                                                                             |
+| `run-all.sh`                    | Provider-neutral | Sole batch dispatcher: no-model cross-provider smoke, paid Claude batches, or approval-gated paid Codex FN-02 smoke                                               |
+| `run-cli.py`                    | Provider-neutral | Query-level correctness, coverage, and latency against a real repository                                                                                          |
+| `run-codex-structural.py`       | Codex            | Codex structural provider-parity transport for canonical A/B/C cells with isolated plugin homes, native telemetry normalization, and shared structural evaluators |
+| `generate-tasks-bench.py`       | Provider-neutral | Validates or refreshes shared structural oracle fields; it does not author prompts                                                                                |
+| `generate-tasks-real-issues.py` | Provider-neutral | Refreshes shared real-issue evidence                                                                                                                              |
+| `suites/tasks-agentic.json`     | Provider-neutral | 16 blast-radius navigation tasks (BA-01–BA-16), 4 difficulty tiers, used by the agentic benchmark                                                                 |
+| `suites/tasks-bench.json`       | Provider-neutral | 60 tasks across 11 series plus the target repository header                                                                                                       |
+| `suites/tasks-code.json`        | Provider-neutral | 15 code-level tasks used by the scan-query benchmark                                                                                                              |
+| `suites/tasks-patch.json`       | Provider-neutral | 5 end-to-end patch tasks requiring patch application and tests                                                                                                    |
+| `suites/tasks-readcrop.json`    | Provider-neutral | 6 symbol-contract extraction tasks scored by keyword recall                                                                                                       |
+| `suites/tasks-fix-single.json`  | Provider-neutral | 4 single-file fix tasks scored by diff keyword recall                                                                                                             |
+| `suites/tasks-fix-multi.json`   | Provider-neutral | 3 multicaller fix tasks scored by diff keyword and file recall                                                                                                    |
+| `results/`                      | Provider-neutral | JSON snapshots and Markdown reports from past runs                                                                                                                |
 
 </details>
 
-## Agentic benchmark (`run-codemap-agentic.py`)
+## Agentic benchmark (`run-claude-agentic.py`)
 
 Runs the same 16 import-graph tasks under four arms:
 
@@ -146,15 +185,15 @@ pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 python plugins/codemap-py/bin/scan-index --root /path/to/repo
 
 # 3. Run all tasks, all arms, all model tiers
-python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo --run-all --report
+python benchmarks/run-claude-agentic.py --repo-path /path/to/repo --run-all --report
 
 # 4. Spot-check one task
-python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo \
+python benchmarks/run-claude-agentic.py --repo-path /path/to/repo \
     --tasks "['BA-01']" --arm plain --model haiku
 
 # Run only non-semble arms (if semble not configured)
-python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo --run-all --arm plain
-python benchmarks/run-codemap-agentic.py --repo-path /path/to/repo --run-all --arm codemap
+python benchmarks/run-claude-agentic.py --repo-path /path/to/repo --run-all --arm plain
+python benchmarks/run-claude-agentic.py --repo-path /path/to/repo --run-all --arm codemap
 ```
 
 <details>
@@ -168,23 +207,23 @@ claude mcp add semble -s user -- uvx --from "semble[mcp]" semble
 
 `-s user` registers it globally (all projects). Use `-s project` to scope to this repo only.
 
-**Verify** — the preflight check in `run-codemap-agentic.py` will raise a `RuntimeError` with instructions if semble is not found.
+**Verify** — the preflight check in `run-claude-agentic.py` will raise a `RuntimeError` with instructions if semble is not found.
 
 </details>
 
 <details>
 <summary><strong>CLI flags</strong></summary>
 
-| Flag                                     | Default       | Description                                                              |
-| ---------------------------------------- | ------------- | ------------------------------------------------------------------------ |
-| `--repo-path PATH`                       | required      | Absolute path to the repo under test                                     |
-| `--index PATH`                           | auto-detected | Override index path (default: `<repo>/.cache/scan/<name>.json`)          |
-| `--arm plain\|codemap\|semble\|combined` | all four      | Run a single arm only                                                    |
-| `--model haiku\|sonnet\|opus`            | all three     | Run a single model tier only                                             |
-| `--tasks "['BA-01','BA-02',...]"`        | all 16        | Run specific task IDs (Python list literal — e.g. `"['BA-01','BA-02']"`) |
-| `--run-all`                              | off           | Run all tasks (required unless `--tasks` given)                          |
-| `--report`                               | off           | Write markdown report to `results/` after run                            |
-| `--dry-run`                              | off           | Print system prompts, skip actual claude invocations                     |
+| Flag                                                                  | Default       | Description                                                              |
+| --------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------ |
+| `--repo-path PATH`                                                    | required      | Absolute path to the repo under test                                     |
+| `--index PATH`                                                        | auto-detected | Override index path (default: `<repo>/.cache/scan/<name>.json`)          |
+| `--arm plain\|codemap\|semble\|combined\|A_plain\|B_auto\|C_required` | all four      | Run a single legacy or canonical arm only                                |
+| `--model haiku\|sonnet\|opus`                                         | all three     | Run a single model tier only                                             |
+| `--tasks "['BA-01','BA-02',...]"`                                     | all 16        | Run specific task IDs (Python list literal — e.g. `"['BA-01','BA-02']"`) |
+| `--run-all`                                                           | off           | Run all tasks (required unless `--tasks` given)                          |
+| `--report`                                                            | off           | Write markdown report to `results/` after run                            |
+| `--dry-run`                                                           | off           | Print the selected plan without invoking Claude or writing model results |
 
 </details>
 
@@ -212,7 +251,7 @@ JSON snapshot written to `results/agentic-YYYY-MM-DD[-N].json` after every run (
 
 ______________________________________________________________________
 
-## Real-codebase benchmark (`run-codemap-bench.py`)
+## Real-codebase benchmark (`run-claude-structural.py`)
 
 Measures whether `scan-query` structural access reduces token usage and improves recall on pre-implementation structural research — symbol lookup, call-graph navigation, code review metrics, code quality health checks, and blast-radius assessment before modifying code.
 
@@ -273,17 +312,17 @@ pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 python plugins/codemap-py/bin/scan-index --root ./<repo-dir>
 
 # 3. Run all 60 tasks, both arms, haiku model
-python benchmarks/run-codemap-bench.py \
+python benchmarks/run-claude-structural.py \
     --repo-path ./<repo-dir> \
     --run-all --model haiku
 
 # 4. Run one series (e.g. symbol tasks only)
-python benchmarks/run-codemap-bench.py \
+python benchmarks/run-claude-structural.py \
     --repo-path ./<repo-dir> \
     --task-type symbol_extraction --arm codemap --model haiku
 
 # 5. Spot-check one task
-python benchmarks/run-codemap-bench.py \
+python benchmarks/run-claude-structural.py \
     --repo-path ./<repo-dir> \
     --tasks "['SE-01']" --arm plain --model haiku
 ```
@@ -291,20 +330,21 @@ python benchmarks/run-codemap-bench.py \
 <details>
 <summary><strong>CLI flags</strong></summary>
 
-| Flag                              | Default       | Description                                                                                                                                                                                              |
-| --------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--repo-path PATH`                | auto          | Path to repo clone (default: `repo.local_path` from `tasks-bench.json`)                                                                                                                                  |
-| `--index-path PATH`               | auto          | Override index; checks `.cache/codemap/` then `.cache/scan/`                                                                                                                                             |
-| `--tasks "['SE-01','FN-02',...]"` | all           | Run specific task IDs (Python list literal — e.g. `"['SE-01','FN-02']"`)                                                                                                                                 |
-| `--task-type TYPE`                | all           | Filter by type: `symbol_extraction`, `fn_call_graph`, `review_assistance`, `code_quality`, `develop_blast_radius`, `debug_from_trace`, `feature_scaffolding`, `real_issue`                               |
-| `--arm plain\|codemap\|all`       | `all`         | Run one arm or both                                                                                                                                                                                      |
-| `--model haiku\|sonnet\|opus`     | `haiku`       | Model tier                                                                                                                                                                                               |
-| `--run-all`                       | off           | Required when `--tasks` and `--task-type` both absent                                                                                                                                                    |
-| `--no-save`                       | off           | Skip writing JSONL results to `results/bench-<model>-<ts>.jsonl`                                                                                                                                         |
-| `--timeout N`                     | model default | Per-run wall-clock timeout in seconds                                                                                                                                                                    |
-| `--resume`                        | off           | Reuse a matching prior result (same `task_id`/`arm`/`model` + `repo_sha`/`index_sha`/`task_hash` provenance) from `results/bench-*.jsonl` instead of re-executing it; reused lines carry `resumed: true` |
-| `--profile dev\|release`          | none          | Cost profile — `dev` = haiku-only stratified subset (fast regression signal), `release` = full matrix incl. RI. Absent → current behavior unchanged                                                      |
-| `--tiered`                        | off           | Tiered protocol (release companion): run one tier per `--model` (haiku full → sonnet dev-subset → opus disagreements). See **Cost profiles** below                                                       |
+| Flag                                                     | Default       | Description                                                                                                                                                                                              |
+| -------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--repo-path PATH`                                       | auto          | Path to repo clone (default: `repo.local_path` from `tasks-bench.json`)                                                                                                                                  |
+| `--index-path PATH`                                      | auto          | Override index; checks `.cache/codemap/` then `.cache/scan/`                                                                                                                                             |
+| `--tasks "['SE-01','FN-02',...]"`                        | all           | Run specific task IDs (Python list literal — e.g. `"['SE-01','FN-02']"`)                                                                                                                                 |
+| `--task-type TYPE`                                       | all           | Filter by type: `symbol_extraction`, `fn_call_graph`, `review_assistance`, `code_quality`, `develop_blast_radius`, `debug_from_trace`, `feature_scaffolding`, `real_issue`                               |
+| `--arm plain\|codemap\|A_plain\|B_auto\|C_required\|all` | `all`         | Run one legacy arm, one canonical A/B/C arm, or both legacy arms                                                                                                                                         |
+| `--model haiku\|sonnet\|opus`                            | `haiku`       | Model tier                                                                                                                                                                                               |
+| `--run-all`                                              | off           | Required when `--tasks` and `--task-type` both absent                                                                                                                                                    |
+| `--no-save`                                              | off           | Skip writing JSONL results to `results/bench-<model>-<ts>.jsonl`                                                                                                                                         |
+| `--timeout N`                                            | model default | Per-run wall-clock timeout in seconds                                                                                                                                                                    |
+| `--resume`                                               | off           | Reuse a matching prior result (same `task_id`/`arm`/`model` + `repo_sha`/`index_sha`/`task_hash` provenance) from `results/bench-*.jsonl` instead of re-executing it; reused lines carry `resumed: true` |
+| `--profile dev\|release`                                 | none          | Cost profile — `dev` = haiku-only stratified subset (fast regression signal), `release` = full matrix incl. RI. Absent → current behavior unchanged                                                      |
+| `--tiered`                                               | off           | Tiered protocol (release companion): run one tier per `--model` (haiku full → sonnet dev-subset → opus disagreements). See **Cost profiles** below                                                       |
+| `--dry-run`                                              | off           | Validate locked canonical inputs and print the planned A/B/C cells; never invoke Claude or write model results                                                                                           |
 
 When `--resume` is set, provenance is fingerprinted per run: `repo_sha` = `git -C <repo> rev-parse HEAD` (or `"unknown"`), `index_sha` = sha256 of the index head-meta (`scan_version`, `scanned_at`, `git_sha`, `project`, `scan_root`), and `task_hash` = sha256 of the task's canonical JSON. These three fields are written on **every** result line (not only under `--resume`), so any prior run is resumable later. A resume match reuses the stored line verbatim and skips the `claude` subprocess entirely.
 
@@ -346,9 +386,9 @@ The full matrix (60 tasks × 2 arms × 3 model tiers) is expensive. Three cost l
 - **tiered** (`--tiered`, a release companion) — spend opus budget only where it adjudicates. Run one tier per invocation, escalating:
 
   ```bash
-  python benchmarks/run-codemap-bench.py --repo-path ./<repo> --tiered --model haiku   # full suite on haiku
-  python benchmarks/run-codemap-bench.py --repo-path ./<repo> --tiered --model sonnet  # dev subset on sonnet
-  python benchmarks/run-codemap-bench.py --repo-path ./<repo> --tiered --model opus    # only haiku/sonnet disagreements
+  python benchmarks/run-claude-structural.py --repo-path ./<repo> --tiered --model haiku   # full suite on haiku
+  python benchmarks/run-claude-structural.py --repo-path ./<repo> --tiered --model sonnet  # dev subset on sonnet
+  python benchmarks/run-claude-structural.py --repo-path ./<repo> --tiered --model opus    # only haiku/sonnet disagreements
   ```
 
   Each invocation reads the earlier tiers' results from the same `results/` dir (matched on `repo_sha` + `index_sha` provenance). The opus tier runs **only** the tasks where the haiku and sonnet `quality.correct` verdicts disagree — the cases a stronger model is worth paying for. Three separate invocations were chosen over one orchestrated run because it fits the runner's per-model structure and lets each tier's cost be inspected and resumed independently (`--resume`).
@@ -375,7 +415,7 @@ python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update --up
 
 ______________________________________________________________________
 
-## Query benchmark (`run-codemap-cli.py`)
+## Query benchmark (`run-cli.py`)
 
 Validates `scan-query` directly — no LLM involved. Requires a pre-built index.
 
@@ -393,7 +433,7 @@ Seven suites run together, split into two tracks. **Primary** suites (C / A / L 
 
 Suites S, H, X auto-skip (no error) when `tasks-bench.json` is absent.
 
-**Deterministic correctness suites (D / B / R / K / U).** In addition to the seven tracks above, `run-codemap-cli.py` runs five deterministic correctness suites, and — unlike S/H/X — they **join the primary verdict**. Each builds a self-contained fixture repo in a tmp dir whose ground truth is KNOWN by construction (an exact importer count, an exactly-corrupted index, a single broken sphinx xref), so a pass is genuine independent-oracle correctness rather than agreement with a scan-query-derived snapshot. They assert the user-visible CLI contract offline (independent of `--repo-path`), and skip cleanly when `scan-index` is absent.
+**Deterministic correctness suites (D / B / R / K / U).** In addition to the seven tracks above, `run-cli.py` runs five deterministic correctness suites, and — unlike S/H/X — they **join the primary verdict**. Each builds a self-contained fixture repo in a tmp dir whose ground truth is KNOWN by construction (an exact importer count, an exactly-corrupted index, a single broken sphinx xref), so a pass is genuine independent-oracle correctness rather than agreement with a scan-query-derived snapshot. They assert the user-visible CLI contract offline (independent of `--repo-path`), and skip cleanly when `scan-index` is absent.
 
 | Suite                 | What it asserts (known-by-construction fixture)                                                                                                                               |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -403,24 +443,24 @@ Suites S, H, X auto-skip (no error) when `tasks-bench.json` is absent.
 | **K** self-check      | corrupt index variants (missing key / bad version / wrong type / truncated JSON) → exit 3 + parseable JSON error, never a partial serve                                       |
 | **U** uncovered/xrefs | fixture with KNOWN counts (2 undocumented public fns, 1 broken sphinx xref) → exact counts — the deterministic replacement for the LLM bench's circular scan-query-derived GT |
 
-This is the division of labour between the two runners: **deterministic correctness now lives in `run-codemap-cli.py`** (suites D/B/R/K/U, joining its primary verdict), while the **LLM bench (`run-codemap-bench.py`) measures workflow efficiency** — token ratio, tool-call economy, and recall on tasks whose ground truth is independent of the index. Because suite U pins the uncovered/xref counts deterministically, the corresponding LLM tasks (`CQ-02` uncovered, `CQ-04` xrefs, `CQ-05` combined-health uncovered part) are **demoted to self-consistency** in the LLM bench: they still run and score, but are excluded from the headline accuracy aggregates (scoring the codemap arm against index-derived truth would measure agreement with itself) and reported in a separate self-consistency row.
+This is the division of labour between the two runners: **deterministic correctness now lives in `run-cli.py`** (suites D/B/R/K/U, joining its primary verdict), while the **LLM bench (`run-claude-structural.py`) measures workflow efficiency** — token ratio, tool-call economy, and recall on tasks whose ground truth is independent of the index. Because suite U pins the uncovered/xref counts deterministically, the corresponding LLM tasks (`CQ-02` uncovered, `CQ-04` xrefs, `CQ-05` combined-health uncovered part) are **demoted to self-consistency** in the LLM bench: they still run and score, but are excluded from the headline accuracy aggregates (scoring the codemap arm against index-derived truth would measure agreement with itself) and reported in a separate self-consistency row.
 
 ### Quick start
 
 ```bash
 # Run all suites against the target repo (auto-detects index)
-python benchmarks/run-codemap-cli.py \
+python benchmarks/run-cli.py \
     --repo-path ./<repo-dir> \
     --report
 
 # Explicit index path
-python benchmarks/run-codemap-cli.py \
+python benchmarks/run-cli.py \
     --repo-path ./<repo-dir> \
     --index-path ./<repo-dir>/.cache/codemap/pytorch-lightning-master.json \
     --report
 
 # Verify task modules exist in index before a full run
-python benchmarks/run-codemap-cli.py \
+python benchmarks/run-cli.py \
     --repo-path ./<repo-dir> \
     --verify-tasks
 ```
@@ -555,12 +595,12 @@ Two suite files extend agentic benchmark coverage from pure structural discovery
 
 ```bash
 # Fix-single (validates archive/restore; single-file; no cross-file index benefit expected)
-python benchmarks/run-codemap-agentic.py \
+python benchmarks/run-claude-agentic.py \
     --repo-path /path/to/pytorch-lightning/src/lightning \
     --tasks "[\'FS-01\',\'FS-02\',\'FS-03\',\'FS-04\']" --run-all --model haiku
 
 # Fix-multicaller (the codemap edit-assist test — run plain + codemap, compare rrec on FM-03)
-python benchmarks/run-codemap-agentic.py \
+python benchmarks/run-claude-agentic.py \
     --repo-path /path/to/pytorch-lightning/src/lightning \
     --tasks "[\'FM-01\',\'FM-02\',\'FM-03\']" --run-all --model haiku --report
 ```
@@ -594,9 +634,9 @@ Full summary + per-task reading: [`results/bench-summary-2026-07-29.md`](results
 
 Per-workflow codemap accuracy: query (n=28) 92.0 / 95.8 / 84.0%; debug (n=6) 100 / 100 / 100%; feature (n=5) 80 / 80 / **40% ⚠** (haiku / sonnet / opus).
 
-> **⚠ The opus codemap figures are deflated by two harness bugs found in a post-run audit** — do not cite opus codemap −8 pp as a result. (1) The count-extraction regex (`run-codemap-bench.py:1422`) grabs the first stray number in verbose codemap prose (RV-02/opus answered "65 modules", correct, but the regex read "0 symbols" → recall 0.000). (2) `codemap query methods used` (`:2975`) silently drops the method on non-pure-JSON tool output, so "index-lookup only" is a parse artifact — opus actually ran `rdeps` in ~17 runs. See the report's scoring banner + the bug list below. **RESOLVED (2026-07-29):** fixes landed; a 2-repeat opus re-run on the fixed scorer shows opus codemap = plain **100% / 100%** with codemap *better* on tail-recall (fewer missed callers, fewer turns) — the −8 pp was pure artifact, and the "codemap short-circuits opus" (anchoring) hypothesis is refuted 0/14. See the report's "Opus anchoring probe" section.
+> **⚠ The opus codemap figures are deflated by two harness bugs found in a post-run audit** — do not cite opus codemap −8 pp as a result. (1) The count-extraction regex (`run-claude-structural.py:1422`) grabs the first stray number in verbose codemap prose (RV-02/opus answered "65 modules", correct, but the regex read "0 symbols" → recall 0.000). (2) `codemap query methods used` (`:2975`) silently drops the method on non-pure-JSON tool output, so "index-lookup only" is a parse artifact — opus actually ran `rdeps` in ~17 runs. See the report's scoring banner + the bug list below. **RESOLVED (2026-07-29):** fixes landed; a 2-repeat opus re-run on the fixed scorer shows opus codemap = plain **100% / 100%** with codemap *better* on tail-recall (fewer missed callers, fewer turns) — the −8 pp was pure artifact, and the "codemap short-circuits opus" (anchoring) hypothesis is refuted 0/14. See the report's "Opus anchoring probe" section.
 
-**Reading it**: codemap's lift is inversely proportional to model strength — biggest where native navigation is weakest (Haiku +25 pp, Sonnet +12 pp). The opus row shows codemap −8 pp **as measured**, but that is mostly the scoring artifact above (below-plain recalls on RV-02/CQ-03 are count-regex false-fails, not real misses); there is no per-model skill routing (both arms share one symmetric prompt), so the residual gap is model behavior, not a plugin defect. Token savings are real at Haiku, near break-even by Opus (fixed index-injection overhead); codemap is faster on wall-clock at every tier (median time× 0.81 / 0.95 / 0.92). Query benchmark (no LLM) verdict **PARTIAL** (26/32); agentic run was **interrupted** and is not reportable this cycle.
+**Reading it**: codemap's lift is inversely proportional to model strength — biggest where native navigation is weakest (Haiku +25 pp, Sonnet +12 pp). The opus row shows codemap −8 pp **as measured**, but that is mostly the scoring artifact above (below-plain recalls on RV-02/CQ-03 are count-regex false-fails, not real misses); there is no per-model skill routing (both arms share one symmetric prompt), so the residual gap is model behavior, not a plugin defect. Token savings are real at Haiku, near break-even by Opus (fixed index-injection overhead); codemap is faster on wall-clock at every tier (median time× 0.81 / 0.95 / 0.92). The historical 2026-07-29 query report recorded **PARTIAL** (26/32); it is distinct from the current r6 no-model diagnostic (14/18 primary and 10/14 self-consistency). The agentic run was **interrupted** and is not reportable this cycle.
 
 **Why the gains look smaller than June 22 — comparability**: the drop in token savings (June 0.22–0.38× → July 0.57–0.83×) is **confounded** and cannot be attributed to the 5-series models alone. Three things changed at once between the two runs: (a) the **harness fairness overhaul** — June ran under codemap-favoring steering (codemap arm capped at 3 calls + forbidden to verify, plain arm coached toward more grepping), which by the README's own note made June ratios *upper bounds*; removing it raises the ratio toward 1.0 independent of model; (b) **model version** (Sonnet 4.6→5, Opus 4.6→5) — newer models navigate code better unaided, so the plain-arm denominator shrinks and the ratio rises even with codemap unchanged; (c) **codemap version** (pre-v0.13.2 → v0.27.0). To isolate the model-version effect you must hold the harness constant — run 4.6-era and 5-era models under the *current* fair harness. What *is* clean is the **within-July up-tier shrink** (0.57 → 0.82 → 0.83, one harness + one codemap version, only the tier varies): codemap injects a roughly fixed index blob while the plain arm's exploration cost falls as models strengthen → ratio → 1. So token savings are structurally largest where the plain baseline is most wasteful (weak models); on strong models the value proposition shifts from tokens to **structural recall / safety-grade** (8/13 → 13/13 at Haiku), which holds at every tier.
 

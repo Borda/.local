@@ -1,4 +1,4 @@
-"""Tests for benchmarks/run-codemap-cli.py.
+"""Tests for benchmarks/run-cli.py.
 
 Covers public API surface:
   - Dataclass defaults and construction (Task, ScenarioResult, TimingStats,
@@ -1248,6 +1248,48 @@ class TestIntegrationSuiteL:
             pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index, scan_index_binary
         )
         assert {r.scenario for r in results} == {"L1", "L2", "L3", "L4"}
+
+
+@pytest.mark.parametrize("times_out", [False, True], ids=["completed", "timed-out"])
+def test_latency_index_build_restores_prebuilt_index_bytes(
+    script_run_cli: Any,
+    tmp_path: Path,
+    times_out: bool,
+) -> None:
+    """Prevent completed or timed-out L3 scans from invalidating a frozen index."""
+    index_path = tmp_path / "repo.json"
+    index_path.write_bytes(b"locked-index")
+    task = script_run_cli.Task(
+        id="T-01",
+        skill="fix",
+        prompt="Inspect the target.",
+        primary_module="pkg.mod",
+        risk_tier="high",
+        queries=[],
+        ground_truth_keys=[],
+    )
+    timing = script_run_cli.TimingStats(min_ms=1.0, median_ms=1.0, max_ms=1.0, n=1)
+
+    def mutate_index(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        index_path.write_bytes(b"rebuilt-index")
+        if times_out:
+            raise subprocess.TimeoutExpired(["scan-index"], 120)
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    with (
+        patch.object(script_run_cli, "load_tasks", return_value=[task]),
+        patch.object(script_run_cli, "time_command", return_value=timing),
+        patch.object(script_run_cli, "time_commands", return_value=timing),
+        patch.object(script_run_cli.subprocess, "run", side_effect=mutate_index),
+    ):
+        script_run_cli.run_measure_latency(
+            tmp_path,
+            tmp_path / "scan-query",
+            index_path,
+            tmp_path / "scan-index",
+        )
+
+    assert index_path.read_bytes() == b"locked-index"
 
 
 @pytest.mark.integration

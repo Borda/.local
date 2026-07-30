@@ -1,4 +1,4 @@
-"""Tests for benchmarks/run-codemap-bench.py.
+"""Tests for benchmarks/run-claude-structural.py.
 
 Public API surface covered:
   - BenchQuality dataclass: field defaults and types
@@ -65,6 +65,308 @@ def _se_task(start_line: int = 100, qname: str = "Trainer.fit") -> dict:
             "module": "lightning.pytorch.trainer",
         },
     }
+
+
+class TestProviderParityIntegration:
+    """The Claude structural adapter consumes the locked shared contract."""
+
+    def test_primary_contract_preserves_raw_task_identity_and_manifest_policy(self, script_run_bench: Any) -> None:
+        """The primary suite uses shared raw loading, hashes, and revision-bound policy without a model call."""
+        tasks, policies = script_run_bench._load_primary_parity_contract()
+        task = next(task for task in tasks if task["id"] == "FN-02")
+        manifest = json.loads(script_run_bench.PARITY_MANIFEST_FILE.read_text(encoding="utf-8"))
+        expected_task = next(row for suite in manifest["suites"] for row in suite["tasks"] if row["id"] == task["id"])
+
+        assert script_run_bench._task_hash(task) == expected_task["canonical_task_sha256"]
+        assert script_run_bench._prompt_hash(task) == expected_task["prompt_sha256"]
+        assert policies[task["id"]].experiment_revision == script_run_bench.PARITY_EXPERIMENT_REVISION
+
+    def test_legacy_arms_keep_their_labels_and_have_no_parity_identity(self, script_run_bench: Any) -> None:
+        """Existing transport labels stay available but cannot inherit A/B/C identity."""
+        assert script_run_bench.ARMS == ("plain", "codemap")
+        assert script_run_bench.PARITY_ARMS == ("A_plain", "B_auto", "C_required")
+        assert script_run_bench.PARITY_ARM_BY_LEGACY_ARM == {}
+
+    def test_runner_stamps_legacy_identity_without_relabelling_legacy_arm(
+        self, script_run_bench: Any, tmp_path: Path
+    ) -> None:
+        """A legacy transport run retains only the explicit legacy experiment identity."""
+        task = {"id": "legacy-fixture", "prompt": "answer", "type": "fixture", "scoreable": False}
+        runner = script_run_bench.BenchRunner(
+            "haiku",
+            "fixture-model",
+            tmp_path,
+            tmp_path / "index.json",
+        )
+        runner._execute = lambda *_args, **_kwargs: script_run_bench.BenchRun(
+            arm="codemap",
+            task_id=task["id"],
+            task_type=task["type"],
+            model="haiku",
+            success=True,
+        )
+
+        result = runner.run(task, "codemap")
+
+        assert result.arm == "codemap"
+        assert result.parity_arm == ""
+        assert result.compliance is None
+        assert result.experiment_revision == script_run_bench.LEGACY_EXPERIMENT_REVISION
+        assert result.arm_contract_hash == ""
+        assert result.task_hash == script_run_bench._task_hash(task)
+        assert result.prompt_hash == script_run_bench._prompt_hash(task)
+
+    def test_canonical_result_stamps_the_locked_policy_and_provenance(
+        self, script_run_bench: Any, tmp_path: Path
+    ) -> None:
+        """Explicit canonical arms receive r4 task, suite, evaluator, envelope, and arm-contract identity."""
+        tasks, policies = script_run_bench._load_primary_parity_contract()
+        task = next(task for task in tasks if task["id"] == "FN-02")
+        runner = script_run_bench.BenchRunner(
+            "haiku",
+            "fixture-model",
+            tmp_path,
+            tmp_path / "index.json",
+            task_policies=policies,
+            suite_hash=script_run_bench.PRIMARY_SUITE_HASH,
+            suite_raw_hash=script_run_bench.PRIMARY_SUITE_RAW_HASH,
+        )
+        runner._execute = lambda *_args, **_kwargs: script_run_bench.BenchRun(
+            arm="B_auto", task_id=task["id"], task_type=task["type"], model="haiku", success=True
+        )
+
+        result = runner.run(task, "B_auto")
+
+        assert result.parity_arm == "B_auto"
+        assert result.experiment_revision == script_run_bench.PARITY_EXPERIMENT_REVISION
+        assert result.suite_hash == script_run_bench.PRIMARY_SUITE_HASH
+        assert result.suite_raw_hash == script_run_bench.PRIMARY_SUITE_RAW_HASH
+        assert result.arm_contract_hash == script_run_bench.ARM_CONTRACTS["B_auto"]["contract_sha256"]
+        assert result.evaluator_id == "_evaluate_develop_br"
+        assert len(result.evaluator_hash) == 64
+        assert len(result.envelope_hash) == 64
+        assert result.scoreable is True
+
+    def test_canonical_task_hash_mismatch_fails_before_execution(self, script_run_bench: Any, tmp_path: Path) -> None:
+        """A known task ID with changed task bytes cannot enter an r4 canonical run."""
+        tasks, policies = script_run_bench._load_primary_parity_contract()
+        task = next(task for task in tasks if task["id"] == "FN-02").copy()
+        task["prompt"] = f"{task['prompt']} tampered"
+        runner = script_run_bench.BenchRunner(
+            "haiku",
+            "fixture-model",
+            tmp_path,
+            tmp_path / "index.json",
+            task_policies=policies,
+            suite_hash=script_run_bench.PRIMARY_SUITE_HASH,
+        )
+        runner._execute = lambda *_args, **_kwargs: pytest.fail("canonical mismatch reached execution")
+
+        with pytest.raises(ValueError, match="task.*hash|hash.*task"):
+            runner.run(task, "A_plain")
+
+    def test_c_required_tracks_no_call_as_noncompliance_without_changing_quality(
+        self, script_run_bench: Any, tmp_path: Path
+    ) -> None:
+        """C records a missing Codemap call separately from the unscored task result."""
+        runner = script_run_bench.BenchRunner("haiku", "fixture-model", tmp_path, tmp_path / "index.json")
+        task = {"id": "fixture", "prompt": "answer", "type": "fixture", "scoreable": False}
+        runner._stream = lambda _cmd, result, _arm, update_fn=None: setattr(result, "success", True)
+
+        result = runner._execute(task, "C_required")
+
+        assert result.compliance is False
+        assert result.quality == script_run_bench.BenchQuality(scored=False)
+
+    @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_required"])
+    def test_canonical_commands_omit_turn_caps_while_legacy_keeps_its_task_cap(
+        self, script_run_bench: Any, tmp_path: Path, arm: str
+    ) -> None:
+        """Canonical structural cells use wall-clock control; legacy cells retain their task cap."""
+        task = {
+            "id": "fixture",
+            "prompt": "answer",
+            "type": "develop_blast_radius",
+            "ground_truth": {"unique_caller_count": 12},
+            "scoreable": False,
+        }
+        runner = script_run_bench.BenchRunner("haiku", "fixture-model", tmp_path, tmp_path / "index.json")
+        commands: dict[str, list[str]] = {}
+
+        def capture_command(cmd: list[str], result: Any, selected_arm: str, update_fn: Any = None) -> None:
+            commands[selected_arm] = cmd
+            result.input_tokens = 1
+
+        runner._stream = capture_command
+        runner._execute(task, arm)
+        runner._execute(task, "plain")
+
+        assert "--max-turns" not in commands[arm]
+        legacy = commands["plain"]
+        assert legacy[legacy.index("--max-turns") + 1] == "80"
+
+    def test_dry_run_plans_canonical_cells_without_executing_claude(
+        self,
+        script_run_bench: Any,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The no-model dry run validates inputs then emits deterministic A/B/C cells only."""
+        index_path = tmp_path / "index.json"
+        index_path.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(
+            script_run_bench.BenchRunner,
+            "_execute",
+            lambda *_args, **_kwargs: pytest.fail("dry run executed Claude"),
+        )
+        runtime_inputs: list[tuple[Path, Path]] = []
+        monkeypatch.setattr(
+            script_run_bench,
+            "_validate_primary_runtime",
+            lambda repo_path, index: runtime_inputs.append((repo_path, index)),
+        )
+
+        script_run_bench.main(
+            repo_path=tmp_path,
+            index_path=index_path,
+            tasks=["FN-02"],
+            arm="all",
+            dry_run=True,
+        )
+
+        output = capsys.readouterr().out
+        assert "FN-02\tA_plain" in output
+        assert "FN-02\tB_auto" in output
+        assert "FN-02\tC_required" in output
+        assert runtime_inputs == [(tmp_path, index_path)]
+
+    @pytest.mark.parametrize(
+        ("arm", "timeout", "expected"),
+        [
+            pytest.param("A_plain", None, 600, id="canonical-default"),
+            pytest.param("A_plain", 123, 123, id="canonical-explicit-override"),
+            pytest.param("plain", None, 210, id="legacy-model-default"),
+        ],
+    )
+    def test_main_selects_shared_parity_timeout_without_changing_legacy_runs(
+        self,
+        script_run_bench: Any,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        arm: str,
+        timeout: int | None,
+        expected: int,
+    ) -> None:
+        """Canonical cells use 600 seconds unless explicitly overridden; legacy policy is unchanged."""
+        index_path = tmp_path / "index.json"
+        index_path.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(script_run_bench, "_validate_primary_runtime", lambda *_args: None)
+        observed: dict[str, int] = {}
+
+        class RunnerReached(RuntimeError):
+            """Stop the no-model test after runner construction."""
+
+        def capture_runner(*_args: Any, **kwargs: Any) -> None:
+            observed["timeout"] = kwargs["timeout"]
+            raise RunnerReached
+
+        monkeypatch.setattr(script_run_bench, "BenchRunner", capture_runner)
+
+        with pytest.raises(RunnerReached):
+            script_run_bench.main(
+                repo_path=tmp_path,
+                index_path=index_path,
+                tasks=["FN-02"],
+                arm=arm,
+                timeout=timeout,
+            )
+
+        assert observed == {"timeout": expected}
+
+    def test_resume_rejects_cached_canonical_result_with_another_contract(
+        self, script_run_bench: Any, tmp_path: Path
+    ) -> None:
+        """A cached result cannot satisfy a canonical arm after its contract identity changes."""
+        tasks, policies = script_run_bench._load_primary_parity_contract()
+        task = next(task for task in tasks if task["id"] == "FN-02")
+        runner = script_run_bench.BenchRunner(
+            "haiku",
+            "fixture-model",
+            tmp_path,
+            tmp_path / "index.json",
+            task_policies=policies,
+            suite_hash=script_run_bench.PRIMARY_SUITE_HASH,
+        )
+        task_hash = script_run_bench._task_hash(task)
+        runner.resume_cache = {
+            (task["id"], "B_auto", "haiku", runner.repo_sha, runner.index_sha, task_hash): {
+                "experiment_revision": script_run_bench.PARITY_EXPERIMENT_REVISION,
+                "arm_contract_hash": "different-contract",
+            }
+        }
+        calls: list[str] = []
+
+        def execute(_task: dict, arm: str, **_kwargs: Any) -> Any:
+            calls.append(arm)
+            return script_run_bench.BenchRun(
+                arm=arm,
+                task_id=task["id"],
+                task_type=task["type"],
+                model="haiku",
+                success=True,
+            )
+
+        runner._execute = execute
+
+        runner.run(task, "B_auto")
+
+        assert calls == ["B_auto"]
+
+    def test_shared_evaluator_runs_once_and_preserves_diagnostics(self, script_run_bench: Any) -> None:
+        """The shared registry retains the one detailed Claude score rather than evaluating twice."""
+        calls: list[tuple[dict[str, Any], str]] = []
+        detailed = script_run_bench.BenchQuality(
+            scored=True,
+            correct=True,
+            recall=0.75,
+            evaluator_used="fixture",
+            scoring_detail={"method": "fixture"},
+        )
+
+        def evaluate_demo(task: dict[str, Any], output_text: str) -> Any:
+            calls.append((task, output_text))
+            return detailed
+
+        registry = script_run_bench.EvaluatorRegistry({"demo": script_run_bench._wrap_bench_evaluator(evaluate_demo)})
+        task = {"id": "EV-01", "prompt": "score", "type": "demo", "scoreable": True}
+
+        result = script_run_bench._evaluate_shared_task(task, "answer", registry=registry)
+
+        assert calls == [(task, "answer")]
+        assert result is detailed
+        assert result.recall == pytest.approx(0.75)
+        assert result.evaluator_used == "fixture"
+        assert result.scoring_detail == {"method": "fixture"}
+
+    def test_shared_evaluator_uses_recall_as_normalized_quality_score(self, script_run_bench: Any) -> None:
+        """Recall-based task families retain their continuous score for paired quality effects."""
+        detailed = script_run_bench.BenchQuality(
+            scored=True,
+            correct=False,
+            recall=0.65,
+            evaluator_used="fixture",
+        )
+        registry = script_run_bench.EvaluatorRegistry(
+            {"demo": script_run_bench._wrap_bench_evaluator(lambda _task, _output: detailed)}
+        )
+
+        result = registry.evaluate(
+            {"id": "EV-02", "prompt": "score", "type": "demo", "scoreable": True},
+            "answer",
+        )
+
+        assert result.quality_score == pytest.approx(0.65)
 
 
 # ===========================================================================

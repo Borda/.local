@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Codemap scan-query benchmark — measures accuracy, latency, and coverage of the scan-query binary.
+"""Provider-neutral Codemap scan-query benchmark for accuracy, latency, and coverage.
 
 ## Motivation
 
@@ -98,10 +98,10 @@ Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-inde
 ## Quick start
 
     # Full benchmark + markdown report (C/A/L/Q always run; S/H/X when tasks-bench.json present)
-    python benchmarks/run-codemap-cli.py --repo-path .sandbox/pytorch-lightning --report
+    python benchmarks/run-cli.py --repo-path .sandbox/pytorch-lightning --report
 
     # Verify task modules exist in the index; non-default index via --index-path /path/to/index.json
-    python benchmarks/run-codemap-cli.py --verify-tasks --repo-path .sandbox/pytorch-lightning
+    python benchmarks/run-cli.py --verify-tasks --repo-path .sandbox/pytorch-lightning
 
 ## Where the benchmark fits in the full flow
 
@@ -2188,7 +2188,9 @@ def run_measure_latency(
 
     Evaluates four scenarios: L1 (central query latency), L2 (rdeps query
     latency across 3 high-risk modules), L3 (amortized scan-index build time),
-    and L4 (speedup of codemap vs equivalent cold grep baseline).
+    and L4 (speedup of codemap vs equivalent cold grep baseline). L3 restores
+    the supplied pre-built index byte-for-byte after timing because scan-index
+    writes to the product index path.
 
     Args:
         repo_path: Root of the pytorch-lightning repository.
@@ -2262,11 +2264,17 @@ def run_measure_latency(
     log("[latency] L3: scan-index build time")
     if scan_index_bin:
         si = str(scan_index_bin)
+        original_index = index_path.read_bytes()
         start = time.perf_counter()
         try:
-            subprocess.run(["python3", si, "--root", str(repo_path)], capture_output=True, text=True, timeout=120)
-        except subprocess.TimeoutExpired:
-            log("[latency] L3: scan-index timed out at 120s")
+            try:
+                subprocess.run(["python3", si, "--root", str(repo_path)], capture_output=True, text=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                log("[latency] L3: scan-index timed out at 120s")
+        finally:
+            # L3 measures the product-path build but must not invalidate a caller's
+            # frozen benchmark input for later provider runs.
+            index_path.write_bytes(original_index)
         build_ms = (time.perf_counter() - start) * 1000
         amortized_ms = build_ms / _QUERIES_PER_SESSION
         passed = amortized_ms <= THRESHOLDS["L3"]["amortized_ms_max"]
@@ -3733,7 +3741,7 @@ def main(
     shape), then the self-consistency suites S/H/X (skipped on an index older
     than ``_SELF_CONSISTENCY_MIN_VER``).  Prints the primary verdict plus the
     separate self-consistency line; optionally writes a markdown report.  Exposed
-    via ``python benchmarks/run-codemap-cli.py`` (:func:`fire.Fire`); CLI flags
+    via ``python benchmarks/run-cli.py`` (:func:`fire.Fire`); CLI flags
     are the parameter names with ``_``→``-`` (e.g. ``--repo-path``).
 
     Args:
@@ -3747,7 +3755,7 @@ def main(
 
     Examples:
         # Full benchmark with markdown report
-        python benchmarks/run-codemap-cli.py --repo-path ./pytorch-lightning --report
+        python benchmarks/run-cli.py --repo-path ./pytorch-lightning --report
     """
     write_report = report and not json_only
     _OUT.quiet = json_only  # suppress human progress narration for machine consumers
