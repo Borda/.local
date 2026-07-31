@@ -1,6 +1,6 @@
 <!-- oss:resolve Step 8 — executed via: cat $_OSS_RESOLVE/modes/action-item-dispatch.md; execute -->
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
-<!-- Input: SELECTED_ITEMS (from Step 3e), COMMIT_MODE (from Step 3d), CODEX_AVAILABLE (from Step 1), $_OSS_RESOLVE, ARGUMENTS -->
+<!-- Input: SELECTED_ITEMS (from Step 3e), COMMIT_MODE (from Step 3d), CODEX_AVAILABLE (from Step 1), PR_REF (from Step 4), $_OSS_RESOLVE, ARGUMENTS -->
 <!-- Output: items implemented/staged/committed; CHALLENGE_LOG populated; CHANGE_SCOPE set for Step 9 -->
 
 ## Step 8: Implement action items
@@ -26,6 +26,7 @@ CHALLENGE_LOG=()  # per-item records: id|finding|evidence|evidence_why|suggestio
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PR_REF < "${TMPDIR:-/tmp}/resolve-pr-ref-${CSID}" 2>/dev/null || PR_REF="#${PR_NUMBER:-0}"  # set in Step 4 — #<N> same-repo, full PR_URL when committing to a fork
 _GITDIR=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")  # timeout: 3000
 _BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo "detached")  # timeout: 3000
 RESOLVE_LOCK="$_GITDIR/oss-resolve-${_BRANCH}.lock"  # shared across worktrees (git-common-dir)
@@ -143,6 +144,7 @@ When `ITEM_EFFORT=medium` AND `CODEX_AVAILABLE=true`: dispatch Codex for evidenc
 Agent(subagent_type="codex:codex-rescue", prompt="Effort level: medium. Review and implement this action item if valid.
 Item: <full_comment_text>
 File: <file>  Line: <line>
+The reviewer's assertion is itself an unproven claim — if it asserts a fact the file alone can't settle (name/identifier/version/count wrong or non-standard), verify against the actual authoritative source before treating it as valid; can't verify → UNCERTAIN, not DONE.
 Implement directly if the issue clearly exists. Return ONLY compact JSON as your FINAL message:
 {\"verdict\":\"DONE\"|\"UNCERTAIN\",\"reason\":\"<one sentence>\",\"files_changed\":N}")
 ```
@@ -171,8 +173,10 @@ Group items by `DOMAIN_CHALLENGER`, preserving each item's original priority-ord
 ```text
 Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Two-part challenge for these review items.
 Part 1 — for each, does the stated problem actually exist in the code as described?
+The reviewer's assertion is itself an unproven claim, not evidence — 'reads like X' != 'is X'.
+When a finding asserts a fact reading the referenced file alone can't settle (a name/identifier/version/count is wrong, non-standard, or inconsistent — license names, API/symbol names, version numbers, spec IDs), verify it via WebFetch/WebSearch against the actual authoritative source for that claim (the specific project/library/spec it names — not a generic registry) before ruling VALID. Source unreachable or inconclusive → REJECT with evidence_rationale stating what couldn't be verified; never default VALID on the reviewer's word alone.
 Part 2 — if problem exists, is the suggested fix the right approach?
-Read each referenced file at <file:line>. Max 3 tool calls per item.
+Read each referenced file at <file:line>. Max 4 tool calls per item (the 4th reserved for one WebFetch/WebSearch when a claim needs external verification).
 Items:
 <id>: <full_comment_text> (<file>:<line>)
 ...
@@ -235,7 +239,7 @@ Implement these action items one at a time. For each, apply the fix using best j
 (if suggestion was rejected in challenge, fix the underlying issue instead — see rationale/alternative below),
 then commit it individually before moving to the next item:
 python \"${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/commit_action_item.py\" --build --summary \"<short summary>\" \\
-    --item-id \"<id>\" --author \"<author>\" --pr \"<PR_NUMBER>\" --comment \"<full_comment_text>\" \\
+    --item-id \"<id>\" --author \"<author>\" --pr \"<PR_REF>\" --comment \"<full_comment_text>\" \\
     --challenge \"evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>\" \\
     --files <files-changed-by-this-item>
 Items:
@@ -286,7 +290,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/merge_specialist_batch.py" \
 
 `PLAN_FILE` = JSON array of `{"item_id", "sha", "group", "module"}` in priority order (assembled from every Phase 2 group's `commits`). With `--centrality-file` the script reorders whole groups most-central-first (`order_plan`) before cherry-picking each in turn:
 
-- **`COMMIT_MODE=each`** — commit lands as-is (own `[resolve #<id>]` attribution message, carried over from the worktree commit); no reset.
+- **`COMMIT_MODE=each`** — commit lands as-is (own `[resolve No.<id>]` attribution message, carried over from the worktree commit); no reset.
 - **`COMMIT_MODE=grouped` / `all` / `stage`** — commit lands then is immediately soft-reset (`git reset --soft HEAD~1`), leaving the diff staged, uncommitted — same state the post-loop sections below already expect.
 
 **Clean run** (`conflict: null`) → every item's commit is on the PR branch (or staged, per mode above).
@@ -337,6 +341,8 @@ Type a topic for each item ID (e.g. '1=style 2=logic 3=tests'), or type 'auto' t
 Group items by topic label. For each unique topic group (ordered by first item ID in group):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PR_REF < "${TMPDIR:-/tmp}/resolve-pr-ref-${CSID}" 2>/dev/null || PR_REF="#0"  # reload (Check 41: fresh shell) — set in Step 4
 GROUP_IDS=(<item ids in this group>)
 GROUP_SUMMARIES=(<item summaries in this group>)
 COMBINED_SUMMARY=$(echo "${GROUP_SUMMARIES[@]}" | tr ' ' '\n' | head -5 | paste -sd '; ')
@@ -345,7 +351,7 @@ trap 'rm -f "$COMMIT_MSG"' RETURN
 cat >"$COMMIT_MSG" <<EOF
 <topic>: ${COMBINED_SUMMARY}
 
-[resolve group] PR #<PR_NUMBER> — items ${GROUP_IDS[*]}
+[resolve group] PR <PR_REF> — items ${GROUP_IDS[*]}
 
 ---
 Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
@@ -368,6 +374,8 @@ for each item_id in GROUP_IDS:
 **After loop — `COMMIT_MODE=all` only**: derive counters from `CHALLENGE_LOG`, create single commit:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PR_REF < "${TMPDIR:-/tmp}/resolve-pr-ref-${CSID}" 2>/dev/null || PR_REF="#0"  # reload (Check 41: fresh shell) — set in Step 4
 N_AS_SUGGESTED=0; N_SELF_RESOLVED=0; N_REJECTED=0; SUMMARIES_FILE=""
 for _entry in "${CHALLENGE_LOG[@]}"; do
     case "$_entry" in
@@ -376,7 +384,7 @@ for _entry in "${CHALLENGE_LOG[@]}"; do
         *evidence=REJECT*) N_REJECTED=$(( N_REJECTED + 1 )) ;;
     esac
 done
-python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/commit_all_items.py" "$PR_NUMBER" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/commit_all_items.py" "$PR_REF" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
 ```
 
 After the commit succeeds, flip all staged items to completed (deferred from per-item loop body where commit had not yet happened):

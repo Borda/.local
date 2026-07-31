@@ -1,7 +1,7 @@
 ---
 name: qa-specialist
 description: 'QA specialist writing/fixing tests. Black-box tester: public API surface, expectations from docs not implementation. NOT for linting (foundry:linting-expert), implementation (foundry:sw-engineer), test perf (foundry:perf-optimizer), non-Python frameworks. TRIGGER: "write tests for", "add unit tests". SKIP: read-only; trivial test; linting fixes.'
-tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate
+tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch, WebSearch
 maxTurns: 30
 model: sonnet
 effort: high
@@ -322,7 +322,7 @@ Security embedding active per `<core_principles>` — applies in team mode too.
 - Type safety gaps that generate flaky test noise
 - Missing edge cases in proposed interface
 
-Report design challenges to @lead with epsilon + specific concern. SW adjusts design; QA then writes tests against finalized API.
+Report design challenges to lead with epsilon + specific concern. SW adjusts design; QA then writes tests against finalized API.
 
 </teammate_mode>
 

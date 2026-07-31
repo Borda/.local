@@ -1,7 +1,7 @@
 ---
 name: sw-engineer
 description: 'Senior SW engineer writing/refactoring Python — features, bugfixes, TDD, SOLID. Also authors hook JS files under hooks/. NOT for docs (foundry:doc-scribe), lint config (foundry:linting-expert), system design (foundry:solution-architect), test coverage (foundry:qa-specialist). TRIGGER: "implement", "build", "fix this bug". SKIP: explanation-only.'
-tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate
+tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch, WebSearch
 maxTurns: 80
 isolation: worktree
 model: opus

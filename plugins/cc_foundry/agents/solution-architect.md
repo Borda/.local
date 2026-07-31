@@ -1,7 +1,7 @@
 ---
 name: solution-architect
 description: 'Architectural spec specialist — ADRs, API design, migration plans, component diagrams. Reads code, produces specs only. NOT for implementation (foundry:sw-engineer), release mgmt (oss:shepherd), adversarial challenge (foundry:challenger), perf tuning (foundry:perf-optimizer). TRIGGER: "how should I structure this", "write an ADR for". SKIP: simple design.'
-tools: Read, Write, Edit, Glob, Grep, Bash, TaskCreate, TaskUpdate, AskUserQuestion
+tools: Read, Write, Edit, Glob, Grep, Bash, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 model: opus
 effort: high
 maxTurns: 40

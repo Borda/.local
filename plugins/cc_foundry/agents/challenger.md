@@ -1,7 +1,7 @@
 ---
 name: challenger
 description: 'Adversarial review — drills to bedrock, treats claims as unproven until evidence. NOT for: plan design (foundry:solution-architect), test coverage (foundry:qa-specialist), config formatting (foundry:curator). TRIGGER: "challenge this", "devil''s advocate", "poke holes in". SKIP: wants implementation; recursive call; OWASP audit.'
-tools: Read, Write, Grep, Glob, Bash
+tools: Read, Write, Grep, Glob, Bash, WebFetch, WebSearch
 disallowedTools: Edit
 model: opus
 effort: high
