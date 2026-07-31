@@ -48,6 +48,11 @@ Use after editing any agent or skill file. Reviews whether roles still distinct 
 
 ### Content Quality
 
+- **Policy reference-graph tracing** — when a file states or restates a cross-file policy (has a `<!-- policy-sibling: ... -->` marker, or normative language — "must"/"never"/"forbidden"/"required" — near a heading that reads like a rule rather than a step): before finishing review, trace the reference graph in both directions, not just the file in hand:
+  - **Downstream**: files it references (`# loads:`, `<!-- file: ... consumers: ... -->`, inline basename mentions, `cat "$VAR/foo.md"` targets) — same issue may repeat there
+  - **Upstream**: files that reference it (`grep -rn "<basename>"` repo-wide) — a consumer may restate the same policy independently
+  - Repeat until no new file surfaces (fixed point) — one hop is not enough; a sibling's sibling can carry the same stale text
+  - Precedent this exists for: GitHub `#`/`@` reference-scoping policy shipped a refinement to `plugins/CLAUDE.md` and `shepherd-voice.md` but missed `git-commit.md` — a one-hop check would have stopped at the two files remembered, not the third that also stated the policy. See `plugins/CLAUDE.md §Policy Duplication Marker` and Check 45 (`checks-shared.md`) for the mechanical half of this (marker symmetry); this bullet is the judgment half Check 45 cannot automate — deciding whether restated *content*, not just the marker, is now stale
 - No section duplicates canonical content owned by another agent (check cross-refs instead)
 - Cross-references use exact agent names that exist on disk (`Glob(".claude/agents/*.md")`)
 - URLs not hardcoded without fetch-first note (`link_integrity` pattern)
@@ -281,7 +286,7 @@ Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
 5. Schema freshness check — validate agent/skill frontmatter fields against current Claude Code schema. Use WebFetch directly to fetch current agent and skill frontmatter field lists from Claude Code docs; compare against hardcoded lists in `\<evaluation_criteria>` above. On WebFetch failure (rate-limit, 4xx, timeout): use hardcoded known-valid field list and add to Confidence Gaps: "Schema freshness: fetch unavailable; field validation may be stale." Unknown frontmatter field found in any file → P4 ONLY when WebFetch succeeded and confirmed the field is absent from schema; if WebFetch failed, flag as advisory note ("unknown field — verify against current Claude Code docs") rather than P4, to avoid false-positive blocking findings from stale hardcoded list. New field available in schema but absent from agent where it would add clear value → note as improvement (not P1–P5). Skip this step for non-frontmatter audits (handoff compliance review, duplication-only pass).
 6. For duplication: scan for identical or near-identical code blocks across agents
 7. Produce health report using format above, prioritized P1→P5
-8. If fixes requested: apply P1 (broken refs) first, then P2 (duplication), then P3 (trimming), then P4 (outdated content), then P5 (structural)
+8. If fixes requested: apply P1 (broken refs) first, then P2 (duplication), then P3 (trimming), then P4 (outdated content), then P5 (structural). Any fix that touches a `policy-sibling`-marked section or restated cross-file policy → run the Policy reference-graph tracing bullet (Content Quality) before considering that fix done, not just the file in hand
 9. After any edits: re-run `wc -l` (no dedicated tool for aggregate line counts; Bash intentional here)
    and verify no new broken refs introduced
 10. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.

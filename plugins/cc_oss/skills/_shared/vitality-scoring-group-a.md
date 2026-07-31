@@ -9,7 +9,7 @@
 
 ### Axis 1 — Responsiveness
 
-(CHAOSS #1 metric — most predictive of contributor attractiveness)
+(CHAOSS top metric — most predictive of contributor attractiveness)
 
 Data: GraphQL response from Group 1 (20 sampled issues + 20 sampled PRs).
 

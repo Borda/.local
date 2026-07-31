@@ -17,6 +17,22 @@ In `.md` plugin files: prose annotations/notes/load directives → `>` blockquot
 - **Procedural code** (steps agent/skill executes): comments explain WHY only — non-obvious constraint, workaround, incident ref, safety rationale. Never WHAT or HOW (code shows that). Remove self-documenting comments (`# Create directory`, `# Check if exists`, `# Parse flags`).
 - **Example/pattern code** (illustrates pattern, not executed directly): comments may also document expected output, pattern motivation, when to apply — value code alone cannot convey.
 
+## GitHub Reference Scoping — `#N` and `@name`
+
+<!-- policy-sibling: plugins/cc_foundry/rules/git-commit.md, plugins/cc_foundry/rules/_full/git-commit.md, plugins/cc_oss/skills/_shared/shepherd-voice.md — same GH #/@ scoping policy restated for each consumer's own context. Editing this section → grep repo for `policy-sibling` to find every copy, update in lockstep (rationale + precedent: §Policy Duplication Marker below). -->
+
+`#N` (bare, in prose, outside code fence/backtick) = **exclusively** GitHub issue/PR/discussion number. `@name` (bare, in prose) = **exclusively** a real GitHub username mention. Both are live link/notify tokens once text lands in a GH comment, PR body, issue, or commit message — using them for anything else creates a false reference that can ping the wrong user or link the wrong issue across the whole repo.
+
+**Forbidden**: bare `#N` for local ordinals — numbered-list items, loop/step indices, rank/leaderboard position, internal check/rule IDs (e.g. "resolve #2 from review list", "checks-index #42", "ranked #1"). Write the bare number, an ordinal (`1st`), or a qualifying word (`step 7`) instead.
+
+**Forbidden**: bare `@word` for non-GitHub-user tokens written in plain prose — Python decorators (`@pytest.fixture`, `@staticmethod`), internal role handles (`@lead`), placeholder mentions. Either drop the `@` (`lead`, not `@lead`) or keep it inside backticks/code fence (`` `@pytest.fixture` ``) so it renders as code, not a live mention.
+
+**`#N` is same-repo only** — GitHub resolves bare `#N` against the repo the comment/commit lives in. Referencing an issue/PR/discussion in a *different* repo needs the full URL (`https://github.com/<owner>/<repo>/issues/N`), never `#N` or `owner/repo#N` shorthand — wrong repo context silently cross-links to the wrong item.
+
+**`@name` requires certainty of intent** — before writing a real `@handle`, confirm the goal is actually to notify/ping that person now. Backticks are for code-shaped tokens only (previous bullet) — never used to defang a real handle; that reads as claiming a person's name is a code identifier. If intent is genuinely uncertain (naming someone in passing inside an internal note not addressed to them), drop the `@` entirely (`octocat`, not `@octocat`) instead. Release-note and CHANGELOG contributor credit is standard, *deliberate* ping-intent — the notification is the point (crediting them) — leave the live `@handle` as-is; do not neutralize it.
+
+**OK**: `#N`/`@name` inside a fenced code block or inline backticks (rendered as code, not live) — for actual code tokens, not for disguising a person's handle; genuine `gh` CLI examples (`gh pr view 123`); actual same-repo GH issue/PR references in commit-message or release-note guidance; real GitHub usernames in reply-drafting, CODEOWNERS templates, or release-note/CHANGELOG contributor credit — all deliberate live mentions.
+
 ## Writing Style — Compression Tiers
 
 Three tiers by reader:
@@ -63,6 +79,14 @@ Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`
 **Why**: grep-based orphan check finds zero hits → agent concludes file dead → deletes it. Happened to `adversarial.md`, `upgrade.md`, `vitality-calibration.md`. Single comment line prevents deletion. Check R2 (`/foundry:audit plugins`) detects violations.
 
 **At authoring time**: before writing file, identify consumer SKILL.md, add `# loads:` comment there first, then create file. Consumer in different plugin → add `<!-- file: ... -->` header to file itself.
+
+## Policy Duplication Marker
+
+Some policies (safety rules, scoping rules, format conventions) get **restated in prose** across multiple files instead of cross-referenced, because each consumer needs the rule inline in its own reading context (a rule stub, an agent's shared-voice file, a plugin doc). A restated copy has no structural link back to its siblings — so when the policy is refined in one location, a plain grep for *violations of the old rule* won't surface the other locations that correctly state the *old, now-stale* version of it. That's a different failure mode than the orphan-file problem above, and needs a different marker.
+
+**Rule**: the first restatement of a policy (i.e. once it exists in ≥2 files) gets a `<!-- policy-sibling: <path1>, <path2>, ... -->` comment immediately under its heading/section in every copy, listing every other file that states the same policy. Before editing any policy-carrying section, `grep -rn "policy-sibling"` first to find every copy that needs the same edit — don't rely on remembering which files you touched last time.
+
+**Precedent**: GitHub `#`/`@` reference-scoping policy (this file's `## GitHub Reference Scoping` section) shipped a refinement to itself and to `shepherd-voice.md` but missed `plugins/cc_foundry/rules/git-commit.md` — caught only because the user noticed by hand. Marker added retroactively to all four copies (`plugins/CLAUDE.md`, `git-commit.md` stub + `_full`, `shepherd-voice.md`) — use as the reference example when adding a marker to a new duplicated policy.
 
 ## Loading Shared Docs — `cat`, not the Read tool
 

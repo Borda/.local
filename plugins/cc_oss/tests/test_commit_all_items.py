@@ -94,8 +94,8 @@ def test_successful_commit_exits_0(fake_git: list[list[str]]) -> None:
 
 
 def test_commit_message_contains_pr_and_counts(fake_git: list[list[str]]) -> None:
-    """Commit message includes PR number and all three challenge-log counts."""
-    cai.main(["99", "2", "1", "0"])
+    """Commit message includes PR reference and all three challenge-log counts."""
+    cai.main(["#99", "2", "1", "0"])
     msg = _commit_calls(fake_git)[0][3]
     assert "PR #99" in msg
     assert "2 as-suggested" in msg
@@ -154,7 +154,7 @@ def test_help_exits_0_without_git(monkeypatch: pytest.MonkeyPatch, flag: str) ->
 
 def test_golden_all_mode_invocation_constructs_expected_commit(fake_git: list[list[str]]) -> None:
     """Exact COMMIT_MODE=all call-site argv → single ``git commit -m`` with expected PR/counts."""
-    rc = cai.main(["42", "3", "1", "0", "", "--codex"])
+    rc = cai.main(["#42", "3", "1", "0", "", "--codex"])
     assert rc == 0
     commit_calls = _commit_calls(fake_git)
     assert len(commit_calls) == 1
@@ -167,7 +167,7 @@ def test_golden_all_mode_invocation_constructs_expected_commit(fake_git: list[li
 
 def test_build_commit_message_pure() -> None:
     """``build_commit_message`` returns expected subject and counts; no subprocess needed."""
-    msg = cai.build_commit_message("7", 5, 2, 1, "", False)
+    msg = cai.build_commit_message("#7", 5, 2, 1, "", False)
     assert "PR #7" in msg
     assert "5 as-suggested" in msg
     assert "2 self-resolved" in msg

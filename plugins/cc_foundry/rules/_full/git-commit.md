@@ -54,7 +54,8 @@ Rules:
   ```
 
 - **No line wrapping** — bullets and prose single continuous lines; never hard-break at any column width. Overrides any skill-level `Wrap at N chars` instruction (e.g. caveman-commit).
-- **No GitHub auto-links** — never use `#N`, `@name`, or `@org` in commit messages; GitHub renders these as issue/PR links and user/org mentions, creating unintended cross-references in any repo that picks up the commit
+- **No GitHub auto-links** — never use `#N`, `@name`, or `@org` in commit messages; GitHub renders these as issue/PR links and user/org mentions, creating unintended cross-references in any repo that picks up the commit. This is stricter than the general `#N`/`@name` scoping rule (`plugins/CLAUDE.md` — same-repo genuine refs OK elsewhere): a PR/issue comment lives in exactly one repo forever, but a commit message travels with the code — fork → merge into upstream → mirror → cherry-pick — so "same-repo" at authoring time gives no guarantee at read time. Default is an unconditional ban. <!-- policy-sibling: plugins/CLAUDE.md (canonical), plugins/cc_foundry/rules/git-commit.md (stub), plugins/cc_oss/skills/_shared/shepherd-voice.md -->
+  - **Narrow exception**: a script that explicitly tracks its own destination repo per commit (e.g. `isCrossRepository` from `gh pr view`, checked before every commit) may embed `#N` for same-repo pushes and must substitute a full URL (`https://github.com/<owner>/<repo>/pull/N`) for cross-repo pushes (e.g. committing to a contributor's fork while referencing the upstream PR number). Reference implementation: `oss:resolve`'s `PR_REF` (`plugins/cc_oss/skills/resolve/SKILL.md` Step 4, consumed by `bin/commit_action_item.py` / `bin/commit_all_items.py`). `@name` in commit messages stays banned outright even under this exception — a commit notifying someone is essentially never the intent.
 - **No non-VCS paths** — never reference files or paths not tracked in repo (e.g. `/tmp/`, `~/.claude/`, local cache dirs, machine-specific paths); commit message must be meaningful on any machine that clones the repo
 
 ## Gathering Diff Context
@@ -143,7 +144,6 @@ Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
 Co-author trailer on every Claude Code commit — not conditional on user mentioning involvement.
 
 **Skill commit templates — trailers not optional**: when skill or workflow step provides `git commit -m "..."` template (heredoc or one-liner), template is **message body scaffold only**. `---` separator and co-author block must always be appended regardless of whether template shows them:
-
 
 - **Heredoc** (`cat <<'EOF' ... EOF`): insert `---` block and trailers before closing `EOF`
 - **One-liner `-m "string"`**: convert to heredoc — one-liners cannot carry multi-line trailers

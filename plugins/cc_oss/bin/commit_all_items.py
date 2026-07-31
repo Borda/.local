@@ -109,7 +109,10 @@ def build_commit_message(
     """Build the commit message string.
 
     Args:
-        pr_number: Pull request number string.
+        pr_number: Pre-formatted PR reference to embed verbatim — ``#<N>`` when the
+            commit lands in the same repo as the PR, or the full PR URL when it lands
+            in a different repo (e.g. pushed to a contributor's fork). Caller resolves
+            which form applies (see ``PR_REF`` in ``resolve/SKILL.md`` Step 4).
         n_as_suggested: Count of items applied as-suggested.
         n_self_resolved: Count of items self-resolved.
         n_rejected: Count of items rejected.
@@ -120,7 +123,7 @@ def build_commit_message(
         Full commit message string.
 
     Examples:
-        >>> msg = build_commit_message("42", 3, 1, 0, "", False)
+        >>> msg = build_commit_message("#42", 3, 1, 0, "", False)
         >>> "PR #42" in msg
         True
         >>> "3 as-suggested" in msg
@@ -131,7 +134,7 @@ def build_commit_message(
     codex_trailer = "\nCo-authored-by: OpenAI Codex <codex@openai.com>" if include_codex else ""
     body_section = f"\n{bullet_list}\n" if bullet_list.strip() else "\n"
     return (
-        f"Resolve review items for PR #{pr_number}\n"
+        f"Resolve review items for PR {pr_number}\n"
         f"{body_section}"
         f"Challenge log: {n_as_suggested} as-suggested, "
         f"{n_self_resolved} self-resolved, {n_rejected} rejected\n"

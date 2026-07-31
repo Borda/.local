@@ -182,7 +182,7 @@ Axes and weights reflect signal quality, data reliability, predictive value for 
 
 | Axis | Weight | Rationale |
 |------|--------|-----------|
-| 1 Responsiveness | 17% | CHAOSS #1 metric — time-to-first-response is the most visible signal to contributors and directly predicts contributor retention |
+| 1 Responsiveness | 17% | CHAOSS top metric — time-to-first-response is the most visible signal to contributors and directly predicts contributor retention |
 | 2 Maintenance activity | 18% | Highest weight — commit velocity is objective evidence the project is alive; cannot be gamed by documentation alone |
 | 3 Contributor health | 14% | Bus factor and retention rate predict abandonment risk 1–2 quarters before commit counts drop |
 | 4 Issue & PR health | 11% | Throughput + code-review coverage; merged from two prior axes to avoid double-counting maintainer behaviour |

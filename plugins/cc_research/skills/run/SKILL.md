@@ -318,7 +318,7 @@ VERIFY_TIMEOUT_MS=$((VERIFY_TIMEOUT_SEC * 1000))
 
 **Initialize `sandbox_mode`**:
 
-- `compute: docker` (daemon check passed in #7) → `sandbox_mode = "docker"`. Print: `sandbox: Docker daemon reachable — sandbox mode active`
+- `compute: docker` (daemon check passed in step 7) → `sandbox_mode = "docker"`. Print: `sandbox: Docker daemon reachable — sandbox mode active`
 - All other cases (`compute: local`, `compute: colab`) → `sandbox_mode = "local"`
 
 **Update state.json status to `"running"`** — write only after ALL checks above pass. Resume treats `"initializing"` as failed-init and skips such runs.

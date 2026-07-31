@@ -11,7 +11,7 @@ Two message-source modes (mutually exclusive):
 * ``--message-file <path>`` — caller supplies the fully-formed message (used by
   the ``grouped``/``all`` commit paths, which assemble bespoke bodies).
 * ``--build`` plus fields — script assembles the canonical per-item ``each``-mode
-  message (subject + ``[resolve #<id>]`` attribution block + co-author trailers),
+  message (subject + ``[resolve No.<id>]`` attribution block + co-author trailers),
   so the ``each``-mode template lives in one place instead of being inlined in
   ``action-item-dispatch.md``.
 
@@ -49,8 +49,13 @@ class EachMessageFields:
     Attributes:
         summary: Imperative short subject for the change.
         item_id: Review action-item id.
-        author: GitHub handle of the reviewer (without leading ``@``).
-        pr: Pull request number.
+        author: GitHub handle of the reviewer (without leading ``@`` — attribution only,
+            not a live ping).
+        pr: Pre-formatted PR reference to embed verbatim — ``#<N>`` when the commit
+            lands in the same repo as the PR, or the full PR URL when it lands in a
+            different repo (e.g. pushed to a contributor's fork, where bare ``#N``
+            would resolve against the fork's own issues, not this PR). Caller resolves
+            which form applies (see ``PR_REF`` in ``resolve/SKILL.md`` Step 4).
         comment: Full review comment text (truncated to 72 chars in the body).
         challenge: Challenge-outcome string (e.g. ``evidence=VALID suggestion=VALID resolution=as-suggested``).
         include_codex: Whether to add the OpenAI Codex co-author trailer.
@@ -92,7 +97,7 @@ def build_each_message(fields: EachMessageFields) -> str:
     """Build the canonical ``each``-mode per-item commit message.
 
     Mirrors the heredoc previously inlined in ``action-item-dispatch.md``:
-    subject line, ``[resolve #<id>]`` attribution block
+    subject line, ``[resolve No.<id>]`` attribution block
     quoting the first 72 chars of the review comment, the challenge-outcome line,
     then the Claude (and optional Codex) co-author trailers.
 
@@ -103,11 +108,11 @@ def build_each_message(fields: EachMessageFields) -> str:
         Full commit message string.
 
     Examples:
-        >>> f = EachMessageFields("Fix typo", "3", "octocat", "42", "Please fix the typo here", "evidence=VALID suggestion=VALID resolution=as-suggested")
+        >>> f = EachMessageFields("Fix typo", "3", "octocat", "#42", "Please fix the typo here", "evidence=VALID suggestion=VALID resolution=as-suggested")
         >>> msg = build_each_message(f)
         >>> msg.splitlines()[0]
         'Fix typo'
-        >>> "[resolve #3] Review by @octocat (PR #42):" in msg
+        >>> "[resolve No.3] Review by octocat (PR #42):" in msg
         True
         >>> "Co-authored-by: OpenAI Codex" in msg
         False
@@ -119,7 +124,7 @@ def build_each_message(fields: EachMessageFields) -> str:
     return (
         f"{fields.summary}\n"
         f"\n"
-        f"[resolve #{fields.item_id}] Review by @{fields.author} (PR #{fields.pr}):\n"
+        f"[resolve No.{fields.item_id}] Review by {fields.author} (PR {fields.pr}):\n"
         f'"{quoted}..."\n'
         f"Challenge: {fields.challenge}\n"
         f"\n---\n"

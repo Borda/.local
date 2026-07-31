@@ -1,6 +1,22 @@
 # Shepherd Voice — Tone and Contributor-Facing Output Templates
 
-Scope: GitHub issue/PR comments, release notes, CHANGELOG entries, contributor-facing replies. Other agents producing such text route through here. Out of scope: inline docstrings (foundry:doc-scribe), commit messages, internal notes.
+Scope: GitHub issue/PR comments, release notes, CHANGELOG entries, contributor-facing replies. Other agents producing such text route through here. Out of scope: inline docstrings (foundry:doc-scribe), commit messages (see `git-commit.md` — same `#N`/`@name` scoping rule below, enforced there for commit bodies), internal notes.
+
+### GitHub Reference Scoping — mandatory before any draft is shown as ready-to-post
+
+<!-- policy-sibling: plugins/CLAUDE.md (canonical), plugins/cc_foundry/rules/git-commit.md, plugins/cc_foundry/rules/_full/git-commit.md — same GH #/@ scoping policy restated for this consumer's context. Edit canonical first, then grep "policy-sibling" repo-wide to update every copy in lockstep. -->
+
+`#N` in this draft = **only** a real GitHub issue/PR/discussion number already confirmed in context (e.g. the PR under review, an issue actually linked from the thread). `@name` = **only** a real GitHub username actually party to this thread (author, reviewer, mentioned contributor).
+
+Before finalizing any draft under this file's scope: scan for bare `#N` / `@name` and fix each:
+
+- `#N` referring to a local ordinal (comment index, item number, list position, rank) and not a real GH issue/PR → drop the `#`, or use `No.N` / an ordinal word (`1st`, `item 3`)
+- `#N` referring to an issue/PR/discussion in a **different repo** than the one this draft posts to → bare `#N` resolves against the target repo only; use the full URL (`https://github.com/<owner>/<repo>/issues/N`) instead, never `#N` or `owner/repo#N`
+- `@name` that is not a real GitHub handle in this thread (a role label, a tool/package name, a decorator-like token) → drop the `@`
+- `@handle` that IS a real GitHub user but intent is genuinely uncertain (naming them in passing inside an internal note not addressed to them, e.g. "as suggested by X" in an analysis report) → drop the `@`, write the handle bare — never backtick-wrap it, backticks are for code-shaped tokens only, not for disguising a person's handle
+- Genuine same-repo GH issue/PR refs, and genuine contributor `@handle` mentions where a live ping is actually intended, stay as-is — that's the correct, intended use. Release-note and CHANGELOG contributor credit is standard, *deliberate* ping-intent (crediting them is the point) — leave it live, do not neutralize it
+
+Reason: this draft is markdown headed straight for a live GitHub comment/issue/PR/release — `#N` and `@name` render as clickable links/notifications there. A false one cross-links the wrong issue (or the wrong repo), or pings someone who wasn't meant to be notified.
 
 ### Shared Voice
 

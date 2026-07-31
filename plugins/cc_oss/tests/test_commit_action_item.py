@@ -348,13 +348,13 @@ def test_build_each_message_structure() -> None:
         summary="Fix off-by-one",
         item_id="7",
         author="octocat",
-        pr="42",
+        pr="#42",
         comment="The loop bound is wrong and should be len(x) - 1 not len(x) here in the inner pass",
         challenge="evidence=VALID suggestion=REJECT resolution=self-resolved",
     )
     msg = cai.build_each_message(fields)
     assert msg.splitlines()[0] == "Fix off-by-one"
-    assert "[resolve #7] Review by @octocat (PR #42):" in msg
+    assert "[resolve No.7] Review by octocat (PR #42):" in msg
     assert "Challenge: evidence=VALID suggestion=REJECT resolution=self-resolved" in msg
     assert "Co-authored-by: claude[bot]" in msg
     assert "Co-authored-by: OpenAI Codex" not in msg

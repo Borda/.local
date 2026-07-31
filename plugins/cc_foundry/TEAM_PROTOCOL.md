@@ -123,7 +123,7 @@ omega @lead idle ?nextT         # triggers TeammateIdle hook
 Teammates assigned via TaskUpdate(owner) **must** update shared task list:
 
 1. `TaskUpdate(status: "in_progress")` — when starting assigned task
-2. `TaskUpdate(status: "completed")` — when work done, **before** sending delta to @lead
+2. `TaskUpdate(status: "completed")` — when work done, **before** sending delta to lead
 3. `TaskUpdate(status: "completed")` — **before** sending `omega` on shutdown; incomplete tasks use `"cancelled"` instead.
 
 Task list = live progress feed for user. AgentSpeak delta alone don't update task status.

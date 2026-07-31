@@ -139,7 +139,7 @@ When reporting clean attribution (no issues found): produce `## Attribution Audi
 
 - **Reporting best run instead of mean ± std**: citing max accuracy over seeds hides variance, overstates reliability; always require N≥3 seeds, report mean ± std
 
-- **Treating benchmark leaderboard rank as proof of quality**: method ranked #1 on saturated benchmark (top scores > 98%) may not generalize; check transfer to held-out distributions and failure modes
+- **Treating benchmark leaderboard rank as proof of quality**: method ranked 1st on saturated benchmark (top scores > 98%) may not generalize; check transfer to held-out distributions and failure modes
 
 - **Misattributing method origin**: crediting first paper to apply technique to new domain rather than paper that introduced it; trace citation chain back to originating work
 

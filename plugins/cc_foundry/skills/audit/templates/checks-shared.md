@@ -500,3 +500,40 @@ done
 | Sub-check | Pattern | Severity | Auto-fix |
 | --- | --- | --- | --- |
 | 44 — orphan letter suffix | `Check Nb` in file without `Check Na` | low | no — rename or add missing variant |
+
+## Check 45 — Policy-sibling marker symmetry (reference-graph completeness)
+
+Some policies (safety rules, scoping rules, format conventions) are **restated in prose** across multiple files instead of cross-referenced, because each consumer needs the rule inline in its own reading context. A restated copy has no structural link back to its siblings, so refining the policy in one location can silently leave others stating a stale version — grep-for-violations doesn't catch a file that correctly states an *old* rule. `plugins/CLAUDE.md §Policy Duplication Marker` requires a `<!-- policy-sibling: path1, path2, ... -->` comment in every copy, listing every other file stating the same policy. This check verifies that declared graph is complete and symmetric — it does not (cannot, mechanically) verify the restated *content* itself stays in sync; that judgment call is `foundry:curator`'s reference-graph trace (see curator `<workflow>` step on policy edits).
+
+Two failure modes:
+- **45-BROKEN**: marker lists a sibling path that doesn't exist on disk (stale — file renamed/deleted, marker not updated)
+- **45-ASYMMETRIC**: file A's marker lists file B as a sibling, but B has no `policy-sibling` marker pointing back — B was never updated to know it's part of the group (exactly how `git-commit.md` was missed before this check existed)
+
+```bash
+printf "=== Check 45: Policy-sibling marker symmetry ===\n"
+OUT=""
+for f in $(grep -rl "<!-- policy-sibling:" .claude plugins --include="*.md" 2>/dev/null); do  # timeout: 10000
+    siblings=$(grep -o '<!-- policy-sibling:[^—]*' "$f" | head -1 | sed 's/<!-- policy-sibling://')
+    for sib in $(printf '%s' "$siblings" | tr ',' '\n' | awk '{print $1}' | grep -E '/.*\.md$'); do
+        if [ ! -f "$sib" ]; then
+            OUT="${OUT}⚠ 45-BROKEN: $f — policy-sibling lists missing file: $sib\n"
+            continue
+        fi
+        grep -q "<!-- policy-sibling:" "$sib" || OUT="${OUT}⚠ 45-ASYMMETRIC: $f — declares sibling $sib, but that file has no policy-sibling marker back\n"
+    done
+done
+if [ -n "$OUT" ]; then printf "$OUT"; else printf "✓: Check 45 — no unsynced policy-sibling markers found\n"; fi
+```
+
+Extraction anchors on the literal `<!-- policy-sibling:` prefix (not a bare grep for the word) so prose documenting the convention — like this file's own explanation above, or an example snippet — never self-matches; the sibling-token filter (`/.*\.md$`) additionally drops non-path fragments (placeholder text, trailing rationale words) that survive the comma split. No array syntax (`read -ra`, `mapfile`) — Claude Code's Bash tool runs under the user's login shell, which is `zsh` on macOS by default, and zsh's `read` does not support bash's `-a` flag; plain `for x in $(...)` word-splitting is portable to both.
+
+**Severity**:
+- `45-BROKEN` — **high** — sibling reference points nowhere; anyone following it to propagate a fix finds nothing
+- `45-ASYMMETRIC` — **medium** — one-directional link; the group is incomplete, next refinement likely repeats the git-commit.md miss
+
+Fix: add the missing `policy-sibling` marker to the un-listed file (45-ASYMMETRIC), or correct/remove the stale path (45-BROKEN). Both directions must resolve — A→B requires B→A.
+
+| Sub-check | Pattern | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| 45-BROKEN — dangling sibling path | listed path does not exist on disk | high | no — fix or remove path |
+| 45-ASYMMETRIC — one-directional link | B listed by A but B has no marker back | medium | no — add reciprocal marker to B |

@@ -215,7 +215,7 @@ Repeat up to `MAX_REFINE` times:
        } > .temp/state/skill-contract.md
        ```
 
-     - Continue next iteration (loop item #1 will re-judge).
+     - Continue next iteration (loop item 1 will re-judge).
    - `REFINE_ITER == MAX_REFINE` — exit loop, outcome `unresolved`.
 
 > **Safety net**: loop edits modify `program.md` in place; P-P3 overwrite gate ensures user-authorized overwrite before S2 writes. Recover prior file from git if needed.
