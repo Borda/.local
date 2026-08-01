@@ -15,13 +15,13 @@ transport contract are defined.
 ## What this measures
 
 The same locked structural task, target repository, prompt, evaluator, and
-600-second wall-clock budget are used for three within-Codex arms. The
+600-second retry-inclusive per-coordinate wall-clock budget are used for three within-Codex arms. The
 experiment asks whether Codemap availability reduces model input and elapsed
 time without lowering task quality:
 
   A_plain    — Codemap absent; the locked index is inaccessible
-  B_auto     — Codemap available; the model chooses whether to use it
-  C_required — Codemap available and must be called at least once
+  B_direct_required — Codemap's compact CLI query is required
+  C_skill_required  — Codemap's installed query skill is required
 
 The task series are identical to ``run-claude-structural.py``:
 
@@ -46,16 +46,16 @@ fingerprinted arm envelope:
     Uses ``provider-parity-plain``. It has no Codemap plugin or writable path,
     and cannot read the locked index or copied authentication file.
 
-  B_auto
-    Uses ``provider-parity-codemap``. The Codemap plugin and locked index are
-    available, but using them is optional.
+  B_direct_required
+    Uses ``provider-parity-codemap``. The direct ``$CODEMAP_BIN`` launcher and
+    locked index are available; one successful compact query is required.
 
-  C_required
-    Uses the same treatment profile as B. It must call
-    ``$codemap-py:query-code`` at least once; compliance and correctness are
-    recorded separately.
+  C_skill_required
+    Uses the same treatment profile as B with the installed Codemap skill. It
+    must use ``$codemap-py:query-code`` and complete one compact query;
+    compliance and correctness are recorded separately.
 
-Both permission profiles extend ``:read-only``, disable network, and inherit no
+Both treatment profiles extend ``:read-only``, disable network, and inherit no
 shell environment. B/C may write only the index-local ``.index-rw`` coordination
 directory. The model command cannot read the disposable home's ``auth.json``.
 
@@ -86,14 +86,15 @@ failure, adoption, and compliance guardrails.
 ## Quick start
 
 First run the no-model preflight. It validates the target/index identities,
-permission profiles, authentication isolation, plugin isolation, and the
-deterministic cell plan:
+permission profiles, authentication isolation, direct-launcher and installed-
+skill isolation, and the deterministic cell plan:
 
   python benchmarks/run-codex-structural.py \\
       --repo-path /path/to/pytorch-lightning \\
       --tasks-path benchmarks/suites/tasks-bench.json \\
       --index-path /path/to/pytorch-lightning/.cache/codemap/pytorch-lightning.json \\
       --marketplace-root . \\
+      --codemap-bin /path/to/codemap-py \\
       --auth-source /path/to/codex/auth.json \\
       --model gpt-5.6-luna \\
       --task-id FN-02 \\
@@ -107,14 +108,17 @@ path. This invokes the model and creates the JSONL file exclusively:
       --tasks-path benchmarks/suites/tasks-bench.json \\
       --index-path /path/to/pytorch-lightning/.cache/codemap/pytorch-lightning.json \\
       --marketplace-root . \\
+      --codemap-bin /path/to/codemap-py \\
       --auth-source /path/to/codex/auth.json \\
       --model gpt-5.6-luna \\
       --task-id FN-02 \\
       --arm all \\
+      --max-wall-clock-seconds 1800 \\
       --output-path benchmarks/results/codex-fn02-post-pilot.jsonl
 
-Use ``--arm A_plain``, ``--arm B_auto``, or ``--arm C_required`` for a single
-arm. ``--arm all`` uses the manifest's deterministic arm ordering.
+Use ``--arm A_plain``, ``--arm B_direct_required``, or
+``--arm C_skill_required`` for a single arm. ``--arm all`` uses the manifest's
+deterministic arm ordering.
 ``--repetitions N`` executes repetitions 1 through N and records the repetition
 on every JSONL row. Repeat ``--task-id`` to select the immutable pilot subset.
 
@@ -123,7 +127,7 @@ on every JSONL row. Repeat ``--task-id`` to select the immutable pilot subset.
   - Python 3.10+ and the benchmark dependency group
   - Codex CLI >=0.138.0; the active permission profiles were validated with 0.145.0
   - A clean target at PyTorch Lightning tag ``2.6.5`` and its locked index
-  - The local plugin marketplace root for B/C
+  - A direct Codemap launcher for B and the local plugin marketplace root for C
   - For authenticated execution, a user-owned regular ``auth.json`` with mode
     0600; symlinks and group/other-readable files are rejected
 
@@ -138,8 +142,9 @@ or a broad coordination write surface.
 During execution, timeouts, non-zero Codex exits, malformed/incomplete native
 events, extraction failures, and target/index/coordination mutations remain
 visible in the result. Only zero-token retryable transport failures may retry,
-at most twice. A C no-call is recorded as ``compliance=false`` rather than
-rewritten as an incorrect task answer.
+at most twice, within the original coordinate's 600-second total budget. Paid
+execution also requires an explicit complete-run wall-clock limit. A required arm without a successful compact query is recorded as
+``compliance=false`` rather than rewritten as an incorrect task answer.
 
 ## Output
 
@@ -160,6 +165,7 @@ import inspect
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -167,6 +173,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -183,7 +190,6 @@ from provider_parity_contracts import (  # noqa: E402
     TaskPolicy,
     capability_strata,
     canonical_task_hash,
-    deterministic_arm_order,
     load_task_policies,
     load_task_suite,
     prompt_hash,
@@ -191,18 +197,83 @@ from provider_parity_contracts import (  # noqa: E402
 )
 
 
-PARITY_MANIFEST_PATH = Path(__file__).parent / "results" / "manifests" / "provider-parity-v1.json"
-ARMS = tuple(ARM_CONTRACTS)
+PARITY_MANIFEST_PATH = Path(__file__).parent / "manifests" / "codex-integration.json"
+CODEX_STRUCTURAL_ARMS = ("A_plain", "B_direct_required", "C_skill_required")
+ARMS = CODEX_STRUCTURAL_ARMS
 PARITY_CODEX_MODEL = "gpt-5.6-luna"
 PARITY_CODEX_REASONING_EFFORT = "high"
 _CODEX_BIN = "codex"
 _PROVENANCE_KEY = "_codex_provenance"
+_NATIVE_ITEM_TELEMETRY_CONTRACT_ID = "canonical-skill-file-v1"
 _PLAIN_PERMISSION_PROFILE = "provider-parity-plain"
 _CODEMAP_PERMISSION_PROFILE = "provider-parity-codemap"
 _MIN_PERMISSION_PROFILE_VERSION = (0, 138, 0)
 _COORDINATION_NAME = ".index-rw"
 _REGISTRY_NAME = "registry.lock"
 _READERS_NAME = "readers"
+
+
+def _is_known_codex_arm(arm: str) -> bool:
+    """Return whether an arm belongs to the current Codex experiment design."""
+    return arm in CODEX_STRUCTURAL_ARMS
+
+
+def deterministic_arm_order(
+    experiment_revision: str,
+    provider: str,
+    model: str,
+    task_id: str,
+    repetition: int,
+    *,
+    reasoning_effort: str = "",
+) -> tuple[str, ...]:
+    """Return a revision-bound ordering over the Codex integration arms only."""
+    if repetition < 1:
+        raise ValueError("repetition must be at least 1")
+    coordinates = (
+        experiment_revision,
+        provider,
+        model,
+        reasoning_effort,
+        task_id,
+        str(repetition),
+    )
+    if any(not coordinate for coordinate in coordinates):
+        raise ValueError("arm-order coordinates must be non-empty")
+
+    def arm_digest(arm: str) -> bytes:
+        payload = "|".join((*coordinates, arm)).encode("utf-8")
+        return hashlib.sha256(payload).digest()
+
+    return tuple(sorted(CODEX_STRUCTURAL_ARMS, key=arm_digest))
+
+
+def _arm_contract_hash(arm: str) -> str:
+    """Return the active known hash or a stable local design hash before relock."""
+    if arm == "A_plain" and arm in ARM_CONTRACTS:
+        return ARM_CONTRACTS[arm]["contract_sha256"]
+    return hashlib.sha256(_arm_envelope(arm).encode("utf-8")).hexdigest()
+
+
+def _manifest_arm_order(
+    experiment_revision: str,
+    model: str,
+    task_id: str,
+    repetition: int,
+    reasoning_effort: str,
+) -> tuple[str, ...]:
+    """Read the manifest order only when it names the current Codex arm contract exactly."""
+    arms = deterministic_arm_order(
+        experiment_revision,
+        "codex",
+        model,
+        task_id,
+        repetition,
+        reasoning_effort=reasoning_effort,
+    )
+    if set(arms) != set(CODEX_STRUCTURAL_ARMS) or len(arms) != len(CODEX_STRUCTURAL_ARMS):
+        raise ValueError("manifest arm ordering does not match the current Codex A/B/C contract")
+    return arms
 
 
 def _raw_task(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -242,10 +313,15 @@ def _index_sha(index_path: Path | None) -> str:
         return "unknown"
 
 
-def _validate_locked_runtime(repo_path: Path, index_path: Path | None, arm: str) -> None:
+def _validate_locked_runtime(
+    repo_path: Path,
+    index_path: Path | None,
+    arm: str,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+) -> None:
     """Fail closed unless the target repository and index match the frozen manifest."""
     try:
-        manifest = json.loads(PARITY_MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         expected_repo = manifest["target_source"]["commit"]
         expected_index = manifest["index"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
@@ -371,6 +447,14 @@ class CodexParseResult:
     command_calls: int = 0
     codemap_calls: int = 0
     codemap_successful_calls: int = 0
+    codemap_compact_successful_calls: int = 0
+    codemap_direct_calls: int = 0
+    codemap_direct_successful_calls: int = 0
+    codemap_direct_compact_successful_calls: int = 0
+    codemap_skill_calls: int = 0
+    codemap_skill_successful_calls: int = 0
+    codemap_skill_compact_successful_calls: int = 0
+    skill_delivery_observed: bool = False
     codemap_errors: int = 0
     fallback_calls: int = 0
     completed: bool = False
@@ -412,20 +496,158 @@ def _command_text(item: Mapping[str, Any]) -> str:
     return " ".join(value if isinstance(value, str) else json.dumps(value, sort_keys=True) for value in values)
 
 
-def _is_codemap_command(command: str) -> bool:
-    lowered = command.lower()
-    return any(
-        token in lowered for token in ("/bin/scan-query", "/bin/codemap-py", "$codemap-py:", "codemap:query-code")
-    ) or bool(re.search(r"(?:^|[;&|]\s*)(?:scan-query|codemap-py)(?:\s|$)", lowered))
-
-
-def _shell_reported_exit_code(command: str, item: Mapping[str, Any]) -> int | None:
-    """Recover an embedded exit status from the launcher's ``; echo $?`` probe."""
-    if "echo $?" not in command:
+def _unwrap_native_command(command: str) -> str | None:
+    """Return a native command after at most one exact Codex zsh wrapper."""
+    if not command or "\n" in command or "\r" in command:
         return None
-    output = str(item.get("aggregated_output", item.get("output", ""))).strip()
-    last_line = output.splitlines()[-1] if output else ""
-    return int(last_line) if last_line.isdigit() else None
+    normalized = command.strip()
+    try:
+        parts = shlex.split(normalized)
+    except ValueError:
+        return None
+    if parts[:2] != ["/bin/zsh", "-lc"]:
+        return normalized
+    if len(parts) != 3 or not parts[2] or "\n" in parts[2] or "\r" in parts[2]:
+        return None
+    return parts[2]
+
+
+def _native_item_tokens(command: str) -> list[str] | None:
+    """Tokenize one dedicated native command while rejecting shell composition."""
+    normalized = _unwrap_native_command(command)
+    if normalized is None:
+        return None
+    try:
+        lexer = shlex.shlex(normalized, posix=True, punctuation_chars=";&|()<>")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    if not tokens or any(any(character in ";&|<>()`" for character in token) for token in tokens):
+        return None
+    return tokens
+
+
+def _has_unquoted_comment(command: str) -> bool:
+    """Return whether a shell comment can hide after an otherwise valid command."""
+    quote: str | None = None
+    index = 0
+    while index < len(command):
+        character = command[index]
+        if character == "\\" and quote != "'":
+            index += 2
+            continue
+        if quote is not None:
+            if character == quote:
+                quote = None
+        elif character in {"'", '"'}:
+            quote = character
+        elif character == "#":
+            return True
+        index += 1
+    return False
+
+
+def _canonical_query_arguments(command: str) -> list[str] | None:
+    """Return query arguments only for the dedicated canonical launcher command."""
+    normalized = _unwrap_native_command(command)
+    if normalized is None or re.match(r'^\s*"\$CODEMAP_BIN"(?:[ \t]+)', normalized) is None:
+        return None
+    if _has_unquoted_comment(normalized):
+        return None
+    tokens = _native_item_tokens(command)
+    if (
+        tokens is None
+        or len(tokens) < 5
+        or tokens[:3] != ["$CODEMAP_BIN", "query", "--compact"]
+        or any("$" in token for token in tokens[3:])
+    ):
+        return None
+    return tokens[3:]
+
+
+def _records_compact_query_attempt(command: str) -> bool:
+    """Return whether a native item records a compact-query attempt for C ordering."""
+    normalized = _unwrap_native_command(command)
+    return (
+        normalized is not None
+        and re.search(r'(?:^|[;&|][ \t]*)"\$(?:CODEMAP_BIN|codemap_bin)"[ \t]+query[ \t]+--compact\b', normalized)
+        is not None
+    )
+
+
+def _is_codemap_command(command: str, *, launcher_path: Path | None = None) -> bool:
+    """Return whether a command satisfies the prospective canonical query form."""
+    del launcher_path
+    return _canonical_query_arguments(command) is not None
+
+
+def _is_compact_codemap_query(command: str, *, launcher_path: Path | None = None) -> bool:
+    """Return whether a command satisfies the canonical compact-query form."""
+    return _is_codemap_command(command, launcher_path=launcher_path)
+
+
+def _command_output(item: Mapping[str, Any]) -> str:
+    """Return the captured command output used for deterministic evidence checks."""
+    value = item.get("aggregated_output", item.get("output", ""))
+    return value if isinstance(value, str) else ""
+
+
+def _query_output_complete(item: Mapping[str, Any]) -> bool:
+    """Return whether output contains JSON proving a completed locked-index query."""
+    output = _command_output(item)
+    decoder = json.JSONDecoder()
+    for offset, character in enumerate(output):
+        if character != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(output[offset:])
+        except json.JSONDecodeError:
+            continue
+        index = payload.get("index") if isinstance(payload, Mapping) else None
+        if isinstance(index, Mapping) and index.get("query_complete") is True:
+            return True
+    return False
+
+
+def _canonical_skill_read(command: str, skill_path: Path | None) -> bool:
+    """Return whether a dedicated command uses the runner-owned Skill binding."""
+    if skill_path is None:
+        return False
+    normalized = _unwrap_native_command(command)
+    return normalized is not None and normalized.strip() == 'cat "$CODEMAP_SKILL_FILE"'
+
+
+def _completed_with_explicit_zero_exit(item: Mapping[str, Any]) -> bool:
+    """Return whether one native command item completed with explicit exit zero."""
+    return item.get("status") == "completed" and type(item.get("exit_code")) is int and item["exit_code"] == 0
+
+
+def _canonical_query_output(item: Mapping[str, Any]) -> bool:
+    """Return whether output is one complete compact-query JSON document."""
+    try:
+        payload = json.loads(_command_output(item))
+    except (TypeError, json.JSONDecodeError):
+        return False
+    index = payload.get("index") if isinstance(payload, Mapping) else None
+    return isinstance(index, Mapping) and index.get("query_complete") is True and index.get("compact") is True
+
+
+def _exact_skill_read_output(item: Mapping[str, Any], skill_path: Path | None, skill_sha256: str) -> bool:
+    """Return whether output exactly proves the currently locked Skill bytes."""
+    if skill_path is None or not skill_sha256:
+        return False
+    try:
+        locked_skill_bytes = skill_path.read_bytes()
+        output_bytes = _command_output(item).encode("utf-8")
+    except (OSError, UnicodeEncodeError):
+        return False
+    return (
+        bool(locked_skill_bytes)
+        and hashlib.sha256(locked_skill_bytes).hexdigest() == skill_sha256
+        and output_bytes == locked_skill_bytes
+    )
 
 
 def _iter_lines(stream: str | bytes | Iterable[str | bytes]) -> Iterable[str]:
@@ -441,7 +663,13 @@ def _iter_lines(stream: str | bytes | Iterable[str | bytes]) -> Iterable[str]:
             yield line
 
 
-def parse_codex_jsonl(stream: str | bytes | Iterable[str | bytes]) -> CodexParseResult:
+def parse_codex_jsonl(
+    stream: str | bytes | Iterable[str | bytes],
+    *,
+    launcher_path: Path | None = None,
+    skill_path: Path | None = None,
+    skill_sha256: str = "",
+) -> CodexParseResult:
     """Parse Codex ``exec --json`` events into provider-neutral telemetry.
 
     Codex has used both ``item.completed`` events and Claude-compatible
@@ -452,6 +680,7 @@ def parse_codex_jsonl(stream: str | bytes | Iterable[str | bytes]) -> CodexParse
     result = CodexParseResult()
     seen_items: set[str] = set()
     pending_items: set[str] = set()
+    compact_query_attempt_seen = False
     saw_terminal = False
     for raw_line in _iter_lines(stream):
         line = raw_line.strip()
@@ -504,21 +733,37 @@ def parse_codex_jsonl(stream: str | bytes | Iterable[str | bytes]) -> CodexParse
                     if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool):
                         elapsed = max(float(duration_ms), 0.0) / 1000.0
                         result.tool_elapsed_s = (result.tool_elapsed_s or 0.0) + elapsed
-                    if _is_codemap_command(command):
+                    skill_read_verified = (
+                        _canonical_skill_read(command, skill_path)
+                        and _completed_with_explicit_zero_exit(item)
+                        and _exact_skill_read_output(item, skill_path, skill_sha256)
+                    )
+                    if _canonical_query_arguments(command) is not None and (
+                        skill_path is None or result.skill_delivery_observed
+                    ):
                         result.codemap_calls += 1
-                        status = str(item.get("status", "")).lower()
-                        exit_code = item.get("exit_code")
-                        reported_exit_code = _shell_reported_exit_code(command, item)
-                        if (
-                            status in {"failed", "error", "cancelled", "canceled"}
-                            or (isinstance(exit_code, int) and exit_code != 0)
-                            or (reported_exit_code is not None and reported_exit_code != 0)
-                        ):
+                        delivery = "skill" if result.skill_delivery_observed else "direct"
+                        if delivery == "direct":
+                            result.codemap_direct_calls += 1
+                        else:
+                            result.codemap_skill_calls += 1
+                        if not _completed_with_explicit_zero_exit(item) or not _canonical_query_output(item):
                             result.codemap_errors += 1
                         else:
                             result.codemap_successful_calls += 1
+                            result.codemap_compact_successful_calls += 1
+                            if delivery == "direct":
+                                result.codemap_direct_successful_calls += 1
+                                result.codemap_direct_compact_successful_calls += 1
+                            else:
+                                result.codemap_skill_successful_calls += 1
+                                result.codemap_skill_compact_successful_calls += 1
                     elif result.codemap_errors:
                         result.fallback_calls += 1
+                    if skill_read_verified and not compact_query_attempt_seen:
+                        result.skill_delivery_observed = True
+                    if _records_compact_query_attempt(command):
+                        compact_query_attempt_seen = True
 
         # Compatibility with older/fixture streams that use assistant blocks.
         message = event.get("message")
@@ -533,8 +778,12 @@ def parse_codex_jsonl(stream: str | bytes | Iterable[str | bytes]) -> CodexParse
                     command = _command_text(block)
                     if name.lower() in {"bash", "shell", "command_execution"}:
                         result.command_calls += 1
-                    if _is_codemap_command(name + " " + command):
+                    if _is_codemap_command(name + " " + command, launcher_path=launcher_path):
                         result.codemap_calls += 1
+                        if result.skill_delivery_observed:
+                            result.codemap_skill_calls += 1
+                        else:
+                            result.codemap_direct_calls += 1
 
         if event_type in {"turn.completed", "result", "response.completed"}:
             saw_terminal = True
@@ -593,6 +842,17 @@ class ArmHome:
     coordination_path: Path | None = None
     codemap_launcher_path: Path | None = None
     codemap_launcher_sha256: str = ""
+    codemap_plugin_path: Path | None = None
+    codemap_plugin_manifest_sha256: str = ""
+    codemap_skill_path: Path | None = None
+    codemap_skill_sha256: str = ""
+    codex_rig_path: Path | None = None
+    codex_rig_manifest_sha256: str = ""
+    codex_rig_adapter_path: Path | None = None
+    codex_rig_adapter_sha256: str = ""
+    codemap_context_path: Path | None = None
+    codemap_context_sha256: str = ""
+    denied_read_paths: tuple[Path, ...] = ()
 
     def cleanup(self) -> None:
         """Remove the disposable home after a run."""
@@ -754,6 +1014,7 @@ def _shell_environment(home: ArmHome) -> dict[str, str]:
     }
     for name in (
         "CODEMAP_BIN",
+        "CODEMAP_SKILL_FILE",
         "CODEMAP_PYTHON",
         "SCAN_NO_AUTOBUILD",
         "CODEMAP_LOGGING",
@@ -765,13 +1026,44 @@ def _shell_environment(home: ArmHome) -> dict[str, str]:
     return allowed
 
 
-def _write_permission_config(home: ArmHome, arm: str, index_path: Path | None) -> Path:
-    """Write the active permission profile into one disposable Codex home."""
-    if arm not in ARM_CONTRACTS:
+def _untrusted_host_agent_roots(
+    home: ArmHome,
+    arm: str,
+    marketplace_root: Path | None = None,
+) -> tuple[Path, ...]:
+    """Return host tooling roots that a measured model must not inspect."""
+    if not _is_known_codex_arm(arm):
+        raise ValueError(f"unknown benchmark arm {arm!r}")
+    roots = [Path.home() / name for name in (".agents", ".claude", ".codex")]
+    if marketplace_root is not None:
+        roots.append(marketplace_root)
+
+    home_root = home.path.resolve()
+    denied: list[Path] = []
+    for candidate in roots:
+        root = candidate.expanduser().resolve()
+        if home_root == root or home_root.is_relative_to(root):
+            raise ValueError("disposable Codex home must be outside denied host tooling roots")
+        if root not in denied:
+            denied.append(root)
+    return tuple(denied)
+
+
+def _write_permission_config(
+    home: ArmHome,
+    arm: str,
+    index_path: Path | None,
+    *,
+    marketplace_root: Path | None = None,
+) -> Path:
+    """Compose permissions ahead of any preserved Codex plugin registration."""
+    if not _is_known_codex_arm(arm):
         raise ValueError(f"unknown benchmark arm {arm!r}")
     profile = _PLAIN_PERMISSION_PROFILE if arm == "A_plain" else _CODEMAP_PERMISSION_PROFILE
     auth_path = (home.path / "auth.json").resolve()
     filesystem_rules = [f'{json.dumps(str(auth_path))} = "deny"']
+    denied_read_paths = _untrusted_host_agent_roots(home, arm, marketplace_root)
+    filesystem_rules.extend(f'{json.dumps(str(path))} = "deny"' for path in denied_read_paths)
     if index_path is None:
         raise ValueError(f"{arm} permission profile requires the locked index")
     canonical_index = _canonical_index_path(index_path)
@@ -809,10 +1101,22 @@ def _write_permission_config(home: ArmHome, arm: str, index_path: Path | None) -
         ]
     )
     config_path = home.path / "config.toml"
+    existing_config = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    managed_markers = (
+        "default_permissions =",
+        "[shell_environment_policy]",
+        f"[permissions.{_PLAIN_PERMISSION_PROFILE}]",
+        f"[permissions.{_CODEMAP_PERMISSION_PROFILE}]",
+    )
+    if any(marker in existing_config for marker in managed_markers):
+        raise ValueError("disposable Codex home already contains benchmark permission configuration")
+    if existing_config.strip():
+        config_text = f"{config_text.rstrip()}\n\n{existing_config.lstrip()}"
     config_path.write_text(config_text, encoding="utf-8")
     config_path.chmod(0o600)
     home.permission_profile = profile
     home.coordination_path = coordination_root
+    home.denied_read_paths = denied_read_paths
     return config_path
 
 
@@ -821,10 +1125,11 @@ def prepare_arm_home(
     *,
     root: Path | None = None,
     auth_source: Path | None = None,
+    codemap_bin: Path | None = None,
     plugin_installer: Callable[[Path], bool | None] | None = None,
 ) -> ArmHome:
     """Create an isolated ``CODEX_HOME`` implementing A/B/C availability."""
-    if arm not in ARM_CONTRACTS:
+    if not _is_known_codex_arm(arm):
         raise ValueError(f"unknown benchmark arm {arm!r}")
     home = Path(tempfile.mkdtemp(prefix=f"codex-{arm}-", dir=str(root) if root else None))
     try:
@@ -835,13 +1140,17 @@ def prepare_arm_home(
         if auth_source is not None:
             _copy_auth_source(auth_source, home)
         verified = False
-        if arm in {"B_auto", "C_required"} and plugin_installer is not None:
+        if arm == "B_direct_required":
+            _validated_direct_codemap_launcher(codemap_bin)
+            verified = True
+        elif arm == "C_skill_required" and plugin_installer is not None:
             verified = bool(plugin_installer(home))
         env = os.environ.copy()
+        env.pop("CODEMAP_SKILL_FILE", None)
         env["CODEX_HOME"] = str(home)
         env["CODEX_BENCHMARK_ARM"] = arm
         env["CODEX_CODEMAP_AVAILABLE"] = "1" if verified else "0"
-        return ArmHome(
+        arm_home = ArmHome(
             arm,
             home,
             env,
@@ -849,6 +1158,9 @@ def prepare_arm_home(
             verified,
             auth_provisioned=auth_source is not None,
         )
+        if arm == "B_direct_required":
+            _configure_direct_codemap_launcher(arm_home, codemap_bin)
+        return arm_home
     except Exception:
         shutil.rmtree(home, ignore_errors=True)
         raise
@@ -862,10 +1174,17 @@ def probe_arm_home(home: ArmHome | Path, arm: str | None = None) -> dict[str, An
     available = home.codemap_available if isinstance(home, ArmHome) else False
     if expected == "A_plain" and available:
         raise ValueError("A_plain Codex home unexpectedly contains Codemap")
-    if expected in {"B_auto", "C_required"} and not (
+    if expected in {"B_direct_required", "C_skill_required"} and not (
         isinstance(home, ArmHome) and home.codemap_available and home.codemap_verified
     ):
-        raise ValueError(f"{expected} Codex home requires a verified plugin probe")
+        raise ValueError(f"{expected} Codex home requires verified Codemap delivery")
+    if isinstance(home, ArmHome):
+        skill_file = home.env.get("CODEMAP_SKILL_FILE")
+        if expected == "C_skill_required":
+            if home.codemap_skill_path is None or skill_file != str(home.codemap_skill_path.resolve()):
+                raise ValueError("C_skill_required requires the exact installed Skill binding")
+        elif skill_file is not None:
+            raise ValueError(f"{expected} Codex home unexpectedly exposes CODEMAP_SKILL_FILE")
     return {
         "home": str(path),
         "config": str(config),
@@ -878,16 +1197,47 @@ def probe_arm_home(home: ArmHome | Path, arm: str | None = None) -> dict[str, An
         "coordination_write_enabled": bool(isinstance(home, ArmHome) and home.coordination_path is not None),
         "codemap_python": (
             home.env.get("CODEMAP_PYTHON")
-            if isinstance(home, ArmHome) and expected in {"B_auto", "C_required"}
+            if isinstance(home, ArmHome) and expected in {"B_direct_required", "C_skill_required"}
             else None
         ),
         "codemap_launcher_path": (
             str(home.codemap_launcher_path)
-            if isinstance(home, ArmHome) and expected in {"B_auto", "C_required"} and home.codemap_launcher_path
+            if isinstance(home, ArmHome)
+            and expected in {"B_direct_required", "C_skill_required"}
+            and home.codemap_launcher_path
             else None
         ),
         "codemap_launcher_sha256": (
-            home.codemap_launcher_sha256 if isinstance(home, ArmHome) and expected in {"B_auto", "C_required"} else ""
+            home.codemap_launcher_sha256
+            if isinstance(home, ArmHome) and expected in {"B_direct_required", "C_skill_required"}
+            else ""
+        ),
+        "codemap_context_path": (
+            str(home.codemap_context_path)
+            if isinstance(home, ArmHome) and expected == "C_skill_required" and home.codemap_context_path
+            else None
+        ),
+        "codemap_context_sha256": (
+            home.codemap_context_sha256 if isinstance(home, ArmHome) and expected == "C_skill_required" else ""
+        ),
+        "codemap_skill_path": (
+            str(home.codemap_skill_path)
+            if isinstance(home, ArmHome) and expected == "C_skill_required" and home.codemap_skill_path
+            else None
+        ),
+        "codemap_skill_sha256": (
+            home.codemap_skill_sha256 if isinstance(home, ArmHome) and expected == "C_skill_required" else ""
+        ),
+        "codemap_skill_file": (
+            home.env.get("CODEMAP_SKILL_FILE") if isinstance(home, ArmHome) and expected == "C_skill_required" else None
+        ),
+        "codex_rig_path": (
+            str(home.codex_rig_path)
+            if isinstance(home, ArmHome) and expected == "C_skill_required" and home.codex_rig_path
+            else None
+        ),
+        "codex_rig_manifest_sha256": (
+            home.codex_rig_manifest_sha256 if isinstance(home, ArmHome) and expected == "C_skill_required" else ""
         ),
         "network_access": False,
         "config_mode": stat.S_IMODE(config.stat().st_mode),
@@ -898,11 +1248,21 @@ def _invoke_plugin_command(
     command: list[str],
     env: Mapping[str, str],
     command_runner: Callable[..., Any] | None = None,
+    *,
+    cwd: Path | None = None,
 ) -> tuple[int, str, str]:
     """Run a no-model Codex plugin command through an injectable seam."""
     runner = command_runner or subprocess.run
+    kwargs: dict[str, Any] = {
+        "env": dict(env),
+        "capture_output": True,
+        "text": True,
+        "check": False,
+    }
+    if cwd is not None:
+        kwargs["cwd"] = cwd
     try:
-        completed = runner(command, env=dict(env), capture_output=True, text=True, check=False)
+        completed = runner(command, **kwargs)
     except TypeError:
         completed = runner(command, dict(env))
     if isinstance(completed, tuple):
@@ -936,7 +1296,7 @@ def _verify_locked_codemap_python(
         or not os.access(python_path, os.X_OK)
     ):
         raise ValueError("locked CODEMAP_PYTHON must be an executable absolute file")
-    if required_major_minor != (3, 11) or scope != ["B_auto", "C_required"]:
+    if required_major_minor != (3, 11) or scope != ["B_direct_required", "C_skill_required"]:
         raise ValueError("provider-parity treatment runtime contract does not match the active manifest")
 
     code, stdout, stderr = _invoke_plugin_command(
@@ -1020,6 +1380,18 @@ def _verify_permission_profile(
         if auth_bytes and auth_bytes in combined_output:
             raise ValueError("Codex permission probe disclosed credential material")
 
+    enumerate_script = "from pathlib import Path; import sys; next(Path(sys.argv[1]).iterdir(), None)"
+    for denied_root in home.denied_read_paths:
+        if not denied_root.exists():
+            continue
+        code, probe_stdout, _probe_stderr = _invoke_plugin_command(
+            [*sandbox_prefix, enumerate_script, str(denied_root)],
+            home.env,
+            command_runner=command_runner,
+        )
+        if code == 0 or probe_stdout:
+            raise ValueError("Codex permission profile allowed host tooling discovery")
+
     if index_path is not None:
         code, _stdout, error = _invoke_plugin_command(
             [*sandbox_prefix, read_script, str(index_path)],
@@ -1059,12 +1431,12 @@ def _verify_authentication(
     home.authenticated = True
 
 
-def _codemap_enabled(plugin_json: str) -> bool:
-    """Return whether Codemap appears enabled in ``codex plugin list --json``."""
+def _enabled_plugin_names(plugin_json: str) -> set[str]:
+    """Return normalized enabled names from ``codex plugin list --json``."""
     try:
         payload = json.loads(plugin_json)
     except json.JSONDecodeError:
-        return False
+        return set()
     if isinstance(payload, list):
         entries = payload
     elif isinstance(payload, dict):
@@ -1073,17 +1445,38 @@ def _codemap_enabled(plugin_json: str) -> bool:
         entries = []
     if not isinstance(entries, list):
         return False
+    names: set[str] = set()
     for entry in entries:
         if isinstance(entry, str):
-            if "codemap-py" in entry.lower():
-                return True
+            names.add(entry.lower())
             continue
         if not isinstance(entry, Mapping):
             continue
         name = str(entry.get("name", entry.get("id", ""))).lower()
-        if "codemap-py" in name:
-            return bool(entry.get("enabled", entry.get("active", True)))
-    return False
+        if name and bool(entry.get("enabled", entry.get("active", True))):
+            names.add(name)
+    return names
+
+
+def _plugin_enabled(plugin_json: str, plugin_name: str) -> bool:
+    """Return whether one exact plugin appears enabled in ``codex plugin list --json``."""
+    return plugin_name.lower() in _enabled_plugin_names(plugin_json)
+
+
+def _verify_installed_plugin_pair(
+    home: ArmHome,
+    *,
+    codex_bin: str = _CODEX_BIN,
+    command_runner: Callable[..., Any] | None = None,
+) -> None:
+    """Require the exact C plugin pair after final permission composition."""
+    code, stdout, stderr = _invoke_plugin_command(
+        [codex_bin, "plugin", "list", "--json"],
+        home.env,
+        command_runner,
+    )
+    if code != 0 or _enabled_plugin_names(stdout) != {"codemap-py", "codex-rig"}:
+        raise RuntimeError(f"final Codex plugin registration is invalid: {stderr[:300]}")
 
 
 def _configure_codemap_launcher(home: ArmHome, install_json: str) -> None:
@@ -1108,11 +1501,14 @@ def _configure_codemap_launcher(home: ArmHome, install_json: str) -> None:
 
     plugin_manifest = installed_path / ".codex-plugin" / "plugin.json"
     launcher = installed_path / "bin" / "codemap-py"
+    query_skill = installed_path / "codex-skills" / "query-code" / "SKILL.md"
     _assert_safe_path_components(plugin_manifest)
     _assert_safe_path_components(launcher)
+    _assert_safe_path_components(query_skill)
     try:
         manifest_metadata = plugin_manifest.lstat()
         launcher_metadata = launcher.lstat()
+        skill_metadata = query_skill.lstat()
         manifest_payload = json.loads(plugin_manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError("Codemap plugin launcher or manifest is unavailable") from exc
@@ -1130,13 +1526,338 @@ def _configure_codemap_launcher(home: ArmHome, install_json: str) -> None:
         or not os.access(launcher, os.X_OK)
     ):
         raise RuntimeError("Codemap plugin launcher must be a regular executable")
+    if not stat.S_ISREG(skill_metadata.st_mode) or query_skill.is_symlink() or skill_metadata.st_nlink != 1:
+        raise RuntimeError("Codemap query skill must be a regular file")
 
     resolved_launcher = launcher.resolve(strict=True)
     if not resolved_launcher.is_relative_to(installed_path):
         raise RuntimeError("Codemap plugin launcher escaped installedPath")
     home.env["CODEMAP_BIN"] = str(resolved_launcher)
+    home.codemap_plugin_path = installed_path
+    home.codemap_plugin_manifest_sha256 = hashlib.sha256(plugin_manifest.read_bytes()).hexdigest()
     home.codemap_launcher_path = resolved_launcher
     home.codemap_launcher_sha256 = hashlib.sha256(resolved_launcher.read_bytes()).hexdigest()
+    home.codemap_skill_path = query_skill.resolve(strict=True)
+    home.codemap_skill_sha256 = hashlib.sha256(home.codemap_skill_path.read_bytes()).hexdigest()
+    home.env["CODEMAP_SKILL_FILE"] = str(home.codemap_skill_path)
+
+
+def _configure_codex_rig_plugin(home: ArmHome, install_json: str) -> None:
+    """Lock the exact Codex Rig plugin installed for the skill-required arm."""
+    try:
+        payload = json.loads(install_json)
+        raw_installed_path = payload["installedPath"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RuntimeError("Codex Rig plugin install did not report installedPath") from exc
+    if not isinstance(raw_installed_path, str) or not raw_installed_path:
+        raise RuntimeError("Codex Rig plugin installedPath must be a non-empty string")
+
+    installed_path = Path(os.path.abspath(raw_installed_path))
+    _assert_safe_path_components(installed_path)
+    try:
+        installed_path = installed_path.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("Codex Rig plugin installedPath is unavailable") from exc
+    home_root = home.path.resolve(strict=True)
+    if not installed_path.is_relative_to(home_root):
+        raise RuntimeError("Codex Rig plugin installedPath escaped the disposable CODEX_HOME")
+
+    plugin_manifest = installed_path / ".codex-plugin" / "plugin.json"
+    adapter = installed_path / "shared" / "codemap_adapter.py"
+    _assert_safe_path_components(plugin_manifest)
+    _assert_safe_path_components(adapter)
+    try:
+        manifest_metadata = plugin_manifest.lstat()
+        adapter_metadata = adapter.lstat()
+        manifest_payload = json.loads(plugin_manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Codex Rig plugin manifest is unavailable") from exc
+    if (
+        not stat.S_ISREG(manifest_metadata.st_mode)
+        or plugin_manifest.is_symlink()
+        or manifest_metadata.st_nlink != 1
+        or manifest_payload.get("name") != "codex-rig"
+    ):
+        raise RuntimeError("Codex Rig plugin manifest identity is invalid")
+    if not stat.S_ISREG(adapter_metadata.st_mode) or adapter.is_symlink() or adapter_metadata.st_nlink != 1:
+        raise RuntimeError("Codex Rig adapter must be a regular file")
+    home.codex_rig_path = installed_path
+    home.codex_rig_manifest_sha256 = hashlib.sha256(plugin_manifest.read_bytes()).hexdigest()
+    home.codex_rig_adapter_path = adapter.resolve(strict=True)
+    home.codex_rig_adapter_sha256 = hashlib.sha256(home.codex_rig_adapter_path.read_bytes()).hexdigest()
+
+
+def _verify_treatment_artifact_locks(home: ArmHome, manifest_path: Path) -> None:
+    """Require installed treatment files and versions to match the reviewed manifest locks."""
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        hashes = manifest["artifact_sha256"]
+        codemap_version = str(manifest["codemap_candidate"]["version"])
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Codex treatment manifest is missing artifact locks") from exc
+    expected_launcher = hashes.get("codemap_runtime_cli") if isinstance(hashes, Mapping) else None
+    if not isinstance(expected_launcher, str) or home.codemap_launcher_sha256 != expected_launcher:
+        raise ValueError("Codemap launcher does not match the locked runtime artifact")
+    if home.arm == "B_direct_required":
+        try:
+            runtime_lock = manifest["direct_cli_runtime"]
+            expected_files = runtime_lock["files"]
+            expected_aggregate = runtime_lock["aggregate_sha256"]
+            staged_root = home.codemap_launcher_path.parent.parent
+        except (AttributeError, KeyError, TypeError) as exc:
+            raise ValueError("direct CLI runtime closure lock is missing") from exc
+        observed_files = _runtime_file_hashes(staged_root)
+        if not isinstance(expected_files, Mapping) or observed_files != dict(expected_files):
+            raise ValueError("staged direct CLI runtime does not match the locked file closure")
+        if not isinstance(expected_aggregate, str) or _aggregate_file_hashes(observed_files) != expected_aggregate:
+            raise ValueError("staged direct CLI runtime aggregate does not match the manifest")
+        return
+    if home.codemap_skill_path is None or home.env.get("CODEMAP_SKILL_FILE") != str(home.codemap_skill_path.resolve()):
+        raise ValueError("installed Codemap Skill binding does not match the locked path")
+    try:
+        codex_rig_version = str(manifest["codex_rig_candidate"]["version"])
+        expected = {
+            "codemap_candidate_manifest": home.codemap_plugin_manifest_sha256,
+            "codemap_query_skill": home.codemap_skill_sha256,
+            "codex_rig_plugin_manifest": home.codex_rig_manifest_sha256,
+            "codex_rig_adapter": home.codex_rig_adapter_sha256,
+        }
+        codemap_manifest = json.loads(
+            (home.codemap_plugin_path / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+        rig_manifest = json.loads((home.codex_rig_path / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    except (AttributeError, OSError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("installed Codemap/Codex Rig artifact identity is incomplete") from exc
+    if codemap_manifest.get("version") != codemap_version or rig_manifest.get("version") != codex_rig_version:
+        raise ValueError("installed Codemap/Codex Rig version does not match the treatment manifest")
+    for artifact_name, observed_sha256 in expected.items():
+        expected_sha256 = hashes.get(artifact_name) if isinstance(hashes, Mapping) else None
+        if not isinstance(expected_sha256, str) or observed_sha256 != expected_sha256:
+            raise ValueError(f"installed treatment artifact does not match lock: {artifact_name}")
+
+
+def _admit_installed_skill_pair(
+    home: ArmHome,
+    repo_path: Path,
+    index_path: Path,
+    *,
+    manifest_path: Path,
+    command_runner: Callable[..., Any] | None = None,
+) -> None:
+    """Run the installed Codex Rig adapter once and persist verified C admission context."""
+    if home.arm != "C_skill_required" or home.codex_rig_adapter_path is None or home.codemap_plugin_path is None:
+        raise ValueError("installed-skill admission requires a locked C skill home")
+    if home.codemap_launcher_path is None or not home.env.get("CODEMAP_PYTHON"):
+        raise ValueError("installed-skill admission requires locked Codemap runtime paths")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        admission = manifest["codex_rig_integration_admission"]
+        category = admission["probe_category"]
+        target = admission["probe_target"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Codex treatment manifest is missing installed-skill admission controls") from exc
+    if category != "analysis" or not isinstance(target, str) or not target:
+        raise ValueError("Codex treatment manifest has invalid installed-skill admission controls")
+    root = repo_path.resolve(strict=True)
+    locked_index = _canonical_index_path(index_path)
+    context_path = home.path.resolve(strict=True) / "codemap-context.json"
+    command = [
+        home.env["CODEMAP_PYTHON"],
+        str(home.codex_rig_adapter_path),
+        "context",
+        "--category",
+        category,
+        "--target",
+        target,
+        "--root",
+        str(root),
+        "--out",
+        str(context_path),
+    ]
+    code, _stdout, stderr = _invoke_plugin_command(
+        command,
+        _shell_environment(home),
+        command_runner,
+        cwd=root,
+    )
+    if code != 0:
+        raise RuntimeError(f"installed Codex Rig context admission failed: {stderr[:300]}")
+    _assert_safe_path_components(context_path)
+    try:
+        metadata = context_path.lstat()
+        payload = json.loads(context_path.read_text(encoding="utf-8"))
+        probe = payload["probe"]
+        doctor = probe["doctor"]
+        queries = payload["queries"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("installed Codex Rig context admission produced no valid context") from exc
+    if not stat.S_ISREG(metadata.st_mode) or context_path.is_symlink() or metadata.st_nlink != 1:
+        raise RuntimeError("installed Codex Rig context artifact must be a regular file")
+    query_evidence_valid = (
+        isinstance(queries, list)
+        and bool(queries)
+        and all(
+            isinstance(query, Mapping)
+            and query.get("exit_code") == 0
+            and query.get("error") is None
+            and query.get("query_complete") is True
+            for query in queries
+        )
+    )
+    checks = {
+        "protocol": payload.get("protocol_version") == "codemap-py.integration.v1",
+        "target": payload.get("target") == target,
+        "context_status": payload.get("status") in {"available", "degraded"},
+        "probe_status": probe.get("status") == "available",
+        "launcher": probe.get("launcher") == str(home.codemap_launcher_path),
+        "plugin_root": doctor.get("plugin_root") == str(home.codemap_plugin_path),
+        "index_path": doctor.get("index_path") == str(locked_index),
+        "queries": query_evidence_valid,
+    }
+    failed_checks = [name for name, passed in checks.items() if not passed]
+    if failed_checks:
+        raise RuntimeError("installed Codex Rig context admission failed checks: " + ", ".join(failed_checks))
+    home.codemap_context_path = context_path.resolve(strict=True)
+    home.codemap_context_sha256 = hashlib.sha256(home.codemap_context_path.read_bytes()).hexdigest()
+
+
+def _admit_staged_direct_cli(
+    home: ArmHome,
+    repo_path: Path,
+    index_path: Path,
+    *,
+    manifest_path: Path,
+    command_runner: Callable[..., Any] | None = None,
+) -> None:
+    """Execute one task-shaped compact query through B's staged CLI runtime."""
+    if home.arm != "B_direct_required" or home.codemap_launcher_path is None:
+        raise ValueError("direct CLI admission requires a locked B runtime")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        admission = manifest["direct_cli_admission"]
+        subcommand = admission["probe_subcommand"]
+        target = admission["probe_target"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("direct CLI admission contract is missing") from exc
+    if subcommand != "fn-rdeps" or not isinstance(target, str) or "::" not in target:
+        raise ValueError("direct CLI admission query is not task-shaped")
+
+    index_sha256 = hashlib.sha256(index_path.read_bytes()).hexdigest()
+    profile = home.permission_profile or _CODEMAP_PERMISSION_PROFILE
+    command = [
+        _CODEX_BIN,
+        "sandbox",
+        "-P",
+        profile,
+        "--include-managed-config",
+        "-C",
+        str(repo_path),
+        "--",
+        str(home.codemap_launcher_path),
+        "query",
+        "--compact",
+        subcommand,
+        target,
+    ]
+    code, stdout, stderr = _invoke_plugin_command(
+        command,
+        _shell_environment(home),
+        command_runner=command_runner,
+    )
+    output_item = {"aggregated_output": stdout}
+    if code != 0 or not _query_output_complete(output_item):
+        detail = stderr.strip() or stdout.strip()
+        raise RuntimeError(f"staged direct CLI admission query failed: {detail[:300]}")
+    if hashlib.sha256(index_path.read_bytes()).hexdigest() != index_sha256:
+        raise RuntimeError("staged direct CLI admission mutated the locked index")
+
+
+def _validated_direct_codemap_launcher(codemap_bin: Path | None) -> Path:
+    """Return a directly supplied regular Codemap launcher without plugin discovery."""
+    if codemap_bin is None:
+        raise ValueError("B_direct_required requires --codemap-bin")
+    launcher = Path(codemap_bin)
+    if not launcher.is_absolute():
+        raise ValueError("--codemap-bin must be an absolute path")
+    _assert_safe_path_components(launcher)
+    try:
+        metadata = launcher.lstat()
+        resolved_launcher = launcher.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("--codemap-bin is unavailable") from exc
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or launcher.is_symlink()
+        or metadata.st_nlink != 1
+        or not os.access(resolved_launcher, os.X_OK)
+    ):
+        raise ValueError("--codemap-bin must be a regular executable")
+    return resolved_launcher
+
+
+def _direct_runtime_files(source_root: Path) -> dict[str, Path]:
+    """Return the exact source files required by the isolated direct CLI."""
+    relative_paths = [
+        Path("bin/codemap-py"),
+        Path("bin/_exclusions.py"),
+        Path("scripts/codemap_py_entry.py"),
+        *sorted(path.relative_to(source_root) for path in (source_root / "src" / "codemap_py").rglob("*.py")),
+    ]
+    files: dict[str, Path] = {}
+    resolved_root = source_root.resolve(strict=True)
+    for relative_path in relative_paths:
+        path = source_root / relative_path
+        try:
+            metadata = path.lstat()
+            resolved = path.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError("--codemap-bin runtime bundle is incomplete") from exc
+        if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or not resolved.is_relative_to(resolved_root):
+            raise ValueError("--codemap-bin runtime bundle contains an unsafe path")
+        files[relative_path.as_posix()] = resolved
+    return files
+
+
+def _runtime_file_hashes(runtime_root: Path) -> dict[str, str]:
+    """Hash the exact files present in a staged direct CLI runtime."""
+    return {
+        path.relative_to(runtime_root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(runtime_root.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    }
+
+
+def _aggregate_file_hashes(hashes: Mapping[str, str]) -> str:
+    """Return a stable aggregate identity for a relative-path hash mapping."""
+    payload = "".join(f"{path}\0{sha256}\n" for path, sha256 in sorted(hashes.items()))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _configure_direct_codemap_launcher(home: ArmHome, codemap_bin: Path | None) -> None:
+    """Stage the direct CLI runtime inside B's disposable home and expose it."""
+    source_launcher = _validated_direct_codemap_launcher(codemap_bin)
+    source_root = source_launcher.parent.parent
+    if source_launcher.parent.name != "bin" or source_launcher.name != "codemap-py":
+        raise ValueError("--codemap-bin must use the Codemap runtime layout")
+    source_files = _direct_runtime_files(source_root)
+
+    # Only the CLI closure is staged: no plugin manifest, skill, marketplace,
+    # or Codex Rig bytes enter B's model-visible home.
+    staged_root = home.path / "direct-cli"
+    staged_launcher = staged_root / "bin" / "codemap-py"
+    for relative_path, source in source_files.items():
+        destination = staged_root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    staged_launcher.chmod(source_launcher.stat().st_mode & 0o777)
+    source_hashes = {
+        relative_path: hashlib.sha256(source.read_bytes()).hexdigest() for relative_path, source in source_files.items()
+    }
+    if _runtime_file_hashes(staged_root) != source_hashes:
+        raise RuntimeError("staged Codemap runtime differs from its locked source closure")
+    home.env["CODEMAP_BIN"] = str(staged_launcher)
+    home.codemap_launcher_path = staged_launcher
+    home.codemap_launcher_sha256 = hashlib.sha256(staged_launcher.read_bytes()).hexdigest()
 
 
 def _install_codemap_plugin(
@@ -1146,7 +1867,7 @@ def _install_codemap_plugin(
     codex_bin: str = _CODEX_BIN,
     command_runner: Callable[..., Any] | None = None,
 ) -> bool:
-    """Install and verify Codemap via Codex's no-model plugin CLI."""
+    """Install and lock Codex Rig plus Codemap via Codex's no-model plugin CLI."""
     if marketplace_root is None:
         return False
     marketplace_root = marketplace_root.resolve()
@@ -1156,18 +1877,23 @@ def _install_codemap_plugin(
             "Codemap plugin source must be a marketplace root containing .agents/plugins/marketplace.json"
         )
     add_marketplace = [codex_bin, "plugin", "marketplace", "add", str(marketplace_root)]
+    add_codex_rig = [codex_bin, "plugin", "add", "codex-rig@borda-ai-rig", "--json"]
     add_plugin = [codex_bin, "plugin", "add", "codemap-py@borda-ai-rig", "--json"]
     list_plugins = [codex_bin, "plugin", "list", "--json"]
+    codex_rig_install_json = ""
     install_json = ""
-    for command in (add_marketplace, add_plugin):
+    for command in (add_marketplace, add_plugin, add_codex_rig):
         code, stdout, stderr = _invoke_plugin_command(command, home.env, command_runner)
         if code != 0:
             raise RuntimeError(f"Codemap plugin setup failed ({' '.join(command[1:4])}): {stderr[:300]}")
         if command is add_plugin:
             install_json = stdout
+        elif command is add_codex_rig:
+            codex_rig_install_json = stdout
+    _configure_codex_rig_plugin(home, codex_rig_install_json)
     _configure_codemap_launcher(home, install_json)
     code, stdout, stderr = _invoke_plugin_command(list_plugins, home.env, command_runner)
-    if code != 0 or not _codemap_enabled(stdout):
+    if code != 0 or not _plugin_enabled(stdout, "codex-rig") or not _plugin_enabled(stdout, "codemap-py"):
         raise RuntimeError(f"Codemap plugin verification failed: {stderr[:300]}")
     return True
 
@@ -1182,7 +1908,7 @@ def _verify_plain_plugin_absent(
     code, stdout, stderr = _invoke_plugin_command([codex_bin, "plugin", "list", "--json"], home.env, command_runner)
     if code != 0:
         raise RuntimeError(f"A_plain plugin absence probe failed: {stderr[:300]}")
-    if _codemap_enabled(stdout):
+    if _plugin_enabled(stdout, "codemap-py"):
         raise RuntimeError("A_plain Codemap plugin unexpectedly enabled")
     path_dirs = home.env.get("PATH", "").split(os.pathsep)
     if any(
@@ -1272,9 +1998,18 @@ class CodexRun:
     command_calls: int = 0
     codemap_calls: int = 0
     codemap_successful_calls: int = 0
+    codemap_compact_successful_calls: int = 0
+    codemap_direct_calls: int = 0
+    codemap_direct_successful_calls: int = 0
+    codemap_direct_compact_successful_calls: int = 0
+    codemap_skill_calls: int = 0
+    codemap_skill_successful_calls: int = 0
+    codemap_skill_compact_successful_calls: int = 0
+    skill_delivery_observed: bool = False
     codemap_errors: int = 0
     fallback_calls: int = 0
     compliance: bool | None = None
+    codemap_delivery: str = "none"
     incomplete: bool = False
     extraction_failed: bool = False
     contaminated: bool = False
@@ -1283,13 +2018,27 @@ class CodexRun:
     output_text: str = ""
     thread_id: str = ""
     raw_events: list[dict[str, Any]] = field(default_factory=list)
+    telemetry_contract_id: str = _NATIVE_ITEM_TELEMETRY_CONTRACT_ID
     native_item_counts: dict[str, int] = field(default_factory=dict)
     elapsed_s: float = 0.0
     tool_elapsed_s: float | None = None
     tool_result_tokens: int | None = None
     native_attempt_events: list[list[dict[str, Any]]] = field(default_factory=list)
     retry_count: int = 0
+    cell_wall_clock_limit_s: float = PARITY_TIMEOUT_SECONDS
+    run_wall_clock_limit_s: float | None = None
     turn_budget_enforced: bool = False
+
+
+def _arm_compliance(arm: str, evidence: CodexParseResult | CodexRun) -> bool | None:
+    """Evaluate the transport-specific required-use contract for one arm."""
+    if arm == "B_direct_required":
+        return evidence.codemap_direct_compact_successful_calls > 0
+    if arm == "C_skill_required":
+        return evidence.skill_delivery_observed and evidence.codemap_skill_compact_successful_calls > 0
+    if arm == "A_plain":
+        return None
+    raise ValueError(f"unknown benchmark arm {arm!r}")
 
 
 @lru_cache(maxsize=1)
@@ -1334,6 +2083,8 @@ class CodexRunner:
         index_path: Path | None = None,
         timeout: float = PARITY_TIMEOUT_SECONDS,
         marketplace_root: Path | None = None,
+        codemap_bin: Path | None = None,
+        manifest_path: Path = PARITY_MANIFEST_PATH,
         auth_source: Path | None = None,
         plugin_installer: Callable[[Path], bool | None] | None = None,
         plugin_probe: Callable[[Path], bool] | None = None,
@@ -1347,6 +2098,8 @@ class CodexRunner:
         self.index_path = _canonical_index_path(Path(index_path)) if index_path else None
         self.timeout = timeout
         self.marketplace_root = marketplace_root.resolve() if marketplace_root else None
+        self.codemap_bin = Path(codemap_bin) if codemap_bin else None
+        self.manifest_path = Path(manifest_path)
         # Preserve the caller-supplied path so `_copy_auth_source` can reject a
         # symlink instead of silently dereferencing it during normalization.
         self.auth_source = Path(auth_source) if auth_source else None
@@ -1367,15 +2120,17 @@ class CodexRunner:
 
     def _prepare_verified_home(self, arm: str) -> ArmHome:
         """Create and verify one arm home without invoking a model."""
-        _validate_locked_runtime(self.repo_path, self.index_path, arm)
+        _validate_locked_runtime(self.repo_path, self.index_path, arm, self.manifest_path)
         home = prepare_arm_home(
             arm,
             auth_source=self.auth_source,
+            codemap_bin=self.codemap_bin,
             plugin_installer=self.plugin_installer,
         )
         try:
-            if arm in {"B_auto", "C_required"} and self.index_path is not None:
+            if arm != "A_plain" and self.index_path is not None:
                 home.env["CODEMAP_PYTHON"] = _verify_locked_codemap_python(
+                    manifest_path=self.manifest_path,
                     command_runner=self.command_runner,
                 )
                 home.env["SCAN_NO_AUTOBUILD"] = "1"
@@ -1388,11 +2143,12 @@ class CodexRunner:
                     "CODEMAP_INDEX",
                     "CODEMAP_INDEX_DIR",
                     "CODEMAP_PYTHON",
+                    "CODEMAP_SKILL_FILE",
                     "SCAN_NO_AUTOBUILD",
                     "CODEMAP_LOGGING",
                 ):
                     home.env.pop(variable, None)
-            if arm != "A_plain":
+            if arm == "C_skill_required":
                 if self.plugin_probe is not None:
                     home.codemap_verified = bool(self.plugin_probe(home.path))
                 elif not home.codemap_verified:
@@ -1401,17 +2157,52 @@ class CodexRunner:
                         self.marketplace_root,
                         command_runner=self.command_runner,
                     )
-            if arm in {"B_auto", "C_required"}:
+            if arm != "A_plain":
                 if not home.codemap_verified:
-                    raise RuntimeError("Codemap plugin is not verified by codex plugin list --json")
+                    raise RuntimeError("Codemap delivery is not verified")
                 home.codemap_available = True
-            _write_permission_config(home, arm, self.index_path)
+                _verify_treatment_artifact_locks(home, self.manifest_path)
+            if arm == "C_skill_required" and (
+                home.codemap_skill_path is None
+                or not home.codemap_skill_sha256
+                or home.codex_rig_path is None
+                or not home.codex_rig_manifest_sha256
+            ):
+                raise RuntimeError("installed Codemap skill and Codex Rig are not verified")
+            if arm == "C_skill_required":
+                if self.index_path is None:
+                    raise ValueError("C_skill_required admission requires the locked index")
+                _admit_installed_skill_pair(
+                    home,
+                    self.repo_path,
+                    self.index_path,
+                    manifest_path=self.manifest_path,
+                    command_runner=self.command_runner,
+                )
+            _write_permission_config(
+                home,
+                arm,
+                self.index_path,
+                marketplace_root=self.marketplace_root,
+            )
+            if arm == "C_skill_required":
+                _verify_installed_plugin_pair(home, command_runner=self.command_runner)
             _verify_permission_profile(
                 home,
                 self.repo_path,
                 self.index_path,
                 command_runner=self.command_runner,
             )
+            if arm == "B_direct_required":
+                if self.index_path is None:
+                    raise ValueError("B_direct_required admission requires the locked index")
+                _admit_staged_direct_cli(
+                    home,
+                    self.repo_path,
+                    self.index_path,
+                    manifest_path=self.manifest_path,
+                    command_runner=self.command_runner,
+                )
             if home.auth_provisioned:
                 _verify_authentication(home, command_runner=self.command_runner)
             if arm == "A_plain":
@@ -1426,14 +2217,28 @@ class CodexRunner:
 
     def probe_arm(self, arm: str) -> dict[str, Any]:
         """Return no-model runtime and plugin-isolation evidence for one arm."""
-        if arm not in ARM_CONTRACTS:
+        if not _is_known_codex_arm(arm):
             raise ValueError(f"unknown benchmark arm {arm!r}")
-        with self._prepare_verified_home(arm) as home:
+        home = self._prepare_verified_home(arm)
+        try:
             return probe_arm_home(home)
+        finally:
+            try:
+                if home.coordination_path is not None:
+                    _cleanup_coordination_root(home.coordination_path)
+            finally:
+                home.cleanup()
 
-    def run(self, task: Mapping[str, Any], arm: str, *, repetition: int = 1) -> CodexRun:
-        """Execute a task cell, or use an injected fixture transport."""
-        if arm not in ARM_CONTRACTS:
+    def run(
+        self,
+        task: Mapping[str, Any],
+        arm: str,
+        *,
+        repetition: int = 1,
+        deadline: float | None = None,
+    ) -> CodexRun:
+        """Execute one task cell within a retry-inclusive coordinate deadline."""
+        if not _is_known_codex_arm(arm):
             raise ValueError(f"unknown benchmark arm {arm!r}")
         if repetition < 1:
             raise ValueError("repetition must be a positive integer")
@@ -1457,8 +2262,9 @@ class CodexRunner:
             repetition=repetition,
         )
         run.parity_arm = arm
+        run.cell_wall_clock_limit_s = self.timeout
         run.capability_strata = capability_strata(_raw_task(task))
-        run.arm_contract_hash = ARM_CONTRACTS[arm]["contract_sha256"]
+        run.arm_contract_hash = _arm_contract_hash(arm)
         raw_hash = _raw_task_hash(task)
         expected_hash = metadata.get("task_hash", task.get("task_hash"))
         raw_prompt_hash = prompt_hash(_raw_task(task))
@@ -1492,22 +2298,44 @@ class CodexRunner:
         if self.transport is None:
             home = self._prepare_verified_home(arm)
         started_at = time.monotonic()
+        coordinate_deadline = started_at + self.timeout
+        if deadline is not None:
+            coordinate_deadline = min(coordinate_deadline, deadline)
         attempt_events: list[list[dict[str, Any]]] = []
         parsed = CodexParseResult()
         postflight_error = ""
         command = self.build_command(command_prompt)
         try:
             for attempt in range(3):
+                remaining_s = coordinate_deadline - time.monotonic()
+                if remaining_s <= 0:
+                    parsed = CodexParseResult(
+                        incomplete=True,
+                        error=f"cell wall-clock budget exhausted ({self.timeout}s total)",
+                        error_type="cell_timeout",
+                    )
+                    break
+                run.retry_count = attempt
                 if self.transport is None:
                     assert home is not None
-                    stream = self._subprocess(command, home.env)
+                    stream = self._subprocess(command, home.env, timeout=remaining_s)
                 else:
                     stream = self.transport(command, arm=arm)
-                parsed = parse_codex_jsonl(stream)
+                parsed = parse_codex_jsonl(
+                    stream,
+                    launcher_path=home.codemap_launcher_path if home is not None else None,
+                    skill_path=home.codemap_skill_path if home is not None else None,
+                    skill_sha256=home.codemap_skill_sha256 if home is not None else "",
+                )
                 attempt_events.append(parsed.raw_events)
                 if home is not None:
                     try:
-                        _validate_locked_runtime(self.repo_path, self.index_path, arm)
+                        _validate_locked_runtime(
+                            self.repo_path,
+                            self.index_path,
+                            arm,
+                            self.manifest_path,
+                        )
                         if home.coordination_path is not None:
                             _validate_coordination_root(home.coordination_path)
                     except ValueError as exc:
@@ -1522,9 +2350,7 @@ class CodexRunner:
                     parsed.input_tokens == 0 and parsed.output_tokens == 0 and parsed.retryable
                 )
                 if not zero_token_transport_failure or attempt == 2:
-                    run.retry_count = attempt
                     break
-                run.retry_count = attempt + 1
         finally:
             run.elapsed_s = time.monotonic() - started_at
             if home is not None:
@@ -1549,6 +2375,14 @@ class CodexRunner:
             "command_calls",
             "codemap_calls",
             "codemap_successful_calls",
+            "codemap_compact_successful_calls",
+            "codemap_direct_calls",
+            "codemap_direct_successful_calls",
+            "codemap_direct_compact_successful_calls",
+            "codemap_skill_calls",
+            "codemap_skill_successful_calls",
+            "codemap_skill_compact_successful_calls",
+            "skill_delivery_observed",
             "codemap_errors",
             "fallback_calls",
         ):
@@ -1557,7 +2391,11 @@ class CodexRunner:
         run.incomplete = parsed.incomplete
         run.error = parsed.error
         run.error_type = parsed.error_type
-        run.compliance = run.codemap_calls > 0 if arm == "C_required" else None
+        run.compliance = _arm_compliance(arm, run)
+        if arm == "B_direct_required" and run.compliance:
+            run.codemap_delivery = "direct_cli"
+        elif arm == "C_skill_required" and run.compliance:
+            run.codemap_delivery = "installed_skill"
         run.contaminated = bool(postflight_error) or (arm == "A_plain" and run.codemap_calls > 0)
         if postflight_error:
             run.incomplete = True
@@ -1575,8 +2413,15 @@ class CodexRunner:
             run.extraction_failed = not evaluation.scored
         return run
 
-    def _subprocess(self, command: list[str], env: Mapping[str, str]) -> str:
-        """Run Codex and classify timeout/non-zero output without retrying model calls."""
+    def _subprocess(
+        self,
+        command: list[str],
+        env: Mapping[str, str],
+        *,
+        timeout: float | None = None,
+    ) -> str:
+        """Run one Codex attempt within the coordinate's remaining budget."""
+        attempt_timeout = self.timeout if timeout is None else timeout
         try:
             completed = subprocess.run(
                 command,
@@ -1584,14 +2429,14 @@ class CodexRunner:
                 env=dict(env),
                 capture_output=True,
                 text=True,
-                timeout=self.timeout,
+                timeout=attempt_timeout,
                 check=False,
             )
         except subprocess.TimeoutExpired:
             return json.dumps(
                 {
                     "type": "error",
-                    "error": f"timeout ({self.timeout}s)",
+                    "error": f"timeout ({attempt_timeout}s)",
                     "error_type": "timeout",
                 }
             )
@@ -1611,9 +2456,23 @@ def _arm_envelope(arm: str) -> str:
     """Return arm-only tool availability instructions."""
     if arm == "A_plain":
         return "Codemap is absent and inaccessible. Use ordinary provider tools only; do not invoke Codemap."
-    if arm == "B_auto":
-        return "Codemap is installed and available. You may use $codemap-py:query-code; no Codemap call is required."
-    return "Codemap is installed and available. You must use $codemap-py:query-code at least once for structural investigation; other tools remain allowed."
+    if arm == "B_direct_required":
+        return (
+            "Codemap is available only through the direct CLI. Before answering, complete a dedicated native "
+            'command item of the exact form "$CODEMAP_BIN" query --compact <subcommand> <arguments>. '
+            "It must exit 0 and emit one JSON document whose index.query_complete and index.compact are true. "
+            "Additional reads and shell work are allowed only as separate native items and are ignored for credit."
+        )
+    if arm == "C_skill_required":
+        return (
+            "Codemap's installed $codemap-py:query-code Skill is available through the runner-owned immutable "
+            "CODEMAP_SKILL_FILE binding. Before the canonical query, complete a separate dedicated native item whose "
+            'exact command is cat "$CODEMAP_SKILL_FILE". Then complete a dedicated '
+            'native command item of the exact form "$CODEMAP_BIN" query --compact <subcommand> <arguments> with '
+            "exit 0 and one JSON document whose index.query_complete and index.compact are true. Additional reads "
+            "and shell work are allowed only as separate native items and are ignored for credit."
+        )
+    raise ValueError(f"unknown benchmark arm {arm!r}")
 
 
 def _append_run(output_path: Path, run: CodexRun) -> None:
@@ -1622,32 +2481,140 @@ def _append_run(output_path: Path, run: CodexRun) -> None:
         handle.write(json.dumps(asdict(run), sort_keys=True) + "\n")
 
 
+def _utc_now() -> str:
+    """Return one stable UTC timestamp for run-level evidence."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _write_run_metadata(metadata_path: Path, payload: Mapping[str, Any]) -> None:
+    """Atomically persist run provenance so interruptions retain the last completed cell."""
+    serialized = (json.dumps(dict(payload), indent=2, sort_keys=True) + "\n").encode("utf-8")
+    with tempfile.NamedTemporaryFile(
+        dir=metadata_path.parent, prefix=f".{metadata_path.name}.", delete=False
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(serialized)
+    try:
+        os.replace(temporary, metadata_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _initial_run_metadata(
+    *,
+    manifest_path: Path,
+    repo_path: Path,
+    index_path: Path | None,
+    output_path: Path,
+    metadata_path: Path,
+    model: str,
+    reasoning_effort: str,
+    repetitions: int,
+    task_arms: Mapping[tuple[str, int], tuple[str, ...]],
+    max_wall_clock_seconds: float,
+    auth_provisioned: bool,
+) -> dict[str, Any]:
+    """Build complete non-secret provenance for one paid structural run."""
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    coordinates = [
+        {"task_id": task_id, "repetition": repetition, "arm": arm}
+        for (task_id, repetition), arms in task_arms.items()
+        for arm in arms
+    ]
+    return {
+        "schema_version": "codex-structural-run-metadata-v1",
+        "status": "running",
+        "started_at": _utc_now(),
+        "completed_at": None,
+        "persisted_cells": 0,
+        "cell_outcomes": {
+            "successful": 0,
+            "unsuccessful": 0,
+            "unscoreable": 0,
+            "incomplete": 0,
+            "extraction_failed": 0,
+            "contaminated": 0,
+            "compliance_failed": 0,
+        },
+        "last_persisted_coordinate": None,
+        "error": None,
+        "auth_provisioned": auth_provisioned,
+        "auth_source_recorded": False,
+        "manifest": {
+            "path": str(manifest_path.resolve()),
+            "sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            "experiment_id": manifest["experiment_id"],
+            "experiment_revision": manifest["experiment_revision"],
+        },
+        "execution": {
+            "model": model,
+            "reasoning_effort": reasoning_effort,
+            "repetitions": repetitions,
+            "arms": list(CODEX_STRUCTURAL_ARMS),
+            "planned_cells": len(coordinates),
+            "coordinates": coordinates,
+            "cell_wall_clock_seconds": PARITY_TIMEOUT_SECONDS,
+            "max_wall_clock_seconds": max_wall_clock_seconds,
+            "python": sys.version,
+            "codex_cli": manifest["codex_cli"],
+        },
+        "inputs": {
+            "target_path": str(repo_path.resolve()),
+            "target": manifest["target_source"],
+            "index_path": str(index_path.resolve()) if index_path is not None else None,
+            "index_sha256": _index_sha(index_path),
+            "index": manifest["index"],
+            "suite_integrity": manifest["suite_integrity"],
+        },
+        "treatments": {
+            "arms": manifest["arms"],
+            "package_roster": manifest["package_roster"],
+            "codemap_candidate": manifest["codemap_candidate"],
+            "codex_rig_candidate": manifest["codex_rig_candidate"],
+            "artifact_sha256": manifest["artifact_sha256"],
+            "permission_profiles": manifest["codex_permission_profiles"],
+            "telemetry_admission": manifest["telemetry_admission"],
+        },
+        "artifacts": {
+            "telemetry_jsonl": str(output_path.resolve()),
+            "run_metadata": str(metadata_path.resolve()),
+        },
+    }
+
+
 def main(
     *,
     repo_path: Path,
     model: str,
     reasoning_effort: str = PARITY_CODEX_REASONING_EFFORT,
     tasks_path: Path,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
     index_path: Path | None = None,
     marketplace_root: Path | None = None,
+    codemap_bin: Path | None = None,
     auth_source: Path | None = None,
     output_path: Path | None = None,
+    metadata_path: Path | None = None,
     task_ids: list[str] | None = None,
     repetitions: int = 1,
     arm: str = "all",
     dry_run: bool = False,
+    max_wall_clock_seconds: float | None = None,
 ) -> None:
-    """Validate and plan canonical cells; model execution requires omitting ``dry_run``."""
+    """Validate and plan cells; paid execution also requires a total deadline."""
     _validate_codex_stratum(model, reasoning_effort)
     if repetitions < 1:
         raise ValueError("--repetitions must be a positive integer")
-    tasks = load_tasks_with_provenance(tasks_path)
+    if max_wall_clock_seconds is not None and max_wall_clock_seconds <= 0:
+        raise ValueError("--max-wall-clock-seconds must be positive")
+    manifest_path = Path(manifest_path)
+    tasks = load_tasks_with_provenance(tasks_path, manifest_path)
     if not tasks:
         raise ValueError("locked task suite must contain at least one task")
     provenance = tasks[0].get(_PROVENANCE_KEY, {})
     experiment_revision = (
         str(provenance.get("experiment_revision", "")) if isinstance(provenance, Mapping) else ""
-    ) or _read_manifest_revision(PARITY_MANIFEST_PATH)
+    ) or _read_manifest_revision(manifest_path)
     if task_ids:
         if len(task_ids) != len(set(task_ids)):
             raise ValueError("--task-id values must be unique")
@@ -1659,10 +2626,16 @@ def main(
     if not dry_run:
         if output_path is None:
             raise ValueError("non-dry Codex runs require --output-path")
+        metadata_path = metadata_path or output_path.with_name(f"{output_path.stem}-metadata.json")
         if output_path.exists():
             raise FileExistsError(output_path)
-        _validate_execution_manifest(PARITY_MANIFEST_PATH)
+        if metadata_path.exists():
+            raise FileExistsError(metadata_path)
+        if max_wall_clock_seconds is None:
+            raise ValueError("non-dry Codex runs require positive --max-wall-clock-seconds")
+        _validate_execution_manifest(manifest_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("x", encoding="utf-8"):
             pass
     runner = CodexRunner(
@@ -1671,6 +2644,8 @@ def main(
         reasoning_effort=reasoning_effort,
         index_path=index_path,
         marketplace_root=marketplace_root,
+        codemap_bin=codemap_bin,
+        manifest_path=manifest_path,
         auth_source=auth_source,
     )
     if dry_run:
@@ -1678,15 +2653,19 @@ def main(
             evidence = runner.probe_arm(selected)
             runtime = evidence.get("codemap_python") or "absent"
             print(f"PROBE\t{selected}\tcodemap={str(evidence['codemap_available']).lower()}\tcodemap_python={runtime}")
+    if max_wall_clock_seconds is not None:
+        print(
+            f"CONTROL\tcell_wall_clock_seconds={PARITY_TIMEOUT_SECONDS:g}"
+            f"\tmax_wall_clock_seconds={max_wall_clock_seconds:g}"
+        )
     task_arms = {
         (task["id"], repetition): (
-            deterministic_arm_order(
+            _manifest_arm_order(
                 experiment_revision,
-                "codex",
                 model,
                 task["id"],
                 repetition,
-                reasoning_effort=reasoning_effort,
+                reasoning_effort,
             )
             if arm == "all"
             else (arm,)
@@ -1700,12 +2679,82 @@ def main(
                 print(f"PLAN\t{task['id']}\t{repetition}\t{selected}")
     if dry_run:
         return
-    for task in tasks:
-        for repetition in range(1, repetitions + 1):
-            for selected in task_arms[(task["id"], repetition)]:
-                run = runner.run(task, selected, repetition=repetition)
-                _append_run(output_path, run)
-                print(f"RESULT\t{task['id']}\t{repetition}\t{selected}\t{output_path}")
+    assert max_wall_clock_seconds is not None
+    assert output_path is not None
+    assert metadata_path is not None
+    metadata = _initial_run_metadata(
+        manifest_path=manifest_path,
+        repo_path=repo_path,
+        index_path=index_path,
+        output_path=output_path,
+        metadata_path=metadata_path,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        repetitions=repetitions,
+        task_arms=task_arms,
+        max_wall_clock_seconds=max_wall_clock_seconds,
+        auth_provisioned=auth_source is not None,
+    )
+    _write_run_metadata(metadata_path, metadata)
+    run_deadline = time.monotonic() + max_wall_clock_seconds
+    try:
+        for task in tasks:
+            for repetition in range(1, repetitions + 1):
+                for selected in task_arms[(task["id"], repetition)]:
+                    if time.monotonic() >= run_deadline:
+                        raise TimeoutError("complete-run wall-clock limit exhausted before next cell")
+                    run = runner.run(task, selected, repetition=repetition, deadline=run_deadline)
+                    run.run_wall_clock_limit_s = max_wall_clock_seconds
+                    _append_run(output_path, run)
+                    metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
+                    outcomes = metadata["cell_outcomes"]
+                    outcomes["successful" if run.success else "unsuccessful"] += 1
+                    for outcome, failed in (
+                        ("unscoreable", not run.scoreable),
+                        ("incomplete", run.incomplete),
+                        ("extraction_failed", run.extraction_failed),
+                        ("contaminated", run.contaminated),
+                        (
+                            "compliance_failed",
+                            run.arm in {"B_direct_required", "C_skill_required"} and not run.compliance,
+                        ),
+                    ):
+                        if failed:
+                            outcomes[outcome] += 1
+                    metadata["last_persisted_coordinate"] = {
+                        "task_id": task["id"],
+                        "repetition": repetition,
+                        "arm": selected,
+                    }
+                    _write_run_metadata(metadata_path, metadata)
+                    status = "✓" if run.success else "✗"
+                    quality = f"{run.quality_score:.3f}" if run.quality_score is not None else "?"
+                    print(
+                        f"RESULT\t{status}\t{task['id']}\trep={repetition}\t{selected}"
+                        f"\tin={run.input_tokens}\tout={run.output_tokens}\ttime={run.elapsed_s:.1f}s"
+                        f"\tquality={quality}\tcompliance={run.compliance}\t{output_path}"
+                    )
+                    if time.monotonic() >= run_deadline:
+                        raise TimeoutError("complete-run wall-clock limit exhausted after persisted cell")
+    except BaseException as exc:
+        metadata["status"] = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+        metadata["completed_at"] = _utc_now()
+        metadata["error"] = {"type": type(exc).__name__, "message": str(exc)[:1000]}
+        metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
+        _write_run_metadata(metadata_path, metadata)
+        print(
+            f"SUMMARY\tstatus={metadata['status']}\tpersisted_cells={metadata['persisted_cells']}"
+            f"\tmetadata={metadata_path}"
+        )
+        raise
+    metadata["status"] = "completed"
+    metadata["completed_at"] = _utc_now()
+    metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    _write_run_metadata(metadata_path, metadata)
+    print(
+        f"SUMMARY\tstatus=completed\tpersisted_cells={metadata['persisted_cells']}"
+        f"\toutcomes={json.dumps(metadata['cell_outcomes'], sort_keys=True)}\tmetadata={metadata_path}"
+    )
 
 
 if __name__ == "__main__":
@@ -1720,13 +2769,17 @@ if __name__ == "__main__":
         choices=(PARITY_CODEX_REASONING_EFFORT,),
     )
     parser.add_argument("--tasks-path", type=Path, required=True)
+    parser.add_argument("--manifest-path", type=Path, default=PARITY_MANIFEST_PATH)
     parser.add_argument("--index-path", type=Path)
     parser.add_argument("--marketplace-root", type=Path, required=False)
+    parser.add_argument("--codemap-bin", type=Path)
     parser.add_argument("--auth-source", type=Path)
     parser.add_argument("--output-path", type=Path)
+    parser.add_argument("--metadata-path", type=Path)
     parser.add_argument("--task-id", dest="task_ids", action="append")
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--arm", default="all")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--max-wall-clock-seconds", type=float)
     args = parser.parse_args()
     main(**vars(args))

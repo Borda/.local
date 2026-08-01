@@ -20,7 +20,7 @@ from benchmarks import provider_parity_contracts as core
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = BENCHMARKS_DIR / "run-codex-structural.py"
 SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-bench.json"
-MANIFEST_PATH = BENCHMARKS_DIR / "results" / "manifests" / "provider-parity-v1.json"
+MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 
 
 @pytest.fixture(scope="module")
@@ -33,6 +33,24 @@ def script_run_codex() -> Any:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _make_direct_runtime_bundle(root: Path) -> Path:
+    """Create the minimum source-shaped direct CLI runtime used by isolation tests."""
+    runtime = root / "codemap-runtime"
+    launcher = runtime / "bin" / "codemap-py"
+    exclusions = runtime / "bin" / "_exclusions.py"
+    entrypoint = runtime / "scripts" / "codemap_py_entry.py"
+    package = runtime / "src" / "codemap_py"
+    launcher.parent.mkdir(parents=True)
+    entrypoint.parent.mkdir(parents=True)
+    package.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    exclusions.write_text("EXCLUSION_PATTERNS = ()\n", encoding="utf-8")
+    entrypoint.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    return launcher
 
 
 def test_codex_command_is_ephemeral_json_profile_backed_and_keeps_prompt_exact(
@@ -71,6 +89,27 @@ def test_codex_stratum_locks_luna_and_high_effort(script_run_codex: Any) -> None
         script_run_codex._validate_codex_stratum("gpt-5.3-codex", "high")
     with pytest.raises(ValueError, match="reasoning effort"):
         script_run_codex._validate_codex_stratum("gpt-5.6-luna", "medium")
+
+
+def test_deterministic_order_uses_only_current_plain_cli_skill_arms(script_run_codex: Any) -> None:
+    """Prevent the historical auto/required arm registry leaking into the new experiment."""
+    first = script_run_codex._manifest_arm_order(
+        "codex-integration-v1",
+        "gpt-5.6-luna",
+        "FN-02",
+        1,
+        "high",
+    )
+    second = script_run_codex._manifest_arm_order(
+        "codex-integration-v1",
+        "gpt-5.6-luna",
+        "FN-02",
+        1,
+        "high",
+    )
+
+    assert first == second
+    assert set(first) == {"A_plain", "B_direct_required", "C_skill_required"}
 
 
 def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_write(
@@ -114,22 +153,124 @@ def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_
     assert 'inherit = "none"' in plain_text
     assert "API_TOKEN" not in plain_text
     assert "SSH_AUTH_SOCK" not in plain_text
+    for denied_root in script_run_codex._untrusted_host_agent_roots(home, "A_plain"):
+        assert f'"{denied_root}" = "deny"' in plain_text
 
-    for arm in ("B_auto", "C_required"):
-        treatment_config = script_run_codex._write_permission_config(home, arm, index_path)
+    for arm in ("B_direct_required", "C_skill_required"):
+        treatment_home_path = tmp_path / f"codex-home-{arm}"
+        treatment_home_path.mkdir()
+        treatment_auth_path = treatment_home_path / "auth.json"
+        treatment_auth_path.write_text("fixture-auth", encoding="utf-8")
+        treatment_home = script_run_codex.ArmHome(
+            arm,
+            treatment_home_path,
+            {"PATH": "/fixture/bin"},
+            True,
+            True,
+        )
+        marketplace_root = tmp_path / "marketplace"
+        treatment_config = script_run_codex._write_permission_config(
+            treatment_home,
+            arm,
+            index_path,
+            marketplace_root=marketplace_root,
+        )
         treatment_text = treatment_config.read_text(encoding="utf-8")
         coordination_root = index_path.parent / ".index-rw"
 
-        assert treatment_config == plain_config
+        assert treatment_config == treatment_home_path / "config.toml"
         assert 'default_permissions = "provider-parity-codemap"' in treatment_text
         assert "[permissions.provider-parity-codemap]" in treatment_text
         assert 'extends = ":read-only"' in treatment_text
-        assert f'"{auth_path.resolve()}" = "deny"' in treatment_text
+        assert f'"{treatment_auth_path.resolve()}" = "deny"' in treatment_text
         assert f'"{coordination_root.resolve()}" = "write"' in treatment_text
         assert "[permissions.provider-parity-codemap.network]" in treatment_text
         assert "enabled = false" in treatment_text
         assert "sandbox_mode" not in treatment_text
         assert "sandbox_workspace_write" not in treatment_text
+        for denied_root in script_run_codex._untrusted_host_agent_roots(treatment_home, arm, marketplace_root):
+            assert f'"{denied_root}" = "deny"' in treatment_text
+
+
+def test_plain_and_direct_homes_drop_host_skill_file_binding(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A/B must not inherit a host Skill path that could contaminate treatment."""
+    monkeypatch.setenv("CODEMAP_SKILL_FILE", "/host/untrusted/SKILL.md")
+    launcher = _make_direct_runtime_bundle(tmp_path / "direct-runtime")
+
+    with script_run_codex.prepare_arm_home("A_plain", root=tmp_path) as plain_home:
+        assert "CODEMAP_SKILL_FILE" not in plain_home.env
+    with script_run_codex.prepare_arm_home(
+        "B_direct_required",
+        root=tmp_path,
+        codemap_bin=launcher,
+    ) as direct_home:
+        assert "CODEMAP_SKILL_FILE" not in direct_home.env
+
+
+def test_skill_home_preserves_plugin_registration_when_permissions_are_applied(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C must retain enabled plugin tables after applying its permission profile.
+
+    Prevents the runner from verifying plugin installation and then deleting
+    its registration by replacing ``config.toml`` before ``codex exec``.
+    """
+    repo_path = tmp_path / "target"
+    index_path = repo_path / ".cache" / "codemap" / "target.json"
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("{}", encoding="utf-8")
+    marketplace_root = tmp_path / "marketplace"
+    marketplace_root.mkdir()
+
+    def install_plugins(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+        config_path = home.path / "config.toml"
+        config_text = config_path.read_text(encoding="utf-8")
+        config_path.write_text(
+            config_text
+            + '\n[plugins."codemap-py@borda-ai-rig"]\nenabled = true\n'
+            + '\n[plugins."codex-rig@borda-ai-rig"]\nenabled = true\n',
+            encoding="utf-8",
+        )
+        home.codemap_skill_path = config_path
+        home.codemap_skill_sha256 = "skill-sha"
+        home.env["CODEMAP_SKILL_FILE"] = str(config_path.resolve())
+        home.codex_rig_path = home.path
+        home.codex_rig_manifest_sha256 = "rig-sha"
+        return True
+
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        script_run_codex,
+        "_verify_locked_codemap_python",
+        lambda **_kwargs: "/opt/homebrew/bin/python3.11",
+    )
+    monkeypatch.setattr(script_run_codex, "_install_codemap_plugin", install_plugins)
+    monkeypatch.setattr(script_run_codex, "_verify_treatment_artifact_locks", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_admit_installed_skill_pair", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_installed_plugin_pair", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        repo_path,
+        index_path=index_path,
+        marketplace_root=marketplace_root,
+    )
+
+    with runner._prepare_verified_home("C_skill_required") as home:
+        config_text = (home.path / "config.toml").read_text(encoding="utf-8")
+        coordination_path = home.coordination_path
+
+    assert "[permissions.provider-parity-codemap]" in config_text
+    assert '[plugins."codemap-py@borda-ai-rig"]' in config_text
+    assert '[plugins."codex-rig@borda-ai-rig"]' in config_text
+    assert coordination_path is not None
+    script_run_codex._cleanup_coordination_root(coordination_path)
 
 
 def test_active_manifest_locks_exact_treatment_python_runtime() -> None:
@@ -141,7 +282,7 @@ def test_active_manifest_locks_exact_treatment_python_runtime() -> None:
     assert runtime == {
         "environment": {"CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"},
         "required_major_minor": [3, 11],
-        "scope": ["B_auto", "C_required"],
+        "scope": ["B_direct_required", "C_skill_required"],
     }
 
 
@@ -161,7 +302,7 @@ def test_locked_treatment_python_is_executable_and_version_checked(
                     "treatment_runtime": {
                         "environment": {"CODEMAP_PYTHON": str(python_path)},
                         "required_major_minor": [3, 11],
-                        "scope": ["B_auto", "C_required"],
+                        "scope": ["B_direct_required", "C_skill_required"],
                     }
                 }
             }
@@ -201,7 +342,7 @@ def test_verified_home_overrides_treatment_python_and_removes_it_from_plain(
     index_path.parent.mkdir(parents=True)
     index_path.write_text("{}", encoding="utf-8")
     monkeypatch.setenv("CODEMAP_PYTHON", "/caller/selected/python")
-    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args: None)
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_plain_plugin_absent", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
@@ -209,17 +350,20 @@ def test_verified_home_overrides_treatment_python_and_removes_it_from_plain(
         "_verify_locked_codemap_python",
         lambda **_kwargs: "/opt/homebrew/bin/python3.11",
     )
+    monkeypatch.setattr(script_run_codex, "_verify_treatment_artifact_locks", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_admit_staged_direct_cli", lambda *_args, **_kwargs: None)
+    launcher = _make_direct_runtime_bundle(tmp_path)
     runner = script_run_codex.CodexRunner(
         "fixture-model",
         repo_path,
         index_path=index_path,
-        plugin_installer=lambda _home: True,
+        codemap_bin=launcher,
     )
 
     with runner._prepare_verified_home("A_plain") as plain:
         plain_evidence = script_run_codex.probe_arm_home(plain)
         plain_has_runtime = "CODEMAP_PYTHON" in plain.env
-    with runner._prepare_verified_home("B_auto") as treatment:
+    with runner._prepare_verified_home("B_direct_required") as treatment:
         treatment_evidence = script_run_codex.probe_arm_home(treatment)
         coordination_path = treatment.coordination_path
 
@@ -300,7 +444,7 @@ def test_permission_profile_verification_fails_closed_when_codex_rejects_the_pro
     repo_path.mkdir()
     home_path = tmp_path / "codex-home"
     home_path.mkdir()
-    home = script_run_codex.ArmHome("B_auto", home_path, {}, True, True)
+    home = script_run_codex.ArmHome("B_direct_required", home_path, {}, True, True)
 
     def reject_profile(command: list[str], **_kwargs: Any) -> SimpleNamespace:
         if "--version" in command:
@@ -325,12 +469,14 @@ def test_real_codex_profile_denies_source_and_auth_but_allows_coordination(
     index_path = repo_path / ".cache" / "codemap" / "target.json"
     index_path.parent.mkdir(parents=True)
     index_path.write_text("{}", encoding="utf-8")
-    home = script_run_codex.prepare_arm_home("B_auto", root=tmp_path)
+    home_path = tmp_path / "codex-home"
+    home_path.mkdir()
+    home = script_run_codex.ArmHome("B_direct_required", home_path, {}, True, True)
     auth_path = home.path / "auth.json"
     auth_path.write_text('{"fixture":"credential-sentinel"}', encoding="utf-8")
     auth_path.chmod(0o600)
     home.coordination_path = script_run_codex._prepare_coordination_root(index_path)
-    script_run_codex._write_permission_config(home, "B_auto", index_path)
+    script_run_codex._write_permission_config(home, "B_direct_required", index_path)
 
     try:
         script_run_codex._verify_permission_profile(home, repo_path, index_path)
@@ -394,9 +540,10 @@ def test_parse_codex_jsonl_preserves_native_events_and_normalizes_usage(
             "item": {
                 "id": "command-1",
                 "type": "command_execution",
-                "command": "/installed/codemap-py/bin/codemap-py query rdeps lightning.fabric",
+                "command": '"$CODEMAP_BIN" query --compact rdeps lightning.fabric',
                 "status": "completed",
                 "exit_code": 0,
+                "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
                 "duration_ms": 1250,
             },
         },
@@ -486,7 +633,7 @@ def test_loaded_task_keeps_canonical_identity_and_shared_evaluator_input(script_
         evaluator=evaluator,
     )
 
-    result = runner.run(loaded_task, "B_auto")
+    result = runner.run(loaded_task, "B_direct_required")
 
     assert result.task_hash == core.canonical_task_hash(raw_task)
     assert result.prompt_hash == core.prompt_hash(raw_task)
@@ -506,9 +653,10 @@ def test_loaded_task_keeps_canonical_identity_and_shared_evaluator_input(script_
             [
                 {
                     "type": "command_execution",
-                    "command": "/plugin/bin/codemap-py query rdeps pkg.core",
+                    "command": '"$CODEMAP_BIN" query --compact rdeps pkg.core',
                     "status": "completed",
                     "exit_code": 0,
+                    "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
                 }
             ],
             None,
@@ -516,22 +664,23 @@ def test_loaded_task_keeps_canonical_identity_and_shared_evaluator_input(script_
             False,
             id="plain-contaminated",
         ),
-        pytest.param("B_auto", [], None, False, True, id="auto-no-call-valid"),
-        pytest.param("C_required", [], False, False, True, id="required-no-call-separate"),
+        pytest.param("B_direct_required", [], False, False, True, id="direct-no-call-separate"),
+        pytest.param("C_skill_required", [], False, False, True, id="skill-no-call-separate"),
         pytest.param(
-            "C_required",
+            "C_skill_required",
             [
                 {
                     "type": "command_execution",
-                    "command": "/plugin/bin/codemap-py query rdeps pkg.core",
+                    "command": '"$CODEMAP_BIN" query --compact rdeps pkg.core',
                     "status": "completed",
                     "exit_code": 0,
+                    "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
                 }
             ],
-            True,
+            False,
             False,
             True,
-            id="required-call-compliant",
+            id="skill-query-without-read-not-compliant",
         ),
     ],
 )
@@ -587,7 +736,7 @@ def test_codemap_failure_then_ordinary_command_is_fallback(script_run_codex: Any
         commands=[
             {
                 "type": "command_execution",
-                "command": "/plugin/bin/codemap-py query rdeps pkg.core",
+                "command": '"$CODEMAP_BIN" query --compact rdeps pkg.core',
                 "status": "failed",
                 "exit_code": 1,
             },
@@ -671,12 +820,43 @@ def test_retry_policy_only_retries_zero_token_transport_failures(
     assert runner.timeout == pytest.approx(600.0)
 
 
+def test_retry_attempts_share_one_coordinate_wall_clock_budget(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transport timeout cannot unlock another full coordinate budget."""
+    calls = 0
+
+    def transport(*_args: Any, **_kwargs: Any) -> str:
+        nonlocal calls
+        calls += 1
+        return json.dumps({"type": "error", "error": "transport unavailable"})
+
+    clock = iter([0.0, 0.0, 600.0, 600.0])
+    monkeypatch.setattr(script_run_codex.time, "monotonic", lambda: next(clock))
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        timeout=600.0,
+        transport=transport,
+        evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+    )
+
+    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "A_plain")
+
+    assert calls == 1
+    assert result.retry_count == 0
+    assert result.error_type == "cell_timeout"
+    assert result.cell_wall_clock_limit_s == pytest.approx(600.0)
+
+
 def test_command_lifecycle_uses_completed_status_once(script_run_codex: Any) -> None:
     """A started command cannot hide its later failed completion status."""
     item = {
         "id": "command-1",
         "type": "command_execution",
-        "command": "/plugin/bin/codemap-py query rdeps pkg.core",
+        "command": '"$CODEMAP_BIN" query --compact rdeps pkg.core',
     }
     events = [
         {"type": "item.started", "item": {**item, "status": "in_progress"}},
@@ -695,8 +875,8 @@ def test_command_lifecycle_uses_completed_status_once(script_run_codex: Any) -> 
     assert parsed.codemap_errors == 1
 
 
-def test_shell_probe_cannot_mask_codemap_exit_code(script_run_codex: Any) -> None:
-    """A trailing shell echo must not turn Codemap exit 127 into a success."""
+def test_compound_shell_probe_is_not_codemap_delivery_evidence(script_run_codex: Any) -> None:
+    """A compound shell command cannot become Codemap delivery evidence."""
     stream = _completed_stream(
         commands=[
             {
@@ -711,9 +891,9 @@ def test_shell_probe_cannot_mask_codemap_exit_code(script_run_codex: Any) -> Non
 
     parsed = script_run_codex.parse_codex_jsonl(stream)
 
-    assert parsed.codemap_calls == 1
+    assert parsed.codemap_calls == 0
     assert parsed.codemap_successful_calls == 0
-    assert parsed.codemap_errors == 1
+    assert parsed.codemap_errors == 0
 
 
 def test_terminal_event_with_pending_command_is_incomplete(script_run_codex: Any) -> None:
@@ -785,18 +965,25 @@ def test_runner_rejects_tampered_nested_provenance(script_run_codex: Any, tmp_pa
     )
 
     with pytest.raises(ValueError, match="task hash"):
-        runner.run(tampered, "B_auto")
+        runner.run(tampered, "B_direct_required")
 
 
-def test_no_model_plugin_install_uses_marketplace_and_installed_list(script_run_codex: Any, tmp_path: Path) -> None:
-    """B/C availability requires a verified exact launcher, not cache guessing."""
+def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: Any, tmp_path: Path) -> None:
+    """C installs both plugins and records their installed identities before model use."""
     marketplace_root = tmp_path / "marketplace"
     manifest = marketplace_root / ".agents" / "plugins" / "marketplace.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"borda-ai-rig","plugins":[]}', encoding="utf-8")
     calls: list[list[str]] = []
 
-    with script_run_codex.prepare_arm_home("B_auto", root=tmp_path) as home:
+    with script_run_codex.prepare_arm_home("C_skill_required", root=tmp_path) as home:
+        rig_path = home.path / "plugins" / "cache" / "borda-ai-rig" / "codex-rig" / "0.4.0"
+        rig_manifest = rig_path / ".codex-plugin" / "plugin.json"
+        rig_manifest.parent.mkdir(parents=True)
+        rig_manifest.write_text('{"name":"codex-rig","version":"0.4.0"}', encoding="utf-8")
+        adapter = rig_path / "shared" / "codemap_adapter.py"
+        adapter.parent.mkdir(parents=True)
+        adapter.write_text("print('fixture adapter')\n", encoding="utf-8")
         installed_path = home.path / "plugins" / "cache" / "borda-ai-rig" / "codemap-py" / "0.27.0"
         launcher = installed_path / "bin" / "codemap-py"
         launcher.parent.mkdir(parents=True)
@@ -805,13 +992,46 @@ def test_no_model_plugin_install_uses_marketplace_and_installed_list(script_run_
         plugin_manifest = installed_path / ".codex-plugin" / "plugin.json"
         plugin_manifest.parent.mkdir()
         plugin_manifest.write_text('{"name":"codemap-py","version":"0.27.0"}', encoding="utf-8")
+        query_skill = installed_path / "codex-skills" / "query-code" / "SKILL.md"
+        query_skill.parent.mkdir(parents=True)
+        query_skill.write_text("# query-code\n", encoding="utf-8")
 
         def command_runner(command: list[str], **_kwargs: Any) -> SimpleNamespace:
             calls.append(command)
-            if command[1:3] == ["plugin", "add"]:
-                stdout = json.dumps({"installedPath": str(installed_path)})
-            elif command[1:3] == ["plugin", "list"]:
-                stdout = '{"installed":[{"name":"codemap-py","enabled":true}],"available":[]}'
+            if len(command) > 2 and command[1:3] == ["plugin", "add"]:
+                install_path = rig_path if command[3] == "codex-rig@borda-ai-rig" else installed_path
+                stdout = json.dumps({"installedPath": str(install_path)})
+            elif len(command) > 2 and command[1:3] == ["plugin", "list"]:
+                stdout = (
+                    '{"installed":[{"name":"codex-rig","enabled":true},'
+                    '{"name":"codemap-py","enabled":true}],"available":[]}'
+                )
+            elif len(command) > 2 and command[1] == str(adapter):
+                assert "SECRET" not in _kwargs["env"]
+                assert _kwargs["env"]["CODEMAP_BIN"] == str(launcher.resolve())
+                assert _kwargs["cwd"] == tmp_path.resolve()
+                context_path = Path(command[command.index("--out") + 1])
+                index_path = tmp_path / "locked-index.json"
+                context_path.write_text(
+                    json.dumps(
+                        {
+                            "protocol_version": "codemap-py.integration.v1",
+                            "target": "lightning.pytorch.trainer.call",
+                            "status": "degraded",
+                            "probe": {
+                                "status": "available",
+                                "launcher": str(launcher.resolve()),
+                                "doctor": {
+                                    "plugin_root": str(installed_path.resolve()),
+                                    "index_path": str(index_path.resolve()),
+                                },
+                            },
+                            "queries": [{"exit_code": 0, "error": None, "query_complete": True}],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                stdout = ""
             else:
                 stdout = ""
             return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
@@ -823,22 +1043,126 @@ def test_no_model_plugin_install_uses_marketplace_and_installed_list(script_run_
         )
 
         assert installed is True
+        assert home.codex_rig_path == rig_path.resolve()
+        assert home.codex_rig_manifest_sha256 == hashlib.sha256(rig_manifest.read_bytes()).hexdigest()
+        assert home.codex_rig_adapter_path == adapter.resolve()
+        assert home.codex_rig_adapter_sha256 == hashlib.sha256(adapter.read_bytes()).hexdigest()
         assert home.env["CODEMAP_BIN"] == str(launcher.resolve())
+        assert home.env["CODEMAP_SKILL_FILE"] == str(query_skill.resolve())
         assert home.codemap_launcher_path == launcher.resolve()
         assert home.codemap_launcher_sha256 == hashlib.sha256(launcher.read_bytes()).hexdigest()
+        assert home.codemap_skill_path == query_skill.resolve()
+        assert home.codemap_skill_sha256 == hashlib.sha256(query_skill.read_bytes()).hexdigest()
+        assert script_run_codex._shell_environment(home)["CODEMAP_SKILL_FILE"] == str(query_skill.resolve())
         home.codemap_available = True
         home.codemap_verified = True
+        home.env["CODEMAP_PYTHON"] = "/usr/bin/python3"
+        home.env["SECRET"] = "must-not-reach-adapter"
+        index_path = tmp_path / "locked-index.json"
+        index_path.write_text("{}", encoding="utf-8")
+        lock_path = tmp_path / "locks.json"
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "artifact_sha256": {
+                        "codemap_runtime_cli": home.codemap_launcher_sha256,
+                        "codemap_candidate_manifest": home.codemap_plugin_manifest_sha256,
+                        "codemap_query_skill": home.codemap_skill_sha256,
+                        "codex_rig_plugin_manifest": home.codex_rig_manifest_sha256,
+                        "codex_rig_adapter": home.codex_rig_adapter_sha256,
+                    },
+                    "codemap_candidate": {"version": "0.27.0"},
+                    "codex_rig_candidate": {"version": "0.4.0"},
+                    "codex_rig_integration_admission": {
+                        "probe_category": "analysis",
+                        "probe_target": "lightning.pytorch.trainer.call",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        script_run_codex._verify_treatment_artifact_locks(home, lock_path)
+        script_run_codex._admit_installed_skill_pair(
+            home,
+            tmp_path,
+            index_path,
+            manifest_path=lock_path,
+            command_runner=command_runner,
+        )
         config = home.path / "config.toml"
         config.write_text("", encoding="utf-8")
         config.chmod(0o600)
         evidence = script_run_codex.probe_arm_home(home)
         assert evidence["codemap_launcher_path"] == str(launcher.resolve())
         assert evidence["codemap_launcher_sha256"] == home.codemap_launcher_sha256
+        assert evidence["codemap_skill_path"] == str(query_skill.resolve())
+        assert evidence["codemap_skill_sha256"] == home.codemap_skill_sha256
+        assert evidence["codemap_skill_file"] == str(query_skill.resolve())
+        assert evidence["codex_rig_path"] == str(rig_path.resolve())
+        assert evidence["codex_rig_manifest_sha256"] == home.codex_rig_manifest_sha256
+        assert evidence["codemap_context_path"] == str(home.codemap_context_path)
+        assert evidence["codemap_context_sha256"] == home.codemap_context_sha256
         assert calls == [
             ["codex", "plugin", "marketplace", "add", str(marketplace_root)],
             ["codex", "plugin", "add", "codemap-py@borda-ai-rig", "--json"],
+            ["codex", "plugin", "add", "codex-rig@borda-ai-rig", "--json"],
             ["codex", "plugin", "list", "--json"],
+            [
+                "/usr/bin/python3",
+                str(adapter.resolve()),
+                "context",
+                "--category",
+                "analysis",
+                "--target",
+                "lightning.pytorch.trainer.call",
+                "--root",
+                str(tmp_path.resolve()),
+                "--out",
+                str(home.codemap_context_path),
+            ],
         ]
+
+
+@pytest.mark.parametrize(
+    "installed",
+    [
+        pytest.param([{"name": "codemap-py", "enabled": True}], id="missing-rig"),
+        pytest.param(
+            [
+                {"name": "codemap-py", "enabled": True},
+                {"name": "codex-rig", "enabled": False},
+            ],
+            id="disabled-rig",
+        ),
+        pytest.param(
+            [
+                {"name": "codemap-py", "enabled": True},
+                {"name": "codex-rig", "enabled": True},
+                {"name": "unrelated", "enabled": True},
+            ],
+            id="extra-plugin",
+        ),
+    ],
+)
+def test_final_skill_plugin_roster_rejects_missing_disabled_or_extra_entries(
+    script_run_codex: Any,
+    tmp_path: Path,
+    installed: list[dict[str, object]],
+) -> None:
+    """Final C admission requires exactly the two enabled treatment plugins."""
+    home_path = tmp_path / "codex-home"
+    home_path.mkdir()
+    home = script_run_codex.ArmHome("C_skill_required", home_path, {}, True, True)
+
+    def command_runner(_command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"installed": installed, "available": []}),
+            stderr="",
+        )
+
+    with pytest.raises(RuntimeError, match="plugin registration"):
+        script_run_codex._verify_installed_plugin_pair(home, command_runner=command_runner)
 
 
 def test_auth_source_is_copied_with_private_modes_and_removed_with_home(script_run_codex: Any, tmp_path: Path) -> None:
@@ -902,7 +1226,7 @@ def test_probe_verifies_authentication_without_disclosing_auth_source(
         calls.append(command)
         return _successful_plain_profile_command(command, **kwargs)
 
-    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args: None)
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
     fixture_index = tmp_path / "fixture-index.json"
     fixture_index.write_text("{}", encoding="utf-8")
     runner = script_run_codex.CodexRunner(
@@ -939,7 +1263,7 @@ def test_runner_cleans_auth_home_when_transport_raises(
         homes.append(home.path)
         return home
 
-    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args: None)
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "_verify_plain_plugin_absent", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare_home)
     fixture_index = tmp_path / "fixture-index.json"
@@ -967,11 +1291,21 @@ def test_runner_cleans_auth_home_when_transport_raises(
 
 def test_probe_requires_verified_treatment_home(script_run_codex: Any, tmp_path: Path) -> None:
     """A copied or merely declared treatment home is not installation evidence."""
-    with script_run_codex.prepare_arm_home("B_auto", root=tmp_path) as home:
+    with script_run_codex.prepare_arm_home("C_skill_required", root=tmp_path) as home:
         with pytest.raises(ValueError, match="verified"):
             script_run_codex.probe_arm_home(home)
         home.codemap_available = True
         home.codemap_verified = True
+        with pytest.raises(ValueError, match="exact installed Skill binding"):
+            script_run_codex.probe_arm_home(home)
+        skill_path = home.path / "query-code" / "SKILL.md"
+        skill_path.parent.mkdir()
+        skill_path.write_text("# query-code\n", encoding="utf-8")
+        home.codemap_skill_path = skill_path.resolve()
+        home.env["CODEMAP_SKILL_FILE"] = "/wrong/SKILL.md"
+        with pytest.raises(ValueError, match="exact installed Skill binding"):
+            script_run_codex.probe_arm_home(home)
+        home.env["CODEMAP_SKILL_FILE"] = str(skill_path.resolve())
         evidence = script_run_codex.probe_arm_home(home)
 
     assert evidence["codemap_available"] is True
@@ -1009,11 +1343,11 @@ def test_locked_runtime_requires_one_shared_locked_index_for_every_arm(
         lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
     )
 
-    script_run_codex._validate_locked_runtime(repo_path, index_path, "A_plain")
-    script_run_codex._validate_locked_runtime(repo_path, index_path, "B_auto")
+    script_run_codex._validate_locked_runtime(repo_path, index_path, "A_plain", manifest_path)
+    script_run_codex._validate_locked_runtime(repo_path, index_path, "B_direct_required", manifest_path)
 
     with pytest.raises(ValueError, match="requires the locked index"):
-        script_run_codex._validate_locked_runtime(repo_path, None, "A_plain")
+        script_run_codex._validate_locked_runtime(repo_path, None, "A_plain", manifest_path)
 
 
 def test_result_exposes_native_telemetry_and_turn_limit_capability(script_run_codex: Any, tmp_path: Path) -> None:
@@ -1025,11 +1359,12 @@ def test_result_exposes_native_telemetry_and_turn_limit_capability(script_run_co
         evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
     )
 
-    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "B_auto")
+    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "B_direct_required")
 
     assert result.elapsed_s >= 0.0
     assert result.native_item_counts == {"agent_message": 1}
     assert result.native_attempt_events == [result.raw_events]
+    assert result.telemetry_contract_id == "canonical-skill-file-v1"
     assert result.tool_elapsed_s is None
     assert result.tool_result_tokens is None
     assert result.error_type == ""
@@ -1099,7 +1434,13 @@ def test_main_dry_run_never_requires_or_writes_output(
 ) -> None:
     """No-model planning performs probes without reserving a result artifact."""
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path: [task])
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(
+        script_run_codex,
+        "deterministic_arm_order",
+        lambda *_args, **_kwargs: script_run_codex.CODEX_STRUCTURAL_ARMS,
+    )
 
     class FixtureRunner:
         """Supply deterministic no-model arm probes."""
@@ -1122,12 +1463,54 @@ def test_main_dry_run_never_requires_or_writes_output(
     assert list(tmp_path.iterdir()) == []
 
 
+def test_dry_run_prints_the_proposed_complete_run_limit_without_model_execution(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reviewable plan exposes the exact proposed total-run authorization boundary."""
+    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
+    planned: list[str] = []
+
+    class FixtureRunner:
+        """Supply deterministic no-model probe evidence."""
+
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def probe_arm(self, _arm: str) -> dict[str, bool]:
+            return {"codemap_available": False}
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    monkeypatch.setattr(script_run_codex, "print", planned.append, raising=False)
+
+    script_run_codex.main(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        tasks_path=tmp_path / "tasks.json",
+        arm="A_plain",
+        dry_run=True,
+        max_wall_clock_seconds=86_400.0,
+    )
+
+    assert "CONTROL\tcell_wall_clock_seconds=600\tmax_wall_clock_seconds=86400" in planned
+    with pytest.raises(ValueError, match="max-wall-clock-seconds"):
+        script_run_codex.main(
+            repo_path=tmp_path,
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks_path=tmp_path / "tasks.json",
+            dry_run=True,
+            max_wall_clock_seconds=0.0,
+        )
+
+
 def test_main_rejects_missing_or_existing_output_before_model_execution(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Paid execution must have a fresh durable destination before constructing a runner."""
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path: [task])
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
     monkeypatch.setattr(
         script_run_codex,
         "CodexRunner",
@@ -1153,6 +1536,100 @@ def test_main_rejects_missing_or_existing_output_before_model_execution(
     assert output_path.read_text(encoding="utf-8") == "preserve\n"
 
 
+def test_main_requires_positive_complete_run_wall_clock_limit_before_output_reservation(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Paid execution cannot begin without a bounded human-reviewable total exposure."""
+    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    output_path = tmp_path / "paid.jsonl"
+
+    for limit in (None, 0.0, -1.0):
+        with pytest.raises(ValueError, match="max-wall-clock-seconds"):
+            script_run_codex.main(
+                repo_path=tmp_path,
+                model=script_run_codex.PARITY_CODEX_MODEL,
+                tasks_path=tmp_path / "tasks.json",
+                output_path=output_path,
+                max_wall_clock_seconds=limit,
+            )
+        assert not output_path.exists()
+
+
+def test_main_stops_at_complete_run_deadline_after_persisting_finished_cells(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The complete-run deadline stops new cells without erasing durable prior evidence."""
+    tasks = [
+        {"id": "first", "prompt": "one", "type": "demo"},
+        {"id": "second", "prompt": "two", "type": "demo"},
+    ]
+    observed_deadlines: list[float] = []
+
+    class FixtureRunner:
+        """Return a serializable row while recording the enforced absolute deadline."""
+
+        def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            self.model = model
+
+        def run(
+            self,
+            task: dict[str, Any],
+            arm: str,
+            *,
+            repetition: int = 1,
+            deadline: float | None = None,
+        ) -> Any:
+            assert deadline is not None
+            observed_deadlines.append(deadline)
+            return script_run_codex.CodexRun(
+                arm=arm,
+                task_id=task["id"],
+                task_type=task["type"],
+                model=self.model,
+                parity_arm=arm,
+                repetition=repetition,
+                success=True,
+                scoreable=True,
+                input_tokens=1,
+                output_tokens=1,
+                compliance=True,
+            )
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    monkeypatch.setattr(script_run_codex, "deterministic_arm_order", lambda *_args, **_kwargs: ("A_plain",))
+    clock = iter([100.0, 100.0, 111.0])
+    monkeypatch.setattr(script_run_codex.time, "monotonic", lambda: next(clock))
+    output_path = tmp_path / "deadline.jsonl"
+
+    with pytest.raises(TimeoutError, match="complete-run wall-clock limit"):
+        script_run_codex.main(
+            repo_path=tmp_path,
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks_path=tmp_path / "tasks.json",
+            output_path=output_path,
+            max_wall_clock_seconds=10.0,
+            arm="A_plain",
+        )
+
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    assert [(row["task_id"], row["arm"]) for row in rows] == [("first", "A_plain")]
+    assert rows[0]["run_wall_clock_limit_s"] == pytest.approx(10.0)
+    assert observed_deadlines == [pytest.approx(110.0)]
+    metadata = json.loads((tmp_path / "deadline-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["status"] == "failed"
+    assert metadata["persisted_cells"] == 1
+    assert metadata["last_persisted_coordinate"] == {
+        "task_id": "first",
+        "repetition": 1,
+        "arm": "A_plain",
+    }
+    assert metadata["error"]["type"] == "TimeoutError"
+
+
 def test_main_rejects_unreviewed_implementation_revision_before_reserving_output(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1170,8 +1647,7 @@ def test_main_rejects_unreviewed_implementation_revision_before_reserving_output
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path: [task])
-    monkeypatch.setattr(script_run_codex, "PARITY_MANIFEST_PATH", manifest_path)
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
     monkeypatch.setattr(
         script_run_codex,
         "CodexRunner",
@@ -1184,7 +1660,9 @@ def test_main_rejects_unreviewed_implementation_revision_before_reserving_output
             repo_path=tmp_path,
             model=script_run_codex.PARITY_CODEX_MODEL,
             tasks_path=tmp_path / "tasks.json",
+            manifest_path=manifest_path,
             output_path=output_path,
+            max_wall_clock_seconds=600.0,
         )
 
     assert not output_path.exists()
@@ -1198,7 +1676,8 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
         {"id": "first", "prompt": "one", "type": "demo"},
         {"id": "second", "prompt": "two", "type": "demo"},
     ]
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path: tasks)
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
 
     class FixtureRunner:
         """Return one minimal serializable result per planned cell."""
@@ -1206,7 +1685,15 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
 
-        def run(self, task: dict[str, Any], arm: str, *, repetition: int = 1) -> Any:
+        def run(
+            self,
+            task: dict[str, Any],
+            arm: str,
+            *,
+            repetition: int = 1,
+            deadline: float | None = None,
+        ) -> Any:
+            assert deadline is not None
             return script_run_codex.CodexRun(
                 arm=arm,
                 task_id=task["id"],
@@ -1215,10 +1702,19 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
                 parity_arm=arm,
                 repetition=repetition,
                 success=True,
+                scoreable=True,
+                input_tokens=1,
+                output_tokens=1,
+                compliance=True,
             )
 
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
     monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(
+        script_run_codex,
+        "deterministic_arm_order",
+        lambda *_args, **_kwargs: script_run_codex.CODEX_STRUCTURAL_ARMS,
+    )
     output_path = tmp_path / "smoke.jsonl"
 
     script_run_codex.main(
@@ -1227,6 +1723,7 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
         tasks_path=tmp_path / "tasks.json",
         output_path=output_path,
         repetitions=3,
+        max_wall_clock_seconds=600.0,
     )
 
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
@@ -1234,15 +1731,67 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
         ("codex", task["id"], repetition, arm)
         for task in tasks
         for repetition in range(1, 4)
-        for arm in core.deterministic_arm_order(
-            script_run_codex._read_manifest_revision(),
-            "codex",
-            script_run_codex.PARITY_CODEX_MODEL,
-            task["id"],
-            repetition,
-            reasoning_effort=script_run_codex.PARITY_CODEX_REASONING_EFFORT,
-        )
+        for arm in script_run_codex.CODEX_STRUCTURAL_ARMS
     ]
+    metadata = json.loads((tmp_path / "smoke-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["status"] == "completed"
+    assert metadata["persisted_cells"] == 18
+    assert metadata["execution"]["planned_cells"] == 18
+    assert metadata["auth_source_recorded"] is False
+
+
+def test_main_records_cell_failures_and_continues_after_smoke(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The full run reports treatment failures without optional cell-level stopping."""
+    tasks = [
+        {"id": "first", "prompt": "one", "type": "demo"},
+        {"id": "second", "prompt": "two", "type": "demo"},
+    ]
+
+    class FixtureRunner:
+        """Return one non-compliant cell followed by one compliant cell."""
+
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            return script_run_codex.CodexRun(
+                arm=arm,
+                task_id=task["id"],
+                task_type="demo",
+                model=script_run_codex.PARITY_CODEX_MODEL,
+                success=True,
+                scoreable=True,
+                input_tokens=1,
+                output_tokens=1,
+                compliance=task["id"] == "second",
+            )
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    output_path = tmp_path / "admission.jsonl"
+
+    script_run_codex.main(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        tasks_path=tmp_path / "tasks.json",
+        output_path=output_path,
+        arm="B_direct_required",
+        max_wall_clock_seconds=600,
+    )
+
+    assert len(output_path.read_text(encoding="utf-8").splitlines()) == 2
+    metadata = json.loads((tmp_path / "admission-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["status"] == "completed"
+    assert metadata["persisted_cells"] == 2
+    assert metadata["cell_outcomes"]["compliance_failed"] == 1
+    assert capsys.readouterr().out.count("\tquality=?\t") == 2
 
 
 def test_main_filters_locked_tasks_in_suite_order_and_rejects_invalid_ids(
@@ -1253,7 +1802,8 @@ def test_main_filters_locked_tasks_in_suite_order_and_rejects_invalid_ids(
         {"id": "first", "prompt": "one", "type": "demo"},
         {"id": "second", "prompt": "two", "type": "demo"},
     ]
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path: tasks)
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
     planned: list[str] = []
 
     class FixtureRunner:
@@ -1320,7 +1870,8 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
     pilot_ids = manifest["preregistered_cells"]["structural_pilot_task_ids"]
     repetitions = manifest["preregistered_cells"]["pilot_repetitions"]
     tasks = [{"id": task_id, "prompt": task_id, "type": "demo"} for task_id in pilot_ids]
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path: tasks)
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
     planned: list[str] = []
 
     class FixtureRunner:
@@ -1334,6 +1885,11 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
 
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
     monkeypatch.setattr(script_run_codex, "print", planned.append, raising=False)
+    monkeypatch.setattr(
+        script_run_codex,
+        "deterministic_arm_order",
+        lambda *_args, **_kwargs: script_run_codex.CODEX_STRUCTURAL_ARMS,
+    )
 
     script_run_codex.main(
         repo_path=tmp_path,
@@ -1349,14 +1905,1711 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
         [task_id, str(repetition), arm]
         for task_id in pilot_ids
         for repetition in range(1, repetitions + 1)
-        for arm in core.deterministic_arm_order(
-            script_run_codex._read_manifest_revision(),
-            "codex",
-            "gpt-5.6-luna",
-            task_id,
-            repetition,
-            reasoning_effort=script_run_codex.PARITY_CODEX_REASONING_EFFORT,
-        )
+        for arm in script_run_codex.CODEX_STRUCTURAL_ARMS
     ]
     assert plan_rows == expected
     assert len(plan_rows) == len({tuple(row) for row in plan_rows}) == 54
+
+
+def test_codex_arm_envelopes_define_plain_cli_and_skill_treatments(script_run_codex: Any) -> None:
+    """The new Codex arms must make delivery mode and required use unambiguous."""
+    assert script_run_codex.CODEX_STRUCTURAL_ARMS == (
+        "A_plain",
+        "B_direct_required",
+        "C_skill_required",
+    )
+    assert "Codemap is absent" in script_run_codex._arm_envelope("A_plain")
+    assert '"$CODEMAP_BIN" query --compact' in script_run_codex._arm_envelope("B_direct_required")
+    assert "dedicated native command item" in script_run_codex._arm_envelope("B_direct_required")
+    assert "$codemap-py:query-code" in script_run_codex._arm_envelope("C_skill_required")
+    assert "separate dedicated native item" in script_run_codex._arm_envelope("C_skill_required")
+    assert 'cat "$CODEMAP_SKILL_FILE"' in script_run_codex._arm_envelope("C_skill_required")
+    assert "sed -n" not in script_run_codex._arm_envelope("C_skill_required")
+
+
+@pytest.mark.parametrize(
+    ("command", "status", "exit_code", "output", "expected_credit"),
+    [
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            True,
+            id="canonical-native-item",
+        ),
+        pytest.param(
+            "$CODEMAP_BIN query --compact fn-rdeps pkg.core",
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="unquoted-launcher",
+        ),
+        pytest.param(
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps pkg.core',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="alias",
+        ),
+        pytest.param(
+            'CODEMAP_BIN=/wrong/codemap-py; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="assignment",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core; printf done',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="compound-command",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core && printf done',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="control-operator",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core > result.json',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="redirection",
+        ),
+        pytest.param(
+            "/bin/zsh -lc '\"$CODEMAP_BIN\" query --compact rdeps pkg.core'",
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            True,
+            id="one-outer-transport-wrapper",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            "completed",
+            "0",
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="noninteger-exit-code",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            "completed",
+            1,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="nonzero-exit-code",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            "completed",
+            0,
+            '{"index":{"query_complete":true}}',
+            False,
+            id="missing-compact-output",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            "completed",
+            0,
+            'diagnostic\n{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="json-prefix",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}\ndiagnostic',
+            False,
+            id="json-suffix",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}\n{}',
+            False,
+            id="multiple-json-documents",
+        ),
+    ],
+)
+def test_canonical_native_item_query_contract(
+    script_run_codex: Any,
+    command: str,
+    status: str,
+    exit_code: object,
+    output: str,
+    expected_credit: bool,
+) -> None:
+    """Credit B only for the standalone canonical native command item.
+
+    Prevents telemetry from treating shell interpretation or loosely embedded
+    JSON as equivalent to the future benchmark's explicit native-item proof.
+    """
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": status,
+                    "exit_code": exit_code,
+                    "aggregated_output": output,
+                }
+            ]
+        )
+    )
+
+    assert parsed.codemap_direct_compact_successful_calls == int(expected_credit)
+    assert script_run_codex._arm_compliance("B_direct_required", parsed) is expected_credit
+
+
+def test_canonical_native_query_allows_auxiliary_separate_events(script_run_codex: Any) -> None:
+    """Separate native command items cannot contaminate a canonical query item."""
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": "pwd",
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": "/fixture\n",
+                },
+                {
+                    "type": "command_execution",
+                    "command": '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"',
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+                },
+                {
+                    "type": "command_execution",
+                    "command": "printf complete",
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": "complete",
+                },
+            ]
+        )
+    )
+
+    assert parsed.codemap_direct_compact_successful_calls == 1
+    assert script_run_codex._arm_compliance("B_direct_required", parsed) is True
+
+
+@pytest.mark.parametrize(
+    ("read_command", "read_output", "query_first", "expected_credit"),
+    [
+        pytest.param('cat "$CODEMAP_SKILL_FILE"', "locked", False, True, id="canonical-skill-file"),
+        pytest.param(
+            "/bin/zsh -lc 'cat \"$CODEMAP_SKILL_FILE\"'",
+            "locked",
+            False,
+            True,
+            id="canonical-transport-wrapper",
+        ),
+        pytest.param("cat {skill}", "locked", False, False, id="literal-path"),
+        pytest.param("sed -n 1,260p {skill}", "locked", False, False, id="static-sed-reader"),
+        pytest.param("sed -n '1,$p' {skill}", "locked", False, False, id="dynamic-sed-reader"),
+        pytest.param("cat $CODEMAP_SKILL_FILE", "locked", False, False, id="unquoted-skill-file"),
+        pytest.param('cat "$OTHER_SKILL_FILE"', "locked", False, False, id="wrong-variable"),
+        pytest.param("skill_path={skill}; cat $skill_path", "locked", False, False, id="bound-reader"),
+        pytest.param("cat {skill}; printf activated", "lockedactivated", False, False, id="compound-reader"),
+        pytest.param('cat "$CODEMAP_SKILL_FILE"', "changed", False, False, id="wrong-reader-bytes"),
+        pytest.param('cat "$CODEMAP_SKILL_FILE"', "locked", True, False, id="read-after-query"),
+    ],
+)
+def test_canonical_C_skill_delivery_requires_the_runner_owned_skill_file(
+    script_run_codex: Any,
+    tmp_path: Path,
+    read_command: str,
+    read_output: str,
+    query_first: bool,
+    expected_credit: bool,
+) -> None:
+    """Require the exact runner-owned Skill command before a canonical query."""
+    skill_path = tmp_path / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir()
+    skill_bytes = b"locked"
+    skill_path.write_bytes(skill_bytes)
+    reader = {
+        "type": "item.completed",
+        "item": {
+            "id": "skill-read",
+            "type": "command_execution",
+            "command": read_command.format(skill=skill_path),
+            "status": "completed",
+            "exit_code": 0,
+            "aggregated_output": skill_bytes.decode() if read_output == "locked" else read_output,
+        },
+    }
+    query = {
+        "type": "item.completed",
+        "item": {
+            "id": "query",
+            "type": "command_execution",
+            "command": '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"',
+            "status": "completed",
+            "exit_code": 0,
+            "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+        },
+    }
+    ordered_events = [query, reader] if query_first else [reader, query]
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in [*ordered_events, {"type": "turn.completed"}]),
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.codemap_skill_compact_successful_calls == int(expected_credit)
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is expected_credit
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        pytest.param("$CODEMAP_BIN query --compact rdeps pkg.core", False, id="historical-unquoted-query"),
+        pytest.param('"$CODEMAP_BIN" query --compact rdeps pkg.core', True, id="quoted-query"),
+        pytest.param("echo $CODEMAP_BIN", False, id="echo-inspection"),
+        pytest.param("env | rg CODEMAP_BIN", False, id="environment-inspection"),
+        pytest.param('"$CODEMAP_BIN" --help', False, id="launcher-inspection"),
+        pytest.param("$CODEMAP_BIN query --compact rdeps pkg.core &", False, id="historical-background"),
+        pytest.param("$CODEMAP_BIN query --compact rdeps pkg.core\nwait", False, id="historical-newline-wait"),
+        pytest.param("`$CODEMAP_BIN query --compact rdeps pkg.core`", False, id="backticks"),
+        pytest.param('$("$CODEMAP_BIN" query --compact rdeps pkg.core)', False, id="historical-substitution"),
+        pytest.param('("$CODEMAP_BIN" query --compact rdeps pkg.core)', False, id="historical-subshell-group"),
+        pytest.param('{ "$CODEMAP_BIN" query --compact rdeps pkg.core; }', False, id="brace-group"),
+        pytest.param('"$CODEMAP_BIN" query --compact rdeps pkg.core > out.json', False, id="historical-redirect"),
+        pytest.param('"$CODEMAP_BIN" query --compact rdeps pkg.core 2>&1', False, id="historical-stderr-redirect"),
+    ],
+)
+def test_historical_shell_query_shapes_reject_the_native_item_contract(
+    script_run_codex: Any, command: str, expected: bool
+) -> None:
+    """Only the exact standalone prospective command is live telemetry evidence."""
+    assert script_run_codex._is_codemap_command(command) is expected
+
+
+def test_required_compliance_needs_successful_compact_delivery_by_arm(script_run_codex: Any, tmp_path: Path) -> None:
+    """A query attempt, wrong delivery mode, or missing compact flag cannot comply."""
+    task = {"id": "fixture", "prompt": "unchanged prompt", "type": "demo", "scoreable": True}
+
+    def run(arm: str, command: str) -> Any:
+        runner = script_run_codex.CodexRunner(
+            "fixture-model",
+            tmp_path,
+            transport=lambda *_args, **_kwargs: _completed_stream(
+                commands=[
+                    {
+                        "type": "command_execution",
+                        "command": command,
+                        "status": "completed",
+                        "exit_code": 0,
+                        "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+                    }
+                ]
+            ),
+            evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+        )
+        return runner.run(task, arm)
+
+    direct = run("B_direct_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
+    noncompact = run("B_direct_required", '"$CODEMAP_BIN" query rdeps pkg.core')
+    skill = run("C_skill_required", '"$CODEMAP_BIN" query --compact rdeps pkg.core')
+
+    assert direct.compliance is True
+    assert direct.codemap_direct_successful_calls == 1
+    assert direct.codemap_skill_successful_calls == 0
+    assert noncompact.compliance is False
+    assert noncompact.codemap_delivery == "none"
+    assert skill.compliance is False
+    assert skill.codemap_direct_successful_calls == 1
+    assert skill.codemap_delivery == "none"
+
+
+def test_direct_cli_arm_never_installs_a_plugin(script_run_codex: Any, tmp_path: Path) -> None:
+    """B must expose the supplied launcher without using Codex plugin setup."""
+    launcher = _make_direct_runtime_bundle(tmp_path)
+    installer_calls: list[Path] = []
+
+    with script_run_codex.prepare_arm_home(
+        "B_direct_required",
+        root=tmp_path,
+        codemap_bin=launcher,
+        plugin_installer=lambda home: installer_calls.append(home) or True,
+    ) as home:
+        assert home.codemap_available is True
+        assert home.codemap_verified is True
+        staged_launcher = Path(home.env["CODEMAP_BIN"])
+        assert staged_launcher == home.path / "direct-cli" / "bin" / "codemap-py"
+        assert staged_launcher.read_bytes() == launcher.read_bytes()
+        assert (home.path / "direct-cli" / "bin" / "_exclusions.py").is_file()
+        assert (home.path / "direct-cli" / "scripts" / "codemap_py_entry.py").is_file()
+        assert (home.path / "direct-cli" / "src" / "codemap_py" / "__init__.py").is_file()
+        assert not (home.path / "direct-cli" / ".codex-plugin").exists()
+        assert not (home.path / "direct-cli" / "codex-skills").exists()
+        assert not (home.path / "direct-cli" / "shared").exists()
+
+    assert installer_calls == []
+
+
+def test_staged_direct_cli_admission_executes_a_task_shaped_query(script_run_codex: Any, tmp_path: Path) -> None:
+    """B preflight must execute its staged CLI before any model can consume a cell."""
+    repo_path = tmp_path / "target"
+    repo_path.mkdir()
+    index_path = repo_path / "locked-index.json"
+    index_path.write_text("{}", encoding="utf-8")
+    home_path = tmp_path / "home"
+    launcher = home_path / "direct-cli" / "bin" / "codemap-py"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    config = home_path / "config.toml"
+    config.write_text("", encoding="utf-8")
+    config.chmod(0o600)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "direct_cli_admission": {
+                    "probe_subcommand": "fn-rdeps",
+                    "probe_target": "lightning.pytorch.trainer.call::_call_lightning_module_hook",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    home = script_run_codex.ArmHome(
+        "B_direct_required",
+        home_path,
+        {
+            "PATH": "/fixture/bin",
+            "CODEMAP_BIN": str(launcher),
+            "CODEMAP_PYTHON": "/usr/bin/python3",
+            "SCAN_NO_AUTOBUILD": "1",
+        },
+        True,
+        True,
+        permission_profile="provider-parity-codemap",
+        codemap_launcher_path=launcher,
+    )
+    calls: list[list[str]] = []
+
+    def command_runner(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        calls.append(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"index": {"query_complete": True, "compact": True}}),
+            stderr="",
+        )
+
+    script_run_codex._admit_staged_direct_cli(
+        home,
+        repo_path,
+        index_path,
+        manifest_path=manifest_path,
+        command_runner=command_runner,
+    )
+
+    assert calls == [
+        [
+            "codex",
+            "sandbox",
+            "-P",
+            "provider-parity-codemap",
+            "--include-managed-config",
+            "-C",
+            str(repo_path),
+            "--",
+            str(launcher),
+            "query",
+            "--compact",
+            "fn-rdeps",
+            "lightning.pytorch.trainer.call::_call_lightning_module_hook",
+        ]
+    ]
+
+
+def test_no_model_probe_removes_its_coordination_root(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dry probe must not leave the index reader-coordination skeleton behind."""
+    home_path = tmp_path / "home"
+    home_path.mkdir()
+    config = home_path / "config.toml"
+    config.write_text("", encoding="utf-8")
+    config.chmod(0o600)
+    index_path = tmp_path / ".cache" / "codemap" / "fixture.json"
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("{}", encoding="utf-8")
+    coordination_root = script_run_codex._prepare_coordination_root(index_path)
+    home = script_run_codex.ArmHome(
+        "B_direct_required",
+        home_path,
+        {},
+        codemap_available=True,
+        codemap_verified=True,
+        coordination_path=coordination_root,
+    )
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    monkeypatch.setattr(runner, "_prepare_verified_home", lambda _arm: home)
+
+    runner.probe_arm("B_direct_required")
+
+    assert not coordination_root.exists()
+    assert not home_path.exists()
+
+
+def test_direct_cli_launcher_must_match_its_manifest_hash(script_run_codex: Any, tmp_path: Path) -> None:
+    """B rejects a direct executable unless its bytes are the locked runtime launcher."""
+    launcher = _make_direct_runtime_bundle(tmp_path)
+    lock_path = tmp_path / "locks.json"
+
+    with script_run_codex.prepare_arm_home("B_direct_required", root=tmp_path, codemap_bin=launcher) as home:
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "artifact_sha256": {"codemap_runtime_cli": home.codemap_launcher_sha256},
+                    "codemap_candidate": {"version": "0.27.0"},
+                    "direct_cli_runtime": {
+                        "files": script_run_codex._runtime_file_hashes(home.codemap_launcher_path.parent.parent),
+                        "aggregate_sha256": script_run_codex._aggregate_file_hashes(
+                            script_run_codex._runtime_file_hashes(home.codemap_launcher_path.parent.parent)
+                        ),
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        script_run_codex._verify_treatment_artifact_locks(home, lock_path)
+
+        lock_path.write_text(
+            json.dumps(
+                {"artifact_sha256": {"codemap_runtime_cli": "0" * 64}, "codemap_candidate": {"version": "0.27.0"}}
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="launcher does not match"):
+            script_run_codex._verify_treatment_artifact_locks(home, lock_path)
+
+
+def test_historical_exact_launcher_and_compound_forms_reject_native_item_contract(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """The prospective contract does not infer delivery from paths or shell composition."""
+    launcher = tmp_path / "codemap-py"
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+    assert not script_run_codex._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core")
+    assert not script_run_codex._is_codemap_command(
+        f'"{launcher}" query --compact rdeps pkg.core', launcher_path=launcher
+    )
+    assert not script_run_codex._is_codemap_command("/plugin/bin/codemap-py query --compact rdeps pkg.core")
+    assert not script_run_codex._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core; echo done")
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        pytest.param(
+            "/bin/zsh -lc '\"$CODEMAP_BIN\" query --compact rdeps pkg.core'", True, id="one-outer-transport-wrapper"
+        ),
+        pytest.param(
+            '/bin/zsh -lc \'/bin/zsh -lc "\\"$CODEMAP_BIN\\" query --compact rdeps pkg.core"\'',
+            False,
+            id="nested-wrapper",
+        ),
+        pytest.param(
+            "/bin/zsh -lc '\"$CODEMAP_BIN\" query --compact rdeps pkg.core; echo done'",
+            False,
+            id="historical-compound-wrapper",
+        ),
+        pytest.param(
+            "/bin/zsh -lc '\"$CODEMAP_BIN\" query --compact rdeps pkg.core > out.json'",
+            False,
+            id="historical-redirect-wrapper",
+        ),
+        pytest.param("/bin/zsh -lc", False, id="missing-wrapper-command"),
+    ],
+)
+def test_one_outer_transport_wrapper_preserves_the_native_item_contract(
+    script_run_codex: Any, command: str, expected: bool
+) -> None:
+    """Only one exact Codex transport wrapper may contain the native payload."""
+    assert script_run_codex._is_codemap_command(command) is expected
+
+
+def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
+    """Historical wrapped C evidence stays available but cannot score a new cell."""
+    skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\n"
+    skill_path.write_bytes(skill_bytes)
+    launcher = tmp_path / "plugins" / "codemap-py" / "bin" / "codemap-py"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    complete_result = json.dumps({"index": {"query_complete": True}})
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": "/bin/zsh -lc 'cat \"$CODEMAP_SKILL_FILE\"'",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode(),
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": f"/bin/zsh -lc '\"{launcher}\" query --compact rdeps pkg.core'",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": complete_result,
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is True
+    assert parsed.codemap_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+    direct_after_skill = [
+        events[0],
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "direct-query",
+                "type": "command_execution",
+                "command": "/bin/zsh -lc '\"$CODEMAP_BIN\" query --compact rdeps pkg.core'",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": complete_result,
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+    direct_parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in direct_after_skill),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert direct_parsed.skill_delivery_observed is True
+    assert direct_parsed.codemap_calls == 1
+    assert script_run_codex._arm_compliance("C_skill_required", direct_parsed) is False
+
+    incomplete = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": "$CODEMAP_BIN query --compact rdeps pkg.core",
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": "{}",
+                }
+            ]
+        )
+    )
+    assert incomplete.codemap_calls == 0
+    assert script_run_codex._arm_compliance("B_direct_required", incomplete) is False
+
+
+def test_historical_bound_launcher_query_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
+    """The paid local-alias shape remains historical-only evidence."""
+    skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    launcher = tmp_path / "plugins" / "codemap-py" / "bin" / "codemap-py"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": "/bin/zsh -lc 'cat \"$CODEMAP_SKILL_FILE\"'",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode(),
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": (
+                    "/bin/zsh -lc '"
+                    f'codemap_bin="${{CODEMAP_BIN:-{launcher}}}"; '
+                    '"$codemap_bin" query --compact fn-rdeps "pkg.core::target"\''
+                ),
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is True
+    assert parsed.codemap_calls == 0
+    assert parsed.codemap_direct_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+    reversed_parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in [events[1], events[0], events[2]]),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+    assert reversed_parsed.skill_delivery_observed is False
+    assert reversed_parsed.codemap_skill_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", reversed_parsed) is False
+
+
+def test_historical_uppercase_launcher_assignment_rejects_native_item_contract(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """A historical assigned launcher is not a future standalone native item."""
+    skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    launcher = tmp_path / "plugins" / "codemap-py" / "bin" / "codemap-py"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": 'cat "$CODEMAP_SKILL_FILE"',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode(),
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": (
+                    "/bin/zsh -lc '"
+                    f'CODEMAP_BIN="${{CODEMAP_BIN:-{launcher}}}"; '
+                    '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"\''
+                ),
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is True
+    assert parsed.codemap_calls == 0
+    assert parsed.codemap_direct_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(
+            'CODEMAP_BIN="${CODEMAP_BIN:-/wrong/codemap-py}"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="wrong-fallback",
+        ),
+        pytest.param(
+            'CODEMAP_BIN="{launcher}"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="literal-assignment",
+        ),
+        pytest.param(
+            'CODEMAP_BIN="${CODEMAP_BIN:-{launcher}}"; CODEMAP_BIN=/wrong/codemap-py; '
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="reassigned",
+        ),
+        pytest.param(
+            'export CODEMAP_BIN="${CODEMAP_BIN:-{launcher}}"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="exported",
+        ),
+        pytest.param(
+            'readonly CODEMAP_BIN="${CODEMAP_BIN:-{launcher}}"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="readonly",
+        ),
+        pytest.param(
+            'typeset CODEMAP_BIN="${CODEMAP_BIN:-{launcher}}"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="typeset",
+        ),
+        pytest.param(
+            'CODEMAP_BIN="${CODEMAP_BIN:-{launcher}}"; unset CODEMAP_BIN; '
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="unset",
+        ),
+        pytest.param(
+            'CODEMAP_BIN="$(printf \'%s\' {launcher})"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="command-substitution",
+        ),
+        pytest.param(
+            'payload="CODEMAP_BIN=/wrong/codemap-py"; eval "$payload"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="dynamic-eval",
+        ),
+        pytest.param(
+            'if true; then CODEMAP_BIN="${CODEMAP_BIN:-{launcher}}"; fi; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="control-flow-binding",
+        ),
+    ],
+)
+def test_uppercase_launcher_fallback_rejects_untrusted_shell_forms(
+    script_run_codex: Any, tmp_path: Path, command: str
+) -> None:
+    """Assignments never substitute for the future standalone native item."""
+    launcher = tmp_path / "codemap-py"
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+    assert not script_run_codex._is_codemap_command(
+        command.replace("{launcher}", str(launcher)), launcher_path=launcher
+    )
+
+
+def test_historical_compound_direct_query_rejects_native_item_contract(script_run_codex: Any) -> None:
+    """A diagnostic/query compound is historical evidence, not a future query item."""
+    output = "ready\n" + json.dumps({"index": {"query_complete": True, "compact": True}}) + "\ndone\n"
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": ('printf "ready\\n"; "$CODEMAP_BIN" query --compact rdeps pkg.core; printf "done\\n"'),
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": output,
+                }
+            ]
+        )
+    )
+
+    assert parsed.codemap_direct_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+
+
+def test_historical_multiline_direct_query_rejects_native_item_contract(script_run_codex: Any) -> None:
+    """The exact paid B wrapper cannot satisfy prospective native telemetry."""
+    command = (
+        '/bin/zsh -lc "printf \'CODEMAP_BIN=%s\\\\n\' \\""\'$CODEMAP_BIN"\n'
+        '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"\''
+    )
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": (
+                        "CODEMAP_BIN=/fixture/codemap-py\n"
+                        + json.dumps({"index": {"query_complete": True, "compact": True}})
+                    ),
+                }
+            ]
+        )
+    )
+
+    assert parsed.codemap_direct_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(
+            'printf \'CODEMAP_BIN=%s\\n\' "$CODEMAP_BIN"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="historical-semicolon",
+        ),
+        pytest.param(
+            'printf ready &&\n"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="historical-and-newline",
+        ),
+        pytest.param(
+            'false ||\n"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="historical-or-newline",
+        ),
+        pytest.param(
+            'printf ready |\n"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="historical-pipe-newline",
+        ),
+        pytest.param(
+            'CODEMAP_BIN=/wrong/codemap-py\n"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="newline-before-mutated-launcher",
+        ),
+        pytest.param(
+            'printf \'CODEMAP_BIN=/wrong\\n\' "$CODEMAP_BIN" "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="diagnostic-data-without-separator",
+        ),
+        pytest.param(
+            'printf \'CODEMAP_BIN=%s\\n\n"$CODEMAP_BIN" query --compact rdeps pkg.core\' "$CODEMAP_BIN"',
+            id="quoted-literal-newline",
+        ),
+        pytest.param(
+            'printf \'CODEMAP_BIN=%s\\n\' "$CODEMAP_BIN" \\\n"$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="escaped-line-continuation",
+        ),
+    ],
+)
+def test_historical_newline_shell_forms_reject_native_item_contract(script_run_codex: Any, command: str) -> None:
+    """No multiline shell form is the dedicated future native query item."""
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+                }
+            ]
+        )
+    )
+
+    assert parsed.codemap_direct_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+
+
+def test_historical_diagnostic_conditional_query_rejects_native_item_contract(script_run_codex: Any) -> None:
+    """A historical diagnostic/control command cannot score a future direct query."""
+    command = (
+        "printf 'CODEMAP_BIN=%s\\n' \"${CODEMAP_BIN-}\"; "
+        "rg -n target .; "
+        'if [ -n "${CODEMAP_BIN-}" ]; then '
+        '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"; '
+        "else printf 'CODEMAP_BIN is unset\\n'; fi"
+    )
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+                }
+            ]
+        )
+    )
+
+    assert parsed.codemap_direct_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("B_direct_required", parsed) is False
+
+
+def test_historical_bound_launcher_diagnostic_rejects_native_item_contract(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """A local launcher binding is not a standalone native query command."""
+    launcher = tmp_path / "codemap-py"
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    command = (
+        "printf 'codemap_bin=%s\\n' \"${CODEMAP_BIN-}\"; "
+        f'codemap_bin="${{CODEMAP_BIN:-{launcher}}}"; '
+        '"$codemap_bin" query --compact rdeps pkg.core'
+    )
+
+    assert not script_run_codex._is_codemap_command(command, launcher_path=launcher)
+
+
+def test_historical_compound_skill_and_control_query_reject_native_item_contract(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """C now requires two dedicated native items rather than compound shell evidence."""
+    skill_path = tmp_path / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir()
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    launcher = tmp_path / "codemap-py"
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    query_output = "diagnostic\n" + json.dumps({"index": {"query_complete": True, "compact": True}})
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": f"sed -n '1,240p' {skill_path}; printf 'activated\\n'",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode() + "activated\n",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": (
+                    'if [ -n "$CODEMAP_BIN" ]; then "$CODEMAP_BIN" query --compact '
+                    'fn-rdeps "pkg.core::target"; else "'
+                    f'{launcher}" query --compact fn-rdeps "pkg.core::target"; fi'
+                ),
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": query_output,
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is False
+    assert parsed.codemap_calls == 0
+    assert parsed.codemap_direct_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+def test_historical_conditional_launcher_alias_replay_is_not_canonical_C_compliance(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Record the observed C command as historical replay incompatibility.
+
+    The prospective C contract is the standalone ``$CODEMAP_BIN query`` form.
+    This conditional alias remains corpus evidence for interpreting historical
+    rows, not a second command grammar eligible for future compliance credit.
+    """
+    skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    launcher = tmp_path / "plugins" / "codemap-py" / "bin" / "codemap-py"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    query_command = (
+        '/bin/zsh -lc \'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+        f'else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+        '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"\''
+    )
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": "/bin/zsh -lc 'cat \"$CODEMAP_SKILL_FILE\"'",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode(),
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": query_command,
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is True
+    assert parsed.codemap_calls == 0
+    assert parsed.codemap_skill_compact_successful_calls == 0
+    assert parsed.codemap_direct_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_OTHER="$CODEMAP_BIN"; '
+            'else CODEMAP_OTHER="{launcher}"; fi\n'
+            '"$CODEMAP_OTHER" query --compact fn-rdeps "pkg.core::target"',
+            id="wrong-alias-name",
+        ),
+        pytest.param(
+            'if [ -n "$OTHER" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="wrong-condition-variable",
+        ),
+        pytest.param(
+            'if [ -z "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="wrong-condition-operator",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="/wrong/codemap-py"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="wrong-then-source",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="/wrong/codemap-py"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="wrong-else-path",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="{launcher}"; '
+            'else CODEMAP_LAUNCHER="$CODEMAP_BIN"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="swapped-branches",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then :; else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="missing-then-branch",
+        ),
+        pytest.param(
+            'CODEMAP_BIN=/wrong/codemap-py; if [ -n "$CODEMAP_BIN" ]; '
+            'then CODEMAP_LAUNCHER="$CODEMAP_BIN"; else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="precondition-codemap-bin-mutation",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi; CODEMAP_LAUNCHER=/wrong/codemap-py\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="post-fi-alias-reassignment",
+        ),
+        pytest.param(
+            'export CODEMAP_LAUNCHER=/wrong/codemap-py; if [ -n "$CODEMAP_BIN" ]; '
+            'then CODEMAP_LAUNCHER="$CODEMAP_BIN"; else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="export-alias",
+        ),
+        pytest.param(
+            'readonly CODEMAP_LAUNCHER=/wrong/codemap-py; if [ -n "$CODEMAP_BIN" ]; '
+            'then CODEMAP_LAUNCHER="$CODEMAP_BIN"; else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="readonly-alias",
+        ),
+        pytest.param(
+            'typeset CODEMAP_LAUNCHER=/wrong/codemap-py; if [ -n "$CODEMAP_BIN" ]; '
+            'then CODEMAP_LAUNCHER="$CODEMAP_BIN"; else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="typeset-alias",
+        ),
+        pytest.param(
+            'unset CODEMAP_LAUNCHER; if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="unset-alias",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$(printf %s "$CODEMAP_BIN")"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="command-substitution",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi; payload="CODEMAP_LAUNCHER=/wrong/codemap-py"; '
+            'eval "$payload"\n"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="eval",
+        ),
+        pytest.param(
+            'source /dev/null; if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="source",
+        ),
+        pytest.param(
+            'read -r CODEMAP_LAUNCHER <<< /wrong/codemap-py; if [ -n "$CODEMAP_BIN" ]; '
+            'then CODEMAP_LAUNCHER="$CODEMAP_BIN"; else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="read",
+        ),
+        pytest.param(
+            'while false; do CODEMAP_LAUNCHER="$CODEMAP_BIN"; done; if [ -n "$CODEMAP_BIN" ]; '
+            'then CODEMAP_LAUNCHER="$CODEMAP_BIN"; else CODEMAP_LAUNCHER="{launcher}"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="loop",
+        ),
+        pytest.param(
+            '( if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi )\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="subshell",
+        ),
+        pytest.param(
+            'if true; then if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="nested-conditional",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi',
+            id="query-inside-branch",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="{launcher}"; fi; printf ready\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="intervening-command",
+        ),
+        pytest.param(
+            'if [ -n "$CODEMAP_BIN" ]; then CODEMAP_LAUNCHER="$CODEMAP_BIN"; '
+            'else CODEMAP_LAUNCHER="/wrong/codemap-py"; fi\n'
+            '"$CODEMAP_LAUNCHER" query --compact fn-rdeps "pkg.core::target"',
+            id="wrong-locked-path",
+        ),
+    ],
+)
+def test_conditional_launcher_alias_rejects_unproven_forms(
+    script_run_codex: Any, tmp_path: Path, template: str
+) -> None:
+    """Keep conditional alias credit limited to one immutable two-branch form.
+
+    Each case could execute a launcher-like command, so a recognizer that only
+    matches ``CODEMAP_LAUNCHER query`` would incorrectly satisfy C compliance.
+    """
+    skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    launcher = tmp_path / "plugins" / "codemap-py" / "bin" / "codemap-py"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": 'cat "$CODEMAP_SKILL_FILE"',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode(),
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": template.format(launcher=launcher),
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        launcher_path=launcher,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is True
+    assert parsed.codemap_calls == 0
+    assert parsed.codemap_skill_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+def test_historical_compound_skill_reader_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
+    """A complete Skill body in a compound reader item is insufficient for C."""
+    skill_path = tmp_path / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir()
+    skill_bytes = b"# query-code\nline 2\nline 3\n"
+    skill_path.write_bytes(skill_bytes)
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": f"sed -n '1,260p' {skill_path}; printf 'activated\\n'",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode() + "activated\n",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is False
+    assert parsed.codemap_skill_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+def test_historical_bound_skill_path_read_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
+    """A bound Skill path is historical evidence, not future static-path proof."""
+    skill_path = tmp_path / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir()
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    read_command = f"skill_path='{skill_path}'; wc -l \"$skill_path\"; sed -n '1,260p' \"$skill_path\""
+    read_output = f"{len(skill_bytes.splitlines())} {skill_path}\n" + skill_bytes.decode()
+    query_command = '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"'
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(
+            json.dumps(event)
+            for event in [
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "skill-read",
+                        "type": "command_execution",
+                        "command": read_command,
+                        "status": "completed",
+                        "exit_code": 0,
+                        "aggregated_output": read_output,
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "query",
+                        "type": "command_execution",
+                        "command": query_command,
+                        "status": "completed",
+                        "exit_code": 0,
+                        "aggregated_output": json.dumps({"index": {"query_complete": True, "compact": True}}),
+                    },
+                },
+                {"type": "turn.completed"},
+            ]
+        ),
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is False
+    assert parsed.codemap_skill_compact_successful_calls == 0
+    assert parsed.codemap_direct_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+@pytest.mark.parametrize(
+    ("template", "output_kind", "_expected_direct_calls"),
+    [
+        pytest.param(
+            "skill_path='{other}'; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="wrong-path",
+        ),
+        pytest.param(
+            "skill_path='{skill}'; skill_path='{other}'; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="reassigned",
+        ),
+        pytest.param(
+            "export skill_path='{skill}'; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="export-declaration",
+        ),
+        pytest.param(
+            "typeset skill_path='{skill}'; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="shell-declaration",
+        ),
+        pytest.param(
+            "skill_path='{skill}'; read -r skill_path <<< '{other}'; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            0,
+            id="read-mutation",
+        ),
+        pytest.param(
+            "while :; do skill_path='{skill}'; break; done; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="while-binding",
+        ),
+        pytest.param(
+            "if true; then skill_path='{skill}'; fi; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="if-binding",
+        ),
+        pytest.param(
+            "until false; do skill_path='{skill}'; break; done; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="until-binding",
+        ),
+        pytest.param(
+            "( skill_path='{skill}'; sed -n '1,260p' \"$skill_path\" ); {query}",
+            "complete",
+            0,
+            id="subshell-binding",
+        ),
+        pytest.param(
+            "skill_path='{skill}' && sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="conditional-and-binding",
+        ),
+        pytest.param(
+            "skill_path=\"$(printf '%s' '{skill}')\"; sed -n '1,260p' \"$skill_path\"; {query}",
+            "complete",
+            1,
+            id="command-substitution",
+        ),
+        pytest.param(
+            "skill_path='{skill}'; sed -n '1,260p' \"$skill_path\"; {query}",
+            "incomplete",
+            1,
+            id="incomplete-bytes",
+        ),
+        pytest.param(
+            "skill_path='{skill}'; sed -n '1,260p' \"$skill_path\"; {query}",
+            "wrong",
+            1,
+            id="wrong-bytes",
+        ),
+    ],
+)
+def test_historical_bound_skill_reader_forms_reject_native_item_contract(
+    script_run_codex: Any, tmp_path: Path, template: str, output_kind: str, _expected_direct_calls: int
+) -> None:
+    """No compound historical reader/query command can earn direct or C credit."""
+    skill_path = tmp_path / "query-code" / "SKILL.md"
+    other_path = tmp_path / "other" / "SKILL.md"
+    skill_path.parent.mkdir()
+    other_path.parent.mkdir()
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    other_path.write_bytes(skill_bytes)
+    query = '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"'
+    command = template.format(skill=skill_path, other=other_path, query=query)
+    output_by_kind = {
+        "complete": skill_bytes.decode(),
+        "incomplete": "# query-code\n",
+        "wrong": skill_bytes.decode().replace("compact", "expanded"),
+    }
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": output_by_kind[output_kind]
+                    + json.dumps({"index": {"query_complete": True, "compact": True}}),
+                }
+            ]
+        ),
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is False
+    assert parsed.codemap_skill_successful_calls == 0
+    assert parsed.codemap_direct_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+def test_historical_query_then_skill_read_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
+    """Reading a Skill in the query item cannot satisfy the separate-item C rule."""
+    skill_path = tmp_path / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir()
+    skill_bytes = b"# query-code\n"
+    skill_path.write_bytes(skill_bytes)
+    output = json.dumps({"index": {"query_complete": True}}) + "\n" + skill_bytes.decode()
+    command = f'"$CODEMAP_BIN" query --compact rdeps pkg.core; cat {skill_path}'
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": output,
+                }
+            ]
+        ),
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is False
+    assert parsed.codemap_direct_compact_successful_calls == 0
+    assert parsed.codemap_skill_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(
+            'CODEMAP_BIN=/wrong/codemap-py; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="direct-variable-reassigned",
+        ),
+        pytest.param(
+            'export CODEMAP_BIN=/wrong/codemap-py; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="direct-variable-exported",
+        ),
+        pytest.param(
+            'codemap_bin="${CODEMAP_BIN:-{launcher}}"; codemap_bin=/wrong; '
+            '"$codemap_bin" query --compact rdeps pkg.core',
+            id="bound-variable-reassigned",
+        ),
+        pytest.param(
+            'payload="CODEMAP_BIN=/wrong/codemap-py"; eval "$payload"; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="direct-variable-eval-indirection",
+        ),
+        pytest.param(
+            'name=CODEMAP_BIN; typeset "$name"=/wrong/codemap-py; "$CODEMAP_BIN" query --compact rdeps pkg.core',
+            id="direct-variable-typeset-indirection",
+        ),
+        pytest.param(
+            'for CODEMAP_BIN in /wrong/codemap-py; do "$CODEMAP_BIN" query --compact rdeps pkg.core; done',
+            id="direct-variable-loop-reassignment",
+        ),
+        pytest.param(
+            "printf 'CODEMAP_BIN=%s\\n' \"${CODEMAP_BIN-}\"; "
+            "CODEMAP_BIN=/wrong/codemap-py; "
+            'if [ -n "${CODEMAP_BIN-}" ]; then '
+            '"$CODEMAP_BIN" query --compact rdeps pkg.core; fi',
+            id="diagnostic-then-direct-reassignment",
+        ),
+        pytest.param(
+            'while IFS= read -r CODEMAP_BIN; do "$CODEMAP_BIN" query --compact '
+            "rdeps pkg.core; break; done <<< /wrong/codemap-py",
+            id="while-read-direct-reassignment",
+        ),
+    ],
+)
+def test_query_credit_rejects_launcher_variable_mutation(script_run_codex: Any, tmp_path: Path, command: str) -> None:
+    """Shell reassignment cannot substitute an unlocked executable for the staged launcher."""
+    launcher = tmp_path / "codemap-py"
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+    assert not script_run_codex._is_codemap_command(
+        command.replace("{launcher}", str(launcher)),
+        launcher_path=launcher,
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(
+            'codemap_bin="${CODEMAP_BIN:-/wrong/codemap-py}"; "$codemap_bin" query --compact rdeps pkg.core',
+            id="wrong-fallback",
+        ),
+        pytest.param(
+            'codemap_bin="${CODEMAP_BIN:-{launcher}}"; "$codemap_bin" --version',
+            id="not-query",
+        ),
+        pytest.param(
+            'codemap_bin="{launcher}"; "$codemap_bin" query --compact rdeps pkg.core',
+            id="unbound-direct-assignment",
+        ),
+        pytest.param(
+            'runner="${CODEMAP_BIN:-{launcher}}"; "$runner" query --compact rdeps pkg.core',
+            id="other-variable",
+        ),
+        pytest.param(
+            'echo "$CODEMAP_BIN query --compact rdeps pkg.core"',
+            id="echo-only",
+        ),
+    ],
+)
+def test_bound_launcher_query_rejects_ambiguous_or_unlocked_shell_forms(
+    script_run_codex: Any, tmp_path: Path, command: str
+) -> None:
+    """Do not widen query evidence to unrelated variables, paths, or non-query commands."""
+    launcher = tmp_path / "codemap-py"
+    launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+    assert not script_run_codex._is_codemap_command(
+        command.replace("{launcher}", str(launcher)), launcher_path=launcher
+    )
+
+
+@pytest.mark.parametrize(
+    ("template", "output_kind", "exit_code", "expected"),
+    [
+        pytest.param('cat "$CODEMAP_SKILL_FILE"', "complete", 0, True, id="canonical-complete"),
+        pytest.param("cat {skill}", "complete", 0, False, id="literal-path"),
+        pytest.param("sed -n '1,1p' {skill}", "partial", 0, False, id="partial-output"),
+        pytest.param("cat {other}", "complete", 0, False, id="wrong-path"),
+        pytest.param('cat "$CODEMAP_SKILL_FILE"', "wrong", 0, False, id="wrong-bytes"),
+        pytest.param('cat "$CODEMAP_SKILL_FILE"', "complete", 1, False, id="failed-command"),
+        pytest.param("cat $CODEMAP_SKILL_FILE", "complete", 0, False, id="unquoted-variable"),
+    ],
+)
+def test_skill_read_requires_exact_environment_command_bytes_and_success(
+    script_run_codex: Any,
+    tmp_path: Path,
+    template: str,
+    output_kind: str,
+    exit_code: int,
+    expected: bool,
+) -> None:
+    """Only the exact bound reader with exact bytes and zero exit proves activation."""
+    skill = tmp_path / "query-code" / "SKILL.md"
+    skill.parent.mkdir()
+    skill_bytes = b"# query-code\nline 2\nline 3\n"
+    skill.write_bytes(skill_bytes)
+    command = template.format(skill=skill, other=tmp_path / "other" / "SKILL.md")
+    outputs = {
+        "complete": skill_bytes.decode(),
+        "partial": "# query-code\n",
+        "wrong": skill_bytes.decode().replace("line 2", "changed"),
+    }
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": "completed" if exit_code == 0 else "failed",
+                    "exit_code": exit_code,
+                    "aggregated_output": outputs[output_kind],
+                }
+            ]
+        ),
+        skill_path=skill,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is expected
+
+
+def test_main_threads_an_explicit_manifest_path_into_task_loading_and_ordering(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A future relock must not be silently replaced by the module-global manifest."""
+    manifest_path = tmp_path / "future-manifest.json"
+    seen: dict[str, Path] = {}
+    tasks = [{"id": "fixture", "prompt": "prompt", "type": "demo"}]
+
+    def load_tasks(_tasks_path: Path, selected_manifest: Path) -> list[dict[str, str]]:
+        seen["tasks"] = selected_manifest
+        return tasks
+
+    def order(revision: str, *_args: Any, **_kwargs: Any) -> tuple[str, ...]:
+        seen["revision"] = Path(revision)
+        return ("A_plain", "B_direct_required", "C_skill_required")
+
+    class FixtureRunner:
+        """Provide deterministic preflight evidence without invoking Codex."""
+
+        def __init__(self, *_args: Any, **kwargs: Any) -> None:
+            seen["runner"] = kwargs["manifest_path"]
+
+        def probe_arm(self, _arm: str) -> dict[str, bool]:
+            return {"codemap_available": False}
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", load_tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda path: str(path))
+    monkeypatch.setattr(script_run_codex, "deterministic_arm_order", order)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+
+    script_run_codex.main(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        tasks_path=tmp_path / "tasks.json",
+        manifest_path=manifest_path,
+        dry_run=True,
+    )
+
+    assert seen["tasks"] == manifest_path
+    assert seen["runner"] == manifest_path
+    assert seen["revision"] == manifest_path

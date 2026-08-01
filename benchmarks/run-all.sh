@@ -2,23 +2,28 @@
 # Provider-neutral benchmark batch entrypoint.
 #
 # Usage:
-#   bash benchmarks/run-all.sh smoke   # validate lock + query + no-model Claude/Codex preflights
-#   bash benchmarks/run-all.sh claude  # validate lock + preflight + full Claude batches
-#   bash benchmarks/run-all.sh codex   # validate lock + preregistered paid Codex FN-02 A/B/C smoke
+#   bash benchmarks/run-all.sh smoke   # fail-fast Claude + Codex smoke only
+#   bash benchmarks/run-all.sh claude  # fail-fast Claude smoke, then full Claude batches
+#   bash benchmarks/run-all.sh codex   # fail-fast Codex smoke, then full 55-task A/B/C study
 #
 # The Codex mode fails before setup unless the caller supplies the exact active
-# manifest SHA-256, a private auth source, and a new output path. No mode runs
-# when the argument is missing or unknown. This entrypoint never rebuilds the
-# frozen parity index because scanner timestamps would invalidate its byte hash.
+# plain/CLI/skill manifest SHA-256, a private auth source, a new run directory, and
+# the manifest-locked complete-run wall-clock limit.
+# No mode runs when the argument is missing or unknown. This entrypoint
+# reconstructs a missing index and accepts it only when normalization reproduces
+# the reviewed byte hash exactly.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PL_TAG="2.6.5"
 PL_URL="${PL_URL:-https://github.com/Lightning-AI/pytorch-lightning.git}"
-REPO="${REPO:-$ROOT/.sandbox/pytorch-lightning}"
+MANAGED_REPO="/private/tmp/codemap-provider-parity-pl-2.6.5"
+REPO="${REPO:-$MANAGED_REPO}"
 INDEX_PATH="$REPO/.cache/codemap/$(basename "$REPO").json"
 MODE="${1:-}"
-MANIFEST_PATH="$ROOT/benchmarks/results/manifests/provider-parity-v1.json"
+MANIFEST_PATH="$ROOT/benchmarks/manifests/codex-integration.json"
+CODEMAP_BIN="${CODEMAP_BIN:-$ROOT/plugins/codemap-py/bin/codemap-py}"
+INDEX_PREPARER="$ROOT/benchmarks/prepare-codex-index.py"
 LOCKED_INDEX_SHA="b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045"
 
 usage() {
@@ -51,8 +56,8 @@ sha256_file() {
 }
 
 ensure_repo() {
-  # Only the managed sandbox is reset. An overridden REPO is never mutated.
-  if [ "$REPO" = "$ROOT/.sandbox/pytorch-lightning" ]; then
+  # Only the canonical benchmark target is reset. An overridden REPO is never mutated.
+  if [ "$REPO" = "$MANAGED_REPO" ]; then
     if [ ! -d "$REPO/.git" ]; then
       echo "== clone pytorch-lightning @ $PL_TAG into .sandbox =="
       rm -rf "$REPO"
@@ -70,10 +75,17 @@ ensure_repo() {
 
 prepare_locked_inputs() {
   ensure_repo
-  echo "== VALIDATE frozen parity index =="
+  echo "== PREPARE frozen parity index =="
   if [ ! -f "$INDEX_PATH" ]; then
-    echo "ERROR: locked parity index is missing: $INDEX_PATH" >&2
-    exit 1
+    echo "→ build missing index from the locked target"
+    CODEMAP_PYTHON="/opt/homebrew/bin/python3.11" "$CODEMAP_BIN" index --root "$REPO"
+    index_sha="$(sha256_file "$INDEX_PATH")"
+    if [ "$index_sha" != "$LOCKED_INDEX_SHA" ]; then
+      python3 "$INDEX_PREPARER" \
+        --index-path "$INDEX_PATH" \
+        --source-root "$REPO" \
+        --manifest-path "$MANIFEST_PATH"
+    fi
   fi
   index_sha="$(sha256_file "$INDEX_PATH")"
   if [ "$index_sha" != "$LOCKED_INDEX_SHA" ]; then
@@ -86,6 +98,16 @@ prepare_locked_inputs() {
 query_check() {
   echo "== QUERY (no model) =="
   python3 benchmarks/run-cli.py --repo-path "$REPO"
+}
+
+validate_codex_cli() {
+  expected_codex_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["codex_cli"]["version"])' "$MANIFEST_PATH")"
+  actual_codex_version="$(command codex --version)"
+  if [ "$actual_codex_version" != "$expected_codex_version" ]; then
+    echo "ERROR: Codex CLI identity mismatch: expected $expected_codex_version, got $actual_codex_version" >&2
+    exit 1
+  fi
+  echo "→ Codex CLI: $actual_codex_version"
 }
 
 claude_preflight() {
@@ -104,14 +126,18 @@ claude_preflight() {
     --dry-run
 }
 
-codex_preflight() {
+codex_smoke_preflight() {
   echo "== CODEX PREFLIGHT (no model) =="
+  validate_codex_cli
   python3 benchmarks/run-codex-structural.py \
     --repo-path "$REPO" \
     --tasks-path benchmarks/suites/tasks-bench.json \
+    --manifest-path "$MANIFEST_PATH" \
     --index-path "$INDEX_PATH" \
     --marketplace-root "$ROOT" \
+    --codemap-bin "$CODEMAP_BIN" \
     --model gpt-5.6-luna \
+    --reasoning-effort high \
     --task-id FN-02 \
     --arm all \
     --dry-run
@@ -120,7 +146,7 @@ codex_preflight() {
 smoke() {
   query_check
   claude_preflight
-  codex_preflight
+  codex_smoke_preflight
   echo "→ smoke OK: query command completed; Claude/Codex no-model preflights passed"
 }
 
@@ -158,30 +184,87 @@ require_codex_paid_inputs() {
     echo "ERROR: paid Codex mode requires CODEX_AUTH_SOURCE pointing to a private auth.json." >&2
     exit 2
   fi
-  if [ -z "${CODEX_OUTPUT_PATH:-}" ]; then
-    echo "ERROR: paid Codex mode requires a new CODEX_OUTPUT_PATH." >&2
+  if [ -z "${CODEX_RUN_DIR:-}" ]; then
+    echo "ERROR: paid Codex mode requires a new CODEX_RUN_DIR." >&2
     exit 2
   fi
-  if [ -e "$CODEX_OUTPUT_PATH" ]; then
-    echo "ERROR: CODEX_OUTPUT_PATH already exists: $CODEX_OUTPUT_PATH" >&2
+  if [ -z "${CODEX_MAX_WALL_CLOCK_SECONDS:-}" ]; then
+    echo "ERROR: paid Codex mode requires CODEX_MAX_WALL_CLOCK_SECONDS." >&2
+    exit 2
+  fi
+  approved_wall_clock="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_controls"]["confirmatory_max_wall_clock_seconds"])' "$MANIFEST_PATH")"
+  if [ "$CODEX_MAX_WALL_CLOCK_SECONDS" != "$approved_wall_clock" ]; then
+    echo "ERROR: CODEX_MAX_WALL_CLOCK_SECONDS must equal the manifest lock: $approved_wall_clock" >&2
+    exit 2
+  fi
+  if [ -e "$CODEX_RUN_DIR" ]; then
+    echo "ERROR: CODEX_RUN_DIR already exists: $CODEX_RUN_DIR" >&2
     exit 2
   fi
 }
 
-codex() {
-  query_check
-  codex_preflight
-  echo "== CODEX FN-02 POST-PILOT A/B/C SMOKE (paid model runs) =="
-  python3 benchmarks/run-codex-structural.py \
+run_codex_study() {
+  # This function runs inside a tee pipeline, where Bash does not reliably apply
+  # errexit to every function command. Propagate smoke failures explicitly so no
+  # full coordinate plan or paid cell can start after a failed smoke.
+  query_check || return "$?"
+  codex_smoke_preflight || return "$?"
+  confirmatory_repetitions="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["preregistered_cells"]["confirmatory_repetitions"])' "$MANIFEST_PATH")"
+  confirmatory_task_args=()
+  while IFS= read -r task_id; do
+    confirmatory_task_args+=(--task-id "$task_id")
+  done < <(python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))["preregistered_cells"]["structural_execution_task_ids"], sep="\n")' "$MANIFEST_PATH")
+  task_count=$((${#confirmatory_task_args[@]} / 2))
+  planned_cells=$((task_count * confirmatory_repetitions * 3))
+  telemetry_path="$CODEX_RUN_DIR/telemetry.jsonl"
+  metadata_path="$CODEX_RUN_DIR/run-metadata.json"
+  echo "== CODEX STRUCTURAL STUDY =="
+  echo "→ design: $planned_cells cells ($task_count tasks × $confirmatory_repetitions run × 3 arms)"
+  echo "→ analysis: 45 independently scored headline tasks; 10 diagnostic tasks reported separately"
+  echo "→ model: gpt-5.6-luna; reasoning effort: high"
+  echo "→ limits: 600 seconds per coordinate; $CODEX_MAX_WALL_CLOCK_SECONDS seconds complete run"
+  echo "→ manifest: $MANIFEST_PATH ($active_manifest_sha)"
+  echo "→ telemetry: $telemetry_path"
+  echo "→ metadata: $metadata_path"
+  common_args=(
     --repo-path "$REPO" \
     --tasks-path benchmarks/suites/tasks-bench.json \
+    --manifest-path "$MANIFEST_PATH" \
     --index-path "$INDEX_PATH" \
     --marketplace-root "$ROOT" \
-    --auth-source "$CODEX_AUTH_SOURCE" \
+    --codemap-bin "$CODEMAP_BIN" \
     --model gpt-5.6-luna \
-    --task-id FN-02 \
+    --reasoning-effort high \
+    "${confirmatory_task_args[@]}" \
+    --repetitions "$confirmatory_repetitions" \
     --arm all \
-    --output-path "$CODEX_OUTPUT_PATH"
+    --max-wall-clock-seconds "$CODEX_MAX_WALL_CLOCK_SECONDS"
+  )
+  echo "== CODEX CONFIRMATORY A/B/C PREFLIGHT (no model) =="
+  python3 benchmarks/run-codex-structural.py "${common_args[@]}" --dry-run || return "$?"
+  echo "== CODEX CONFIRMATORY A/B/C STUDY (paid model runs) =="
+  python3 benchmarks/run-codex-structural.py \
+    "${common_args[@]}" \
+    --auth-source "$CODEX_AUTH_SOURCE" \
+    --output-path "$telemetry_path" \
+    --metadata-path "$metadata_path"
+}
+
+run_codex_with_artifacts() {
+  if run_codex_study 2>&1 | tee "$CODEX_RUN_DIR/run.log"; then
+    run_status=0
+  else
+    run_status=$?
+  fi
+  checksum_path="$CODEX_RUN_DIR/checksums.sha256"
+  : > "$checksum_path"
+  for artifact in run.log telemetry.jsonl run-metadata.json; do
+    if [ -f "$CODEX_RUN_DIR/$artifact" ]; then
+      shasum -a 256 "$CODEX_RUN_DIR/$artifact" >> "$checksum_path"
+    fi
+  done
+  echo "→ artifact checksums: $checksum_path"
+  return "$run_status"
 }
 
 case "$MODE" in
@@ -196,7 +279,8 @@ case "$MODE" in
   codex)
     require_codex_paid_inputs
     prepare_locked_inputs
-    codex
+    mkdir -p "$CODEX_RUN_DIR"
+    run_codex_with_artifacts
     ;;
 esac
 

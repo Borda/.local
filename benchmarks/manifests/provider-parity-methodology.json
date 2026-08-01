@@ -1,0 +1,2703 @@
+{
+  "codex_permission_profiles": {
+    "cli_min_version": "0.138.0",
+    "command_contract": "canonical Codex cells omit --sandbox because an explicit legacy sandbox mode disables permission profiles",
+    "config_mode": "0600",
+    "plain": {
+      "arm": "A_plain",
+      "extends": ":read-only",
+      "filesystem_overrides": {
+        "$CODEX_HOME/auth.json": "deny",
+        "<locked-index-parent>": "deny"
+      },
+      "network_enabled": false,
+      "profile": "provider-parity-plain",
+      "write_roots": []
+    },
+    "preflight": [
+      "reject Codex CLI versions older than 0.138.0",
+      "reject profile parse or selection failure",
+      "prove source-tree write denial",
+      "prove copied auth.json read denial without disclosing credential bytes",
+      "for A, prove the locked index directory is unreadable",
+      "for B/C, prove write access only in the initialized index-local .index-rw coordination root",
+      "for B/C, prove the locked CODEMAP_PYTHON executable reports the required major/minor before model execution",
+      "for B/C, prove CODEMAP_BIN is a contained regular single-link executable resolved from the installed plugin and record its SHA-256"
+    ],
+    "shell_environment": {
+      "inherit": "none",
+      "secret_inheritance": false,
+      "set_allowlist": [
+        "PATH",
+        "HOME",
+        "CODEX_HOME",
+        "CODEMAP_BIN",
+        "CODEMAP_PYTHON",
+        "SCAN_NO_AUTOBUILD",
+        "CODEMAP_LOGGING",
+        "CODEX_CODEMAP_AVAILABLE"
+      ]
+    },
+    "treatment": {
+      "arms": [
+        "B_auto",
+        "C_required"
+      ],
+      "coordination_root": "<locked-index-parent>/.index-rw",
+      "extends": ":read-only",
+      "filesystem_overrides": {
+        "$CODEX_HOME/auth.json": "deny",
+        "<locked-index-parent>/.index-rw": "write"
+      },
+      "network_enabled": false,
+      "profile": "provider-parity-codemap",
+      "write_roots": [
+        "<locked-index-parent>/.index-rw"
+      ]
+    },
+    "treatment_runtime": {
+      "environment": {
+        "CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"
+      },
+      "required_major_minor": [
+        3,
+        11
+      ],
+      "scope": [
+        "B_auto",
+        "C_required"
+      ]
+    },
+    "validated_cli_version": "0.145.0"
+  },
+  "evaluation_contract": {
+    "binary_guardrail": "correct",
+    "capability_strata_counts": {
+      "dependency_path": 1,
+      "diff_impact": 6,
+      "direct_reverse_call": 14,
+      "direct_reverse_import": 5,
+      "graph_centrality": 2,
+      "high_fan_in": 20,
+      "test_selection": 6,
+      "transitive_reverse_call": 1
+    },
+    "components": [
+      "recall",
+      "caller_recall",
+      "test_recall"
+    ],
+    "precision_f1_status": "not reported without a frozen false-positive oracle",
+    "provider_neutral": true,
+    "quality_primary": "continuous task-family quality_score in [0,1]"
+  },
+  "execution_controls": {
+    "applies_to": [
+      "claude",
+      "codex"
+    ],
+    "budget": "wall_clock_only",
+    "claude_max_turns": "omitted for canonical A/B/C cells; legacy arms retain their existing caps",
+    "codex_max_turns": "unavailable in Codex CLI 0.145.0",
+    "codex_permission_profiles": "A uses provider-parity-plain and denies the shared locked-index directory; B/C use provider-parity-codemap; both extend :read-only, deny auth.json reads, disable network, and inherit no shell environment; only B/C may write the exact index-local .index-rw root",
+    "codex_transport": "run-codex-structural.py; no Codex agentic adapter is registered for the active manifest",
+    "parity_timeout_seconds": 600,
+    "provider_native_internal_limits": "retained as provider-native telemetry and limitations, never treated as a shared turn count",
+    "retry": "at most 2 retries only after retryable transport failure with zero input and output tokens",
+    "turn_budget_enforced": false
+  },
+  "headline_structural_v1": {
+    "diagnostic_independent_ids": [
+      "CQ-02",
+      "RV-05"
+    ],
+    "diagnostic_reason": "uncovered coverage oracle is a source-level simple-name approximation, not executable coverage",
+    "policy": "tasks-bench only; independent non-approximate oracle; validator PASS; effectively scoreable; not self-consistency; known exact-oracle/tool divergence remains an intentional tool-accuracy outcome",
+    "task_count": 45,
+    "task_ids": [
+      "FN-01",
+      "FN-02",
+      "FN-03",
+      "FN-04",
+      "FN-05",
+      "RV-01",
+      "RV-02",
+      "RV-03",
+      "RV-04",
+      "CQ-01",
+      "BR-01",
+      "BR-02",
+      "BR-03",
+      "BR-04",
+      "BR-05",
+      "BR-06",
+      "BR-07",
+      "BR-08",
+      "BR-09",
+      "DG-01",
+      "DG-02",
+      "DG-03",
+      "DG-04",
+      "DG-05",
+      "DG-06",
+      "FT-01",
+      "FT-02",
+      "FT-03",
+      "FT-04",
+      "FT-05",
+      "DI-01",
+      "DI-02",
+      "DI-03",
+      "DI-04",
+      "DI-05",
+      "DI-06",
+      "GR-01",
+      "GR-02",
+      "GR-03",
+      "GR-04",
+      "MB-01",
+      "MB-02",
+      "MB-03",
+      "MB-04",
+      "MB-05"
+    ]
+  },
+  "implementation_contract": {
+    "artifact_sha256": {
+      "claude_query_skill": "5a5a528c3f50395289fbbf38b9579612a1ca74bd09d9bf7b3a119d47ce63482f",
+      "codemap_graph": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
+      "codemap_query": "96179bb2c31dff1944d10d6825ae48707d25b081f695681b65235aef81884798",
+      "codex_query_skill": "41c868a74ac342a278c8ae66182acc1e739f857262b17977301ce4ba4e523916",
+      "provider_parity_contracts": "fdd5c08ee9698053c9b32b6a2d6423888c637ef2f9bf1fc1a6c204405de6edb4",
+      "run_all": "a95b9ad864e1d0b23da85ff6dba0b51d9bb4a8ac6083bb07fca92b05567e55fd",
+      "run_claude_structural": "2e13119ce51a6dac480152b6f2a01ed08b011237649fcc26795b854647c7f966",
+      "run_codex_structural": "2c5b29781e5d69d92de084c77612d78acccfd21533499c22a1c614569f922c97"
+    },
+    "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
+    "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
+    "codex_model_stratum": {
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "strict_config": true
+    }
+  },
+  "index": {
+    "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
+    "module_count": 645,
+    "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
+    "project": "codemap-provider-parity-pl-2.6.5",
+    "raw_sha256": "b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045",
+    "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
+    "scan_version": 11,
+    "scanned_at": "2026-07-29T18:51:27.926212+00:00"
+  },
+  "oracle_remediation": {
+    "codex_runner_added": false,
+    "headline_divergence_policy": "exact independent caller-oracle divergence is measured as tool accuracy; approximate uncovered-oracle divergence stays diagnostic",
+    "known_tool_divergence_ids": [
+      "FN-04",
+      "RV-05",
+      "CQ-02",
+      "BR-04",
+      "BR-07",
+      "BR-09"
+    ],
+    "original_counts": {
+      "fail": 20,
+      "pass": 24,
+      "skip": 16
+    },
+    "provider_specific_changes": false,
+    "remediated_counts": {
+      "fail": 0,
+      "pass": 60,
+      "skip": 0
+    },
+    "tool_derived_update_ids": [
+      "SE-03",
+      "CQ-04"
+    ],
+    "tool_derived_update_reason": "target-version relock only; both rows remain diagnostic and cannot enter headline correctness",
+    "tool_derived_update_used": true
+  },
+  "preregistered_cells": {
+    "arm_order": "sort arms by sha256(experiment_revision|provider|model|reasoning_effort|task_id|repetition|arm), ascending raw digest; Claude uses an empty effort coordinate",
+    "arms": [
+      "A_plain",
+      "B_auto",
+      "C_required"
+    ],
+    "confirmatory_repetitions": 5,
+    "pilot_repetitions": 3,
+    "providers": [
+      "claude",
+      "codex"
+    ],
+    "smoke_task_ids": [
+      "FN-02",
+      "BA-01",
+      "RC-01",
+      "FS-01",
+      "FM-01",
+      "PT-01"
+    ],
+    "structural_confirmatory_task_ids": [
+      "FN-01",
+      "FN-02",
+      "FN-03",
+      "FN-04",
+      "FN-05",
+      "RV-01",
+      "RV-02",
+      "RV-03",
+      "RV-04",
+      "CQ-01",
+      "BR-01",
+      "BR-02",
+      "BR-03",
+      "BR-04",
+      "BR-05",
+      "BR-06",
+      "BR-07",
+      "BR-08",
+      "BR-09",
+      "DG-01",
+      "DG-02",
+      "DG-03",
+      "DG-04",
+      "DG-05",
+      "DG-06",
+      "FT-01",
+      "FT-02",
+      "FT-03",
+      "FT-04",
+      "FT-05",
+      "DI-01",
+      "DI-02",
+      "DI-03",
+      "DI-04",
+      "DI-05",
+      "DI-06",
+      "GR-01",
+      "GR-02",
+      "GR-03",
+      "GR-04",
+      "MB-01",
+      "MB-02",
+      "MB-03",
+      "MB-04",
+      "MB-05"
+    ],
+    "structural_pilot_task_ids": [
+      "FN-02",
+      "FN-05",
+      "BR-02",
+      "BR-05",
+      "MB-01",
+      "MB-04"
+    ]
+  },
+  "suite_integrity": {
+    "all_tasks_have_id_and_prompt": true,
+    "suite_count": 7,
+    "task_count": 109,
+    "unique_canonical_task_hashes": true,
+    "unique_ids_within_and_across_suites": true
+  },
+  "suites": [
+    {
+      "current_consumer": "run-claude-agentic.py default; no Codex agentic runner for the active manifest",
+      "generation_provenance": "committed_static_prompts_runtime_ast_oracle",
+      "ordered_task_ids": [
+        "BA-01",
+        "BA-02",
+        "BA-03",
+        "BA-04",
+        "BA-05",
+        "BA-06",
+        "BA-07",
+        "BA-08",
+        "BA-09",
+        "BA-10",
+        "BA-11",
+        "BA-12",
+        "BA-13",
+        "BA-14",
+        "BA-15",
+        "BA-16"
+      ],
+      "path": "benchmarks/suites/tasks-agentic.json",
+      "raw_sha256": "f40a24b178ee5ab2043b98e3523fffb93431e18bb6ae6ad317468ca95ad85b4b",
+      "root_shape": "object_with_tasks",
+      "task_count": 16,
+      "tasks": [
+        {
+          "canonical_task_sha256": "81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-01",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "0de13f8f8578ffccbba5ae57a6de5a7f37f17c476af01de16a5db9224e18189e",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "ddb83160b1ea5aefff19a5c046cf22bb5911a8c633735f47667ee5404d6de251",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "8dc7726fe78280d4ed7a19cfe4fe57bb0bd919ce85772f8c34f2430506d26dd2",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-03",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "503b9f0ce2f90815d273a41d83cdf22be60494d3f1c17163c430690830cc09f4",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "4153aa0ee0d076ed3b1736aa51a787d9d9331608c58b2d5325d3b448da0ced6c",
+          "difficulty": "extreme",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "073473cfd5f7d7713d20dd58fbf1a112ab0d575fbe7b2a86213bf6f2811784cb",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "c2fd3d325ce22e8ca8ab85127cc9cd794fbb9b87dca9ddc8465b038e2fb8860c",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-05",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "0845059673f7b8ac52302659241640fc7cec0a5d00f48300469a25317b76e019",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "3b38a8f28ae16cd659a52faa61eba38eab7ee504d66114422dd5a853b006e9ca",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-06",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "457df7e3deb5492160f9724c0b52e6d18d22e76268b71a3d117e390cb1be8644",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "2dc2b714ce85bb13de0296dc8b4486db31a98bc8307445ba5ea8775a1743bcfb",
+          "difficulty": "extreme",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-07",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "6674fbfd76cfb6eb00c4228537a632686dc550cae856a45acc77a162a092b56a",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "393431378f34baf3200e08008b0d80e53eaab3562efd494241b5182fd4f54d10",
+          "difficulty": "extreme",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-08",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "ff52a9b1aa9c4cae6df5e8c3f34ca46d05cde85accf0a2774070ea521dd66ddb",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "00485f9f4c9d4fb295043ef4f4f64189175c79e2904046cd9406a67cfb6c1374",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-09",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "b5e1fb5175ef2c89967111b41c91a455083d14fe16d500a6f24f669e8b08c698",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "a8d5cb0fbf81ef0b29a0c50d6cb3cedc1361cab4bf5972d288a15497a02920bb",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-10",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "fcc1f9f35a16f4c33a4fbf9fe6ef1522acd9b80cdbaf211182c3baba222f3451",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "e20a788f40bc257b6b0fb41e8b37517cfef5f868ce3eecc4aeb7245c782b2938",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-11",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "48fed2c622e304ecfbe7077d39d07830a24ba2c45fea38ded3164623580cef8f",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "bf5b72f8e4dcfe8e8712aca572bd7d5c7913feb6e4e1ce613cdbdacb213ae21a",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-12",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "8345bac9f4d86785816156ecf59d8eef9cfdd7adcaf0f93f0658de723dcf78f4",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "007da9a3ce2fb9cc8dc4c856b87a88ecd802b13d8afba61e2a5705bca04a33f9",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-13",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "18cd371d7c4c3f977fa5645bfdd00554929409db5b85774e7816f0426fa6dbef",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "22bb73877419419748da4524bb19e2e6c47e74d6bacfd6c0ab4090a84d97a31e",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-14",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "4063164d306c14c13ce7b523591cbc925c0ca64ac9e2f01e63a0f04c8902b16d",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "00bac84a381e1867be422fec2d3089286f28bddbdc2fba056bc2c718c9b3a989",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-15",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "0419f1641a34cc1e3f72cbb763ea41b937923f6659637251cc695e9cfb8779e0",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "945a97bf8a6d7478942e12c9ed38497368b68f0323543ef93c5cf849a4bb059c",
+          "difficulty": "extreme",
+          "effective_scoreable": true,
+          "effective_type": "blast_radius_analysis",
+          "headline_eligible_v1": false,
+          "id": "BA-16",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "5b253f3120c42cb01f30f7ec799e0605ee7f796784148b5097d5d97a833f23bc",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "blast_radius_analysis",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        }
+      ]
+    },
+    {
+      "current_consumer": "run-claude-structural.py and run-codex-structural.py defaults",
+      "generation_provenance": "committed_prompts_and_ground_truth; generate-tasks-bench.py validates_or_updates_ground_truth_only",
+      "ordered_task_ids": [
+        "SE-01",
+        "SE-02",
+        "SE-03",
+        "SE-04",
+        "SE-05",
+        "FN-01",
+        "FN-02",
+        "FN-03",
+        "FN-04",
+        "FN-05",
+        "RV-01",
+        "RV-02",
+        "RV-03",
+        "RV-04",
+        "RV-05",
+        "CQ-01",
+        "CQ-02",
+        "CQ-03",
+        "CQ-04",
+        "CQ-05",
+        "BR-01",
+        "BR-02",
+        "BR-03",
+        "BR-04",
+        "BR-05",
+        "BR-06",
+        "BR-07",
+        "BR-08",
+        "BR-09",
+        "DG-01",
+        "DG-02",
+        "DG-03",
+        "DG-04",
+        "DG-05",
+        "DG-06",
+        "FT-01",
+        "FT-02",
+        "FT-03",
+        "FT-04",
+        "FT-05",
+        "RI-01",
+        "RI-02",
+        "RI-03",
+        "RI-04",
+        "RI-05",
+        "DI-01",
+        "DI-02",
+        "DI-03",
+        "DI-04",
+        "DI-05",
+        "DI-06",
+        "GR-01",
+        "GR-02",
+        "GR-03",
+        "GR-04",
+        "MB-01",
+        "MB-02",
+        "MB-03",
+        "MB-04",
+        "MB-05"
+      ],
+      "path": "benchmarks/suites/tasks-bench.json",
+      "raw_sha256": "be37d7caaf506df26ef9dec872f9434294e93f1efb80b98b109cc2542bf3d16e",
+      "root_shape": "object_with_tasks",
+      "task_count": 60,
+      "tasks": [
+        {
+          "canonical_task_sha256": "67330dd5e36a966c4a168c46e63b1e41d21f27ccd6356e918d58631a1451b0d2",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "symbol_extraction",
+          "headline_eligible_v1": false,
+          "id": "SE-01",
+          "oracle_class": "static_reference",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "c25ef891aaa4842330ce894c0264ff282b34cdb1fdba01f4b81d07189c7545b1",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "symbol_extraction",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "ddcb5a42661ffec9400cd0f4701930f9a440feb86ced266fbd13bdbe83976e47",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "symbol_extraction",
+          "headline_eligible_v1": false,
+          "id": "SE-02",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "75beefcf1ea18a3fe88b9d8bc21b3246da38e3d2f7ef5a28393d7876d21cef1f",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "symbol_extraction",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "dfd96ca77b4b79e2f243d54c3662daf49ab985b42f80c60dc18b1a8831783415",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "symbol_extraction",
+          "headline_eligible_v1": false,
+          "id": "SE-03",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "11d5ee2695ae8b3dee88cb2135f14e9d65c74fc2b403cf1fedc78854b922dcf7",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "symbol_extraction",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "361ece01be14e4eb2994776a65a0c667c5871b178d8a3a0f7ded8768b5f15751",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "symbol_extraction",
+          "headline_eligible_v1": false,
+          "id": "SE-04",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "462d53dee617a78a0fa9f2f9ad3d54d2fbfb69ee7e1167ff7dcbcfad22a40ec3",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "symbol_extraction",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "eec2aa8c31045d0fec9dc1e0c2842a5c4e3727a7669d310b24b78e5ae0871c95",
+          "difficulty": "extreme",
+          "effective_scoreable": true,
+          "effective_type": "symbol_extraction",
+          "headline_eligible_v1": false,
+          "id": "SE-05",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "f2d0659afdb0e06a88827e65ebf21aa6e379e0d737239fabcdfef875cb6775ee",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "symbol_extraction",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "664b3fd37b963b534c82fe3188bb27ce2eceae33f393e13ce21df7f293e2fd18",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "fn_call_graph",
+          "headline_eligible_v1": true,
+          "id": "FN-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "796b54bc4f8f1cb429145bfe0b76844dda1ab6c22e6f21e2f24e106311908c90",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fn_call_graph",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "42519dd0d8a9e27c2756b9ddb57d277ba65bd2112a681c775ccc337fe9a00a39",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "fn_call_graph",
+          "headline_eligible_v1": true,
+          "id": "FN-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "2ce744702379101271dd97829dbd4118876ec19326e9ce5af8e3d43df3f72f6b",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fn_call_graph",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "162133613c4e7b5a86cb6a7ba01c94275cdcba0b10d6b64b072428c5bd1a80a0",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "fn_call_graph",
+          "headline_eligible_v1": true,
+          "id": "FN-03",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "3d6227aae7f560273f1f255becd49784f8a9ea068253440d652c08a67c913b5f",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fn_call_graph",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "518e060496e2789462e22aca4825fd3c7a92c342fd5da9bb71d7f0fd89f1c2bd",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "fn_call_graph",
+          "headline_eligible_v1": true,
+          "id": "FN-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "8c2e20a7e94b681db8d40b0817d06149d8853f2ffd63b3595f79a804aba0fbc3",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fn_call_graph",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "37396463cbc9bf57944e10edaa2dc77f7ff37494b2c0bf10cb320684bb9a4a78",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "fn_call_graph",
+          "headline_eligible_v1": true,
+          "id": "FN-05",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "64c9a536dad03079310a8199124d9803433d8f5d726cd4127e5fd1780e0b513d",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fn_call_graph",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "1f1ca10f471b1b9a18360a3da8b595c23b40e42118097e6222a9099da68ae349",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "review_assistance",
+          "headline_eligible_v1": true,
+          "id": "RV-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "0feb213bc9607a9dfc1de7c69d54e721e154629b17848345f4330a2c6f90cd1f",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "review_assistance",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "be684c1837ad2a7675a5e3b4bcca7253a00fe2b234ee5ff63a8eb504770a1d63",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "review_assistance",
+          "headline_eligible_v1": true,
+          "id": "RV-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "36a41032550d6c442fd57a2c16a951dfade8d65e39096ab7411fc35f16883c53",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "review_assistance",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "5826cd78da884b092fe69531bbdc5c1ed8848aeb77a45e60f6972aef34026b6e",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "review_assistance",
+          "headline_eligible_v1": true,
+          "id": "RV-03",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "41cfba5a5d5316f6809420d76982d51ab5a01e52808eb160d3d810f366ff3a5d",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "review_assistance",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "2e6cee53f1ee63129a85245c63cee8956d00d76f0aefab53ea14896e898832f7",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "review_assistance",
+          "headline_eligible_v1": true,
+          "id": "RV-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "51b14e5613988a749fb227f1af711732e4cae3333fb44abbb41d531864013d37",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "review_assistance",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "b5f370e566e5c6b2c3429249d603f164470d507bd64c1a721780d04898321110",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "review_assistance",
+          "headline_eligible_v1": false,
+          "id": "RV-05",
+          "oracle_class": "independent",
+          "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
+          "profiles": [],
+          "prompt_sha256": "e5915a2448c25abf01ea5c3d1bfa7d27559a0e0228169f6b681733740b06017a",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "review_assistance",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "6008a818b634ee4e1742702f08afb9437a9b151ce911a7d1d27482378a387f1a",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "code_quality",
+          "headline_eligible_v1": true,
+          "id": "CQ-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "460c73b667b13ffc1f3ccd7a18ef217c5b6737e49bae924c74ee62621119b31d",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "code_quality",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "db5ca1ff988e57b60cfab85cb98dc8106a0567e2f9d071e2e3477a58078d1e79",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "code_quality",
+          "headline_eligible_v1": false,
+          "id": "CQ-02",
+          "oracle_class": "independent",
+          "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
+          "profiles": [],
+          "prompt_sha256": "7ebb763804d6c72f9c8e6a643330b02689d5e22a857692775e0dda682a28e198",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "code_quality",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "2358bba3d73aa730f8ce7d04dc72fbae3f5206d3b319dc4a9927fca6ac92d03a",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "code_quality",
+          "headline_eligible_v1": false,
+          "id": "CQ-03",
+          "oracle_class": "self_consistency",
+          "profiles": [],
+          "prompt_sha256": "6d82c938a7bac4b201363d6bea5f4ee3f40abcff496a7edf0af4aa44a3e58e1b",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "code_quality",
+          "self_consistency": true,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "723866fb45814d08c81bfc877f4cf6537a26e45973ddd51c94ed7518ef9db630",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "code_quality",
+          "headline_eligible_v1": false,
+          "id": "CQ-04",
+          "oracle_class": "self_consistency",
+          "profiles": [],
+          "prompt_sha256": "156ba0132a171e68584feced7efc8a568ec77cccc4018d2175f6f406dcde89b3",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "code_quality",
+          "self_consistency": true,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "bc7577975762024090262362c8b1c383da722110086b78e0904503774cc33991",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "code_quality",
+          "headline_eligible_v1": false,
+          "id": "CQ-05",
+          "oracle_class": "self_consistency",
+          "profiles": [],
+          "prompt_sha256": "4ac3a44fb2d0d96610ed2aafd1913ed7a1c2a9a0ae7c6163a48eea5b525974a2",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "code_quality",
+          "self_consistency": true,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "66b91681a48c0dafdec975ff01bb9d27edead659c2aa194ef05d8d80cbf0df2d",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "7e4a423f234984a39c5f304d96bfcbce3f6db44b5d5c9f2a53a394edbb2c3386",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "ec70b69dd4c0db68a53efb75401c3c8ce246e1b5678e9eadcad57462a425002b",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "8c7d0d4131300feb9fed2340a674e264144b11c640a06507d824947c7c486f94",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "76e92c3b2ac98e2cca9e9d708e89c8dce674bdfd74d7403883d890e0cf70694e",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-03",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "218e6c6426df2f11f758df0ca18bc081ade09203bfc7133ccfb297c5ec14ed65",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "4b8f0a03a60c2fad5c51e7110a77f39eb8f39c8a38d389cfba5e041a17402a99",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "c64f3b86203b5d936673b263a0d67933703dd0217e82102e4542cd91b9671786",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "332d461fb75f63e3a6ef3d0ff275158f40bc7e06966a94e110217f2e73bdf6a9",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-05",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "28849007d0356306ed30a5c94557542f980291862c8f24795f3fbff8fc986ed5",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "7df6d25645875092ec5f6a44f4d7b8b4f74dd580b5ba4a72f3e5e266f39b9c4d",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-06",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "ae2001711a59a2280e01a71d75ee797007e0be6f9b5e04904feabff7a70109cf",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "ad82b425700ff155b4fb0182c6ebabcc2fca48f159b1b330a5e6c56e75d178a4",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-07",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "0aaf4af950495acbae7f192fd515ea2f0f82c58a57453b561bb512038c3f2857",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "810bd5c68e4a51b8ea5a1127afa97652af868f21310bcd97091d1cc3b5d8ceb3",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-08",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "c739370f0d5e888d5f1e1649f50f56411bcfb283767ae43b53181f7c0f946d63",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "758f905fb6e8279b7ac99f651b254670d5380b5029fa20b3adf4f3c618c2b9a9",
+          "difficulty": "extreme",
+          "effective_scoreable": true,
+          "effective_type": "develop_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "BR-09",
+          "oracle_class": "independent",
+          "profiles": [
+            "fanin"
+          ],
+          "prompt_sha256": "255024a08421a17f1ff796c4edea47cc5526d83444aabd7b94f2fcdb4d98ce71",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "develop_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "a9126581a2530e86d03af6a36ea1a51a4a849211a505140f07b08f869244352b",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "debug_from_trace",
+          "headline_eligible_v1": true,
+          "id": "DG-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "735a38f30c532b0279e3e61b5da252075092b6c78d4b78d189c5556e9c5af2b4",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "debug_from_trace",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "5c8907d157336167c55d435ffe18236f3ae5dc2e685fcf821dd52d4b29bdc7e9",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "debug_from_trace",
+          "headline_eligible_v1": true,
+          "id": "DG-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "9d022402c08991eed92ed97f9cf82c98fea6f5c1e705cb3e1a8e89d50864fdf8",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "debug_from_trace",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "9aa6336182820945a6699b690c86b4a0eba5a7faa8ec6f515afa94bb39450161",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "debug_from_trace",
+          "headline_eligible_v1": true,
+          "id": "DG-03",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "0e6e4dcc0fcd858d4a87a7279407a6b41a362ddf5454999188b8eeaea3ece066",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "debug_from_trace",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "591bab62657678bbeaa0853f69dc92fa481b9cff3e947eceeb852dc91a73072b",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "debug_from_trace",
+          "headline_eligible_v1": true,
+          "id": "DG-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "27bffd80449d6bfe11ec2e64d2da033bb7285f082a0bb1bb2c61da9fb142fb98",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "debug_from_trace",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "2fd50af34df0055b0167895480822c5759b0ee85d110708e40757a54d5ecafb7",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "debug_from_trace",
+          "headline_eligible_v1": true,
+          "id": "DG-05",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "847d175f0736a3f4930d2459ec7c4f34ceb1c44c0ce96e4f2ddcaa3487a12cd6",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "debug_from_trace",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "fd05a19ce8814a46a01805fa7836b8b08850adcd92b2901ecdd0f97a23b85626",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "debug_from_trace",
+          "headline_eligible_v1": true,
+          "id": "DG-06",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "c3cd5e302b8d60d9363c62b820f196d54018a344da6568f7612a4e9c3e3a0507",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "debug_from_trace",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "4dec9628f08964c766ed4e0fcd0c12eaf0db63498cfd8e88a6758b25aaa2af0f",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "feature_scaffolding",
+          "headline_eligible_v1": true,
+          "id": "FT-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "de2edb04038b8ea7d171a695b0b362543329ded7b623e890bd71e8b528c87def",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "feature_scaffolding",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "ed0cc2b2365d29bf380a37f9bac8b687c5a3d1159cc6687a5403a210c62e0b15",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "feature_scaffolding",
+          "headline_eligible_v1": true,
+          "id": "FT-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "114764c42262f09b37821998ffd6f2d87741aef78f8fe50a1388448a14d6deef",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "feature_scaffolding",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "786d8fae21ff19a010f536c06d79d3308b2fa68533cbb91f1edd3193bf874a67",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "feature_scaffolding",
+          "headline_eligible_v1": true,
+          "id": "FT-03",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "96ace0f4204fcda6c2c2dc468f0563693918ba6e31076d60df63b9ef3de63926",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "feature_scaffolding",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "068b59199df09e322219a5580a0c03e1dad87be0c7fab036791a51f1cff1f149",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "feature_scaffolding",
+          "headline_eligible_v1": true,
+          "id": "FT-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "39411af3524269bf9b694a2c0b8fe87b7358bb5f221cc5d91b7e12651bf64893",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "feature_scaffolding",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "5a624cbaab9f5b6e49e55608014a91c62545accbaa70f3cf6159b5deb0e3b8fb",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "feature_scaffolding",
+          "headline_eligible_v1": true,
+          "id": "FT-05",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "6fd61c05d6010f7e7300d1098131b6319a0a0cc71bae09ca459ab1873f242d54",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "feature_scaffolding",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "00475734c2f8a81dac479bb2ab8773c1e7798ef492fc009eeb9e6c7dced1e299",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "real_issue",
+          "headline_eligible_v1": false,
+          "id": "RI-01",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "43ca16d61c380e3361c6e9a43eecead53f4a8e8fb50cec6b10abc563a51e071f",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "real_issue",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "16b5b3fd8eeec53f71eaea3a8d81950e4fe8a067cf32e7c078bec828a78ede94",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "real_issue",
+          "headline_eligible_v1": false,
+          "id": "RI-02",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "1ae2c8dd58ba9931892dc652a413d45f60fc9a8adc46af66307938319d5a0f61",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "real_issue",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "a4ff8de629d931ef1c285444dcccae6985fa4d8dbd67c40e5817a65d9f698aed",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "real_issue",
+          "headline_eligible_v1": false,
+          "id": "RI-03",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "ea09627235193461e8b8fe1386bb1e007750533e1f1ee77df7cc61277b0ad3ef",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "real_issue",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "f743635ad806466b85ff5bf2afc53889a5c1e4fa0caa9fbe3dd528dbea93ee53",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "real_issue",
+          "headline_eligible_v1": false,
+          "id": "RI-04",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "c014ca1e48fe24c76e22ec2597546a62f4d4e7671e7040c4f63372c9e5cca622",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "real_issue",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "5095690e53b8db879eccabccd05ecc59e54795fd5eb5a7314a9a6893630406f6",
+          "difficulty": "medium",
+          "effective_scoreable": false,
+          "effective_type": "real_issue",
+          "headline_eligible_v1": false,
+          "id": "RI-05",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "4cf6674c350e74bef3f598d4351de3df02a6a43dfde1ab2069b1d907157c8e7f",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": false,
+          "raw_type": "real_issue",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "b9bda22b8ad280d37c7ecd3d6de3149144df7c59ab41f48866f1108b8f405885",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "diff_impact",
+          "headline_eligible_v1": true,
+          "id": "DI-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "1ca4a14c1daaddbe6ed3d5720c031976a1ad0c8dd79a266aa3d26488ae018d7e",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "diff_impact",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "7b7185f2b12c1c3071d58ec7af4ce1bc23061cf7d07043abedbcd776fce7ee78",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "diff_impact",
+          "headline_eligible_v1": true,
+          "id": "DI-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "92fd0de32e8c7279a9c14f237a54750963ff56359bf3031eb48572610b2b5dc7",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "diff_impact",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "9f952a63e4c711c08ecf88b836719229ee51e59818a7cb70dd84334a841bb902",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "diff_impact",
+          "headline_eligible_v1": true,
+          "id": "DI-03",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "c128a37676f5cd97a230112c2dd96e31253fb231435aa17c9afd77d573609ac2",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "diff_impact",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "792ab0e326086301ced4db634876c91b753153ec13c77023000b8430bceb40a7",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "diff_impact",
+          "headline_eligible_v1": true,
+          "id": "DI-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "519597193a6c5a5ba42ae5e101c9441661422983e9cfb3f8bec85b106cf3ecd5",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "diff_impact",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "69ccb5f74667bbfd8dded02414898869fa9601d0e5830843e3c8db50ac9fa403",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "diff_impact",
+          "headline_eligible_v1": true,
+          "id": "DI-05",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "06cbf8d59ee36f90381a1891d3ed61d90445d115f958c1a28bba54763e46ad82",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "diff_impact",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "678615e4b7958d3c7827a560c05f4d161ea1b6c7e1e869cb32d6fe3935265b7f",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "diff_impact",
+          "headline_eligible_v1": true,
+          "id": "DI-06",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "6e5466c8f47787f23a055f0b40b62b1425ab635ab4d989ef1fef62480e187057",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "diff_impact",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "23731d396950d15f2df8e55ea2489fa007b0b923c48bd7f595212f5d29df614a",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "graph_central",
+          "headline_eligible_v1": true,
+          "id": "GR-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "fe5b2b1fa0d585d41a4b2f86e24c6458746dbde79228b805ecb9f386be6ddabf",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "graph_central",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "bd6a46ad8a465357d0cc995369af584d6dffc261fb1ea16e23bc9efd5f0c0de8",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "graph_path",
+          "headline_eligible_v1": true,
+          "id": "GR-02",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "b7688820cc81ccfce29006012a753e42295203f43c9b2c18202002a3d45e02ab",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "graph_path",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "e39bcfcdaba7eb3ac6d2a81727eb9fbf09a063a93936da7de5151e4a64ac73af",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "graph_fn_blast",
+          "headline_eligible_v1": true,
+          "id": "GR-03",
+          "oracle_class": "independent",
+          "profiles": [
+            "dev"
+          ],
+          "prompt_sha256": "4f76e8e36c104458c09d042f51031c5a8dd4b39c8a4c455c7ddbf1f516968549",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "graph_fn_blast",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "0d37e4044fa87c874777635b543edd47e889d8199e23c012418ef0ca871f01e5",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "graph_central",
+          "headline_eligible_v1": true,
+          "id": "GR-04",
+          "oracle_class": "independent",
+          "profiles": [],
+          "prompt_sha256": "9ab65e64289fd24d3c544efb32aaa4db6eab41ef4e5002ed99983473918d2f4c",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "graph_central",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "67641bc341d849f059aab8e02a410ceab991c8d313ab6e5bfa25790bf5ce91f2",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "module_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "MB-01",
+          "oracle_class": "independent",
+          "profiles": [
+            "fanin"
+          ],
+          "prompt_sha256": "b793b553100491caad265bc952d61edc9805c57b3de0202eec9474ed713c5ae7",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "module_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "91089d76020506e5e315d427284ffb798b64a472376659cef8911d11924eda46",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "module_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "MB-02",
+          "oracle_class": "independent",
+          "profiles": [
+            "fanin"
+          ],
+          "prompt_sha256": "f54c011e23b279fa156609a2915ba8314590de2fa9ec301880b96ecf3919d553",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "module_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "cafa2ab48836c00d75044909593e94a4faaba6b0b82c1cf4b5bd89c9e7a20fd3",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "module_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "MB-03",
+          "oracle_class": "independent",
+          "profiles": [
+            "fanin"
+          ],
+          "prompt_sha256": "175660a0fa7db76b1b9f445c5110d50506a9204492ec24321230e0808fcf4d12",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "module_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "c41e4cb19469950250a65d9c3596289875547a4a6a426082835ae96a0e11777d",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "module_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "MB-04",
+          "oracle_class": "independent",
+          "profiles": [
+            "fanin"
+          ],
+          "prompt_sha256": "873a7252ea1ad6c71fa1d27ef4e2e49f62de2be83edada77c3dea925d5c32f7c",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "module_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        },
+        {
+          "canonical_task_sha256": "4acf300b4874f75385e0eb25fc6e1e450a32bc4125f5ae0a93cd4c174d035f42",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "module_blast_radius",
+          "headline_eligible_v1": true,
+          "id": "MB-05",
+          "oracle_class": "independent",
+          "profiles": [
+            "fanin"
+          ],
+          "prompt_sha256": "5be0dd9ff76e7f4f89419fefd63df38f8c9bb660bc61b8fc4f2bc353f55febcf",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "module_blast_radius",
+          "self_consistency": false,
+          "validation_status": "pass"
+        }
+      ]
+    },
+    {
+      "current_consumer": "run-cli.py; optional external input to run-claude-structural.py",
+      "generation_provenance": "committed_cli_query_specs_without_materialized_llm_ground_truth",
+      "ordered_task_ids": [
+        "B-01",
+        "B-02",
+        "B-03",
+        "B-04",
+        "B-05",
+        "F-01",
+        "F-02",
+        "F-03",
+        "F-04",
+        "F-05",
+        "R-01",
+        "R-02",
+        "R-03",
+        "R-04",
+        "R-05"
+      ],
+      "path": "benchmarks/suites/tasks-code.json",
+      "raw_sha256": "427513fba521401f8027ac7da683165d2abac0b5a3591ce09071b7713944f9d3",
+      "root_shape": "bare_list",
+      "task_count": 15,
+      "tasks": [
+        {
+          "canonical_task_sha256": "50ddb5e1f1d308da49aedf515dc67fc88ca467967f74bd3c94cc7d6eaaf36764",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "B-01",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "00353f74ac9160d375c145a6ef76ed903e34eef87eed8e9edd8a99ed2951e8ff",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "b475fd946eec21210596147c6718adbcaaa5ba65a3efb5d7d36ba7d467b47e64",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "B-02",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "eb422375b3ffe514641a8157df2375041ac879e12f57d0b3924d6644bd7b309d",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "ef606c5fcab10cf9b320ab144ea561290c2e83db5544a63fe0610ff5652a501c",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "B-03",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "6b98be3c2447dff381e2eaa962f9a5bec7954c496a05a1816f82e733c052bbf9",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "6b54854423aa2bdec4ec08fc0187148e9a334c544665fa12d743e8690f4cf175",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "B-04",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "a86757b296ee17e56b10e58502cfdf783c063969fed9c0aea521811be46382a7",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "8ff84f232b860dcf76db12c1446fb6b0c25cd92e7c19da279b4b72e04e2df7d3",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "B-05",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "8496eff570cdb97ff13f1ff8a9c727b74ce651a2c93536e64212a8c521472eb1",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "7b2a254b7641b0e3780b18bae362dd38ecf15c6648dd839f70a698b435bcf560",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "F-01",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "f2c8183e9e1733cff25f386e43b4adabc2e6b4cbacd62fa1ac2c9adfb94238f1",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "070ce7954054a86d02c2d201df534c90c67cb11766e9929497b14e71aeddce39",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "F-02",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "fa08f7ae051a1ecf9514237b8443c713453c75c1325838c316cf1f43e0c70c7a",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "92cc7733857044859870b78246609f29a24f9bc7f3c5adf2bd5faba5f4796288",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "F-03",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "53a8d32de4ada702865d56cdcd3d088740547098fe5a461cfe9c367f9a607c29",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "cd2b3370611aaed154eac132e9bb3bdcaf0406d7d4c9a347d680ff2eebcc9be8",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "F-04",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "71e88c1061648fac16e3622c4e4e59f568c16bd145b261350a0483206c47247c",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "5f912b2253351fe1691c8924ab1fe82bf34eeea8884c2d8b8b3626cbdcb42594",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "F-05",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "8d5a40d4dfc7e9352cbe9e2785eb2467f39d9f30c01af33faac4f209cd9678b5",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "5e254cbde7b37bccf40a85c5c386b41876809da00b537e79d46d3f9fa7c31dd9",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "R-01",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "115fae370c6ce2a32edf3a317f7d57404b418a70df5a790a0c41472c602059e3",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "05cd3b09fb1625795394d37ff670793deb86c8aad805664ec3158a53b5b81e5a",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "R-02",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "adc7f748db19956f6d7e25b22a7594abebf813d01c16af3378daf5557c0a246d",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "bc04dc2bb10b6eea9af6c48261d48f149d1e82f513b683364a715497eaf8a4c4",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "R-03",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "9f8b3f4c3b1afed51339d7436bc815895ad3332909cbbe3dfdf5e2867556570c",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "6b64c0ee7bbc66d6367d6858e72e9a85c90929136142e44f9cae0553b02eb620",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "R-04",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "1c0d827959dd843fdb694464d501970afaf979b856997f715ba334cb26c1cbfe",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "3713ee37720566115027f76a867a4f13845e648ae1df2cfd7654fb6bebfaf912",
+          "difficulty": null,
+          "effective_scoreable": false,
+          "effective_type": "develop_skill",
+          "headline_eligible_v1": false,
+          "id": "R-05",
+          "oracle_class": "unscoreable",
+          "profiles": [],
+          "prompt_sha256": "ec9efc84dc83bca9e34f12fce4201d8521cc52a5ad70d481e64589af9ecd9b55",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": null,
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        }
+      ]
+    },
+    {
+      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner for the active manifest",
+      "generation_provenance": "committed_static_prompts_keyword_file_oracle",
+      "ordered_task_ids": [
+        "FM-01",
+        "FM-02",
+        "FM-03"
+      ],
+      "path": "benchmarks/suites/tasks-fix-multi.json",
+      "raw_sha256": "1294f52f0ff3660847e6a7001b996d12ecfbec780e4c59f7f42803f2541d8613",
+      "root_shape": "bare_list",
+      "task_count": 3,
+      "tasks": [
+        {
+          "canonical_task_sha256": "0015b16e235da3cb158dfa09c1b266aea1ada8eac8d37b568cf7c14d34ae2f43",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "fix_multicaller",
+          "headline_eligible_v1": false,
+          "id": "FM-01",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "e97c241551371cf6613aa4eb46cb3f928e06d1634916431d0e93611b40e5e2d1",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fix_multicaller",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "053fc1901723d9918aab6c00bf3cd95f9980e6663a7382c5d44bbea52ab941bb",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "fix_multicaller",
+          "headline_eligible_v1": false,
+          "id": "FM-02",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "35d1bbfb9403d4ec08d84be72dbdcfcd9aa99db60c23224c95fa912392de5fda",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fix_multicaller",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "470b139605241b561d57034f1d1d48257d430456d24f65d285bbdd6ba329157f",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "fix_multicaller",
+          "headline_eligible_v1": false,
+          "id": "FM-03",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "aef9c2e1521950aef53f2e9d01bdc482ff6fc997d130c52a1bb10582d61ac7e7",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fix_multicaller",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        }
+      ]
+    },
+    {
+      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner for the active manifest",
+      "generation_provenance": "committed_static_prompts_keyword_file_oracle",
+      "ordered_task_ids": [
+        "FS-01",
+        "FS-02",
+        "FS-03",
+        "FS-04"
+      ],
+      "path": "benchmarks/suites/tasks-fix-single.json",
+      "raw_sha256": "2316927ea63da21f45752e33e3dc884aae0913faff2bf1d5fc5730abd39c446a",
+      "root_shape": "bare_list",
+      "task_count": 4,
+      "tasks": [
+        {
+          "canonical_task_sha256": "1216e2ae5160b15fb0725462380436c80450d382be206c326e452247dd341bcb",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "fix_single",
+          "headline_eligible_v1": false,
+          "id": "FS-01",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "5da8e24e59663845c22e2e77f6f72663bc00469174d998aa3a39511b3452a1d4",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fix_single",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "a47de23ebd8ca61b0fe1e21e06372c8a4391ebcca0b84ed6aaab356317eda644",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "fix_single",
+          "headline_eligible_v1": false,
+          "id": "FS-02",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "6d6a3dd2996a5e97855667c5494bdb816a31a8ec5f83caf2b42422bc1548f49e",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fix_single",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "68aaaaebc0a902faefdc8b0a8f843f997e18e345e5a7b2fdc1c5314a59506275",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "fix_single",
+          "headline_eligible_v1": false,
+          "id": "FS-03",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "649b97b97c257028edc8d9f473887c23d5f7b9f853f4b6d12842a798d1218301",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fix_single",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "9a9634c81746d092b7331b25f0deb99a0b0d695c17b238fddcd08e83c3c89123",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "fix_single",
+          "headline_eligible_v1": false,
+          "id": "FS-04",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "e8e386daba935ba44115a06166feb6cc895fc8e134d35a46d588607d4a83d7b6",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "fix_single",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        }
+      ]
+    },
+    {
+      "current_consumer": "run-claude-structural.py patch extension",
+      "generation_provenance": "committed_real_issue_prompts_reference_patch_and_test_oracle",
+      "ordered_task_ids": [
+        "PT-01",
+        "PT-02",
+        "PT-03",
+        "PT-04",
+        "PT-05"
+      ],
+      "path": "benchmarks/suites/tasks-patch.json",
+      "raw_sha256": "b6f6eb45d86024d47f08e51679efa2e9f704a4f34e17a86bc423c5afa5ddb05b",
+      "root_shape": "object_with_tasks",
+      "task_count": 5,
+      "tasks": [
+        {
+          "canonical_task_sha256": "e9abfcdb1a6add57b14889c63ee562ae145f65bdc6f95978a23b5fce433690c0",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "patch_task",
+          "headline_eligible_v1": false,
+          "id": "PT-01",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "5adf09c437cca849468697decf11af07306107b34e153ba56445e66f881f3422",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "patch_task",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "22acddc0394258d16f7dbdd085b61dade7aa8f1026cb7c243040431da4e39708",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "patch_task",
+          "headline_eligible_v1": false,
+          "id": "PT-02",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "2e820c7d0e8ef8b4a4087be6e874ef444a3b9a9c60cf59e43b4feb2f4bc8faeb",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "patch_task",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "e37811b21cd8e3e9f5ee326477fdc0cfeb63e2eb5fc62cd8b21c248d870b5fa6",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "patch_task",
+          "headline_eligible_v1": false,
+          "id": "PT-03",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "abe969963ddbfaa8f375053c9deba40e07f666c3940950f204b242c04f8dac31",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "patch_task",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "1e4c562d359caadc0a5c274d94c38ce3ddd3bea66705cdd4860ec6ec13a2b6e9",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "patch_task",
+          "headline_eligible_v1": false,
+          "id": "PT-04",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "c0b76e8b530672ca67f2510bef69bdc160d8c55127ee417b1a908580e371554d",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "patch_task",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "268bf89914d86d9d8e3907da892b47889e705486e10f21d63cefc260020327bc",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "patch_task",
+          "headline_eligible_v1": false,
+          "id": "PT-05",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "e1e07825cd356fd7e0bf67afcf582b985930528f4f8401faa643110a4b6e141b",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": true,
+          "raw_type": "patch_task",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        }
+      ]
+    },
+    {
+      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner for the active manifest",
+      "generation_provenance": "committed_static_prompts_keyword_oracle",
+      "ordered_task_ids": [
+        "RC-01",
+        "RC-02",
+        "RC-03",
+        "RC-04",
+        "RC-05",
+        "RC-06"
+      ],
+      "path": "benchmarks/suites/tasks-readcrop.json",
+      "raw_sha256": "087ccf5efdb2e14816550ad7a35479403d999811acfafcd527607a73b3a5d25b",
+      "root_shape": "bare_list",
+      "task_count": 6,
+      "tasks": [
+        {
+          "canonical_task_sha256": "b3f622f906726617ddf80d42f5c1a9757362795011855a0eb9c23de4ac90e924",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "read_crop",
+          "headline_eligible_v1": false,
+          "id": "RC-01",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "6d300b09c6e1d20ad4e7b9308f9de8788a8e9340074318288a1ed0b6987b8a93",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "read_crop",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "01af3f72c67c039a40ad08ded6644916ceb7a6176cdd797d24a8ff2659e348a0",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "read_crop",
+          "headline_eligible_v1": false,
+          "id": "RC-02",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "92842c7ce53e7bdb11cbc1169d41a0fa67b5c450e817eb1d14737ed5b9ea29d1",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "read_crop",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "c33b23c87473f7f506063a05f256539521027328ccefab1ec99fd127cfae8f57",
+          "difficulty": "hard",
+          "effective_scoreable": true,
+          "effective_type": "read_crop",
+          "headline_eligible_v1": false,
+          "id": "RC-03",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "03a8458926a1bea91ba71c1684cdebf2c3d13b3639af7cd08be0e1b115034451",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "read_crop",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "8954c59e0c593b1445b15850b86dab6ad69762387e67ebf66c63a36bf274f5a3",
+          "difficulty": "medium",
+          "effective_scoreable": true,
+          "effective_type": "read_crop",
+          "headline_eligible_v1": false,
+          "id": "RC-04",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "0f8ba9aead464645e9c47c263e64bbc3d6ab7af5e000f8360a57f2df83c0e875",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "read_crop",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "303b127d0e4e867d41da302f8dbaac787078d71f5a641dab727b9077d8b75311",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "read_crop",
+          "headline_eligible_v1": false,
+          "id": "RC-05",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "3487af5f5b1e9dd9e62674ee775c3de686f0b98c87e30e7f6968508dc0f28f84",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "read_crop",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        },
+        {
+          "canonical_task_sha256": "7626d8a2b2a143da13ccca3dfe763d77f1fbada80ca0cd6524b97bd18471ba35",
+          "difficulty": "simple",
+          "effective_scoreable": true,
+          "effective_type": "read_crop",
+          "headline_eligible_v1": false,
+          "id": "RC-06",
+          "oracle_class": "static_reference",
+          "profiles": [],
+          "prompt_sha256": "12db09816f93ebd800a6e6ba89ab8082e8ed5ca0967099dcef981ad30b0e25f2",
+          "providers": [
+            "claude",
+            "codex"
+          ],
+          "raw_scoreable": null,
+          "raw_type": "read_crop",
+          "self_consistency": false,
+          "validation_status": "not_in_tasks_bench_validator"
+        }
+      ]
+    }
+  ],
+  "target_source": {
+    "archive_contract": "git archive --format=tar refs/tags/2.6.5",
+    "archive_sha256": "e4e823ea8f06ec8c179e4915b02cdc358257789603f75fe421a023313941fdb5",
+    "commit": "be98784a1a03581b7051a355ae1084fd352d7cea",
+    "materialization_contract": "materialize the clean tracked tree for refs/tags/2.6.5; reject every other commit or dirty target",
+    "repository": "https://github.com/Lightning-AI/pytorch-lightning",
+    "tag": "2.6.5",
+    "tag_ref": "refs/tags/2.6.5",
+    "tree": "812e327b141dd04a4ce25fe2f62c8acd111c7a8c",
+    "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
+    "validation_worktree_clean": true
+  },
+  "validation": {
+    "actual_counts": {
+      "fail": 0,
+      "pass": 60,
+      "skip": 0
+    },
+    "command": "uv run python benchmarks/generate-tasks-bench.py --repo-path <locked-target> --index-path <locked-index>",
+    "exit_code": 0,
+    "fail_closed_on_skip": true,
+    "fail_ids": [],
+    "pass_ids": [
+      "SE-01",
+      "SE-02",
+      "SE-03",
+      "SE-04",
+      "SE-05",
+      "FN-01",
+      "FN-02",
+      "FN-03",
+      "FN-04",
+      "FN-05",
+      "RV-01",
+      "RV-02",
+      "RV-03",
+      "RV-04",
+      "RV-05",
+      "CQ-01",
+      "CQ-02",
+      "CQ-03",
+      "CQ-04",
+      "CQ-05",
+      "BR-01",
+      "BR-02",
+      "BR-03",
+      "BR-04",
+      "BR-05",
+      "BR-06",
+      "BR-07",
+      "BR-08",
+      "BR-09",
+      "DG-01",
+      "DG-02",
+      "DG-03",
+      "DG-04",
+      "DG-05",
+      "DG-06",
+      "FT-01",
+      "FT-02",
+      "FT-03",
+      "FT-04",
+      "FT-05",
+      "RI-01",
+      "RI-02",
+      "RI-03",
+      "RI-04",
+      "RI-05",
+      "DI-01",
+      "DI-02",
+      "DI-03",
+      "DI-04",
+      "DI-05",
+      "DI-06",
+      "GR-01",
+      "GR-02",
+      "GR-03",
+      "GR-04",
+      "MB-01",
+      "MB-02",
+      "MB-03",
+      "MB-04",
+      "MB-05"
+    ],
+    "reported_summary": "60/60 passed",
+    "skip_ids": [],
+    "update_from_tool_ids": [
+      "SE-03",
+      "CQ-04"
+    ],
+    "update_from_tool_performed": true,
+    "update_mode": "target_relock: independent oracles plus explicit diagnostic-only tool refresh",
+    "update_performed": true
+  }
+}

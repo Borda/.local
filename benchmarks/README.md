@@ -4,11 +4,9 @@ Empirical validation for the `codemap` plugin. Provider ownership is explicit in
 
 ## Provider-parity expansion
 
-The active provider-parity manifest reuses the same canonical task objects and prompts for Claude and Codex, locks structural sample/sandbox execution to PyTorch Lightning tag `2.6.5` (commit `be98784a1a03581b7051a355ae1084fd352d7cea`), and locks Codex to `gpt-5.6-luna` at high reasoning effort. The provider-neutral library lives in `provider_parity_contracts.py`; it locks task/prompt identity, arm semantics, evaluator dispatch, continuous fitness components, capability strata, headline exclusions, and effort-aware paired construction. It does not generate tasks, run benchmarks, invoke models, or implement provider transport.
+The committed [methodology manifest](manifests/provider-parity-methodology.json) freezes the canonical task objects, prompts, evaluators, target, and index shared by the Claude and Codex structural studies. The generated [Codex integration manifest](manifests/codex-integration.json) locks Codex to `gpt-5.6-luna` at high reasoning effort and defines the plain, direct-CLI, and installed-Skill treatments. Its [human companion](manifests/codex-integration.md) records the exact review and execution contract. Runtime logs and telemetry remain under ignored `results/` paths.
 
-### Experiment naming convention
-
-Use the complete experiment revision, for example `codemap-provider-parity-v1-b0-r7`, in authored documentation, status values, and historical references. Do not use a shorthand revision alias in prose, identifiers, or filenames. Code that targets the current revision uses `active`, `current`, `previous`, or another semantic role and reads the exact revision from `provider-parity-v1.json`. Immutable historical result filenames retain their complete experiment revision.
+The provider-neutral library lives in `provider_parity_contracts.py`; it locks task/prompt identity, arm semantics, evaluator dispatch, continuous fitness components, capability strata, headline exclusions, and effort-aware paired construction. It does not generate tasks, run benchmarks, invoke models, or implement provider transport.
 
 **B2 Claude adapter migration.** Both Claude runners now route explicit canonical arms through the shared contracts:
 
@@ -18,11 +16,11 @@ Use the complete experiment revision, for example `codemap-provider-parity-v1-b0
 
 Canonical runs load the locked task/prompt/evaluator policy and fail closed unless the target commit/tree, clean worktree, and index bytes/metadata match the manifest; result records carry task, suite, evaluator, envelope, arm-contract, repository, and index provenance. Legacy labels (`plain`, `codemap`, `semble`, `combined`) retain their historical behavior and remain `legacy-unversioned`; they are not retroactively mapped to A/B/C. `--dry-run` prints the selected plan without invoking Claude or writing model results; the real-code runner's default `--arm all` plan is A/B/C and validates the locked inputs, while the agentic runner validates them when a canonical arm is selected.
 
-**Codex structural adapter and active controls.** `run-codex-structural.py` executes structural A/B/C cells through noninteractive `codex exec --json --ephemeral`, retains raw native events, normalizes usage/tool/error/compliance fields, and reuses the exact Claude structural evaluator registry. It does not run `tasks-agentic.json`; Codex agentic support needs a separate evaluator and ground-truth contract before a runner is added. Each cell gets an isolated `CODEX_HOME`: A uses a no-write profile without the Codemap plugin and explicitly denies the shared locked index directory; B/C use a separate profile that permits writes only to the locked index's `.index-rw` coordination directory. Both profiles extend `:read-only`, deny reads of the copied `auth.json`, disable network, and inherit no shell environment. B/C additionally receive the exact locked Python 3.11 runtime and a contained, hashed `CODEMAP_BIN` launcher resolved from Codex plugin installation output; A receives neither. The canonical command omits legacy `--sandbox` because that flag disables permission profiles.
+**Codex structural adapter and active controls.** `run-codex-structural.py` executes structural A/B/C cells through noninteractive `codex exec --json --ephemeral`, retains raw native events, normalizes usage/tool/error/compliance fields, and reuses the exact Claude structural evaluator registry. A has no Codemap access. B receives only a locked direct CLI and must complete at least one compact query. C installs the locked Codemap and Codex Rig packages, reads the exact installed query Skill, and completes at least one compact query. Additional repository reads and shell commands are allowed in B/C but do not replace the required treatment evidence.
 
-**Post-pilot review gate.** The completed prior smoke/pilot remains immutable exploratory evidence. The active manifest applies the post-pilot Codemap/query integration, continuous-fitness, capability-strata, launcher-provenance, and Luna/high-effort controls. Never pool results across manifest revisions. Review the active manifest and no-model evidence before authorizing another paid FN-02 smoke. The separate query-quality diagnostic remains `PARTIAL` (14/18 primary scenarios); it is not represented as a full query-quality pass.
+Each cell receives an isolated `CODEX_HOME`. Permission profiles deny the copied credential, host agent roots, network, and source-tree writes; treatment arms may write only to the index-local coordination directory. The runner records answer, quality, extraction, treatment-compliance, and transport failures per cell and continues after the admission smoke so these outcomes remain measurable.
 
-Existing Claude result snapshots are historical legacy evidence. The structural confirmatory population has 45 independently scored tasks. `RV-05`, `CQ-02`, RI, static-reference, self-consistency, and unscoreable rows remain separately labelled diagnostics as defined in `results/manifests/provider-parity-v1.md`. Do not run `codemap-provider-parity-v1-b0-r4` against `master` or another tag: target-dependent ground truth is valid only for the locked `2.6.5` tree.
+Existing Claude and exploratory Codex results remain historical evidence and are never pooled with the current study. The confirmatory population has 45 independently scored tasks; ten static-reference or approximate/self-consistency tasks run as diagnostics. Target-dependent ground truth is valid only for PyTorch Lightning tag `2.6.5` at commit `be98784a1a03581b7051a355ae1084fd352d7cea`.
 
 ### Entrypoint ownership
 
@@ -57,9 +55,10 @@ Run **Query** first — validates the index before spending LLM tokens on agenti
 ```bash
 bash benchmarks/run-all.sh smoke
 bash benchmarks/run-all.sh claude
-CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/results/manifests/provider-parity-v1.json | awk '{print $1}')" \
+CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-integration.json | awk '{print $1}')" \
     CODEX_AUTH_SOURCE=/private/path/to/auth.json \
-    CODEX_OUTPUT_PATH=benchmarks/results/codex-fn02-post-pilot.jsonl \
+    CODEX_RUN_DIR=benchmarks/results/codex-integration-human-run \
+    CODEX_MAX_WALL_CLOCK_SECONDS=86400 \
     bash benchmarks/run-all.sh codex
 ```
 
@@ -67,9 +66,9 @@ Modes:
 
 - `smoke` — validate the frozen active index, run the deterministic query check, and execute Claude and Codex dry-run/preflight paths. It invokes no model.
 - `claude` — validate the frozen index and preflight, then run the existing paid Claude structural tiers and agentic batch.
-- `codex` — validate the frozen index and preflight, then run only the preregistered paid FN-02/Codex/Luna/high/repetition-1 A/B/C smoke in deterministic manifest-bound order. It fails before setup unless the exact active-manifest SHA-256, a private auth source, and a nonexistent output path are supplied.
+- `codex` — validate the frozen index, run the fail-fast FN-02 A/B/C smoke and exact no-model plan, then execute the complete 55-task × one-repetition × three-arm study. Cell outcomes are recorded without fail-fast after admission. It fails before setup unless the exact active-manifest SHA-256, a private auth source, a new run directory, and the manifest-locked complete-run ceiling are supplied.
 
-The target is pinned to PyTorch Lightning tag `2.6.5`; the hardcoded ground truth and active manifest reject every other tree. The managed `.sandbox/pytorch-lightning` clone is reset to that tag before each mode. `REPO=/path/to/clone` may select an external clone, but the script never resets an override and canonical preflight still requires the locked clean commit and exact frozen-index SHA-256. The batch entrypoint never rebuilds the index: scanner timestamps change its bytes and would invalidate the evidence lock. The Codex structural runner accepts repeated `--task-id` values and `--repetitions N`; every result row records `provider`, `model`, `reasoning_effort`, `task_id`, `repetition`, and `arm`. The locked exploratory pilot is six tasks × three repetitions × three arms = 54 cells.
+The target is pinned to PyTorch Lightning tag `2.6.5`; the hardcoded ground truth and active manifest reject every other tree. The managed `/private/tmp/codemap-provider-parity-pl-2.6.5` clone is reset to that tag before each mode. `REPO=/path/to/clone` may select an external clone, but the script never resets an override and canonical preflight still requires the locked clean commit and exact frozen-index SHA-256. A missing index is rebuilt and admitted only when normalization of declared environment-specific metadata reproduces the complete locked SHA-256. Every Codex result row records provider, model, effort, task, repetition, arm, telemetry, compliance, provenance, timing, and limits; `run-metadata.json` is updated after each durable cell.
 
 <details>
 <summary>Manual equivalent — paste-safe, no inline <code>#</code> comments (interactive zsh does not strip them and passes them as args)</summary>
@@ -110,10 +109,13 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 
 | File                            | Ownership        | Purpose                                                                                                                                                           |
 | ------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider_parity_contracts.py`  | Provider-neutral | Canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                                 |
+| `manifests/provider-parity-methodology.json` | Provider-neutral | Committed shared task, evaluator, target, index, and analysis identities used to regenerate the Codex execution lock                                |
+| `manifests/codex-integration.json`            | Codex            | Machine-enforced plain/direct-CLI/Skill execution contract                                                                                           |
+| `manifests/codex-integration.md`              | Codex            | Human-readable manifest review and paid-run instructions                                                                                             |
+| `provider_parity_contracts.py`                | Provider-neutral | Canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                   |
 | `run-claude-agentic.py`         | Claude           | Agentic benchmark measuring how Codemap/semble structural context changes Claude exploration                                                                      |
 | `run-claude-structural.py`      | Claude           | Repo-agnostic structural benchmark driven by the `tasks-bench.json` repository header                                                                             |
-| `run-all.sh`                    | Provider-neutral | Sole batch dispatcher: no-model cross-provider smoke, paid Claude batches, or approval-gated paid Codex FN-02 smoke                                               |
+| `run-all.sh`                    | Provider-neutral | Sole batch dispatcher: no-model cross-provider smoke, paid Claude batches, or approval-gated complete Codex structural study                                     |
 | `run-cli.py`                    | Provider-neutral | Query-level correctness, coverage, and latency against a real repository                                                                                          |
 | `run-codex-structural.py`       | Codex            | Codex structural provider-parity transport for canonical A/B/C cells with isolated plugin homes, native telemetry normalization, and shared structural evaluators |
 | `generate-tasks-bench.py`       | Provider-neutral | Validates or refreshes shared structural oracle fields; it does not author prompts                                                                                |
