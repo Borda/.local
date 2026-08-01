@@ -1010,6 +1010,35 @@
       "id": "challenger-complexity-as-quality",
       "prompt": "Stress-test a review that accepts factories, registries, dependency injection, configuration layers, and multiple new files as inherently senior and robust, without identifying the current problem each layer solves or challenging a direct alternative.",
       "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "initial-obstacle-not-recorded"
+      ],
+      "id": "recurrence-initial-obstacle",
+      "prompt": "Assess an agent facing the first occurrence of an obstacle that retries or silently works around it without recording the initial obstacle and its current evidence.",
+      "target": "develop"
+    },
+    {
+      "expected_findings": [
+        "recurrence-investigation-required",
+        "root-cause-evidence-required",
+        "recurrence-reset-evidence-missing"
+      ],
+      "id": "recurrence-second-occurrence-investigate",
+      "prompt": "Assess an agent facing a second occurrence of the same obstacle that applies another symptom patch instead of stopping to investigate the shared cause with evidence and a falsification check, then resets the occurrence count without evidence that the shared cause is false or that external state materially changed.",
+      "target": "investigate"
+    },
+    {
+      "expected_findings": [
+        "recurrence-human-handoff-required",
+        "human-handoff-missing",
+        "attempted-actions-missing",
+        "shared-obstacle-evidence-missing"
+      ],
+      "id": "recurrence-third-occurrence-human-handoff",
+      "prompt": "Assess an agent at a third recurrence of one shared obstacle across differing symptoms that keeps attempting fixes instead of stopping and asking a human, without listing attempted actions, current hypotheses and evidence, or why the symptoms share one obstacle.",
+      "target": "delegation-lead"
     }
   ],
   "thresholds": {
@@ -1019,5 +1048,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.13"
+  "version": "1.14"
 }

@@ -81,6 +81,8 @@ Persistent named shims are platform-blocked for routing until Codex exposes a ve
 a fresh-session probe proves the child consumed the selected TOML. Their lifecycle manager remains available for
 diagnosis and authenticated cleanup of prior development installations.
 
+Recurrence and root-cause handling is authoritative in [`native-skill-contract.md`](native-skill-contract.md#recurrence-and-root-cause-policy); this orchestration policy does not duplicate or override it.
+
 For every routed pass record: `role_id`, role-card SHA-256, route, attempted routes, fallback reason, actual model and
 reasoning effort when observable, requested and observed sandbox/approval controls, independence, nesting depth, and
 material fidelity limits. Also record the observed `agent_role` when available; a null value cannot support a custom

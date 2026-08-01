@@ -26,6 +26,15 @@ Docs, deps, CI/CD, releases, security, deprecations → prefer current primary s
 - Symptom-first failures = investigation tasks before implementation. Failing tests/CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, symptom-only user reports without verified cause → route through `investigate` or equivalent documented evidence before `develop`, `code-remediate`, or workaround recommendations.
 - Workarounds = temporary mitigations only. No workaround-only change/answer presented as complete unless user explicitly requests temporary mitigation; label mitigation + remaining root-cause work.
 
+### Fixed recurrence and root-cause policy
+
+Apply this policy to every same or plausibly shared obstacle, including one that appears under different symptoms:
+
+- Occurrence 1 is the initial occurrence; capture the symptom and evidence, then proceed with the normal gates.
+- Occurrence 2 (the first recurrence) stops symptom patching. Run `investigate` or equivalent root-cause evidence before another fix attempt; record the root-cause claim, supporting evidence, falsification check, and at least one rejected alternative.
+- Occurrence 3 stops all attempts. Ask the human for next steps and include attempted actions, current hypotheses/evidence, and the shared obstacle across differing symptoms.
+- Reset the count only when evidence falsifies the shared cause or a material external-state change occurs. Record the reset and its evidence.
+
 ## Coordination Discipline
 
 - Keep live plan for multi-step work, update as task changes shape. Use as session task ledger.

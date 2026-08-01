@@ -5,6 +5,8 @@ description: Minimal codex-native develop loop. Use for implementation tasks wit
 
 # Develop
 
+See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) for repeated-obstacle handling; it governs symptom patching, escalation, and reset evidence.
+
 Run linear implementation with strict gates.
 
 ## Input Schema

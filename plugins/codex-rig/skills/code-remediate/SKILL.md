@@ -5,6 +5,8 @@ description: 'Codex-native code-remediation loop: triage/apply code-review findi
 
 # Code Remediate
 
+See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) for repeated-obstacle handling; it governs symptom patching, escalation, and reset evidence.
+
 Run linear code remediation to close findings.
 
 ## Input Schema

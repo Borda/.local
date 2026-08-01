@@ -99,6 +99,133 @@ def test_probe_available_when_doctor_reports_supported(monkeypatch: pytest.Monke
     assert result.doctor.supported is True
 
 
+def test_explicit_codemap_bin_wins_over_path_for_probe_and_query(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Use the explicit launcher consistently when PATH contains another codemap-py."""
+    explicit_bin = tmp_path / "explicit"
+    path_bin = tmp_path / "path"
+    explicit_bin.mkdir()
+    path_bin.mkdir()
+    explicit_doctor = dict(_HEALTHY_DOCTOR, version="explicit")
+    path_doctor = dict(_HEALTHY_DOCTOR, supported=False, version="path")
+    _write_fake_codemap_py(explicit_bin, _fake_script(explicit_doctor, 0, _CLEAN_QUERY, 0))
+    _write_fake_codemap_py(path_bin, _fake_script(path_doctor, 0, _CLEAN_QUERY, 1))
+    explicit_launcher = explicit_bin / ("codemap-py.bat" if os.name == "nt" else "codemap-py")
+    monkeypatch.setenv("CODEMAP_BIN", str(explicit_launcher))
+    monkeypatch.setenv("PATH", str(path_bin))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    assert context.probe.doctor is not None
+    assert context.probe.doctor.version == "explicit"
+    assert context.status == adapter.STATUS_AVAILABLE
+    assert context.queries[0].exit_code == 0
+
+
+@pytest.mark.parametrize("invalid_kind", ["missing", "directory", "not-executable", "relative", "symlink"])
+def test_invalid_explicit_codemap_bin_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, invalid_kind: str
+) -> None:
+    """Reject a nonempty invalid, relative, or symlink configured launcher."""
+    path_bin = tmp_path / "path"
+    path_bin.mkdir()
+    _write_fake_codemap_py(path_bin, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
+    configured = tmp_path / invalid_kind
+    if invalid_kind == "directory":
+        configured.mkdir()
+    elif invalid_kind == "not-executable":
+        configured.write_text("not executable", encoding="utf-8")
+    elif invalid_kind == "relative":
+        _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
+        monkeypatch.chdir(tmp_path)
+        configured = Path("codemap-py")
+    elif invalid_kind == "symlink":
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+        _write_fake_codemap_py(target_dir, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
+        configured.symlink_to(target_dir / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
+    monkeypatch.setenv("CODEMAP_BIN", str(configured))
+    monkeypatch.setenv("PATH", str(path_bin))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    assert context.status == adapter.STATUS_INCOMPATIBLE
+    assert context.probe.launcher is None
+    assert "CODEMAP_BIN" in context.probe.detail
+    assert context.queries == ()
+
+
+def test_empty_codemap_bin_falls_back_to_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Treat an empty launcher setting as absent and resolve codemap-py through PATH."""
+    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
+    monkeypatch.setenv("CODEMAP_BIN", "")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    assert context.status == adapter.STATUS_AVAILABLE
+    assert context.probe.launcher == str(tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
+
+
+def test_gather_context_resolves_once_and_reuses_launcher_for_compact_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep doctor and query on one launcher even if PATH changes after the probe."""
+    adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    resolved: list[None] = []
+    commands: list[list[str]] = []
+
+    def resolve():
+        resolved.append(None)
+        return adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher")
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        commands.append(argv)
+        if argv[1] == "doctor":
+            monkeypatch.setenv("PATH", "/changed-after-doctor")
+            return 0, _HEALTHY_DOCTOR, None
+        return 0, _CLEAN_QUERY, None
+
+    monkeypatch.setattr(adapter, "_resolve_codemap_executable", resolve)
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("review")
+
+    assert len(resolved) == 1
+    assert commands == [[launcher, "doctor", "--json"], [launcher, "query", "--compact", "diff-impact"]]
+    assert context.probe.launcher == launcher
+
+
+def test_analysis_query_uses_only_supported_compact_deps_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent the managed analysis mapping from passing symbol-only flags to deps."""
+    adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
+    )
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        commands.append(argv)
+        return (0, _HEALTHY_DOCTOR, None) if argv[1] == "doctor" else (0, _CLEAN_QUERY, None)
+
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("analysis", target="pkg.core")
+
+    assert context.status == adapter.STATUS_AVAILABLE
+    assert commands == [
+        [launcher, "doctor", "--json"],
+        [launcher, "query", "--compact", "central"],
+        [launcher, "query", "--compact", "deps", "pkg.core"],
+    ]
+
+
 def test_probe_incompatible_when_interpreter_unsupported(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Report `incompatible` when `doctor` marks the resolved interpreter unsupported."""
     unsupported = dict(_HEALTHY_DOCTOR, supported=False)
@@ -216,6 +343,9 @@ def test_cli_context_persists_json_to_out_path(monkeypatch: pytest.MonkeyPatch, 
     assert stdout_payload == file_payload
     assert stdout_payload["status"] == "available"
     assert stdout_payload["protocol_version"] == "codemap-py.integration.v1"
+    assert stdout_payload["probe"]["launcher"] == str(
+        tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py")
+    )
 
 
 def test_cli_probe_absent_exits_zero_and_reports_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -284,7 +414,11 @@ def test_root_scoped_query_runs_against_real_cli(monkeypatch: pytest.MonkeyPatch
     assert scan.returncode == 0, scan.stderr
 
     adapter = load_adapter()
-    outcome = adapter._run_one_query(adapter.QuerySpec("central", requires_target=False), None, fixture, 30.0)
+    resolution = adapter._resolve_codemap_executable()
+    assert resolution.launcher is not None
+    outcome = adapter._run_one_query(
+        resolution.launcher, adapter.QuerySpec("central", requires_target=False), None, fixture, 30.0
+    )
 
     assert outcome.exit_code == 0, outcome.error
     assert outcome.error is None

@@ -5,6 +5,8 @@ description: Minimal codex-native investigation loop. Use for unknown failures, 
 
 # Investigate
 
+See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) for repeated-obstacle handling; it governs symptom patching, escalation, and reset evidence.
+
 Diagnosis-first loop for unclear failures: failing tests, tracebacks, regressions, surprising runtime behavior. Produce root-cause claim with evidence, falsification, rejected alternatives before any fix. Use `investigate` until root cause established; then hand off to `develop` or `code-remediate`.
 
 ## Input Schema

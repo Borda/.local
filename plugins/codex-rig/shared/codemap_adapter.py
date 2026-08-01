@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -46,7 +47,7 @@ CATEGORY_QUERIES: dict[str, tuple[QuerySpec, ...]] = {
     # analysis/research: centrality, symbol/import context, completeness metadata (plan §8.4).
     "analysis": (
         QuerySpec("central", requires_target=False),
-        QuerySpec("deps", requires_target=True, extra_args=("--with-imports",)),
+        QuerySpec("deps", requires_target=True),
     ),
     # develop/investigate/optimize: callers, coupling, test impact before implementation.
     "develop": (
@@ -77,11 +78,21 @@ class DoctorReport:
 
 
 @dataclass(frozen=True)
+class LauncherResolution:
+    """One validated Codemap launcher decision reused for one adapter invocation."""
+
+    launcher: str | None
+    status: str
+    detail: str
+
+
+@dataclass(frozen=True)
 class ProbeResult:
     """Outcome of probing `codemap-py` availability and interpreter health."""
 
     status: str
     detail: str
+    launcher: str | None
     doctor: DoctorReport | None
 
     def to_dict(self) -> dict[str, Any]:
@@ -89,6 +100,7 @@ class ProbeResult:
         return {
             "status": self.status,
             "detail": self.detail,
+            "launcher": self.launcher,
             "doctor": None if self.doctor is None else vars(self.doctor),
         }
 
@@ -160,25 +172,48 @@ def _run_json(argv: list[str], timeout: float) -> tuple[int, dict[str, Any] | No
         return completed.returncode, None, detail
 
 
-def probe_codemap(timeout: float = _DEFAULT_TIMEOUT) -> ProbeResult:
-    """Probe `codemap-py` presence and interpreter health via the public CLI only.
-
-    Examples:
-        >>> probe_codemap().status in {"available", "absent", "incompatible"}
-        True
-    """
+def _resolve_codemap_executable() -> LauncherResolution:
+    """Resolve one validated launcher, failing closed for a nonempty invalid `CODEMAP_BIN`."""
+    configured = os.environ.get("CODEMAP_BIN")
+    if configured:
+        candidate = Path(configured)
+        if (
+            candidate.is_absolute()
+            and not candidate.is_symlink()
+            and candidate.is_file()
+            and os.access(candidate, os.X_OK)
+        ):
+            return LauncherResolution(str(candidate), STATUS_AVAILABLE, "configured launcher")
+        return LauncherResolution(
+            None,
+            STATUS_INCOMPATIBLE,
+            "CODEMAP_BIN must be an absolute, non-symlink executable file",
+        )
     executable = shutil.which("codemap-py")
     if executable is None:
-        return ProbeResult(status=STATUS_ABSENT, detail="codemap-py not found on PATH", doctor=None)
-    exit_code, payload, error = _run_json([executable, "doctor", "--json"], timeout)
+        return LauncherResolution(None, STATUS_ABSENT, "codemap-py not found on PATH")
+    return LauncherResolution(executable, STATUS_AVAILABLE, "PATH launcher")
+
+
+def _probe_codemap(resolution: LauncherResolution, timeout: float) -> ProbeResult:
+    """Probe one resolved launcher through `doctor --json`; never re-resolve it."""
+    if resolution.launcher is None:
+        return ProbeResult(resolution.status, resolution.detail, None, None)
+    exit_code, payload, error = _run_json([resolution.launcher, "doctor", "--json"], timeout)
     if exit_code != 0 or payload is None:
         return ProbeResult(
             status=STATUS_INCOMPATIBLE,
             detail=error or f"doctor exited {exit_code}",
+            launcher=resolution.launcher,
             doctor=None,
         )
     if not isinstance(payload, dict):
-        return ProbeResult(status=STATUS_INCOMPATIBLE, detail="doctor payload not a JSON object", doctor=None)
+        return ProbeResult(
+            status=STATUS_INCOMPATIBLE,
+            detail="doctor payload not a JSON object",
+            launcher=resolution.launcher,
+            doctor=None,
+        )
     try:
         doctor = DoctorReport(
             python=str(payload["python"]),
@@ -189,23 +224,35 @@ def probe_codemap(timeout: float = _DEFAULT_TIMEOUT) -> ProbeResult:
             index_path=str(payload["index_path"]),
         )
     except KeyError as missing:
-        return ProbeResult(status=STATUS_INCOMPATIBLE, detail=f"doctor payload missing {missing}", doctor=None)
+        return ProbeResult(
+            status=STATUS_INCOMPATIBLE,
+            detail=f"doctor payload missing {missing}",
+            launcher=resolution.launcher,
+            doctor=None,
+        )
     if not doctor.supported:
         detail = f"unsupported interpreter {doctor.implementation} {doctor.version}"
-        return ProbeResult(status=STATUS_INCOMPATIBLE, detail=detail, doctor=doctor)
-    return ProbeResult(status=STATUS_AVAILABLE, detail="doctor healthy", doctor=doctor)
+        return ProbeResult(STATUS_INCOMPATIBLE, detail, resolution.launcher, doctor)
+    return ProbeResult(STATUS_AVAILABLE, "doctor healthy", resolution.launcher, doctor)
 
 
-def _run_one_query(spec: QuerySpec, target: str | None, root: Path | None, timeout: float) -> QueryOutcome:
+def probe_codemap(timeout: float = _DEFAULT_TIMEOUT) -> ProbeResult:
+    """Probe `codemap-py` presence and interpreter health via the public CLI only.
+
+    Examples:
+        >>> probe_codemap().status in {"available", "absent", "incompatible"}
+        True
+    """
+    return _probe_codemap(_resolve_codemap_executable(), timeout)
+
+
+def _run_one_query(
+    launcher: str, spec: QuerySpec, target: str | None, root: Path | None, timeout: float
+) -> QueryOutcome:
     """Run one planned query and reduce its response to completeness metadata."""
-    # Resolve the launcher through a PATHEXT-aware lookup rather than passing a bare name:
-    # on Windows, CreateProcess only appends `.exe` to an unqualified argv[0], so a `.bat`/`.cmd`
-    # launcher (how `codemap-py` ships there) would never be found and every query would error out
-    # as `incompatible`. `probe_codemap` already resolves via `shutil.which`; mirror it here.
-    executable = shutil.which("codemap-py") or "codemap-py"
     # `--root` is a top-level `query` flag (query.py registers it on the parent parser),
     # so it must precede the subcommand — argparse rejects it once the subcommand is consumed.
-    argv = [executable, "query"]
+    argv = [launcher, "query", "--compact"]
     if root is not None:
         argv += ["--root", str(root)]
     argv.append(spec.subcommand)
@@ -269,10 +316,11 @@ def gather_structural_context(
     if specs is None:
         known = ", ".join(sorted(CATEGORY_QUERIES))
         raise ValueError(f"unknown category {category!r}; expected one of: {known}")
-    probe = probe_codemap(timeout=timeout)
+    resolution = _resolve_codemap_executable()
+    probe = _probe_codemap(resolution, timeout)
     queries: tuple[QueryOutcome, ...] = ()
-    if probe.status == STATUS_AVAILABLE:
-        queries = tuple(_run_one_query(spec, target, root, timeout) for spec in specs)
+    if probe.status == STATUS_AVAILABLE and resolution.launcher is not None:
+        queries = tuple(_run_one_query(resolution.launcher, spec, target, root, timeout) for spec in specs)
     status = _reduce_status(probe, queries)
     return StructuralContext(
         protocol_version=PROTOCOL_VERSION,

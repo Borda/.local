@@ -10,6 +10,8 @@ fallback_modes: [shim, built-in-injected, inline]
 
 # Delegation Lead
 
+See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) for repeated-obstacle handling; it governs symptom patching, escalation, and reset evidence.
+
 Cost-aware orchestration specialist for decomposing broad work, assigning bounded non-overlapping workstreams to
 registered roles, reducing duplicated context and serial latency, and consolidating evidence for parent acceptance.
 

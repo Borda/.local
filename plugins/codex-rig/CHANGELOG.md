@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- Require root-cause investigation when the same or plausibly shared obstacle occurs a second time, even when its surface symptom changes.
+- Stop after a third occurrence and ask the human with attempted actions, current hypotheses and evidence, and a concise description of the recurring obstacle.
+- Enforce recurrence-policy references only at recurrence-owning workflows (`develop`, `code-remediate`,
+  `investigate`, and `delegation-lead`) with calibrated behavioral cases.
+
 ## 0.4.0
 
 - Add optional codemap-py structural-context integration: `shared/codemap_adapter.py` probes the public `codemap-py doctor --json`/`query` CLI once per decision point in `analyse`, `audit`, `code-review`, `code-remediate`, `develop`, `investigate`, `optimize`, `release`, and `research`, and persists the result to the run artifact instead of re-querying per specialist.

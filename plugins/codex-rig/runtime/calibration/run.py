@@ -71,6 +71,29 @@ LUNA_MODEL_AGENTS = {
 }
 TERRA_MODEL_AGENTS = set(AGENTS) - SOL_MODEL_AGENTS - LUNA_MODEL_AGENTS
 HIGH_EFFORT_AGENTS = set(AGENTS)
+RECURRENCE_POLICY_LINK = "../../shared/native-skill-contract.md#recurrence-and-root-cause-policy"
+RECURRENCE_POLICY_SKILLS = frozenset({"code-remediate", "develop", "investigate"})
+RECURRENCE_POLICY_ROLES = frozenset({"delegation-lead"})
+RECURRENCE_CASE_CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "recurrence-initial-obstacle": ("develop", ("initial-obstacle-not-recorded",)),
+    "recurrence-second-occurrence-investigate": (
+        "investigate",
+        (
+            "recurrence-investigation-required",
+            "root-cause-evidence-required",
+            "recurrence-reset-evidence-missing",
+        ),
+    ),
+    "recurrence-third-occurrence-human-handoff": (
+        "delegation-lead",
+        (
+            "recurrence-human-handoff-required",
+            "human-handoff-missing",
+            "attempted-actions-missing",
+            "shared-obstacle-evidence-missing",
+        ),
+    ),
+}
 
 
 @dataclass(slots=True)
@@ -699,6 +722,7 @@ def check_core_configs(run: CalibrationRun) -> None:
         helper_names += ("codex-harness.sh",)
     for helper_name in helper_names:
         check_contains(run, run.paths.helper_cli_contract, re.escape(helper_name), "shared-script-selftests")
+    check_packaged_recurrence_policy_links(run)
     check_agents(run)
 
 
@@ -729,10 +753,62 @@ def check_fixed_task_and_behavioral_rosters(run: CalibrationRun) -> None:
         missing_targets = sorted(set(SKILLS) - case_targets)
         if missing_targets:
             raise ValueError(f"behavioral skill targets missing: {missing_targets}")
+        validate_recurrence_case_contract(cases_payload)
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         run.fail_and_leak("fixed-task-set", f"fixed-task-roster-invalid:{exc}")
         return
     run.append_check("fixed-task-roster=ok")
+
+
+def validate_recurrence_case_contract(cases_payload: dict[str, Any]) -> None:
+    """Require one observed calibration case for every recurrence escalation stage."""
+    cases = cases_payload.get("cases")
+    if not isinstance(cases, list):
+        raise ValueError("behavioral cases must be a list")
+    recurrence_cases = {
+        case.get("id"): case
+        for case in cases
+        if isinstance(case, dict) and isinstance(case.get("id"), str) and case["id"].startswith("recurrence-")
+    }
+    if set(recurrence_cases) != set(RECURRENCE_CASE_CONTRACT):
+        raise ValueError("recurrence behavioral case roster mismatch")
+    for case_id, (expected_target, expected_findings) in RECURRENCE_CASE_CONTRACT.items():
+        case = recurrence_cases[case_id]
+        if case.get("target") != expected_target:
+            raise ValueError(f"recurrence case target mismatch: {case_id}")
+        if case.get("expected_findings") != list(expected_findings):
+            raise ValueError(f"recurrence case findings mismatch: {case_id}")
+
+
+def find_misplaced_packaged_recurrence_policy_links(
+    skill_files: tuple[Path, ...], role_files: tuple[Path, ...]
+) -> list[Path]:
+    """Return packaged files whose recurrence link conflicts with retry ownership."""
+    misplaced: list[Path] = []
+    for path in skill_files:
+        link_present = RECURRENCE_POLICY_LINK in read_text(path)
+        if link_present != (path.parent.name in RECURRENCE_POLICY_SKILLS):
+            misplaced.append(path)
+    for path in role_files:
+        link_present = RECURRENCE_POLICY_LINK in read_text(path)
+        if link_present != (path.parent.name in RECURRENCE_POLICY_ROLES):
+            misplaced.append(path)
+    return misplaced
+
+
+def check_packaged_recurrence_policy_links(run: CalibrationRun) -> None:
+    """Require recurrence links only on workflows that own repeated attempts."""
+    if run.paths.layout != "plugin":
+        return
+    skill_files = tuple(sorted(run.paths.skills_dir.glob("*/SKILL.md")))
+    role_files = tuple(sorted(run.paths.roles_dir.glob("*/ROLE.md")))
+    misplaced = find_misplaced_packaged_recurrence_policy_links(skill_files, role_files)
+    if misplaced:
+        for path in misplaced:
+            run.fail_and_leak("recurrence-policy-links", f"misplaced-recurrence-policy-link:{path}")
+        return
+    required_count = len(RECURRENCE_POLICY_SKILLS) + len(RECURRENCE_POLICY_ROLES)
+    run.append_check(f"recurrence-policy-links=ok:owners={required_count}")
 
 
 def check_shared_confidence_contracts(run: CalibrationRun) -> None:
@@ -2262,6 +2338,7 @@ def write_result(run: CalibrationRun) -> None:
             "agent-model-policy",
             "native-skill-contract",
             "native-agent-contract",
+            "recurrence-policy-links",
             "native-runtime-leakage",
             "confidence-policy",
             "fixed-task-set",

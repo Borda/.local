@@ -7,12 +7,29 @@ the public `codemap-py` CLI/JSON surface (`doctor --json`, `query <subcommand>`)
 `../../shared/codemap_adapter.py`. It never imports `codemap_py`, never reads codemap-py cache
 internals or source-tree paths, and never depends on `codemap-py` being installed.
 
+## Launcher resolution
+
+The adapter's launcher contract is explicit: when `CODEMAP_BIN` is non-empty,
+use that launcher first and fail closed if it cannot be executed or inspected;
+do not fall back to another launcher. Only when `CODEMAP_BIN` is unset or
+empty may the adapter resolve `codemap-py` through `PATH`. The fallback must
+not guess a cache version or inspect Codemap's installation internals.
+Managed queries use the compact public form, `query --compact ...`, and record
+the resolved launcher and `doctor --json` result in the persisted context
+evidence.
+
 ## Persist-once rule
 
 Each required workflow probes **once**, at its bounded decision point, and persists the result to
 its own run artifact (e.g. `<run-directory>/codemap-context.json`). Specialists consume that
 artifact from the context pack; they never re-run the adapter. Re-querying per child specialist
 defeats the token-saving purpose of a shared structural index and is a contract violation.
+
+If a caller already has a context artifact that answers the decision, it must
+reuse that artifact rather than invoke `query-code` or the adapter again. A
+new query is permitted only for an identified completeness gap; after a query
+returns `query_complete: true`, querying stops. Structural evidence comes from
+the compact CLI JSON, never from index/cache files or raw runtime logs.
 
 Invocation:
 
@@ -67,3 +84,9 @@ integrate:
 installed — every subprocess call is lazy, inside a function called only when a wired skill reaches
 its decision point. Codex Rig's own skill discovery, packaging, and startup never probe or require
 `codemap-py`.
+
+This optionality is the default runtime contract. A benchmark or deployment
+profile may make Codemap availability an explicit admission requirement for a
+packaged-integration arm, but it must install and version-lock the provider
+and still validate launcher recognition through the adapter; installation
+alone does not change the runtime contract.

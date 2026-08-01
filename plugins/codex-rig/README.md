@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.4.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.5.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 

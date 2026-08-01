@@ -34,6 +34,19 @@ Long workflows keep contract-level `## Workflow` with `### NN:` ordered subheade
 - External services/browser optional; caveat when unavailable.
 - Native operation requires no external-runner metadata, hidden cache, widget, slash syntax, non-Codex path variable.
 
+## Recurrence And Root-Cause Policy
+
+Apply this fixed policy to every same or plausibly shared obstacle, including one that appears under different symptoms:
+
+- Occurrence 1 is the initial occurrence; capture the symptom and evidence, then proceed with the normal gates.
+- Occurrence 2 (the first recurrence) stops symptom patching. Run `investigate` or equivalent root-cause evidence before another fix attempt; record the root-cause claim, supporting evidence, falsification check, and at least one rejected alternative.
+- Occurrence 3 stops all attempts. Ask the human for next steps and include attempted actions, current hypotheses/evidence, and the shared obstacle across differing symptoms.
+- Reset the count only when evidence falsifies the shared cause or a material external-state change occurs. Record the reset and its evidence.
+
+Only recurrence-lifecycle owners link this policy directly: the `develop`, `code-remediate`, and `investigate`
+skills plus the `delegation-lead` role. Other skills use their own linear or bounded iteration contracts, and leaf
+specialists leave recurrence counting to their caller. They must not duplicate this link.
+
 ## Evidence Rules
 
 - Code claims: file/line refs. Current external: live primary source or stale/unverified caveat. Root cause: evidence, falsification, rejected alternative. Metric: baseline, guard, comparison. Release: SemVer plus changelog/migration evidence.

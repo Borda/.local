@@ -362,6 +362,89 @@ def test_commit_contract_requires_exact_history_rewrite_authorization() -> None:
     assert history_case["expected_findings"] == ["history-rewrite-not-explicitly-authorized"]
 
 
+def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
+    """Keep calibration fixtures aligned with the recurrence escalation contract."""
+    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    case_contract = {
+        case["id"]: (case["target"], case["expected_findings"])
+        for case in cases
+        if case["id"].startswith("recurrence-")
+    }
+
+    assert case_contract == {
+        "recurrence-initial-obstacle": ("develop", ["initial-obstacle-not-recorded"]),
+        "recurrence-second-occurrence-investigate": (
+            "investigate",
+            [
+                "recurrence-investigation-required",
+                "root-cause-evidence-required",
+                "recurrence-reset-evidence-missing",
+            ],
+        ),
+        "recurrence-third-occurrence-human-handoff": (
+            "delegation-lead",
+            [
+                "recurrence-human-handoff-required",
+                "human-handoff-missing",
+                "attempted-actions-missing",
+                "shared-obstacle-evidence-missing",
+            ],
+        ),
+    }
+
+
+def test_calibration_recurrence_policy_link_is_limited_to_retry_owners(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject both missing owner links and redundant links on linear workflows."""
+    calibration_dir = PLUGIN_ROOT / "runtime" / "calibration"
+    monkeypatch.syspath_prepend(str(calibration_dir))
+    spec = importlib.util.spec_from_file_location("codex_rig_calibration_recurrence", calibration_dir / "run.py")
+    assert spec is not None and spec.loader is not None
+    runner = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, runner)
+    spec.loader.exec_module(runner)
+
+    packaged_skills = tuple(sorted((PLUGIN_ROOT / "skills").glob("*/SKILL.md")))
+    packaged_roles = tuple(sorted((PLUGIN_ROOT / "roles").glob("*/ROLE.md")))
+    linked_skills = {
+        path.parent.name
+        for path in packaged_skills
+        if runner.RECURRENCE_POLICY_LINK in path.read_text(encoding="utf-8")
+    }
+    linked_roles = {
+        path.parent.name for path in packaged_roles if runner.RECURRENCE_POLICY_LINK in path.read_text(encoding="utf-8")
+    }
+    assert linked_skills == {"code-remediate", "develop", "investigate"}
+    assert linked_roles == {"delegation-lead"}
+    assert runner.find_misplaced_packaged_recurrence_policy_links(packaged_skills, packaged_roles) == []
+
+    for source, relative, is_role, remove_link in (
+        (PLUGIN_ROOT / "skills" / "develop" / "SKILL.md", Path("skills/develop/SKILL.md"), False, True),
+        (PLUGIN_ROOT / "skills" / "manage" / "SKILL.md", Path("skills/manage/SKILL.md"), False, False),
+        (
+            PLUGIN_ROOT / "roles" / "delegation-lead" / "ROLE.md",
+            Path("roles/delegation-lead/ROLE.md"),
+            True,
+            True,
+        ),
+        (PLUGIN_ROOT / "roles" / "sw-engineer" / "ROLE.md", Path("roles/sw-engineer/ROLE.md"), True, False),
+    ):
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True)
+        shutil.copy2(source, target)
+        skill_files = () if is_role else (target,)
+        role_files = (target,) if is_role else ()
+        assert runner.find_misplaced_packaged_recurrence_policy_links(skill_files, role_files) == []
+        content = target.read_text(encoding="utf-8")
+        if remove_link:
+            content = content.replace(runner.RECURRENCE_POLICY_LINK, "")
+        else:
+            content += f"\n{runner.RECURRENCE_POLICY_LINK}\n"
+        target.write_text(content, encoding="utf-8")
+        assert runner.find_misplaced_packaged_recurrence_policy_links(skill_files, role_files) == [target]
+
+
 def test_code_remediate_accepts_only_completed_intent_first_merge_states(tmp_path: Path) -> None:
     """Allow conflict-free evidence or one explicitly authorized completed merge."""
     validator = load_shared_artifact_validator()
