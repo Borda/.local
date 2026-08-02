@@ -93,8 +93,10 @@ from provider_parity_contracts import (  # noqa: E402
     canonical_task_hash,
     load_task_policies,
     load_task_suite,
+    materialize_task_prompt,
     prompt_hash,
     semantic_suite_hash,
+    treatment_adherence,
 )
 
 _USE_COLOR = sys.stdout.isatty()
@@ -157,7 +159,7 @@ _TIER_OPUS = "opus"
 ARMS = ("plain", "codemap")
 PARITY_ARMS = tuple(ARM_CONTRACTS)
 PARITY_ARM_BY_LEGACY_ARM: dict[str, str] = {}
-PARITY_MANIFEST_FILE = Path(__file__).parent / "results" / "manifests" / "provider-parity-v1.json"
+PARITY_MANIFEST_FILE = Path(__file__).parent / "manifests" / "provider-parity-methodology.json"
 LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
 _PARITY_MANIFEST = json.loads(PARITY_MANIFEST_FILE.read_text(encoding="utf-8"))
 _PRIMARY_SUITE_MANIFEST = next(
@@ -315,6 +317,8 @@ class BenchRun:
         task_hash: Provenance — sha256 of the canonical task JSON (see ``_task_hash``).
         suite_hash: Provenance — versioned semantic hash of ordered task contracts.
         suite_raw_hash: Audit-only SHA-256 of the source suite file bytes.
+        contaminated: True when the existing contamination or answer-file-read guard excluded the row.
+        treatment_adherence: Canonical A/B/C assigned-treatment observation; None for legacy arms.
         resumed: True when this line was reused from a prior results file via ``--resume``
             (the claude subprocess was not re-executed for this tuple).
     """
@@ -366,6 +370,8 @@ class BenchRun:
     experiment_revision: str = LEGACY_EXPERIMENT_REVISION
     parity_arm: str = ""
     compliance: bool | None = None  # C_required usage evidence, separate from task quality
+    contaminated: bool = False
+    treatment_adherence: bool | None = None
     oracle_class: str = "unknown"
     headline_eligible_v1: bool = False
     scoreable: bool = False
@@ -1275,7 +1281,7 @@ def _embedded_json_objects(raw: str) -> list[dict]:
     return objects
 
 
-# Legacy per-task turn cap. Canonical `codemap-provider-parity-v1-b0-r4` arms rely exclusively on the shared
+# Legacy per-task turn cap. Canonical provider-parity arms rely exclusively on the shared
 # wall-clock budget because Codex has no equivalent public turn-cap control. The old structural
 # experiment keeps its existing task-sensitive cap unchanged for historical comparability.
 _TURN_FLOOR_DEFAULT = 40
@@ -1290,7 +1296,7 @@ def _max_turns_for_task(task: dict) -> int:
     Caller-enumeration tasks (``develop_blast_radius``, ``fn_call_graph``) scale the cap with the
     ground-truth unique-caller count so a task with many callers gets more head-room; every other
     task type uses a flat floor. The value does not depend on the arm — the plain and the codemap arm
-    receive the same cap for a given task. Canonical `codemap-provider-parity-v1-b0-r4` runs omit this CLI flag and
+    receive the same cap for a given task. Canonical provider-parity runs omit this CLI flag and
     instead use their shared wall-clock budget.
 
     Args:
@@ -1319,8 +1325,8 @@ def _max_turns_for_task(task: dict) -> int:
 
 _EVAL_VER_NAME_RECALL = "v5"  # _evaluate_develop_br (v5: drop .md file-dump M-10; precision-tighten fuzzy tiers M-11)
 _EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
-_EVAL_VER_REVIEW = "v4"  # _evaluate_rv — v4: count branch scoped to answer region (count-fragility fix)
-_EVAL_VER_OSS = "v2"  # _evaluate_oss — v2: count extraction scoped to answer region (count-fragility fix)
+_EVAL_VER_REVIEW = "v7"  # _evaluate_rv — natural direct-import and uncovered-count grammar
+_EVAL_VER_OSS = "v5"  # _evaluate_oss — complete ordered coupled-ranking components
 _EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching (review H-1)
 _EVAL_VER_FEATURE = "v2"  # _evaluate_feature — v2: structured-block + stem-blocklist matching (review H-1)
 _EVAL_VER_REAL_ISSUE = "v2"  # _evaluate_real_issue — v2: path-with-parent matching in answer block (review H-1)
@@ -1565,6 +1571,95 @@ def _count_tol_detail(expected: Any, got: Any, **extra: Any) -> dict[str, Any]:
     return {"metric_expected": expected, "metric_got": got, "threshold": 0.10, "method": "count_tolerance", **extra}
 
 
+def _score_required_components(
+    *,
+    count_components: list[tuple[str, Any, Optional[int]]],
+    symbol_components: list[tuple[str, list[str], str, bool]],
+    evaluator_used: str,
+    evaluator_version: str,
+    oracle_views: Mapping[str, Any] | None = None,
+    check: str | None = None,
+) -> BenchQuality:
+    """Score every required count or symbol answer and average their fitness.
+
+    A required count contributes bounded relative-error fitness while its documented
+    10% tolerance remains the binary correctness gate.
+    A required symbol set contributes its recall. A task is correct only when every
+    component meets its own gate; a missing component is an extraction failure.
+    """
+    components: dict[str, dict[str, Any]] = {}
+    primary_expected: Any = None
+    primary_got: Any = None
+
+    for name, expected, got in count_components:
+        correct = _int_close(got, expected, tolerance=0.10)
+        relative_error: float | None = None
+        fitness = 0.0
+        if got is not None and isinstance(expected, (int, float)) and not isinstance(expected, bool):
+            relative_error = abs(got - expected) / max(abs(expected), 1)
+            fitness = max(0.0, 1.0 - relative_error)
+        components[name] = {
+            "kind": "count",
+            "expected": expected,
+            "got": got,
+            "threshold": 0.10,
+            "fitness": fitness,
+            "correct": correct,
+            "extraction_failed": got is None,
+            "relative_error": relative_error,
+            "method": "bounded_relative_error",
+        }
+        if primary_expected is None:
+            primary_expected, primary_got = expected, got
+
+    for name, expected_symbols, region, degraded in symbol_components:
+        found = sum(1 for symbol in expected_symbols if _stem_matches(symbol.split(".")[-1], region))
+        recall = found / max(len(expected_symbols), 1)
+        correct = recall >= 0.70
+        components[name] = {
+            "kind": "symbols",
+            "expected": len(expected_symbols),
+            "got": found,
+            "threshold": 0.70,
+            "fitness": recall,
+            "correct": correct,
+            "extraction_failed": found == 0,
+            "extraction_degraded": degraded,
+        }
+        if primary_expected is None:
+            primary_expected, primary_got = len(expected_symbols), found
+
+    if not components:
+        return BenchQuality(scored=False)
+
+    details: dict[str, Any] = {
+        "metric_expected": primary_expected,
+        "metric_got": primary_got,
+        "method": "required_component_mean",
+        "components": components,
+        "fitness_aggregation": "unweighted mean of every required component",
+    }
+    if check is not None:
+        details["check"] = check
+    if oracle_views is not None:
+        details["oracle_views"] = dict(oracle_views)
+
+    component_values = [float(component["fitness"]) for component in components.values()]
+    return BenchQuality(
+        scored=True,
+        correct=all(bool(component["correct"]) for component in components.values()),
+        metric_expected=primary_expected,
+        metric_got=primary_got,
+        recall=round(sum(component_values) / len(component_values), 3),
+        extraction_failed=any(bool(component["extraction_failed"]) for component in components.values()),
+        extraction_degraded=any(bool(component.get("extraction_degraded")) for component in components.values()),
+        evaluator_used=evaluator_used,
+        evaluator_version=evaluator_version,
+        extracted_metric={name: component["got"] for name, component in components.items()},
+        scoring_detail=details,
+    )
+
+
 def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
     """Evaluate symbol_extraction task: check whether start_line matches ground truth.
 
@@ -1638,104 +1733,111 @@ def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
 
 
 def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate review_assistance task.
-
-    Primary: count from sq0; for symbol-bearing tasks also validate symbol recall.
-    Correct = count within ±10% AND (if symbols present) recall ≥ 0.70.
-    If count extraction fails and symbols present, symbol recall alone decides.
-
-    Args:
-        task: Task dict from tasks-bench.json.
-        output_text: Agent's full response text.
-
-    Returns:
-        BenchQuality with recall set when symbol list available, metric_got/expected otherwise.
-    """
+    """Evaluate every required review subanswer with continuous component fitness."""
     sub_questions = task.get("sub_questions", [])
     if not sub_questions:
         return BenchQuality(scored=False)
+    if not isinstance(sub_questions, list):
+        raise ValueError("review sub-questions must be a list")
 
     _count_patterns = [
         r"(\d+)\s+undocumented",
+        r"(\d+)\s+(?:unique\s+)?(?:public\s+)?symbols?(?:\s+are)?\s+uncovered",
         r"(\d+)\s+uncovered",
+        r"(\d+)\s+reverse\s+dependenc(?:y|ies)",
+        r"(\d+)\s+(?:distinct|unique)\s+production\s+functions?",
+        r"(\d+)\s+(?:distinct|unique)\s+production\s+callers?",
         r"(\d+)\s+(?:function|symbol|method|class)",
         r"(\d+)\s+(?:production\s+)?call\s*site",
         r"(\d+)\s+(?:production\s+)?calls?\b",
         r"(\d+)\s+(?:total\s+)?(?:unique\s+)?importers?",  # "61 total importers", "56 importers"
-        r"(\d+)\s+(?:unique\s+)?modules?\s+(?:import|depend)",  # "N modules import"
+        r"(\d+)\s+(?:unique\s+)?modules?\s+(?:directly\s+)?(?:import|depend)",  # "N modules [directly] import"
         r"(\d+)\s+total\s+importer",
         r"total[:\s]+(\d+)",
         r"count[:\s]+(\d+)",
         r"found\s+(\d+)",
     ]
 
-    sq0_gt = sub_questions[0].get("ground_truth", {})
-    expected_count = sq0_gt.get("count")
+    validated_questions: list[tuple[str, str, Mapping[str, Any]]] = []
+    for index, sub_question in enumerate(sub_questions, start=1):
+        if not isinstance(sub_question, Mapping):
+            raise ValueError(f"review sub-question {index} must be an object")
+        question_id = sub_question.get("id")
+        match = sub_question.get("match")
+        ground_truth = sub_question.get("ground_truth")
+        if not isinstance(question_id, str) or not question_id:
+            raise ValueError(f"review sub-question {index} requires a non-empty id")
+        if not isinstance(ground_truth, Mapping):
+            raise ValueError(f"review sub-question {question_id!r} requires ground_truth")
+        if match == "integer_extract":
+            expected_count = ground_truth.get("count")
+            if isinstance(expected_count, bool) or not isinstance(expected_count, int) or expected_count < 0:
+                raise ValueError(f"review sub-question {question_id!r} requires a non-negative integer count")
+        elif match == "symbol_name_set":
+            expected_symbols = ground_truth.get("symbols")
+            if not isinstance(expected_symbols, list) or not all(
+                isinstance(symbol, str) for symbol in expected_symbols
+            ):
+                raise ValueError(f"review sub-question {question_id!r} requires a symbol string list")
+        else:
+            raise ValueError(f"review sub-question {question_id!r} has unsupported match {match!r}")
+        validated_questions.append((question_id, match, ground_truth))
 
-    # Symbol list from any subquestion (secondary metric for recall display).
-    syms = None
-    for sq in sub_questions:
-        s = sq.get("ground_truth", {}).get("symbols")
-        if s:
-            syms = s
-            break
+    count_question_count = sum(match == "integer_extract" for _, match, _ in validated_questions)
+    if count_question_count > 1:
+        raise ValueError("review task has multiple required count components without answer scoping")
 
-    if syms:
-        # Symbol-bearing tasks (RV-01, RV-05): recall is the primary gate.
-        # Count check removed: non-anchored regex grabs stray numbers from verbose
-        # codemap output, causing false fails when recall is perfect.
-        # review H-1: match symbol short names inside the structured answer block only, and require
-        # blocklisted stems to appear as a qualified reference — a bare `trainer` in prose never counts.
-        region, degraded = _answer_region(output_text, _ANSWER_LABELS_SYMBOLS)
-        found = sum(1 for s in syms if _stem_matches(s.split(".")[-1], region))
-        recall_val = found / max(len(syms), 1)
-        got_count = _extract_int(output_text, _count_patterns) if expected_count is not None else None
-        correct = recall_val >= 0.70
-        # Mirror the count branch (and the develop_br / real_issue evaluators): when no answer symbol
-        # could be extracted from the output at all, mark extraction_failed so the (recall=0) run is
-        # excluded from the accuracy denominator instead of counted as an incorrect answer — otherwise
-        # the symbol branch and the count branch treat extraction failure inconsistently.
-        return BenchQuality(
-            scored=True,
-            correct=correct,
-            metric_expected=len(syms),
-            metric_got=found,
-            recall=round(recall_val, 3),
-            extraction_failed=found == 0,
-            extraction_degraded=degraded,
-            evaluator_used="_evaluate_rv",
-            evaluator_version=_EVAL_VER_REVIEW,
-            extracted_metric={"symbols_found": found, "count_got": got_count},
-            scoring_detail={
-                "metric_expected": len(syms),
-                "metric_got": found,
-                "threshold": 0.70,
-                "method": "recall",
-                "count_expected": expected_count,
-                "count_got": got_count,
-            },
-        )
+    count_components: list[tuple[str, Any, Optional[int]]] = []
+    symbol_components: list[tuple[str, list[str], str, bool]] = []
+    symbol_region, symbol_degraded = _answer_region(output_text, _ANSWER_LABELS_SYMBOLS)
+    for question_id, match, ground_truth in validated_questions:
+        if match == "integer_extract":
+            got_count = _extract_count_answer_first(output_text, _count_patterns)
+            if got_count is None:
+                list_items = re.findall(r"^\s*[-*•]\s+\S", output_text, re.MULTILINE)
+                if list_items:
+                    got_count = len(list_items)
+            count_components.append((f"{question_id}.count", ground_truth["count"], got_count))
+        else:
+            expected_symbols = ground_truth["symbols"]
+            symbol_components.append((f"{question_id}.symbols", expected_symbols, symbol_region, symbol_degraded))
 
-    # No symbol list — count extraction from sq0. Prefer the answer/conclusion region so a stray
-    # count in exploratory prose (the RV-02 "0 symbols of its own" false-fail) cannot outrank the
-    # real answer ("65 importers"); fall back to the full text only when the region has no count.
-    got_count = _extract_count_answer_first(output_text, _count_patterns)
-    if got_count is None:
-        list_items = re.findall(r"^\s*[-*•]\s+\S", output_text, re.MULTILINE)
-        if list_items:
-            got_count = len(list_items)
-    correct = _int_close(got_count, expected_count, tolerance=0.10)
-    return BenchQuality(
-        scored=True,
-        correct=correct,
-        metric_expected=expected_count,
-        metric_got=got_count,
-        extraction_failed=got_count is None,
+    oracle_views = task.get("ground_truth", {}).get("oracle_views")
+    return _score_required_components(
+        count_components=count_components,
+        symbol_components=symbol_components,
         evaluator_used="_evaluate_rv",
         evaluator_version=_EVAL_VER_REVIEW,
-        extracted_metric=got_count,
-        scoring_detail=_count_tol_detail(expected_count, got_count),
+        oracle_views=oracle_views if isinstance(oracle_views, Mapping) else None,
     )
+
+
+def _extract_coupled_ranking(output_text: str, metric_fields: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Extract numbered coupled-ranking rows from bullet or Markdown-table answers."""
+    rows_by_rank: dict[int, dict[str, Any]] = {}
+    for line in output_text.splitlines():
+        rank_match = re.match(r"^\s*\|?\s*(\d+)\s*(?:[.)]|\|)\s*(.*)$", line)
+        if rank_match is None:
+            continue
+        rank = int(rank_match.group(1))
+        body = rank_match.group(2)
+        name_match = re.search(r"`([^`]+)`|\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)\b", body)
+        if name_match is None:
+            continue
+        row: dict[str, Any] = {"name": name_match.group(1) or name_match.group(2)}
+        for metric_field in metric_fields:
+            count_match = re.search(rf"\b{re.escape(metric_field)}\s*[:=]\s*(\d+)", body)
+            if count_match is not None:
+                row[metric_field] = int(count_match.group(1))
+        if len(metric_fields) == 1 and metric_fields[0] not in row:
+            count_values = re.findall(r"\b\d+\b", body)
+            if not count_values:
+                continue
+            row[metric_fields[0]] = int(count_values[-1])
+        if any(metric_field not in row for metric_field in metric_fields):
+            continue
+        rows_by_rank.setdefault(rank, row)
+    return [rows_by_rank[rank] for rank in sorted(rows_by_rank)]
 
 
 def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
@@ -1752,6 +1854,35 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
     check = gt.get("check", "")
 
     if check == "coupled":
+        expected_ranking = gt.get("top_modules")
+        if isinstance(expected_ranking, list) and expected_ranking:
+            metric_fields = ("dep_count",)
+            if not all(isinstance(row, Mapping) and "name" in row and "dep_count" in row for row in expected_ranking):
+                raise ValueError("coupled top_modules requires name and dep_count fields")
+            expected = [
+                {"name": row.get("name"), **{field: row.get(field) for field in metric_fields}}
+                for row in expected_ranking
+                if isinstance(row, Mapping)
+            ]
+            got = _extract_coupled_ranking(output_text, metric_fields)
+            correct = got == expected
+            return BenchQuality(
+                scored=True,
+                correct=correct,
+                metric_expected=expected,
+                metric_got=got,
+                extraction_failed=not got,
+                evaluator_used="_evaluate_oss",
+                evaluator_version=_EVAL_VER_OSS,
+                extracted_metric=got,
+                scoring_detail={
+                    "metric_expected": expected,
+                    "metric_got": got,
+                    "threshold": 0,
+                    "method": "ordered_coupled_ranking",
+                    "metric_fields": metric_fields,
+                },
+            )
         expected = gt.get("top_dep_count", 0)
         # Anchor to number immediately before "dep" — avoids forward-scan into summary totals.
         # dep_count field name first (structured output), then "N dep*" literal.
@@ -1813,10 +1944,14 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
         )
 
     if check in ("undocumented", "combined_health"):
-        expected = gt.get("undocumented_count", 0)
+        oracle_views = gt.get("oracle_views")
+        independent_ast = oracle_views.get("independent_ast", {}) if isinstance(oracle_views, Mapping) else {}
+        expected = independent_ast.get("count", gt.get("undocumented_count", 0))
         got = _extract_count_answer_first(
             output_text,
             [
+                r"independent\s+AST(?:\s+view)?\s*[:—–-]?\s*(\d+)",
+                r"(\d+)\s+unique\s+(?:undocumented\s+)?(?:qualified\s+)?(?:names|symbols)",
                 r"(\d+)\s+undocumented",
                 r"undocumented[:\s]+(\d+)",
                 r"undocumented[^:\n]*[:\s—–]+(\d+)",  # "Undocumented public symbols — 3" (no-newline stops greedy bleed)
@@ -1824,17 +1959,24 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
                 r"without\s+docstring.*?(\d+)",
             ],
         )
-        correct = _int_close(got, expected, tolerance=0.10)
-        return BenchQuality(
-            scored=True,
-            correct=correct,
-            metric_expected=expected,
-            metric_got=got,
-            extraction_failed=got is None,
+        required_components = gt.get("required_answer_components", [])
+        expected_symbols = independent_ast.get("symbols", gt.get("undocumented_symbols"))
+        symbol_components: list[tuple[str, list[str], str, bool]] = []
+        if (
+            isinstance(required_components, list)
+            and "independent_ast_symbols" in required_components
+            and isinstance(expected_symbols, list)
+            and all(isinstance(symbol, str) for symbol in expected_symbols)
+        ):
+            region, degraded = _answer_region(output_text, _ANSWER_LABELS_SYMBOLS)
+            symbol_components.append(("independent_ast_symbols", expected_symbols, region, degraded))
+        return _score_required_components(
+            count_components=[("independent_ast_count", expected, got)],
+            symbol_components=symbol_components,
             evaluator_used="_evaluate_oss",
             evaluator_version=_EVAL_VER_OSS,
-            extracted_metric=got,
-            scoring_detail=_count_tol_detail(expected, got, check=check),
+            oracle_views=oracle_views if isinstance(oracle_views, Mapping) else None,
+            check=check,
         )
 
     if check == "uncovered":
@@ -1849,17 +1991,25 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
                 r"without\s+test.*?(\d+)",
             ],
         )
-        correct = _int_close(got, expected, tolerance=0.10)
-        return BenchQuality(
-            scored=True,
-            correct=correct,
-            metric_expected=expected,
-            metric_got=got,
-            extraction_failed=got is None,
+        required_components = gt.get("required_answer_components", [])
+        expected_symbols = gt.get("uncovered_symbols")
+        symbol_components: list[tuple[str, list[str], str, bool]] = []
+        if (
+            isinstance(required_components, list)
+            and "independent_ast_symbols" in required_components
+            and isinstance(expected_symbols, list)
+            and all(isinstance(symbol, str) for symbol in expected_symbols)
+        ):
+            region, degraded = _answer_region(output_text, _ANSWER_LABELS_SYMBOLS)
+            symbol_components.append(("independent_ast_symbols", expected_symbols, region, degraded))
+        oracle_views = gt.get("oracle_views")
+        return _score_required_components(
+            count_components=[("independent_ast_count", expected, got)],
+            symbol_components=symbol_components,
             evaluator_used="_evaluate_oss",
             evaluator_version=_EVAL_VER_OSS,
-            extracted_metric=got,
-            scoring_detail=_count_tol_detail(expected, got, check=check),
+            oracle_views=oracle_views if isinstance(oracle_views, Mapping) else None,
+            check=check,
         )
 
     return BenchQuality(scored=False)
@@ -2776,6 +2926,14 @@ def _wrap_bench_evaluator(
         components: dict[str, float] = {}
         if quality.scored and quality.recall is not None:
             components["recall"] = float(quality.recall)
+        required_components = quality.scoring_detail.get("components")
+        if isinstance(required_components, Mapping):
+            for name, component in required_components.items():
+                if not isinstance(name, str) or not isinstance(component, Mapping):
+                    continue
+                fitness = component.get("fitness")
+                if isinstance(fitness, (int, float)) and not isinstance(fitness, bool):
+                    components[f"subanswer:{name}"] = float(fitness)
         for name in ("caller_recall", "test_recall"):
             value = quality.scoring_detail.get(name)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -2784,6 +2942,7 @@ def _wrap_bench_evaluator(
             scored=quality.scored,
             correct=quality.correct,
             quality_score=quality_score,
+            extraction_failed=quality.extraction_failed,
             components=components,
             bench_quality=quality,
         )
@@ -3285,7 +3444,7 @@ class BenchRunner:
             *allow_flags,
             "--system-prompt",
             system,
-            task["prompt"],
+            materialize_task_prompt(task),
         ]
         # workflow_type groups tasks at a coarser level than task_type; default to task_type
         # so legacy task files (no workflow_type field) still group sensibly.
@@ -3353,6 +3512,13 @@ class BenchRunner:
 
         if arm == "C_required":
             result.compliance = result.scan_query_calls > 0
+        result.contaminated = result.error in {"contaminated", "answer_file_read"}
+        if arm in ARM_CONTRACTS:
+            result.treatment_adherence = treatment_adherence(
+                arm,
+                codemap_use_compliance=result.compliance,
+                contaminated=result.contaminated,
+            )
         return result
 
     def _env(self, arm: str) -> dict[str, str]:

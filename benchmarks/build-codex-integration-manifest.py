@@ -28,8 +28,13 @@ SOURCE_MANIFEST = MANIFESTS / "provider-parity-methodology.json"
 OUTPUT_MANIFEST = MANIFESTS / "codex-integration.json"
 OUTPUT_HUMAN_MANIFEST = MANIFESTS / "codex-integration.md"
 EXPERIMENT_ID = "codex-integration-v1"
-EXPERIMENT_REVISION = "codex-integration-single-run-confirmatory-v1"
+EXPERIMENT_REVISION = "codex-integration-single-run-confirmatory-2026-08-02"
 TELEMETRY_CONTRACT_ID = "canonical-skill-file-v1"
+CANONICAL_QUERY_FORM = '"$CODEMAP_BIN" query --compact <subcommand> [arguments]'
+ARM_ORDER_POLICY = (
+    "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
+    "across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -145,7 +150,7 @@ def _arms() -> dict[str, dict[str, Any]]:
             "installed_packages": [],
             "requirement": (
                 "Run at least one successful compact direct query in its own native command item containing exactly "
-                '"$CODEMAP_BIN" query --compact <subcommand> <arguments>; '
+                f"{CANONICAL_QUERY_FORM}; "
                 "additional reads and shell work are allowed as separate items."
             ),
             "treatment": "direct_cli",
@@ -224,6 +229,13 @@ def _execution_controls(source: dict[str, Any]) -> dict[str, Any]:
         "the exact value is recorded in every result row"
     )
     controls["confirmatory_max_wall_clock_seconds"] = 86_400
+    controls["arm_order"] = ARM_ORDER_POLICY
+    controls["token_prompt_cache_policy"] = (
+        "Console and primary efficiency reports use gross provider input tokens only. "
+        "Cached and fresh input counts are retained as raw telemetry diagnostics. "
+        "The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. "
+        "Deterministic arm-order counterbalancing mitigates order exposure without claiming cache elimination."
+    )
     controls["retry"] = (
         "at most 2 retries only after retryable transport failure with zero input and output tokens; "
         "retries receive only the unspent coordinate budget"
@@ -252,7 +264,7 @@ def _telemetry_admission() -> dict[str, Any]:
         },
         "query": {
             "item_scope": "dedicated native command item",
-            "accepted_form": '"$CODEMAP_BIN" query --compact <subcommand> <arguments>',
+            "accepted_form": CANONICAL_QUERY_FORM,
             "required_exit_code": 0,
             "required_output": "one JSON document with index.query_complete=true and index.compact=true",
         },
@@ -282,6 +294,7 @@ def _preregistered_cells(source: dict[str, Any]) -> dict[str, Any]:
     cells["providers"] = ["codex"]
     cells["smoke_task_ids"] = ["FN-02"]
     cells["confirmatory_repetitions"] = 1
+    cells["arm_order"] = ARM_ORDER_POLICY
     cells["structural_execution_task_ids"] = execution_ids
     cells["structural_diagnostic_task_ids"] = [task_id for task_id in execution_ids if task_id not in headline_ids]
     return cells
@@ -453,7 +466,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "## Arms",
         "",
         "- `A_plain`: no Codemap package or query access.",
-        '- `B_direct_required`: one dedicated successful `"$CODEMAP_BIN" query --compact <subcommand> <arguments>` command item.',
+        f"- `B_direct_required`: one dedicated successful `{CANONICAL_QUERY_FORM}` command item.",
         '- `C_skill_required`: one dedicated exact `cat "$CODEMAP_SKILL_FILE"` item, then one dedicated canonical compact query item.',
         "- B/C may use additional reads and shell commands as separate items; those actions are ignored for attribution.",
         "",
@@ -467,6 +480,12 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "",
         "- The 600-second coordinate budget is shared by the initial attempt and any eligible zero-token transport retries.",
         "- Paid execution requires a positive, human-approved `--max-wall-clock-seconds` value recorded in every result row.",
+        "- Arm order uses deterministic six-permutation counterbalancing by frozen structural task ordinal; across the "
+        "55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times.",
+        "- Console and primary efficiency reports use gross provider input tokens only. Cached and fresh input counts "
+        "are retained as raw telemetry diagnostics.",
+        "- The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. Deterministic "
+        "arm-order counterbalancing mitigates order exposure without claiming cache elimination.",
         "",
         "## Locked candidates",
         "",
@@ -483,8 +502,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         f"- Diagnostic tasks: `{len(manifest['preregistered_cells']['structural_diagnostic_task_ids'])}`.",
         f"- Repetitions: `{repetitions}`.",
         f"- Total cells: `{total_cells}` (`{execution_tasks} tasks × {repetitions} repetition × {arm_count} arms`).",
-        "- Model-cell failures are recorded and do not stop the study after admission; integrity, interruption, and ",
-        "  complete-run ceiling failures preserve a partial artifact and stop execution.",
+        "- Model-cell failures are recorded and do not stop the study after admission; integrity, interruption, and complete-run ceiling failures preserve a partial artifact and stop execution.",
         "",
         "## Execution",
         "",

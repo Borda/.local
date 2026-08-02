@@ -47,6 +47,14 @@ ARM_CONTRACTS: Mapping[str, Mapping[str, str]] = MappingProxyType(
     }
 )
 
+COMPARISON_ARMS_BY_PROVIDER: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "claude": frozenset(ARM_CONTRACTS),
+        "codex": frozenset({"A_plain", "B_direct_required", "C_skill_required"}),
+    }
+)
+COMPARISON_ARM_NAMES = frozenset(arm for provider_arms in COMPARISON_ARMS_BY_PROVIDER.values() for arm in provider_arms)
+
 
 @dataclass(frozen=True)
 class TaskPolicy:
@@ -186,21 +194,138 @@ def canonical_task_hash(task: Task) -> str:
 
 
 def prompt_hash(task: Task) -> str:
-    """Return the SHA-256 digest of a task's exact UTF-8 prompt.
+    """Return the SHA-256 digest of a task's delivered UTF-8 prompt.
 
     Args:
         task: Raw task object containing a string ``prompt`` field.
 
     Returns:
-        Hexadecimal SHA-256 digest of the prompt's UTF-8 bytes.
+        Hexadecimal SHA-256 digest of the exact bytes delivered to a provider.
 
     Raises:
         ValueError: If the task does not carry a string prompt.
     """
+    return hashlib.sha256(materialize_task_prompt(task).encode("utf-8")).hexdigest()
+
+
+def materialize_task_prompt(task: Task) -> str:
+    """Return the complete provider prompt for one structural task.
+
+    Review tasks store independently scored follow-up questions in
+    ``sub_questions``.  They must be part of the provider-visible prompt, not
+    evaluator-only metadata.  Other task types retain their exact top-level
+    prompt bytes.
+
+    Args:
+        task: Raw task object containing a string ``prompt`` field.
+
+    Returns:
+        The exact prompt bytes supplied to either model provider.
+
+    Raises:
+        ValueError: If the task prompt or a nested question prompt is invalid.
+    """
     prompt = task.get("prompt")
     if not isinstance(prompt, str):
         raise ValueError("task prompt must be a string")
-    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    sub_questions = task.get("sub_questions")
+    if sub_questions is None:
+        return prompt
+    if not isinstance(sub_questions, list):
+        raise ValueError("task sub_questions must be a list when present")
+    questions: list[str] = []
+    for index, sub_question in enumerate(sub_questions, start=1):
+        if not isinstance(sub_question, Mapping):
+            raise ValueError("task sub_questions entries must be objects")
+        question = sub_question.get("prompt")
+        if not isinstance(question, str) or not question:
+            raise ValueError(f"task sub_question {index} prompt must be a non-empty string")
+        questions.append(f"{index}. {question}")
+    if not questions:
+        return prompt
+    return f"{prompt}\n\nAnswer every review question:\n" + "\n".join(questions)
+
+
+def token_accounting_inconsistent(input_tokens: int, cached_input_tokens: int) -> bool:
+    """Return whether native cached input exceeds gross input.
+
+    Gross and cached counts are retained as provider-native evidence. A cache
+    count above gross is internally contradictory, so derived token metrics
+    must remain unscoreable rather than being coerced into a plausible value.
+    """
+    for name, value in (("input_tokens", input_tokens), ("cached_input_tokens", cached_input_tokens)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer token count")
+    return cached_input_tokens > input_tokens
+
+
+def fresh_input_tokens(input_tokens: int, cached_input_tokens: int) -> int | None:
+    """Return fresh input tokens, or ``None`` for contradictory native usage.
+
+    Native providers report gross input and a cached subset. The raw values
+    remain available for diagnosis; this derived metric is deliberately absent
+    when the cache exceeds gross so it cannot enter token comparisons.
+    """
+    if token_accounting_inconsistent(input_tokens, cached_input_tokens):
+        return None
+    return input_tokens - cached_input_tokens
+
+
+def treatment_adherence(
+    arm: str,
+    *,
+    codemap_use_compliance: bool | None,
+    contaminated: bool,
+) -> bool:
+    """Return whether a treatment arm followed its assigned availability rule."""
+    if arm not in COMPARISON_ARM_NAMES:
+        raise ValueError(f"unknown benchmark arm {arm!r}")
+    if contaminated:
+        return False
+    if arm == "A_plain":
+        return codemap_use_compliance is None
+    if arm == "B_auto":
+        return True
+    return codemap_use_compliance is True
+
+
+def canonical_result_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    task_order: Sequence[str],
+    arm_order: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Return a derived task/repetition/arm ordered view of raw result rows.
+
+    The caller retains its raw append-only stream in execution order.  This
+    function only constructs a canonical analysis sidecar and rejects
+    ambiguous coordinates instead of silently selecting evidence.
+    """
+    task_rank = {task_id: index for index, task_id in enumerate(task_order)}
+    arm_rank = {arm: index for index, arm in enumerate(arm_order)}
+    if len(task_rank) != len(task_order) or len(arm_rank) != len(arm_order):
+        raise ValueError("canonical result task and arm order values must be unique")
+    coordinates: set[tuple[str, int, str]] = set()
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        task_id = row.get("task_id")
+        arm = row.get("arm")
+        repetition = row.get("repetition")
+        if task_id not in task_rank:
+            raise ValueError(f"unknown task coordinate {task_id!r}")
+        if arm not in arm_rank:
+            raise ValueError(f"unknown arm coordinate {arm!r}")
+        if isinstance(repetition, bool) or not isinstance(repetition, int) or repetition < 1:
+            raise ValueError("result repetition must be a positive integer")
+        coordinate = (task_id, repetition, arm)
+        if coordinate in coordinates:
+            raise ValueError(f"duplicate canonical result coordinate {coordinate!r}")
+        coordinates.add(coordinate)
+        normalized.append(dict(row))
+    return sorted(
+        normalized,
+        key=lambda row: (task_rank[row["task_id"]], row["repetition"], arm_rank[row["arm"]]),
+    )
 
 
 def semantic_suite_hash(tasks: Sequence[Task]) -> str:
@@ -313,6 +438,7 @@ class EvaluationResult:
     scored: bool
     correct: bool
     quality_score: float | None
+    extraction_failed: bool = False
     components: dict[str, float] = dataclass_field(default_factory=dict)
 
 
@@ -375,6 +501,10 @@ class ResultRecord:
     arm: str
     input_tokens: int
     quality_score: float | None
+    treatment_adherence: bool
+    cached_input_tokens: int = 0
+    fresh_input_tokens: int | None = None
+    token_accounting_inconsistent: bool = False
     scoreable: bool = True
     self_consistency: bool = False
     approximate: bool = False
@@ -424,6 +554,9 @@ def result_eligibility(record: ResultRecord, policies: Mapping[str, TaskPolicy])
         and not record.incomplete
         and not record.extraction_failed
         and not record.contaminated
+        and record.treatment_adherence is True
+        and not record.token_accounting_inconsistent
+        and not token_accounting_inconsistent(record.input_tokens, record.cached_input_tokens)
     )
 
 
@@ -485,18 +618,24 @@ def pair_effects(
 
 
 def _validate_comparison_arms(baseline_arm: str, treatment_arm: str) -> None:
-    """Reject invalid or degenerate requested treatment comparisons."""
+    """Reject invalid, degenerate, or cross-experiment treatment comparisons."""
     for arm in (baseline_arm, treatment_arm):
-        if arm not in ARM_CONTRACTS:
+        if arm not in COMPARISON_ARM_NAMES:
             raise ValueError(f"unknown benchmark arm {arm!r}")
     if baseline_arm == treatment_arm:
         raise ValueError("baseline and treatment arms must differ")
+    requested_arms = frozenset({baseline_arm, treatment_arm})
+    if not any(requested_arms <= provider_arms for provider_arms in COMPARISON_ARMS_BY_PROVIDER.values()):
+        raise ValueError(f"benchmark arms {baseline_arm!r} and {treatment_arm!r} do not coexist in one provider")
 
 
 def _validate_record_arm(record: ResultRecord) -> None:
-    """Reject a result that does not use a registered benchmark arm."""
-    if record.arm not in ARM_CONTRACTS:
-        raise ValueError(f"unknown benchmark arm {record.arm!r}")
+    """Reject a result whose arm belongs to another provider's experiment."""
+    provider_arms = COMPARISON_ARMS_BY_PROVIDER.get(record.provider)
+    if provider_arms is None:
+        raise ValueError(f"unknown benchmark provider {record.provider!r}")
+    if record.arm not in provider_arms:
+        raise ValueError(f"benchmark arm {record.arm!r} is not valid for provider {record.provider!r}")
 
 
 def _task_policy(record: ResultRecord, policies: Mapping[str, TaskPolicy]) -> TaskPolicy:
@@ -513,6 +652,9 @@ def _task_policy(record: ResultRecord, policies: Mapping[str, TaskPolicy]) -> Ta
 
 def _validate_pair_record(record: ResultRecord, policies: Mapping[str, TaskPolicy]) -> None:
     """Reject an ineligible or mathematically invalid pair cell."""
+    _validate_pair_token_accounting(record)
+    if not isinstance(record.treatment_adherence, bool):
+        raise ValueError("result treatment_adherence must be a boolean")
     if not result_eligibility(record, policies):
         raise ValueError(f"ineligible result for task {record.task_id!r}")
     for field in ("revision", "provider", "model", "task_id"):
@@ -530,3 +672,21 @@ def _validate_pair_record(record: ResultRecord, policies: Mapping[str, TaskPolic
         or not 0.0 <= quality_score <= 1.0
     ):
         raise ValueError("result quality_score must be a finite value in [0, 1]")
+
+
+def _validate_pair_token_accounting(record: ResultRecord) -> None:
+    """Reject stale flags or derived values that disagree with native token counts."""
+    inconsistent = token_accounting_inconsistent(record.input_tokens, record.cached_input_tokens)
+    if not isinstance(record.token_accounting_inconsistent, bool):
+        raise ValueError("result token_accounting_inconsistent must be a boolean")
+    if record.token_accounting_inconsistent is not inconsistent:
+        raise ValueError("result token_accounting_inconsistent flag disagrees with native token counts")
+    if record.fresh_input_tokens is None:
+        if inconsistent:
+            raise ValueError("result token accounting is inconsistent: cached input exceeds gross input")
+        return
+    if isinstance(record.fresh_input_tokens, bool) or not isinstance(record.fresh_input_tokens, int):
+        raise ValueError("result fresh_input_tokens must be an integer or None")
+    expected_fresh = record.input_tokens - record.cached_input_tokens
+    if inconsistent or record.fresh_input_tokens != expected_fresh:
+        raise ValueError("result fresh_input_tokens disagrees with native token counts")

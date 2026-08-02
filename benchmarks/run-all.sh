@@ -24,6 +24,7 @@ INDEX_PATH="$REPO/.cache/codemap/$(basename "$REPO").json"
 MODE="${1:-}"
 CODEX_DRY_RUN=false
 MANIFEST_PATH="$ROOT/benchmarks/manifests/codex-integration.json"
+MANIFEST_CHECKER="$ROOT/benchmarks/build-codex-integration-manifest.py"
 CODEMAP_BIN="${CODEMAP_BIN:-$ROOT/plugins/codemap-py/bin/codemap-py}"
 INDEX_PREPARER="$ROOT/benchmarks/prepare-codex-index.py"
 LOCKED_INDEX_SHA="b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045"
@@ -71,6 +72,11 @@ sha256_file() {
   fi
 }
 
+validate_generated_manifest() {
+  echo "== CHECK generated Codex integration manifest (no model) =="
+  python3 "$MANIFEST_CHECKER" --check
+}
+
 ensure_repo() {
   # Only the canonical benchmark target is reset. An overridden REPO is never mutated.
   if [ "$REPO" = "$MANAGED_REPO" ]; then
@@ -90,6 +96,7 @@ ensure_repo() {
 }
 
 prepare_locked_inputs() {
+  validate_generated_manifest
   ensure_repo
   echo "== PREPARE frozen parity index =="
   if [ ! -f "$INDEX_PATH" ]; then
@@ -304,7 +311,7 @@ run_codex_with_artifacts() {
   fi
   checksum_path="$CODEX_RUN_DIR/checksums.sha256"
   : > "$checksum_path"
-  for artifact in run.log telemetry.jsonl run-metadata.json; do
+  for artifact in run.log telemetry.jsonl telemetry-canonical.jsonl run-metadata.json; do
     if [ -f "$CODEX_RUN_DIR/$artifact" ]; then
       shasum -a 256 "$CODEX_RUN_DIR/$artifact" >> "$checksum_path"
     fi

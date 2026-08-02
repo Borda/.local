@@ -754,11 +754,9 @@ def _is_patch_call(func: ast.expr) -> bool:
 class _TestRefFinder(ast.NodeVisitor):
     """AST visitor collecting the simple names a test module references (review C-2).
 
-    Mirrors scan-query's coverage definition independently: a public symbol is *covered* when a test
-    reaches it either through a call/attribute reference (its ``fn_rdep_test_count`` analogue) or
-    through a ``patch("pkg.mod.Symbol")`` string target (its ``mock_rdep_count`` analogue). Every
-    ``Name``/``Attribute`` identifier is recorded, plus the last dotted component of each string
-    argument to a patch call.
+    The independent oracle is deliberately broad: every test ``Name`` and ``Attribute`` identifier
+    is recorded, plus the last dotted component of every string argument to a ``patch(...)`` /
+    ``patch.object(...)`` / ``mock.patch(...)`` call. It does not require a name to be a call target.
 
     Args:
         refs: Mutable set accumulating referenced simple names.
@@ -790,8 +788,8 @@ def _collect_test_references(repo: Path) -> set[str]:
         repo: Repository root directory.
 
     Returns:
-        Referenced simple names (call/attribute identifiers and patch-string tails) from every test
-        file (matched by :data:`_TEST_PATH_RE`).
+        Referenced simple names (every ``Name``/``Attribute`` identifier and patch-string tails) from
+        every test file (matched by :data:`_TEST_PATH_RE`).
     """
     refs: set[str] = set()
     for _fpath, _rel, tree in walk_py_modules(repo, keep=lambda rel: bool(_TEST_PATH_RE.search(rel))):
@@ -803,10 +801,11 @@ def _uncovered_via_ast(repo: Path, module: str | None = None) -> tuple[set[str],
     """Independent AST oracle for the ``uncovered`` check: public symbols no test references (review C-2).
 
     Mirrors scan-query ``cmd_uncovered`` independently: a public symbol (per :func:`_is_public_qualname`,
-    no leading-underscore component) in a non-test module is *uncovered* when its simple name is not
-    referenced by any test module — neither called/accessed (``fn_rdep_test_count`` analogue) nor named
-    in a ``patch(...)`` string target (``mock_rdep_count`` analogue). Qualified names are module-relative
-    (``Class.method`` / ``func`` / ``Class``), matching scan-query's ``qualified_name`` field.
+    no leading-underscore component) in a non-test module is *uncovered* when its simple name does not
+    appear in any test AST ``Name`` or ``Attribute`` identifier and is not the final dotted component of
+    any string argument to a ``patch(...)`` / ``patch.object(...)`` / ``mock.patch(...)`` call. Qualified
+    names are module-relative (``Class.method`` / ``func`` / ``Class``), matching scan-query's
+    ``qualified_name`` field.
 
     Approximate like the caller oracle: coverage is matched by the symbol's simple name, so it
     over-approximates *coverage* (a same-named symbol referenced anywhere by a test marks all of them
@@ -1401,6 +1400,35 @@ def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
 
     if not expected_queries:
         return False, None, "no expected_queries defined"
+    if not isinstance(sub_questions, list) or not sub_questions:
+        return False, None, "review task requires a non-empty sub_questions list"
+
+    count_questions = 0
+    for index, sq_item in enumerate(sub_questions, start=1):
+        if not isinstance(sq_item, dict):
+            return False, None, f"review sub-question {index} must be an object"
+        sq_id = sq_item.get("id")
+        match_type = sq_item.get("match")
+        expected_gt = sq_item.get("ground_truth")
+        if not isinstance(sq_id, str) or not sq_id:
+            return False, None, f"review sub-question {index} requires a non-empty id"
+        if not isinstance(expected_gt, dict):
+            return False, None, f"review sub-question {sq_id!r} requires ground_truth"
+        if match_type == "integer_extract":
+            expected_count = expected_gt.get("count")
+            if isinstance(expected_count, bool) or not isinstance(expected_count, int) or expected_count < 0:
+                return False, None, f"review sub-question {sq_id!r} requires a non-negative integer count"
+            count_questions += 1
+        elif match_type == "symbol_name_set":
+            expected_symbols = expected_gt.get("symbols")
+            if not isinstance(expected_symbols, list) or not all(
+                isinstance(symbol, str) for symbol in expected_symbols
+            ):
+                return False, None, f"review sub-question {sq_id!r} requires a symbol string list"
+        else:
+            return False, None, f"review sub-question {sq_id!r} has unsupported match {match_type!r}"
+    if count_questions > 1:
+        return False, None, "review task has multiple required count components without answer scoping"
 
     # One expected query supplies every current sub-question.  Its AST result is
     # authoritative; scan-query remains a diagnostic because it is the tool under test.
@@ -1499,6 +1527,17 @@ def _validate_undocumented_ast(
     live_gt["undocumented_symbols"] = live_syms
     live_gt["undocumented_count_scan"] = scan_count
     live_gt["undocumented_symbols_scan"] = scan_syms
+    live_gt["oracle_views"] = {
+        "independent_ast": {
+            "count": len(live_syms),
+            "semantics": "Unique public qualified names without docstrings under the independent AST oracle.",
+            "symbols": live_syms,
+        },
+        "codemap_static": {
+            "count": scan_count,
+            "semantics": "Declaration findings reported by Codemap; repeated qualified names may remain.",
+        },
+    }
     scan_set = set(scan_syms)
     _warn_ast_divergence(
         task.get("id", "?"), "undocumented symbols", sorted(ast_syms - scan_set), sorted(scan_set - ast_syms)
@@ -1553,6 +1592,17 @@ def _validate_uncovered_ast(
     live_gt["uncovered_symbols"] = live_syms
     live_gt["uncovered_count_scan"] = scan_count
     live_gt["uncovered_symbols_scan"] = scan_syms
+    live_gt["oracle_views"] = {
+        "independent_ast": {
+            "count": len(live_syms),
+            "semantics": "Unique symbols without test coverage under the independent AST oracle.",
+            "symbols": live_syms,
+        },
+        "codemap_static": {
+            "count": scan_count,
+            "semantics": "Static uncovered findings reported by Codemap; repeated declaration-level findings may remain.",
+        },
+    }
     scan_set = set(scan_syms)
     _warn_ast_divergence(
         task.get("id", "?"), "uncovered symbols", sorted(ast_syms - scan_set), sorted(scan_set - ast_syms)
@@ -1693,6 +1743,23 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         live_gt["top_module"] = top.get("name", "")
         live_gt["top_dep_count"] = top.get("dep_count", 0)
         live_gt["top_internal_dep_count"] = top.get("internal_dep_count", 0)
+        expected_ranking = gt.get("top_modules")
+        if expected_ranking is not None:
+            if not isinstance(expected_ranking, list) or not expected_ranking:
+                return False, None, "coupled top_modules ground truth is not a non-empty list"
+            if not all(isinstance(row, dict) for row in expected_ranking):
+                return False, None, "coupled top_modules ground truth contains a non-object row"
+            ranking_fields = ("name", "dep_count", "internal_dep_count")
+            if any(any(field not in row for field in ranking_fields) for row in expected_ranking):
+                return False, None, "coupled top_modules ground truth has incomplete rows"
+            live_ranking = [
+                {field: row.get(field) for field in ranking_fields}
+                for row in coupled[: len(expected_ranking)]
+                if isinstance(row, dict)
+            ]
+            live_gt["top_modules"] = live_ranking
+            if live_ranking != expected_ranking:
+                problems.append(f"top_modules: expected {expected_ranking!r}, got {live_ranking!r}")
         if live_gt["top_module"] != gt.get("top_module", ""):
             problems.append(f"top_module: expected {gt['top_module']!r}, got {live_gt['top_module']!r}")
         if live_gt["top_dep_count"] != gt.get("top_dep_count", 0):
@@ -2194,7 +2261,9 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
         # AST-oracle-only GT (review DI/GR/MB); live_gt already carries the cleared gt_pending flag.
         return {**existing_gt, **live_gt}
     if task_type == "review_assistance":
-        # live_gt is {sq_id: {count: N} | {symbols: [...]}}
+        # Review refreshes nested answer keys in place.  Top-level
+        # ``ground_truth.oracle_views`` deliberately remains attached to the
+        # task so a regeneration never erases the named AST/static semantics.
         return live_gt  # caller updates sub_questions in place
     if task_type == "code_quality":
         return {**existing_gt, **live_gt}

@@ -65,12 +65,13 @@ Each task × repetition × arm cell records:
 
   Headline inputs:
     provider, repetition, elapsed_s, input_tokens, cached_input_tokens, output_tokens,
-    reasoning_output_tokens, quality_score, and correct
+    fresh_input_tokens, reasoning_output_tokens, quality_score, and correct
 
   Diagnostics:
     command_calls, Codemap calls/successes/errors, fallback calls, required-arm
-    compliance, extraction failure, contamination, retry count, native item
-    counts, raw Codex events, and provider error classification
+    Codemap-use compliance, treatment adherence, extraction failure, contamination,
+    retry count, execution index, native item counts, raw Codex events, and
+    provider error classification
 
 The runner writes raw cells; it does not declare an advantage. The manifest
 analysis compares paired log input-token ratios and quality deltas, then applies
@@ -150,11 +151,12 @@ execution also requires an explicit complete-run wall-clock limit. A required ar
 ``--dry-run`` invokes no model and prints one ``PROBE`` line per selected arm
 followed by deterministic task/repetition/arm ``PLAN`` lines. A paid run prints
 its telemetry and metadata paths once, appends one normalized JSON object per
-completed cell to ``--output-path``, and prints a compact ``RESULT`` line. Token
-counts and durations use the same human-readable formatter as the Claude runner.
-Interactive terminals color A/B/C rows; redirected logs remain plain text.
-The file is created before the first cell so an existing result cannot be
-overwritten, and each completed cell survives a later failure.
+completed cell to ``--output-path`` in execution order, atomically refreshes a
+``telemetry-canonical.jsonl`` task/repetition/A-B-C sidecar, and prints a
+compact fixed-order ``RESULT`` block. Token counts show gross/cached/fresh
+input separately in telemetry; the terminal shows gross input only. Interactive terminals color A/B/C rows; redirected logs
+remain plain text. The raw file is created before the first cell so an existing
+result cannot be overwritten, and each completed cell survives a later failure.
 """
 
 from __future__ import annotations
@@ -163,6 +165,7 @@ import contextlib
 import hashlib
 import importlib.util
 import inspect
+import itertools
 import json
 import os
 import re
@@ -182,6 +185,7 @@ from uuid import uuid4
 
 import sys
 from rich.console import Console as _Console
+from rich.panel import Panel as _Panel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -193,15 +197,21 @@ from provider_parity_contracts import (  # noqa: E402
     TaskPolicy,
     capability_strata,
     canonical_task_hash,
+    canonical_result_rows,
+    fresh_input_tokens,
     load_task_policies,
     load_task_suite,
+    materialize_task_prompt,
     prompt_hash,
     semantic_suite_hash,
+    token_accounting_inconsistent,
+    treatment_adherence,
 )
 
 
 PARITY_MANIFEST_PATH = Path(__file__).parent / "manifests" / "codex-integration.json"
 CODEX_STRUCTURAL_ARMS = ("A_plain", "B_direct_required", "C_skill_required")
+_COUNTERBALANCED_ARM_ORDERS = tuple(itertools.permutations(CODEX_STRUCTURAL_ARMS))
 ARMS = CODEX_STRUCTURAL_ARMS
 PARITY_CODEX_MODEL = "gpt-5.6-luna"
 PARITY_CODEX_REASONING_EFFORT = "high"
@@ -214,29 +224,40 @@ _MIN_PERMISSION_PROFILE_VERSION = (0, 138, 0)
 _COORDINATION_NAME = ".index-rw"
 _REGISTRY_NAME = "registry.lock"
 _READERS_NAME = "readers"
-_ARM_COLUMN_WIDTH = max(len(arm) for arm in CODEX_STRUCTURAL_ARMS)
+_DISPLAY_ARM_LABELS = {
+    "A_plain": "A_plain",
+    "B_direct_required": "B_direct",
+    "C_skill_required": "C_skill",
+}
+_DISPLAY_ARM_TO_CANONICAL = {label: arm for arm, label in _DISPLAY_ARM_LABELS.items()}
+_DISPLAY_ARM_COLUMN_WIDTH = max(len(label) for label in _DISPLAY_ARM_LABELS.values())
 _ARM_ROW_STYLES = {
     "A_plain": "yellow",
     "B_direct_required": "cyan",
     "C_skill_required": "magenta",
 }
-_RESULT_ARM = re.compile(r"^RESULT\b.*\b(A_plain|B_direct_required|C_skill_required)\b")
+_RESULT_ARM = re.compile(r"^RESULT\b.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill)\b")
 _OUTPUT_LEGEND = (
-    "LEGEND  treatments: A=A_plain (no Codemap), B=B_direct_required (direct Codemap required), "
-    "C=C_skill_required (Codemap skill required)\n"
-    "LEGEND  tasks: SE=symbol extraction, FN=function-call graph, RV=review assistance, CQ=code quality, "
+    "LEGEND\n"
+    "  treatments: A_plain=no Codemap, B_direct=direct Codemap required, "
+    "C_skill=Codemap Skill required\n"
+    "  tasks: SE=symbol extraction, FN=function-call graph, RV=review assistance, CQ=code quality, "
     "BR=blast radius, DG=debug from trace\n"
-    "LEGEND  tasks: FT=feature scaffolding, RI=real issue, DI=diff impact, GR=graph reasoning, "
+    "  tasks: FT=feature scaffolding, RI=real issue, DI=diff impact, GR=graph reasoning, "
     "MB=module blast radius | status: ✓ completed, ✗ failed\n"
-    "LEGEND  quality: continuous [0,1], ? unscoreable | compliance: ✓ required use observed, "
-    "✗ requirement missed, n/a no requirement for A_plain | tokens: k=1,000, M=1,000,000"
+    "  quality: continuous [0,1], ? unscoreable | treatment: ✓ assigned arm followed, "
+    "✗ assigned arm not followed | codemap-used: ✓ Codemap call observed; ✗ no Codemap call "
+    "(expected for A_plain) or required use missed (B/C) | input tokens: gross total; cached and fresh "
+    "details remain in telemetry only | tokens: k=1,000, M=1,000,000\n"
+    "END LEGEND"
 )
 _console = _Console(highlight=False)
 
 
 def _format_plan_row(task_id: str, repetition: int, arm: str) -> str:
     """Format one deterministic coordinate as an aligned terminal row."""
-    return f"PLAN    {task_id:<5}  rep={repetition}  {arm}"
+    display_arm = _DISPLAY_ARM_LABELS.get(arm, arm)
+    return f"PLAN    {task_id:<5}  rep={repetition}  {display_arm}"
 
 
 def _format_result_row(
@@ -246,17 +267,24 @@ def _format_result_row(
     repetition: int,
     arm: str,
     input_tokens: int,
+    cached_input_tokens: int,
+    fresh_tokens: int | None,
     output_tokens: int,
     elapsed_s: float,
     quality: str,
-    compliance: bool | None,
+    adherence: bool,
+    codemap_used: bool,
 ) -> str:
     """Format one result with stable columns and shared human-readable units."""
-    compliance_mark = {None: "n/a", True: "✓", False: "✗"}[compliance]
+    del cached_input_tokens, fresh_tokens
+    adherence_mark = "✓" if adherence else "✗"
+    codemap_used_mark = "✓" if codemap_used else "✗"
+    display_arm = _DISPLAY_ARM_LABELS.get(arm, arm)
     return (
-        f"RESULT  {status}  {task_id:<5}  rep={repetition}  {arm:<{_ARM_COLUMN_WIDTH}}"
-        f"  in={fmt_tok(input_tokens):>6}  out={fmt_tok(output_tokens):>6}"
-        f"  time={fmt_time(elapsed_s):>5}  quality={quality:>5}  compliance:{compliance_mark}"
+        f"RESULT  {status}  {task_id:<5}  rep={repetition}  {display_arm:<{_DISPLAY_ARM_COLUMN_WIDTH}}"
+        f"  in={fmt_tok(input_tokens):>6}"
+        f"  out={fmt_tok(output_tokens):>6}  time={fmt_time(elapsed_s):>5}"
+        f"  quality={quality:>5}  treatment:{adherence_mark}  codemap-used:{codemap_used_mark}"
     )
 
 
@@ -268,10 +296,17 @@ def _print_arm_row(row: str, arm: str) -> None:
     print(row)
 
 
+def _print_result_block(rows: Iterable[tuple[str, str]]) -> None:
+    """Print persisted results in the fixed human A/B/C order for one task block."""
+    arm_rank = {arm: index for index, arm in enumerate(CODEX_STRUCTURAL_ARMS)}
+    for arm, row in sorted(rows, key=lambda item: arm_rank[item[0]]):
+        _print_arm_row(row, arm)
+
+
 def _result_arm(row: str) -> str | None:
     """Return the recognized arm from one result row, if any."""
     match = _RESULT_ARM.search(row)
-    return match.group(1) if match else None
+    return _DISPLAY_ARM_TO_CANONICAL.get(match.group(1), match.group(1)) if match else None
 
 
 def render_result_rows(
@@ -279,6 +314,14 @@ def render_result_rows(
 ) -> None:
     """Render result rows, optionally hiding human PLAN rows and coloring terminal output."""
     use_color = force_color or output.isatty()
+    if not use_color:
+        for row in rows:
+            if hide_plan and row.startswith("PLAN "):
+                continue
+            output.write(row)
+        output.flush()
+        return
+
     console = _Console(
         file=output,
         force_terminal=use_color,
@@ -287,14 +330,35 @@ def render_result_rows(
         markup=False,
         no_color=not use_color,
     )
+    legend_lines: list[str] | None = None
+
+    def flush_legend() -> None:
+        """Render one accumulated plain legend section as a titled Rich panel."""
+        nonlocal legend_lines
+        if legend_lines is None:
+            return
+        body = "\n".join(line.rstrip("\r\n") for line in legend_lines[1:-1])
+        console.print(_Panel(body, title="Legend", subtitle="End legend", border_style="blue"))
+        legend_lines = None
+
     for row in rows:
         if hide_plan and row.startswith("PLAN "):
+            continue
+        stripped = row.rstrip("\r\n")
+        if legend_lines is not None:
+            legend_lines.append(row)
+            if stripped == "END LEGEND":
+                flush_legend()
+            continue
+        if stripped == "LEGEND":
+            legend_lines = [row]
             continue
         arm = _result_arm(row) if use_color else None
         if arm is None:
             output.write(row)
             continue
         console.print(row.rstrip("\n"), style=_ARM_ROW_STYLES[arm], end="\n")
+    flush_legend()
     output.flush()
 
 
@@ -311,8 +375,15 @@ def deterministic_arm_order(
     repetition: int,
     *,
     reasoning_effort: str = "",
+    task_ordinal: int | None = None,
 ) -> tuple[str, ...]:
-    """Return a revision-bound ordering over the Codex integration arms only."""
+    """Return a revision-bound, position-counterbalanced Codex arm ordering.
+
+    The coordinate remains bound to its experiment/model/effort identity, while
+    the locked task ordinal—not a per-task hash—selects one of six arm
+    permutations. Across the 55-task suite, every treatment therefore occupies
+    each ordinal 18 or 19 times.
+    """
     if repetition < 1:
         raise ValueError("repetition must be at least 1")
     coordinates = (
@@ -325,12 +396,29 @@ def deterministic_arm_order(
     )
     if any(not coordinate for coordinate in coordinates):
         raise ValueError("arm-order coordinates must be non-empty")
+    ordinal = _locked_task_ordinal(task_id) if task_ordinal is None else task_ordinal
+    if ordinal < 0:
+        raise ValueError("task ordinal must be non-negative")
+    phase_payload = "|".join(coordinates[:4]).encode("utf-8")
+    phase = int.from_bytes(hashlib.sha256(phase_payload).digest()[:1], "big") % len(_COUNTERBALANCED_ARM_ORDERS)
+    return _COUNTERBALANCED_ARM_ORDERS[(ordinal + repetition - 1 + phase) % len(_COUNTERBALANCED_ARM_ORDERS)]
 
-    def arm_digest(arm: str) -> bytes:
-        payload = "|".join((*coordinates, arm)).encode("utf-8")
-        return hashlib.sha256(payload).digest()
 
-    return tuple(sorted(CODEX_STRUCTURAL_ARMS, key=arm_digest))
+def _locked_task_ordinal(task_id: str, manifest_path: Path = PARITY_MANIFEST_PATH) -> int:
+    """Return ``task_id``'s unique ordinal from the manifest's locked execution order."""
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        task_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("locked structural task order is unavailable") from exc
+    if not isinstance(task_ids, list) or not all(isinstance(item, str) and item for item in task_ids):
+        raise ValueError("locked structural task order is malformed")
+    if len(task_ids) != len(set(task_ids)):
+        raise ValueError("locked structural task order contains duplicate task IDs")
+    try:
+        return task_ids.index(task_id)
+    except ValueError as exc:
+        raise ValueError(f"task {task_id!r} is absent from the locked structural task order") from exc
 
 
 def _arm_contract_hash(arm: str) -> str:
@@ -346,6 +434,8 @@ def _manifest_arm_order(
     task_id: str,
     repetition: int,
     reasoning_effort: str,
+    *,
+    task_ordinal: int | None = None,
 ) -> tuple[str, ...]:
     """Read the manifest order only when it names the current Codex arm contract exactly."""
     arms = deterministic_arm_order(
@@ -355,6 +445,7 @@ def _manifest_arm_order(
         task_id,
         repetition,
         reasoning_effort=reasoning_effort,
+        task_ordinal=task_ordinal,
     )
     if set(arms) != set(CODEX_STRUCTURAL_ARMS) or len(arms) != len(CODEX_STRUCTURAL_ARMS):
         raise ValueError("manifest arm ordering does not match the current Codex A/B/C contract")
@@ -637,29 +728,28 @@ def _has_unquoted_comment(command: str) -> bool:
 def _canonical_query_arguments(command: str) -> list[str] | None:
     """Return query arguments only for the dedicated canonical launcher command."""
     normalized = _unwrap_native_command(command)
-    if normalized is None or re.match(r'^\s*"\$CODEMAP_BIN"(?:[ \t]+)', normalized) is None:
+    if normalized is None or re.match(r'^\s*"\$\{?CODEMAP_BIN\}?"(?:[ \t]+)', normalized) is None:
         return None
     if _has_unquoted_comment(normalized):
         return None
     tokens = _native_item_tokens(command)
     if (
         tokens is None
-        or len(tokens) < 5
-        or tokens[:3] != ["$CODEMAP_BIN", "query", "--compact"]
+        or len(tokens) < 4
+        or tokens[0] not in {"$CODEMAP_BIN", "${CODEMAP_BIN}"}
+        or tokens[1:3] != ["query", "--compact"]
         or any("$" in token for token in tokens[3:])
     ):
         return None
-    return tokens[3:]
+    arguments = tokens[3:]
+    if arguments[0] == "help" or arguments[0].startswith("-"):
+        return None
+    return arguments
 
 
 def _records_compact_query_attempt(command: str) -> bool:
     """Return whether a native item records a compact-query attempt for C ordering."""
-    normalized = _unwrap_native_command(command)
-    return (
-        normalized is not None
-        and re.search(r'(?:^|[;&|][ \t]*)"\$(?:CODEMAP_BIN|codemap_bin)"[ \t]+query[ \t]+--compact\b', normalized)
-        is not None
-    )
+    return _canonical_query_arguments(command) is not None
 
 
 def _is_codemap_command(command: str, *, launcher_path: Path | None = None) -> bool:
@@ -2027,7 +2117,7 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
     ]
     if len(matching_suites) != 1:
         raise ValueError("ordered task IDs do not match exactly one locked manifest suite")
-    for task in raw_tasks:
+    for task_ordinal, task in enumerate(raw_tasks):
         row = manifest_rows.get(task["id"])
         if row is None or task["id"] not in policies:
             raise ValueError(f"no locked task policy for {task['id']!r}")
@@ -2038,7 +2128,7 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
     suite_hash = semantic_suite_hash(raw_tasks)
     raw_hash = hashlib.sha256(tasks_path.read_bytes()).hexdigest()
     loaded: list[dict[str, Any]] = []
-    for task in raw_tasks:
+    for task_ordinal, task in enumerate(raw_tasks):
         policy: TaskPolicy = policies[task["id"]]
         if policy.experiment_revision != experiment_revision:
             raise ValueError(f"task policy revision mismatch for {task['id']!r}")
@@ -2049,6 +2139,7 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
             "prompt_hash": prompt_hash(task),
             "suite_hash": suite_hash,
             "suite_raw_hash": raw_hash,
+            "task_ordinal": task_ordinal,
             "oracle_class": policy.oracle_class,
             "headline_eligible_v1": policy.headline_eligible_v1,
             "scoreable": policy.scoreable,
@@ -2090,6 +2181,8 @@ class CodexRun:
     correct: bool = False
     input_tokens: int = 0
     cached_input_tokens: int = 0
+    fresh_input_tokens: int | None = None
+    token_accounting_inconsistent: bool = False
     output_tokens: int = 0
     reasoning_output_tokens: int = 0
     command_calls: int = 0
@@ -2106,6 +2199,7 @@ class CodexRun:
     codemap_errors: int = 0
     fallback_calls: int = 0
     compliance: bool | None = None
+    treatment_adherence: bool = False
     codemap_delivery: str = "none"
     incomplete: bool = False
     extraction_failed: bool = False
@@ -2122,6 +2216,7 @@ class CodexRun:
     tool_result_tokens: int | None = None
     native_attempt_events: list[list[dict[str, Any]]] = field(default_factory=list)
     retry_count: int = 0
+    execution_index: int = -1
     cell_wall_clock_limit_s: float = PARITY_TIMEOUT_SECONDS
     run_wall_clock_limit_s: float | None = None
     turn_budget_enforced: bool = False
@@ -2136,6 +2231,29 @@ def _arm_compliance(arm: str, evidence: CodexParseResult | CodexRun) -> bool | N
     if arm == "A_plain":
         return None
     raise ValueError(f"unknown benchmark arm {arm!r}")
+
+
+def _pooling_ineligibility_reasons(run: CodexRun) -> tuple[str, ...]:
+    """Return run-level admission failures that forbid canonical pooling.
+
+    Unscoreable diagnostic cells are intentionally absent: they are planned
+    exclusions, unlike incomplete, contaminated, malformed-token, and
+    required-use-invalid results.
+    """
+    reasons: list[str] = []
+    if not run.success:
+        reasons.append("unsuccessful")
+    if run.incomplete:
+        reasons.append("incomplete")
+    if run.extraction_failed:
+        reasons.append("extraction_failed")
+    if run.contaminated:
+        reasons.append("contaminated")
+    if run.token_accounting_inconsistent:
+        reasons.append("token_accounting_inconsistent")
+    if run.arm in {"B_direct_required", "C_skill_required"} and run.compliance is not True:
+        reasons.append("required_use_missing")
+    return tuple(reasons)
 
 
 @lru_cache(maxsize=1)
@@ -2342,9 +2460,7 @@ class CodexRunner:
         task_id = task.get("id")
         if not isinstance(task_id, str) or not task_id:
             raise ValueError("task requires a non-empty id")
-        prompt = task.get("prompt")
-        if not isinstance(prompt, str):
-            raise ValueError("task prompt must be a string")
+        prompt = materialize_task_prompt(_raw_task(task))
         envelope = _arm_envelope(arm)
         command_prompt = envelope + "\n\n" + prompt
         metadata = task.get(_PROVENANCE_KEY, {})
@@ -2494,6 +2610,13 @@ class CodexRunner:
         elif arm == "C_skill_required" and run.compliance:
             run.codemap_delivery = "installed_skill"
         run.contaminated = bool(postflight_error) or (arm == "A_plain" and run.codemap_calls > 0)
+        run.treatment_adherence = treatment_adherence(
+            arm,
+            codemap_use_compliance=run.compliance,
+            contaminated=run.contaminated,
+        )
+        run.token_accounting_inconsistent = token_accounting_inconsistent(run.input_tokens, run.cached_input_tokens)
+        run.fresh_input_tokens = fresh_input_tokens(run.input_tokens, run.cached_input_tokens)
         if postflight_error:
             run.incomplete = True
             run.error = f"runtime contamination: {postflight_error}"
@@ -2507,7 +2630,7 @@ class CodexRunner:
             run.quality_score = evaluation.quality_score
             run.quality_components = evaluation.components
             run.correct = evaluation.correct
-            run.extraction_failed = not evaluation.scored
+            run.extraction_failed = evaluation.extraction_failed
         return run
 
     def _subprocess(
@@ -2572,10 +2695,44 @@ def _arm_envelope(arm: str) -> str:
     raise ValueError(f"unknown benchmark arm {arm!r}")
 
 
-def _append_run(output_path: Path, run: CodexRun) -> None:
+def _append_run(output_path: Path, run: CodexRun, *, execution_index: int) -> None:
     """Append one completed cell so later failures cannot erase smoke evidence."""
+    if execution_index < 0:
+        raise ValueError("execution_index must be non-negative")
+    run.execution_index = execution_index
     with output_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(asdict(run), sort_keys=True) + "\n")
+
+
+def _canonical_telemetry_path(output_path: Path) -> Path:
+    """Return the derived canonical-order sidecar path for raw telemetry."""
+    return output_path.with_name("telemetry-canonical.jsonl")
+
+
+def _write_canonical_telemetry(
+    output_path: Path,
+    canonical_path: Path,
+    *,
+    task_order: tuple[str, ...],
+) -> str:
+    """Atomically publish a canonical sidecar without rewriting raw execution evidence."""
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line]
+    canonical_rows = canonical_result_rows(
+        rows,
+        task_order=task_order,
+        arm_order=CODEX_STRUCTURAL_ARMS,
+    )
+    serialized = "".join(json.dumps(row, sort_keys=True) + "\n" for row in canonical_rows).encode("utf-8")
+    with tempfile.NamedTemporaryFile(
+        dir=canonical_path.parent, prefix=f".{canonical_path.name}.", delete=False
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(serialized)
+    try:
+        os.replace(temporary, canonical_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return hashlib.sha256(serialized).hexdigest()
 
 
 def _utc_now() -> str:
@@ -2632,6 +2789,7 @@ def _initial_run_metadata(
             "extraction_failed": 0,
             "contaminated": 0,
             "compliance_failed": 0,
+            "token_accounting_inconsistent": 0,
         },
         "last_persisted_coordinate": None,
         "error": None,
@@ -2674,6 +2832,10 @@ def _initial_run_metadata(
         },
         "artifacts": {
             "telemetry_jsonl": str(output_path.resolve()),
+            "telemetry_canonical_jsonl": str(_canonical_telemetry_path(output_path).resolve()),
+            "canonical_telemetry_status": "not_written",
+            "canonical_telemetry_pooling_eligible": False,
+            "canonical_telemetry_pooling_ineligibility_reasons": [],
             "run_metadata": str(metadata_path.resolve()),
         },
     }
@@ -2728,6 +2890,9 @@ def main(
             raise FileExistsError(output_path)
         if metadata_path.exists():
             raise FileExistsError(metadata_path)
+        canonical_path = _canonical_telemetry_path(output_path)
+        if canonical_path.exists():
+            raise FileExistsError(canonical_path)
         if max_wall_clock_seconds is None:
             raise ValueError("non-dry Codex runs require positive --max-wall-clock-seconds")
         _validate_execution_manifest(manifest_path)
@@ -2745,7 +2910,7 @@ def main(
         manifest_path=manifest_path,
         auth_source=auth_source,
     )
-    print(_OUTPUT_LEGEND)
+    render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
     if dry_run:
         for selected in ARMS if arm == "all" else (arm,):
             evidence = runner.probe_arm(selected)
@@ -2768,6 +2933,12 @@ def main(
                 task["id"],
                 repetition,
                 reasoning_effort,
+                task_ordinal=(
+                    int(task[_PROVENANCE_KEY]["task_ordinal"])
+                    if isinstance(task.get(_PROVENANCE_KEY), Mapping)
+                    and type(task[_PROVENANCE_KEY].get("task_ordinal")) is int
+                    else None
+                ),
             )
             if arm == "all"
             else (arm,)
@@ -2797,17 +2968,21 @@ def main(
         max_wall_clock_seconds=max_wall_clock_seconds,
         auth_provisioned=auth_source is not None,
     )
+    canonical_path = _canonical_telemetry_path(output_path)
+    task_order = tuple(str(task["id"]) for task in tasks)
     _write_run_metadata(metadata_path, metadata)
     run_deadline = time.monotonic() + max_wall_clock_seconds
+    pending_result_rows: list[tuple[str, str]] = []
     try:
         for task in tasks:
             for repetition in range(1, repetitions + 1):
+                pending_result_rows = []
                 for selected in task_arms[(task["id"], repetition)]:
                     if time.monotonic() >= run_deadline:
                         raise TimeoutError("complete-run wall-clock limit exhausted before next cell")
                     run = runner.run(task, selected, repetition=repetition, deadline=run_deadline)
                     run.run_wall_clock_limit_s = max_wall_clock_seconds
-                    _append_run(output_path, run)
+                    _append_run(output_path, run, execution_index=int(metadata["persisted_cells"]))
                     metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
                     outcomes = metadata["cell_outcomes"]
                     outcomes["successful" if run.success else "unsuccessful"] += 1
@@ -2820,44 +2995,75 @@ def main(
                             "compliance_failed",
                             run.arm in {"B_direct_required", "C_skill_required"} and not run.compliance,
                         ),
+                        ("token_accounting_inconsistent", run.token_accounting_inconsistent),
                     ):
                         if failed:
                             outcomes[outcome] += 1
+                    pooling_reasons = metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"]
+                    for reason in _pooling_ineligibility_reasons(run):
+                        if reason not in pooling_reasons:
+                            pooling_reasons.append(reason)
                     metadata["last_persisted_coordinate"] = {
                         "task_id": task["id"],
                         "repetition": repetition,
                         "arm": selected,
                     }
+                    metadata["artifacts"]["canonical_telemetry_sha256"] = _write_canonical_telemetry(
+                        output_path,
+                        canonical_path,
+                        task_order=task_order,
+                    )
+                    metadata["artifacts"]["canonical_telemetry_status"] = "partial"
                     _write_run_metadata(metadata_path, metadata)
                     status = "✓" if run.success else "✗"
                     quality = f"{run.quality_score:.3f}" if run.quality_score is not None else "?"
-                    _print_arm_row(
-                        _format_result_row(
-                            status=status,
-                            task_id=task["id"],
-                            repetition=repetition,
-                            arm=selected,
-                            input_tokens=run.input_tokens,
-                            output_tokens=run.output_tokens,
-                            elapsed_s=run.elapsed_s,
-                            quality=quality,
-                            compliance=run.compliance,
-                        ),
-                        selected,
+                    pending_result_rows.append(
+                        (
+                            selected,
+                            _format_result_row(
+                                status=status,
+                                task_id=task["id"],
+                                repetition=repetition,
+                                arm=selected,
+                                input_tokens=run.input_tokens,
+                                cached_input_tokens=run.cached_input_tokens,
+                                fresh_tokens=run.fresh_input_tokens,
+                                output_tokens=run.output_tokens,
+                                elapsed_s=run.elapsed_s,
+                                quality=quality,
+                                adherence=run.treatment_adherence,
+                                codemap_used=run.codemap_calls > 0,
+                            ),
+                        )
                     )
                     if time.monotonic() >= run_deadline:
                         raise TimeoutError("complete-run wall-clock limit exhausted after persisted cell")
+                _print_result_block(pending_result_rows)
+                pending_result_rows = []
     except BaseException as exc:
+        if pending_result_rows:
+            _print_result_block(pending_result_rows)
+            pending_result_rows = []
         metadata["status"] = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
         metadata["completed_at"] = _utc_now()
         metadata["error"] = {"type": type(exc).__name__, "message": str(exc)[:1000]}
         metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
+        pooling_reasons = metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"]
+        if "run_not_completed" not in pooling_reasons:
+            pooling_reasons.append("run_not_completed")
+        if canonical_path.exists():
+            metadata["artifacts"]["canonical_telemetry_status"] = "partial"
+            metadata["artifacts"]["canonical_telemetry_pooling_eligible"] = False
         _write_run_metadata(metadata_path, metadata)
         print(f"SUMMARY\tstatus={metadata['status']}\tpersisted_cells={metadata['persisted_cells']}")
         raise
     metadata["status"] = "completed"
     metadata["completed_at"] = _utc_now()
     metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    metadata["artifacts"]["canonical_telemetry_status"] = "complete"
+    metadata["artifacts"]["canonical_telemetry_pooling_eligible"] = not metadata["artifacts"][
+        "canonical_telemetry_pooling_ineligibility_reasons"
+    ]
     _write_run_metadata(metadata_path, metadata)
     print(
         f"SUMMARY\tstatus=completed\tpersisted_cells={metadata['persisted_cells']}"

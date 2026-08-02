@@ -1,4 +1,5 @@
 {
+  "experiment_revision": "provider-parity-shared-methodology-2026-08-02",
   "codex_permission_profiles": {
     "cli_min_version": "0.138.0",
     "command_contract": "canonical Codex cells omit --sandbox because an explicit legacy sandbox mode disables permission profiles",
@@ -166,12 +167,12 @@
     "artifact_sha256": {
       "claude_query_skill": "5a5a528c3f50395289fbbf38b9579612a1ca74bd09d9bf7b3a119d47ce63482f",
       "codemap_graph": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
-      "codemap_query": "96179bb2c31dff1944d10d6825ae48707d25b081f695681b65235aef81884798",
-      "codex_query_skill": "41c868a74ac342a278c8ae66182acc1e739f857262b17977301ce4ba4e523916",
-      "provider_parity_contracts": "fdd5c08ee9698053c9b32b6a2d6423888c637ef2f9bf1fc1a6c204405de6edb4",
-      "run_all": "a95b9ad864e1d0b23da85ff6dba0b51d9bb4a8ac6083bb07fca92b05567e55fd",
-      "run_claude_structural": "2e13119ce51a6dac480152b6f2a01ed08b011237649fcc26795b854647c7f966",
-      "run_codex_structural": "2c5b29781e5d69d92de084c77612d78acccfd21533499c22a1c614569f922c97"
+      "codemap_query": "f117fb05f775f106cd9a07dfbe33b93084f9df571759a74734711001e7d1c3f5",
+      "codex_query_skill": "3dff7af5af9872c9bc5f48799d599ae108eea9a63d4273844dfe093671077444",
+      "provider_parity_contracts": "a6d5d753b48ab66d6a46bf4ae2bb683a53cf744463cc59721753d1632ef38b3d",
+      "run_all": "19e781f5214627aaa49f11d931d8714e902853a8dfd9e6bca77388d9c5592d36",
+      "run_claude_structural": "52eb92b299de3ca2c890e767af6c3e09e774646a78aac026c79e66742deb055e",
+      "run_codex_structural": "2a338ba9aa7f34079a43a33c0e53007f4be116fea17d6a49672cece42ce6ecbd"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -327,7 +328,7 @@
         "BA-16"
       ],
       "path": "benchmarks/suites/tasks-agentic.json",
-      "raw_sha256": "f40a24b178ee5ab2043b98e3523fffb93431e18bb6ae6ad317468ca95ad85b4b",
+      "raw_sha256": "97e762235b57cd819ca5710052ab34426f96141c50b65717e58467a08dc503e9",
       "root_shape": "object_with_tasks",
       "task_count": 16,
       "tasks": [
@@ -703,7 +704,7 @@
         "MB-05"
       ],
       "path": "benchmarks/suites/tasks-bench.json",
-      "raw_sha256": "be37d7caaf506df26ef9dec872f9434294e93f1efb80b98b109cc2542bf3d16e",
+      "raw_sha256": "af7ce4c414269b6dde87278a97b3db7e0f17a02cb70db8ae1f4df042d8318995",
       "root_shape": "object_with_tasks",
       "task_count": 60,
       "tasks": [
@@ -912,7 +913,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "0feb213bc9607a9dfc1de7c69d54e721e154629b17848345f4330a2c6f90cd1f",
+          "prompt_sha256": "cc24038405a8e9320fc0df77cb8b52dfc6c6e3fe0b43305b30c319392b91d375",
           "providers": [
             "claude",
             "codex"
@@ -931,7 +932,7 @@
           "id": "RV-02",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "36a41032550d6c442fd57a2c16a951dfade8d65e39096ab7411fc35f16883c53",
+          "prompt_sha256": "6aa12a25d2df07e1cf50ba0e1a869962e336ebc326cbd80232c39ccba47a932d",
           "providers": [
             "claude",
             "codex"
@@ -950,7 +951,7 @@
           "id": "RV-03",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "41cfba5a5d5316f6809420d76982d51ab5a01e52808eb160d3d810f366ff3a5d",
+          "prompt_sha256": "f4c614b03de1a8818da4438c4bd43893b1a86ec35588e25d217fc1787a7d8e68",
           "providers": [
             "claude",
             "codex"
@@ -969,7 +970,7 @@
           "id": "RV-04",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "51b14e5613988a749fb227f1af711732e4cae3333fb44abbb41d531864013d37",
+          "prompt_sha256": "4c6832691a39a128bdde709c737704f372be7299d3088232c0d1858172ded703",
           "providers": [
             "claude",
             "codex"
@@ -980,7 +981,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "b5f370e566e5c6b2c3429249d603f164470d507bd64c1a721780d04898321110",
+          "canonical_task_sha256": "470e5ecc68847dc54aa458394977964cabd0cb3ebe5547489dabf6a116c23ba4",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "review_assistance",
@@ -989,7 +990,7 @@
           "oracle_class": "independent",
           "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
           "profiles": [],
-          "prompt_sha256": "e5915a2448c25abf01ea5c3d1bfa7d27559a0e0228169f6b681733740b06017a",
+          "prompt_sha256": "fd9a494bcd06d2a8feae24d10af044c171b8559d71163e670bda4f326e5cb42d",
           "providers": [
             "claude",
             "codex"
@@ -1000,7 +1001,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "6008a818b634ee4e1742702f08afb9437a9b151ce911a7d1d27482378a387f1a",
+          "canonical_task_sha256": "11bfebdacc89839616f952d3bebc6de3c672f0bab37fad167b73da34030f6002",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1010,7 +1011,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "460c73b667b13ffc1f3ccd7a18ef217c5b6737e49bae924c74ee62621119b31d",
+          "prompt_sha256": "1533250b66ceb4f5b953b7f69287adfac8520786de781e74fa6d77ff3962f8b8",
           "providers": [
             "claude",
             "codex"
@@ -1021,7 +1022,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "db5ca1ff988e57b60cfab85cb98dc8106a0567e2f9d071e2e3477a58078d1e79",
+          "canonical_task_sha256": "cd8a5cf9abbdeaad81b9066b85aaa903ac28e5ffd650a38cd95fb987f3ba0a3a",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1030,7 +1031,7 @@
           "oracle_class": "independent",
           "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
           "profiles": [],
-          "prompt_sha256": "7ebb763804d6c72f9c8e6a643330b02689d5e22a857692775e0dda682a28e198",
+          "prompt_sha256": "ba13f0dcb81decfb3752f752eb113bed7a740da9b17e3c801032e21722aa0e07",
           "providers": [
             "claude",
             "codex"
@@ -1041,7 +1042,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "2358bba3d73aa730f8ce7d04dc72fbae3f5206d3b319dc4a9927fca6ac92d03a",
+          "canonical_task_sha256": "6323e475b1ef80856071e0ebb6e5b33da69535a8c7ed3a62b748d4adba713568",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1049,7 +1050,7 @@
           "id": "CQ-03",
           "oracle_class": "self_consistency",
           "profiles": [],
-          "prompt_sha256": "6d82c938a7bac4b201363d6bea5f4ee3f40abcff496a7edf0af4aa44a3e58e1b",
+          "prompt_sha256": "44fd3f0949f2210a4cc4db29c0c26c8fa09640d3b4834a6902c26930bde279fe",
           "providers": [
             "claude",
             "codex"
@@ -2372,7 +2373,7 @@
         "PT-05"
       ],
       "path": "benchmarks/suites/tasks-patch.json",
-      "raw_sha256": "b6f6eb45d86024d47f08e51679efa2e9f704a4f34e17a86bc423c5afa5ddb05b",
+      "raw_sha256": "5f1589fe0ce8ead2756ca74c0012d2dfa8c08464d8fa1b17211d98d3b6a288e0",
       "root_shape": "object_with_tasks",
       "task_count": 5,
       "tasks": [

@@ -10,6 +10,7 @@ import hashlib
 import inspect
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,20 @@ from benchmarks import provider_parity_contracts as core
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
-MANIFEST_PATH = BENCHMARKS_DIR / "results" / "manifests" / "provider-parity-v1.json"
+MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
+HISTORICAL_MANIFEST_DIR = BENCHMARKS_DIR / "results" / "manifests"
 SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-bench.json"
 EXPERIMENT_REVISION = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))["experiment_revision"]
+
+
+def _historical_manifest(name: str) -> Path:
+    """Return an opt-in archived manifest without making current tests depend on it."""
+    if os.environ.get("RUN_HISTORICAL_ARCHIVE_TESTS") != "1":
+        pytest.skip("historical archive checks require RUN_HISTORICAL_ARCHIVE_TESTS=1")
+    path = HISTORICAL_MANIFEST_DIR / name
+    if not path.is_file():
+        pytest.skip(f"historical archive is unavailable: {path}")
+    return path
 
 
 def _record(**overrides: Any) -> Any:
@@ -35,6 +47,7 @@ def _record(**overrides: Any) -> Any:
         "arm": "A_plain",
         "input_tokens": 100,
         "quality_score": 0.6,
+        "treatment_adherence": True,
     }
     values.update(overrides)
     return core.ResultRecord(**values)
@@ -64,6 +77,12 @@ def _manifest_task(task_id: str) -> dict[str, Any]:
 
 class TestTaskSuiteLoading:
     """Raw task loading must not silently apply runner-specific normalization."""
+
+    def test_contract_tests_bind_tracked_methodology_manifest(self) -> None:
+        """Current contract assertions use the tracked provider-neutral methodology lock."""
+        assert MANIFEST_PATH == BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
+        assert MANIFEST_PATH.is_file()
+        assert "results" not in MANIFEST_PATH.parts
 
     @pytest.mark.parametrize(
         ("payload", "expected"),
@@ -121,10 +140,10 @@ class TestTaskSuiteLoading:
 
 
 class TestCanonicalTaskIdentity:
-    """Task and prompt identity must match the approved B0 manifest byte for byte."""
+    """Task and prompt identity must match the tracked methodology byte for byte."""
 
     def test_canonical_task_hash_and_prompt_hash_match_locked_manifest(self) -> None:
-        """FN-02 has the manifest's raw-object hash and exact UTF-8 prompt hash."""
+        """FN-02 has the manifest's raw-object hash and exact delivered prompt hash."""
         suite = core.load_task_suite(SUITE_PATH)
         task = next(task for task in suite if task["id"] == "FN-02")
         locked = _manifest_task("FN-02")
@@ -133,7 +152,7 @@ class TestCanonicalTaskIdentity:
         assert core.canonical_task_bytes(task) == expected_bytes
         assert core.canonical_task_hash(task) == locked["canonical_task_sha256"]
         assert core.prompt_hash(task) == locked["prompt_sha256"]
-        assert core.prompt_hash(task) == hashlib.sha256(task["prompt"].encode("utf-8")).hexdigest()
+        assert core.prompt_hash(task) == hashlib.sha256(core.materialize_task_prompt(task).encode("utf-8")).hexdigest()
 
     def test_canonical_task_hash_includes_raw_fields_without_normalization(self) -> None:
         """Adding a raw field changes identity, preventing inferred-field substitution."""
@@ -164,18 +183,29 @@ class TestArmContracts:
         assert core.PARITY_TIMEOUT_SECONDS == 600
 
     def test_arm_contracts_match_manifest_and_are_immutable(self) -> None:
-        """The three semantic arm contracts retain their approved exact hashes."""
+        """The current methodology names the same immutable Claude arm contracts."""
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
-        assert set(core.ARM_CONTRACTS) == {"A_plain", "B_auto", "C_required"}
-        for arm, expected in manifest["arms"].items():
-            actual = core.ARM_CONTRACTS[arm]
-            assert actual["contract"] == expected["contract"]
-            assert actual["contract_sha256"] == expected["contract_sha256"]
-            assert "prompt" not in actual
+        assert set(core.ARM_CONTRACTS) == set(manifest["preregistered_cells"]["arms"])
+        for expected in core.ARM_CONTRACTS.values():
+            assert expected["contract_sha256"] == hashlib.sha256(expected["contract"].encode("utf-8")).hexdigest()
 
         with pytest.raises(TypeError):
             core.ARM_CONTRACTS["A_plain"]["contract"] = "changed"
+
+    def test_comparison_arm_registry_extends_claude_without_changing_its_lock(self) -> None:
+        """Codex comparisons add direct/Skill arms without broadening Claude's arm contract."""
+        assert core.COMPARISON_ARMS_BY_PROVIDER == {
+            "claude": frozenset({"A_plain", "B_auto", "C_required"}),
+            "codex": frozenset({"A_plain", "B_direct_required", "C_skill_required"}),
+        }
+        assert core.COMPARISON_ARM_NAMES == frozenset(
+            {"A_plain", "B_auto", "C_required", "B_direct_required", "C_skill_required"}
+        )
+        assert set(core.ARM_CONTRACTS) == {"A_plain", "B_auto", "C_required"}
+
+        with pytest.raises(TypeError):
+            core.COMPARISON_ARMS_BY_PROVIDER["codex"] = frozenset()
 
     def test_arm_contract_lookup_does_not_mutate_task_prompt(self) -> None:
         """Arm metadata remains separate so every provider receives identical task bytes."""
@@ -192,24 +222,24 @@ class TestArmContracts:
     def test_arm_order_is_revision_bound_and_rejects_invalid_coordinates(self) -> None:
         """One block has a stable complete order that changes with experiment identity."""
         runtime_revision_order = core.deterministic_arm_order(
-            "codemap-provider-parity-v1-b0-r6",
+            EXPERIMENT_REVISION,
             "codex",
             "gpt-5.6-luna",
             "FN-02",
             1,
         )
 
-        assert runtime_revision_order == ("C_required", "A_plain", "B_auto")
+        assert runtime_revision_order == ("A_plain", "C_required", "B_auto")
         assert set(runtime_revision_order) == set(core.ARM_CONTRACTS)
         assert runtime_revision_order != core.deterministic_arm_order(
-            "codemap-provider-parity-v1-b0-r5",
+            "provider-parity-shared-methodology-2026-08-01",
             "codex",
             "gpt-5.6-luna",
             "FN-02",
             1,
         )
         with pytest.raises(ValueError, match="repetition"):
-            core.deterministic_arm_order("codemap-provider-parity-v1-b0-r4", "codex", "model", "FN-02", 0)
+            core.deterministic_arm_order("provider-parity-shared-methodology-2026-08-01", "codex", "model", "FN-02", 0)
 
     def test_arm_order_includes_reasoning_effort_in_the_model_stratum(self) -> None:
         """Effort drift must change the randomized block identity."""
@@ -278,11 +308,11 @@ class TestArmContracts:
         """The suite must expose named structural-capability strata."""
         assert core.capability_strata(task) == expected
 
-    def test_profile_revision_changes_only_transport_control_not_locked_benchmark_inputs(self) -> None:
-        """The profile relock preserves codemap-provider-parity-v1-b0-r4 input identities."""
-        profile_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r5.json")
+    def test_historical_archive_profile_revision_preserves_locked_benchmark_inputs(self) -> None:
+        """The archived profile relock preserves its predecessor's input identities."""
+        profile_manifest_path = _historical_manifest("provider-parity-v1-b0-r5.json")
         profile_manifest = json.loads(profile_manifest_path.read_text(encoding="utf-8"))
-        base_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r4.json")
+        base_manifest_path = _historical_manifest("provider-parity-v1-b0-r4.json")
         base_manifest = json.loads(base_manifest_path.read_text(encoding="utf-8"))
 
         def locked_identities(manifest: dict[str, Any]) -> list[tuple[str, str, list[tuple[str, str, str]]]]:
@@ -303,11 +333,11 @@ class TestArmContracts:
             assert profile_manifest["arms"][arm]["contract"] == base_manifest["arms"][arm]["contract"]
             assert profile_manifest["arms"][arm]["contract_sha256"] == base_manifest["arms"][arm]["contract_sha256"]
 
-    def test_runtime_revision_changes_only_treatment_runtime_not_locked_benchmark_inputs(self) -> None:
-        """The runtime relock preserves codemap-provider-parity-v1-b0-r5 inputs except runtime."""
-        runtime_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r6.json")
+    def test_historical_archive_runtime_revision_preserves_locked_benchmark_inputs(self) -> None:
+        """The archived runtime relock preserves its predecessor's inputs except runtime."""
+        runtime_manifest_path = _historical_manifest("provider-parity-v1-b0-r6.json")
         runtime_manifest = json.loads(runtime_manifest_path.read_text(encoding="utf-8"))
-        profile_manifest_path = MANIFEST_PATH.with_name("provider-parity-v1-b0-r5.json")
+        profile_manifest_path = _historical_manifest("provider-parity-v1-b0-r5.json")
         profile_manifest = json.loads(profile_manifest_path.read_text(encoding="utf-8"))
 
         def locked_identities(manifest: dict[str, Any]) -> list[tuple[str, str, list[tuple[str, str, str]]]]:
@@ -339,8 +369,7 @@ class TestArmContracts:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         profiles = manifest["codex_permission_profiles"]
 
-        assert manifest["experiment_revision"]
-        assert manifest["status"].endswith("_manifest_review_required_before_paid_smoke")
+        assert manifest["experiment_revision"] == EXPERIMENT_REVISION
         assert profiles["plain"]["extends"] == ":read-only"
         assert profiles["plain"]["write_roots"] == []
         assert profiles["plain"]["filesystem_overrides"]["<locked-index-parent>"] == "deny"
@@ -361,7 +390,7 @@ class TestArmContracts:
 
 
 class TestTaskPolicies:
-    """The B0 manifest is the sole source of headline eligibility policy."""
+    """The tracked methodology manifest is the sole source of headline eligibility policy."""
 
     def test_load_task_policies_matches_every_unique_manifest_task_and_revision(self) -> None:
         """Every manifest row becomes one immutable policy carrying its experiment revision."""
@@ -438,6 +467,20 @@ class TestEvaluatorRegistry:
 class TestResultEligibility:
     """Headline pairing excludes preregistered diagnostic and failed-result classes."""
 
+    def test_result_record_requires_explicit_treatment_adherence(self) -> None:
+        """Pairing cannot infer adherence from the arm name or a permissive default."""
+        with pytest.raises(TypeError, match="treatment_adherence"):
+            core.ResultRecord(
+                revision=EXPERIMENT_REVISION,
+                provider="claude",
+                model="test-model",
+                task_id="FN-02",
+                repetition=1,
+                arm="A_plain",
+                input_tokens=100,
+                quality_score=0.6,
+            )
+
     def test_result_eligibility_requires_explicit_policy_mapping(self) -> None:
         """Eligibility without B0 policy provenance cannot infer a headline result."""
         with pytest.raises(TypeError):
@@ -446,6 +489,52 @@ class TestResultEligibility:
     def test_result_eligibility_accepts_clean_independent_score(self) -> None:
         """A complete independent scoreable result is eligible for paired headline metrics."""
         assert core.result_eligibility(_record(), _synthetic_policies()) is True
+
+    @pytest.mark.parametrize(
+        ("provider", "baseline_arm", "treatment_arm", "invalid_arm"),
+        [
+            pytest.param("claude", "A_plain", "B_auto", "A_plain", id="plain-adherence-false"),
+            pytest.param("claude", "A_plain", "C_required", "C_required", id="claude-required-adherence-false"),
+            pytest.param(
+                "codex", "A_plain", "B_direct_required", "B_direct_required", id="codex-direct-adherence-false"
+            ),
+            pytest.param("codex", "A_plain", "C_skill_required", "C_skill_required", id="codex-skill-adherence-false"),
+        ],
+    )
+    def test_false_treatment_adherence_is_ineligible_and_rejects_pairing(
+        self, provider: str, baseline_arm: str, treatment_arm: str, invalid_arm: str
+    ) -> None:
+        """Every arm needs observed adherence; required-use arms receive no special permissiveness."""
+        records = [
+            _record(provider=provider, arm=baseline_arm, treatment_adherence=baseline_arm != invalid_arm),
+            _record(provider=provider, arm=treatment_arm, treatment_adherence=treatment_arm != invalid_arm),
+        ]
+        invalid_record = next(record for record in records if record.arm == invalid_arm)
+
+        assert core.result_eligibility(invalid_record, _synthetic_policies()) is False
+        with pytest.raises(ValueError, match="ineligible"):
+            core.pair_effects(
+                records,
+                baseline_arm=baseline_arm,
+                treatment_arm=treatment_arm,
+                policies=_synthetic_policies(),
+            )
+
+    def test_pairing_rejects_non_boolean_treatment_adherence(self) -> None:
+        """An untyped telemetry value cannot be interpreted as observed adherence."""
+        records = [
+            _record(arm="A_plain", treatment_adherence=1),
+            _record(arm="B_auto", treatment_adherence=True),
+        ]
+
+        assert core.result_eligibility(records[0], _synthetic_policies()) is False
+        with pytest.raises(ValueError, match="treatment_adherence must be a boolean"):
+            core.pair_effects(
+                records,
+                baseline_arm="A_plain",
+                treatment_arm="B_auto",
+                policies=_synthetic_policies(),
+            )
 
     @pytest.mark.parametrize(
         "overrides",
@@ -479,6 +568,50 @@ class TestResultEligibility:
 class TestPairedEffects:
     """Pair construction is repetition-preserving and block-local."""
 
+    @pytest.mark.parametrize(
+        ("baseline_arm", "treatment_arm"),
+        [
+            pytest.param("B_auto", "B_direct_required", id="claude-auto-vs-codex-direct"),
+            pytest.param("C_required", "C_skill_required", id="claude-required-vs-codex-skill"),
+        ],
+    )
+    def test_pair_effects_rejects_cross_experiment_estimands_without_records(
+        self, baseline_arm: str, treatment_arm: str
+    ) -> None:
+        """Union arm membership cannot authorize an estimand no provider actually ran."""
+        with pytest.raises(ValueError, match="do not coexist"):
+            core.pair_effects(
+                [],
+                baseline_arm=baseline_arm,
+                treatment_arm=treatment_arm,
+                policies=_synthetic_policies(),
+            )
+
+    @pytest.mark.parametrize(
+        ("baseline_arm", "treatment_arm"),
+        [
+            pytest.param("A_plain", "B_direct_required", id="direct-cli-vs-plain"),
+            pytest.param("A_plain", "C_skill_required", id="skill-vs-plain"),
+            pytest.param("B_direct_required", "C_skill_required", id="skill-vs-direct-cli"),
+        ],
+    )
+    def test_pair_effects_accepts_each_codex_estimand(self, baseline_arm: str, treatment_arm: str) -> None:
+        """Codex's direct and Skill interventions remain distinct valid comparisons."""
+        effects = core.pair_effects(
+            [
+                _record(arm=baseline_arm, provider="codex", input_tokens=100, quality_score=0.6),
+                _record(arm=treatment_arm, provider="codex", input_tokens=50, quality_score=0.8),
+            ],
+            baseline_arm=baseline_arm,
+            treatment_arm=treatment_arm,
+            policies=_synthetic_policies(),
+        )
+
+        assert len(effects) == 1
+        assert effects[0].provider == "codex"
+        assert effects[0].baseline_arm == baseline_arm
+        assert effects[0].treatment_arm == treatment_arm
+
     def test_pair_effects_preserves_repetitions_and_computes_effects(self) -> None:
         """Each task repetition produces its own log token ratio and quality delta."""
         records = [
@@ -507,27 +640,94 @@ class TestPairedEffects:
         assert by_repetition[2].quality_delta == pytest.approx(-0.5)
 
     def test_pair_effects_keeps_provider_blocks_separate(self) -> None:
-        """Equal task/repetition coordinates from two providers cannot be pooled together."""
-        records = [
+        """Equivalent coordinates stay in separate provider-valid treatment comparisons."""
+        claude_records = [
             _record(arm="A_plain", provider="claude"),
             _record(arm="B_auto", provider="claude", input_tokens=50, quality_score=0.7),
+        ]
+        codex_records = [
             _record(arm="A_plain", provider="codex"),
-            _record(arm="B_auto", provider="codex", input_tokens=200, quality_score=0.4),
+            _record(arm="B_direct_required", provider="codex", input_tokens=200, quality_score=0.4),
         ]
 
-        effects = core.pair_effects(
-            records,
+        claude_effect = core.pair_effects(
+            claude_records,
             baseline_arm="A_plain",
             treatment_arm="B_auto",
             policies=_synthetic_policies(),
-        )
-        by_provider = {effect.provider: effect for effect in effects}
+        )[0]
+        codex_effect = core.pair_effects(
+            codex_records,
+            baseline_arm="A_plain",
+            treatment_arm="B_direct_required",
+            policies=_synthetic_policies(),
+        )[0]
 
-        assert set(by_provider) == {"claude", "codex"}
-        assert by_provider["claude"].log_input_token_ratio == pytest.approx(math.log(0.5))
-        assert by_provider["claude"].quality_delta == pytest.approx(0.1)
-        assert by_provider["codex"].log_input_token_ratio == pytest.approx(math.log(2.0))
-        assert by_provider["codex"].quality_delta == pytest.approx(-0.2)
+        assert claude_effect.provider == "claude"
+        assert claude_effect.log_input_token_ratio == pytest.approx(math.log(0.5))
+        assert claude_effect.quality_delta == pytest.approx(0.1)
+        assert codex_effect.provider == "codex"
+        assert codex_effect.log_input_token_ratio == pytest.approx(math.log(2.0))
+        assert codex_effect.quality_delta == pytest.approx(-0.2)
+
+    @pytest.mark.parametrize(
+        ("provider", "arm"),
+        [
+            pytest.param("codex", "B_auto", id="codex-cannot-use-claude-auto-arm"),
+            pytest.param("claude", "B_direct_required", id="claude-cannot-use-codex-direct-arm"),
+        ],
+    )
+    def test_pair_effects_rejects_provider_arm_mismatches(self, provider: str, arm: str) -> None:
+        """Union membership must not make another provider's treatment semantics valid."""
+        records = [
+            _record(provider=provider, arm="A_plain"),
+            _record(provider=provider, arm=arm),
+        ]
+
+        with pytest.raises(ValueError, match="not valid for provider"):
+            core.pair_effects(
+                records,
+                baseline_arm="A_plain",
+                treatment_arm=arm,
+                policies=_synthetic_policies(),
+            )
+
+    @pytest.mark.parametrize(
+        ("cached_input_tokens", "token_accounting_inconsistent", "fresh_input_tokens", "message"),
+        [
+            pytest.param(101, False, None, "flag disagrees", id="raw-inconsistency-cannot-be-hidden"),
+            pytest.param(80, True, None, "flag disagrees", id="stale-true-flag-is-rejected"),
+            pytest.param(80, False, 19, "fresh_input_tokens disagrees", id="stale-derived-fresh-is-rejected"),
+            pytest.param(
+                101, True, None, "token accounting is inconsistent", id="explicit-inconsistent-record-is-rejected"
+            ),
+        ],
+    )
+    def test_pair_effects_rejects_inconsistent_token_accounting(
+        self,
+        cached_input_tokens: int,
+        token_accounting_inconsistent: bool,
+        fresh_input_tokens: int | None,
+        message: str,
+    ) -> None:
+        """Raw token counts, the explicit flag, and any derived fresh value must agree."""
+        records = [
+            _record(
+                input_tokens=100,
+                cached_input_tokens=cached_input_tokens,
+                token_accounting_inconsistent=token_accounting_inconsistent,
+                fresh_input_tokens=fresh_input_tokens,
+            ),
+            _record(arm="B_auto", input_tokens=50, cached_input_tokens=0),
+        ]
+
+        with pytest.raises(ValueError, match=message):
+            core.pair_effects(
+                records,
+                baseline_arm="A_plain",
+                treatment_arm="B_auto",
+                policies=_synthetic_policies(),
+            )
 
     @pytest.mark.parametrize(
         "records",

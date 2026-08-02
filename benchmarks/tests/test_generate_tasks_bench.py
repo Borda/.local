@@ -823,6 +823,35 @@ class TestValidateRv:
         assert live_gt is None
         assert "expected_queries" in reason
 
+    @pytest.mark.parametrize(
+        "sub_questions",
+        [
+            pytest.param(
+                [{"id": "sq1", "match": "unknown", "ground_truth": {"count": 1}}],
+                id="unsupported-match",
+            ),
+            pytest.param(
+                [
+                    {"id": "sq1", "match": "integer_extract", "ground_truth": {"count": 1}},
+                    {"id": "sq2", "match": "integer_extract", "ground_truth": {"count": 2}},
+                ],
+                id="ambiguous-multiple-counts",
+            ),
+            pytest.param(["not-an-object"], id="non-object-subquestion"),
+        ],
+    )
+    def test_fails_closed_for_invalid_or_ambiguous_review_subquestions(
+        self, script_gen_bench: Any, tmp_path: Path, sub_questions: list[object]
+    ) -> None:
+        """Generation refuses evaluator contracts that cannot produce one unambiguous answer mapping."""
+        task = self._task(sub_questions)  # type: ignore[arg-type]
+
+        ok, live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt is None
+        assert "review" in reason
+
     def test_passes_when_diagnostic_scan_query_fails(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Keeps independent validation usable when diagnostic scan-query fails.
 
@@ -901,6 +930,37 @@ class TestValidateOss:
                 "top_internal_dep_count": internal,
             },
         }
+
+    def _task_coupled_ranking(self, ranking: list[dict[str, int | str]]) -> dict:
+        """Build a CQ-03-style coupled task with its complete ordered oracle.
+
+        ``coupled`` ranks by ``internal_dep_count``.  The benchmark prompt asks
+        for all five displayed module names and their ``dep_count`` values, so
+        ground truth must retain every row rather than treating rank one as a
+        proxy for the requested ranking.
+        """
+        first = ranking[0]
+        return {
+            "type": "code_quality",
+            "expected_queries": [{"cmd": "coupled", "args": ["--top", str(len(ranking))]}],
+            "ground_truth": {
+                "check": "coupled",
+                "top_module": first["name"],
+                "top_dep_count": first["dep_count"],
+                "top_internal_dep_count": first["internal_dep_count"],
+                "top_modules": ranking,
+            },
+        }
+
+    def _coupled_ranking(self) -> list[dict[str, int | str]]:
+        """Return a five-row oracle with different ranking and display metrics."""
+        return [
+            {"name": "pkg.alpha", "dep_count": 9, "internal_dep_count": 5},
+            {"name": "pkg.bravo", "dep_count": 8, "internal_dep_count": 4},
+            {"name": "pkg.charlie", "dep_count": 7, "internal_dep_count": 3},
+            {"name": "pkg.delta", "dep_count": 6, "internal_dep_count": 2},
+            {"name": "pkg.echo", "dep_count": 5, "internal_dep_count": 1},
+        ]
 
     def _task_xrefs(self, broken_count: int, targets: list[dict]) -> dict:
         """Build a code_quality task with check='xrefs_broken'."""
@@ -1078,6 +1138,60 @@ class TestValidateOss:
 
         assert ok is False
         assert "empty" in reason
+
+    @pytest.mark.parametrize(
+        "live_ranking",
+        [
+            pytest.param(
+                _coupled_ranking(None)[:4],
+                id="missing-fifth-member",
+            ),
+            pytest.param(
+                [
+                    _coupled_ranking(None)[0],
+                    {"name": "pkg.unexpected", "dep_count": 8, "internal_dep_count": 4},
+                    *_coupled_ranking(None)[2:],
+                ],
+                id="wrong-second-member",
+            ),
+            pytest.param(
+                [
+                    _coupled_ranking(None)[0],
+                    _coupled_ranking(None)[2],
+                    _coupled_ranking(None)[1],
+                    *_coupled_ranking(None)[3:],
+                ],
+                id="second-and-third-reordered",
+            ),
+            pytest.param(
+                [
+                    _coupled_ranking(None)[0],
+                    {"name": "pkg.bravo", "dep_count": 8, "internal_dep_count": 99},
+                    *_coupled_ranking(None)[2:],
+                ],
+                id="wrong-internal-dependency-count",
+            ),
+        ],
+    )
+    def test_coupled_rejects_missing_or_misordered_top_five(
+        self, script_gen_bench: Any, tmp_path: Path, live_ranking: list[dict[str, int | str]]
+    ) -> None:
+        """CQ-03 validation rejects every incorrect member of the five-row ranking.
+
+        Prevents a false-green benchmark refresh where rank one still matches
+        but the requested top-five answer is missing, substituted, reordered,
+        or has a stale ``internal_dep_count`` value.
+        """
+        expected = self._coupled_ranking()
+        task = self._task_coupled_ranking(expected)
+        payload = {"coupled": live_ranking}
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+            ok, live_gt, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt is not None
+        assert "top_modules" in reason
 
     def test_xrefs_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Returns (True, ...) when broken cross-reference count and targets match GT.
@@ -1999,7 +2113,7 @@ class TestUncoveredViaAst:
     """Contract: independent AST oracle lists public symbols no test references (C-2 remainder)."""
 
     def test_symbol_with_no_test_reference_is_uncovered(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """A public symbol that no test file calls is reported as uncovered."""
+        """A public symbol absent from every configured test-AST reference is uncovered."""
         (tmp_path / "m.py").write_text("def orphan():\n    pass\n")
         syms, err = script_gen_bench._uncovered_via_ast(tmp_path)
         assert err is None
@@ -2013,6 +2127,25 @@ class TestUncoveredViaAst:
         syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
         assert "used" not in syms
 
+    @pytest.mark.parametrize(
+        "test_expression",
+        [
+            pytest.param("mentioned", id="bare-name-expression"),
+            pytest.param("fixture.mentioned", id="attribute-expression"),
+        ],
+    )
+    def test_every_test_name_and_attribute_reference_counts_as_coverage(
+        self, script_gen_bench: Any, tmp_path: Path, test_expression: str
+    ) -> None:
+        """The broad oracle records references even when they are not call targets."""
+        (tmp_path / "m.py").write_text("def mentioned():\n    pass\n")
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_m.py").write_text(f"def test_it():\n    {test_expression}\n")
+
+        syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
+
+        assert "mentioned" not in syms
+
     def test_mock_patched_symbol_is_covered(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """A symbol referenced only through a patch() string target counts as covered."""
         (tmp_path / "m.py").write_text("def mocked():\n    pass\n")
@@ -2022,6 +2155,18 @@ class TestUncoveredViaAst:
         )
         syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
         assert "mocked" not in syms
+
+    def test_every_patch_string_argument_tail_counts_as_coverage(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """The declared oracle records every string argument to a recognized patch call."""
+        (tmp_path / "m.py").write_text("def first():\n    pass\n\n\ndef second():\n    pass\n")
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_m.py").write_text(
+            "from unittest.mock import patch\n\n\ndef test_it():\n    patch('m.first', 'm.second')\n"
+        )
+
+        syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
+
+        assert syms == set()
 
     def test_private_symbol_excluded(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Private (leading-underscore) symbols are never reported (scan-query public-only rule)."""
@@ -2138,6 +2283,24 @@ class TestUpdateGating:
         stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=True)
         assert status == "UPDATED"
         assert stored["sub_questions"][0]["ground_truth"] == {"count": 5}
+
+    def test_review_refresh_preserves_named_oracle_views(self, script_gen_bench: Any) -> None:
+        """Regeneration cannot erase the AST/static semantic split from a review task."""
+        views = {
+            "independent_ast": {"count": 11, "semantics": "unique symbols"},
+            "codemap_static": {"count": 25, "semantics": "static findings"},
+        }
+        task = {
+            "type": "review_assistance",
+            "ground_truth": {"oracle_views": views},
+            "sub_questions": [{"id": "sq1", "ground_truth": {"count": 1}}],
+        }
+
+        stored, status = script_gen_bench._refresh_task_gt(task, {"sq1": {"count": 11}}, update_from_tool=True)
+
+        assert status == "UPDATED"
+        assert stored["ground_truth"]["oracle_views"] == views
+        assert stored["sub_questions"][0]["ground_truth"] == {"count": 11}
 
 
 class TestMainUnitBehavior:

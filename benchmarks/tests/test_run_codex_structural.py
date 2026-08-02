@@ -113,6 +113,40 @@ def test_deterministic_order_uses_only_current_plain_cli_skill_arms(script_run_c
     assert set(first) == {"A_plain", "B_direct_required", "C_skill_required"}
 
 
+def test_exact_suite_counterbalances_arm_ordinals_at_one_repetition(script_run_codex: Any) -> None:
+    """Each treatment must occupy every ordinal 18 or 19 times across all 55 tasks.
+
+    Prevents a deterministic hash order from making prompt-cache exposure a
+    systematic arm confound while preserving repeatable execution planning.
+    """
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    task_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
+    assert len(task_ids) == 55
+    ordinals_by_arm = {arm: [0, 0, 0] for arm in script_run_codex.CODEX_STRUCTURAL_ARMS}
+
+    for task_id in task_ids:
+        first = script_run_codex._manifest_arm_order(
+            "codex-integration-v1",
+            script_run_codex.PARITY_CODEX_MODEL,
+            task_id,
+            1,
+            script_run_codex.PARITY_CODEX_REASONING_EFFORT,
+        )
+        second = script_run_codex._manifest_arm_order(
+            "codex-integration-v1",
+            script_run_codex.PARITY_CODEX_MODEL,
+            task_id,
+            1,
+            script_run_codex.PARITY_CODEX_REASONING_EFFORT,
+        )
+
+        assert first == second
+        for ordinal, arm in enumerate(first):
+            ordinals_by_arm[arm][ordinal] += 1
+
+    assert all(count in {18, 19} for counts in ordinals_by_arm.values() for count in counts), ordinals_by_arm
+
+
 def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_write(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
@@ -622,6 +656,7 @@ def _completed_stream(
     *,
     output: str = "fixture answer",
     input_tokens: int = 10,
+    cached_input_tokens: int = 0,
     output_tokens: int = 2,
     commands: list[dict[str, Any]] | None = None,
 ) -> str:
@@ -641,7 +676,7 @@ def _completed_stream(
                 "type": "turn.completed",
                 "usage": {
                     "input_tokens": input_tokens,
-                    "cached_input_tokens": 0,
+                    "cached_input_tokens": cached_input_tokens,
                     "output_tokens": output_tokens,
                     "reasoning_output_tokens": 0,
                 },
@@ -746,6 +781,65 @@ def test_arm_call_semantics_are_separate_from_quality(
     assert result.success is expected_success
     assert result.correct is True
     assert result.quality_score == pytest.approx(1.0)
+
+
+def test_runner_persists_cache_over_gross_as_explicit_unscoreable_token_accounting(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Provider-native gross/cache evidence remains raw when fresh-token derivation is impossible."""
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        transport=lambda *_args, **_kwargs: _completed_stream(input_tokens=25, cached_input_tokens=80),
+        evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+    )
+
+    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "A_plain")
+    output_path = tmp_path / "telemetry.jsonl"
+    script_run_codex._append_run(output_path, result, execution_index=0)
+    persisted = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert (result.input_tokens, result.cached_input_tokens, result.fresh_input_tokens) == (25, 80, None)
+    assert result.token_accounting_inconsistent is True
+    assert persisted["token_accounting_inconsistent"] is True
+    assert persisted["fresh_input_tokens"] is None
+
+
+def test_result_rows_show_gross_input_while_telemetry_retains_cache_detail(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Console output avoids cache-derived claims while JSONL retains provider evidence."""
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        transport=lambda *_args, **_kwargs: _completed_stream(input_tokens=120, cached_input_tokens=80),
+        evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+    )
+
+    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "A_plain")
+    output_path = tmp_path / "telemetry.jsonl"
+    script_run_codex._append_run(output_path, result, execution_index=0)
+    persisted = json.loads(output_path.read_text(encoding="utf-8"))
+    row = script_run_codex._format_result_row(
+        status="✓",
+        task_id=result.task_id,
+        repetition=1,
+        arm=result.arm,
+        input_tokens=result.input_tokens,
+        cached_input_tokens=result.cached_input_tokens,
+        fresh_tokens=result.fresh_input_tokens,
+        output_tokens=result.output_tokens,
+        elapsed_s=1.0,
+        quality="1.000",
+        adherence=True,
+        codemap_used=False,
+    )
+
+    assert "in=   120  out=" in row
+    assert "/" not in row
+    assert persisted["input_tokens"] == 120
+    assert persisted["cached_input_tokens"] == 80
+    assert persisted["fresh_input_tokens"] == 40
 
 
 def test_parser_marks_malformed_and_missing_terminal_streams_incomplete(script_run_codex: Any) -> None:
@@ -1592,6 +1686,37 @@ def test_main_rejects_missing_or_existing_output_before_model_execution(
     assert output_path.read_text(encoding="utf-8") == "preserve\n"
 
 
+def test_main_rejects_existing_canonical_telemetry_before_model_execution_or_mutation(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A derived canonical sidecar cannot be replaced by a new paid run."""
+    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
+    output_path = tmp_path / "fresh.jsonl"
+    metadata_path = tmp_path / "fresh-metadata.json"
+    canonical_path = script_run_codex._canonical_telemetry_path(output_path)
+    canonical_path.write_text('{"preserve": true}\n', encoding="utf-8")
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(
+        script_run_codex,
+        "CodexRunner",
+        lambda *_args, **_kwargs: pytest.fail("existing sidecar reached runner construction"),
+    )
+
+    with pytest.raises(FileExistsError, match="telemetry-canonical\\.jsonl"):
+        script_run_codex.main(
+            repo_path=tmp_path,
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks_path=tmp_path / "tasks.json",
+            output_path=output_path,
+            metadata_path=metadata_path,
+            max_wall_clock_seconds=600.0,
+        )
+
+    assert canonical_path.read_text(encoding="utf-8") == '{"preserve": true}\n'
+    assert not output_path.exists()
+    assert not metadata_path.exists()
+
+
 def test_main_requires_positive_complete_run_wall_clock_limit_before_output_reservation(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1807,6 +1932,8 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
     assert metadata["persisted_cells"] == 18
     assert metadata["execution"]["planned_cells"] == 18
     assert metadata["auth_source_recorded"] is False
+    assert metadata["artifacts"]["canonical_telemetry_pooling_eligible"] is True
+    assert metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"] == []
 
 
 def test_main_records_cell_failures_and_continues_after_smoke(
@@ -1860,9 +1987,13 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     assert metadata["status"] == "completed"
     assert metadata["persisted_cells"] == 2
     assert metadata["cell_outcomes"]["compliance_failed"] == 1
+    assert metadata["artifacts"]["canonical_telemetry_pooling_eligible"] is False
+    assert metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"] == ["required_use_missing"]
     stdout = capsys.readouterr().out
     assert stdout.count("quality=    ?") == 2
-    assert stdout.count(script_run_codex._OUTPUT_LEGEND) == 1
+    assert sum(line == "LEGEND" for line in stdout.splitlines()) == 1
+    assert sum(line == "END LEGEND" for line in stdout.splitlines()) == 1
+    assert all(not line.startswith("LEGEND  ") for line in stdout.splitlines())
     assert stdout.count(f"ARTIFACTS  telemetry={output_path}") == 1
     assert stdout.count(str(tmp_path / "admission-metadata.json")) == 1
     assert str(output_path) not in "\n".join(line for line in stdout.splitlines() if line.startswith("RESULT"))
@@ -1940,13 +2071,56 @@ def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run
     """The upfront legend makes every compact terminal field independently interpretable."""
     legend = script_run_codex._OUTPUT_LEGEND
 
-    assert "A=A_plain (no Codemap)" in legend
-    assert "B=B_direct_required (direct Codemap required)" in legend
-    assert "C=C_skill_required (Codemap skill required)" in legend
+    assert legend.startswith("LEGEND\n")
+    assert legend.endswith("END LEGEND")
+    assert all(not line.startswith("LEGEND  ") for line in legend.splitlines())
+    assert "treatments: A_plain=no Codemap, B_direct=direct Codemap required, C_skill=Codemap Skill required" in legend
+    assert "B_direct_required" not in legend
+    assert "C_skill_required" not in legend
     assert "status: ✓ completed, ✗ failed" in legend
     assert "quality: continuous [0,1], ? unscoreable" in legend
-    assert "compliance: ✓ required use observed, ✗ requirement missed, n/a no requirement for A_plain" in legend
+    assert "treatment: ✓ assigned arm followed, ✗ assigned arm not followed" in legend
+    assert "codemap-used: ✓ Codemap call observed; ✗ no Codemap call (expected for A_plain)" in legend
+    assert "or required use missed (B/C)" in legend
+    assert "input tokens: gross total; cached and fresh details remain in telemetry" in legend
     assert "tokens: k=1,000, M=1,000,000" in legend
+
+
+@pytest.mark.parametrize(
+    ("canonical_arm", "display_arm"),
+    [
+        pytest.param("A_plain", "A_plain", id="plain"),
+        pytest.param("B_direct_required", "B_direct", id="direct"),
+        pytest.param("C_skill_required", "C_skill", id="skill"),
+    ],
+)
+def test_human_arm_labels_shorten_only_presentation_names(
+    script_run_codex: Any,
+    canonical_arm: str,
+    display_arm: str,
+) -> None:
+    """PLAN/RESULT rows use short labels while machine arm IDs remain canonical."""
+    plan = script_run_codex._format_plan_row("FN-02", 1, canonical_arm)
+    result = script_run_codex._format_result_row(
+        status="✓",
+        task_id="FN-02",
+        repetition=1,
+        arm=canonical_arm,
+        input_tokens=100,
+        cached_input_tokens=20,
+        fresh_tokens=80,
+        output_tokens=1,
+        elapsed_s=1.0,
+        quality="1.000",
+        adherence=True,
+        codemap_used=canonical_arm != "A_plain",
+    )
+
+    assert display_arm in plan
+    assert display_arm in result
+    if canonical_arm != display_arm:
+        assert canonical_arm not in plan
+        assert canonical_arm not in result
 
 
 @pytest.mark.parametrize(
@@ -2002,6 +2176,26 @@ def test_render_results_force_color_maps_each_arm_to_its_review_color(arm: str, 
     assert completed.stdout.endswith("\x1b[0m\n")
 
 
+def test_render_results_force_color_renders_legend_as_bounded_rich_panel() -> None:
+    """Interactive rendering turns the plain legend block into one titled Rich box."""
+    input_text = (
+        "LEGEND\n"
+        "  treatments: A_plain=no Codemap\n"
+        "  status: ✓ completed, ✗ failed\n"
+        "END LEGEND\n"
+        "RESULT  ✓  FN-02  rep=1  A_plain  quality=1.000\n"
+    )
+
+    completed = _render_result_stream(input_text, "--force-color")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Legend" in completed.stdout
+    assert "End legend" in completed.stdout
+    assert "treatments: A_plain=no Codemap" in completed.stdout
+    assert completed.stdout.count("Legend") == 1
+    assert completed.stdout.count("End legend") == 1
+
+
 def test_render_results_preserves_noninteractive_stream_byte_for_byte() -> None:
     """Redirected renderer output remains a plain machine-reviewable stream."""
     input_text = "INFO keep this byte-for-byte\nRESULT  ✓  FN-02  rep=1  A_plain  quality=1.000\n"
@@ -2011,6 +2205,22 @@ def test_render_results_preserves_noninteractive_stream_byte_for_byte() -> None:
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == input_text
     assert "\x1b[" not in completed.stdout
+
+
+def test_render_results_noninteractive_legend_is_byte_stable() -> None:
+    """The noninteractive renderer does not rewrite a bounded plain legend."""
+    input_text = (
+        "LEGEND\n"
+        "  treatments: A_plain=no Codemap\n"
+        "  status: ✓ completed, ✗ failed\n"
+        "END LEGEND\n"
+        "RESULT  ✓  FN-02  rep=1  A_plain  quality=1.000\n"
+    )
+
+    completed = _render_result_stream(input_text)
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == input_text
 
 
 def test_render_results_force_color_preserves_unknown_and_non_result_rows() -> None:
@@ -2067,36 +2277,52 @@ def test_hide_plan_requires_render_results_mode() -> None:
 
 
 @pytest.mark.parametrize(
-    ("arm", "input_tokens", "output_tokens", "elapsed_s", "quality", "compliance", "expected"),
+    (
+        "arm",
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "elapsed_s",
+        "quality",
+        "adherence",
+        "codemap_used",
+        "expected",
+    ),
     [
         pytest.param(
             "A_plain",
             44_441,
+            2_000,
             658,
             17.2,
             "1.000",
-            None,
-            "RESULT  ✓  SE-01  rep=1  A_plain            in= 44.4k  out=   658  time=  17s  quality=1.000  compliance:n/a",
+            True,
+            False,
+            "RESULT  ✓  SE-01  rep=1  A_plain   in= 44.4k  out=   658  time=  17s  quality=1.000  treatment:✓  codemap-used:✗",
             id="plain-small-output",
         ),
         pytest.param(
             "C_skill_required",
             74_530,
+            10_000,
             995,
             24.0,
             "1.000",
             True,
-            "RESULT  ✓  SE-01  rep=1  C_skill_required   in= 74.5k  out=   995  time=  24s  quality=1.000  compliance:✓",
+            True,
+            "RESULT  ✓  SE-01  rep=1  C_skill   in= 74.5k  out=   995  time=  24s  quality=1.000  treatment:✓  codemap-used:✓",
             id="skill-required",
         ),
         pytest.param(
             "B_direct_required",
             1_230_920,
+            230_920,
             1_475,
             97.6,
             "?",
             False,
-            "RESULT  ✗  SE-01  rep=1  B_direct_required  in=  1.2M  out=  1.5k  time=1m38s  quality=    ?  compliance:✗",
+            True,
+            "RESULT  ✗  SE-01  rep=1  B_direct  in=  1.2M  out=  1.5k  time=1m38s  quality=    ?  treatment:✗  codemap-used:✓",
             id="direct-million-and-failure",
         ),
     ],
@@ -2105,14 +2331,16 @@ def test_format_result_row_uses_shared_human_units_and_fixed_columns(
     script_run_codex: Any,
     arm: str,
     input_tokens: int,
+    cached_input_tokens: int,
     output_tokens: int,
     elapsed_s: float,
     quality: str,
-    compliance: bool | None,
+    adherence: bool,
+    codemap_used: bool,
     expected: str,
 ) -> None:
     """Terminal rows remain compact and visually comparable across all Codex arms."""
-    status = "✓" if compliance is not False else "✗"
+    status = "✓" if adherence else "✗"
 
     assert (
         script_run_codex._format_result_row(
@@ -2121,13 +2349,61 @@ def test_format_result_row_uses_shared_human_units_and_fixed_columns(
             repetition=1,
             arm=arm,
             input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            fresh_tokens=input_tokens - cached_input_tokens,
             output_tokens=output_tokens,
             elapsed_s=elapsed_s,
             quality=quality,
-            compliance=compliance,
+            adherence=adherence,
+            codemap_used=codemap_used,
         )
         == expected
     )
+
+
+def test_format_result_row_hides_inconsistent_cache_detail(script_run_codex: Any) -> None:
+    """The terminal display must remain gross-only even for inconsistent cache telemetry."""
+    row = script_run_codex._format_result_row(
+        status="✓",
+        task_id="SE-01",
+        repetition=1,
+        arm="A_plain",
+        input_tokens=25,
+        cached_input_tokens=80,
+        fresh_tokens=None,
+        output_tokens=1,
+        elapsed_s=1.0,
+        quality="1.000",
+        adherence=True,
+        codemap_used=False,
+    )
+
+    assert "in=    25  out=" in row
+    assert "/" not in row
+
+
+def test_format_result_row_separates_treatment_from_observed_codemap_use(
+    script_run_codex: Any,
+) -> None:
+    """A contaminated plain arm reports use even though its treatment failed."""
+    row = script_run_codex._format_result_row(
+        status="✗",
+        task_id="FN-02",
+        repetition=1,
+        arm="A_plain",
+        input_tokens=86_600,
+        cached_input_tokens=77_300,
+        fresh_tokens=9_300,
+        output_tokens=1,
+        elapsed_s=1.0,
+        quality="1.000",
+        adherence=False,
+        codemap_used=True,
+    )
+
+    assert "treatment:✗  codemap-used:✓" in row
+    assert "in= 86.6k  out=" in row
+    assert "/" not in row
 
 
 @pytest.mark.parametrize(
@@ -2286,7 +2562,10 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
         [task_id, f"rep={repetition}", arm]
         for task_id in pilot_ids
         for repetition in range(1, repetitions + 1)
-        for arm in script_run_codex.CODEX_STRUCTURAL_ARMS
+        for arm in (
+            script_run_codex._DISPLAY_ARM_LABELS[canonical_arm]
+            for canonical_arm in script_run_codex.CODEX_STRUCTURAL_ARMS
+        )
     ]
     assert plan_rows == expected
     assert len(plan_rows) == len({tuple(row) for row in plan_rows}) == 54
@@ -2488,6 +2767,85 @@ def test_canonical_native_query_allows_auxiliary_separate_events(script_run_code
 
     assert parsed.codemap_direct_compact_successful_calls == 1
     assert script_run_codex._arm_compliance("B_direct_required", parsed) is True
+
+
+@pytest.mark.parametrize(
+    ("command", "expected_credit"),
+    [
+        pytest.param('"$CODEMAP_BIN" query --compact coupled', True, id="quoted-public-zero-argument-query"),
+        pytest.param('"${CODEMAP_BIN}" query --compact coupled', True, id="braced-public-zero-argument-query"),
+        pytest.param('"$CODEMAP_BIN" query --help', False, id="help-only"),
+    ],
+)
+def test_public_query_forms_credit_completed_queries_but_not_help(
+    script_run_codex: Any,
+    command: str,
+    expected_credit: bool,
+) -> None:
+    """A public compact query may omit target arguments; a help call is not evidence."""
+    parsed = script_run_codex.parse_codex_jsonl(
+        _completed_stream(
+            commands=[
+                {
+                    "type": "command_execution",
+                    "command": command,
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+                }
+            ]
+        )
+    )
+
+    assert parsed.codemap_direct_compact_successful_calls == int(expected_credit)
+    assert script_run_codex._arm_compliance("B_direct_required", parsed) is expected_credit
+
+
+def test_skill_activation_then_public_coupled_query_satisfies_compliance_and_adherence(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """C requires its exact Skill activation plus one completed public compact query."""
+    skill_path = tmp_path / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir()
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    events = [
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill-read",
+                "type": "command_execution",
+                "command": 'cat "$CODEMAP_SKILL_FILE"',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode(),
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": '"${CODEMAP_BIN}" query --compact coupled',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+            },
+        },
+        {"type": "turn.completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl(
+        "\n".join(json.dumps(event) for event in events),
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+    compliance = script_run_codex._arm_compliance("C_skill_required", parsed)
+
+    assert parsed.skill_delivery_observed is True
+    assert parsed.codemap_skill_compact_successful_calls == 1
+    assert compliance is True
+    assert core.treatment_adherence("C_skill_required", codemap_use_compliance=compliance, contaminated=False) is True
 
 
 @pytest.mark.parametrize(
@@ -2984,7 +3342,9 @@ def test_historical_bound_launcher_query_rejects_native_item_contract(script_run
         skill_path=skill_path,
         skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
     )
-    assert reversed_parsed.skill_delivery_observed is False
+    # The exact Skill read is still observable, but it cannot make the preceding
+    # non-canonical query compliant.
+    assert reversed_parsed.skill_delivery_observed is True
     assert reversed_parsed.codemap_skill_compact_successful_calls == 0
     assert script_run_codex._arm_compliance("C_skill_required", reversed_parsed) is False
 

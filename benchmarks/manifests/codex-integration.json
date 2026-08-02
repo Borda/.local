@@ -7,7 +7,7 @@
     },
     "B_direct_required": {
       "installed_packages": [],
-      "requirement": "Run at least one successful compact direct query in its own native command item containing exactly \"$CODEMAP_BIN\" query --compact <subcommand> <arguments>; additional reads and shell work are allowed as separate items.",
+      "requirement": "Run at least one successful compact direct query in its own native command item containing exactly \"$CODEMAP_BIN\" query --compact <subcommand> [arguments]; additional reads and shell work are allowed as separate items.",
       "treatment": "direct_cli"
     },
     "C_skill_required": {
@@ -21,23 +21,23 @@
   },
   "artifact_sha256": {
     "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-    "codemap_query_skill": "b5b800f0b22e1e99dc8c2c2018119e13983c2cce4716eb4ba9fce6963b5c6228",
+    "codemap_query_skill": "3dff7af5af9872c9bc5f48799d599ae108eea9a63d4273844dfe093671077444",
     "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
-    "codemap_runtime_entrypoint": "866e46f4cadc620045d2a120dd6dd6fab3f46a45e0cf4df1c542c4b2a7f115f7",
+    "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
     "codemap_runtime_graph": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
     "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-    "codemap_runtime_query": "96179bb2c31dff1944d10d6825ae48707d25b081f695681b65235aef81884798",
+    "codemap_runtime_query": "f117fb05f775f106cd9a07dfbe33b93084f9df571759a74734711001e7d1c3f5",
     "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "da2d863e8a6ac3b100017a4e29d33597b6743cca13fab8c2906d5b67d9645a98",
-    "run_all": "5d81da7d0b7c0f94d8bba69437c339c525474c5b8d879a7b064acef387513815",
-    "run_codex_structural": "0629ba794237ebcfe35274889ce08848772fff13da131fa61526fd9badc0f892"
+    "run_all": "19e781f5214627aaa49f11d931d8714e902853a8dfd9e6bca77388d9c5592d36",
+    "run_codex_structural": "2a338ba9aa7f34079a43a33c0e53007f4be116fea17d6a49672cece42ce6ecbd"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "c47f58ff4bdef34630925e969815d59c331e7cc1675b3cb3e6ab889ab0f6a6db",
+    "package_manifest_sha256": "a3bd035d1dbc4f536ad7219c5f0db1bd7b2e110d1a9a2101beba0df92a85b2b9",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
     "version": "0.27.0"
@@ -173,18 +173,18 @@
     "required_before_paid_execution": "Execute this compact query through B's staged launcher under the treatment permission profile; require exit 0, index.query_complete=true, and unchanged locked-index bytes."
   },
   "direct_cli_runtime": {
-    "aggregate_sha256": "7dcac94aa31781e4600e2793fed11760dc44f2028e1cd1ee0f16f6931c86e567",
+    "aggregate_sha256": "4337bbf54f511614540f0faf04c7e8ee5bf1af10a9a64d4ea6ccb1b0980f5843",
     "files": {
       "bin/_exclusions.py": "1aa5857b5012f1a433f7d2001e4eee07d275a951a80b6a87e026183e5bf7622e",
       "bin/codemap-py": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "scripts/codemap_py_entry.py": "1b4daada1bbac15845230518ea889a32478e21b847cfa12d26e652f5318896e5",
       "src/codemap_py/__init__.py": "06a6ab7c0099412092c6bf7a9cc8e1743e2d2abff893b5d88f01efb455f3492f",
       "src/codemap_py/__main__.py": "19ed5044f96af22c034fd9c816dc9398eacced444c7d884782388a9ad98a988c",
-      "src/codemap_py/cli.py": "866e46f4cadc620045d2a120dd6dd6fab3f46a45e0cf4df1c542c4b2a7f115f7",
+      "src/codemap_py/cli.py": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
       "src/codemap_py/graph.py": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
       "src/codemap_py/index_paths.py": "35b533c4d8080639d80dffcff0d1a4694eccd40869c2a719348704b6876faf00",
       "src/codemap_py/integration.py": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "src/codemap_py/query.py": "96179bb2c31dff1944d10d6825ae48707d25b081f695681b65235aef81884798",
+      "src/codemap_py/query.py": "f117fb05f775f106cd9a07dfbe33b93084f9df571759a74734711001e7d1c3f5",
       "src/codemap_py/runtime_log.py": "2f8030bd31bf36413d851c0d49081913948a566758158b45faaed545dee9b0ac",
       "src/codemap_py/rwgate.py": "161b9f67aa87c30863ac2f2fe210a339af65b35fde3fada14ca2cd32e4f756a0",
       "src/codemap_py/scanner.py": "20adc3d27e699af9174990d39b33b7bb4f9e9cdd9835d006f6d8a3a693ffcc56",
@@ -223,6 +223,7 @@
     "applies_to": [
       "codex"
     ],
+    "arm_order": "deterministic six-permutation counterbalancing by frozen structural task ordinal; across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times",
     "budget": "wall_clock_only",
     "claude_max_turns": "omitted for canonical A/B/C cells; legacy arms retain their existing caps",
     "codex_max_turns": "unavailable in Codex CLI 0.145.0",
@@ -234,10 +235,11 @@
     "parity_timeout_seconds": 600,
     "provider_native_internal_limits": "retained as provider-native telemetry and limitations, never treated as a shared turn count",
     "retry": "at most 2 retries only after retryable transport failure with zero input and output tokens; retries receive only the unspent coordinate budget",
+    "token_prompt_cache_policy": "Console and primary efficiency reports use gross provider input tokens only. Cached and fresh input counts are retained as raw telemetry diagnostics. The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. Deterministic arm-order counterbalancing mitigates order exposure without claiming cache elimination.",
     "turn_budget_enforced": false
   },
   "experiment_id": "codex-integration-v1",
-  "experiment_revision": "codex-integration-single-run-confirmatory-v1",
+  "experiment_revision": "codex-integration-single-run-confirmatory-2026-08-02",
   "headline_structural_v1": {
     "diagnostic_independent_ids": [
       "CQ-02",
@@ -297,20 +299,20 @@
   "implementation_contract": {
     "artifact_sha256": {
       "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-      "codemap_query_skill": "b5b800f0b22e1e99dc8c2c2018119e13983c2cce4716eb4ba9fce6963b5c6228",
+      "codemap_query_skill": "3dff7af5af9872c9bc5f48799d599ae108eea9a63d4273844dfe093671077444",
       "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
-      "codemap_runtime_entrypoint": "866e46f4cadc620045d2a120dd6dd6fab3f46a45e0cf4df1c542c4b2a7f115f7",
+      "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
       "codemap_runtime_graph": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
       "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "codemap_runtime_query": "96179bb2c31dff1944d10d6825ae48707d25b081f695681b65235aef81884798",
+      "codemap_runtime_query": "f117fb05f775f106cd9a07dfbe33b93084f9df571759a74734711001e7d1c3f5",
       "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "da2d863e8a6ac3b100017a4e29d33597b6743cca13fab8c2906d5b67d9645a98",
-      "run_all": "5d81da7d0b7c0f94d8bba69437c339c525474c5b8d879a7b064acef387513815",
-      "run_codex_structural": "0629ba794237ebcfe35274889ce08848772fff13da131fa61526fd9badc0f892"
+      "run_all": "19e781f5214627aaa49f11d931d8714e902853a8dfd9e6bca77388d9c5592d36",
+      "run_codex_structural": "2a338ba9aa7f34079a43a33c0e53007f4be116fea17d6a49672cece42ce6ecbd"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -394,7 +396,7 @@
     "codex-rig"
   ],
   "preregistered_cells": {
-    "arm_order": "sort arms by sha256(experiment_revision|provider|model|reasoning_effort|task_id|repetition|arm), ascending raw digest; Claude uses an empty effort coordinate",
+    "arm_order": "deterministic six-permutation counterbalancing by frozen structural task ordinal; across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times",
     "arms": [
       "A_plain",
       "B_direct_required",
@@ -536,7 +538,7 @@
   "schema_version": "codex-integration-manifest-v1",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "bfa7a196edda7709f9049b366a2ddc1128878498bd6ed58bbe524c5d30960269"
+    "sha256": "c78f102031d8826639ed92d69e48a8de0d949485aa59b14417e141507d2fe825"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
@@ -568,7 +570,7 @@
         "BA-16"
       ],
       "path": "benchmarks/suites/tasks-agentic.json",
-      "raw_sha256": "f40a24b178ee5ab2043b98e3523fffb93431e18bb6ae6ad317468ca95ad85b4b",
+      "raw_sha256": "97e762235b57cd819ca5710052ab34426f96141c50b65717e58467a08dc503e9",
       "root_shape": "object_with_tasks",
       "task_count": 16,
       "tasks": [
@@ -944,7 +946,7 @@
         "MB-05"
       ],
       "path": "benchmarks/suites/tasks-bench.json",
-      "raw_sha256": "be37d7caaf506df26ef9dec872f9434294e93f1efb80b98b109cc2542bf3d16e",
+      "raw_sha256": "af7ce4c414269b6dde87278a97b3db7e0f17a02cb70db8ae1f4df042d8318995",
       "root_shape": "object_with_tasks",
       "task_count": 60,
       "tasks": [
@@ -1153,7 +1155,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "0feb213bc9607a9dfc1de7c69d54e721e154629b17848345f4330a2c6f90cd1f",
+          "prompt_sha256": "cc24038405a8e9320fc0df77cb8b52dfc6c6e3fe0b43305b30c319392b91d375",
           "providers": [
             "claude",
             "codex"
@@ -1172,7 +1174,7 @@
           "id": "RV-02",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "36a41032550d6c442fd57a2c16a951dfade8d65e39096ab7411fc35f16883c53",
+          "prompt_sha256": "6aa12a25d2df07e1cf50ba0e1a869962e336ebc326cbd80232c39ccba47a932d",
           "providers": [
             "claude",
             "codex"
@@ -1191,7 +1193,7 @@
           "id": "RV-03",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "41cfba5a5d5316f6809420d76982d51ab5a01e52808eb160d3d810f366ff3a5d",
+          "prompt_sha256": "f4c614b03de1a8818da4438c4bd43893b1a86ec35588e25d217fc1787a7d8e68",
           "providers": [
             "claude",
             "codex"
@@ -1210,7 +1212,7 @@
           "id": "RV-04",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "51b14e5613988a749fb227f1af711732e4cae3333fb44abbb41d531864013d37",
+          "prompt_sha256": "4c6832691a39a128bdde709c737704f372be7299d3088232c0d1858172ded703",
           "providers": [
             "claude",
             "codex"
@@ -1221,7 +1223,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "b5f370e566e5c6b2c3429249d603f164470d507bd64c1a721780d04898321110",
+          "canonical_task_sha256": "470e5ecc68847dc54aa458394977964cabd0cb3ebe5547489dabf6a116c23ba4",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "review_assistance",
@@ -1230,7 +1232,7 @@
           "oracle_class": "independent",
           "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
           "profiles": [],
-          "prompt_sha256": "e5915a2448c25abf01ea5c3d1bfa7d27559a0e0228169f6b681733740b06017a",
+          "prompt_sha256": "fd9a494bcd06d2a8feae24d10af044c171b8559d71163e670bda4f326e5cb42d",
           "providers": [
             "claude",
             "codex"
@@ -1241,7 +1243,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "6008a818b634ee4e1742702f08afb9437a9b151ce911a7d1d27482378a387f1a",
+          "canonical_task_sha256": "11bfebdacc89839616f952d3bebc6de3c672f0bab37fad167b73da34030f6002",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1251,7 +1253,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "460c73b667b13ffc1f3ccd7a18ef217c5b6737e49bae924c74ee62621119b31d",
+          "prompt_sha256": "1533250b66ceb4f5b953b7f69287adfac8520786de781e74fa6d77ff3962f8b8",
           "providers": [
             "claude",
             "codex"
@@ -1262,7 +1264,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "db5ca1ff988e57b60cfab85cb98dc8106a0567e2f9d071e2e3477a58078d1e79",
+          "canonical_task_sha256": "cd8a5cf9abbdeaad81b9066b85aaa903ac28e5ffd650a38cd95fb987f3ba0a3a",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1271,7 +1273,7 @@
           "oracle_class": "independent",
           "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
           "profiles": [],
-          "prompt_sha256": "7ebb763804d6c72f9c8e6a643330b02689d5e22a857692775e0dda682a28e198",
+          "prompt_sha256": "ba13f0dcb81decfb3752f752eb113bed7a740da9b17e3c801032e21722aa0e07",
           "providers": [
             "claude",
             "codex"
@@ -1282,7 +1284,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "2358bba3d73aa730f8ce7d04dc72fbae3f5206d3b319dc4a9927fca6ac92d03a",
+          "canonical_task_sha256": "6323e475b1ef80856071e0ebb6e5b33da69535a8c7ed3a62b748d4adba713568",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1290,7 +1292,7 @@
           "id": "CQ-03",
           "oracle_class": "self_consistency",
           "profiles": [],
-          "prompt_sha256": "6d82c938a7bac4b201363d6bea5f4ee3f40abcff496a7edf0af4aa44a3e58e1b",
+          "prompt_sha256": "44fd3f0949f2210a4cc4db29c0c26c8fa09640d3b4834a6902c26930bde279fe",
           "providers": [
             "claude",
             "codex"
@@ -2613,7 +2615,7 @@
         "PT-05"
       ],
       "path": "benchmarks/suites/tasks-patch.json",
-      "raw_sha256": "b6f6eb45d86024d47f08e51679efa2e9f704a4f34e17a86bc423c5afa5ddb05b",
+      "raw_sha256": "5f1589fe0ce8ead2756ca74c0012d2dfa8c08464d8fa1b17211d98d3b6a288e0",
       "root_shape": "object_with_tasks",
       "task_count": 5,
       "tasks": [
@@ -2862,7 +2864,7 @@
   "telemetry_admission": {
     "auxiliary_item_policy": "B/C may use additional reads and shell commands as separate native items. They are ignored for query attribution.",
     "query": {
-      "accepted_form": "\"$CODEMAP_BIN\" query --compact <subcommand> <arguments>",
+      "accepted_form": "\"$CODEMAP_BIN\" query --compact <subcommand> [arguments]",
       "item_scope": "dedicated native command item",
       "required_exit_code": 0,
       "required_output": "one JSON document with index.query_complete=true and index.compact=true"

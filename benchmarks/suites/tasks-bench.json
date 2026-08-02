@@ -580,8 +580,27 @@
         }
       ],
       "id": "RV-05",
+      "ground_truth": {
+        "oracle_views": {
+          "codemap_static": {
+            "count": 25,
+            "semantics": "25 static uncovered declaration findings reported by Codemap; this view can retain repeated declaration-level findings."
+          },
+          "independent_ast": {
+            "count": 11,
+            "semantics": "11 unique public declarations whose simple name is absent from every test AST Name and Attribute identifier and from the final dotted component of every string argument to patch(...), patch.object(...), or mock.patch(...).",
+            "symbols": [
+              "LayerSummary",
+              "LayerSummary.detach_hook",
+              "LayerSummary.in_size",
+              "LayerSummary.layer_type",
+              "LayerSummary.num_parameters"
+            ]
+          }
+        }
+      },
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
-      "prompt": "You are reviewing a PR that adds 3 new public functions to `lightning.pytorch.utilities.model_summary.model_summary` without adding tests. Before merging, assess the current test coverage of the module. Answer the following sub-questions.",
+      "prompt": "You are reviewing a PR that adds 3 new public functions to `lightning.pytorch.utilities.model_summary.model_summary` without adding tests. Before merging, assess the current test coverage of the module. The benchmark's independent AST oracle defines an uncovered symbol as a unique public declaration (no qualified-name component begins with `_`) whose simple name is absent from every AST `Name` and `Attribute` identifier in test files and from the final dotted component of every string argument to `patch(...)`, `patch.object(...)`, or `mock.patch(...)`. This independent view is distinct from Codemap's static `uncovered` findings, which can differ. Answer the following sub-questions.",
       "scoreable": true,
       "sub_questions": [
         {
@@ -590,7 +609,7 @@
           },
           "id": "q1",
           "match": "integer_extract",
-          "prompt": "Under the benchmark's independent AST oracle, how many symbols in `lightning.pytorch.utilities.model_summary.model_summary` are not covered by tests? Report the integer count."
+          "prompt": "Under the benchmark's independent AST oracle, how many unique public symbols in `lightning.pytorch.utilities.model_summary.model_summary` are not covered by tests? Report the integer count; do not substitute Codemap's static finding total."
         },
         {
           "ground_truth": {
@@ -604,7 +623,7 @@
           },
           "id": "q2",
           "match": "symbol_name_set",
-          "prompt": "Name the lexicographically first 5 uncovered symbols in `lightning.pytorch.utilities.model_summary.model_summary` under the benchmark's independent AST oracle."
+          "prompt": "Name the lexicographically first 5 uncovered symbols in `lightning.pytorch.utilities.model_summary.model_summary` under the benchmark's independent AST oracle. Use ordinary repository inspection if the Codemap static query does not provide this distinct view."
         }
       ],
       "type": "review_assistance",
@@ -624,6 +643,29 @@
       ],
       "ground_truth": {
         "check": "undocumented",
+        "required_answer_components": [
+          "independent_ast_count",
+          "independent_ast_symbols"
+        ],
+        "oracle_views": {
+          "codemap_static": {
+            "count": 11,
+            "semantics": "11 undocumented declaration findings; repeated declarations for the same qualified public symbol are retained."
+          },
+          "independent_ast": {
+            "count": 7,
+            "semantics": "7 unique public qualified names without docstrings under the independent AST oracle.",
+            "symbols": [
+              "LightningModule",
+              "LightningModule.automatic_optimization",
+              "LightningModule.example_input_array",
+              "LightningModule.fabric",
+              "LightningModule.optimizers",
+              "LightningModule.strict_loading",
+              "LightningModule.trainer"
+            ]
+          }
+        },
         "undocumented_count": 7,
         "undocumented_count_scan": 11,
         "undocumented_symbols": [
@@ -654,7 +696,7 @@
       "profiles": [
         "dev"
       ],
-      "prompt": "Run a documentation gate on `lightning.pytorch.core.module` before the v2.4.0 release. List all public symbols that currently lack docstrings. Report both the total count and the qualified names.",
+      "prompt": "Run a documentation gate on `lightning.pytorch.core.module` before the v2.4.0 release. Report these two views separately: (1) Codemap's total undocumented declaration findings, which can contain repeated qualified names; and (2) the benchmark's independent AST count of unique public qualified symbols without docstrings, followed by those unique names. Do not present the two counts as interchangeable.",
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
@@ -674,6 +716,33 @@
       ],
       "ground_truth": {
         "check": "uncovered",
+        "required_answer_components": [
+          "independent_ast_count",
+          "independent_ast_symbols"
+        ],
+        "oracle_views": {
+          "codemap_static": {
+            "count": 25,
+            "semantics": "25 static uncovered declaration findings reported by Codemap; this view can retain repeated declaration-level findings."
+          },
+          "independent_ast": {
+            "count": 11,
+            "semantics": "11 unique public declarations whose simple name is absent from every test AST Name and Attribute identifier and from the final dotted component of every string argument to patch(...), patch.object(...), or mock.patch(...).",
+            "symbols": [
+              "LayerSummary",
+              "LayerSummary.detach_hook",
+              "LayerSummary.in_size",
+              "LayerSummary.layer_type",
+              "LayerSummary.num_parameters",
+              "LayerSummary.out_size",
+              "ModelSummary.flop_counts",
+              "ModelSummary.training_modes",
+              "get_formatted_model_size",
+              "get_human_readable_count",
+              "parse_batch_shape"
+            ]
+          }
+        },
         "uncovered_count": 11,
         "uncovered_count_scan": 25,
         "uncovered_symbols": [
@@ -714,7 +783,7 @@
       },
       "id": "CQ-02",
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
-      "prompt": "Run the benchmark's independent AST coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. Identify all public symbols the AST oracle classifies as not covered by tests and report the total count.",
+      "prompt": "Run the benchmark's independent AST oracle coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. The oracle counts each unique public declaration (no qualified-name component begins with `_`) whose simple name is absent from every AST `Name` and `Attribute` identifier in test files and from the final dotted component of every string argument to `patch(...)`, `patch.object(...)`, or `mock.patch(...)`. Identify all such symbols and report the total count. This independent AST view is distinct from Codemap's static `uncovered` findings; use ordinary repository reads when that distinct evidence is absent from the query output.",
       "self_consistency": false,
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
@@ -736,12 +805,39 @@
         "check": "coupled",
         "top_dep_count": 49,
         "top_internal_dep_count": 38,
-        "top_module": "lightning.pytorch.trainer.trainer"
+        "top_module": "lightning.pytorch.trainer.trainer",
+        "top_modules": [
+          {
+            "dep_count": 49,
+            "internal_dep_count": 38,
+            "name": "lightning.pytorch.trainer.trainer"
+          },
+          {
+            "dep_count": 45,
+            "internal_dep_count": 25,
+            "name": "lightning.pytorch.core.module"
+          },
+          {
+            "dep_count": 22,
+            "internal_dep_count": 22,
+            "name": "lightning.pytorch.callbacks"
+          },
+          {
+            "dep_count": 40,
+            "internal_dep_count": 22,
+            "name": "lightning.pytorch.strategies.fsdp"
+          },
+          {
+            "dep_count": 34,
+            "internal_dep_count": 20,
+            "name": "lightning.fabric.fabric"
+          }
+        ]
       },
       "id": "CQ-03",
       "primary_module": null,
       "profiles": [],
-      "prompt": "Identify the top 5 most coupled (highest total dependency count) modules in the codebase. For each module, report its name and its total dependency count (dep_count).",
+      "prompt": "Run `coupled --top 5`. It ranks modules by internal import count. Report the five modules in the returned order, with each module name and its `dep_count`.",
       "self_consistency": true,
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",

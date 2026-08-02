@@ -151,7 +151,7 @@ class TestProviderParityTaskIntegration:
     def test_legacy_loader_preserves_unlocked_custom_suite_support(
         self, tmp_path: Path, script_run_agentic: Any
     ) -> None:
-        """Legacy arms may consume a custom suite without claiming codemap-provider-parity-v1-b0-r3 provenance."""
+        """Legacy arms may consume a custom suite without claiming canonical provider-parity provenance."""
         suite_path = tmp_path / "custom-agentic-suite.json"
         suite_path.write_text(
             json.dumps([{"id": "CUSTOM-01", "type": "fix", "prompt": "Inspect the failure."}]),
@@ -296,7 +296,7 @@ class TestProviderParityTaskIntegration:
     def test_legacy_arm_keeps_legacy_revision_while_explicit_canonical_arm_gets_locked_revision(
         self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
     ) -> None:
-        """A legacy label is not upgraded from an internal codemap-provider-parity-v1-b0-r4 policy."""
+        """A legacy label is not upgraded from an internal canonical provider-parity policy."""
         task = next(
             item
             for item in script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)

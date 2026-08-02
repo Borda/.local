@@ -111,6 +111,8 @@ class TestProviderParityIntegration:
         assert result.arm == "codemap"
         assert result.parity_arm == ""
         assert result.compliance is None
+        assert result.treatment_adherence is None
+        assert result.contaminated is False
         assert result.experiment_revision == script_run_bench.LEGACY_EXPERIMENT_REVISION
         assert result.arm_contract_hash == ""
         assert result.task_hash == script_run_bench._task_hash(task)
@@ -119,7 +121,7 @@ class TestProviderParityIntegration:
     def test_canonical_result_stamps_the_locked_policy_and_provenance(
         self, script_run_bench: Any, tmp_path: Path
     ) -> None:
-        """Canonical arms receive codemap-provider-parity-v1-b0-r4 task and contract identity."""
+        """Canonical arms receive provider-parity task and contract identity."""
         tasks, policies = script_run_bench._load_primary_parity_contract()
         task = next(task for task in tasks if task["id"] == "FN-02")
         runner = script_run_bench.BenchRunner(
@@ -148,7 +150,7 @@ class TestProviderParityIntegration:
         assert result.scoreable is True
 
     def test_canonical_task_hash_mismatch_fails_before_execution(self, script_run_bench: Any, tmp_path: Path) -> None:
-        """Changed task bytes cannot enter a codemap-provider-parity-v1-b0-r4 canonical run."""
+        """Changed task bytes cannot enter a canonical provider-parity run."""
         tasks, policies = script_run_bench._load_primary_parity_contract()
         task = next(task for task in tasks if task["id"] == "FN-02").copy()
         task["prompt"] = f"{task['prompt']} tampered"
@@ -177,6 +179,81 @@ class TestProviderParityIntegration:
 
         assert result.compliance is False
         assert result.quality == script_run_bench.BenchQuality(scored=False)
+
+    @pytest.mark.parametrize(
+        ("arm", "scan_query_calls", "expected_compliance", "expected_adherence"),
+        [
+            pytest.param("A_plain", 0, None, True, id="plain-clean"),
+            pytest.param("B_auto", 0, None, True, id="auto-optional-no-call"),
+            pytest.param("C_required", 0, False, False, id="required-no-call"),
+            pytest.param("C_required", 1, True, True, id="required-call"),
+        ],
+    )
+    def test_canonical_arm_records_treatment_adherence(
+        self,
+        script_run_bench: Any,
+        tmp_path: Path,
+        arm: str,
+        scan_query_calls: int,
+        expected_compliance: bool | None,
+        expected_adherence: bool,
+    ) -> None:
+        """Canonical A/B/C rows record assigned availability separately from answer quality."""
+        runner = script_run_bench.BenchRunner("haiku", "fixture-model", tmp_path, tmp_path / "index.json")
+        task = {"id": "fixture", "prompt": "answer", "type": "fixture", "scoreable": False}
+
+        def stream(_cmd: list[str], result: Any, _arm: str, update_fn: Any = None) -> None:
+            result.success = True
+            result.input_tokens = 1
+            result.scan_query_calls = scan_query_calls
+
+        runner._stream = stream
+
+        result = runner._execute(task, arm)
+
+        assert result.compliance is expected_compliance
+        assert result.contaminated is False
+        assert result.treatment_adherence is expected_adherence
+
+    def test_canonical_contamination_makes_treatment_adherence_false(
+        self, script_run_bench: Any, tmp_path: Path
+    ) -> None:
+        """An answer-file-read is contamination and invalidates a canonical arm."""
+        runner = script_run_bench.BenchRunner("haiku", "fixture-model", tmp_path, tmp_path / "index.json")
+        task = {**_se_task(), "prompt": "answer"}
+
+        def stream(_cmd: list[str], result: Any, _arm: str, update_fn: Any = None) -> None:
+            result.success = True
+            result.input_tokens = 1
+            result.tool_log.append("Read: benchmarks/results/answer.json")
+
+        runner._stream = stream
+
+        result = runner._execute(task, "A_plain")
+
+        assert result.error == "answer_file_read"
+        assert result.contaminated is True
+        assert result.treatment_adherence is False
+
+    def test_run_serialization_includes_treatment_provenance(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """JSONL telemetry preserves adherence and contamination for later pairing ingestion."""
+        run = _make_run(
+            script_run_bench,
+            arm="A_plain",
+            contaminated=False,
+            treatment_adherence=True,
+        )
+        serialized = script_run_bench.asdict(run)
+        monkeypatch.setattr(script_run_bench, "RESULTS_DIR", tmp_path)
+        saved = script_run_bench._save_results([run], "haiku")
+
+        persisted = json.loads(saved.read_text(encoding="utf-8"))
+        assert serialized["contaminated"] is False
+        assert serialized["treatment_adherence"] is True
+        assert persisted["contaminated"] is False
+        assert persisted["treatment_adherence"] is True
 
     @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_required"])
     def test_canonical_commands_omit_turn_caps_while_legacy_keeps_its_task_cap(
@@ -1055,7 +1132,7 @@ class TestEvaluateRv:
         return {
             "id": "RV-01",
             "type": "review_assistance",
-            "sub_questions": [{"ground_truth": {"count": count}}],
+            "sub_questions": [{"id": "q1", "match": "integer_extract", "ground_truth": {"count": count}}],
         }
 
     def _rv_task_symbols(self, symbols: list[str]) -> dict:
@@ -1063,7 +1140,7 @@ class TestEvaluateRv:
         return {
             "id": "RV-05",
             "type": "review_assistance",
-            "sub_questions": [{"ground_truth": {"symbols": symbols}}],
+            "sub_questions": [{"id": "q1", "match": "symbol_name_set", "ground_truth": {"symbols": symbols}}],
         }
 
     def test_no_sub_questions_returns_unscored(self, script_run_bench: Any) -> None:
@@ -1102,6 +1179,93 @@ class TestEvaluateRv:
         assert result.metric_got == 65
         assert result.correct is True
         assert result.extraction_failed is False
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            pytest.param(
+                "I’ll inspect the repository with ordinary file-search tools and count module files "
+                "containing direct imports of `lightning.pytorch.utilities.rank_zero`.64 modules "
+                "directly import `lightning.pytorch.utilities.rank_zero` (60 source modules and 4 "
+                "test modules).",
+                id="plain-answer",
+            ),
+            pytest.param(
+                "I’ll verify this through Codemap’s native CLI, then cross-check the resulting import "
+                "count in the repository.The relevant Codemap query is reverse dependencies (`rdeps`) "
+                "for `lightning.pytorch.utilities.rank_zero`; I’m running the required compact query "
+                "now.64 modules directly import `lightning.pytorch.utilities.rank_zero`.",
+                id="direct-cli-answer",
+            ),
+            pytest.param(
+                "I’m using the installed `codemap-py:query-code` skill as required. I’ll activate it in "
+                "one dedicated shell item, then run the single compact reverse-dependency query.1. "
+                "**64 modules** directly import `lightning.pytorch.utilities.rank_zero`.",
+                id="skill-answer",
+            ),
+            pytest.param(
+                "64 modules directly depend on `lightning.pytorch.utilities.rank_zero`.",
+                id="direct-depend",
+            ),
+            pytest.param(
+                "64 modules import `lightning.pytorch.utilities.rank_zero`.",
+                id="bare-import",
+            ),
+        ],
+    )
+    def test_rv02_exact_provider_answers_extract_direct_import_count(self, script_run_bench: Any, answer: str) -> None:
+        """Immutable RV-02 A/B/C answers must parse their directly-imported count."""
+        result = script_run_bench._evaluate_rv(self._rv_task_count(64), answer)
+
+        assert result.metric_got == 64
+        assert result.correct is True
+        assert result.extraction_failed is False
+
+    def test_rv05_exact_partial_answer_scores_count_and_symbol_components_separately(
+        self, script_run_bench: Any
+    ) -> None:
+        """RV-05 keeps correct count credit while retaining its 2/5 symbol recall loss."""
+        task = {
+            "id": "RV-05",
+            "type": "review_assistance",
+            "sub_questions": [
+                {"id": "q1", "match": "integer_extract", "ground_truth": {"count": 11}},
+                {
+                    "id": "q2",
+                    "match": "symbol_name_set",
+                    "ground_truth": {
+                        "symbols": [
+                            "LayerSummary",
+                            "LayerSummary.detach_hook",
+                            "LayerSummary.in_size",
+                            "LayerSummary.layer_type",
+                            "LayerSummary.num_parameters",
+                        ]
+                    },
+                },
+            ],
+        }
+        answer = (
+            "I’m checking the module’s actual test references against the benchmark’s AST-based "
+            "definition, while also completing the required compact native Codemap query.The required "
+            "compact query completed successfully (`query_complete: true`, `compact: true`). Its "
+            "25-item static list is not the benchmark oracle, so I’m now inspecting declarations and "
+            "all test AST identifiers/string patch targets directly.1. **11** unique public symbols "
+            "are uncovered under the independent AST oracle.\n\n2. The lexicographically first five "
+            "are:\n\n   1. `LayerSummary`\n   2. `detach_hook`\n   3. `flop_counts`\n   4. "
+            "`get_formatted_model_size`\n   5. `get_human_readable_count`"
+        )
+
+        result = script_run_bench._evaluate_rv(task, answer)
+
+        assert result.metric_got == 11
+        assert result.extracted_metric["q1.count"] == 11
+        assert result.extracted_metric["q2.symbols"] == 2
+        assert result.scoring_detail["components"]["q1.count"]["extraction_failed"] is False
+        assert result.scoring_detail["components"]["q2.symbols"]["extraction_failed"] is False
+        assert result.correct is False
+        assert result.recall == pytest.approx(0.7, abs=1e-9)
+        assert result.evaluator_version == "v7"
 
     def test_symbol_recall_path_correct_at_threshold(self, script_run_bench: Any) -> None:
         """Symbol-recall path: correct when ≥70% of expected symbols appear in output."""
@@ -1198,6 +1362,103 @@ class TestEvaluateOss:
         """coupled check: incorrect when extracted count is outside 10%."""
         task = self._oss_task("coupled", top_dep_count=100)
         result = script_run_bench._evaluate_oss(task, "120 dependencies found")
+        assert result.correct is False
+
+    @staticmethod
+    def _cq03_ranking() -> list[dict[str, int | str]]:
+        """Return an ordered five-module CQ-03 oracle with distinct names and counts."""
+        return [
+            {"name": "pkg.alpha", "dep_count": 49},
+            {"name": "pkg.bravo", "dep_count": 42},
+            {"name": "pkg.charlie", "dep_count": 37},
+            {"name": "pkg.delta", "dep_count": 31},
+            {"name": "pkg.echo", "dep_count": 29},
+        ]
+
+    def _cq03_task(self) -> dict:
+        """Return the full ranking contract requested by the CQ-03 prompt."""
+        ranking = self._cq03_ranking()
+        return self._oss_task(
+            "coupled",
+            top_dep_count=ranking[0]["dep_count"],
+            top_modules=ranking,
+        )
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            pytest.param(
+                "1. `pkg.alpha` — dep_count: 49\n"
+                "2. `pkg.bravo` — dep_count: 42\n"
+                "3. `pkg.charlie` — dep_count: 37\n"
+                "4. `pkg.delta` — dep_count: 31\n"
+                "5. `pkg.echo` — dep_count: 29",
+                id="ordered-bullets",
+            ),
+            pytest.param(
+                "| Rank | Module | dep_count |\n"
+                "| ---: | --- | ---: |\n"
+                "| 1 | `pkg.alpha` | 49 |\n"
+                "| 2 | `pkg.bravo` | 42 |\n"
+                "| 3 | `pkg.charlie` | 37 |\n"
+                "| 4 | `pkg.delta` | 31 |\n"
+                "| 5 | `pkg.echo` | 29 |",
+                id="ordered-table",
+            ),
+        ],
+    )
+    def test_cq03_requires_the_complete_ordered_module_dependency_ranking(
+        self, script_run_bench: Any, answer: str
+    ) -> None:
+        """CQ-03 accepts each requested module/count pair in rank order, not only rank one."""
+        expected = self._cq03_ranking()
+
+        result = script_run_bench._evaluate_oss(self._cq03_task(), answer)
+
+        assert result.correct is True
+        assert result.extracted_metric == expected
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            pytest.param(
+                "1. `pkg.alpha` — dep_count: 49\n"
+                "2. `pkg.bravo` — dep_count: 42\n"
+                "3. `pkg.charlie` — dep_count: 37\n"
+                "4. `pkg.delta` — dep_count: 31",
+                id="missing-fifth-member",
+            ),
+            pytest.param(
+                "1. `pkg.alpha` — dep_count: 49\n"
+                "2. `pkg.bravo` — dep_count: 42\n"
+                "3. `pkg.unexpected` — dep_count: 37\n"
+                "4. `pkg.delta` — dep_count: 31\n"
+                "5. `pkg.echo` — dep_count: 29",
+                id="wrong-member",
+            ),
+            pytest.param(
+                "1. `pkg.alpha` — dep_count: 49\n"
+                "2. `pkg.charlie` — dep_count: 37\n"
+                "3. `pkg.bravo` — dep_count: 42\n"
+                "4. `pkg.delta` — dep_count: 31\n"
+                "5. `pkg.echo` — dep_count: 29",
+                id="wrong-order",
+            ),
+            pytest.param(
+                "1. `pkg.alpha` — dep_count: 49\n"
+                "2. `pkg.bravo` — dep_count: 42\n"
+                "3. `pkg.charlie` — dep_count: 37\n"
+                "4. `pkg.delta` — dep_count: 31\n"
+                "5. `pkg.echo` — dep_count: 28",
+                id="wrong-count",
+            ),
+        ],
+    )
+    def test_cq03_rejects_incomplete_or_incorrect_ranking_members(self, script_run_bench: Any, answer: str) -> None:
+        """CQ-03 rejects missing, substituted, reordered, and mismatched requested rows."""
+        result = script_run_bench._evaluate_oss(self._cq03_task(), answer)
+
+        assert result.extraction_failed is False
         assert result.correct is False
 
     def test_xrefs_broken_exact_match_correct(self, script_run_bench: Any) -> None:

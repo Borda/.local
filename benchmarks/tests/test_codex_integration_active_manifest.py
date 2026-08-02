@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -40,6 +41,51 @@ def _run_generator(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
     )
+
+
+def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> None:
+    """Builder output must replace inherited query, ordering, and token-reporting drift."""
+    builder = runpy.run_path(str(GENERATOR))
+    source = _load(SOURCE_MANIFEST)
+    arm_order = (
+        "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
+        "across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times"
+    )
+    token_prompt_cache_policy = (
+        "Console and primary efficiency reports use gross provider input tokens only. "
+        "Cached and fresh input counts are retained as raw telemetry diagnostics. "
+        "The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. "
+        "Deterministic arm-order counterbalancing mitigates order exposure without claiming cache elimination."
+    )
+
+    arms = builder["_arms"]()
+    controls = builder["_execution_controls"](source)
+    cells = builder["_preregistered_cells"](source)
+    telemetry = builder["_telemetry_admission"]()
+    human_manifest = {
+        "codemap_candidate": {"package_manifest_sha256": "0" * 64, "version": "test"},
+        "codex_cli": {"available": False},
+        "codex_rig_candidate": {"version": "test"},
+        "execution_controls": controls,
+        "preregistered_cells": cells,
+        "source_manifest": {"path": "test.json", "sha256": "0" * 64},
+    }
+    human = builder["_human_bytes"](human_manifest, "0" * 64).decode("utf-8")
+
+    assert builder["EXPERIMENT_REVISION"] == "codex-integration-single-run-confirmatory-2026-08-02"
+    assert arms["B_direct_required"]["requirement"] == (
+        "Run at least one successful compact direct query in its own native command item containing exactly "
+        '"$CODEMAP_BIN" query --compact <subcommand> [arguments]; '
+        "additional reads and shell work are allowed as separate items."
+    )
+    assert telemetry["query"]["accepted_form"] == '"$CODEMAP_BIN" query --compact <subcommand> [arguments]'
+    assert controls["arm_order"] == arm_order
+    assert cells["arm_order"] == arm_order
+    assert controls["token_prompt_cache_policy"] == token_prompt_cache_policy
+    assert '`"$CODEMAP_BIN" query --compact <subcommand> [arguments]`' in human
+    assert "every arm occupies every ordinal 18 or 19 times" in human
+    assert "Console and primary efficiency reports use gross provider input tokens only." in human
+    assert "without claiming cache elimination" in human
 
 
 def test_generator_is_current_and_never_rewrites_methodology_source() -> None:
@@ -86,7 +132,7 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     }
     assert manifest["package_roster"] == ["codemap-py", "codex-rig"]
     assert manifest["experiment_id"] == "codex-integration-v1"
-    assert manifest["experiment_revision"] == "codex-integration-single-run-confirmatory-v1"
+    assert manifest["experiment_revision"] == "codex-integration-single-run-confirmatory-2026-08-02"
     assert manifest["preregistered_cells"]["arms"] == [
         "A_plain",
         "B_direct_required",
@@ -94,6 +140,10 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     ]
     assert manifest["preregistered_cells"]["providers"] == ["codex"]
     assert manifest["preregistered_cells"]["confirmatory_repetitions"] == 1
+    assert manifest["preregistered_cells"]["arm_order"] == (
+        "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
+        "across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times"
+    )
     assert len(manifest["preregistered_cells"]["structural_confirmatory_task_ids"]) == 45
     assert len(manifest["preregistered_cells"]["structural_execution_task_ids"]) == 55
     assert len(manifest["preregistered_cells"]["structural_diagnostic_task_ids"]) == 10
@@ -132,6 +182,16 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
         "the exact value is recorded in every result row"
     )
     assert manifest["execution_controls"]["confirmatory_max_wall_clock_seconds"] == 86_400
+    assert manifest["execution_controls"]["arm_order"] == (
+        "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
+        "across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times"
+    )
+    assert manifest["execution_controls"]["token_prompt_cache_policy"] == (
+        "Console and primary efficiency reports use gross provider input tokens only. "
+        "Cached and fresh input counts are retained as raw telemetry diagnostics. "
+        "The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. "
+        "Deterministic arm-order counterbalancing mitigates order exposure without claiming cache elimination."
+    )
     assert manifest["codex_rig_integration_admission"]["required_before_paid_smoke"] == [
         "C installs exactly the locked codemap-py then codex-rig package roster.",
         "The Codex Rig adapter resolves the public CODEMAP_BIN launcher before PATH.",
@@ -197,7 +257,7 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
             "exact-path or non-CODEMAP_BIN launcher forms",
         ],
         "query": {
-            "accepted_form": '"$CODEMAP_BIN" query --compact <subcommand> <arguments>',
+            "accepted_form": '"$CODEMAP_BIN" query --compact <subcommand> [arguments]',
             "item_scope": "dedicated native command item",
             "required_exit_code": 0,
             "required_output": "one JSON document with index.query_complete=true and index.compact=true",
@@ -227,6 +287,10 @@ def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authoriz
 
     human = HUMAN_MANIFEST.read_text(encoding="utf-8")
     assert "# `codex-integration-v1`" in human
+    assert '`"$CODEMAP_BIN" query --compact <subcommand> [arguments]`' in human
+    assert "every arm occupies every ordinal 18 or 19 times" in human
+    assert "Console and primary efficiency reports use gross provider input tokens only." in human
+    assert "without claiming cache elimination" in human
     assert "Runtime smoke and exact coordinate-plan validation are required before paid execution." in human
     assert "no separate chat authorization is required" in human
     assert "CODEX_PAID_APPROVAL" in human

@@ -54,6 +54,12 @@ def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         bin_dir / "python3",
         f"""if [ "$1" = "-c" ]; then exec {sys.executable} "$@"; fi
 printf "python %s\\n" "$*" >> "$CALL_LOG"
+if [[ "$*" == *"build-codex-integration-manifest.py"* && "$*" == *"--check"* ]]; then
+  if [ -n "${{FAIL_MANIFEST_CHECK:-}}" ]; then
+    printf "stale generated Codex manifest\\n" >&2
+    exit 47
+  fi
+fi
 if [ -n "${{FAIL_WHEN_ARGS_CONTAIN:-}}" ] && [[ "$*" == *"$FAIL_WHEN_ARGS_CONTAIN"* ]]; then
   exit 41
 fi
@@ -67,6 +73,9 @@ if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PLAN    FN-02  rep=1  A_plain\\n"
 fi
 if [[ "$*" == *"--auth-source"* ]]; then
+  printf "raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
+  printf "canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
+  printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
   printf "PLAN    FN-02  rep=1  A_plain\\n"
   printf "RESULT  completed  FN-02  rep=1  A_plain  in=1  out=1  time=1s  quality=1.0  compliance:✓\\n"
   printf "ARTIFACTS  telemetry=%s/telemetry.jsonl  metadata=%s/run-metadata.json\\n" "$CODEX_RUN_DIR" "$CODEX_RUN_DIR"
@@ -79,6 +88,8 @@ fi""",
   printf "{LOCKED_INDEX_SHA}  %s\\n" "$3"
 elif [ "$3" = "{ACTIVE_MANIFEST}" ]; then
   printf "{ACTIVE_MANIFEST_SHA}  %s\\n" "$3"
+elif [[ "$3" == "$CODEX_RUN_DIR/"* ]]; then
+  exec /usr/bin/shasum -a 256 "$3"
 else
   printf "%064d  %s\\n" 0 "$3"
 fi""",
@@ -271,7 +282,26 @@ def test_smoke_rejects_mismatched_locked_index_before_provider_commands(
 
     assert completed.returncode == 1
     assert "locked parity index SHA-256 mismatch" in completed.stderr
-    assert not call_log.exists()
+    calls = call_log.read_text(encoding="utf-8")
+    assert "run-claude-" not in calls
+    assert "run-codex-structural.py" not in calls
+
+
+def test_stale_generated_manifest_blocks_provider_preflights(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Reject stale generated Codex records before either provider can run."""
+    env, call_log = batch_env
+    env["FAIL_MANIFEST_CHECK"] = "1"
+
+    completed = _run_batch("smoke", env)
+
+    assert completed.returncode == 47
+    assert "stale generated Codex manifest" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8")
+    assert "build-codex-integration-manifest.py" in calls
+    assert "run-claude-" not in calls
+    assert "run-codex-structural.py" not in calls
 
 
 def test_smoke_accepts_git_worktree_metadata_file(
@@ -394,6 +424,23 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert (run_dir / "run.log").is_file()
     checksums = (run_dir / "checksums.sha256").read_text(encoding="utf-8")
     assert "run.log" in checksums
+
+
+def test_paid_codex_checksums_include_canonical_telemetry_sidecar(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Record and verify the canonical telemetry sidecar in the artifact checksum list."""
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 0, completed.stderr
+    run_dir = Path(env["CODEX_RUN_DIR"])
+    canonical = run_dir / "telemetry-canonical.jsonl"
+    assert canonical.is_file()
+    checksums = (run_dir / "checksums.sha256").read_text(encoding="utf-8").splitlines()
+    canonical_line = next(line for line in checksums if "telemetry-canonical.jsonl" in line)
+    assert canonical_line.split()[0] == hashlib.sha256(canonical.read_bytes()).hexdigest()
 
 
 def test_codex_mode_reconstructs_a_missing_locked_index_before_dispatch(
