@@ -1886,7 +1886,7 @@
       ]
     },
     {
-      "current_consumer": "run-cli.py; optional external input to run-claude-structural.py",
+      "current_consumer": "run-codemap-cli.py; optional external input to run-claude-structural.py",
       "generation_provenance": "committed_cli_query_specs_without_materialized_llm_ground_truth",
       "ordered_task_ids": [
         "B-01",

@@ -1,4 +1,4 @@
-"""Tests for benchmarks/run-cli.py.
+"""Tests for benchmarks/run-codemap-cli.py.
 
 Covers public API surface:
   - Dataclass defaults and construction (Task, ScenarioResult, TimingStats,

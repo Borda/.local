@@ -56,8 +56,8 @@ def script_run_bench():
 
 @pytest.fixture(scope="session")
 def script_run_cli():
-    """Loaded run-cli module."""
-    return _load_module("run_cli", "run-cli.py")
+    """Loaded Codemap CLI module."""
+    return _load_module("run_cli", "run-codemap-cli.py")
 
 
 @pytest.fixture(scope="session")

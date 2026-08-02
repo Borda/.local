@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -453,6 +454,42 @@ def test_permission_profile_verification_fails_closed_when_codex_rejects_the_pro
 
     with pytest.raises(ValueError, match="profile|permission|unsupported"):
         script_run_codex._verify_permission_profile(home, repo_path, command_runner=reject_profile)
+
+
+def test_permission_profile_resolves_workspace_python_symlink_before_sandbox(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A project virtualenv launcher must not be denied as a source-tree executable."""
+    repo_path = tmp_path / "target"
+    python_dir = repo_path / ".venv" / "bin"
+    python_dir.mkdir(parents=True)
+    external_python = tmp_path / "runtime" / "python3"
+    external_python.parent.mkdir()
+    external_python.write_text("fixture", encoding="utf-8")
+    external_python.chmod(0o755)
+    workspace_python = python_dir / "python3"
+    workspace_python.symlink_to(external_python)
+    home_path = tmp_path / "codex-home"
+    home_path.mkdir()
+    home = script_run_codex.ArmHome("A_plain", home_path, {}, False)
+    commands: list[list[str]] = []
+
+    def reject_after_capture(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        commands.append(command)
+        if command == ["codex", "--version"]:
+            return SimpleNamespace(returncode=0, stdout="codex-cli 0.146.0", stderr="")
+        return SimpleNamespace(returncode=2, stdout="", stderr="fixture stop")
+
+    monkeypatch.setattr(script_run_codex.sys, "executable", str(workspace_python))
+
+    with pytest.raises(ValueError, match="profile|permission|unsupported"):
+        script_run_codex._verify_permission_profile(home, repo_path, command_runner=reject_after_capture)
+
+    sandbox_command = commands[1]
+    interpreter = sandbox_command[sandbox_command.index("--") + 1]
+    assert interpreter == str(external_python.resolve())
 
 
 @pytest.mark.integration
@@ -1187,6 +1224,25 @@ def test_auth_source_is_copied_with_private_modes_and_removed_with_home(script_r
     assert auth_source.read_text(encoding="utf-8") == '{"fixture_token":"do-not-report"}'
 
 
+def test_arm_home_drops_batch_controls_from_codex_process_environment(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local approval, auth-source, result, and budget values must not reach Codex."""
+    control_names = (
+        "CODEX_PAID_APPROVAL",
+        "CODEX_AUTH_SOURCE",
+        "CODEX_RUN_DIR",
+        "CODEX_MAX_WALL_CLOCK_SECONDS",
+    )
+    for name in control_names:
+        monkeypatch.setenv(name, f"private-{name.lower()}")
+
+    with script_run_codex.prepare_arm_home("A_plain", root=tmp_path) as home:
+        assert all(name not in home.env for name in control_names)
+
+
 def test_auth_source_rejects_insecure_permissions_and_symlinks(script_run_codex: Any, tmp_path: Path) -> None:
     """Credential propagation must fail closed on readable or indirect sources."""
     auth_source = tmp_path / "source-auth.json"
@@ -1557,7 +1613,10 @@ def test_main_requires_positive_complete_run_wall_clock_limit_before_output_rese
 
 
 def test_main_stops_at_complete_run_deadline_after_persisting_finished_cells(
-    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The complete-run deadline stops new cells without erasing durable prior evidence."""
     tasks = [
@@ -1628,6 +1687,16 @@ def test_main_stops_at_complete_run_deadline_after_persisting_finished_cells(
         "arm": "A_plain",
     }
     assert metadata["error"]["type"] == "TimeoutError"
+    stdout = capsys.readouterr().out
+    metadata_path = tmp_path / "deadline-metadata.json"
+    assert stdout.count(str(output_path)) == 1
+    assert stdout.count(str(metadata_path)) == 1
+    assert all(
+        str(path) not in line
+        for path in (output_path, metadata_path)
+        for line in stdout.splitlines()
+        if line.startswith("SUMMARY")
+    )
 
 
 def test_main_rejects_unreviewed_implementation_revision_before_reserving_output(
@@ -1791,7 +1860,319 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     assert metadata["status"] == "completed"
     assert metadata["persisted_cells"] == 2
     assert metadata["cell_outcomes"]["compliance_failed"] == 1
-    assert capsys.readouterr().out.count("\tquality=?\t") == 2
+    stdout = capsys.readouterr().out
+    assert stdout.count("quality=    ?") == 2
+    assert stdout.count(script_run_codex._OUTPUT_LEGEND) == 1
+    assert stdout.count(f"ARTIFACTS  telemetry={output_path}") == 1
+    assert stdout.count(str(tmp_path / "admission-metadata.json")) == 1
+    assert str(output_path) not in "\n".join(line for line in stdout.splitlines() if line.startswith("RESULT"))
+
+
+def test_main_emits_plans_only_for_dry_runs_and_paths_only_in_artifact_announcement(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Dry-run exposes its plan while a paid run exposes only results and one path announcement."""
+    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
+
+    class FixtureRunner:
+        """Provide deterministic probe evidence and one successful paid cell."""
+
+        def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            self.model = model
+
+        def probe_arm(self, _arm: str) -> dict[str, bool]:
+            return {"codemap_available": False}
+
+        def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            return script_run_codex.CodexRun(
+                arm=arm,
+                task_id=task["id"],
+                task_type=task["type"],
+                model=self.model,
+                success=True,
+                scoreable=True,
+                input_tokens=1,
+                output_tokens=1,
+                compliance=None,
+            )
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+
+    script_run_codex.main(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        tasks_path=tmp_path / "tasks.json",
+        arm="A_plain",
+        dry_run=True,
+    )
+    dry_stdout = capsys.readouterr().out
+    assert [line for line in dry_stdout.splitlines() if line.startswith("PLAN")] == ["PLAN    fixture  rep=1  A_plain"]
+
+    output_path = tmp_path / "paid.jsonl"
+    metadata_path = tmp_path / "paid-metadata.json"
+    script_run_codex.main(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        tasks_path=tmp_path / "tasks.json",
+        output_path=output_path,
+        arm="A_plain",
+        max_wall_clock_seconds=600.0,
+    )
+    paid_stdout = capsys.readouterr().out
+    assert not any(line.startswith("PLAN") for line in paid_stdout.splitlines())
+    assert paid_stdout.count(str(output_path)) == 1
+    assert paid_stdout.count(str(metadata_path)) == 1
+    assert all(
+        str(path) not in line
+        for path in (output_path, metadata_path)
+        for line in paid_stdout.splitlines()
+        if line.startswith(("RESULT", "SUMMARY"))
+    )
+
+
+def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run_codex: Any) -> None:
+    """The upfront legend makes every compact terminal field independently interpretable."""
+    legend = script_run_codex._OUTPUT_LEGEND
+
+    assert "A=A_plain (no Codemap)" in legend
+    assert "B=B_direct_required (direct Codemap required)" in legend
+    assert "C=C_skill_required (Codemap skill required)" in legend
+    assert "status: ✓ completed, ✗ failed" in legend
+    assert "quality: continuous [0,1], ? unscoreable" in legend
+    assert "compliance: ✓ required use observed, ✗ requirement missed, n/a no requirement for A_plain" in legend
+    assert "tokens: k=1,000, M=1,000,000" in legend
+
+
+@pytest.mark.parametrize(
+    ("code", "meaning"),
+    [
+        pytest.param("SE", "symbol extraction", id="symbol-extraction"),
+        pytest.param("FN", "function-call graph", id="function-call-graph"),
+        pytest.param("RV", "review assistance", id="review-assistance"),
+        pytest.param("CQ", "code quality", id="code-quality"),
+        pytest.param("BR", "blast radius", id="blast-radius"),
+        pytest.param("DG", "debug from trace", id="debug-from-trace"),
+        pytest.param("FT", "feature scaffolding", id="feature-scaffolding"),
+        pytest.param("RI", "real issue", id="real-issue"),
+        pytest.param("DI", "diff impact", id="diff-impact"),
+        pytest.param("GR", "graph reasoning", id="graph-reasoning"),
+        pytest.param("MB", "module blast radius", id="module-blast-radius"),
+    ],
+)
+def test_output_legend_defines_each_task_code(script_run_codex: Any, code: str, meaning: str) -> None:
+    """Every task code in compact output expands to its benchmark meaning."""
+    assert f"{code}={meaning}" in script_run_codex._OUTPUT_LEGEND
+
+
+def _render_result_stream(input_text: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run the runner's stream-rendering mode with captured text output."""
+    return subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--render-results", *args],
+        cwd=BENCHMARKS_DIR.parent,
+        input=input_text,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("arm", "color_code"),
+    [
+        pytest.param("A_plain", "33", id="plain-yellow"),
+        pytest.param("B_direct_required", "36", id="direct-cyan"),
+        pytest.param("C_skill_required", "35", id="skill-magenta"),
+    ],
+)
+def test_render_results_force_color_maps_each_arm_to_its_review_color(arm: str, color_code: str) -> None:
+    """The test-only flag proves the exact A/B/C terminal palette."""
+    row = f"RESULT  ✓  FN-02  rep=1  {arm}  quality=1.000\n"
+
+    completed = _render_result_stream(row, "--force-color")
+
+    assert completed.returncode == 0, completed.stderr
+    assert f"\x1b[{color_code}m" in completed.stdout
+    assert row.rstrip("\n") in completed.stdout
+    assert completed.stdout.endswith("\x1b[0m\n")
+
+
+def test_render_results_preserves_noninteractive_stream_byte_for_byte() -> None:
+    """Redirected renderer output remains a plain machine-reviewable stream."""
+    input_text = "INFO keep this byte-for-byte\nRESULT  ✓  FN-02  rep=1  A_plain  quality=1.000\n"
+
+    completed = _render_result_stream(input_text)
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == input_text
+    assert "\x1b[" not in completed.stdout
+
+
+def test_render_results_force_color_preserves_unknown_and_non_result_rows() -> None:
+    """Only recognized A/B/C RESULT rows receive terminal styling."""
+    input_text = "INFO preparation\nRESULT  ✓  FN-02  rep=1  unknown  quality=1.000\n"
+
+    completed = _render_result_stream(input_text, "--force-color")
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == input_text
+    assert "\x1b[" not in completed.stdout
+
+
+def test_render_results_hide_plan_omits_only_human_plan_rows() -> None:
+    """The optional renderer filter removes PLAN rows without changing other output."""
+    input_text = (
+        "LEGEND  fields\n"
+        "PROBE\tA_plain\tcodemap=false\n"
+        "PLAN    SE-01  rep=1  A_plain\n"
+        "PLAN    FN-02  rep=1  B_direct_required\n"
+        "CONTROL\tcell_wall_clock_seconds=600\n"
+        "ARTIFACTS  telemetry=run.jsonl  metadata=metadata.json\n"
+        "RESULT  ✓  SE-01  rep=1  A_plain  quality=1.000\n"
+        "SUMMARY\tstatus=completed\n"
+    )
+    expected = (
+        "LEGEND  fields\n"
+        "PROBE\tA_plain\tcodemap=false\n"
+        "CONTROL\tcell_wall_clock_seconds=600\n"
+        "ARTIFACTS  telemetry=run.jsonl  metadata=metadata.json\n"
+        "RESULT  ✓  SE-01  rep=1  A_plain  quality=1.000\n"
+        "SUMMARY\tstatus=completed\n"
+    )
+
+    completed = _render_result_stream(input_text, "--hide-plan")
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == expected
+
+
+def test_hide_plan_requires_render_results_mode() -> None:
+    """The internal stream filter cannot alter normal benchmark execution."""
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--hide-plan"],
+        cwd=BENCHMARKS_DIR.parent,
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "--hide-plan requires --render-results" in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("arm", "input_tokens", "output_tokens", "elapsed_s", "quality", "compliance", "expected"),
+    [
+        pytest.param(
+            "A_plain",
+            44_441,
+            658,
+            17.2,
+            "1.000",
+            None,
+            "RESULT  ✓  SE-01  rep=1  A_plain            in= 44.4k  out=   658  time=  17s  quality=1.000  compliance:n/a",
+            id="plain-small-output",
+        ),
+        pytest.param(
+            "C_skill_required",
+            74_530,
+            995,
+            24.0,
+            "1.000",
+            True,
+            "RESULT  ✓  SE-01  rep=1  C_skill_required   in= 74.5k  out=   995  time=  24s  quality=1.000  compliance:✓",
+            id="skill-required",
+        ),
+        pytest.param(
+            "B_direct_required",
+            1_230_920,
+            1_475,
+            97.6,
+            "?",
+            False,
+            "RESULT  ✗  SE-01  rep=1  B_direct_required  in=  1.2M  out=  1.5k  time=1m38s  quality=    ?  compliance:✗",
+            id="direct-million-and-failure",
+        ),
+    ],
+)
+def test_format_result_row_uses_shared_human_units_and_fixed_columns(
+    script_run_codex: Any,
+    arm: str,
+    input_tokens: int,
+    output_tokens: int,
+    elapsed_s: float,
+    quality: str,
+    compliance: bool | None,
+    expected: str,
+) -> None:
+    """Terminal rows remain compact and visually comparable across all Codex arms."""
+    status = "✓" if compliance is not False else "✗"
+
+    assert (
+        script_run_codex._format_result_row(
+            status=status,
+            task_id="SE-01",
+            repetition=1,
+            arm=arm,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            elapsed_s=elapsed_s,
+            quality=quality,
+            compliance=compliance,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("is_terminal", "expected_rich_calls", "expected_plain_calls"),
+    [
+        pytest.param(True, 1, 0, id="interactive-rich-color"),
+        pytest.param(False, 0, 1, id="redirected-plain-text"),
+    ],
+)
+def test_print_arm_row_colors_only_interactive_output(
+    script_run_codex: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    is_terminal: bool,
+    expected_rich_calls: int,
+    expected_plain_calls: int,
+) -> None:
+    """Color aids terminal navigation without contaminating redirected benchmark logs."""
+    rich_calls: list[tuple[str, dict[str, Any]]] = []
+    plain_calls: list[str] = []
+
+    class FixtureConsole:
+        """Record Rich calls behind a configurable terminal boundary."""
+
+        def __init__(self) -> None:
+            self.is_terminal = is_terminal
+
+        def print(self, row: str, **kwargs: Any) -> None:
+            rich_calls.append((row, kwargs))
+
+    monkeypatch.setattr(script_run_codex, "_console", FixtureConsole())
+    monkeypatch.setattr(script_run_codex, "print", plain_calls.append, raising=False)
+
+    script_run_codex._print_arm_row("RESULT fixture", "B_direct_required")
+
+    assert len(rich_calls) == expected_rich_calls
+    assert len(plain_calls) == expected_plain_calls
+    if rich_calls:
+        assert rich_calls == [
+            (
+                "RESULT fixture",
+                {"style": "cyan", "markup": False, "soft_wrap": True},
+            )
+        ]
+    if plain_calls:
+        assert plain_calls == ["RESULT fixture"]
 
 
 def test_main_filters_locked_tasks_in_suite_order_and_rejects_invalid_ids(
@@ -1832,7 +2213,7 @@ def test_main_filters_locked_tasks_in_suite_order_and_rejects_invalid_ids(
         dry_run=True,
     )
 
-    assert any(row == "PLAN\tsecond\t1\tA_plain" for row in planned)
+    assert any(row == "PLAN    second  rep=1  A_plain" for row in planned)
     assert not any("first" in row for row in planned)
     with pytest.raises(ValueError, match="unique"):
         script_run_codex.main(
@@ -1900,9 +2281,9 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
         dry_run=True,
     )
 
-    plan_rows = [line.split("\t")[1:] for line in planned if line.startswith("PLAN\t")]
+    plan_rows = [line.split()[1:] for line in planned if line.startswith("PLAN ")]
     expected = [
-        [task_id, str(repetition), arm]
+        [task_id, f"rep={repetition}", arm]
         for task_id in pilot_ids
         for repetition in range(1, repetitions + 1)
         for arm in script_run_codex.CODEX_STRUCTURAL_ARMS

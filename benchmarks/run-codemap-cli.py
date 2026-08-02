@@ -98,10 +98,10 @@ Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-inde
 ## Quick start
 
     # Full benchmark + markdown report (C/A/L/Q always run; S/H/X when tasks-bench.json present)
-    python benchmarks/run-cli.py --repo-path .sandbox/pytorch-lightning --report
+    python benchmarks/run-codemap-cli.py --repo-path .sandbox/pytorch-lightning --report
 
     # Verify task modules exist in the index; non-default index via --index-path /path/to/index.json
-    python benchmarks/run-cli.py --verify-tasks --repo-path .sandbox/pytorch-lightning
+    python benchmarks/run-codemap-cli.py --verify-tasks --repo-path .sandbox/pytorch-lightning
 
 ## Where the benchmark fits in the full flow
 
@@ -3741,7 +3741,7 @@ def main(
     shape), then the self-consistency suites S/H/X (skipped on an index older
     than ``_SELF_CONSISTENCY_MIN_VER``).  Prints the primary verdict plus the
     separate self-consistency line; optionally writes a markdown report.  Exposed
-    via ``python benchmarks/run-cli.py`` (:func:`fire.Fire`); CLI flags
+    via ``python benchmarks/run-codemap-cli.py`` (:func:`fire.Fire`); CLI flags
     are the parameter names with ``_``→``-`` (e.g. ``--repo-path``).
 
     Args:
@@ -3755,7 +3755,7 @@ def main(
 
     Examples:
         # Full benchmark with markdown report
-        python benchmarks/run-cli.py --repo-path ./pytorch-lightning --report
+        python benchmarks/run-codemap-cli.py --repo-path ./pytorch-lightning --report
     """
     write_report = report and not json_only
     _OUT.quiet = json_only  # suppress human progress narration for machine consumers

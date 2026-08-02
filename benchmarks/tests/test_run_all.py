@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import errno
 import json
 import os
+import pty
 import subprocess
 import sys
 from pathlib import Path
@@ -54,6 +56,20 @@ def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
 printf "python %s\\n" "$*" >> "$CALL_LOG"
 if [ -n "${{FAIL_WHEN_ARGS_CONTAIN:-}}" ] && [[ "$*" == *"$FAIL_WHEN_ARGS_CONTAIN"* ]]; then
   exit 41
+fi
+if [[ "$*" == *"--render-results"* ]]; then
+  if [ -n "${{FAIL_RENDER_RESULTS:-}}" ]; then
+    exit 43
+  fi
+  exec {sys.executable} "$@"
+fi
+if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
+  printf "PLAN    FN-02  rep=1  A_plain\\n"
+fi
+if [[ "$*" == *"--auth-source"* ]]; then
+  printf "PLAN    FN-02  rep=1  A_plain\\n"
+  printf "RESULT  completed  FN-02  rep=1  A_plain  in=1  out=1  time=1s  quality=1.0  compliance:✓\\n"
+  printf "ARTIFACTS  telemetry=%s/telemetry.jsonl  metadata=%s/run-metadata.json\\n" "$CODEX_RUN_DIR" "$CODEX_RUN_DIR"
 fi""",
     )
     _write_executable(bin_dir / "codex", 'printf "codex-cli 0.146.0\\n"')
@@ -86,16 +102,47 @@ fi""",
     return env, call_log
 
 
-def _run_batch(mode: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _run_batch(mode: str, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
     """Run one batch mode against command stubs and capture its public output."""
     return subprocess.run(
-        ["/bin/bash", str(SCRIPT), mode],
+        ["/bin/bash", str(SCRIPT), mode, *args],
         cwd=BENCHMARKS_DIR.parent,
         env=env,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def _run_batch_tty(mode: str, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
+    """Run one batch with stdout and stderr attached to a pseudo-terminal."""
+    master_fd, slave_fd = pty.openpty()
+    command = ["/bin/bash", str(SCRIPT), mode, *args]
+    process = subprocess.Popen(
+        command,
+        cwd=BENCHMARKS_DIR.parent,
+        env=env,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+    output: list[bytes] = []
+    try:
+        while True:
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    break
+                raise
+            if not chunk:
+                break
+            output.append(chunk)
+    finally:
+        os.close(master_fd)
+    return subprocess.CompletedProcess(command, process.wait(), b"".join(output).decode(), "")
 
 
 def test_only_provider_neutral_batch_entrypoint_exists() -> None:
@@ -126,7 +173,40 @@ def test_batch_entrypoint_accepts_exactly_three_modes(batch_env: tuple[dict[str,
         rejected = _run_batch(obsolete, env)
         assert rejected.returncode == 2
         assert "smoke | claude | codex" in rejected.stderr
+    for mode in ("smoke", "claude"):
+        rejected = _run_batch(mode, env, "--dry-run")
+        assert rejected.returncode == 2
+    rejected = _run_batch("codex", env, "--unknown")
+    assert rejected.returncode == 2
     assert not call_log.exists()
+
+
+def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Path]) -> None:
+    """Expose the exact full Codex plan without authorization, credentials, or writes."""
+    env, call_log = batch_env
+    for name in (
+        "CODEX_PAID_APPROVAL",
+        "CODEX_AUTH_SOURCE",
+        "CODEX_RUN_DIR",
+        "CODEX_MAX_WALL_CLOCK_SECONDS",
+    ):
+        env.pop(name)
+
+    completed = _run_batch("codex", env, "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    codex_calls = [line for line in calls if "run-codex-structural.py" in line]
+    assert len(codex_calls) == 2
+    assert all("--dry-run" in line for line in codex_calls)
+    full_plan = next(line for line in codex_calls if "--repetitions 1" in line)
+    assert full_plan.count("--task-id") == len(CONFIRMATORY_TASK_IDS)
+    assert "--max-wall-clock-seconds 86400" in full_plan
+    assert all("--auth-source" not in line for line in codex_calls)
+    assert all("--output-path" not in line for line in codex_calls)
+    assert all("--render-results" not in line for line in codex_calls)
+    assert "PLAN " in completed.stdout
+    assert "165 cells" in completed.stdout
 
 
 def test_smoke_checks_claude_and_codex_without_paid_codex(
@@ -246,6 +326,27 @@ def test_codex_mode_requires_explicit_paid_inputs_before_setup(
     assert not call_log.exists()
 
 
+def test_codex_paid_rejection_prints_actionable_launch_guidance(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A rejected paid launch must explain dry-run and copyable paid-run commands."""
+    env, _ = batch_env
+    env.pop("CODEX_PAID_APPROVAL")
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 2
+    assert "bash benchmarks/run-all.sh codex --dry-run" in completed.stderr
+    assert f"CODEX_PAID_APPROVAL={ACTIVE_MANIFEST_SHA}" in completed.stderr
+    assert "CODEX_AUTH_SOURCE=" in completed.stderr
+    assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
+    assert str(Path.home()) not in completed.stderr
+    assert "CODEX_RUN_DIR=" in completed.stderr
+    assert "CODEX_MAX_WALL_CLOCK_SECONDS=86400" in completed.stderr
+    assert "benchmarks/manifests/codex-integration.md" in completed.stderr
+    assert "The command itself records paid authorization" in completed.stderr
+
+
 def test_provider_modes_dispatch_only_the_selected_provider(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
@@ -264,9 +365,7 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert codex.returncode == 0, codex.stderr
     codex_calls = call_log.read_text(encoding="utf-8")
     assert "run-codex-structural.py" in codex_calls
-    paid_call = next(
-        line for line in codex_calls.splitlines() if "run-codex-structural.py" in line and "--dry-run" not in line
-    )
+    paid_call = next(line for line in codex_calls.splitlines() if "--auth-source" in line)
     assert paid_call.count("--task-id") == len(CONFIRMATORY_TASK_IDS)
     assert all(f"--task-id {task_id}" in paid_call for task_id in CONFIRMATORY_TASK_IDS)
     assert "--repetitions 1" in paid_call
@@ -276,7 +375,11 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert f"--codemap-bin {env['CODEMAP_BIN']}" in codex_calls
     assert "--max-wall-clock-seconds 86400" in codex_calls
     assert "run-claude-" not in codex_calls
-    codex_lines = [line for line in codex_calls.splitlines() if "run-codex-structural.py" in line]
+    codex_lines = [
+        line
+        for line in codex_calls.splitlines()
+        if "run-codex-structural.py" in line and "--render-results" not in line
+    ]
     assert len(codex_lines) == 3
     smoke_call = next(line for line in codex_lines if "--task-id FN-02 --arm all --dry-run" in line)
     full_dry_run = next(line for line in codex_lines if "--dry-run" in line and "--task-id FN-02 --arm all" not in line)
@@ -306,3 +409,85 @@ def test_codex_mode_reconstructs_a_missing_locked_index_before_dispatch(
     assert completed.returncode == 0, completed.stderr
     assert index_path.read_text(encoding="utf-8") == "locked-index"
     assert "run-codex-structural.py" in call_log.read_text(encoding="utf-8")
+
+
+def test_paid_codex_noninteractive_output_and_artifact_log_remain_plain(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A redirected paid run must retain plain terminal output and a plain tee log."""
+    env, _ = batch_env
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 0, completed.stderr
+    run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
+    assert "\x1b[" not in completed.stdout
+    assert "\x1b[" not in run_log
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "PLAN " not in completed.stdout
+    assert "PLAN " in run_log
+    assert "RESULT  completed" in completed.stdout
+    assert "ARTIFACTS  telemetry=" in completed.stdout
+    assert "RESULT_RENDERER" not in script
+    assert "render-codex-results.py" not in script
+    assert (
+        'tee "$CODEX_RUN_DIR/run.log" | python3 "$ROOT/benchmarks/run-codex-structural.py" --render-results --hide-plan'
+    ) in script
+    assert "if [ -t 1 ]; then" not in script
+    assert 'echo "→ telemetry:' not in script
+    assert 'echo "→ metadata:' not in script
+
+
+def test_paid_codex_tty_output_hides_plan_rows_and_uses_shared_renderer(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """An interactive paid run uses the same renderer while preserving its plan log."""
+    env, call_log = batch_env
+
+    completed = _run_batch_tty("codex", env)
+
+    assert completed.returncode == 0, completed.stdout
+    run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
+    assert "PLAN " not in completed.stdout
+    assert "PLAN " in run_log
+    assert "--render-results --hide-plan" in call_log.read_text(encoding="utf-8")
+
+
+def test_paid_codex_runner_failure_survives_the_artifact_tee(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The paid runner's non-zero exit must remain visible after its log pipeline."""
+    env, call_log = batch_env
+    env["FAIL_WHEN_ARGS_CONTAIN"] = "--auth-source"
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 41
+    assert "--auth-source" in call_log.read_text(encoding="utf-8")
+    assert (Path(env["CODEX_RUN_DIR"]) / "run.log").is_file()
+
+
+def test_paid_codex_renderer_failure_survives_the_artifact_pipeline(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A failed console renderer must fail the paid pipeline after teeing its log."""
+    env, _ = batch_env
+    env["FAIL_RENDER_RESULTS"] = "1"
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 43
+    assert (Path(env["CODEX_RUN_DIR"]) / "run.log").is_file()
+
+
+def test_paid_codex_tee_failure_survives_the_artifact_pipeline(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A failed tee must fail the paid pipeline even when the renderer exits cleanly."""
+    env, _ = batch_env
+    tee = Path(env["PATH"].split(":", maxsplit=1)[0]) / "tee"
+    _write_executable(tee, "exit 44")
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 44

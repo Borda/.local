@@ -881,7 +881,7 @@ def _derive_module_name(py_path: Path, root: Path) -> Optional[str]:
     return rel_dotted or None
 
 
-# resolve_relative_base now imported from _utilities (shared with run-cli).
+# resolve_relative_base now imported from _utilities (shared with run-codemap-cli).
 
 
 def _extract_import_targets(tree: ast.Module, package: str, all_modules: set[str]) -> set[str]:

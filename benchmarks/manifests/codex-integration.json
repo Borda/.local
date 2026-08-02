@@ -33,8 +33,8 @@
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "da2d863e8a6ac3b100017a4e29d33597b6743cca13fab8c2906d5b67d9645a98",
-    "run_all": "01ad079865cd18ae5a9eaf8ed0367c91c11909d00b217a44cffa0cf804b3a70d",
-    "run_codex_structural": "302f04dcd5306c174aa8a66239ed49bc5a813dbf42217ec375bde1f34f49ca9d"
+    "run_all": "5d81da7d0b7c0f94d8bba69437c339c525474c5b8d879a7b064acef387513815",
+    "run_codex_structural": "0629ba794237ebcfe35274889ce08848772fff13da131fa61526fd9badc0f892"
   },
   "codemap_candidate": {
     "package_manifest_sha256": "c47f58ff4bdef34630925e969815d59c331e7cc1675b3cb3e6ab889ab0f6a6db",
@@ -309,8 +309,8 @@
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "da2d863e8a6ac3b100017a4e29d33597b6743cca13fab8c2906d5b67d9645a98",
-      "run_all": "01ad079865cd18ae5a9eaf8ed0367c91c11909d00b217a44cffa0cf804b3a70d",
-      "run_codex_structural": "302f04dcd5306c174aa8a66239ed49bc5a813dbf42217ec375bde1f34f49ca9d"
+      "run_all": "5d81da7d0b7c0f94d8bba69437c339c525474c5b8d879a7b064acef387513815",
+      "run_codex_structural": "0629ba794237ebcfe35274889ce08848772fff13da131fa61526fd9badc0f892"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -357,7 +357,7 @@
       }
     ],
     "model_or_auth_used": false,
-    "query_diagnostic": "run-cli.py remains non-admission diagnostic evidence; retain each run's output separately because its latency counts are environment-sensitive",
+    "query_diagnostic": "run-codemap-cli.py remains non-admission diagnostic evidence; retain each run's output separately because its latency counts are environment-sensitive",
     "status": "runtime_smoke_required_before_paid_execution"
   },
   "oracle_remediation": {
@@ -536,7 +536,7 @@
   "schema_version": "codex-integration-manifest-v1",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "1acecdbf6d58d3380075bbbaf3915b6c43165c1cce1143564ba319651c952394"
+    "sha256": "bfa7a196edda7709f9049b366a2ddc1128878498bd6ed58bbe524c5d30960269"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
@@ -2127,7 +2127,7 @@
       ]
     },
     {
-      "current_consumer": "run-cli.py; optional external input to run-claude-structural.py",
+      "current_consumer": "run-codemap-cli.py; optional external input to run-claude-structural.py",
       "generation_provenance": "committed_cli_query_specs_without_materialized_llm_ground_truth",
       "ordered_task_ids": [
         "B-01",

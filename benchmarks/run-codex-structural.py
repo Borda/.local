@@ -95,7 +95,6 @@ skill isolation, and the deterministic cell plan:
       --index-path /path/to/pytorch-lightning/.cache/codemap/pytorch-lightning.json \\
       --marketplace-root . \\
       --codemap-bin /path/to/codemap-py \\
-      --auth-source /path/to/codex/auth.json \\
       --model gpt-5.6-luna \\
       --task-id FN-02 \\
       --dry-run
@@ -149,9 +148,11 @@ execution also requires an explicit complete-run wall-clock limit. A required ar
 ## Output
 
 ``--dry-run`` invokes no model and prints one ``PROBE`` line per selected arm
-followed by deterministic task/repetition/arm ``PLAN`` lines. A paid run appends
-one normalized JSON object per completed cell to ``--output-path`` and prints a
-``RESULT`` line.
+followed by deterministic task/repetition/arm ``PLAN`` lines. A paid run prints
+its telemetry and metadata paths once, appends one normalized JSON object per
+completed cell to ``--output-path``, and prints a compact ``RESULT`` line. Token
+counts and durations use the same human-readable formatter as the Claude runner.
+Interactive terminals color A/B/C rows; redirected logs remain plain text.
 The file is created before the first cell so an existing result cannot be
 overwritten, and each completed cell survives a later failure.
 """
@@ -176,13 +177,15 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 from uuid import uuid4
 
 import sys
+from rich.console import Console as _Console
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _utilities import fmt_time, fmt_tok  # noqa: E402
 from provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
@@ -211,6 +214,88 @@ _MIN_PERMISSION_PROFILE_VERSION = (0, 138, 0)
 _COORDINATION_NAME = ".index-rw"
 _REGISTRY_NAME = "registry.lock"
 _READERS_NAME = "readers"
+_ARM_COLUMN_WIDTH = max(len(arm) for arm in CODEX_STRUCTURAL_ARMS)
+_ARM_ROW_STYLES = {
+    "A_plain": "yellow",
+    "B_direct_required": "cyan",
+    "C_skill_required": "magenta",
+}
+_RESULT_ARM = re.compile(r"^RESULT\b.*\b(A_plain|B_direct_required|C_skill_required)\b")
+_OUTPUT_LEGEND = (
+    "LEGEND  treatments: A=A_plain (no Codemap), B=B_direct_required (direct Codemap required), "
+    "C=C_skill_required (Codemap skill required)\n"
+    "LEGEND  tasks: SE=symbol extraction, FN=function-call graph, RV=review assistance, CQ=code quality, "
+    "BR=blast radius, DG=debug from trace\n"
+    "LEGEND  tasks: FT=feature scaffolding, RI=real issue, DI=diff impact, GR=graph reasoning, "
+    "MB=module blast radius | status: ✓ completed, ✗ failed\n"
+    "LEGEND  quality: continuous [0,1], ? unscoreable | compliance: ✓ required use observed, "
+    "✗ requirement missed, n/a no requirement for A_plain | tokens: k=1,000, M=1,000,000"
+)
+_console = _Console(highlight=False)
+
+
+def _format_plan_row(task_id: str, repetition: int, arm: str) -> str:
+    """Format one deterministic coordinate as an aligned terminal row."""
+    return f"PLAN    {task_id:<5}  rep={repetition}  {arm}"
+
+
+def _format_result_row(
+    *,
+    status: str,
+    task_id: str,
+    repetition: int,
+    arm: str,
+    input_tokens: int,
+    output_tokens: int,
+    elapsed_s: float,
+    quality: str,
+    compliance: bool | None,
+) -> str:
+    """Format one result with stable columns and shared human-readable units."""
+    compliance_mark = {None: "n/a", True: "✓", False: "✗"}[compliance]
+    return (
+        f"RESULT  {status}  {task_id:<5}  rep={repetition}  {arm:<{_ARM_COLUMN_WIDTH}}"
+        f"  in={fmt_tok(input_tokens):>6}  out={fmt_tok(output_tokens):>6}"
+        f"  time={fmt_time(elapsed_s):>5}  quality={quality:>5}  compliance:{compliance_mark}"
+    )
+
+
+def _print_arm_row(row: str, arm: str) -> None:
+    """Print a plain log row, adding arm color only on interactive terminals."""
+    if _console.is_terminal:
+        _console.print(row, style=_ARM_ROW_STYLES[arm], markup=False, soft_wrap=True)
+        return
+    print(row)
+
+
+def _result_arm(row: str) -> str | None:
+    """Return the recognized arm from one result row, if any."""
+    match = _RESULT_ARM.search(row)
+    return match.group(1) if match else None
+
+
+def render_result_rows(
+    rows: Iterable[str], output: TextIO, *, force_color: bool = False, hide_plan: bool = False
+) -> None:
+    """Render result rows, optionally hiding human PLAN rows and coloring terminal output."""
+    use_color = force_color or output.isatty()
+    console = _Console(
+        file=output,
+        force_terminal=use_color,
+        color_system="standard" if use_color else None,
+        highlight=False,
+        markup=False,
+        no_color=not use_color,
+    )
+    for row in rows:
+        if hide_plan and row.startswith("PLAN "):
+            continue
+        arm = _result_arm(row) if use_color else None
+        if arm is None:
+            output.write(row)
+            continue
+        console.print(row.rstrip("\n"), style=_ARM_ROW_STYLES[arm], end="\n")
+    output.flush()
 
 
 def _is_known_codex_arm(arm: str) -> bool:
@@ -1146,6 +1231,15 @@ def prepare_arm_home(
         elif arm == "C_skill_required" and plugin_installer is not None:
             verified = bool(plugin_installer(home))
         env = os.environ.copy()
+        # Batch admission values belong to the parent orchestrator, not the
+        # Codex process or any measured arm environment.
+        for variable in (
+            "CODEX_PAID_APPROVAL",
+            "CODEX_AUTH_SOURCE",
+            "CODEX_RUN_DIR",
+            "CODEX_MAX_WALL_CLOCK_SECONDS",
+        ):
+            env.pop(variable, None)
         env.pop("CODEMAP_SKILL_FILE", None)
         env["CODEX_HOME"] = str(home)
         env["CODEX_BENCHMARK_ARM"] = arm
@@ -1334,6 +1428,9 @@ def _verify_permission_profile(
     profile = home.permission_profile or (
         _PLAIN_PERMISSION_PROFILE if home.arm == "A_plain" else _CODEMAP_PERMISSION_PROFILE
     )
+    # An activated project virtualenv may expose a workspace symlink even when
+    # the running interpreter itself lives outside the protected source tree.
+    probe_python = str(Path(sys.executable).resolve())
     sandbox_prefix = [
         _CODEX_BIN,
         "sandbox",
@@ -1343,7 +1440,7 @@ def _verify_permission_profile(
         "-C",
         str(repo_path),
         "--",
-        sys.executable,
+        probe_python,
         "-c",
     ]
     code, _stdout, error = _invoke_plugin_command(
@@ -2648,6 +2745,7 @@ def main(
         manifest_path=manifest_path,
         auth_source=auth_source,
     )
+    print(_OUTPUT_LEGEND)
     if dry_run:
         for selected in ARMS if arm == "all" else (arm,):
             evidence = runner.probe_arm(selected)
@@ -2658,6 +2756,10 @@ def main(
             f"CONTROL\tcell_wall_clock_seconds={PARITY_TIMEOUT_SECONDS:g}"
             f"\tmax_wall_clock_seconds={max_wall_clock_seconds:g}"
         )
+    if not dry_run:
+        assert output_path is not None
+        assert metadata_path is not None
+        print(f"ARTIFACTS  telemetry={output_path}  metadata={metadata_path}")
     task_arms = {
         (task["id"], repetition): (
             _manifest_arm_order(
@@ -2673,11 +2775,11 @@ def main(
         for task in tasks
         for repetition in range(1, repetitions + 1)
     }
-    for task in tasks:
-        for repetition in range(1, repetitions + 1):
-            for selected in task_arms[(task["id"], repetition)]:
-                print(f"PLAN\t{task['id']}\t{repetition}\t{selected}")
     if dry_run:
+        for task in tasks:
+            for repetition in range(1, repetitions + 1):
+                for selected in task_arms[(task["id"], repetition)]:
+                    _print_arm_row(_format_plan_row(task["id"], repetition, selected), selected)
         return
     assert max_wall_clock_seconds is not None
     assert output_path is not None
@@ -2729,10 +2831,19 @@ def main(
                     _write_run_metadata(metadata_path, metadata)
                     status = "✓" if run.success else "✗"
                     quality = f"{run.quality_score:.3f}" if run.quality_score is not None else "?"
-                    print(
-                        f"RESULT\t{status}\t{task['id']}\trep={repetition}\t{selected}"
-                        f"\tin={run.input_tokens}\tout={run.output_tokens}\ttime={run.elapsed_s:.1f}s"
-                        f"\tquality={quality}\tcompliance={run.compliance}\t{output_path}"
+                    _print_arm_row(
+                        _format_result_row(
+                            status=status,
+                            task_id=task["id"],
+                            repetition=repetition,
+                            arm=selected,
+                            input_tokens=run.input_tokens,
+                            output_tokens=run.output_tokens,
+                            elapsed_s=run.elapsed_s,
+                            quality=quality,
+                            compliance=run.compliance,
+                        ),
+                        selected,
                     )
                     if time.monotonic() >= run_deadline:
                         raise TimeoutError("complete-run wall-clock limit exhausted after persisted cell")
@@ -2742,10 +2853,7 @@ def main(
         metadata["error"] = {"type": type(exc).__name__, "message": str(exc)[:1000]}
         metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
         _write_run_metadata(metadata_path, metadata)
-        print(
-            f"SUMMARY\tstatus={metadata['status']}\tpersisted_cells={metadata['persisted_cells']}"
-            f"\tmetadata={metadata_path}"
-        )
+        print(f"SUMMARY\tstatus={metadata['status']}\tpersisted_cells={metadata['persisted_cells']}")
         raise
     metadata["status"] = "completed"
     metadata["completed_at"] = _utc_now()
@@ -2753,7 +2861,7 @@ def main(
     _write_run_metadata(metadata_path, metadata)
     print(
         f"SUMMARY\tstatus=completed\tpersisted_cells={metadata['persisted_cells']}"
-        f"\toutcomes={json.dumps(metadata['cell_outcomes'], sort_keys=True)}\tmetadata={metadata_path}"
+        f"\toutcomes={json.dumps(metadata['cell_outcomes'], sort_keys=True)}"
     )
 
 
@@ -2761,14 +2869,17 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo-path", type=Path, required=True)
-    parser.add_argument("--model", required=True)
+    parser.add_argument("--render-results", action="store_true", help="render RESULT rows from standard input")
+    parser.add_argument("--force-color", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--hide-plan", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--repo-path", type=Path)
+    parser.add_argument("--model")
     parser.add_argument(
         "--reasoning-effort",
         default=PARITY_CODEX_REASONING_EFFORT,
         choices=(PARITY_CODEX_REASONING_EFFORT,),
     )
-    parser.add_argument("--tasks-path", type=Path, required=True)
+    parser.add_argument("--tasks-path", type=Path)
     parser.add_argument("--manifest-path", type=Path, default=PARITY_MANIFEST_PATH)
     parser.add_argument("--index-path", type=Path)
     parser.add_argument("--marketplace-root", type=Path, required=False)
@@ -2782,4 +2893,18 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-wall-clock-seconds", type=float)
     args = parser.parse_args()
-    main(**vars(args))
+    if args.force_color and not args.render_results:
+        parser.error("--force-color requires --render-results")
+    if args.hide_plan and not args.render_results:
+        parser.error("--hide-plan requires --render-results")
+    if args.render_results:
+        render_result_rows(sys.stdin, sys.stdout, force_color=args.force_color, hide_plan=args.hide_plan)
+    else:
+        for option in ("repo_path", "model", "tasks_path"):
+            if getattr(args, option) is None:
+                parser.error(f"--{option.replace('_', '-')} is required unless --render-results is used")
+        arguments = vars(args)
+        arguments.pop("render_results")
+        arguments.pop("force_color")
+        arguments.pop("hide_plan")
+        main(**arguments)

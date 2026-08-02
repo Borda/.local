@@ -217,8 +217,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     }
 
 
-def test_integration_manifest_has_no_plan_shorthand_and_human_review_status() -> None:
-    """Committed benchmark records use self-contained names and require human approval."""
+def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authorization() -> None:
+    """Committed records use self-contained names and a manifest-bound launch authorization."""
     for path in (SOURCE_MANIFEST, GENERATOR, MANIFEST, HUMAN_MANIFEST):
         assert SHORTHAND.search(path.read_text(encoding="utf-8")) is None
 
@@ -228,5 +228,7 @@ def test_integration_manifest_has_no_plan_shorthand_and_human_review_status() ->
     human = HUMAN_MANIFEST.read_text(encoding="utf-8")
     assert "# `codex-integration-v1`" in human
     assert "Runtime smoke and exact coordinate-plan validation are required before paid execution." in human
-    assert "Human review is required before any further paid execution." in human
+    assert "no separate chat authorization is required" in human
+    assert "CODEX_PAID_APPROVAL" in human
+    assert "bash benchmarks/run-all.sh codex --dry-run" in human
     assert "This manifest rebuild used no model cell or authentication source." in human

@@ -30,7 +30,7 @@ Existing Claude and exploratory Codex results remain historical evidence and are
 | Claude only      | `run-claude-agentic.py`         | Agentic Claude/semble comparison plus canonical Claude arms              |
 | Codex only       | `run-codex-structural.py`       | Canonical structural Codex A/B/C transport                               |
 | Provider-neutral | `run-all.sh`                    | Safe dispatcher for smoke, Claude, or Codex batch workflows              |
-| Provider-neutral | `run-cli.py`                    | Deterministic scan/query correctness and performance; no model           |
+| Provider-neutral | `run-codemap-cli.py`            | Deterministic scan/query correctness and performance; no model           |
 | Provider-neutral | `provider_parity_contracts.py`  | Shared task, arm, scoring, provenance, and pairing library; not a runner |
 | Provider-neutral | `generate-tasks-bench.py`       | Validates or refreshes shared structural oracle fields                   |
 | Provider-neutral | `generate-tasks-real-issues.py` | Refreshes shared real-issue task evidence                                |
@@ -44,20 +44,21 @@ Archived manifests retain historical consumer labels from before this rename. Ac
 | [Agentic](#agentic-benchmark-run-claude-agenticpy)             | Claude           | `run-claude-agentic.py`    | Yes | Legacy 4; parity 3 (A/B/C) | 16 import-graph tasks                                                       | Does codemap/semble reduce exploration overhead vs grep?                                              |
 | [Structural](#real-codebase-benchmark-run-claude-structuralpy) | Claude           | `run-claude-structural.py` | Yes | Legacy 2; parity 3 (A/B/C) | 60 tasks — 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) | Does scan-query reduce token cost and improve structural recall on pre-implementation research tasks? |
 | Provider parity                                                | Codex            | `run-codex-structural.py`  | Yes | Parity 3 (A/B/C)           | Locked structural `tasks-bench.json` tasks                                  | Does Codemap provide an objective within-Codex advantage under the same shared contracts?             |
-| [Query](#query-benchmark-run-clipy)                            | Provider-neutral | `run-cli.py`               | No  | —                          | Deterministic query/correctness suites                                      | Is scan-query correct, complete, and fast enough?                                                     |
+| [Query](#query-benchmark-run-codemap-clipy)                    | Provider-neutral | `run-codemap-cli.py`       | No  | —                          | Deterministic query/correctness suites                                      | Is scan-query correct, complete, and fast enough?                                                     |
 
 Run **Query** first — validates the index before spending LLM tokens on agentic runs.
 
 ## Unified batch entrypoint
 
-`run-all.sh` is the only batch orchestrator. It requires exactly one mode and does nothing when the argument is missing or unknown:
+`run-all.sh` is the only batch orchestrator. It requires one mode; only `codex` accepts the optional `--dry-run` argument. Missing or unknown arguments do nothing:
 
 ```bash
 bash benchmarks/run-all.sh smoke
 bash benchmarks/run-all.sh claude
+bash benchmarks/run-all.sh codex --dry-run
 CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-integration.json | awk '{print $1}')" \
-    CODEX_AUTH_SOURCE=/private/path/to/auth.json \
-    CODEX_RUN_DIR=benchmarks/results/codex-integration-human-run \
+    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
+    CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=86400 \
     bash benchmarks/run-all.sh codex
 ```
@@ -66,7 +67,12 @@ Modes:
 
 - `smoke` — validate the frozen active index, run the deterministic query check, and execute Claude and Codex dry-run/preflight paths. It invokes no model.
 - `claude` — validate the frozen index and preflight, then run the existing paid Claude structural tiers and agentic batch.
+- `codex --dry-run` — validate the frozen index, run the deterministic query check and FN-02 Codex smoke, then print the exact 165-coordinate plan. It needs no paid approval, authentication source, or result directory and invokes no model.
 - `codex` — validate the frozen index, run the fail-fast FN-02 A/B/C smoke and exact no-model plan, then execute the complete 55-task × one-repetition × three-arm study. Cell outcomes are recorded without fail-fast after admission. It fails before setup unless the exact active-manifest SHA-256, a private auth source, a new run directory, and the manifest-locked complete-run ceiling are supplied.
+
+For a human-launched run, setting `CODEX_PAID_APPROVAL` to the current machine-manifest SHA-256 in the same command is the paid authorization and stale-manifest safety lock; no separate chat authorization is required. The entrypoint prints a complete launch template whenever paid admission fails.
+
+Credential handling is explicit, not discover-and-search: the runner opens only `CODEX_AUTH_SOURCE`, requires a user-owned nonsymlink regular file with mode `0600`, copies it into each disposable mode-`0700` Codex home, denies model-shell reads, and removes the home after the arm. Credential bytes and the source path are not written to telemetry or run metadata. Batch approval, auth-source, result-directory, and wall-clock variables are removed from measured Codex arm environments.
 
 The target is pinned to PyTorch Lightning tag `2.6.5`; the hardcoded ground truth and active manifest reject every other tree. The managed `/private/tmp/codemap-provider-parity-pl-2.6.5` clone is reset to that tag before each mode. `REPO=/path/to/clone` may select an external clone, but the script never resets an override and canonical preflight still requires the locked clean commit and exact frozen-index SHA-256. A missing index is rebuilt and admitted only when normalization of declared environment-specific metadata reproduces the complete locked SHA-256. Every Codex result row records provider, model, effort, task, repetition, arm, telemetry, compliance, provenance, timing, and limits; `run-metadata.json` is updated after each durable cell.
 
@@ -81,7 +87,7 @@ git -C "$REPO" reset --hard 2.6.5 && git -C "$REPO" clean -fd
 CM=plugins/codemap-py/bin/codemap-py
 
 "$CM" index --root "$REPO"
-python benchmarks/run-cli.py --repo-path "$REPO" --report
+python benchmarks/run-codemap-cli.py --repo-path "$REPO" --report
 python benchmarks/run-claude-structural.py --repo-path "$REPO" --run-all --model haiku
 python benchmarks/run-claude-structural.py --repo-path "$REPO" --run-all --model sonnet
 python benchmarks/run-claude-structural.py --repo-path "$REPO" --run-all --model opus
@@ -101,7 +107,7 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 
 - [Agentic benchmark](#agentic-benchmark-run-claude-agenticpy) — Claude-only 4-arm import-graph navigation with semble support
 - [Real-codebase benchmark](#real-codebase-benchmark-run-claude-structuralpy) — Claude-only structural navigation on pytorch-lightning
-- [Query benchmark](#query-benchmark-run-clipy) — provider-neutral scan-query correctness and latency, no LLM
+- [Query benchmark](#query-benchmark-run-codemap-clipy) — provider-neutral scan-query correctness and latency, no LLM
 - [Results](#results)
 
 <details>
@@ -116,7 +122,7 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 | `run-claude-agentic.py`         | Claude           | Agentic benchmark measuring how Codemap/semble structural context changes Claude exploration                                                                      |
 | `run-claude-structural.py`      | Claude           | Repo-agnostic structural benchmark driven by the `tasks-bench.json` repository header                                                                             |
 | `run-all.sh`                    | Provider-neutral | Sole batch dispatcher: no-model cross-provider smoke, paid Claude batches, or approval-gated complete Codex structural study                                     |
-| `run-cli.py`                    | Provider-neutral | Query-level correctness, coverage, and latency against a real repository                                                                                          |
+| `run-codemap-cli.py`            | Provider-neutral | Query-level correctness, coverage, and latency against a real repository                                                                                          |
 | `run-codex-structural.py`       | Codex            | Codex structural provider-parity transport for canonical A/B/C cells with isolated plugin homes, native telemetry normalization, and shared structural evaluators |
 | `generate-tasks-bench.py`       | Provider-neutral | Validates or refreshes shared structural oracle fields; it does not author prompts                                                                                |
 | `generate-tasks-real-issues.py` | Provider-neutral | Refreshes shared real-issue evidence                                                                                                                              |
@@ -421,7 +427,7 @@ python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update --up
 
 ______________________________________________________________________
 
-## Query benchmark (`run-cli.py`)
+## Query benchmark (`run-codemap-cli.py`)
 
 Validates `scan-query` directly — no LLM involved. Requires a pre-built index.
 
@@ -439,7 +445,7 @@ Seven suites run together, split into two tracks. **Primary** suites (C / A / L 
 
 Suites S, H, X auto-skip (no error) when `tasks-bench.json` is absent.
 
-**Deterministic correctness suites (D / B / R / K / U).** In addition to the seven tracks above, `run-cli.py` runs five deterministic correctness suites, and — unlike S/H/X — they **join the primary verdict**. Each builds a self-contained fixture repo in a tmp dir whose ground truth is KNOWN by construction (an exact importer count, an exactly-corrupted index, a single broken sphinx xref), so a pass is genuine independent-oracle correctness rather than agreement with a scan-query-derived snapshot. They assert the user-visible CLI contract offline (independent of `--repo-path`), and skip cleanly when `scan-index` is absent.
+**Deterministic correctness suites (D / B / R / K / U).** In addition to the seven tracks above, `run-codemap-cli.py` runs five deterministic correctness suites, and — unlike S/H/X — they **join the primary verdict**. Each builds a self-contained fixture repo in a tmp dir whose ground truth is KNOWN by construction (an exact importer count, an exactly-corrupted index, a single broken sphinx xref), so a pass is genuine independent-oracle correctness rather than agreement with a scan-query-derived snapshot. They assert the user-visible CLI contract offline (independent of `--repo-path`), and skip cleanly when `scan-index` is absent.
 
 | Suite                 | What it asserts (known-by-construction fixture)                                                                                                                               |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -449,24 +455,24 @@ Suites S, H, X auto-skip (no error) when `tasks-bench.json` is absent.
 | **K** self-check      | corrupt index variants (missing key / bad version / wrong type / truncated JSON) → exit 3 + parseable JSON error, never a partial serve                                       |
 | **U** uncovered/xrefs | fixture with KNOWN counts (2 undocumented public fns, 1 broken sphinx xref) → exact counts — the deterministic replacement for the LLM bench's circular scan-query-derived GT |
 
-This is the division of labour between the two runners: **deterministic correctness now lives in `run-cli.py`** (suites D/B/R/K/U, joining its primary verdict), while the **LLM bench (`run-claude-structural.py`) measures workflow efficiency** — token ratio, tool-call economy, and recall on tasks whose ground truth is independent of the index. Because suite U pins the uncovered/xref counts deterministically, the corresponding LLM tasks (`CQ-02` uncovered, `CQ-04` xrefs, `CQ-05` combined-health uncovered part) are **demoted to self-consistency** in the LLM bench: they still run and score, but are excluded from the headline accuracy aggregates (scoring the codemap arm against index-derived truth would measure agreement with itself) and reported in a separate self-consistency row.
+This is the division of labour between the two runners: **deterministic correctness now lives in `run-codemap-cli.py`** (suites D/B/R/K/U, joining its primary verdict), while the **LLM bench (`run-claude-structural.py`) measures workflow efficiency** — token ratio, tool-call economy, and recall on tasks whose ground truth is independent of the index. Because suite U pins the uncovered/xref counts deterministically, the corresponding LLM tasks (`CQ-02` uncovered, `CQ-04` xrefs, `CQ-05` combined-health uncovered part) are **demoted to self-consistency** in the LLM bench: they still run and score, but are excluded from the headline accuracy aggregates (scoring the codemap arm against index-derived truth would measure agreement with itself) and reported in a separate self-consistency row.
 
 ### Quick start
 
 ```bash
 # Run all suites against the target repo (auto-detects index)
-python benchmarks/run-cli.py \
+python benchmarks/run-codemap-cli.py \
     --repo-path ./<repo-dir> \
     --report
 
 # Explicit index path
-python benchmarks/run-cli.py \
+python benchmarks/run-codemap-cli.py \
     --repo-path ./<repo-dir> \
     --index-path ./<repo-dir>/.cache/codemap/pytorch-lightning-master.json \
     --report
 
 # Verify task modules exist in index before a full run
-python benchmarks/run-cli.py \
+python benchmarks/run-codemap-cli.py \
     --repo-path ./<repo-dir> \
     --verify-tasks
 ```

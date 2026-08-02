@@ -409,7 +409,7 @@ def _build_manifest() -> dict[str, Any]:
             ],
             "model_or_auth_used": False,
             "query_diagnostic": (
-                "run-cli.py remains non-admission diagnostic evidence; retain each run's output separately because "
+                "run-codemap-cli.py remains non-admission diagnostic evidence; retain each run's output separately because "
                 "its latency counts are environment-sensitive"
             ),
             "status": "runtime_smoke_required_before_paid_execution",
@@ -488,30 +488,28 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "",
         "## Execution",
         "",
-        "Run the no-model admission smoke first:",
+        "Run the exact no-model Codex smoke and 165-coordinate plan first:",
         "",
         "```bash",
-        "bash benchmarks/run-all.sh smoke",
+        "bash benchmarks/run-all.sh codex --dry-run",
         "```",
         "",
-        "After reviewing this manifest and separately authorizing credential use and paid execution:",
+        "After reviewing this manifest, launch the paid study with the manifest-bound command:",
         "",
         "```bash",
         f"CODEX_PAID_APPROVAL={machine_sha256} \\",
-        "    CODEX_AUTH_SOURCE=/private/path/to/auth.json \\",
-        "    CODEX_RUN_DIR=benchmarks/results/codex-integration-human-run \\",
+        '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
+        '    CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \\',
         f"    CODEX_MAX_WALL_CLOCK_SECONDS={manifest['execution_controls']['confirmatory_max_wall_clock_seconds']} \\",
         "    bash benchmarks/run-all.sh codex",
         "```",
         "",
-        "The run directory must not already exist. Runtime logs, telemetry, metadata, and checksums stay under the ",
-        "ignored `benchmarks/results/` directory unless the user deliberately exports them for review.",
+        "Setting `CODEX_PAID_APPROVAL` to this exact machine-manifest SHA-256 in the launch command is the human authorization and stale-manifest lock; no separate chat authorization is required. The run directory must not already exist. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless the user deliberately exports them for review.",
         "",
         "## Status",
         "",
-        "Runtime smoke and exact coordinate-plan validation are required before paid execution. "
-        "Human review is required before any further paid execution. This manifest rebuild used no model cell or "
-        "authentication source.",
+        "Runtime smoke and exact coordinate-plan validation are required before paid execution. This manifest rebuild "
+        "used no model cell or authentication source.",
         "",
     ]
     return "\n".join(lines).encode("utf-8")

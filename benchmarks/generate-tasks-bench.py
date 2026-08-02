@@ -155,7 +155,7 @@ def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
 # ---- BINARY RESOLUTION ----
 
 
-# find_codemap_bin now imported from _utilities (shared with run-cli).
+# find_codemap_bin now imported from _utilities (shared with run-codemap-cli).
 
 
 def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
