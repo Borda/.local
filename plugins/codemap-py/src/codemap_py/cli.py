@@ -38,7 +38,24 @@ from codemap_py import index_paths, integration, query, rwgate
 _MIN = (3, 11)
 _MAX_EXCLUSIVE = (3, 15)
 _PROBE_FIELDS = 3
-_USAGE = "usage: codemap-py {index,query,doctor} [args...]"
+_USAGE = "usage: codemap-py {index,query,doctor,integrate} [args...]"
+_HELP = """usage: codemap-py {index,query,doctor,integrate} [args...]
+
+Commands:
+  index [args...]       Build or update the structural index.
+  query [args...]       Query the structural index as JSON.
+  doctor [--json]       Report the resolved interpreter and index path.
+  integrate [args...]   Run a supported integration command.
+
+Direct compact query examples:
+  codemap-py query --compact rdeps mypackage.auth
+  codemap-py query --compact fn-rdeps 'mypackage.auth::validate_token'
+  codemap-py query --compact coupled --top 5
+  codemap-py query --compact undocumented mypackage.auth
+  codemap-py query --compact uncovered mypackage.auth
+
+Run `codemap-py query --help` for every query and its arguments.
+"""
 _PROBE_SNIPPET = "import sys;v=sys.version_info;print(sys.implementation.name,v.major,v.minor)"
 _NO_INTERPRETER_EXIT = 127
 _USAGE_EXIT = 2
@@ -252,9 +269,12 @@ def _run_index(rest: Sequence[str], plugin_root: Path) -> int:
 
 
 def main(argv: Sequence[str] | None = None, plugin_root: Path | None = None) -> int:
-    """Dispatch ``index``/``query``/``doctor`` (plan §7.5 exit codes)."""
+    """Dispatch ``index``/``query``/``doctor``/``integrate`` (plan §7.5 exit codes)."""
     argv = sys.argv[1:] if argv is None else list(argv)
     root = _default_plugin_root() if plugin_root is None else plugin_root
+    if argv in (["--help"], ["-h"]):
+        sys.stdout.write(_HELP)
+        return 0
     if not argv:
         sys.stderr.write(_USAGE + "\n")
         return _USAGE_EXIT

@@ -20,7 +20,8 @@ surfaces:
   not ``scan-query``, so argparse's own usage/error banners legitimately
   differ in that one token (pre-existing argparse behavior, not a regression
   introduced by the extraction — see :func:`_error_suffix` below). Every
-  other byte, including the entire JSON payload on every success path and
+  other byte, including every legacy JSON field/value (and the entire payload
+  for commands other than ``undocumented``/``uncovered``) on every success path and
   the ``_die_json``-style missing-index error, is asserted identical.
 
 Coverage: all 28 non-composite subcommands (:data:`_QUERY_CASES`, enumerated
@@ -343,6 +344,68 @@ def _run_cli_module(args: list[str], cwd: Path, stdin: str | None = None) -> sub
     )
 
 
+@pytest.fixture
+def coupled_ranking_project(tmp_path: Path) -> Path:
+    """Create a frozen index whose total and internal dependency rankings differ.
+
+    ``dep_count`` is deliberately inverse to ``internal_dep_count``.  This
+    isolates the public ``coupled --top`` ordering contract from scanner
+    details: a total-dependency sort would put ``pkg.echo`` first, while the
+    intended internal-import sort starts with ``pkg.alpha``.
+    """
+    root = tmp_path / "coupled_ranking"
+    root.mkdir()
+    cache = root / ".cache" / "codemap"
+    cache.mkdir(parents=True)
+    modules = [
+        {
+            "name": "pkg.alpha",
+            "path": "pkg/alpha.py",
+            "status": "ok",
+            "dep_count": 1,
+            "direct_imports": ["pkg.bravo", "pkg.charlie", "pkg.delta", "pkg.echo", "pkg.foxtrot"],
+        },
+        {
+            "name": "pkg.bravo",
+            "path": "pkg/bravo.py",
+            "status": "ok",
+            "dep_count": 2,
+            "direct_imports": ["pkg.charlie", "pkg.delta", "pkg.echo", "pkg.foxtrot"],
+        },
+        {
+            "name": "pkg.charlie",
+            "path": "pkg/charlie.py",
+            "status": "ok",
+            "dep_count": 3,
+            "direct_imports": ["pkg.delta", "pkg.echo", "pkg.foxtrot"],
+        },
+        {
+            "name": "pkg.delta",
+            "path": "pkg/delta.py",
+            "status": "ok",
+            "dep_count": 4,
+            "direct_imports": ["pkg.echo", "pkg.foxtrot"],
+        },
+        {
+            "name": "pkg.echo",
+            "path": "pkg/echo.py",
+            "status": "ok",
+            "dep_count": 5,
+            "direct_imports": ["pkg.foxtrot"],
+        },
+        {
+            "name": "pkg.foxtrot",
+            "path": "pkg/foxtrot.py",
+            "status": "ok",
+            "dep_count": 6,
+            "direct_imports": [],
+        },
+    ]
+    index = {"scan_version": 11, "modules": modules}
+    (cache / f"{root.name}.json").write_text(json.dumps(index), encoding="utf-8")
+    return root
+
+
 def _error_suffix(stderr: str) -> str:
     """Return the ``: error: ...`` tail of an argparse stderr message, prog-name-free.
 
@@ -359,22 +422,61 @@ def _error_suffix(stderr: str) -> str:
     return stderr if idx == -1 else stderr[idx + len(marker) :]
 
 
+_ADDITIVE_QUERY_KEYS = frozenset({"unique_total", "unique_qualified_names", "count_semantics"})
+_COUNT_SEMANTIC_KEYS = {
+    "undocumented": frozenset({"total", "unique_total"}),
+    "uncovered": frozenset({"definition", "total", "showing", "unique_total"}),
+}
+
+
+def _assert_golden_query_parity(
+    old: subprocess.CompletedProcess[str], new: subprocess.CompletedProcess[str], case: list[str]
+) -> None:
+    """Assert byte parity except the fixed additive metadata on two quality commands."""
+    assert old.returncode == new.returncode
+    assert old.stderr == new.stderr
+    command = case[0]
+    if command not in _COUNT_SEMANTIC_KEYS:
+        assert old.stdout == new.stdout
+        return
+
+    legacy = json.loads(old.stdout)
+    current = json.loads(new.stdout)
+    assert isinstance(legacy, dict)
+    assert isinstance(current, dict)
+    assert set(current) == set(legacy) | _ADDITIVE_QUERY_KEYS
+    assert {key: current[key] for key in legacy} == legacy
+
+    unique_names = current["unique_qualified_names"]
+    assert isinstance(current["unique_total"], int)
+    assert isinstance(unique_names, list)
+    assert all(isinstance(name, str) and name for name in unique_names)
+    assert unique_names == sorted(set(unique_names))
+    assert current["unique_total"] == len(unique_names)
+    legacy_names = {finding["qualified_name"] for finding in legacy[command]}
+    assert unique_names == sorted(legacy_names)
+
+    semantics = current["count_semantics"]
+    assert isinstance(semantics, dict)
+    assert set(semantics) == _COUNT_SEMANTIC_KEYS[command]
+    assert all(isinstance(value, str) and value for value in semantics.values())
+
+
 class TestOldVsNewBinParity:
     """Golden pre-extraction ``scan-query`` vs. the current thin launcher.
 
-    Both share the ``scan-query`` argv[0] basename, so success payloads and
-    stable error semantics are asserted identical. Additive post-extraction
-    flags may legitimately expand argparse's usage banner.
+    Both share the ``scan-query`` argv[0] basename, so stable error semantics
+    are asserted identical. Every success payload is byte-identical except
+    ``undocumented`` and ``uncovered``: their legacy fields must be identical,
+    and only their fixed unique-count metadata may be additive.
     """
 
     @pytest.mark.parametrize("case", _QUERY_CASES)
     def test_query_kind_matches_golden(self, old_scan_query: Path, built_project: Path, case: list[str]) -> None:
-        """Every non-composite subcommand is byte-identical old-vs-new."""
+        """Every command preserves golden output, with a narrow quality-metadata exception."""
         old = _run_old(old_scan_query, case, built_project)
         new = _run_new_bin(case, built_project)
-        assert old.returncode == new.returncode
-        assert old.stdout == new.stdout
-        assert old.stderr == new.stderr
+        _assert_golden_query_parity(old, new, case)
 
     def test_batch_matches_golden(self, old_scan_query: Path, built_project: Path) -> None:
         """The ``batch`` composite command matches old-vs-new (stdin JSON array)."""
@@ -458,6 +560,38 @@ class TestCrossPathParity:
         assert new_bin.returncode == cli.returncode == 2
         assert new_bin.stdout == cli.stdout == ""
         assert _error_suffix(new_bin.stderr) == _error_suffix(cli.stderr)
+
+
+@pytest.mark.parametrize("runner", [_run_new_bin, _run_cli_module], ids=["bin", "module"])
+def test_coupled_top_five_is_ordered_by_internal_dependency_count(
+    coupled_ranking_project: Path,
+    runner: object,
+) -> None:
+    """``coupled --top 5`` sorts on internal imports, not ``dep_count``.
+
+    The deliberate inverse ``dep_count`` order means a total-dependency sort
+    would look plausible but violate the command's documented coupling metric.
+    """
+    result = runner(["coupled", "--top", "5"], coupled_ranking_project)  # type: ignore[operator]
+
+    assert result.returncode == 0, result.stderr
+    rows = json.loads(result.stdout)["coupled"]
+    assert [row["name"] for row in rows] == ["pkg.alpha", "pkg.bravo", "pkg.charlie", "pkg.delta", "pkg.echo"]
+    assert [row["internal_dep_count"] for row in rows] == [5, 4, 3, 2, 1]
+    assert [row["dep_count"] for row in rows] == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.parametrize("runner", [_run_new_bin, _run_cli_module], ids=["bin", "module"])
+def test_coupled_help_explains_internal_import_ranking(coupled_ranking_project: Path, runner: object) -> None:
+    """Public help must state the ordering metric behind ``coupled --top``.
+
+    Prevents a user from interpreting a rank as highest total ``dep_count``
+    and carrying that mismatch into benchmark ground truth or an agent prompt.
+    """
+    result = runner(["coupled", "--help"], coupled_ranking_project)  # type: ignore[operator]
+
+    assert result.returncode == 0
+    assert "internal import count" in result.stdout.lower()
 
     def test_missing_required_arg_error_content_matches_module_dispatch(self, built_project: Path) -> None:
         """A missing required positional's error content matches bin-vs-module (prog aside)."""

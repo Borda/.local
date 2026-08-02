@@ -6,6 +6,10 @@ repository directory, and skill namespace change. Pre-`0.25.0` history was recor
 `codemap` under `plugins/codemap/` — see the repository git history for that line; it is
 not reproduced here.
 
+## 0.27.3
+
+- Clarify query command contracts and improve structural-query discoverability for Codex.
+
 ## 0.27.2
 
 - Streamline all six Codex skills around the native plugin-root integration contract.

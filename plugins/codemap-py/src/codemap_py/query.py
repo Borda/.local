@@ -2997,9 +2997,16 @@ def cmd_undocumented(index: dict, module: str | None, all_modules: bool) -> None
             )
 
     findings.sort(key=lambda f: (-f["loc"], f["module"], f["qualified_name"]))
+    unique_qualified_names = sorted({finding["qualified_name"] for finding in findings})
     payload: dict = {
         "undocumented": findings,
         "total": len(findings),
+        "unique_total": len(unique_qualified_names),
+        "unique_qualified_names": unique_qualified_names,
+        "count_semantics": {
+            "total": "Undocumented public symbol declarations. Multiple declarations may share one qualified name.",
+            "unique_total": "Unique qualified names among undocumented public symbol declarations.",
+        },
         "index": _cmd_coverage(
             index, method="ast-flags", scope="public-api-only", excludes=["private", "dunder", "test-modules"]
         ),
@@ -3097,6 +3104,7 @@ def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
         findings.sort(key=lambda f: (-f["loc"], f["module"], f["qualified_name"]))
 
     total = len(findings)
+    unique_qualified_names = sorted({finding["qualified_name"] for finding in findings})
     top_n = max(0, int(args.top))
     showing = min(total, top_n)
     findings = findings[:top_n]
@@ -3105,6 +3113,14 @@ def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
         "uncovered": findings,
         "total": total,
         "showing": showing,
+        "unique_total": len(unique_qualified_names),
+        "unique_qualified_names": unique_qualified_names,
+        "count_semantics": {
+            "definition": "Public symbols with zero test callers and zero mocks.",
+            "total": "All matching static public symbol declarations before the --top display cap.",
+            "showing": "Number of matching declarations included in uncovered after the --top display cap.",
+            "unique_total": "Unique qualified names among all matching static public symbol declarations.",
+        },
         "index": _cmd_coverage(index, method="ast-flags", scope="public-api-only", excludes=["private", "dunder"]),
     }
     if module is not None:
@@ -4189,7 +4205,8 @@ def _add_module_subparsers(sub: argparse._SubParsersAction) -> None:
         help="Restrict to this entity type (requires v5.5+ index for docs/example).",
     )
 
-    p_coupled = sub.add_parser("coupled", help="Modules with the most imports (highest coupling).")
+    coupled_help = "Modules ranked by internal import count (highest coupling)."
+    p_coupled = sub.add_parser("coupled", help=coupled_help, description=coupled_help)
     p_coupled.add_argument("--top", type=int, default=10, metavar="N")
     p_coupled.add_argument(
         "--exclude-tests", action="store_true", default=False, help="Exclude test files from results"
