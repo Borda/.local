@@ -2008,8 +2008,15 @@
             "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func"
+          ],
+          "cmd": "rdeps"
         }
       ],
+      "expected_query_policy": "all_required",
       "id": "DI-01",
       "primary_fn": "lightning.fabric.utilities.apply_func::convert_tensors_to_scalars",
       "primary_module": "lightning.fabric.utilities.apply_func",
@@ -2075,8 +2082,15 @@
             "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.cloud_io"
+          ],
+          "cmd": "rdeps"
         }
       ],
+      "expected_query_policy": "all_required",
       "id": "DI-02",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
       "primary_module": "lightning.fabric.utilities.cloud_io",
@@ -2142,8 +2156,15 @@
             "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.pytorch.utilities.model_helpers"
+          ],
+          "cmd": "rdeps"
         }
       ],
+      "expected_query_policy": "all_required",
       "id": "DI-03",
       "primary_fn": "lightning.pytorch.utilities.model_helpers::is_overridden",
       "primary_module": "lightning.pytorch.utilities.model_helpers",
@@ -2204,8 +2225,15 @@
             "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.distributed"
+          ],
+          "cmd": "rdeps"
         }
       ],
+      "expected_query_policy": "all_required",
       "id": "DI-04",
       "primary_fn": "lightning.fabric.utilities.distributed::_distributed_is_initialized",
       "primary_module": "lightning.fabric.utilities.distributed",
@@ -2249,8 +2277,15 @@
             "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.rank_zero"
+          ],
+          "cmd": "rdeps"
         }
       ],
+      "expected_query_policy": "all_required",
       "id": "DI-05",
       "primary_fn": "lightning.fabric.utilities.rank_zero::_get_rank",
       "primary_module": "lightning.fabric.utilities.rank_zero",
@@ -2300,8 +2335,15 @@
             "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
+        },
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func"
+          ],
+          "cmd": "rdeps"
         }
       ],
+      "expected_query_policy": "all_required",
       "id": "DI-06",
       "primary_fn": "lightning.fabric.utilities.apply_func::move_data_to_device",
       "primary_module": "lightning.fabric.utilities.apply_func",
@@ -2395,7 +2437,7 @@
       "profiles": [
         "dev"
       ],
-      "prompt": "List the 10 most-imported modules in the codebase (the modules imported by the most other modules). Put them under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
+      "prompt": "List the 10 most-imported production modules, excluding tests (the modules imported by the most other production modules). Put them under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
       "scoreable": true,
       "type": "graph_central",
       "workflow_subtype": "pre_implementation_research",

@@ -111,6 +111,26 @@ class TestTasksFile:
                 "Q-03: expected query 1 has unsupported cmd 'unknown'",
                 id="unsupported-command",
             ),
+            pytest.param(
+                {
+                    "id": "Q-04",
+                    "type": "query",
+                    "expected_queries": [{"cmd": "symbol", "args": ["pkg.name"]}],
+                    "expected_query_policy": "every_query",
+                },
+                "Q-04: expected_query_policy must be one of ['all_required', 'any_match']",
+                id="unsupported-query-policy",
+            ),
+            pytest.param(
+                {
+                    "id": "Q-05",
+                    "type": "query",
+                    "expected_queries": [{"cmd": "symbol", "args": ["pkg.name"]}],
+                    "expected_query_policy": ["all_required"],
+                },
+                "Q-05: expected_query_policy must be one of ['all_required', 'any_match']",
+                id="non-string-query-policy",
+            ),
         ],
     )
     def test_expected_query_contract_rejects_unrepresentable_execution_task(
@@ -119,18 +139,20 @@ class TestTasksFile:
         """Malformed execution metadata fails before any benchmark coordinate runs."""
         assert script_gen_bench._expected_query_contract_errors([task]) == [expected_error]
 
-    def test_every_diff_impact_task_requires_its_own_fn_rdeps_query(self, script_gen_bench: Any) -> None:
-        """Diff-impact compliance must prove a direct query of the staged target.
+    def test_every_diff_impact_task_requires_both_direct_query_components(self, script_gen_bench: Any) -> None:
+        """Diff-impact compliance must prove callers and direct test importers.
 
         A nearby module or a generic symbol search can look useful while
         failing to establish the requested blast-radius evidence.
         """
         tasks = json.loads(script_gen_bench.TASKS_FILE.read_text(encoding="utf-8"))["tasks"]
         for task in (task for task in tasks if task["type"] == "diff_impact"):
+            assert task["expected_query_policy"] == "all_required"
             assert {
                 "cmd": "fn-rdeps",
                 "args": [task["primary_fn"], "--exclude-tests"],
             } in task["expected_queries"]
+            assert {"cmd": "rdeps", "args": [task["primary_module"]]} in task["expected_queries"]
 
 
 # ===========================================================================

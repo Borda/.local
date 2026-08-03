@@ -2360,6 +2360,82 @@ class TestPairedAccuracy:
 # ===========================================================================
 
 
+class TestDiffImpactQuality:
+    """Diff-impact scoring keeps answer sections and false positives observable."""
+
+    @staticmethod
+    def _task() -> dict:
+        """Return a compact DI oracle with two callers and two tests."""
+        return {
+            "id": "DI-fixture",
+            "type": "diff_impact",
+            "ground_truth": {
+                "fn_callers": ["lightning.pytorch.mod::Worker.run", "lightning.fabric.other::Other.go"],
+                "test_modules": ["tests_pytorch.test_mod", "tests_fabric.test_other"],
+                "unique_caller_count": 2,
+            },
+        }
+
+    def test_exact_sections_score_caller_and_test_fitness_with_false_positive_penalty(
+        self, script_run_bench: Any
+    ) -> None:
+        """DI quality rewards complete scoped answers but penalizes extra listed modules."""
+        output = """exploration: lightning.pytorch.mod::Wrong.ignore\n## Callers
+lightning.pytorch.mod::Worker.run
+lightning.fabric.other::Other.go
+lightning.pytorch.wrong::Wrong.ignore
+## Tests
+tests_pytorch.test_mod
+tests_fabric.test_other
+tests_pytorch.test_wrong
+"""
+
+        result = script_run_bench._evaluate_diff_impact(self._task(), output)
+
+        assert result.correct is True
+        assert result.recall == pytest.approx(0.8)
+        assert result.scoring_detail["caller_recall"] == 1.0
+        assert result.scoring_detail["test_recall"] == 1.0
+        assert result.scoring_detail["caller_precision"] == pytest.approx(0.667)
+        assert result.scoring_detail["test_precision"] == pytest.approx(0.667)
+        assert result.scoring_detail["caller_fitness"] == pytest.approx(0.8)
+        assert result.scoring_detail["test_fitness"] == pytest.approx(0.8)
+
+    def test_missing_or_missectioned_answers_receive_no_cross_section_credit(self, script_run_bench: Any) -> None:
+        """Only explicit matching H2 sections can contribute to the two DI components."""
+        output = """## Tests
+lightning.pytorch.mod::Worker.run
+lightning.fabric.other::Other.go
+tests_pytorch.test_mod
+tests_fabric.test_other
+"""
+
+        result = script_run_bench._evaluate_diff_impact(self._task(), output)
+
+        assert result.correct is False
+        assert result.recall == 0.5
+        assert result.scoring_detail["callers_section_found"] is False
+        assert result.scoring_detail["tests_section_found"] is True
+        assert result.scoring_detail["caller_got"] == 0
+        assert result.scoring_detail["test_got"] == 2
+
+    def test_missing_tests_or_wrong_test_module_cannot_pass_di_binary_gate(self, script_run_bench: Any) -> None:
+        """Missing sections and wrong modules retain partial fitness but fail transparent correctness."""
+        callers = "lightning.pytorch.mod::Worker.run\nlightning.fabric.other::Other.go"
+        missing_tests = script_run_bench._evaluate_diff_impact(self._task(), f"## Callers\n{callers}\n")
+        wrong_module = script_run_bench._evaluate_diff_impact(
+            self._task(),
+            f"## Callers\n{callers}\n## Tests\ntests_pytorch.wrong_module\n",
+        )
+
+        assert missing_tests.correct is False
+        assert missing_tests.recall == 0.5
+        assert missing_tests.scoring_detail["tests_section_found"] is False
+        assert wrong_module.correct is False
+        assert wrong_module.scoring_detail["test_got"] == 0
+        assert wrong_module.scoring_detail["test_recall"] == 0.0
+
+
 class TestExtractDiff:
     """Unified-diff extractor from agent output text."""
 

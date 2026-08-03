@@ -20,13 +20,13 @@
     }
   },
   "artifact_sha256": {
-    "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-    "codemap_query_skill": "16bf735d3ca245434558cb0da5daed343dfe98811ce37fa73f586f1af56c16ae",
+    "codemap_candidate_manifest": "b5e05f4990d6a8f62ec171977b038e7931b5fa5149b4d60223dbc1757149317c",
+    "codemap_query_skill": "ca5112c5b1adc03ba063797fc00855d1acc418ef45fad8c6bd54385fcab7688c",
     "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
     "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
     "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-    "codemap_runtime_query": "d6d469a9d454e6c6bb0095629ed112c01ab28835df74c2a39c43d29bc3271ca6",
+    "codemap_runtime_query": "8eda62e6399e38972015842d24c9835fb97af43a2a9c7c1b32c39ade80a5b3b4",
     "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
@@ -34,13 +34,13 @@
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
     "run_all": "d47dce19826ce7620c0753cd26dccac0122c33c763c791bad17688cd54a21917",
-    "run_codex_structural": "551dc84c2889dd5e2a81b3f9d8cd76a37f3fa6cea47b5659e3e5171bb23bca1f"
+    "run_codex_structural": "b81a3b6585881f8ad5b596bb9bb13c0ceed6e2a2956393455556e68dbf1fdda4"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "05bff60724a18fd2ba59301ca231f6a3e443ddd03b0ed0bdb8119ce70a9cfc9c",
+    "package_manifest_sha256": "a12cd6962e2a6d28cb407ac78174c9b3f0ee8054ff1ddb27b058800cd7b353cc",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
-    "version": "0.27.0"
+    "version": "0.28.2"
   },
   "codex_cli": {
     "available": true,
@@ -173,7 +173,7 @@
     "required_before_paid_execution": "Execute this compact query through B's staged launcher under the treatment permission profile; require exit 0, index.query_complete=true, and unchanged locked-index bytes."
   },
   "direct_cli_runtime": {
-    "aggregate_sha256": "c6ff39d437e7f646f30dd9caa991a29f0d97e2bea4ced10d85045f72a1048b71",
+    "aggregate_sha256": "14bbfd2be2ce554faaa37b4c47cbf3a114c5f28b39b656bf0841b6df0353f45b",
     "files": {
       "bin/_exclusions.py": "1aa5857b5012f1a433f7d2001e4eee07d275a951a80b6a87e026183e5bf7622e",
       "bin/codemap-py": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
@@ -184,10 +184,10 @@
       "src/codemap_py/graph.py": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
       "src/codemap_py/index_paths.py": "35b533c4d8080639d80dffcff0d1a4694eccd40869c2a719348704b6876faf00",
       "src/codemap_py/integration.py": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "src/codemap_py/query.py": "d6d469a9d454e6c6bb0095629ed112c01ab28835df74c2a39c43d29bc3271ca6",
+      "src/codemap_py/query.py": "8eda62e6399e38972015842d24c9835fb97af43a2a9c7c1b32c39ade80a5b3b4",
       "src/codemap_py/runtime_log.py": "2f8030bd31bf36413d851c0d49081913948a566758158b45faaed545dee9b0ac",
       "src/codemap_py/rwgate.py": "161b9f67aa87c30863ac2f2fe210a339af65b35fde3fada14ca2cd32e4f756a0",
-      "src/codemap_py/scanner.py": "5cc8c7289e4964fbd718b46dd9c8ea81138d94bab8318b9316d0e0278cbdfc2d",
+      "src/codemap_py/scanner.py": "ebf5be8e3e9868d6c13ef744d538347fca59b35037d33f6dbdba02bd5047e7a1",
       "src/codemap_py/schema.py": "584310c543130b51dc4795351ec4d2649d27eacf190a4fc9f7decd0a30e9b24c",
       "src/codemap_py/telemetry.py": "eb305260c3ed61e4fe12b18815cc32b357da5664317bfc686a9a48ec02491819"
     },
@@ -311,13 +311,13 @@
   },
   "implementation_contract": {
     "artifact_sha256": {
-      "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-      "codemap_query_skill": "16bf735d3ca245434558cb0da5daed343dfe98811ce37fa73f586f1af56c16ae",
+      "codemap_candidate_manifest": "b5e05f4990d6a8f62ec171977b038e7931b5fa5149b4d60223dbc1757149317c",
+      "codemap_query_skill": "ca5112c5b1adc03ba063797fc00855d1acc418ef45fad8c6bd54385fcab7688c",
       "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
       "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
       "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "codemap_runtime_query": "d6d469a9d454e6c6bb0095629ed112c01ab28835df74c2a39c43d29bc3271ca6",
+      "codemap_runtime_query": "8eda62e6399e38972015842d24c9835fb97af43a2a9c7c1b32c39ade80a5b3b4",
       "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
@@ -325,7 +325,7 @@
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
       "run_all": "d47dce19826ce7620c0753cd26dccac0122c33c763c791bad17688cd54a21917",
-      "run_codex_structural": "551dc84c2889dd5e2a81b3f9d8cd76a37f3fa6cea47b5659e3e5171bb23bca1f"
+      "run_codex_structural": "b81a3b6585881f8ad5b596bb9bb13c0ceed6e2a2956393455556e68dbf1fdda4"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -336,15 +336,15 @@
     }
   },
   "index": {
-    "change_reason": "Scanner schema 12 persists static symbol aliases required for re-export reverse-caller completeness.",
+    "change_reason": "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; production-only centrality is recomputed from production importers without changing the schema.",
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
     "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
     "project": "codemap-provider-parity-pl-2.6.5",
-    "raw_sha256": "25ef7a9868c7bb004e8e7476f8bc1515f1e16366b75737b527341c35d7fd2dbd",
+    "raw_sha256": "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb",
     "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
     "scan_version": 12,
-    "scanned_at": "2026-08-02T19:38:57.376588+00:00"
+    "scanned_at": "2026-08-03T10:58:35.335616+00:00"
   },
   "model": {
     "name": "gpt-5.6-luna",
@@ -552,13 +552,13 @@
   "schema_version": "codex-integration-manifest-v1",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "2291f698f5dcf8cab34013068baa74a178a79cf78612ed7464188c255eabd193"
+    "sha256": "920f82eb626febf6b19bd2178b064f892be4b26f5d61bbc2d200f70b4d87b211"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
     "semantic_suite_sha256": {
       "benchmarks/suites/tasks-agentic.json": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
-      "benchmarks/suites/tasks-bench.json": "7cb4f5306d90c482773cf8bff54f57fadff0acbef998c19ff8bbf1f57a7b2802",
+      "benchmarks/suites/tasks-bench.json": "4df61b0778962453d8af9de6ebf02f41877fc2355426734468c4404cede59a02",
       "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
       "benchmarks/suites/tasks-fix-single.json": "3ae89d8fe843d8d4aca46a9e5c4229eb7487090c525625fa1690a0cc8e5b5046",
@@ -970,9 +970,9 @@
         "MB-05"
       ],
       "path": "benchmarks/suites/tasks-bench.json",
-      "raw_sha256": "4fffb00a7776cc50ed7dc065b7ab87fe34082384e628f2a5c95dd7f6fbeb6c9a",
+      "raw_sha256": "518239c494495c6fc91f00b13337ea61889fc76fdcfb84e12adcd5e33863e356",
       "root_shape": "object_with_tasks",
-      "semantic_suite_sha256": "7cb4f5306d90c482773cf8bff54f57fadff0acbef998c19ff8bbf1f57a7b2802",
+      "semantic_suite_sha256": "4df61b0778962453d8af9de6ebf02f41877fc2355426734468c4404cede59a02",
       "task_count": 60,
       "tasks": [
         {
@@ -1851,7 +1851,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "a55d877a02ab0f5f56694597d0e410632b52e970826776d78323d6818399f458",
+          "canonical_task_sha256": "a2cfb3e2f30aec2c484eec9c87ad93173970caaee4713f5ee8e6e8cf53009681",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1872,7 +1872,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "b6d4d7bef18257bc1dfd1f52f6ac7c70fa0e7a63694e7bcbc6f64cfca11baf78",
+          "canonical_task_sha256": "a1bca059946ece38a979b64352d814a60827dcc6d29f11616a1796ea7302e317",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1891,7 +1891,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "608655923617df67e3a1a798583ca29697ebd5c83fa72a9712478c8de54893f0",
+          "canonical_task_sha256": "97555dfcab7d298990b439e57b5167863fe2f6c6d7e29454468801c687593a00",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1910,7 +1910,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "09f2d7d12fbc1762487dc78ad3d9920e880f46d31b983e4dcc54db653a4efb90",
+          "canonical_task_sha256": "ee3cb3dbcf5d63dd0a448340fbb3471efb48e31c671a86f9fd77838faf84dd6d",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1929,7 +1929,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "4aacb7cd5c045bf6849143bd7cf027390247082dd6db4c37eb6010d428e190b4",
+          "canonical_task_sha256": "feda3695ee74bbdfa2e3f617d3196069712bc2a0dc5e35de0c1a96a64ddc6b22",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1948,7 +1948,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "822345cb66daba7368f3f0274cfe9f6359f6ec1d3a531c01b3bdcb78e1ce5d8a",
+          "canonical_task_sha256": "3d6da22d17fb69869b1ebb3ca4fc5873dec5b015ebe5ed0608315e35a0a9faf6",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1967,7 +1967,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "2c3d7ca03efaf210f008bdec6d0c8b7d363416442b173b805a90bd038435e1b5",
+          "canonical_task_sha256": "0d06e2349457a975536fab9d7e3760263d9c494025a2321268e15206fbd29dde",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "graph_central",
@@ -1977,7 +1977,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "fe5b2b1fa0d585d41a4b2f86e24c6458746dbde79228b805ecb9f386be6ddabf",
+          "prompt_sha256": "4cb9b3f19d4889dc992fb586637f56d1ba92525e4f140148f1dd6ee8fc9be533",
           "providers": [
             "claude",
             "codex"

@@ -83,6 +83,7 @@ _SUPPORTED_EXPECTED_QUERY_COMMANDS: frozenset[str] = frozenset(
         "batch",
     }
 )
+_EXPECTED_QUERY_POLICIES: frozenset[str] = frozenset({"any_match", "all_required"})
 
 
 def _expected_query_contract_errors(
@@ -108,6 +109,10 @@ def _expected_query_contract_errors(
         if not isinstance(queries, list) or not queries:
             errors.append(f"{task_id}: expected_queries must be a non-empty list")
             continue
+        policy = task.get("expected_query_policy", "any_match")
+        if not isinstance(policy, str) or policy not in _EXPECTED_QUERY_POLICIES:
+            choices = sorted(_EXPECTED_QUERY_POLICIES)
+            errors.append(f"{task_id}: expected_query_policy must be one of {choices}")
         for position, query in enumerate(queries, start=1):
             if not isinstance(query, Mapping):
                 errors.append(f"{task_id}: expected query {position} must be an object")

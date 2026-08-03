@@ -1365,6 +1365,20 @@ def sample_pkg(tmp_path: Path) -> Path:
 class TestGrepImportersBoundary:
     """Validate grep_importers_boundary anchors to import statements only."""
 
+    def test_uses_regular_package_chain_for_test_importer(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: a test package below a non-package directory keeps its import identity."""
+        package = tmp_path / "tests" / "tests_fabric"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "test_target.py").write_text("from pkg.target import Thing\n", encoding="utf-8")
+
+        grep_floor = script_run_cli.grep_importers_boundary(tmp_path, "pkg.target")
+        stats = script_run_cli.score_rdeps_accuracy({"tests_fabric.test_target"}, grep_floor, "pkg.target", tmp_path)
+
+        assert grep_floor == {"tests_fabric.test_target"}
+        assert stats.precision == pytest.approx(1.0)
+        assert stats.recall == pytest.approx(1.0)
+
     def test_matches_literal_imports_only(self, script_run_cli: Any, sample_pkg: Path) -> None:
         """Scenario: only literal, boundary-anchored importers are returned; relatives/decoys excluded."""
         result = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")

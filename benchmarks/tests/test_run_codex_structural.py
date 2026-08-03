@@ -680,6 +680,25 @@ def test_parse_codex_jsonl_preserves_native_events_and_normalizes_usage(
     assert parsed.tool_result_tokens is None
 
 
+def test_parse_codex_jsonl_preserves_agent_message_boundaries(script_run_codex: Any) -> None:
+    """Separate progress and answer events must not fuse a Markdown heading."""
+    events = [
+        {
+            "type": "item.completed",
+            "item": {"id": "progress", "type": "agent_message", "text": "Checked the repository."},
+        },
+        {
+            "type": "item.completed",
+            "item": {"id": "answer", "type": "agent_message", "text": "## Callers\npkg.mod::caller"},
+        },
+        {"type": "turn.completed", "status": "completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
+
+    assert parsed.output_text == "Checked the repository.\n## Callers\npkg.mod::caller"
+
+
 def _completed_stream(
     *,
     output: str = "fixture answer",
@@ -2807,8 +2826,16 @@ def test_codex_arm_envelopes_define_plain_cli_and_skill_treatments(script_run_co
             "completed",
             0,
             '{"index":{"query_complete":true,"compact":true}}',
-            False,
+            True,
             id="unquoted-launcher",
+        ),
+        pytest.param(
+            "${CODEMAP_BIN} query --compact fn-rdeps pkg.core",
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            True,
+            id="unquoted-braced-launcher",
         ),
         pytest.param(
             '"$CODEMAP_LAUNCHER" query --compact fn-rdeps pkg.core',
@@ -2974,78 +3001,111 @@ def test_canonical_native_query_allows_auxiliary_separate_events(script_run_code
 
 
 @pytest.mark.parametrize(
-    ("expected_queries", "actual", "expected"),
+    ("expected_queries", "expected_query_policy", "actual", "expected"),
     [
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["central", "--top", "5"]],
             True,
             id="matching-central",
         ),
         pytest.param(
             [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
+            None,
             [["fn-rdeps", "--exclude-tests", "qname"]],
             True,
             id="equivalent-option-order",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5", "--exclude-tests"]}],
+            None,
             [["central", "--exclude-tests", "--top", "5"]],
             True,
             id="equivalent-boolean-and-value-order",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["coupled"]],
             False,
             id="wrong-endpoint",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["central", "--top", "3"]],
             False,
             id="wrong-target",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["central", "--unknown", "5"]],
             False,
             id="unknown-option",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["central", "--top"]],
             False,
             id="missing-value",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--exclude-tests"]}],
+            None,
             [["central", "--exclude-tests", "--exclude-tests"]],
             False,
             id="duplicate-boolean",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["central", "--top", "5", "extra"]],
             False,
             id="extra-positional",
         ),
         pytest.param(
             [{"cmd": "coupled", "args": []}, {"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["coupled"], ["central", "--top", "5"]],
             True,
             id="extra-query-with-match",
+        ),
+        pytest.param(
+            [
+                {"cmd": "fn-rdeps", "args": ["pkg.core::target", "--exclude-tests"]},
+                {"cmd": "rdeps", "args": ["pkg.core"]},
+            ],
+            "all_required",
+            [["fn-rdeps", "pkg.core::target", "--exclude-tests"]],
+            False,
+            id="all-required-rejects-one-of-two-queries",
+        ),
+        pytest.param(
+            [
+                {"cmd": "fn-rdeps", "args": ["pkg.core::target", "--exclude-tests"]},
+                {"cmd": "rdeps", "args": ["pkg.core"]},
+            ],
+            "all_required",
+            [["fn-rdeps", "--exclude-tests", "pkg.core::target"], ["rdeps", "pkg.core"]],
+            True,
+            id="all-required-accepts-every-query",
         ),
     ],
 )
 def test_semantic_query_compliance_requires_task_locked_endpoint_and_target(
     script_run_codex: Any,
     expected_queries: list[dict[str, Any]],
+    expected_query_policy: str | None,
     actual: list[list[str]],
     expected: bool,
 ) -> None:
     """Generic Codemap use cannot satisfy a task-shaped semantic contract."""
     task = {"id": "GR-01", "expected_queries": expected_queries}
+    if expected_query_policy is not None:
+        task["expected_query_policy"] = expected_query_policy
     run = script_run_codex.CodexRun(
         arm="B_direct_required",
         task_id="GR-01",
@@ -3057,54 +3117,83 @@ def test_semantic_query_compliance_requires_task_locked_endpoint_and_target(
 
 
 @pytest.mark.parametrize(
-    ("expected_queries", "actual", "expected"),
+    ("expected_queries", "expected_query_policy", "actual", "expected"),
     [
         pytest.param(
             [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
+            None,
             [["fn-rdeps", "--exclude-tests", "qname"]],
             1.0,
             id="exact-option-permutation",
         ),
         pytest.param(
             [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
+            None,
             [["fn-rdeps", "qname"]],
             2 / 3,
             id="missing-production-filter",
         ),
         pytest.param(
             [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
+            None,
             [["fn-blast", "qname"]],
             1 / 4,
             id="wrong-endpoint-same-target",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["central", "--top", "3"]],
             1 / 2,
             id="wrong-top-value",
         ),
         pytest.param(
             [{"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["central", "--unknown", "5"]],
             0.0,
             id="invalid-query-shape",
         ),
         pytest.param(
             [{"cmd": "coupled", "args": []}, {"cmd": "central", "args": ["--top", "5"]}],
+            None,
             [["coupled"], ["central", "--top", "3"]],
             1.0,
             id="best-successful-query",
+        ),
+        pytest.param(
+            [
+                {"cmd": "fn-rdeps", "args": ["pkg.core::target", "--exclude-tests"]},
+                {"cmd": "rdeps", "args": ["pkg.core"]},
+            ],
+            "all_required",
+            [["fn-rdeps", "pkg.core::target", "--exclude-tests"]],
+            0.5,
+            id="all-required-averages-missing-component",
+        ),
+        pytest.param(
+            [
+                {"cmd": "fn-rdeps", "args": ["pkg.core::target", "--exclude-tests"]},
+                {"cmd": "rdeps", "args": ["pkg.core"]},
+            ],
+            "all_required",
+            [["fn-rdeps", "--exclude-tests", "pkg.core::target"], ["rdeps", "pkg.core"]],
+            1.0,
+            id="all-required-averages-best-observed-match-per-component",
         ),
     ],
 )
 def test_task_query_fitness_reports_continuous_similarity_separate_from_treatment(
     script_run_codex: Any,
     expected_queries: list[dict[str, Any]],
+    expected_query_policy: str | None,
     actual: list[list[str]],
     expected: float,
 ) -> None:
     """Query fitness distinguishes partial routing from transport adherence."""
     task = {"id": "GR-01", "expected_queries": expected_queries}
+    if expected_query_policy is not None:
+        task["expected_query_policy"] = expected_query_policy
     run = script_run_codex.CodexRun(
         arm="B_direct_required",
         task_id="GR-01",
@@ -3139,7 +3228,7 @@ def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
 def test_all_locked_execution_queries_accept_strict_option_permutations(script_run_codex: Any) -> None:
     """Every current execution query must survive strict B/C semantic admission.
 
-    The table is derived from the locked 55-task execution set (62 expected
+    The table is derived from the locked 55-task execution set (68 expected
     queries), rather than from the normalizer's option vocabulary.  This keeps
     a newly introduced task query from silently becoming unrecognized.
     """
@@ -3147,13 +3236,8 @@ def test_all_locked_execution_queries_accept_strict_option_permutations(script_r
     execution_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
     tasks_by_id = {task["id"]: task for task in core.load_task_suite(SUITE_PATH)}
     tasks = [tasks_by_id[task_id] for task_id in execution_ids]
-    cases = [
-        (task["id"], query_index, query)
-        for task in tasks
-        for query_index, query in enumerate(task.get("expected_queries", []))
-    ]
     assert len(tasks) == 55
-    assert len(cases) == 62
+    assert sum(len(task.get("expected_queries", [])) for task in tasks) == 68
 
     boolean_options = {"--broken", "--exclude-tests", "--with-imports"}
 
@@ -3178,20 +3262,24 @@ def test_all_locked_execution_queries_accept_strict_option_permutations(script_r
             groups.reverse()
         return [token for group in groups for token in group] + positionals
 
-    for task_id, query_index, query in cases:
-        assert isinstance(query, dict), (task_id, query_index)
-        command = query.get("cmd")
-        arguments = query.get("args")
-        assert isinstance(command, str) and isinstance(arguments, list), (task_id, query_index, query)
-        assert all(isinstance(argument, str) for argument in arguments), (task_id, query_index, query)
-        actual = [command, *permute_options(arguments)]
+    for task in tasks:
+        task_id = task["id"]
+        queries = task.get("expected_queries", [])
+        actual: list[list[str]] = []
+        for query_index, query in enumerate(queries):
+            assert isinstance(query, dict), (task_id, query_index)
+            command = query.get("cmd")
+            arguments = query.get("args")
+            assert isinstance(command, str) and isinstance(arguments, list), (task_id, query_index, query)
+            assert all(isinstance(argument, str) for argument in arguments), (task_id, query_index, query)
+            actual.append([command, *permute_options(arguments)])
         for arm in ("B_direct_required", "C_skill_required"):
             run = script_run_codex.CodexRun(
                 arm=arm,
                 task_id=task_id,
                 task_type="contract-test",
                 model=script_run_codex.PARITY_CODEX_MODEL,
-                successful_query_arguments=[actual],
+                successful_query_arguments=actual,
             )
             assert script_run_codex._semantic_query_compliance(tasks_by_id[task_id], arm, run) is True, (
                 task_id,
@@ -4017,7 +4105,7 @@ def test_canonical_C_skill_delivery_requires_the_runner_owned_skill_file(
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
-        pytest.param("$CODEMAP_BIN query --compact rdeps pkg.core", False, id="historical-unquoted-query"),
+        pytest.param("$CODEMAP_BIN query --compact rdeps pkg.core", True, id="unquoted-query"),
         pytest.param('"$CODEMAP_BIN" query --compact rdeps pkg.core', True, id="quoted-query"),
         pytest.param("echo $CODEMAP_BIN", False, id="echo-inspection"),
         pytest.param("env | rg CODEMAP_BIN", False, id="environment-inspection"),
@@ -4035,7 +4123,7 @@ def test_canonical_C_skill_delivery_requires_the_runner_owned_skill_file(
 def test_historical_shell_query_shapes_reject_the_native_item_contract(
     script_run_codex: Any, command: str, expected: bool
 ) -> None:
-    """Only the exact standalone prospective command is live telemetry evidence."""
+    """Standalone native commands remain evidence across quoted launcher spellings."""
     assert script_run_codex._is_codemap_command(command) is expected
 
 
@@ -4252,7 +4340,7 @@ def test_historical_exact_launcher_and_compound_forms_reject_native_item_contrac
     launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     launcher.chmod(0o755)
 
-    assert not script_run_codex._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core")
+    assert script_run_codex._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core")
     assert not script_run_codex._is_codemap_command(
         f'"{launcher}" query --compact rdeps pkg.core', launcher_path=launcher
     )
@@ -4378,7 +4466,7 @@ def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_c
             ]
         )
     )
-    assert incomplete.codemap_calls == 0
+    assert incomplete.codemap_calls == 1
     assert script_run_codex._arm_compliance("B_direct_required", incomplete) is False
 
 
@@ -5409,6 +5497,174 @@ def test_skill_read_requires_exact_environment_command_bytes_and_success(
     )
 
     assert parsed.skill_delivery_observed is expected
+
+
+def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Offline rescore derives corrected fields from frozen inputs without model credentials."""
+    run_dir = tmp_path / "run"
+    snapshot_dir = run_dir / "inputs"
+    shared = snapshot_dir / "shared"
+    shared.mkdir(parents=True)
+    task = {
+        "id": "SE-01",
+        "prompt": "locate pkg.symbol",
+        "type": "symbol_extraction",
+        "scoreable": True,
+        "ground_truth": {"start_line": 10, "qualified_name": "pkg.symbol"},
+    }
+    tasks_path = shared / "tasks-bench.json"
+    tasks_bytes = (json.dumps({"tasks": [task]}, sort_keys=True) + "\n").encode()
+    tasks_path.write_bytes(tasks_bytes)
+    skill_path = snapshot_dir / "C_skill_required" / "codemap-py" / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\nUse the compact query.\n"
+    skill_path.write_bytes(skill_bytes)
+    skill_sha256 = hashlib.sha256(skill_bytes).hexdigest()
+    snapshot_payload = {
+        "schema_version": "codex-structural-input-snapshot-v1",
+        "files": [
+            {
+                "role": "task_suite",
+                "archived_path": "shared/tasks-bench.json",
+                "sha256": hashlib.sha256(tasks_bytes).hexdigest(),
+                "bytes": len(tasks_bytes),
+            },
+            {
+                "role": "C_skill_required:codemap-py",
+                "archived_path": "C_skill_required/codemap-py/codex-skills/query-code/SKILL.md",
+                "sha256": skill_sha256,
+                "bytes": len(skill_bytes),
+            },
+        ],
+        "auth_source": None,
+    }
+    snapshot_path = snapshot_dir / "input-snapshot.json"
+    snapshot_bytes = (json.dumps(snapshot_payload, sort_keys=True) + "\n").encode()
+    snapshot_path.write_bytes(snapshot_bytes)
+    telemetry_path = run_dir / "telemetry.jsonl"
+    raw_events = [
+        {"type": "thread.started", "thread_id": "frozen-thread"},
+        {"type": "item.completed", "item": {"id": "answer", "type": "agent_message", "text": "start_line: 10"}},
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": "$CODEMAP_BIN query --compact symbols pkg.symbol",
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+            },
+        },
+        {"type": "turn.completed", "status": "completed"},
+    ]
+    direct_row = {
+        "task_id": "SE-01",
+        "task_type": "symbol_extraction",
+        "arm": "B_direct_required",
+        "repetition": 1,
+        "model": script_run_codex.PARITY_CODEX_MODEL,
+        "scoreable": True,
+        "output_text": "stale answer",
+        "raw_events": raw_events,
+    }
+    skill_events = [
+        {"type": "thread.started", "thread_id": "frozen-skill-thread"},
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "skill",
+                "type": "command_execution",
+                "command": 'cat "$CODEMAP_SKILL_FILE"',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": skill_bytes.decode(),
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": '"$CODEMAP_BIN" query --compact symbols pkg.symbol',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+            },
+        },
+        {"type": "item.completed", "item": {"id": "answer", "type": "agent_message", "text": "start_line: 10"}},
+        {"type": "turn.completed", "status": "completed"},
+    ]
+    skill_row = {**direct_row, "arm": "C_skill_required", "raw_events": skill_events}
+    telemetry_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in (direct_row, skill_row)),
+        encoding="utf-8",
+    )
+    metadata_path = run_dir / "run-metadata.json"
+    metadata = {
+        "schema_version": "codex-structural-run-metadata-v1",
+        "status": "completed",
+        "execution": {
+            "selected_task_ids": ["SE-01"],
+            "coordinates": [
+                {"task_id": "SE-01", "repetition": 1, "arm": "B_direct_required"},
+                {"task_id": "SE-01", "repetition": 1, "arm": "C_skill_required"},
+            ],
+        },
+        "treatments": {"artifact_sha256": {"codemap_query_skill": skill_sha256}},
+        "inputs": {"snapshot": {"path": str(snapshot_path), "sha256": hashlib.sha256(snapshot_bytes).hexdigest()}},
+        "artifacts": {
+            "telemetry_jsonl": str(telemetry_path),
+            "telemetry_sha256": hashlib.sha256(telemetry_path.read_bytes()).hexdigest(),
+        },
+    }
+    metadata_path.write_text(json.dumps(metadata, sort_keys=True) + "\n", encoding="utf-8")
+    source_bytes = {
+        path: path.read_bytes() for path in (telemetry_path, metadata_path, snapshot_path, tasks_path, skill_path)
+    }
+
+    artifact_path = script_run_codex.rescore_results(run_dir)
+    first_bytes = artifact_path.read_bytes()
+    repeated_path = script_run_codex.rescore_results(run_dir)
+
+    assert repeated_path == artifact_path
+    assert artifact_path.read_bytes() == first_bytes
+    assert all(path.read_bytes() == contents for path, contents in source_bytes.items())
+    artifact = json.loads(first_bytes)
+    assert artifact["schema_version"] == "codex-structural-offline-rescore-v1"
+    assert artifact["source"]["telemetry_sha256"] == hashlib.sha256(source_bytes[telemetry_path]).hexdigest()
+    assert artifact["source"]["frozen_suite_semantic_sha256"] == core.semantic_suite_hash([task])
+    rows = {row["arm"]: row for row in artifact["rows"]}
+    assert rows["B_direct_required"]["quality_score"] == 1.0
+    assert rows["B_direct_required"]["output_text"] == "start_line: 10"
+    assert rows["B_direct_required"]["codemap_direct_compact_successful_calls"] == 1
+    assert rows["B_direct_required"]["treatment_adherence"] is True
+    assert rows["C_skill_required"]["skill_delivery_observed"] is True
+    assert rows["C_skill_required"]["codemap_skill_compact_successful_calls"] == 1
+    assert rows["C_skill_required"]["compliance"] is True
+    assert rows["C_skill_required"]["treatment_adherence"] is True
+
+    telemetry_path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="telemetry hash mismatch"):
+        script_run_codex.rescore_results(run_dir)
+    telemetry_path.write_bytes(source_bytes[telemetry_path])
+    metadata["status"] = "running"
+    metadata_path.write_text(json.dumps(metadata, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="requires completed"):
+        script_run_codex.rescore_results(run_dir)
+    metadata["status"] = "completed"
+    metadata["execution"]["selected_task_ids"] = ["not-in-frozen-suite"]
+    metadata_path.write_text(json.dumps(metadata, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="task scope"):
+        script_run_codex.rescore_results(run_dir)
+    metadata["execution"]["selected_task_ids"] = ["SE-01"]
+    telemetry_path.write_text(json.dumps(direct_row, sort_keys=True) + "\n", encoding="utf-8")
+    metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(telemetry_path.read_bytes()).hexdigest()
+    metadata_path.write_text(json.dumps(metadata, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="telemetry is incomplete"):
+        script_run_codex.rescore_results(run_dir)
 
 
 def test_main_threads_an_explicit_manifest_path_into_task_loading_and_ordering(

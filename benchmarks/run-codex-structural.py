@@ -1007,7 +1007,7 @@ def _has_unquoted_comment(command: str) -> bool:
 def _canonical_query_arguments(command: str) -> list[str] | None:
     """Return query arguments only for the dedicated canonical launcher command."""
     normalized = _unwrap_native_command(command)
-    if normalized is None or re.match(r'^\s*"\$\{?CODEMAP_BIN\}?"(?:[ \t]+)', normalized) is None:
+    if normalized is None:
         return None
     if _has_unquoted_comment(normalized):
         return None
@@ -1117,6 +1117,14 @@ def _iter_lines(stream: str | bytes | Iterable[str | bytes]) -> Iterable[str]:
             yield line
 
 
+def _append_message_text(current: str, item: Mapping[str, Any]) -> str:
+    """Preserve agent-message boundaries when reconstructing one response."""
+    addition = _item_text(item)
+    if not addition:
+        return current
+    return f"{current}\n{addition}" if current else addition
+
+
 def parse_codex_jsonl(
     stream: str | bytes | Iterable[str | bytes],
     *,
@@ -1175,7 +1183,7 @@ def parse_codex_jsonl(
             if event_type == "item.completed" and item_type:
                 result.item_counts[item_type] = result.item_counts.get(item_type, 0) + 1
             if item_type == "agent_message" and event_type in {"", "item.completed"}:
-                result.output_text += _item_text(item)
+                result.output_text = _append_message_text(result.output_text, item)
             if item_type in {"command_execution", "shell_command", "command"}:
                 if event_type == "item.started" and item_id:
                     pending_items.add(item_id)
@@ -1229,7 +1237,8 @@ def parse_codex_jsonl(
                 if not isinstance(block, Mapping):
                     continue
                 if block.get("type") == "text":
-                    result.output_text += str(block.get("text", ""))
+                    text_item = {"text": str(block.get("text", ""))}
+                    result.output_text = _append_message_text(result.output_text, text_item)
                 if block.get("type") == "tool_use":
                     name = str(block.get("name", ""))
                     command = _command_text(block)
@@ -2699,45 +2708,28 @@ def _arm_compliance(arm: str, evidence: CodexParseResult | CodexRun) -> bool | N
     raise ValueError(f"unknown benchmark arm {arm!r}")
 
 
-def _semantic_query_compliance(task: Mapping[str, Any], arm: str, run: CodexRun) -> bool | None:
-    """Require one successful compact query matching the locked task contract."""
+def _semantic_query_compliance(task: Mapping[str, Any], arm: str, run: CodexParseResult | CodexRun) -> bool | None:
+    """Require successful compact queries that satisfy the locked task contract."""
     if arm == "A_plain":
         return None
-    expected = task.get("expected_queries")
-    if not isinstance(expected, list) or not expected:
+    locked = _locked_semantic_queries(task)
+    if not locked:
         return None
-    allowed: set[tuple[str, ...]] = set()
-    for query in expected:
-        if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
-            continue
-        args = query.get("args", [])
-        if isinstance(args, list) and all(isinstance(value, str) for value in args):
-            normalized = _normalize_semantic_query(str(query["cmd"]), args)
-            if normalized is not None:
-                allowed.add(normalized)
-    return any(
-        _normalize_semantic_query(arguments[0], arguments[1:]) in allowed
+    observed = {
+        normalized
         for arguments in run.successful_query_arguments
-        if arguments
-    )
+        if arguments and (normalized := _normalize_semantic_query(arguments[0], arguments[1:])) is not None
+    }
+    if _expected_query_policy(task) == "all_required":
+        return all(query in observed for query in locked)
+    return any(query in observed for query in locked)
 
 
-def _task_query_fitness(task: Mapping[str, Any], arm: str, run: CodexRun) -> float | None:
-    """Score the closest successful query against the locked task shape."""
+def _task_query_fitness(task: Mapping[str, Any], arm: str, run: CodexParseResult | CodexRun) -> float | None:
+    """Score observed queries against locked task shape under its match policy."""
     if arm == "A_plain":
         return None
-    expected = task.get("expected_queries")
-    if not isinstance(expected, list) or not expected:
-        return None
-    locked: list[tuple[str, ...]] = []
-    for query in expected:
-        if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
-            continue
-        arguments = query.get("args", [])
-        if isinstance(arguments, list) and all(isinstance(value, str) for value in arguments):
-            normalized = _normalize_semantic_query(str(query["cmd"]), arguments)
-            if normalized is not None:
-                locked.append(normalized)
+    locked = _locked_semantic_queries(task)
     if not locked:
         return None
     observed = [
@@ -2747,11 +2739,49 @@ def _task_query_fitness(task: Mapping[str, Any], arm: str, run: CodexRun) -> flo
     ]
     if not observed:
         return 0.0
-    return max(
-        len(set(expected_query) & set(actual_query)) / len(set(expected_query) | set(actual_query))
+    best_matches = [
+        max(_semantic_query_similarity(expected_query, actual_query) for actual_query in observed)
         for expected_query in locked
-        for actual_query in observed
-    )
+    ]
+    if _expected_query_policy(task) == "all_required":
+        return sum(best_matches) / len(best_matches)
+    return max(best_matches)
+
+
+_EXPECTED_QUERY_POLICIES = frozenset({"any_match", "all_required"})
+
+
+def _expected_query_policy(task: Mapping[str, Any]) -> str:
+    """Return the task query-match policy, defaulting legacy tasks to any-match."""
+    policy = task.get("expected_query_policy", "any_match")
+    if not isinstance(policy, str) or policy not in _EXPECTED_QUERY_POLICIES:
+        choices = ", ".join(sorted(_EXPECTED_QUERY_POLICIES))
+        raise ValueError(f"expected_query_policy must be one of {choices}")
+    return policy
+
+
+def _locked_semantic_queries(task: Mapping[str, Any]) -> list[tuple[str, ...]]:
+    """Normalize every valid expected query declared by one task."""
+    expected = task.get("expected_queries")
+    if not isinstance(expected, list) or not expected:
+        return []
+    locked: list[tuple[str, ...]] = []
+    for query in expected:
+        if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
+            continue
+        arguments = query.get("args", [])
+        if isinstance(arguments, list) and all(isinstance(value, str) for value in arguments):
+            normalized = _normalize_semantic_query(str(query["cmd"]), arguments)
+            if normalized is not None:
+                locked.append(normalized)
+    return locked
+
+
+def _semantic_query_similarity(expected_query: tuple[str, ...], actual_query: tuple[str, ...]) -> float:
+    """Measure token-set overlap between one locked and one observed query."""
+    expected_tokens = set(expected_query)
+    actual_tokens = set(actual_query)
+    return len(expected_tokens & actual_tokens) / len(expected_tokens | actual_tokens)
 
 
 _SEMANTIC_BOOLEAN_OPTIONS = frozenset({"--broken", "--exclude-tests", "--with-imports"})
@@ -3550,6 +3580,251 @@ def _write_run_metadata(metadata_path: Path, payload: Mapping[str, Any]) -> None
         temporary.unlink(missing_ok=True)
 
 
+def _regular_file_within(path: Path, root: Path, *, description: str) -> Path:
+    """Resolve one immutable rescore input while rejecting links and scope escapes."""
+    try:
+        metadata = path.lstat()
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"offline rescore {description} is unavailable") from exc
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or not resolved.is_relative_to(root):
+        raise ValueError(f"offline rescore {description} escaped the run directory")
+    return resolved
+
+
+def _load_frozen_rescore_inputs(
+    run_dir: Path,
+) -> tuple[dict[str, Any], Path, list[dict[str, Any]], Path, Path, str]:
+    """Load all hash-verified inputs needed to replay one completed run."""
+    root = run_dir.resolve(strict=True)
+    metadata_candidates = sorted(root.glob("*metadata.json"))
+    if len(metadata_candidates) != 1:
+        raise ValueError("offline rescore requires exactly one run metadata JSON file")
+    metadata_path = _regular_file_within(metadata_candidates[0], root, description="metadata")
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("offline rescore metadata is not valid JSON") from exc
+    if not isinstance(metadata, dict) or metadata.get("schema_version") != "codex-structural-run-metadata-v1":
+        raise ValueError("offline rescore metadata schema is unsupported")
+    if metadata.get("status") != "completed":
+        raise ValueError("offline rescore requires completed run metadata")
+    artifacts = metadata.get("artifacts")
+    inputs = metadata.get("inputs")
+    if not isinstance(artifacts, Mapping) or not isinstance(inputs, Mapping):
+        raise ValueError("offline rescore metadata lacks artifact or input provenance")
+    telemetry_raw = artifacts.get("telemetry_jsonl")
+    snapshot = inputs.get("snapshot")
+    if not isinstance(telemetry_raw, str) or not isinstance(snapshot, Mapping):
+        raise ValueError("offline rescore metadata lacks frozen telemetry or snapshot")
+    telemetry_recorded = Path(telemetry_raw)
+    if telemetry_recorded.name != "telemetry.jsonl":
+        raise ValueError("offline rescore telemetry provenance has an unexpected name")
+    telemetry_path = _regular_file_within(root / telemetry_recorded.name, root, description="telemetry")
+    telemetry_bytes = telemetry_path.read_bytes()
+    expected_telemetry_hash = artifacts.get("telemetry_sha256")
+    if (
+        not isinstance(expected_telemetry_hash, str)
+        or hashlib.sha256(telemetry_bytes).hexdigest() != expected_telemetry_hash
+    ):
+        raise ValueError("offline rescore telemetry hash mismatch")
+    snapshot_raw = snapshot.get("path")
+    snapshot_hash = snapshot.get("sha256")
+    if not isinstance(snapshot_raw, str) or not isinstance(snapshot_hash, str):
+        raise ValueError("offline rescore snapshot provenance is incomplete")
+    snapshot_recorded = Path(snapshot_raw)
+    if snapshot_recorded.name != "input-snapshot.json":
+        raise ValueError("offline rescore snapshot provenance has an unexpected name")
+    snapshot_path = _regular_file_within(
+        root / "inputs" / snapshot_recorded.name,
+        root,
+        description="input snapshot",
+    )
+    snapshot_bytes = snapshot_path.read_bytes()
+    if hashlib.sha256(snapshot_bytes).hexdigest() != snapshot_hash:
+        raise ValueError("offline rescore input snapshot hash mismatch")
+    try:
+        snapshot_payload = json.loads(snapshot_bytes)
+    except json.JSONDecodeError as exc:
+        raise ValueError("offline rescore input snapshot is not valid JSON") from exc
+    if (
+        not isinstance(snapshot_payload, Mapping)
+        or snapshot_payload.get("schema_version") != "codex-structural-input-snapshot-v1"
+    ):
+        raise ValueError("offline rescore input snapshot schema is unsupported")
+    files = snapshot_payload.get("files")
+    if not isinstance(files, list):
+        raise ValueError("offline rescore input snapshot lacks files")
+    task_entry = next(
+        (entry for entry in files if isinstance(entry, Mapping) and entry.get("role") == "task_suite"), None
+    )
+    if task_entry is None:
+        raise ValueError("offline rescore input snapshot lacks frozen task suite")
+    archived_path = task_entry.get("archived_path")
+    expected_task_hash = task_entry.get("sha256")
+    if not isinstance(archived_path, str) or not isinstance(expected_task_hash, str):
+        raise ValueError("offline rescore frozen task suite provenance is incomplete")
+    tasks_path = _regular_file_within(root / "inputs" / archived_path, root, description="frozen task suite")
+    if hashlib.sha256(tasks_path.read_bytes()).hexdigest() != expected_task_hash:
+        raise ValueError("offline rescore frozen task suite hash mismatch")
+    treatments = metadata.get("treatments")
+    artifact_hashes = treatments.get("artifact_sha256") if isinstance(treatments, Mapping) else None
+    skill_hash = artifact_hashes.get("codemap_query_skill") if isinstance(artifact_hashes, Mapping) else None
+    if not isinstance(skill_hash, str) or not skill_hash:
+        raise ValueError("offline rescore metadata lacks the frozen Codemap Skill hash")
+    skill_entries = [
+        entry
+        for entry in files
+        if isinstance(entry, Mapping)
+        and entry.get("role") == "C_skill_required:codemap-py"
+        and entry.get("sha256") == skill_hash
+        and str(entry.get("archived_path", "")).endswith("/codex-skills/query-code/SKILL.md")
+    ]
+    if len(skill_entries) != 1:
+        raise ValueError("offline rescore snapshot lacks one exact frozen Codemap Skill")
+    skill_archived_path = skill_entries[0].get("archived_path")
+    if not isinstance(skill_archived_path, str):
+        raise ValueError("offline rescore frozen Codemap Skill provenance is incomplete")
+    skill_path = _regular_file_within(
+        root / "inputs" / skill_archived_path,
+        root,
+        description="frozen Codemap Skill",
+    )
+    if hashlib.sha256(skill_path.read_bytes()).hexdigest() != skill_hash:
+        raise ValueError("offline rescore frozen Codemap Skill hash mismatch")
+    return metadata, telemetry_path, load_task_suite(tasks_path), metadata_path, skill_path, skill_hash
+
+
+def rescore_results(run_dir: Path) -> Path:
+    """Replay frozen raw telemetry and current evaluators into an immutable offline artifact.
+
+    The function accepts only a completed run directory. It never invokes a
+    provider, reads credentials, or rewrites raw telemetry, canonical telemetry,
+    metadata, or frozen input snapshots.
+    """
+    root = Path(run_dir).resolve(strict=True)
+    metadata, telemetry_path, tasks, metadata_path, skill_path, skill_sha256 = _load_frozen_rescore_inputs(root)
+    task_by_id = {str(task["id"]): task for task in tasks}
+    execution = metadata.get("execution")
+    if not isinstance(execution, Mapping):
+        raise ValueError("offline rescore metadata lacks execution scope")
+    selected_ids = execution.get("selected_task_ids")
+    coordinates = execution.get("coordinates")
+    if not isinstance(selected_ids, list) or not all(isinstance(task_id, str) for task_id in selected_ids):
+        raise ValueError("offline rescore selected task scope is invalid")
+    if set(selected_ids) - task_by_id.keys() or not isinstance(coordinates, list):
+        raise ValueError("offline rescore task scope disagrees with frozen suite")
+    allowed_coordinates: set[tuple[str, int, str]] = set()
+    for coordinate in coordinates:
+        if not isinstance(coordinate, Mapping):
+            raise ValueError("offline rescore coordinate scope is invalid")
+        task_id = coordinate.get("task_id")
+        repetition = coordinate.get("repetition")
+        arm = coordinate.get("arm")
+        if (
+            not isinstance(task_id, str)
+            or task_id not in selected_ids
+            or isinstance(repetition, bool)
+            or not isinstance(repetition, int)
+            or repetition < 1
+            or arm not in CODEX_STRUCTURAL_ARMS
+        ):
+            raise ValueError("offline rescore coordinate scope is invalid")
+        allowed_coordinates.add((task_id, repetition, arm))
+    if len(allowed_coordinates) != len(coordinates):
+        raise ValueError("offline rescore coordinate scope is invalid")
+    telemetry_bytes = telemetry_path.read_bytes()
+    source = {
+        "metadata_sha256": hashlib.sha256(metadata_path.read_bytes()).hexdigest(),
+        "telemetry_sha256": hashlib.sha256(telemetry_bytes).hexdigest(),
+        "frozen_suite_semantic_sha256": semantic_suite_hash(tasks),
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    }
+    rows: list[dict[str, Any]] = []
+    seen_coordinates: set[tuple[Any, Any, Any]] = set()
+    for line in telemetry_bytes.decode("utf-8").splitlines():
+        try:
+            raw_row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError("offline rescore telemetry is not valid JSONL") from exc
+        if not isinstance(raw_row, Mapping):
+            raise ValueError("offline rescore telemetry row is not an object")
+        task_id = raw_row.get("task_id")
+        arm = raw_row.get("arm")
+        repetition = raw_row.get("repetition", 1)
+        coordinate = (task_id, repetition, arm)
+        if (
+            not isinstance(task_id, str)
+            or task_id not in task_by_id
+            or coordinate not in allowed_coordinates
+            or coordinate in seen_coordinates
+        ):
+            raise ValueError("offline rescore telemetry row is outside frozen execution scope")
+        raw_events = raw_row.get("raw_events")
+        if not isinstance(raw_events, list) or not all(isinstance(event, Mapping) for event in raw_events):
+            raise ValueError("offline rescore telemetry row lacks replayable raw events")
+        seen_coordinates.add(coordinate)
+        parsed = parse_codex_jsonl(
+            (json.dumps(event, sort_keys=True) for event in raw_events),
+            skill_path=skill_path if arm == "C_skill_required" else None,
+            skill_sha256=skill_sha256 if arm == "C_skill_required" else "",
+        )
+        evaluation = _default_evaluator(task_by_id[task_id], parsed.output_text)
+        compliance = _arm_compliance(str(arm), parsed)
+        contaminated = arm == "A_plain" and parsed.codemap_calls > 0
+        row = {
+            "task_id": task_id,
+            "repetition": repetition,
+            "arm": arm,
+            "output_text": parsed.output_text,
+            "success": parsed.success,
+            "incomplete": parsed.incomplete,
+            "error": parsed.error,
+            "error_type": parsed.error_type,
+            "quality_score": evaluation.quality_score if evaluation.scored else None,
+            "quality_components": evaluation.components,
+            "correct": evaluation.correct,
+            "extraction_failed": evaluation.extraction_failed,
+            "compliance": compliance,
+            "codemap_semantic_compliance": _semantic_query_compliance(task_by_id[task_id], str(arm), parsed),
+            "task_query_fitness": _task_query_fitness(task_by_id[task_id], str(arm), parsed),
+            "contaminated": contaminated,
+            "treatment_adherence": treatment_adherence(
+                str(arm),
+                codemap_use_compliance=compliance,
+                contaminated=contaminated,
+            ),
+            "codemap_calls": parsed.codemap_calls,
+            "codemap_successful_calls": parsed.codemap_successful_calls,
+            "codemap_direct_compact_successful_calls": parsed.codemap_direct_compact_successful_calls,
+            "codemap_skill_compact_successful_calls": parsed.codemap_skill_compact_successful_calls,
+            "skill_delivery_observed": parsed.skill_delivery_observed,
+            "successful_query_arguments": parsed.successful_query_arguments,
+            "raw_events_sha256": hashlib.sha256(
+                json.dumps(raw_events, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+        }
+        rows.append(row)
+    if seen_coordinates != allowed_coordinates:
+        raise ValueError("offline rescore telemetry is incomplete for the frozen execution scope")
+    payload = {
+        "schema_version": "codex-structural-offline-rescore-v1",
+        "source": source,
+        "rows": rows,
+    }
+    serialized_without_hash = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    payload["derived_sha256"] = hashlib.sha256(serialized_without_hash).hexdigest()
+    serialized = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    artifact_path = root / (f"offline-rescore-v1-{source['telemetry_sha256'][:16]}-{source['runner_sha256'][:16]}.json")
+    if artifact_path.exists():
+        if artifact_path.read_bytes() != serialized:
+            raise ValueError("offline rescore artifact already exists with different derived content")
+        return artifact_path
+    with artifact_path.open("x", encoding="utf-8") as handle:
+        handle.write(serialized.decode("utf-8"))
+    return artifact_path
+
+
 def _initial_run_metadata(
     *,
     manifest_path: Path,
@@ -4002,6 +4277,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--render-results", action="store_true", help="render progress rows from standard input")
     parser.add_argument(
+        "--rescore-results",
+        type=Path,
+        metavar="RUN_DIR",
+        help="replay frozen telemetry and tasks into an immutable offline rescore artifact",
+    )
+    parser.add_argument(
         "--resolve-tasks",
         metavar="SELECTORS",
         help="resolve comma-separated exact task IDs or task families into a targeted scope",
@@ -4037,7 +4318,11 @@ if __name__ == "__main__":
         parser.error("--force-color requires --render-results")
     if args.hide_plan and not args.render_results:
         parser.error("--hide-plan requires --render-results")
-    if args.resolve_tasks is not None:
+    if args.rescore_results is not None:
+        if args.render_results or args.resolve_tasks is not None:
+            parser.error("--rescore-results cannot be combined with rendering or task resolution")
+        print(rescore_results(args.rescore_results))
+    elif args.resolve_tasks is not None:
         if args.render_results:
             parser.error("--resolve-tasks cannot be combined with --render-results")
         print(json.dumps(resolve_task_selection(args.manifest_path, args.resolve_tasks), sort_keys=True))
@@ -4049,6 +4334,7 @@ if __name__ == "__main__":
                 parser.error(f"--{option.replace('_', '-')} is required unless --render-results is used")
         arguments = vars(args)
         arguments.pop("render_results")
+        arguments.pop("rescore_results")
         arguments.pop("resolve_tasks")
         arguments.pop("force_color")
         arguments.pop("hide_plan")

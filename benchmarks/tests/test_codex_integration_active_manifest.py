@@ -344,6 +344,12 @@ def test_integration_manifest_locks_generic_nonpoolable_task_selection() -> None
     assert "derived at runtime" in human
     assert "## Paid selected-task command" in human
     assert "bash benchmarks/run-all.sh codex --tasks=DI,GR" in human
+    selected_section = human.split("## Paid selected-task command", 1)[1].split("## Confirmatory execution", 1)[0]
+    assert "CODEX_PAID_APPROVAL=<resolved-scope-sha256>" in selected_section
+    assert f"CODEX_PAID_APPROVAL={_sha256(MANIFEST)}" not in selected_section
+    assert "copy its `selection scope` SHA-256" in selected_section
+    assert "--resolve-tasks DI,GR" in selected_section
+    assert "# Alternatively" not in selected_section
     assert "post-fix diagnostic" not in human
     assert human.index("## Paid selected-task command") < human.index("## Confirmatory execution")
 

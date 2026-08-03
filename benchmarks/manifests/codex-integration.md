@@ -1,6 +1,6 @@
 # `codex-integration-v1`
 
-**Manifest SHA-256**: `22dd692577018e5d0f6848a516a8bad4fd2ed9b3c0a4dbb6594da00aa623b50b`
+**Manifest SHA-256**: `9fca5b943eb69bec709a3bdf7742ffd2c1b75d55261f382657e7eb7a0c7bd627`
 
 ## Purpose
 
@@ -29,11 +29,11 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 
 ## Locked candidates
 
-- `codemap-py` `0.27.0`.
-  Package manifest SHA-256: `05bff60724a18fd2ba59301ca231f6a3e443ddd03b0ed0bdb8119ce70a9cfc9c`.
+- `codemap-py` `0.28.2`.
+  Package manifest SHA-256: `a12cd6962e2a6d28cb407ac78174c9b3f0ee8054ff1ddb27b058800cd7b353cc`.
 - `codex-rig` `0.4.1`.
 - Codex CLI: `{'available': True, 'path': '/opt/homebrew/bin/codex', 'version': 'codex-cli 0.146.0'}`.
-- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `2291f698f5dcf8cab34013068baa74a178a79cf78612ed7464188c255eabd193`.
+- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `920f82eb626febf6b19bd2178b064f892be4b26f5d61bbc2d200f70b4d87b211`.
 
 ## Study scope
 
@@ -60,8 +60,20 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 
 Replace `DI,GR` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.
 
+Run the matching no-model dry-run first and copy its `selection scope` SHA-256 (or the `scope_sha256` field from the resolver output) into the placeholder below. This targeted scope digest is distinct from the machine-manifest SHA-256.
+
 ```bash
-CODEX_PAID_APPROVAL=22dd692577018e5d0f6848a516a8bad4fd2ed9b3c0a4dbb6594da00aa623b50b \
+bash benchmarks/run-all.sh codex --tasks=DI,GR --dry-run
+```
+
+Alternatively, resolve the selector directly and copy its `scope_sha256` value:
+
+```bash
+python3 benchmarks/run-codex-structural.py --manifest-path benchmarks/manifests/codex-integration.json --resolve-tasks DI,GR
+```
+
+```bash
+CODEX_PAID_APPROVAL=<resolved-scope-sha256> \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     CODEX_RUN_DIR="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=<derived-ceiling> \
@@ -79,7 +91,7 @@ bash benchmarks/run-all.sh codex --dry-run
 After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:
 
 ```bash
-CODEX_PAID_APPROVAL=22dd692577018e5d0f6848a516a8bad4fd2ed9b3c0a4dbb6594da00aa623b50b \
+CODEX_PAID_APPROVAL=9fca5b943eb69bec709a3bdf7742ffd2c1b75d55261f382657e7eb7a0c7bd627 \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=86400 \

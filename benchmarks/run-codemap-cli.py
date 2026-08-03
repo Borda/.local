@@ -400,8 +400,9 @@ def load_oss_tasks(type_filter: str | None = None) -> list[dict]:
 def path_to_module(path: str, repo_root: str) -> str | None:
     """Convert a filesystem path to a dotted module name relative to the repo root.
 
-    Strips a leading ``src/`` layout prefix if present, converts path separators
-    to dots, drops the ``.py`` suffix, and collapses ``__init__`` to its package.
+    For an on-disk regular package, the name starts at the outermost package
+    directory, so a non-package container such as ``tests/`` is excluded. Paths
+    without a discoverable package retain the legacy repo-relative conversion.
 
     Args:
         path: Absolute or relative path to a ``.py`` file.
@@ -420,15 +421,28 @@ def path_to_module(path: str, repo_root: str) -> str | None:
         >>> path_to_module("/repo/README.md", "/repo") is None
         True
     """
-    rel = os.path.relpath(path, repo_root).replace(os.sep, "/")
+    file_path = Path(path)
+    root = Path(repo_root)
+    if not file_path.is_absolute():
+        file_path = root / file_path
+    if file_path.suffix != ".py":
+        return None
+
+    parts = [] if file_path.stem == "__init__" else [file_path.stem]
+    package_dir = file_path.parent
+    found_package = False
+    while package_dir != root and ((package_dir / "__init__.py").exists() or (package_dir / "__init__.pyi").exists()):
+        found_package = True
+        parts.append(package_dir.name)
+        package_dir = package_dir.parent
+    if found_package:
+        return ".".join(reversed(parts))
+
+    rel = os.path.relpath(file_path, root).replace(os.sep, "/")
     if rel.startswith("src/"):
         rel = rel[4:]
-    if not rel.endswith(".py"):
-        return None
     mod = rel[:-3].replace("/", ".")
-    if mod.endswith(".__init__"):
-        mod = mod[:-9]
-    return mod
+    return mod[:-9] if mod.endswith(".__init__") else mod
 
 
 def module_to_grep_pattern(module: str) -> str:
@@ -751,7 +765,9 @@ def module_to_source_file(module: str, repo_root: Path) -> Path | None:
     """Resolve a dotted module name to its source ``.py`` file on disk.
 
     Checks ``src/`` layout and ``__init__.py`` package variants, mirroring the
-    candidate order used by :func:`count_cold_calls_deps`.
+    candidate order used by :func:`count_cold_calls_deps`. For a regular package
+    below another non-package directory, falls back to the matching
+    :func:`path_to_module` identity.
 
     Args:
         module: Dotted module name (e.g. ``"pkg.sub.mod"``).
@@ -772,7 +788,24 @@ def module_to_source_file(module: str, repo_root: Path) -> Path | None:
         repo_root / "src" / parts / "__init__.py",
         repo_root / parts / "__init__.py",
     ]
-    return next((c for c in candidates if c.exists()), None)
+    direct_match = next((candidate for candidate in candidates if candidate.exists()), None)
+    if direct_match is not None:
+        return direct_match
+
+    # A package may live below a non-package container (for example, tests/).
+    # Match its actual dotted identity instead of inventing a directory prefix.
+    filename = f"{module.rsplit('.', maxsplit=1)[-1]}.py"
+    for candidate in sorted(repo_root.rglob(filename)):
+        if {".git", "__pycache__"}.intersection(candidate.parts):
+            continue
+        if path_to_module(str(candidate), str(repo_root)) == module:
+            return candidate
+    for candidate in sorted(repo_root.rglob("__init__.py")):
+        if {".git", "__pycache__"}.intersection(candidate.parts):
+            continue
+        if path_to_module(str(candidate), str(repo_root)) == module:
+            return candidate
+    return None
 
 
 def _file_base_package(file_path: Path, repo_root: Path) -> str:

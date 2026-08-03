@@ -2698,8 +2698,24 @@ def _set_recall(expected: list[str], predicate: Any) -> tuple[int, float]:
     return hits, (hits / len(expected) if expected else 0.0)
 
 
+def _explicit_h2_section(output_text: str, label: str) -> tuple[str, bool]:
+    """Return one exact Markdown H2 answer section without cross-section fallback.
+
+    Diff-impact prompts require separate ``## Callers`` and ``## Tests`` lists.
+    Restricting their evaluators to these bounded sections keeps exploratory prose
+    and misplaced answers from becoming scoreable evidence.
+    """
+    pattern = rf"(?im)^##[ \t]+{re.escape(label)}[ \t]*$"
+    match = re.search(pattern, output_text)
+    if match is None:
+        return "", False
+    next_heading = re.search(r"(?m)^##[ \t]+", output_text[match.end() :])
+    end = match.end() + next_heading.start() if next_heading is not None else len(output_text)
+    return output_text[match.end() : end], True
+
+
 def _evaluate_diff_impact(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate a ``diff_impact`` task: caller recall AND test-file recall both ≥ 0.70 (review DI).
+    """Evaluate scoped DI callers/tests with continuous precision-recall fitness.
 
     A diff-impact task stages a change and asks for the blast radius: which modules/callers are affected
     and which tests to run. Correctness requires BOTH the caller recall (reusing the develop_br
@@ -2711,7 +2727,8 @@ def _evaluate_diff_impact(task: dict, output_text: str) -> BenchQuality:
         output_text: Agent's full response text.
 
     Returns:
-        BenchQuality with recall = caller recall; scoring_detail carries both recalls.
+        BenchQuality with averaged caller/test F1 fitness; binary correctness keeps
+        the transparent per-component recall thresholds.
     """
     gt = task["ground_truth"]
     expected_callers: list[str] = gt.get("fn_callers", [])
@@ -2719,13 +2736,27 @@ def _evaluate_diff_impact(task: dict, output_text: str) -> BenchQuality:
     if not expected_callers and not expected_tests:
         return BenchQuality(scored=False)
 
-    found_callers = _match_callers(output_text, expected_callers)
+    callers_section, callers_section_found = _explicit_h2_section(output_text, "Callers")
+    tests_section, tests_section_found = _explicit_h2_section(output_text, "Tests")
+    found_callers = _match_callers(callers_section, expected_callers)
     caller_hits = len(set(expected_callers) & found_callers)
     caller_recall = caller_hits / len(expected_callers) if expected_callers else 1.0
+    caller_candidates = set(_extract_caller_raw_forms(callers_section))
+    caller_precision = caller_hits / len(caller_candidates) if caller_candidates else 0.0
+    caller_fitness = (
+        2 * caller_precision * caller_recall / (caller_precision + caller_recall)
+        if caller_precision + caller_recall
+        else 0.0
+    )
 
-    test_hits, test_recall = _set_recall(expected_tests, lambda m: _module_mentioned(m, output_text))
+    test_hits, test_recall = _set_recall(expected_tests, lambda m: _module_mentioned(m, tests_section))
     if not expected_tests:
         test_recall = 1.0
+    test_candidates = set(re.findall(r"\b(?:tests|parity)_[\w.]+", tests_section))
+    test_precision = test_hits / len(test_candidates) if test_candidates else 0.0
+    test_fitness = (
+        2 * test_precision * test_recall / (test_precision + test_recall) if test_precision + test_recall else 0.0
+    )
 
     correct = caller_recall >= _DI_RECALL_THRESHOLD and test_recall >= _DI_RECALL_THRESHOLD
     return BenchQuality(
@@ -2733,19 +2764,25 @@ def _evaluate_diff_impact(task: dict, output_text: str) -> BenchQuality:
         correct=correct,
         metric_expected=len(expected_callers),
         metric_got=caller_hits,
-        recall=round(caller_recall, 3),
+        recall=round((caller_fitness + test_fitness) / 2, 3),
         caller_count_gt=gt.get("unique_caller_count"),
         extraction_failed=not found_callers and test_hits == 0,
         evaluator_used="_evaluate_diff_impact",
         scoring_detail={
             "caller_recall": round(caller_recall, 3),
             "test_recall": round(test_recall, 3),
+            "caller_precision": round(caller_precision, 3),
+            "test_precision": round(test_precision, 3),
+            "caller_fitness": round(caller_fitness, 3),
+            "test_fitness": round(test_fitness, 3),
             "caller_expected": len(expected_callers),
             "caller_got": caller_hits,
             "test_expected": len(expected_tests),
             "test_got": test_hits,
+            "callers_section_found": callers_section_found,
+            "tests_section_found": tests_section_found,
             "threshold": _DI_RECALL_THRESHOLD,
-            "method": "caller_recall_and_test_recall",
+            "method": "scoped_caller_test_f1_with_recall_gates",
         },
     )
 

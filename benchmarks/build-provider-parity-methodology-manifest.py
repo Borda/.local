@@ -29,15 +29,18 @@ ARCHIVED_MANIFEST = BENCHMARKS / "results" / "manifests" / ("provider-parity-v1-
 ARCHIVED_MANIFEST_SHA256 = "971c6ad220c1e821ed72109396f4dce1d745f0a1b74b2790874f6b07e833627b"
 EXPERIMENT_REVISION = "provider-parity-shared-methodology-quality-contract-2026-08-02"
 INDEX_LOCK = {
-    "change_reason": "Scanner schema 12 persists static symbol aliases required for re-export reverse-caller completeness.",
+    "change_reason": (
+        "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; "
+        "production-only centrality is recomputed from production importers without changing the schema."
+    ),
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
     "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
     "project": "codemap-provider-parity-pl-2.6.5",
-    "raw_sha256": "25ef7a9868c7bb004e8e7476f8bc1515f1e16366b75737b527341c35d7fd2dbd",
+    "raw_sha256": "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb",
     "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
     "scan_version": 12,
-    "scanned_at": "2026-08-02T19:38:57.376588+00:00",
+    "scanned_at": "2026-08-03T10:58:35.335616+00:00",
 }
 PRODUCT_ACCEPTANCE_POLICY = {
     "efficiency_path": {
@@ -123,19 +126,23 @@ TASK_CHANGE_LEDGER: dict[str, dict[str, Any]] = {
     ),
     "DI-01": _ledger_entry(
         ["canonical_task_sha256", "prompt_sha256"],
-        "Replaced an external re-export with a staged local target and structured reverse-caller query.",
+        "Replaced an external re-export with a staged local target; caller and direct test-import queries are all required.",
     ),
-    "DI-02": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-caller query is required."),
-    "DI-03": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-caller query is required."),
-    "DI-04": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-caller query is required."),
+    "DI-02": _ledger_entry(["canonical_task_sha256"], "Caller and direct test-import queries are all required."),
+    "DI-03": _ledger_entry(["canonical_task_sha256"], "Caller and direct test-import queries are all required."),
+    "DI-04": _ledger_entry(["canonical_task_sha256"], "Caller and direct test-import queries are all required."),
     "DI-05": _ledger_entry(
         ["canonical_task_sha256", "prompt_sha256"],
-        "Replaced an external re-export with a staged local target and structured reverse-caller query.",
+        "Replaced an external re-export with a staged local target; caller and direct test-import queries are all required.",
     ),
     "DI-06": _ledger_entry(
-        ["canonical_task_sha256"], "Corrected recursive re-export caller oracle and added its reverse-caller query."
+        ["canonical_task_sha256"],
+        "Corrected recursive re-export caller oracle; caller and direct test-import queries are all required.",
     ),
-    "GR-01": _ledger_entry(["canonical_task_sha256"], "Structured graph-centrality query is required."),
+    "GR-01": _ledger_entry(
+        ["canonical_task_sha256", "prompt_sha256"],
+        "Production-only centrality scope is explicit and matches the exclude-tests oracle/query.",
+    ),
     "GR-02": _ledger_entry(["canonical_task_sha256"], "Structured graph query is required."),
     "GR-03": _ledger_entry(["canonical_task_sha256"], "Structured graph query is required."),
     "GR-04": _ledger_entry(["canonical_task_sha256"], "Structured graph-centrality query is required."),
