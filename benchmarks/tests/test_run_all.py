@@ -582,9 +582,13 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     )
     run_dir = Path(env["CODEX_RUN_DIR"])
     assert run_dir.is_dir()
+    launcher_snapshot = run_dir / ".launcher" / "run-all.sh"
+    assert launcher_snapshot.read_bytes() == SCRIPT.read_bytes()
     assert (run_dir / "run.log").is_file()
     checksums = (run_dir / "checksums.sha256").read_text(encoding="utf-8")
     assert "run.log" in checksums
+    assert ".launcher/run-all.sh" in checksums
+    assert f"--invocation-launcher-path {launcher_snapshot}" in paid_call
 
 
 def test_paid_codex_tasks_runs_only_resolved_scope(

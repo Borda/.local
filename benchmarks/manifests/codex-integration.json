@@ -21,7 +21,7 @@
   },
   "artifact_sha256": {
     "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-    "codemap_query_skill": "5b8e5dc2cd84d3b0daa3742c652c44e49b233ffaa542cf19d0e358f3ee55f929",
+    "codemap_query_skill": "16bf735d3ca245434558cb0da5daed343dfe98811ce37fa73f586f1af56c16ae",
     "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
     "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
@@ -33,11 +33,11 @@
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-    "run_all": "49dc8e28e51661c62fb175f7d9bd9a9f79a25addc50d308d4816727688c554ed",
-    "run_codex_structural": "35a3be64ce5a3e2d773380beaa339f6722100b788f7dce4993bb9d6ddcd86a78"
+    "run_all": "d47dce19826ce7620c0753cd26dccac0122c33c763c791bad17688cd54a21917",
+    "run_codex_structural": "551dc84c2889dd5e2a81b3f9d8cd76a37f3fa6cea47b5659e3e5171bb23bca1f"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "c2d232ea557198aa7f7ee626467a719371b93840039faaff6894616f04075104",
+    "package_manifest_sha256": "05bff60724a18fd2ba59301ca231f6a3e443ddd03b0ed0bdb8119ce70a9cfc9c",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
     "version": "0.27.0"
@@ -312,7 +312,7 @@
   "implementation_contract": {
     "artifact_sha256": {
       "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-      "codemap_query_skill": "5b8e5dc2cd84d3b0daa3742c652c44e49b233ffaa542cf19d0e358f3ee55f929",
+      "codemap_query_skill": "16bf735d3ca245434558cb0da5daed343dfe98811ce37fa73f586f1af56c16ae",
       "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
       "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
@@ -324,8 +324,8 @@
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-      "run_all": "49dc8e28e51661c62fb175f7d9bd9a9f79a25addc50d308d4816727688c554ed",
-      "run_codex_structural": "35a3be64ce5a3e2d773380beaa339f6722100b788f7dce4993bb9d6ddcd86a78"
+      "run_all": "d47dce19826ce7620c0753cd26dccac0122c33c763c791bad17688cd54a21917",
+      "run_codex_structural": "551dc84c2889dd5e2a81b3f9d8cd76a37f3fa6cea47b5659e3e5171bb23bca1f"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -552,7 +552,7 @@
   "schema_version": "codex-integration-manifest-v1",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "7e0b89b8c34b84f372d011ef392f469df02ca1b9c55ebdc01b0549cd6077c961"
+    "sha256": "2291f698f5dcf8cab34013068baa74a178a79cf78612ed7464188c255eabd193"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,

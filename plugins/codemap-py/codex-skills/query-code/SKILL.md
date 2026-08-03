@@ -12,9 +12,9 @@ Use verified `CODEMAP_BIN`. Make one query first: task-shaped and compact; do no
 | Need | Query |
 | --- | --- |
 | module importers / blast radius | `rdeps <module>` |
-| most-imported modules / highest in-degree | `central --top N` |
+| production centrality / highest in-degree | `central --top N --exclude-tests` |
 | internal-import coupling (not centrality) | `coupled --top N` |
-| direct callers | `fn-rdeps <module::symbol>` |
+| direct production callers | `fn-rdeps <module::symbol> --exclude-tests` |
 | transitive callers / function blast | `fn-blast <module::symbol>` |
 | imports / callees | `deps <module>` / `fn-deps <module::symbol>` |
 | source / symbols | `symbol <name>` / `symbols <module>` |

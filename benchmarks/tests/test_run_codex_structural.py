@@ -3056,6 +3056,86 @@ def test_semantic_query_compliance_requires_task_locked_endpoint_and_target(
     assert script_run_codex._semantic_query_compliance(task, run.arm, run) is expected
 
 
+@pytest.mark.parametrize(
+    ("expected_queries", "actual", "expected"),
+    [
+        pytest.param(
+            [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
+            [["fn-rdeps", "--exclude-tests", "qname"]],
+            1.0,
+            id="exact-option-permutation",
+        ),
+        pytest.param(
+            [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
+            [["fn-rdeps", "qname"]],
+            2 / 3,
+            id="missing-production-filter",
+        ),
+        pytest.param(
+            [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
+            [["fn-blast", "qname"]],
+            1 / 4,
+            id="wrong-endpoint-same-target",
+        ),
+        pytest.param(
+            [{"cmd": "central", "args": ["--top", "5"]}],
+            [["central", "--top", "3"]],
+            1 / 2,
+            id="wrong-top-value",
+        ),
+        pytest.param(
+            [{"cmd": "central", "args": ["--top", "5"]}],
+            [["central", "--unknown", "5"]],
+            0.0,
+            id="invalid-query-shape",
+        ),
+        pytest.param(
+            [{"cmd": "coupled", "args": []}, {"cmd": "central", "args": ["--top", "5"]}],
+            [["coupled"], ["central", "--top", "3"]],
+            1.0,
+            id="best-successful-query",
+        ),
+    ],
+)
+def test_task_query_fitness_reports_continuous_similarity_separate_from_treatment(
+    script_run_codex: Any,
+    expected_queries: list[dict[str, Any]],
+    actual: list[list[str]],
+    expected: float,
+) -> None:
+    """Query fitness distinguishes partial routing from transport adherence."""
+    task = {"id": "GR-01", "expected_queries": expected_queries}
+    run = script_run_codex.CodexRun(
+        arm="B_direct_required",
+        task_id="GR-01",
+        task_type="graph_reasoning",
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        successful_query_arguments=actual,
+    )
+
+    assert script_run_codex._task_query_fitness(task, run.arm, run) == pytest.approx(expected)
+
+
+def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
+    script_run_codex: Any,
+) -> None:
+    """A required Codemap call remains treatment-adherent when query fitness is imperfect."""
+    run = script_run_codex.CodexRun(
+        arm="C_skill_required",
+        task_id="GR-01",
+        task_type="graph_reasoning",
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        success=True,
+        compliance=True,
+        treatment_adherence=True,
+        codemap_semantic_compliance=False,
+        task_query_fitness=0.25,
+    )
+
+    assert run.treatment_adherence is True
+    assert script_run_codex._pooling_ineligibility_reasons(run) == ()
+
+
 def test_all_locked_execution_queries_accept_strict_option_permutations(script_run_codex: Any) -> None:
     """Every current execution query must survive strict B/C semantic admission.
 
@@ -3128,8 +3208,15 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
     manifest = source / "manifest.json"
     tasks = source / "tasks.json"
     runner = source / "runner.py"
+    launcher = source / "run-all.sh"
     index = source / "index.json"
-    for path, value in ((manifest, "manifest"), (tasks, "tasks"), (runner, "runner"), (index, "index")):
+    for path, value in (
+        (manifest, "manifest"),
+        (tasks, "tasks"),
+        (runner, "runner"),
+        (launcher, "launcher"),
+        (index, "index"),
+    ):
         path.write_text(value, encoding="utf-8")
     package = source / "package"
     package.mkdir()
@@ -3142,6 +3229,7 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
         manifest_path=manifest,
         tasks_path=tasks,
         runner_path=runner,
+        invocation_launcher_path=launcher,
         index_path=index,
         auth_source=auth,
         arm_archives={"B_direct_required": {"direct-cli": package}},
@@ -3152,7 +3240,23 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
     assert "secret-token" not in json.dumps(payload)
     assert str(auth) not in json.dumps(payload)
     assert payload["files"] == sorted(payload["files"], key=lambda item: (item["role"], item["archived_path"]))
+    launcher_entry = next(entry for entry in payload["files"] if entry["role"] == "invocation_launcher")
+    assert launcher_entry["archived_path"] == "shared/run-all.sh"
+    assert launcher_entry["sha256"] == hashlib.sha256(launcher.read_bytes()).hexdigest()
     assert snapshot["sha256"] == hashlib.sha256((tmp_path / "inputs" / "input-snapshot.json").read_bytes()).hexdigest()
+
+
+def test_invocation_launcher_validation_rejects_drift(script_run_codex: Any, tmp_path: Path) -> None:
+    """A paid run cannot continue after its executing shell snapshot changes."""
+    launcher = tmp_path / "run-all.sh"
+    launcher.write_text("original", encoding="utf-8")
+    expected = hashlib.sha256(launcher.read_bytes()).hexdigest()
+
+    script_run_codex._validate_invocation_launcher(launcher, expected)
+    launcher.write_text("mutated", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invocation launcher changed"):
+        script_run_codex._validate_invocation_launcher(launcher, expected)
 
 
 def test_input_snapshot_includes_configuration_for_every_arm(script_run_codex: Any, tmp_path: Path) -> None:

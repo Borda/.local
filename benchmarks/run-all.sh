@@ -16,7 +16,7 @@
 # the reviewed byte hash exactly.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="${CODEX_LAUNCHER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 PL_TAG="2.6.5"
 PL_URL="${PL_URL:-https://github.com/Lightning-AI/pytorch-lightning.git}"
 MANAGED_REPO="/private/tmp/codemap-provider-parity-pl-2.6.5"
@@ -307,11 +307,34 @@ require_codex_paid_inputs() {
     print_codex_paid_guidance
     exit 2
   fi
-  if [ -e "$CODEX_RUN_DIR" ]; then
+  if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" = "1" ]; then
+    expected_launcher="$CODEX_RUN_DIR/.launcher/run-all.sh"
+    if [ "$0" != "$expected_launcher" ] || [ "${CODEX_INVOCATION_LAUNCHER:-}" != "$expected_launcher" ]; then
+      echo "ERROR: paid Codex mode is not executing its private launcher snapshot." >&2
+      exit 2
+    fi
+    if [ "$(sha256_file "$expected_launcher")" != "${CODEX_LAUNCHER_SHA256:-}" ]; then
+      echo "ERROR: paid Codex launcher snapshot changed before execution." >&2
+      exit 2
+    fi
+  elif [ -e "$CODEX_RUN_DIR" ]; then
     echo "ERROR: CODEX_RUN_DIR already exists: $CODEX_RUN_DIR" >&2
     print_codex_paid_guidance
     exit 2
   fi
+}
+
+exec_codex_launcher_snapshot() {
+  launcher_dir="$CODEX_RUN_DIR/.launcher"
+  launcher_snapshot="$launcher_dir/run-all.sh"
+  mkdir -p "$launcher_dir"
+  cp "$ROOT/benchmarks/run-all.sh" "$launcher_snapshot"
+  chmod 500 "$launcher_snapshot"
+  export CODEX_LAUNCHER_ROOT="$ROOT"
+  export CODEX_INVOCATION_LAUNCHER="$launcher_snapshot"
+  export CODEX_LAUNCHER_SHA256="$(sha256_file "$launcher_snapshot")"
+  export CODEX_LAUNCHER_SNAPSHOT_ACTIVE=1
+  exec /bin/bash "$launcher_snapshot" "$@"
 }
 
 print_codex_paid_guidance() {
@@ -464,6 +487,7 @@ run_codex_study() {
   python3 benchmarks/run-codex-structural.py \
     "${common_args[@]}" \
     --auth-source "$CODEX_AUTH_SOURCE" \
+    --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
     --no-legend \
     --output-path "$CODEX_RUN_DIR/telemetry.jsonl" \
     --metadata-path "$CODEX_RUN_DIR/run-metadata.json"
@@ -489,6 +513,9 @@ run_codex_with_artifacts() {
       shasum -a 256 "$input_artifact" >> "$checksum_path"
     done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
   fi
+  if [ -f "$CODEX_RUN_DIR/.launcher/run-all.sh" ]; then
+    shasum -a 256 "$CODEX_RUN_DIR/.launcher/run-all.sh" >> "$checksum_path"
+  fi
   echo "→ artifact checksums: $checksum_path"
   return "$run_status"
 }
@@ -511,8 +538,10 @@ case "$MODE" in
       run_codex_plan
     else
       require_codex_paid_inputs
+      if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" != "1" ]; then
+        exec_codex_launcher_snapshot "$@"
+      fi
       prepare_locked_inputs
-      mkdir -p "$CODEX_RUN_DIR"
       run_codex_with_artifacts run_codex_study
     fi
     ;;

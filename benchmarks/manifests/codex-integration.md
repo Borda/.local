@@ -1,6 +1,6 @@
 # `codex-integration-v1`
 
-**Manifest SHA-256**: `9c08713ca25900eecf9f397acf0629baf047c8f70b76502485f3e46dbdd2d80a`
+**Manifest SHA-256**: `22dd692577018e5d0f6848a516a8bad4fd2ed9b3c0a4dbb6594da00aa623b50b`
 
 ## Purpose
 
@@ -30,10 +30,10 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 ## Locked candidates
 
 - `codemap-py` `0.27.0`.
-  Package manifest SHA-256: `c2d232ea557198aa7f7ee626467a719371b93840039faaff6894616f04075104`.
+  Package manifest SHA-256: `05bff60724a18fd2ba59301ca231f6a3e443ddd03b0ed0bdb8119ce70a9cfc9c`.
 - `codex-rig` `0.4.1`.
 - Codex CLI: `{'available': True, 'path': '/opt/homebrew/bin/codex', 'version': 'codex-cli 0.146.0'}`.
-- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `7e0b89b8c34b84f372d011ef392f469df02ca1b9c55ebdc01b0549cd6077c961`.
+- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `2291f698f5dcf8cab34013068baa74a178a79cf78612ed7464188c255eabd193`.
 
 ## Study scope
 
@@ -61,7 +61,7 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 Replace `DI,GR` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.
 
 ```bash
-CODEX_PAID_APPROVAL=9c08713ca25900eecf9f397acf0629baf047c8f70b76502485f3e46dbdd2d80a \
+CODEX_PAID_APPROVAL=22dd692577018e5d0f6848a516a8bad4fd2ed9b3c0a4dbb6594da00aa623b50b \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     CODEX_RUN_DIR="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=<derived-ceiling> \
@@ -79,7 +79,7 @@ bash benchmarks/run-all.sh codex --dry-run
 After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:
 
 ```bash
-CODEX_PAID_APPROVAL=9c08713ca25900eecf9f397acf0629baf047c8f70b76502485f3e46dbdd2d80a \
+CODEX_PAID_APPROVAL=22dd692577018e5d0f6848a516a8bad4fd2ed9b3c0a4dbb6594da00aa623b50b \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=86400 \

@@ -2400,6 +2400,7 @@ def _write_input_snapshot(
     manifest_path: Path,
     tasks_path: Path,
     runner_path: Path,
+    invocation_launcher_path: Path | None = None,
     index_path: Path | None,
     auth_source: Path | None,
     arm_archives: Mapping[str, Mapping[str, Path]],
@@ -2417,6 +2418,14 @@ def _write_input_snapshot(
         ("runner", runner_path, Path("run-codex-structural.py")),
     ):
         _archive_snapshot_file(source, shared / relative, role=role, archive_root=snapshot_root, entries=entries)
+    if invocation_launcher_path is not None:
+        _archive_snapshot_file(
+            invocation_launcher_path,
+            shared / "run-all.sh",
+            role="invocation_launcher",
+            archive_root=snapshot_root,
+            entries=entries,
+        )
     if index_path is not None:
         _archive_snapshot_file(
             index_path,
@@ -2456,6 +2465,19 @@ def _write_input_snapshot(
     payload["sha256"] = hashlib.sha256(serialized).hexdigest()
     payload["bytes"] = len(serialized)
     return payload
+
+
+def _validate_invocation_launcher(path: Path, expected_sha256: str) -> None:
+    """Require the executing paid launcher to remain the locked regular file."""
+    try:
+        metadata = path.lstat()
+        observed_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ValueError(f"invocation launcher is unavailable: {path}") from exc
+    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink() or metadata.st_nlink != 1:
+        raise ValueError(f"invocation launcher is not a private regular file: {path}")
+    if observed_sha256 != expected_sha256:
+        raise ValueError(f"invocation launcher changed: expected {expected_sha256}, observed {observed_sha256}")
 
 
 def _configure_direct_codemap_launcher(home: ArmHome, codemap_bin: Path | None) -> None:
@@ -2638,6 +2660,7 @@ class CodexRun:
     codemap_skill_compact_successful_calls: int = 0
     successful_query_arguments: list[list[str]] = field(default_factory=list)
     codemap_semantic_compliance: bool | None = None
+    task_query_fitness: float | None = None
     skill_delivery_observed: bool = False
     codemap_errors: int = 0
     fallback_calls: int = 0
@@ -2696,6 +2719,38 @@ def _semantic_query_compliance(task: Mapping[str, Any], arm: str, run: CodexRun)
         _normalize_semantic_query(arguments[0], arguments[1:]) in allowed
         for arguments in run.successful_query_arguments
         if arguments
+    )
+
+
+def _task_query_fitness(task: Mapping[str, Any], arm: str, run: CodexRun) -> float | None:
+    """Score the closest successful query against the locked task shape."""
+    if arm == "A_plain":
+        return None
+    expected = task.get("expected_queries")
+    if not isinstance(expected, list) or not expected:
+        return None
+    locked: list[tuple[str, ...]] = []
+    for query in expected:
+        if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
+            continue
+        arguments = query.get("args", [])
+        if isinstance(arguments, list) and all(isinstance(value, str) for value in arguments):
+            normalized = _normalize_semantic_query(str(query["cmd"]), arguments)
+            if normalized is not None:
+                locked.append(normalized)
+    if not locked:
+        return None
+    observed = [
+        normalized
+        for arguments in run.successful_query_arguments
+        if arguments and (normalized := _normalize_semantic_query(arguments[0], arguments[1:])) is not None
+    ]
+    if not observed:
+        return 0.0
+    return max(
+        len(set(expected_query) & set(actual_query)) / len(set(expected_query) | set(actual_query))
+        for expected_query in locked
+        for actual_query in observed
     )
 
 
@@ -2766,8 +2821,6 @@ def _pooling_ineligibility_reasons(run: CodexRun) -> tuple[str, ...]:
         reasons.append("diagnostic_only")
     if run.arm in {"B_direct_required", "C_skill_required"} and run.compliance is not True:
         reasons.append("required_use_missing")
-    if run.arm in {"B_direct_required", "C_skill_required"} and run.codemap_semantic_compliance is False:
-        reasons.append("semantic_query_mismatch")
     return tuple(reasons)
 
 
@@ -3059,6 +3112,7 @@ class CodexRunner:
         *,
         tasks_path: Path,
         manifest_path: Path,
+        invocation_launcher_path: Path | None = None,
         tasks: Iterable[Mapping[str, Any]],
         arms: Iterable[str],
     ) -> dict[str, Any]:
@@ -3092,6 +3146,7 @@ class CodexRunner:
                 manifest_path=manifest_path,
                 tasks_path=tasks_path,
                 runner_path=Path(__file__),
+                invocation_launcher_path=invocation_launcher_path,
                 index_path=self.index_path,
                 auth_source=self.auth_source,
                 arm_archives=arm_archives,
@@ -3345,6 +3400,7 @@ class CodexRunner:
         run.error_type = parsed.error_type
         run.compliance = _arm_compliance(arm, run)
         run.codemap_semantic_compliance = _semantic_query_compliance(task, arm, run)
+        run.task_query_fitness = _task_query_fitness(task, arm, run)
         if arm == "B_direct_required" and run.compliance:
             run.codemap_delivery = "direct_cli"
         elif arm == "C_skill_required" and run.compliance:
@@ -3355,8 +3411,6 @@ class CodexRunner:
             codemap_use_compliance=run.compliance,
             contaminated=run.contaminated,
         )
-        if run.codemap_semantic_compliance is False:
-            run.treatment_adherence = False
         run.token_accounting_inconsistent = token_accounting_inconsistent(run.input_tokens, run.cached_input_tokens)
         run.fresh_input_tokens = fresh_input_tokens(run.input_tokens, run.cached_input_tokens)
         if postflight_error:
@@ -3605,6 +3659,7 @@ def main(
     marketplace_root: Path | None = None,
     codemap_bin: Path | None = None,
     auth_source: Path | None = None,
+    invocation_launcher_path: Path | None = None,
     output_path: Path | None = None,
     metadata_path: Path | None = None,
     task_ids: list[str] | None = None,
@@ -3686,6 +3741,15 @@ def main(
         metadata_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("x", encoding="utf-8"):
             pass
+    invocation_launcher_sha256: str | None = None
+    if invocation_launcher_path is not None:
+        invocation_launcher_path = Path(invocation_launcher_path)
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            invocation_launcher_sha256 = str(manifest["artifact_sha256"]["run_all"])
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("paid manifest lacks the invocation-launcher lock") from exc
+        _validate_invocation_launcher(invocation_launcher_path, invocation_launcher_sha256)
     runner = CodexRunner(
         model,
         repo_path,
@@ -3756,6 +3820,7 @@ def main(
             output_path.parent,
             tasks_path=tasks_path,
             manifest_path=manifest_path,
+            invocation_launcher_path=invocation_launcher_path,
             tasks=tasks,
             arms=tuple(dict.fromkeys(selected for arms in task_arms.values() for selected in arms)),
         )
@@ -3807,10 +3872,14 @@ def main(
                 for selected in task_arms[(task["id"], repetition)]:
                     if time.monotonic() >= run_deadline:
                         raise TimeoutError("complete-run wall-clock limit exhausted before next cell")
+                    if invocation_launcher_path is not None and invocation_launcher_sha256 is not None:
+                        _validate_invocation_launcher(invocation_launcher_path, invocation_launcher_sha256)
                     run_kwargs: dict[str, Any] = {"repetition": repetition, "deadline": run_deadline}
                     if active_diff_impact_stage is not None:
                         run_kwargs["diff_impact_stage"] = active_diff_impact_stage
                     run = runner.run(task, selected, **run_kwargs)
+                    if invocation_launcher_path is not None and invocation_launcher_sha256 is not None:
+                        _validate_invocation_launcher(invocation_launcher_path, invocation_launcher_sha256)
                     run.run_wall_clock_limit_s = max_wall_clock_seconds
                     _append_run(output_path, run, execution_index=int(metadata["persisted_cells"]))
                     metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
@@ -3911,6 +3980,8 @@ def main(
         _write_run_metadata(metadata_path, metadata)
         print(f"SUMMARY\tstatus={metadata['status']}\tpersisted_cells={metadata['persisted_cells']}")
         raise
+    if invocation_launcher_path is not None and invocation_launcher_sha256 is not None:
+        _validate_invocation_launcher(invocation_launcher_path, invocation_launcher_sha256)
     metadata["status"] = "completed"
     metadata["completed_at"] = _utc_now()
     metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
@@ -3950,6 +4021,7 @@ if __name__ == "__main__":
     parser.add_argument("--marketplace-root", type=Path, required=False)
     parser.add_argument("--codemap-bin", type=Path)
     parser.add_argument("--auth-source", type=Path)
+    parser.add_argument("--invocation-launcher-path", type=Path)
     parser.add_argument("--output-path", type=Path)
     parser.add_argument("--metadata-path", type=Path)
     parser.add_argument("--task-id", dest="task_ids", action="append")

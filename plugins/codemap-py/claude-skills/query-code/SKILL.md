@@ -32,12 +32,13 @@ Direction matters: "affected if X changes" means reverse dependencies.
 | module importers / blast radius | `rdeps <module> [--exclude-tests]` |
 | module imports | `deps <module>` |
 | shortest import chain | `path <from> <to>` |
-| most-imported modules / highest in-degree | `central --top N` |
+| production centrality / highest in-degree | `central --top N --exclude-tests` |
 | internal-import coupling (not centrality) | `coupled --top N` |
 | symbol source or module symbols | `symbol <name> [--with-imports]` · `symbols <module>` |
 | regex symbol search | `find-symbol <pattern>` |
-| direct callers / callees | `fn-rdeps <module::symbol>` · `fn-deps <module::symbol>` |
-| transitive caller closure / function blast | `fn-blast <module::symbol>` |
+| direct production callers | `fn-rdeps <module::symbol> --exclude-tests` |
+| direct imports / callees | `fn-deps <module::symbol>` |
+| transitive callers / function blast | `fn-blast <module::symbol>` |
 | changed-code blast radius | `diff-impact [--base REF]` |
 | affected tests / mocks | `test-impact <target>` · `mock-rdeps <target>` |
 | pytest fixtures | `fixture-rdeps <name>` · `fixture-graph <test-file>` |

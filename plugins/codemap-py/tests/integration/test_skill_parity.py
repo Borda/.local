@@ -34,9 +34,10 @@ _SKILL_REF_RE = re.compile(r"[/$]codemap-py:([a-z][a-z-]*)")
 # Query routing is a product contract, not merely documentation style.  Both
 # surfaces must steer the model to the same supported high-leverage command.
 _QUERY_CODE_REQUIRED_SNIPPETS = (
-    "most-imported modules / highest in-degree | `central --top n`",
+    "production centrality / highest in-degree | `central --top n --exclude-tests`",
     "internal-import coupling (not centrality)",
-    "fn-blast <module::symbol>",
+    "direct production callers | `fn-rdeps <module::symbol> --exclude-tests`",
+    "transitive callers / function blast | `fn-blast <module::symbol>`",
     "never `--depth`",
     "never invent flags",
     "ordinary repository reads remain allowed",
