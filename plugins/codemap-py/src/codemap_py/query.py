@@ -740,6 +740,62 @@ def build_symbol_map(index: dict, exclude_tests: bool = False) -> dict[str, tupl
     return result
 
 
+def _resolve_symbol_alias(index: dict, qname: str) -> str | None:
+    """Resolve a persisted static symbol alias without trusting malformed chains.
+
+    Scan-index writes only canonical alias targets, but query must still treat an
+    edited or otherwise malformed index defensively. A cycle therefore returns
+    ``None`` rather than looping or inventing a target.
+    """
+    aliases = index.get("symbol_aliases", {})
+    if not isinstance(aliases, dict):
+        return None
+    current = qname
+    seen: set[str] = set()
+    while current in aliases:
+        if current in seen:
+            return None
+        seen.add(current)
+        target = aliases[current]
+        if not isinstance(target, str) or "::" not in target:
+            return None
+        current = target
+    return current
+
+
+def _symbol_alias_limitations(index: dict) -> list[dict[str, str]]:
+    """Return validated persisted evidence for every rejected alias path."""
+    records = index.get("symbol_alias_limitations", [])
+    if not isinstance(records, list):
+        return []
+    matches: set[tuple[str, str, str]] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        alias_qname = record.get("alias_qname")
+        target_qname = record.get("target_qname")
+        reason = record.get("reason")
+        if not all(isinstance(value, str) for value in (alias_qname, target_qname, reason)):
+            continue
+        resolved_target = _resolve_symbol_alias(index, target_qname)
+        if resolved_target is not None:
+            matches.add((alias_qname, resolved_target, reason))
+    return [
+        {"alias_qname": alias_qname, "target_qname": target_qname, "reason": reason}
+        for alias_qname, target_qname, reason in sorted(matches)
+    ]
+
+
+def _alias_limitations_for_target(index: dict, query_target: str | None) -> list[dict[str, str]]:
+    """Return persisted rejected-alias records that can hide callers of one target."""
+    if not query_target:
+        return []
+    resolved_target = _resolve_symbol_alias(index, query_target)
+    if resolved_target is None:
+        return []
+    return [record for record in _symbol_alias_limitations(index) if record["target_qname"] == resolved_target]
+
+
 def build_reverse_call_graph(index: dict, exclude_tests: bool = False) -> dict[str, list[str]]:
     """Reverse call map: ``callee_full_qname -> [caller_full_qname, ...]``.
 
@@ -759,7 +815,9 @@ def build_reverse_call_graph(index: dict, exclude_tests: bool = False) -> dict[s
             caller_qname = f"{m['name']}::{sym['qualified_name']}"
             for edge in sym.get("calls", []):
                 if edge.get("resolution") in VALID_CALL_RESOLUTIONS:
-                    target = edge["target"]
+                    target = _resolve_symbol_alias(index, edge["target"])
+                    if target is None:
+                        continue
                     rev.setdefault(target, []).append(caller_qname)
     return rev
 
@@ -1201,7 +1259,14 @@ def _degraded_relevant(base: dict, query_target: str | None) -> list[dict]:
     return relevant
 
 
-def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
+def _coverage_note(
+    base: dict,
+    *,
+    complete: bool,
+    reason: str,
+    alias_limitations_total: int = 0,
+    alias_limitations_truncated: bool = False,
+) -> str:
     """Build a human note that never contradicts the emitted ``query_complete``.
 
     F1: the note must track the direction-scoped flag, not the direction-agnostic
@@ -1212,6 +1277,8 @@ def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
         base: the shared coverage dict from :func:`_coverage`.
         complete: the decided ``query_complete`` value for this command.
         reason: the veto slug from :func:`_query_complete` (``"ok"`` when complete).
+        alias_limitations_total: number of relevant rejected alias paths.
+        alias_limitations_truncated: whether compact output emits only the bounded sample.
     """
     total = base["total_modules"]
     if complete:
@@ -1230,6 +1297,16 @@ def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
         "root_mismatch": "the index was built for a different project root than the one queried "
         "(--root or CWD differs from the index's scan_root) — this result describes another tree. "
         "Re-scan the current root, or query with a matching --root.",
+        "symbol_alias_ambiguous": (
+            "a rejected top-level alias path may hide a caller of this symbol; "
+            + (
+                f"the compact result shows {_COMPACT_ALIAS_LIMITATION_LIMIT} of {alias_limitations_total} "
+                "symbol_alias_limitations records — Run without --compact to inspect every alias and reason, "
+                "then verify that path with grep."
+                if alias_limitations_truncated
+                else "see symbol_alias_limitations for the alias and reason, then verify that path with grep."
+            )
+        ),
     }.get(reason, "a structural blind spot may hide an edge; verify with grep.")
     return prefix + detail
 
@@ -1256,6 +1333,7 @@ def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
 _SESSION_MARKER_TTL_MS = 30 * 60 * 1000  # 30 min — matches the hook writer's guard
 _verbose_coverage: bool = False  # set from --verbose-coverage in main(); forces full block
 _force_compact_coverage: bool = False  # set from --compact in main(); opt-in coverage diet
+_COMPACT_ALIAS_LIMITATION_LIMIT = 8
 _coverage_full_keys = (
     "total_modules",
     "total_symbols",
@@ -1355,6 +1433,29 @@ def _should_compact_coverage() -> bool:
     return _coverage_already_emitted(session_id)
 
 
+def _compact_alias_limitations(records: list[dict[str, str]]) -> dict[str, object]:
+    """Return bounded alias evidence while preserving the exact limitation count.
+
+    Compact query output must remain safe to place directly in an agent context:
+    global commands can otherwise repeat every persisted ambiguous-alias record.
+    The sample is deterministic because ``_symbol_alias_limitations`` sorts records.
+    A caller can always omit ``--compact`` to obtain the lossless full record list.
+    """
+    total = len(records)
+    shown = records[:_COMPACT_ALIAS_LIMITATION_LIMIT]
+    truncated = total > len(shown)
+    payload: dict[str, object] = {
+        "symbol_alias_limitations": shown,
+        "symbol_alias_limitations_total": total,
+        "symbol_alias_limitations_truncated": truncated,
+    }
+    if truncated:
+        payload["symbol_alias_limitations_hint"] = (
+            "Run without --compact to inspect every symbol_alias_limitations record."
+        )
+    return payload
+
+
 def _cmd_coverage(
     index: dict,
     *,
@@ -1396,13 +1497,29 @@ def _cmd_coverage(
         **extra: per-command fields (method, not_covered, hint, scope, etc.).
     """
     base = _coverage(index)
+    resolved_command = command or _CMD
     complete, reason = _query_complete(
-        base, command=command or _CMD, module_status=module_status, module_name=module_name
+        base, command=resolved_command, module_status=module_status, module_name=module_name
     )
-    note = _coverage_note(base, complete=complete, reason=reason)
+    alias_limitations = (
+        _symbol_alias_limitations(index)
+        if resolved_command == "fn-central"
+        else _alias_limitations_for_target(index, query_target)
+    )
+    if resolved_command in {"fn-blast", "fn-central", "fn-rdeps"} and alias_limitations:
+        complete, reason = False, "symbol_alias_ambiguous"
+    compact_mode = _should_compact_coverage()
+    alias_payload = _compact_alias_limitations(alias_limitations) if compact_mode and alias_limitations else {}
+    note = _coverage_note(
+        base,
+        complete=complete,
+        reason=reason,
+        alias_limitations_total=len(alias_limitations),
+        alias_limitations_truncated=bool(alias_payload.get("symbol_alias_limitations_truncated")),
+    )
     # Drop the internal collision-names set from the emitted block; keep it out of JSON.
     emitted = {k: v for k, v in base.items() if k != "_collision_names"}
-    if _should_compact_coverage():
+    if compact_mode:
         compact = {
             "query_complete": complete,
             "stale": emitted["stale"],
@@ -1416,7 +1533,7 @@ def _cmd_coverage(
             compact["degraded"] = emitted["degraded"]
             compact["note"] = note
             compact["completeness_reason"] = reason
-        return {**compact, **extra}
+        return {**compact, **extra, **alias_payload}
     relevant = _degraded_relevant(base, query_target if query_target is not None else module_name)
     full = {
         **emitted,
@@ -1429,7 +1546,7 @@ def _cmd_coverage(
     }
     if relevant:
         full["degraded_relevant"] = relevant
-    return {**full, **extra}
+    return {**full, **extra, **({"symbol_alias_limitations": alias_limitations} if alias_limitations else {})}
 
 
 # ---------------------------------------------------------------------------
@@ -2245,11 +2362,12 @@ def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
     """
     _require_call_graph(index)
     sym_map = _get_symbol_map(index)
-    if qname not in sym_map:
+    resolved_qname = _resolve_symbol_alias(index, qname)
+    if resolved_qname is None or (qname not in sym_map and qname not in (index.get("symbol_aliases") or {})):
         _exit_symbol_not_found(index, qname)
     rev_graph = _get_rev_graph(index)
     callers = []
-    for caller_qname in sorted(set(rev_graph.get(qname, []))):
+    for caller_qname in sorted(set(rev_graph.get(resolved_qname, []))):
         entry = sym_map.get(caller_qname)
         m_entry = entry[0] if entry else {}
         callers.append(
@@ -2266,6 +2384,7 @@ def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
         json.dumps(
             {
                 "qname": qname,
+                "resolved_qname": resolved_qname,
                 "called_by": callers,
                 "count": len(callers),
                 "unique_caller_count": len(callers),
@@ -2300,7 +2419,9 @@ def cmd_fn_central(index: dict, top: int, exclude_tests: bool = False) -> None:
         for sym in m.get("symbols", []):
             for edge in sym.get("calls", []):
                 if edge.get("resolution") in VALID_CALL_RESOLUTIONS:
-                    target = edge["target"]
+                    target = _resolve_symbol_alias(index, edge["target"])
+                    if target is None:
+                        continue
                     counts[target] = counts.get(target, 0) + 1
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:top]
     result = []
@@ -2365,6 +2486,7 @@ def cmd_fn_blast(index: dict, qname: str) -> None:
                 "total_callers": len(result),
                 "index": _cmd_coverage(
                     index,
+                    query_target=qname,
                     method="static-ast",
                     scope="transitive-call-graph",
                     not_covered=_CALL_GRAPH_NOT_COVERED,
@@ -4530,7 +4652,7 @@ def _add_global_flags(parser: argparse.ArgumentParser) -> None:
         "--compact",
         action="store_true",
         default=False,
-        help="Emit compact coverage metadata without truncating command results.",
+        help="Emit compact coverage metadata and bounded alias-limitation evidence.",
     )
 
 

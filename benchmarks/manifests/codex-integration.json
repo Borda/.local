@@ -21,23 +21,23 @@
   },
   "artifact_sha256": {
     "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-    "codemap_query_skill": "3dff7af5af9872c9bc5f48799d599ae108eea9a63d4273844dfe093671077444",
+    "codemap_query_skill": "5b8e5dc2cd84d3b0daa3742c652c44e49b233ffaa542cf19d0e358f3ee55f929",
     "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-    "codemap_runtime_graph": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
+    "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
     "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-    "codemap_runtime_query": "f117fb05f775f106cd9a07dfbe33b93084f9df571759a74734711001e7d1c3f5",
+    "codemap_runtime_query": "d6d469a9d454e6c6bb0095629ed112c01ab28835df74c2a39c43d29bc3271ca6",
     "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
-    "prepare_codex_index": "da2d863e8a6ac3b100017a4e29d33597b6743cca13fab8c2906d5b67d9645a98",
-    "run_all": "19e781f5214627aaa49f11d931d8714e902853a8dfd9e6bca77388d9c5592d36",
-    "run_codex_structural": "2a338ba9aa7f34079a43a33c0e53007f4be116fea17d6a49672cece42ce6ecbd"
+    "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
+    "run_all": "49dc8e28e51661c62fb175f7d9bd9a9f79a25addc50d308d4816727688c554ed",
+    "run_codex_structural": "35a3be64ce5a3e2d773380beaa339f6722100b788f7dce4993bb9d6ddcd86a78"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "a3bd035d1dbc4f536ad7219c5f0db1bd7b2e110d1a9a2101beba0df92a85b2b9",
+    "package_manifest_sha256": "c2d232ea557198aa7f7ee626467a719371b93840039faaff6894616f04075104",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
     "version": "0.27.0"
@@ -173,7 +173,7 @@
     "required_before_paid_execution": "Execute this compact query through B's staged launcher under the treatment permission profile; require exit 0, index.query_complete=true, and unchanged locked-index bytes."
   },
   "direct_cli_runtime": {
-    "aggregate_sha256": "4337bbf54f511614540f0faf04c7e8ee5bf1af10a9a64d4ea6ccb1b0980f5843",
+    "aggregate_sha256": "c6ff39d437e7f646f30dd9caa991a29f0d97e2bea4ced10d85045f72a1048b71",
     "files": {
       "bin/_exclusions.py": "1aa5857b5012f1a433f7d2001e4eee07d275a951a80b6a87e026183e5bf7622e",
       "bin/codemap-py": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
@@ -181,14 +181,14 @@
       "src/codemap_py/__init__.py": "06a6ab7c0099412092c6bf7a9cc8e1743e2d2abff893b5d88f01efb455f3492f",
       "src/codemap_py/__main__.py": "19ed5044f96af22c034fd9c816dc9398eacced444c7d884782388a9ad98a988c",
       "src/codemap_py/cli.py": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-      "src/codemap_py/graph.py": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
+      "src/codemap_py/graph.py": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
       "src/codemap_py/index_paths.py": "35b533c4d8080639d80dffcff0d1a4694eccd40869c2a719348704b6876faf00",
       "src/codemap_py/integration.py": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "src/codemap_py/query.py": "f117fb05f775f106cd9a07dfbe33b93084f9df571759a74734711001e7d1c3f5",
+      "src/codemap_py/query.py": "d6d469a9d454e6c6bb0095629ed112c01ab28835df74c2a39c43d29bc3271ca6",
       "src/codemap_py/runtime_log.py": "2f8030bd31bf36413d851c0d49081913948a566758158b45faaed545dee9b0ac",
       "src/codemap_py/rwgate.py": "161b9f67aa87c30863ac2f2fe210a339af65b35fde3fada14ca2cd32e4f756a0",
-      "src/codemap_py/scanner.py": "20adc3d27e699af9174990d39b33b7bb4f9e9cdd9835d006f6d8a3a693ffcc56",
-      "src/codemap_py/schema.py": "6a654663c4288db0eb43ee1e11874253518da812867624cf9a9cee1394689345",
+      "src/codemap_py/scanner.py": "5cc8c7289e4964fbd718b46dd9c8ea81138d94bab8318b9316d0e0278cbdfc2d",
+      "src/codemap_py/schema.py": "584310c543130b51dc4795351ec4d2649d27eacf190a4fc9f7decd0a30e9b24c",
       "src/codemap_py/telemetry.py": "eb305260c3ed61e4fe12b18815cc32b357da5664317bfc686a9a48ec02491819"
     },
     "staged_root": "<disposable-CODEX_HOME>/direct-cli"
@@ -206,7 +206,7 @@
       "direct_reverse_call": 14,
       "direct_reverse_import": 5,
       "graph_centrality": 2,
-      "high_fan_in": 20,
+      "high_fan_in": 18,
       "test_selection": 6,
       "transitive_reverse_call": 1
     },
@@ -216,6 +216,19 @@
       "test_recall"
     ],
     "precision_f1_status": "not reported without a frozen false-positive oracle",
+    "prospective_product_acceptance": {
+      "efficiency_path": {
+        "c_a_gross_input_ratio_95_upper": "< 1.00",
+        "c_a_paired_quality_95_lower": ">= -0.02",
+        "c_a_paired_quality_mean": ">= 0.00"
+      },
+      "historical_evidence": "Historical nonpoolable evidence cannot satisfy this prospective policy.",
+      "quality_path": {
+        "c_a_gross_input_ratio_95_upper": "<= 1.05",
+        "c_a_paired_quality_95_lower": "> 0"
+      },
+      "task_family_block": "Any repeated task-family mean C_skill-A_plain quality difference < -0.10 blocks acceptance."
+    },
     "provider_neutral": true,
     "quality_primary": "continuous task-family quality_score in [0,1]"
   },
@@ -299,20 +312,20 @@
   "implementation_contract": {
     "artifact_sha256": {
       "codemap_candidate_manifest": "51d25200d192069b0c6f32e1d9c0f355580204a06dcb3eb8cd37b52e1a3b9d8f",
-      "codemap_query_skill": "3dff7af5af9872c9bc5f48799d599ae108eea9a63d4273844dfe093671077444",
+      "codemap_query_skill": "5b8e5dc2cd84d3b0daa3742c652c44e49b233ffaa542cf19d0e358f3ee55f929",
       "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-      "codemap_runtime_graph": "560cdc136d05ded52c59fdc7dd49cddf1df6b93d7c0ba3a183c5f9825bd19530",
+      "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
       "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "codemap_runtime_query": "f117fb05f775f106cd9a07dfbe33b93084f9df571759a74734711001e7d1c3f5",
+      "codemap_runtime_query": "d6d469a9d454e6c6bb0095629ed112c01ab28835df74c2a39c43d29bc3271ca6",
       "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
-      "prepare_codex_index": "da2d863e8a6ac3b100017a4e29d33597b6743cca13fab8c2906d5b67d9645a98",
-      "run_all": "19e781f5214627aaa49f11d931d8714e902853a8dfd9e6bca77388d9c5592d36",
-      "run_codex_structural": "2a338ba9aa7f34079a43a33c0e53007f4be116fea17d6a49672cece42ce6ecbd"
+      "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
+      "run_all": "49dc8e28e51661c62fb175f7d9bd9a9f79a25addc50d308d4816727688c554ed",
+      "run_codex_structural": "35a3be64ce5a3e2d773380beaa339f6722100b788f7dce4993bb9d6ddcd86a78"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -323,14 +336,15 @@
     }
   },
   "index": {
+    "change_reason": "Scanner schema 12 persists static symbol aliases required for re-export reverse-caller completeness.",
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
     "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
     "project": "codemap-provider-parity-pl-2.6.5",
-    "raw_sha256": "b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045",
+    "raw_sha256": "25ef7a9868c7bb004e8e7476f8bc1515f1e16366b75737b527341c35d7fd2dbd",
     "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
-    "scan_version": 11,
-    "scanned_at": "2026-07-29T18:51:27.926212+00:00"
+    "scan_version": 12,
+    "scanned_at": "2026-08-02T19:38:57.376588+00:00"
   },
   "model": {
     "name": "gpt-5.6-luna",
@@ -538,10 +552,19 @@
   "schema_version": "codex-integration-manifest-v1",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "c78f102031d8826639ed92d69e48a8de0d949485aa59b14417e141507d2fe825"
+    "sha256": "7e0b89b8c34b84f372d011ef392f469df02ca1b9c55ebdc01b0549cd6077c961"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
+    "semantic_suite_sha256": {
+      "benchmarks/suites/tasks-agentic.json": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
+      "benchmarks/suites/tasks-bench.json": "7cb4f5306d90c482773cf8bff54f57fadff0acbef998c19ff8bbf1f57a7b2802",
+      "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
+      "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
+      "benchmarks/suites/tasks-fix-single.json": "3ae89d8fe843d8d4aca46a9e5c4229eb7487090c525625fa1690a0cc8e5b5046",
+      "benchmarks/suites/tasks-patch.json": "2d5a712b2224af8dfd655c9de375a56d421c052a3fc405aa453723c1c70c1a61",
+      "benchmarks/suites/tasks-readcrop.json": "d4881095786660c99f0eaf830bfe8caa8be1f7db5b35f508416b6317ab92ac1f"
+    },
     "suite_count": 7,
     "task_count": 109,
     "unique_canonical_task_hashes": true,
@@ -549,7 +572,7 @@
   },
   "suites": [
     {
-      "current_consumer": "run-claude-agentic.py default; no Codex agentic runner for the active manifest",
+      "current_consumer": "run-claude-agentic.py default; no Codex agentic runner in the archived provider-parity study",
       "generation_provenance": "committed_static_prompts_runtime_ast_oracle",
       "ordered_task_ids": [
         "BA-01",
@@ -572,6 +595,7 @@
       "path": "benchmarks/suites/tasks-agentic.json",
       "raw_sha256": "97e762235b57cd819ca5710052ab34426f96141c50b65717e58467a08dc503e9",
       "root_shape": "object_with_tasks",
+      "semantic_suite_sha256": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
       "task_count": 16,
       "tasks": [
         {
@@ -946,8 +970,9 @@
         "MB-05"
       ],
       "path": "benchmarks/suites/tasks-bench.json",
-      "raw_sha256": "af7ce4c414269b6dde87278a97b3db7e0f17a02cb70db8ae1f4df042d8318995",
+      "raw_sha256": "4fffb00a7776cc50ed7dc065b7ab87fe34082384e628f2a5c95dd7f6fbeb6c9a",
       "root_shape": "object_with_tasks",
+      "semantic_suite_sha256": "7cb4f5306d90c482773cf8bff54f57fadff0acbef998c19ff8bbf1f57a7b2802",
       "task_count": 60,
       "tasks": [
         {
@@ -1029,7 +1054,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "eec2aa8c31045d0fec9dc1e0c2842a5c4e3727a7669d310b24b78e5ae0871c95",
+          "canonical_task_sha256": "95d34abc387dc6c77b23c211cdafd76add15bc06b495deb2aaba12aa2a92407e",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "symbol_extraction",
@@ -1048,7 +1073,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "664b3fd37b963b534c82fe3188bb27ce2eceae33f393e13ce21df7f293e2fd18",
+          "canonical_task_sha256": "33c54b2e21d8ae408181bed9950599cbd56d39812afe82f01a2d5bda379bbd23",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "fn_call_graph",
@@ -1058,7 +1083,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "796b54bc4f8f1cb429145bfe0b76844dda1ab6c22e6f21e2f24e106311908c90",
+          "prompt_sha256": "8cd3e8cbea698f6389777e5decd67e00d809c0feddd9eca171ae4bf7d1f377ca",
           "providers": [
             "claude",
             "codex"
@@ -1243,7 +1268,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "11bfebdacc89839616f952d3bebc6de3c672f0bab37fad167b73da34030f6002",
+          "canonical_task_sha256": "7ed8bbe099e04c76ffd43318708abdb54a589ff806a749c86197aff66ad9e60c",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1253,7 +1278,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "1533250b66ceb4f5b953b7f69287adfac8520786de781e74fa6d77ff3962f8b8",
+          "prompt_sha256": "69ad46abff0485ef478653a12d6c2085ba9f46ae172d73c86f75a60d152edb07",
           "providers": [
             "claude",
             "codex"
@@ -1264,7 +1289,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "cd8a5cf9abbdeaad81b9066b85aaa903ac28e5ffd650a38cd95fb987f3ba0a3a",
+          "canonical_task_sha256": "5f84e97a1d5d18eb66bcb6a69b2ae75b3a16b60e3a54e102d1ffe16e206ab6ad",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1273,7 +1298,7 @@
           "oracle_class": "independent",
           "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
           "profiles": [],
-          "prompt_sha256": "ba13f0dcb81decfb3752f752eb113bed7a740da9b17e3c801032e21722aa0e07",
+          "prompt_sha256": "110e4c9c6cea8d2aa87f40639f2449af97fc6d465172aa0face682b0c1039342",
           "providers": [
             "claude",
             "codex"
@@ -1322,7 +1347,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "bc7577975762024090262362c8b1c383da722110086b78e0904503774cc33991",
+          "canonical_task_sha256": "ed7cc3f0dbdb3227b6eb20d3d53576b34606df5f44e6f7039b126f6e9fdd48dc",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "code_quality",
@@ -1330,7 +1355,7 @@
           "id": "CQ-05",
           "oracle_class": "self_consistency",
           "profiles": [],
-          "prompt_sha256": "4ac3a44fb2d0d96610ed2aafd1913ed7a1c2a9a0ae7c6163a48eea5b525974a2",
+          "prompt_sha256": "d7b9626f7766184952e668a13a779c71c9ef4a3b8c85363867c75e1907d0b1c0",
           "providers": [
             "claude",
             "codex"
@@ -1341,7 +1366,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "66b91681a48c0dafdec975ff01bb9d27edead659c2aa194ef05d8d80cbf0df2d",
+          "canonical_task_sha256": "3f465169b4cfc61a3fc3c27c41793caaf5609a55136432b938f0c5c60e0045b0",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "develop_blast_radius",
@@ -1351,7 +1376,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "7e4a423f234984a39c5f304d96bfcbce3f6db44b5d5c9f2a53a394edbb2c3386",
+          "prompt_sha256": "93b36ffd90516550f8947302b9f0bdb2b2e29a31799e8b178b14bd4ae2a41595",
           "providers": [
             "claude",
             "codex"
@@ -1497,7 +1522,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "758f905fb6e8279b7ac99f651b254670d5380b5029fa20b3adf4f3c618c2b9a9",
+          "canonical_task_sha256": "c6364382495b0a8ebd83909d69f5b4bacbc15b124ec53936dd2fa28232e33bb6",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "develop_blast_radius",
@@ -1518,7 +1543,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "a9126581a2530e86d03af6a36ea1a51a4a849211a505140f07b08f869244352b",
+          "canonical_task_sha256": "77ff00a53fa4d09e94cb7e2e05f08b14e6e73807dcb8a0a10f4df22d93d63a21",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "debug_from_trace",
@@ -1539,7 +1564,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "5c8907d157336167c55d435ffe18236f3ae5dc2e685fcf821dd52d4b29bdc7e9",
+          "canonical_task_sha256": "d48e1230e425afa5679ca7b01bcd44311a2d6cc46e99b073720fb35b655b081c",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "debug_from_trace",
@@ -1558,7 +1583,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "9aa6336182820945a6699b690c86b4a0eba5a7faa8ec6f515afa94bb39450161",
+          "canonical_task_sha256": "074f0b5ab640f21d8e111da1f84e21e4db9bfcda3299f431d18fb1581e927489",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "debug_from_trace",
@@ -1577,7 +1602,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "591bab62657678bbeaa0853f69dc92fa481b9cff3e947eceeb852dc91a73072b",
+          "canonical_task_sha256": "f0cae5932ea20c96e612fe91bb63b5b1731592845211f7e4c81f836c3203ba53",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "debug_from_trace",
@@ -1596,7 +1621,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "2fd50af34df0055b0167895480822c5759b0ee85d110708e40757a54d5ecafb7",
+          "canonical_task_sha256": "b957c41c6f8d782511a03cec142186e184a88be2eaaa0ffefc1846e006848d0a",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "debug_from_trace",
@@ -1615,7 +1640,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "fd05a19ce8814a46a01805fa7836b8b08850adcd92b2901ecdd0f97a23b85626",
+          "canonical_task_sha256": "0fbbf69021aa817ea26049e27081364690da366a0a33f1d8b8fdd91d08abf275",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "debug_from_trace",
@@ -1634,7 +1659,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "4dec9628f08964c766ed4e0fcd0c12eaf0db63498cfd8e88a6758b25aaa2af0f",
+          "canonical_task_sha256": "f519f31635450ef0b79ffc2be247143f8ebd3bbc17f56d93926edf748fdcc6b0",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "feature_scaffolding",
@@ -1644,7 +1669,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "de2edb04038b8ea7d171a695b0b362543329ded7b623e890bd71e8b528c87def",
+          "prompt_sha256": "915308403c600a58bc111a9a23aa878131334cd7faec1d583799343653b3c58b",
           "providers": [
             "claude",
             "codex"
@@ -1655,7 +1680,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "ed0cc2b2365d29bf380a37f9bac8b687c5a3d1159cc6687a5403a210c62e0b15",
+          "canonical_task_sha256": "7b7e924d6047c1cef8c42e59577b7580810f8808a90fa5b24aa804f88fc5d912",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "feature_scaffolding",
@@ -1663,7 +1688,7 @@
           "id": "FT-02",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "114764c42262f09b37821998ffd6f2d87741aef78f8fe50a1388448a14d6deef",
+          "prompt_sha256": "988f535135bf4c864745732e620539cd829afcd8bdf14dcfbe86dae5a53f730b",
           "providers": [
             "claude",
             "codex"
@@ -1674,7 +1699,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "786d8fae21ff19a010f536c06d79d3308b2fa68533cbb91f1edd3193bf874a67",
+          "canonical_task_sha256": "a7f5dc3c33069e90f32c4a771c29bf5c9efca6aacfcdba7b3535c6d9721a1fb7",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "feature_scaffolding",
@@ -1682,7 +1707,7 @@
           "id": "FT-03",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "96ace0f4204fcda6c2c2dc468f0563693918ba6e31076d60df63b9ef3de63926",
+          "prompt_sha256": "4a485e7cf58f4354e2a9be66df6cab66a774203162750c46eb7a36fdf79776a0",
           "providers": [
             "claude",
             "codex"
@@ -1693,7 +1718,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "068b59199df09e322219a5580a0c03e1dad87be0c7fab036791a51f1cff1f149",
+          "canonical_task_sha256": "7bcf90c52436214fa7f1a0af3440d38bbf403cc873f65980323a2cc20e687412",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "feature_scaffolding",
@@ -1701,7 +1726,7 @@
           "id": "FT-04",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "39411af3524269bf9b694a2c0b8fe87b7358bb5f221cc5d91b7e12651bf64893",
+          "prompt_sha256": "07479aa81924bc9cbb97427c3c2e76f7697d8723334f2d949a5f11782fc11b2a",
           "providers": [
             "claude",
             "codex"
@@ -1712,7 +1737,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "5a624cbaab9f5b6e49e55608014a91c62545accbaa70f3cf6159b5deb0e3b8fb",
+          "canonical_task_sha256": "7a0346401ba4e975acc958202f27628b698e59fede0fcb950247a2afb48b3ce5",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "feature_scaffolding",
@@ -1720,7 +1745,7 @@
           "id": "FT-05",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "6fd61c05d6010f7e7300d1098131b6319a0a0cc71bae09ca459ab1873f242d54",
+          "prompt_sha256": "0567efc78d3ed55b607ec54e73841f40e70c5f9eb4d16c172e0d065b90bd1ceb",
           "providers": [
             "claude",
             "codex"
@@ -1826,7 +1851,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "b9bda22b8ad280d37c7ecd3d6de3149144df7c59ab41f48866f1108b8f405885",
+          "canonical_task_sha256": "a55d877a02ab0f5f56694597d0e410632b52e970826776d78323d6818399f458",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1836,7 +1861,7 @@
           "profiles": [
             "dev"
           ],
-          "prompt_sha256": "1ca4a14c1daaddbe6ed3d5720c031976a1ad0c8dd79a266aa3d26488ae018d7e",
+          "prompt_sha256": "85aeb60e32e7783e09497dfa77ff74bf7d9d57385e01f178cc2de1c640d5c229",
           "providers": [
             "claude",
             "codex"
@@ -1847,7 +1872,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "7b7185f2b12c1c3071d58ec7af4ce1bc23061cf7d07043abedbcd776fce7ee78",
+          "canonical_task_sha256": "b6d4d7bef18257bc1dfd1f52f6ac7c70fa0e7a63694e7bcbc6f64cfca11baf78",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1866,7 +1891,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "9f952a63e4c711c08ecf88b836719229ee51e59818a7cb70dd84334a841bb902",
+          "canonical_task_sha256": "608655923617df67e3a1a798583ca29697ebd5c83fa72a9712478c8de54893f0",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1885,7 +1910,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "792ab0e326086301ced4db634876c91b753153ec13c77023000b8430bceb40a7",
+          "canonical_task_sha256": "09f2d7d12fbc1762487dc78ad3d9920e880f46d31b983e4dcc54db653a4efb90",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1904,7 +1929,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "69ccb5f74667bbfd8dded02414898869fa9601d0e5830843e3c8db50ac9fa403",
+          "canonical_task_sha256": "4aacb7cd5c045bf6849143bd7cf027390247082dd6db4c37eb6010d428e190b4",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1912,7 +1937,7 @@
           "id": "DI-05",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "06cbf8d59ee36f90381a1891d3ed61d90445d115f958c1a28bba54763e46ad82",
+          "prompt_sha256": "262188fdcab1f247a5aee4c13e5cab22bf4a9f1ddeb66c606ac182fdfca5916d",
           "providers": [
             "claude",
             "codex"
@@ -1923,7 +1948,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "678615e4b7958d3c7827a560c05f4d161ea1b6c7e1e869cb32d6fe3935265b7f",
+          "canonical_task_sha256": "822345cb66daba7368f3f0274cfe9f6359f6ec1d3a531c01b3bdcb78e1ce5d8a",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "diff_impact",
@@ -1942,7 +1967,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "23731d396950d15f2df8e55ea2489fa007b0b923c48bd7f595212f5d29df614a",
+          "canonical_task_sha256": "2c3d7ca03efaf210f008bdec6d0c8b7d363416442b173b805a90bd038435e1b5",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "graph_central",
@@ -1963,7 +1988,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "bd6a46ad8a465357d0cc995369af584d6dffc261fb1ea16e23bc9efd5f0c0de8",
+          "canonical_task_sha256": "d6897ec8ee3bf10d04a2593b3ad23276e6d5f60821c19eef46e230711076de6b",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "graph_path",
@@ -1982,7 +2007,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "e39bcfcdaba7eb3ac6d2a81727eb9fbf09a063a93936da7de5151e4a64ac73af",
+          "canonical_task_sha256": "8bd28718420f3982e2bf54d9c2d8659cf33a3f118ffa906a85196ffe1b9c6bd5",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "graph_fn_blast",
@@ -2003,7 +2028,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "0d37e4044fa87c874777635b543edd47e889d8199e23c012418ef0ca871f01e5",
+          "canonical_task_sha256": "2de1ff271b21e438020c82920c952af8d191af120f8e2b536939646c367d61b3",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "graph_central",
@@ -2022,7 +2047,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "67641bc341d849f059aab8e02a410ceab991c8d313ab6e5bfa25790bf5ce91f2",
+          "canonical_task_sha256": "acb9336d6957d016ef07aa5468c6f490c00fac2634d28e0e49fbb938c37d606f",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "module_blast_radius",
@@ -2043,7 +2068,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "91089d76020506e5e315d427284ffb798b64a472376659cef8911d11924eda46",
+          "canonical_task_sha256": "81a4f03d54a19854ab1d71e797a88081c25c18f639223405b526613f153c7800",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "module_blast_radius",
@@ -2064,7 +2089,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "cafa2ab48836c00d75044909593e94a4faaba6b0b82c1cf4b5bd89c9e7a20fd3",
+          "canonical_task_sha256": "d94f6a067cea7d3c48d9aa0b25fcac4b9c895a0cdb16df1baa2c6c6ed7c7e4bb",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "module_blast_radius",
@@ -2085,7 +2110,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "c41e4cb19469950250a65d9c3596289875547a4a6a426082835ae96a0e11777d",
+          "canonical_task_sha256": "9632290830d301cc012cb0f87ef39ea5c1d7d323335495780b0d0e78483d624a",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "module_blast_radius",
@@ -2106,7 +2131,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "4acf300b4874f75385e0eb25fc6e1e450a32bc4125f5ae0a93cd4c174d035f42",
+          "canonical_task_sha256": "fb647a7308eb2d4f9a472665829bccf412b34ced69908b14beb58a6e159ed3e4",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "module_blast_radius",
@@ -2129,7 +2154,7 @@
       ]
     },
     {
-      "current_consumer": "run-codemap-cli.py; optional external input to run-claude-structural.py",
+      "current_consumer": "run-cli.py; optional external input to run-claude-structural.py",
       "generation_provenance": "committed_cli_query_specs_without_materialized_llm_ground_truth",
       "ordered_task_ids": [
         "B-01",
@@ -2151,6 +2176,7 @@
       "path": "benchmarks/suites/tasks-code.json",
       "raw_sha256": "427513fba521401f8027ac7da683165d2abac0b5a3591ce09071b7713944f9d3",
       "root_shape": "bare_list",
+      "semantic_suite_sha256": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "task_count": 15,
       "tasks": [
         {
@@ -2441,7 +2467,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner for the active manifest",
+      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
       "generation_provenance": "committed_static_prompts_keyword_file_oracle",
       "ordered_task_ids": [
         "FM-01",
@@ -2451,6 +2477,7 @@
       "path": "benchmarks/suites/tasks-fix-multi.json",
       "raw_sha256": "1294f52f0ff3660847e6a7001b996d12ecfbec780e4c59f7f42803f2541d8613",
       "root_shape": "bare_list",
+      "semantic_suite_sha256": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
       "task_count": 3,
       "tasks": [
         {
@@ -2513,7 +2540,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner for the active manifest",
+      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
       "generation_provenance": "committed_static_prompts_keyword_file_oracle",
       "ordered_task_ids": [
         "FS-01",
@@ -2524,6 +2551,7 @@
       "path": "benchmarks/suites/tasks-fix-single.json",
       "raw_sha256": "2316927ea63da21f45752e33e3dc884aae0913faff2bf1d5fc5730abd39c446a",
       "root_shape": "bare_list",
+      "semantic_suite_sha256": "3ae89d8fe843d8d4aca46a9e5c4229eb7487090c525625fa1690a0cc8e5b5046",
       "task_count": 4,
       "tasks": [
         {
@@ -2617,6 +2645,7 @@
       "path": "benchmarks/suites/tasks-patch.json",
       "raw_sha256": "5f1589fe0ce8ead2756ca74c0012d2dfa8c08464d8fa1b17211d98d3b6a288e0",
       "root_shape": "object_with_tasks",
+      "semantic_suite_sha256": "2d5a712b2224af8dfd655c9de375a56d421c052a3fc405aa453723c1c70c1a61",
       "task_count": 5,
       "tasks": [
         {
@@ -2717,7 +2746,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner for the active manifest",
+      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
       "generation_provenance": "committed_static_prompts_keyword_oracle",
       "ordered_task_ids": [
         "RC-01",
@@ -2730,6 +2759,7 @@
       "path": "benchmarks/suites/tasks-readcrop.json",
       "raw_sha256": "087ccf5efdb2e14816550ad7a35479403d999811acfafcd527607a73b3a5d25b",
       "root_shape": "bare_list",
+      "semantic_suite_sha256": "d4881095786660c99f0eaf830bfe8caa8be1f7db5b35f508416b6317ab92ac1f",
       "task_count": 6,
       "tasks": [
         {
@@ -2860,6 +2890,118 @@
     "tree": "812e327b141dd04a4ce25fe2f62c8acd111c7a8c",
     "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
     "validation_worktree_clean": true
+  },
+  "task_selection": {
+    "allowed_families": [
+      "SE",
+      "FN",
+      "RV",
+      "CQ",
+      "BR",
+      "DG",
+      "FT",
+      "DI",
+      "GR",
+      "MB"
+    ],
+    "allowed_task_ids": [
+      "SE-01",
+      "SE-02",
+      "SE-03",
+      "SE-04",
+      "SE-05",
+      "FN-01",
+      "FN-02",
+      "FN-03",
+      "FN-04",
+      "FN-05",
+      "RV-01",
+      "RV-02",
+      "RV-03",
+      "RV-04",
+      "RV-05",
+      "CQ-01",
+      "CQ-02",
+      "CQ-03",
+      "CQ-04",
+      "CQ-05",
+      "BR-01",
+      "BR-02",
+      "BR-03",
+      "BR-04",
+      "BR-05",
+      "BR-06",
+      "BR-07",
+      "BR-08",
+      "BR-09",
+      "DG-01",
+      "DG-02",
+      "DG-03",
+      "DG-04",
+      "DG-05",
+      "DG-06",
+      "FT-01",
+      "FT-02",
+      "FT-03",
+      "FT-04",
+      "FT-05",
+      "DI-01",
+      "DI-02",
+      "DI-03",
+      "DI-04",
+      "DI-05",
+      "DI-06",
+      "GR-01",
+      "GR-02",
+      "GR-03",
+      "GR-04",
+      "MB-01",
+      "MB-02",
+      "MB-03",
+      "MB-04",
+      "MB-05"
+    ],
+    "arms": [
+      "A_plain",
+      "B_direct_required",
+      "C_skill_required"
+    ],
+    "complete_run_max_wall_clock_seconds": {
+      "derived_at_runtime": true,
+      "formula": "resolved_task_count \u00d7 repetitions \u00d7 arm_count \u00d7 coordinate_timeout_seconds"
+    },
+    "confirmatory_product_acceptance": "ineligible",
+    "coordinate_timeout_seconds": 600,
+    "nonpoolable": true,
+    "pooling_eligibility": "ineligible",
+    "purpose": "Targeted task-family or exact-task study selected from the frozen structural execution IDs; it estimates selected behavior only.",
+    "repetitions": 3,
+    "resolution_policy": {
+      "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
+      "exact_id_first": true,
+      "family_match": "a family token selects every matching allowed ID",
+      "order": "resolved IDs preserve frozen structural_execution_task_ids order",
+      "reject": [
+        "empty tokens",
+        "unknown task IDs",
+        "unknown families"
+      ]
+    },
+    "scope_digest": {
+      "canonical_fields": [
+        "active manifest SHA-256",
+        "resolved ordered task IDs",
+        "repetitions",
+        "arms",
+        "coordinate timeout seconds",
+        "derived complete-run wall-clock ceiling"
+      ],
+      "runtime_derived": true,
+      "stored_in_manifest": false
+    },
+    "selector_option": "--tasks",
+    "separator": ",",
+    "study_mode": "selected_tasks"
   },
   "telemetry_admission": {
     "auxiliary_item_policy": "B/C may use additional reads and shell commands as separate native items. They are ignored for query attribution.",

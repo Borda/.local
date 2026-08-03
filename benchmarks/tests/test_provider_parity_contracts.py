@@ -221,25 +221,30 @@ class TestArmContracts:
 
     def test_arm_order_is_revision_bound_and_rejects_invalid_coordinates(self) -> None:
         """One block has a stable complete order that changes with experiment identity."""
-        runtime_revision_order = core.deterministic_arm_order(
-            EXPERIMENT_REVISION,
+        fixed_revision = "arm-order-fixed-oracle"
+        fixed_order = core.deterministic_arm_order(
+            fixed_revision,
             "codex",
             "gpt-5.6-luna",
             "FN-02",
             1,
         )
 
-        assert runtime_revision_order == ("A_plain", "C_required", "B_auto")
-        assert set(runtime_revision_order) == set(core.ARM_CONTRACTS)
-        assert runtime_revision_order != core.deterministic_arm_order(
-            "provider-parity-shared-methodology-2026-08-01",
-            "codex",
-            "gpt-5.6-luna",
-            "FN-02",
-            1,
-        )
+        assert fixed_order == ("C_required", "B_auto", "A_plain")
+        assert set(fixed_order) == set(core.ARM_CONTRACTS)
+        revision_orders = {
+            core.deterministic_arm_order(
+                f"{fixed_revision}:variant-{index}",
+                "codex",
+                "gpt-5.6-luna",
+                "FN-02",
+                1,
+            )
+            for index in range(8)
+        }
+        assert any(order != fixed_order for order in revision_orders)
         with pytest.raises(ValueError, match="repetition"):
-            core.deterministic_arm_order("provider-parity-shared-methodology-2026-08-01", "codex", "model", "FN-02", 0)
+            core.deterministic_arm_order(fixed_revision, "codex", "model", "FN-02", 0)
 
     def test_arm_order_includes_reasoning_effort_in_the_model_stratum(self) -> None:
         """Effort drift must change the randomized block identity."""

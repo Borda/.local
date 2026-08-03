@@ -1,6 +1,6 @@
 # `codex-integration-v1`
 
-**Manifest SHA-256**: `d6a99ee19799d02255e145fe6f7fc89904eae3ba74cadc836a5abe03cbf34f5b`
+**Manifest SHA-256**: `9c08713ca25900eecf9f397acf0629baf047c8f70b76502485f3e46dbdd2d80a`
 
 ## Purpose
 
@@ -30,10 +30,10 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 ## Locked candidates
 
 - `codemap-py` `0.27.0`.
-  Package manifest SHA-256: `a3bd035d1dbc4f536ad7219c5f0db1bd7b2e110d1a9a2101beba0df92a85b2b9`.
+  Package manifest SHA-256: `c2d232ea557198aa7f7ee626467a719371b93840039faaff6894616f04075104`.
 - `codex-rig` `0.4.1`.
 - Codex CLI: `{'available': True, 'path': '/opt/homebrew/bin/codex', 'version': 'codex-cli 0.146.0'}`.
-- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `c78f102031d8826639ed92d69e48a8de0d949485aa59b14417e141507d2fe825`.
+- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `7e0b89b8c34b84f372d011ef392f469df02ca1b9c55ebdc01b0549cd6077c961`.
 
 ## Study scope
 
@@ -44,7 +44,31 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 - Total cells: `165` (`55 tasks × 1 repetition × 3 arms`).
 - Model-cell failures are recorded and do not stop the study after admission; integrity, interruption, and complete-run ceiling failures preserve a partial artifact and stop execution.
 
-## Execution
+## Selected-task scope
+
+- Use `--tasks=DI,GR` for family selection, `--tasks=DI-01,GR-03` for exact IDs, or `--tasks=DI,GR-03` for a mixed selection.
+- Exact task IDs are resolved before family tokens; family tokens select all matching frozen IDs.
+- Empty or unknown selectors fail closed; duplicate tokens and overlapping expansions are evaluated once.
+- Resolved IDs always follow frozen manifest order, independent of selector order.
+- Omit --tasks for the full confirmatory scope; providing --tasks requires separate targeted approval and cannot authorize or replace the full scope.
+- Selected-task runs use `3` repetitions × `3` arms and `600` seconds per coordinate.
+- The complete-run ceiling is derived at runtime as `resolved tasks × repetitions × arms × coordinate seconds`.
+- Selected-task runs are explicitly nonpoolable and ineligible for confirmatory or product acceptance.
+- The runtime scope digest covers the active manifest SHA-256, resolved ordered IDs, and execution controls; it is derived at runtime and is not stored in this manifest.
+
+## Paid selected-task command
+
+Replace `DI,GR` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.
+
+```bash
+CODEX_PAID_APPROVAL=9c08713ca25900eecf9f397acf0629baf047c8f70b76502485f3e46dbdd2d80a \
+    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
+    CODEX_RUN_DIR="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)" \
+    CODEX_MAX_WALL_CLOCK_SECONDS=<derived-ceiling> \
+    bash benchmarks/run-all.sh codex --tasks=DI,GR
+```
+
+## Confirmatory execution
 
 Run the exact no-model Codex smoke and 165-coordinate plan first:
 
@@ -52,10 +76,10 @@ Run the exact no-model Codex smoke and 165-coordinate plan first:
 bash benchmarks/run-all.sh codex --dry-run
 ```
 
-After reviewing this manifest, launch the paid study with the manifest-bound command:
+After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:
 
 ```bash
-CODEX_PAID_APPROVAL=d6a99ee19799d02255e145fe6f7fc89904eae3ba74cadc836a5abe03cbf34f5b \
+CODEX_PAID_APPROVAL=9c08713ca25900eecf9f397acf0629baf047c8f70b76502485f3e46dbdd2d80a \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=86400 \

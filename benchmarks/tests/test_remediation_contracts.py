@@ -473,12 +473,15 @@ def test_codex_result_block_presents_persisted_arms_in_fixed_order(
     printed: list[tuple[str, str]] = []
     monkeypatch.setattr(script_run_codex, "_print_arm_row", lambda row, arm: printed.append((arm, row)))
 
-    script_run_codex._print_result_block(
-        (("C_skill_required", "C row"), ("A_plain", "A row"), ("B_direct_required", "B row"))
+    next_progress = script_run_codex._print_result_block(
+        (("C_skill_required", "C row"), ("A_plain", "A row"), ("B_direct_required", "B row")),
+        printed_cells=4,
+        planned_cells=9,
     )
 
     assert printed == [
-        ("A_plain", "A row"),
-        ("B_direct_required", "B row"),
-        ("C_skill_required", "C row"),
+        ("A_plain", "(5/9) A row"),
+        ("B_direct_required", "(6/9) B row"),
+        ("C_skill_required", "(7/9) C row"),
     ]
+    assert next_progress == 7

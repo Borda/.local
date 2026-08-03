@@ -153,7 +153,7 @@ followed by deterministic task/repetition/arm ``PLAN`` lines. A paid run prints
 its telemetry and metadata paths once, appends one normalized JSON object per
 completed cell to ``--output-path`` in execution order, atomically refreshes a
 ``telemetry-canonical.jsonl`` task/repetition/A-B-C sidecar, and prints a
-compact fixed-order ``RESULT`` block. Token counts show gross/cached/fresh
+compact fixed-order progress block. Token counts show gross/cached/fresh
 input separately in telemetry; the terminal shows gross input only. Interactive terminals color A/B/C rows; redirected logs
 remain plain text. The raw file is created before the first cell so an existing
 result cannot be overwritten, and each completed cell survives a later failure.
@@ -175,7 +175,7 @@ import stat
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -236,19 +236,30 @@ _ARM_ROW_STYLES = {
     "B_direct_required": "cyan",
     "C_skill_required": "magenta",
 }
-_RESULT_ARM = re.compile(r"^RESULT\b.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill)\b")
+_RESULT_ARM = re.compile(r"^\(\d+/\d+\)\s+.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill)\b")
 _OUTPUT_LEGEND = (
     "LEGEND\n"
     "  treatments: A_plain=no Codemap, B_direct=direct Codemap required, "
     "C_skill=Codemap Skill required\n"
-    "  tasks: SE=symbol extraction, FN=function-call graph, RV=review assistance, CQ=code quality, "
-    "BR=blast radius, DG=debug from trace\n"
-    "  tasks: FT=feature scaffolding, RI=real issue, DI=diff impact, GR=graph reasoning, "
-    "MB=module blast radius | status: ✓ completed, ✗ failed\n"
-    "  quality: continuous [0,1], ? unscoreable | treatment: ✓ assigned arm followed, "
-    "✗ assigned arm not followed | codemap-used: ✓ Codemap call observed; ✗ no Codemap call "
-    "(expected for A_plain) or required use missed (B/C) | input tokens: gross total; cached and fresh "
-    "details remain in telemetry only | tokens: k=1,000, M=1,000,000\n"
+    "  tasks:\n"
+    "      SE: symbol extraction\n"
+    "      FN: function-call graph\n"
+    "      RV: review assistance\n"
+    "      CQ: code quality\n"
+    "      BR: blast radius\n"
+    "      DG: debug from trace\n"
+    "      FT: feature scaffolding\n"
+    "      RI: real issue\n"
+    "      DI: diff impact\n"
+    "      GR: graph reasoning\n"
+    "      MB: module blast radius\n"
+    "  status: ✓ completed, ✗ failed\n"
+    "  quality: continuous [0,1], ? unscoreable\n"
+    "  progress: N completed cells / M planned cells\n"
+    "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
+    "  codemap-used: ✓ Codemap call observed; ✗ no Codemap call "
+    "(expected for A_plain) or required use missed (B/C)\n"
+    "  input tokens: gross total; cached and fresh details remain in telemetry only\n"
     "END LEGEND"
 )
 _console = _Console(highlight=False)
@@ -281,7 +292,7 @@ def _format_result_row(
     codemap_used_mark = "✓" if codemap_used else "✗"
     display_arm = _DISPLAY_ARM_LABELS.get(arm, arm)
     return (
-        f"RESULT  {status}  {task_id:<5}  rep={repetition}  {display_arm:<{_DISPLAY_ARM_COLUMN_WIDTH}}"
+        f"{status}  {task_id:<5}  rep={repetition}  {display_arm:<{_DISPLAY_ARM_COLUMN_WIDTH}}"
         f"  in={fmt_tok(input_tokens):>6}"
         f"  out={fmt_tok(output_tokens):>6}  time={fmt_time(elapsed_s):>5}"
         f"  quality={quality:>5}  treatment:{adherence_mark}  codemap-used:{codemap_used_mark}"
@@ -296,11 +307,13 @@ def _print_arm_row(row: str, arm: str) -> None:
     print(row)
 
 
-def _print_result_block(rows: Iterable[tuple[str, str]]) -> None:
+def _print_result_block(rows: Iterable[tuple[str, str]], *, printed_cells: int, planned_cells: int) -> int:
     """Print persisted results in the fixed human A/B/C order for one task block."""
     arm_rank = {arm: index for index, arm in enumerate(CODEX_STRUCTURAL_ARMS)}
     for arm, row in sorted(rows, key=lambda item: arm_rank[item[0]]):
-        _print_arm_row(row, arm)
+        printed_cells += 1
+        _print_arm_row(f"({printed_cells}/{planned_cells}) {row}", arm)
+    return printed_cells
 
 
 def _result_arm(row: str) -> str | None:
@@ -489,11 +502,121 @@ def _index_sha(index_path: Path | None) -> str:
         return "unknown"
 
 
+@dataclass(frozen=True)
+class DiffImpactStageAdmission:
+    """Exact, temporary Git state admitted for one staged diff-impact task."""
+
+    repo_sha: str
+    statuses: tuple[tuple[str, str], ...]
+    file_sha256: tuple[tuple[str, str], ...]
+
+
+def _git_porcelain_status(repo_path: Path) -> dict[str, str]:
+    """Return exact short Git statuses, rejecting malformed or rename records."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_path), "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("canonical Codex run could not verify worktree cleanliness") from exc
+    if proc.returncode != 0:
+        raise ValueError("canonical Codex run could not verify worktree cleanliness")
+    records = [record for record in proc.stdout.split("\0") if record]
+    statuses: dict[str, str] = {}
+    for record in records:
+        if len(record) < 4 or record[2] != " ":
+            raise ValueError("canonical Codex run received malformed Git worktree status")
+        status, relative_path = record[:2], record[3:]
+        if not relative_path or status[0] in "RC" or status[1] in "RC":
+            raise ValueError("canonical Codex run rejects renamed or copied worktree paths")
+        if relative_path in statuses:
+            raise ValueError("canonical Codex run received duplicate Git worktree status")
+        statuses[relative_path] = status
+    return statuses
+
+
+def _stage_relative_path(repo_path: Path, relative_path: str) -> Path:
+    """Return one tracked regular stage file, rejecting escaping or linked paths."""
+    relative = Path(relative_path)
+    if not relative_path or relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("canonical Codex DI stage contains an unsafe path")
+    path = repo_path / relative
+    current = repo_path
+    for part in relative.parts:
+        current = current / part
+        try:
+            mode = current.lstat().st_mode
+        except OSError as exc:
+            raise ValueError("canonical Codex DI stage file is unavailable") from exc
+        if stat.S_ISLNK(mode):
+            raise ValueError("canonical Codex DI stage rejects symlink paths")
+    path_stat = path.lstat()
+    if not stat.S_ISREG(path_stat.st_mode) or path_stat.st_nlink != 1:
+        raise ValueError("canonical Codex DI stage requires unlinked regular tracked files")
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", str(repo_path), "ls-files", "--error-unmatch", "--", relative_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("canonical Codex DI stage could not verify tracked files") from exc
+    if tracked.returncode != 0:
+        raise ValueError("canonical Codex DI stage requires tracked files")
+    return path
+
+
+def _capture_diff_impact_stage(repo_path: Path, task: Mapping[str, Any]) -> DiffImpactStageAdmission:
+    """Capture the sole staged state that may temporarily replace clean-tree admission."""
+    stage = task.get("stage")
+    if task.get("type") != "diff_impact" or not isinstance(stage, list) or not stage:
+        raise ValueError("canonical Codex DI admission requires a declared diff-impact stage")
+    declared_paths: list[str] = []
+    for edit in stage:
+        if not isinstance(edit, Mapping) or not isinstance(edit.get("file"), str) or not edit["file"]:
+            raise ValueError("canonical Codex DI stage contains an invalid file declaration")
+        declared_paths.append(edit["file"])
+    paths = tuple(dict.fromkeys(declared_paths))
+    hashes = tuple(
+        (relative_path, hashlib.sha256(_stage_relative_path(repo_path, relative_path).read_bytes()).hexdigest())
+        for relative_path in paths
+    )
+    statuses = _git_porcelain_status(repo_path)
+    expected_statuses = {relative_path: " M" for relative_path in paths}
+    if statuses != expected_statuses:
+        raise ValueError("canonical Codex DI stage does not match its exact staged worktree status")
+    return DiffImpactStageAdmission(
+        repo_sha=_repo_sha(repo_path),
+        statuses=tuple(expected_statuses.items()),
+        file_sha256=hashes,
+    )
+
+
+def _validate_diff_impact_stage_admission(repo_path: Path, admission: DiffImpactStageAdmission) -> None:
+    """Fail closed unless the current DI state still equals its captured staged bytes."""
+    if _repo_sha(repo_path) != admission.repo_sha:
+        raise ValueError("canonical Codex DI stage changed the target commit")
+    expected_statuses = dict(admission.statuses)
+    if _git_porcelain_status(repo_path) != expected_statuses:
+        raise ValueError("canonical Codex DI stage has unexpected worktree status")
+    for relative_path, expected_hash in admission.file_sha256:
+        observed_hash = hashlib.sha256(_stage_relative_path(repo_path, relative_path).read_bytes()).hexdigest()
+        if observed_hash != expected_hash:
+            raise ValueError("canonical Codex DI stage bytes changed after admission")
+
+
 def _validate_locked_runtime(
     repo_path: Path,
     index_path: Path | None,
     arm: str,
     manifest_path: Path = PARITY_MANIFEST_PATH,
+    diff_impact_stage: DiffImpactStageAdmission | None = None,
 ) -> None:
     """Fail closed unless the target repository and index match the frozen manifest."""
     try:
@@ -504,18 +627,11 @@ def _validate_locked_runtime(
         raise ValueError("provider-parity manifest is unavailable or malformed") from exc
     if _repo_sha(repo_path) != expected_repo:
         raise ValueError(f"canonical Codex run requires target commit {expected_repo}")
-    try:
-        status = subprocess.run(
-            ["git", "-C", str(repo_path), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ValueError("canonical Codex run could not verify worktree cleanliness") from exc
-    if status.returncode != 0 or status.stdout.strip():
-        raise ValueError("canonical Codex run requires a clean target worktree")
+    if diff_impact_stage is None:
+        if _git_porcelain_status(repo_path):
+            raise ValueError("canonical Codex run requires a clean target worktree")
+    else:
+        _validate_diff_impact_stage_admission(repo_path, diff_impact_stage)
     if index_path is None or not index_path.is_file():
         raise ValueError("canonical Codex arm requires the locked index")
     if not index_path.is_relative_to(repo_path):
@@ -594,6 +710,168 @@ def _read_manifest_revision(manifest_path: Path = PARITY_MANIFEST_PATH) -> str:
         raise ValueError("provider-parity execution manifest is unavailable or malformed") from exc
 
 
+def _task_selection_contract(manifest_path: Path) -> dict[str, Any]:
+    """Read the locked selector contract, deriving the legacy form when needed.
+
+    The generated manifest will carry ``task_selection``.  The derivation keeps
+    older, already-reviewed manifests usable until their next regeneration; it
+    uses only their immutable preregistered execution order and fixed controls.
+    """
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        preregistered = manifest["preregistered_cells"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("task selection contract is unavailable or malformed") from exc
+    configured = manifest.get("task_selection")
+    contract = configured if isinstance(configured, Mapping) else {}
+    execution_ids = contract.get("execution_task_ids", preregistered.get("structural_execution_task_ids"))
+    excluded_families = contract.get("excluded_task_families", ["RI"])
+    repetitions = contract.get("targeted_repetitions", 3)
+    arms = contract.get("arms", list(CODEX_STRUCTURAL_ARMS))
+    coordinate_timeout = contract.get("coordinate_timeout_seconds", PARITY_TIMEOUT_SECONDS)
+    if (
+        not isinstance(execution_ids, list)
+        or not execution_ids
+        or not all(
+            isinstance(task_id, str) and re.fullmatch(r"[A-Z]{2}-[0-9]{2}", task_id) for task_id in execution_ids
+        )
+        or len(execution_ids) != len(set(execution_ids))
+        or not isinstance(excluded_families, list)
+        or not all(isinstance(family, str) and re.fullmatch(r"[A-Z]{2}", family) for family in excluded_families)
+        or len(excluded_families) != len(set(excluded_families))
+        or type(repetitions) is not int
+        or repetitions != 3
+        or arms != list(CODEX_STRUCTURAL_ARMS)
+        or type(coordinate_timeout) is not int
+        or coordinate_timeout != PARITY_TIMEOUT_SECONDS
+    ):
+        raise ValueError("task selection contract is unavailable or malformed")
+    return {
+        "execution_task_ids": execution_ids,
+        "excluded_task_families": excluded_families,
+        "targeted_repetitions": repetitions,
+        "arms": arms,
+        "coordinate_timeout_seconds": coordinate_timeout,
+    }
+
+
+def _selector_tokens(value: str | Sequence[str]) -> list[str]:
+    """Split comma-separated selectors while rejecting empty selector tokens."""
+    values = [value] if isinstance(value, str) else list(value)
+    if not values or not all(isinstance(item, str) for item in values):
+        raise ValueError("at least one task selector is required")
+    selectors: list[str] = []
+    for raw_value in values:
+        for token in raw_value.split(","):
+            selector = token.strip().upper()
+            if not selector:
+                raise ValueError("task selectors cannot contain empty tokens")
+            if selector not in selectors:
+                selectors.append(selector)
+    return selectors
+
+
+def _targeted_scope_sha256(scope: Mapping[str, Any]) -> str:
+    """Return the canonical identity of a resolved targeted benchmark scope."""
+    payload = {
+        key: scope[key]
+        for key in (
+            "manifest_sha256",
+            "task_ids",
+            "repetitions",
+            "arms",
+            "coordinate_timeout_seconds",
+            "complete_run_max_wall_clock_seconds",
+        )
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str]) -> dict[str, Any]:
+    """Resolve exact IDs and family selectors into a locked, nonpoolable scope."""
+    manifest_path = Path(manifest_path)
+    contract = _task_selection_contract(manifest_path)
+    normalized = _selector_tokens(selectors)
+    task_ids = contract["execution_task_ids"]
+    excluded = set(contract["excluded_task_families"])
+    selected: set[str] = set()
+    known_families = {task_id.split("-", 1)[0] for task_id in task_ids} | excluded
+    for selector in normalized:
+        family = selector.split("-", 1)[0]
+        if family in excluded:
+            raise ValueError(f"task family {family!r} is excluded from targeted execution")
+        if selector in task_ids:
+            selected.add(selector)
+            continue
+        if re.fullmatch(r"[A-Z]{2}", selector) and selector in known_families:
+            selected.update(task_id for task_id in task_ids if task_id.startswith(f"{selector}-"))
+            continue
+        raise ValueError(f"unknown task selector {selector!r}")
+    resolved_ids = [task_id for task_id in task_ids if task_id in selected]
+    if not resolved_ids:
+        raise ValueError("task selectors resolved to no executable tasks")
+    repetitions = contract["targeted_repetitions"]
+    arms = contract["arms"]
+    coordinate_timeout = contract["coordinate_timeout_seconds"]
+    scope = {
+        "selectors": normalized,
+        "task_ids": resolved_ids,
+        "study_mode": "targeted",
+        "nonpoolable": True,
+        "pooling_eligibility": "ineligible",
+        "repetitions": repetitions,
+        "arms": arms,
+        "coordinate_timeout_seconds": coordinate_timeout,
+        "complete_run_max_wall_clock_seconds": len(resolved_ids) * repetitions * len(arms) * coordinate_timeout,
+        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    }
+    scope["scope_sha256"] = _targeted_scope_sha256(scope)
+    return scope
+
+
+def _validate_targeted_scope_request(
+    scope: Mapping[str, Any],
+    *,
+    repetitions: int,
+    arm: str,
+    max_wall_clock_seconds: float | None,
+    scope_sha256: str | None,
+    dry_run: bool,
+) -> None:
+    """Require paid targeted invocations to match their reviewed scope exactly."""
+    if repetitions != scope["repetitions"]:
+        raise ValueError("targeted execution requires the scope repetition count")
+    if arm != "all":
+        raise ValueError("targeted execution requires --arm all")
+    if max_wall_clock_seconds != scope["complete_run_max_wall_clock_seconds"]:
+        raise ValueError("targeted execution requires the derived wall-clock ceiling")
+    expected_sha = scope["scope_sha256"]
+    if scope_sha256 is not None and scope_sha256 != expected_sha:
+        raise ValueError("targeted execution scope SHA-256 does not match the resolved scope")
+    if not dry_run and scope_sha256 is None:
+        raise ValueError("paid targeted execution requires --scope-sha256 from --resolve-tasks")
+
+
+def _validate_unscoped_paid_task_ids(
+    manifest_path: Path,
+    task_ids: list[str] | None,
+    *,
+    targeted: bool,
+    dry_run: bool,
+) -> None:
+    """Allow unscoped paid task IDs only for the exact confirmatory sequence."""
+    if dry_run or targeted or task_ids is None:
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        confirmatory_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("confirmatory task scope is unavailable or malformed") from exc
+    if task_ids != confirmatory_ids:
+        raise ValueError("paid task subsets require --tasks and its resolved scope SHA-256")
+
+
 def _validate_execution_manifest(manifest_path: Path = PARITY_MANIFEST_PATH) -> None:
     """Require an active manifest locked to the exact runner implementation."""
     try:
@@ -630,6 +908,7 @@ class CodexParseResult:
     codemap_skill_calls: int = 0
     codemap_skill_successful_calls: int = 0
     codemap_skill_compact_successful_calls: int = 0
+    successful_query_arguments: list[list[str]] = field(default_factory=list)
     skill_delivery_observed: bool = False
     codemap_errors: int = 0
     fallback_calls: int = 0
@@ -927,6 +1206,9 @@ def parse_codex_jsonl(
                         else:
                             result.codemap_successful_calls += 1
                             result.codemap_compact_successful_calls += 1
+                            query_arguments = _canonical_query_arguments(command)
+                            if query_arguments is not None:
+                                result.successful_query_arguments.append(query_arguments)
                             if delivery == "direct":
                                 result.codemap_direct_successful_calls += 1
                                 result.codemap_direct_compact_successful_calls += 1
@@ -1306,7 +1588,17 @@ def prepare_arm_home(
     """Create an isolated ``CODEX_HOME`` implementing A/B/C availability."""
     if not _is_known_codex_arm(arm):
         raise ValueError(f"unknown benchmark arm {arm!r}")
-    home = Path(tempfile.mkdtemp(prefix=f"codex-{arm}-", dir=str(root) if root else None))
+    if root is None:
+        try:
+            temp_root = Path(tempfile.gettempdir()).resolve(strict=True)
+        except OSError as exc:
+            raise ValueError("default temporary root is unavailable") from exc
+    else:
+        temp_root = Path(os.path.abspath(root))
+        _assert_safe_path_components(temp_root)
+    if not temp_root.is_dir():
+        raise ValueError("temporary root must be a real directory")
+    home = Path(tempfile.mkdtemp(prefix=f"codex-{arm}-", dir=str(temp_root)))
     try:
         home.chmod(0o700)
         config = home / "config.toml"
@@ -2020,6 +2312,152 @@ def _aggregate_file_hashes(hashes: Mapping[str, str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _archive_snapshot_file(
+    source: Path,
+    destination: Path,
+    *,
+    role: str,
+    archive_root: Path,
+    source_root: Path | None = None,
+    entries: list[dict[str, Any]],
+) -> None:
+    """Copy one verified non-secret input and append its deterministic identity."""
+    _assert_safe_path_components(source)
+    metadata = source.lstat()
+    resolved = source.resolve(strict=True)
+    if source.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise ValueError(f"snapshot source must be a regular single-link file: {source}")
+    if source_root is not None and not resolved.is_relative_to(source_root.resolve(strict=True)):
+        raise ValueError(f"snapshot source escaped its locked root: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source_fd: int | None = None
+    destination_fd: int | None = None
+    try:
+        source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        opened = os.fstat(source_fd)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_nlink != 1
+            or (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino)
+        ):
+            raise ValueError(f"snapshot source changed while being opened: {source}")
+        destination_fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(source_fd, "rb") as source_handle:
+            source_fd = None
+            with os.fdopen(destination_fd, "wb") as destination_handle:
+                destination_fd = None
+                shutil.copyfileobj(source_handle, destination_handle)
+    except OSError as exc:
+        destination.unlink(missing_ok=True)
+        raise ValueError(f"snapshot source could not be copied securely: {source}") from exc
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        if source_fd is not None:
+            os.close(source_fd)
+        if destination_fd is not None:
+            os.close(destination_fd)
+    payload = destination.read_bytes()
+    entries.append(
+        {
+            "role": role,
+            "archived_path": destination.relative_to(archive_root).as_posix(),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "bytes": len(payload),
+        }
+    )
+
+
+def _archive_snapshot_tree(
+    source_root: Path,
+    destination_root: Path,
+    *,
+    role: str,
+    entries: list[dict[str, Any]],
+) -> None:
+    """Archive every regular file in one verified package/runtime tree."""
+    root = source_root.resolve(strict=True)
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError(f"snapshot package root must be a real directory: {source_root}")
+    for source in sorted(root.rglob("*")):
+        if not source.is_file() or source.is_symlink() or "__pycache__" in source.parts or source.suffix == ".pyc":
+            continue
+        relative = source.relative_to(root)
+        _archive_snapshot_file(
+            source,
+            destination_root / relative,
+            role=role,
+            archive_root=destination_root.parent.parent,
+            source_root=root,
+            entries=entries,
+        )
+
+
+def _write_input_snapshot(
+    snapshot_root: Path,
+    *,
+    manifest_path: Path,
+    tasks_path: Path,
+    runner_path: Path,
+    index_path: Path | None,
+    auth_source: Path | None,
+    arm_archives: Mapping[str, Mapping[str, Path]],
+    arm_files: Mapping[str, Mapping[str, Path]] | None = None,
+) -> dict[str, Any]:
+    """Write immutable launch inputs without copying credential bytes."""
+    if snapshot_root.exists():
+        raise FileExistsError(snapshot_root)
+    snapshot_root.mkdir(parents=True, mode=0o700)
+    entries: list[dict[str, Any]] = []
+    shared = snapshot_root / "shared"
+    for role, source, relative in (
+        ("manifest", manifest_path, Path("manifest.json")),
+        ("task_suite", tasks_path, Path("tasks-bench.json")),
+        ("runner", runner_path, Path("run-codex-structural.py")),
+    ):
+        _archive_snapshot_file(source, shared / relative, role=role, archive_root=snapshot_root, entries=entries)
+    if index_path is not None:
+        _archive_snapshot_file(
+            index_path,
+            shared / "locked-index.json",
+            role="locked_index",
+            archive_root=snapshot_root,
+            entries=entries,
+        )
+    files_by_arm = arm_files or {}
+    for arm in sorted(set(arm_archives) | set(files_by_arm)):
+        for relative, source in sorted(files_by_arm.get(arm, {}).items()):
+            _archive_snapshot_file(
+                source,
+                snapshot_root / arm / relative,
+                role=f"{arm}:{relative}",
+                archive_root=snapshot_root,
+                entries=entries,
+            )
+        for package_role, root in sorted(arm_archives.get(arm, {}).items()):
+            _archive_snapshot_tree(
+                root, snapshot_root / arm / package_role, role=f"{arm}:{package_role}", entries=entries
+            )
+
+    auth_metadata: dict[str, Any] | None = {"supplied": True, "archived": False} if auth_source is not None else None
+
+    entries.sort(key=lambda item: (str(item["role"]), str(item["archived_path"])))
+    payload = {
+        "schema_version": "codex-structural-input-snapshot-v1",
+        "files": entries,
+        "auth_source": auth_metadata,
+    }
+    snapshot_path = snapshot_root / "input-snapshot.json"
+    serialized = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    snapshot_path.write_bytes(serialized)
+    snapshot_path.chmod(0o600)
+    payload["path"] = str(snapshot_path.resolve())
+    payload["sha256"] = hashlib.sha256(serialized).hexdigest()
+    payload["bytes"] = len(serialized)
+    return payload
+
+
 def _configure_direct_codemap_launcher(home: ArmHome, codemap_bin: Path | None) -> None:
     """Stage the direct CLI runtime inside B's disposable home and expose it."""
     source_launcher = _validated_direct_codemap_launcher(codemap_bin)
@@ -2177,6 +2615,9 @@ class CodexRun:
     oracle_class: str = "unknown"
     headline_eligible_v1: bool = False
     scoreable: bool = True
+    targeted: bool = False
+    diagnostic_only: bool = False
+    study_mode: str = "confirmatory"
     quality_score: float | None = None
     correct: bool = False
     input_tokens: int = 0
@@ -2195,6 +2636,8 @@ class CodexRun:
     codemap_skill_calls: int = 0
     codemap_skill_successful_calls: int = 0
     codemap_skill_compact_successful_calls: int = 0
+    successful_query_arguments: list[list[str]] = field(default_factory=list)
+    codemap_semantic_compliance: bool | None = None
     skill_delivery_observed: bool = False
     codemap_errors: int = 0
     fallback_calls: int = 0
@@ -2233,6 +2676,72 @@ def _arm_compliance(arm: str, evidence: CodexParseResult | CodexRun) -> bool | N
     raise ValueError(f"unknown benchmark arm {arm!r}")
 
 
+def _semantic_query_compliance(task: Mapping[str, Any], arm: str, run: CodexRun) -> bool | None:
+    """Require one successful compact query matching the locked task contract."""
+    if arm == "A_plain":
+        return None
+    expected = task.get("expected_queries")
+    if not isinstance(expected, list) or not expected:
+        return None
+    allowed: set[tuple[str, ...]] = set()
+    for query in expected:
+        if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
+            continue
+        args = query.get("args", [])
+        if isinstance(args, list) and all(isinstance(value, str) for value in args):
+            normalized = _normalize_semantic_query(str(query["cmd"]), args)
+            if normalized is not None:
+                allowed.add(normalized)
+    return any(
+        _normalize_semantic_query(arguments[0], arguments[1:]) in allowed
+        for arguments in run.successful_query_arguments
+        if arguments
+    )
+
+
+_SEMANTIC_BOOLEAN_OPTIONS = frozenset({"--broken", "--exclude-tests", "--with-imports"})
+
+
+def _normalize_semantic_query(command: str, arguments: list[str]) -> tuple[str, ...] | None:
+    """Canonicalize the locked query grammar without weakening task semantics.
+
+    Positional arguments retain their order.  Only the registered boolean
+    options may move, and ``--top`` accepts one non-negative decimal value.
+    Unknown, duplicate, missing-value, and extra option tokens are rejected.
+    """
+    if not command or not isinstance(command, str):
+        return None
+    positionals: list[str] = []
+    booleans: set[str] = set()
+    top: str | None = None
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if not isinstance(argument, str) or not argument:
+            return None
+        if argument in _SEMANTIC_BOOLEAN_OPTIONS:
+            if argument in booleans:
+                return None
+            booleans.add(argument)
+        elif argument == "--top":
+            if top is not None or index + 1 >= len(arguments):
+                return None
+            value = arguments[index + 1]
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9]+", value):
+                return None
+            top = str(int(value))
+            index += 1
+        elif argument.startswith("-"):
+            return None
+        else:
+            positionals.append(argument)
+        index += 1
+    normalized = [command, *positionals, *sorted(booleans)]
+    if top is not None:
+        normalized.extend(("--top", top))
+    return tuple(normalized)
+
+
 def _pooling_ineligibility_reasons(run: CodexRun) -> tuple[str, ...]:
     """Return run-level admission failures that forbid canonical pooling.
 
@@ -2251,8 +2760,14 @@ def _pooling_ineligibility_reasons(run: CodexRun) -> tuple[str, ...]:
         reasons.append("contaminated")
     if run.token_accounting_inconsistent:
         reasons.append("token_accounting_inconsistent")
+    if run.targeted:
+        reasons.append("targeted")
+    if run.diagnostic_only:
+        reasons.append("diagnostic_only")
     if run.arm in {"B_direct_required", "C_skill_required"} and run.compliance is not True:
         reasons.append("required_use_missing")
+    if run.arm in {"B_direct_required", "C_skill_required"} and run.codemap_semantic_compliance is False:
+        reasons.append("semantic_query_mismatch")
     return tuple(reasons)
 
 
@@ -2267,6 +2782,35 @@ def _reference_bench_module() -> Any:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _diff_impact_stager(repo_path: Path, task: Mapping[str, Any]) -> Any | None:
+    """Return the shared Claude stager for one DI task, or ``None``."""
+    if task.get("type") != "diff_impact":
+        return None
+    stage_spec = task.get("stage")
+    if not isinstance(stage_spec, list) or not stage_spec:
+        return None
+    return _reference_bench_module().DiffImpactStager(repo_path, stage_spec)
+
+
+def _validate_diff_impact_stage(repo_path: Path, task: Mapping[str, Any]) -> None:
+    """Validate every DI anchor without mutating the target tree."""
+    stager = _diff_impact_stager(repo_path, task)
+    if stager is None:
+        return
+    stager._assert_clean()
+    for edit in stager.stage_spec:
+        if not isinstance(edit, Mapping) or not isinstance(edit.get("file"), str):
+            raise ValueError(f"invalid DI stage edit for {task.get('id', '<unknown>')}")
+        path = repo_path / str(edit["file"])
+        if not path.is_file():
+            raise ValueError(f"DI stage anchor file is unavailable: {edit['file']}")
+        text = path.read_text(encoding="utf-8")
+        if "append" in edit:
+            continue
+        if "find" not in edit or "replace" not in edit or str(edit["find"]) not in text:
+            raise ValueError(f"DI stage anchor is stale: {edit['file']}")
 
 
 def _default_evaluator(task: Mapping[str, Any], output_text: str) -> EvaluationResult:
@@ -2303,6 +2847,7 @@ class CodexRunner:
         auth_source: Path | None = None,
         plugin_installer: Callable[[Path], bool | None] | None = None,
         plugin_probe: Callable[[Path], bool] | None = None,
+        targeted: bool = False,
         command_runner: Callable[..., Any] | None = None,
         transport: Callable[..., str | bytes | Iterable[str | bytes]] | None = None,
         evaluator: Callable[[Mapping[str, Any], str], EvaluationResult] | None = None,
@@ -2320,6 +2865,7 @@ class CodexRunner:
         self.auth_source = Path(auth_source) if auth_source else None
         self.plugin_installer = plugin_installer
         self.plugin_probe = plugin_probe
+        self.targeted = targeted
         self.command_runner = command_runner
         self.transport = transport
         self.evaluator = evaluator or _default_evaluator
@@ -2333,9 +2879,20 @@ class CodexRunner:
             reasoning_effort=self.reasoning_effort,
         )
 
-    def _prepare_verified_home(self, arm: str) -> ArmHome:
+    def _prepare_verified_home(
+        self,
+        arm: str,
+        *,
+        diff_impact_stage: DiffImpactStageAdmission | None = None,
+    ) -> ArmHome:
         """Create and verify one arm home without invoking a model."""
-        _validate_locked_runtime(self.repo_path, self.index_path, arm, self.manifest_path)
+        _validate_locked_runtime(
+            self.repo_path,
+            self.index_path,
+            arm,
+            self.manifest_path,
+            diff_impact_stage,
+        )
         home = prepare_arm_home(
             arm,
             auth_source=self.auth_source,
@@ -2430,11 +2987,136 @@ class CodexRunner:
             raise
         return home
 
-    def probe_arm(self, arm: str) -> dict[str, Any]:
+    def _preflight_expected_queries(
+        self,
+        home: ArmHome,
+        tasks: Iterable[Mapping[str, Any]],
+    ) -> None:
+        """Run every locked B/C expected query and fail closed on drift."""
+        if home.arm == "A_plain":
+            return
+        if home.codemap_launcher_path is None or self.index_path is None:
+            raise RuntimeError(f"{home.arm} query preflight lacks a locked launcher/index")
+        before = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
+        profile = home.permission_profile or _CODEMAP_PERMISSION_PROFILE
+        for task in tasks:
+            task_id = str(task.get("id", "unknown"))
+            expected = task.get("expected_queries")
+            if not isinstance(expected, list) or not expected:
+                raise RuntimeError(f"{home.arm} task {task_id} has no structured expected_queries")
+            for query in expected:
+                if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
+                    raise RuntimeError(f"{home.arm} task {task_id} has malformed expected query")
+                args = query.get("args", [])
+                if not isinstance(args, list) or not all(isinstance(value, str) for value in args):
+                    raise RuntimeError(f"{home.arm} task {task_id} has malformed expected query args")
+                command = [
+                    _CODEX_BIN,
+                    "sandbox",
+                    "-P",
+                    profile,
+                    "--include-managed-config",
+                    "-C",
+                    str(self.repo_path),
+                    "--",
+                    str(home.codemap_launcher_path),
+                    "query",
+                    "--compact",
+                    str(query["cmd"]),
+                    *args,
+                ]
+                code, stdout, stderr = _invoke_plugin_command(
+                    command,
+                    home.env,
+                    self.command_runner,
+                    cwd=self.repo_path,
+                )
+                if code != 0 or not _canonical_query_output({"aggregated_output": stdout}):
+                    detail = stderr.strip() or stdout.strip()
+                    raise RuntimeError(f"{home.arm} expected query failed for {task_id}: {detail[:300]}")
+                after = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
+                if after != before:
+                    raise RuntimeError(f"{home.arm} expected query mutated the locked index for {task_id}")
+
+    def preflight_expected_queries(self, tasks: Iterable[Mapping[str, Any]], arms: Iterable[str]) -> None:
+        """Perform complete no-model structured-query admission for B/C."""
+        task_list = list(tasks)
+        for arm in arms:
+            if arm == "A_plain":
+                continue
+            home = self._prepare_verified_home(arm)
+            try:
+                self._preflight_expected_queries(home, task_list)
+            finally:
+                if home.coordination_path is not None:
+                    with contextlib.suppress(ValueError):
+                        _cleanup_coordination_root(home.coordination_path)
+                home.cleanup()
+
+    def create_input_snapshot(
+        self,
+        run_dir: Path,
+        *,
+        tasks_path: Path,
+        manifest_path: Path,
+        tasks: Iterable[Mapping[str, Any]],
+        arms: Iterable[str],
+    ) -> dict[str, Any]:
+        """Archive launch inputs and verified B/C package bytes before paid calls."""
+        snapshot_root = Path(run_dir) / "inputs"
+        if snapshot_root.exists():
+            raise FileExistsError(snapshot_root)
+        task_list = list(tasks)
+        homes: list[ArmHome] = []
+        arm_archives: dict[str, dict[str, Path]] = {}
+        arm_files: dict[str, dict[str, Path]] = {}
+        try:
+            for arm in arms:
+                home = self._prepare_verified_home(arm)
+                homes.append(home)
+                arm_files[arm] = {"config.toml": home.path / "config.toml"}
+                if arm == "B_direct_required":
+                    arm_archives[arm] = {"direct-cli": home.path / "direct-cli"}
+                elif arm == "C_skill_required":
+                    if home.codemap_plugin_path is None or home.codex_rig_path is None:
+                        raise RuntimeError("C_skill_required package roots are not verified")
+                    arm_archives[arm] = {
+                        "codemap-py": home.codemap_plugin_path,
+                        "codex-rig": home.codex_rig_path,
+                    }
+                    if home.codemap_context_path is not None:
+                        arm_files[arm]["codemap-context.json"] = home.codemap_context_path
+                self._preflight_expected_queries(home, task_list)
+            return _write_input_snapshot(
+                snapshot_root,
+                manifest_path=manifest_path,
+                tasks_path=tasks_path,
+                runner_path=Path(__file__),
+                index_path=self.index_path,
+                auth_source=self.auth_source,
+                arm_archives=arm_archives,
+                arm_files=arm_files,
+            )
+        finally:
+            for home in homes:
+                if home.coordination_path is not None:
+                    with contextlib.suppress(ValueError):
+                        _cleanup_coordination_root(home.coordination_path)
+                home.cleanup()
+
+    def probe_arm(
+        self,
+        arm: str,
+        *,
+        diff_impact_stage: DiffImpactStageAdmission | None = None,
+    ) -> dict[str, Any]:
         """Return no-model runtime and plugin-isolation evidence for one arm."""
         if not _is_known_codex_arm(arm):
             raise ValueError(f"unknown benchmark arm {arm!r}")
-        home = self._prepare_verified_home(arm)
+        if diff_impact_stage is None:
+            home = self._prepare_verified_home(arm)
+        else:
+            home = self._prepare_verified_home(arm, diff_impact_stage=diff_impact_stage)
         try:
             return probe_arm_home(home)
         finally:
@@ -2444,6 +3126,42 @@ class CodexRunner:
             finally:
                 home.cleanup()
 
+    def preflight_diff_impact_stages(self, tasks: Iterable[Mapping[str, Any]], arms: Iterable[str]) -> None:
+        """Exercise DI staging, exact admission, and strict restoration without a model."""
+        selected_arms = tuple(arms)
+        for task in tasks:
+            stager = _diff_impact_stager(self.repo_path, task)
+            if stager is None:
+                continue
+            _validate_locked_runtime(self.repo_path, self.index_path, "A_plain", self.manifest_path)
+            entered = False
+            try:
+                stager.__enter__()
+                entered = True
+                admission = _capture_diff_impact_stage(self.repo_path, task)
+                for arm in selected_arms:
+                    home = self._prepare_verified_home(arm, diff_impact_stage=admission)
+                    try:
+                        _validate_locked_runtime(
+                            self.repo_path,
+                            self.index_path,
+                            arm,
+                            self.manifest_path,
+                            admission,
+                        )
+                    finally:
+                        try:
+                            if home.coordination_path is not None:
+                                _cleanup_coordination_root(home.coordination_path)
+                        finally:
+                            home.cleanup()
+            finally:
+                try:
+                    if entered:
+                        stager.__exit__(*sys.exc_info())
+                finally:
+                    _validate_locked_runtime(self.repo_path, self.index_path, "A_plain", self.manifest_path)
+
     def run(
         self,
         task: Mapping[str, Any],
@@ -2451,6 +3169,7 @@ class CodexRunner:
         *,
         repetition: int = 1,
         deadline: float | None = None,
+        diff_impact_stage: DiffImpactStageAdmission | None = None,
     ) -> CodexRun:
         """Execute one task cell within a retry-inclusive coordinate deadline."""
         if not _is_known_codex_arm(arm):
@@ -2460,6 +3179,11 @@ class CodexRunner:
         task_id = task.get("id")
         if not isinstance(task_id, str) or not task_id:
             raise ValueError("task requires a non-empty id")
+        is_diff_impact = task.get("type") == "diff_impact"
+        if is_diff_impact and diff_impact_stage is None:
+            raise ValueError("canonical Codex DI run requires an admitted staged worktree")
+        if not is_diff_impact and diff_impact_stage is not None:
+            raise ValueError("canonical Codex non-DI run cannot admit a staged worktree")
         prompt = materialize_task_prompt(_raw_task(task))
         envelope = _arm_envelope(arm)
         command_prompt = envelope + "\n\n" + prompt
@@ -2473,6 +3197,8 @@ class CodexRunner:
             self.model,
             reasoning_effort=self.reasoning_effort,
             repetition=repetition,
+            targeted=self.targeted,
+            study_mode="targeted" if self.targeted else "confirmatory",
         )
         run.parity_arm = arm
         run.cell_wall_clock_limit_s = self.timeout
@@ -2508,8 +3234,19 @@ class CodexRunner:
         run.envelope_hash = hashlib.sha256(envelope.encode()).hexdigest()
         run.scoreable = metadata.get("scoreable", task.get("scoreable", True)) is not False
         home: ArmHome | None = None
+        if diff_impact_stage is not None:
+            _validate_locked_runtime(
+                self.repo_path,
+                self.index_path,
+                arm,
+                self.manifest_path,
+                diff_impact_stage,
+            )
         if self.transport is None:
-            home = self._prepare_verified_home(arm)
+            if diff_impact_stage is None:
+                home = self._prepare_verified_home(arm)
+            else:
+                home = self._prepare_verified_home(arm, diff_impact_stage=diff_impact_stage)
         started_at = time.monotonic()
         coordinate_deadline = started_at + self.timeout
         if deadline is not None:
@@ -2541,15 +3278,16 @@ class CodexRunner:
                     skill_sha256=home.codemap_skill_sha256 if home is not None else "",
                 )
                 attempt_events.append(parsed.raw_events)
-                if home is not None:
+                if home is not None or diff_impact_stage is not None:
                     try:
                         _validate_locked_runtime(
                             self.repo_path,
                             self.index_path,
                             arm,
                             self.manifest_path,
+                            diff_impact_stage,
                         )
-                        if home.coordination_path is not None:
+                        if home is not None and home.coordination_path is not None:
                             _validate_coordination_root(home.coordination_path)
                     except ValueError as exc:
                         postflight_error = str(exc)
@@ -2598,6 +3336,7 @@ class CodexRunner:
             "skill_delivery_observed",
             "codemap_errors",
             "fallback_calls",
+            "successful_query_arguments",
         ):
             setattr(run, field_name, getattr(parsed, field_name))
         run.success = parsed.success
@@ -2605,6 +3344,7 @@ class CodexRunner:
         run.error = parsed.error
         run.error_type = parsed.error_type
         run.compliance = _arm_compliance(arm, run)
+        run.codemap_semantic_compliance = _semantic_query_compliance(task, arm, run)
         if arm == "B_direct_required" and run.compliance:
             run.codemap_delivery = "direct_cli"
         elif arm == "C_skill_required" and run.compliance:
@@ -2615,6 +3355,8 @@ class CodexRunner:
             codemap_use_compliance=run.compliance,
             contaminated=run.contaminated,
         )
+        if run.codemap_semantic_compliance is False:
+            run.treatment_adherence = False
         run.token_accounting_inconsistent = token_accounting_inconsistent(run.input_tokens, run.cached_input_tokens)
         run.fresh_input_tokens = fresh_input_tokens(run.input_tokens, run.cached_input_tokens)
         if postflight_error:
@@ -2767,9 +3509,13 @@ def _initial_run_metadata(
     task_arms: Mapping[tuple[str, int], tuple[str, ...]],
     max_wall_clock_seconds: float,
     auth_provisioned: bool,
+    input_snapshot: Mapping[str, Any] | None = None,
+    study_mode: str = "confirmatory",
+    targeted_scope: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build complete non-secret provenance for one paid structural run."""
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    scope = dict(targeted_scope) if targeted_scope is not None else None
     coordinates = [
         {"task_id": task_id, "repetition": repetition, "arm": arm}
         for (task_id, repetition), arms in task_arms.items()
@@ -2789,6 +3535,8 @@ def _initial_run_metadata(
             "extraction_failed": 0,
             "contaminated": 0,
             "compliance_failed": 0,
+            "semantic_query_failed": 0,
+            "targeted": 0,
             "token_accounting_inconsistent": 0,
         },
         "last_persisted_coordinate": None,
@@ -2802,11 +3550,15 @@ def _initial_run_metadata(
             "experiment_revision": manifest["experiment_revision"],
         },
         "execution": {
+            "study_mode": study_mode,
             "model": model,
             "reasoning_effort": reasoning_effort,
             "repetitions": repetitions,
             "arms": list(CODEX_STRUCTURAL_ARMS),
             "planned_cells": len(coordinates),
+            "selected_task_ids": list(dict.fromkeys(task_id for task_id, _ in task_arms)),
+            "targeted_scope": scope,
+            "targeted_scope_sha256": scope["scope_sha256"] if scope is not None else None,
             "coordinates": coordinates,
             "cell_wall_clock_seconds": PARITY_TIMEOUT_SECONDS,
             "max_wall_clock_seconds": max_wall_clock_seconds,
@@ -2820,6 +3572,7 @@ def _initial_run_metadata(
             "index_sha256": _index_sha(index_path),
             "index": manifest["index"],
             "suite_integrity": manifest["suite_integrity"],
+            "snapshot": dict(input_snapshot) if input_snapshot is not None else None,
         },
         "treatments": {
             "arms": manifest["arms"],
@@ -2855,18 +3608,48 @@ def main(
     output_path: Path | None = None,
     metadata_path: Path | None = None,
     task_ids: list[str] | None = None,
-    repetitions: int = 1,
+    task_selectors: str | Sequence[str] | None = None,
+    scope_sha256: str | None = None,
+    repetitions: int | None = None,
     arm: str = "all",
     dry_run: bool = False,
     max_wall_clock_seconds: float | None = None,
+    show_legend: bool = True,
 ) -> None:
     """Validate and plan cells; paid execution also requires a total deadline."""
     _validate_codex_stratum(model, reasoning_effort)
+    if task_ids and task_selectors is not None:
+        raise ValueError("--task-id and --tasks cannot be combined")
+    targeted_scope = resolve_task_selection(Path(manifest_path), task_selectors) if task_selectors is not None else None
+    if targeted_scope is not None:
+        task_ids = list(targeted_scope["task_ids"])
+        repetitions = targeted_scope["repetitions"] if repetitions is None else repetitions
+        max_wall_clock_seconds = (
+            targeted_scope["complete_run_max_wall_clock_seconds"]
+            if max_wall_clock_seconds is None
+            else max_wall_clock_seconds
+        )
+    repetitions = 1 if repetitions is None else repetitions
     if repetitions < 1:
         raise ValueError("--repetitions must be a positive integer")
     if max_wall_clock_seconds is not None and max_wall_clock_seconds <= 0:
         raise ValueError("--max-wall-clock-seconds must be positive")
     manifest_path = Path(manifest_path)
+    if targeted_scope is not None:
+        _validate_targeted_scope_request(
+            targeted_scope,
+            repetitions=repetitions,
+            arm=arm,
+            max_wall_clock_seconds=max_wall_clock_seconds,
+            scope_sha256=scope_sha256,
+            dry_run=dry_run,
+        )
+    _validate_unscoped_paid_task_ids(
+        manifest_path,
+        task_ids,
+        targeted=targeted_scope is not None,
+        dry_run=dry_run,
+    )
     tasks = load_tasks_with_provenance(tasks_path, manifest_path)
     if not tasks:
         raise ValueError("locked task suite must contain at least one task")
@@ -2882,6 +3665,9 @@ def main(
             raise ValueError(f"unknown locked task IDs: {sorted(missing)}")
         selected_ids = set(task_ids)
         tasks = [task for task in tasks if task["id"] in selected_ids]
+    explicit_selection = targeted_scope is not None
+    for task in tasks:
+        _validate_diff_impact_stage(Path(repo_path), task)
     if not dry_run:
         if output_path is None:
             raise ValueError("non-dry Codex runs require --output-path")
@@ -2909,13 +3695,22 @@ def main(
         codemap_bin=codemap_bin,
         manifest_path=manifest_path,
         auth_source=auth_source,
+        targeted=explicit_selection,
     )
-    render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
+    if show_legend:
+        render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
     if dry_run:
         for selected in ARMS if arm == "all" else (arm,):
             evidence = runner.probe_arm(selected)
             runtime = evidence.get("codemap_python") or "absent"
             print(f"PROBE\t{selected}\tcodemap={str(evidence['codemap_available']).lower()}\tcodemap_python={runtime}")
+        selected_arms = ARMS if arm == "all" else (arm,)
+        preflight = getattr(runner, "preflight_expected_queries", None)
+        if callable(preflight):
+            preflight(tasks, selected_arms)
+        staged_preflight = getattr(runner, "preflight_diff_impact_stages", None)
+        if callable(staged_preflight):
+            staged_preflight(tasks, selected_arms)
     if max_wall_clock_seconds is not None:
         print(
             f"CONTROL\tcell_wall_clock_seconds={PARITY_TIMEOUT_SECONDS:g}"
@@ -2955,6 +3750,18 @@ def main(
     assert max_wall_clock_seconds is not None
     assert output_path is not None
     assert metadata_path is not None
+    snapshot_builder = getattr(runner, "create_input_snapshot", None)
+    input_snapshot = (
+        snapshot_builder(
+            output_path.parent,
+            tasks_path=tasks_path,
+            manifest_path=manifest_path,
+            tasks=tasks,
+            arms=tuple(dict.fromkeys(selected for arms in task_arms.values() for selected in arms)),
+        )
+        if callable(snapshot_builder)
+        else None
+    )
     metadata = _initial_run_metadata(
         manifest_path=manifest_path,
         repo_path=repo_path,
@@ -2967,20 +3774,43 @@ def main(
         task_arms=task_arms,
         max_wall_clock_seconds=max_wall_clock_seconds,
         auth_provisioned=auth_source is not None,
+        input_snapshot=input_snapshot,
+        study_mode="targeted" if explicit_selection else "confirmatory",
+        targeted_scope=targeted_scope,
     )
     canonical_path = _canonical_telemetry_path(output_path)
     task_order = tuple(str(task["id"]) for task in tasks)
     _write_run_metadata(metadata_path, metadata)
     run_deadline = time.monotonic() + max_wall_clock_seconds
+    planned_cells = sum(len(arms) for arms in task_arms.values())
+    printed_cells = 0
     pending_result_rows: list[tuple[str, str]] = []
+    active_stager: Any | None = None
+    active_diff_impact_stage: DiffImpactStageAdmission | None = None
     try:
         for task in tasks:
             for repetition in range(1, repetitions + 1):
+                active_stager = _diff_impact_stager(Path(repo_path), task)
+                if active_stager is not None:
+                    _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
+                    try:
+                        active_stager.__enter__()
+                        active_diff_impact_stage = _capture_diff_impact_stage(Path(repo_path), task)
+                    except BaseException:
+                        try:
+                            active_stager.__exit__(*sys.exc_info())
+                        finally:
+                            active_stager = None
+                            _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
+                        raise
                 pending_result_rows = []
                 for selected in task_arms[(task["id"], repetition)]:
                     if time.monotonic() >= run_deadline:
                         raise TimeoutError("complete-run wall-clock limit exhausted before next cell")
-                    run = runner.run(task, selected, repetition=repetition, deadline=run_deadline)
+                    run_kwargs: dict[str, Any] = {"repetition": repetition, "deadline": run_deadline}
+                    if active_diff_impact_stage is not None:
+                        run_kwargs["diff_impact_stage"] = active_diff_impact_stage
+                    run = runner.run(task, selected, **run_kwargs)
                     run.run_wall_clock_limit_s = max_wall_clock_seconds
                     _append_run(output_path, run, execution_index=int(metadata["persisted_cells"]))
                     metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
@@ -2995,6 +3825,12 @@ def main(
                             "compliance_failed",
                             run.arm in {"B_direct_required", "C_skill_required"} and not run.compliance,
                         ),
+                        (
+                            "semantic_query_failed",
+                            run.arm in {"B_direct_required", "C_skill_required"}
+                            and run.codemap_semantic_compliance is False,
+                        ),
+                        ("targeted", run.targeted),
                         ("token_accounting_inconsistent", run.token_accounting_inconsistent),
                     ):
                         if failed:
@@ -3038,11 +3874,29 @@ def main(
                     )
                     if time.monotonic() >= run_deadline:
                         raise TimeoutError("complete-run wall-clock limit exhausted after persisted cell")
-                _print_result_block(pending_result_rows)
+                printed_cells = _print_result_block(
+                    pending_result_rows, printed_cells=printed_cells, planned_cells=planned_cells
+                )
                 pending_result_rows = []
+                if active_stager is not None:
+                    try:
+                        active_stager.__exit__(None, None, None)
+                    finally:
+                        active_stager = None
+                        active_diff_impact_stage = None
+                        _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
     except BaseException as exc:
+        if active_stager is not None:
+            try:
+                active_stager.__exit__(*sys.exc_info())
+            finally:
+                active_stager = None
+                active_diff_impact_stage = None
+                _validate_locked_runtime(Path(repo_path), index_path, "A_plain", manifest_path)
         if pending_result_rows:
-            _print_result_block(pending_result_rows)
+            printed_cells = _print_result_block(
+                pending_result_rows, printed_cells=printed_cells, planned_cells=planned_cells
+            )
             pending_result_rows = []
         metadata["status"] = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
         metadata["completed_at"] = _utc_now()
@@ -3075,7 +3929,12 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--render-results", action="store_true", help="render RESULT rows from standard input")
+    parser.add_argument("--render-results", action="store_true", help="render progress rows from standard input")
+    parser.add_argument(
+        "--resolve-tasks",
+        metavar="SELECTORS",
+        help="resolve comma-separated exact task IDs or task families into a targeted scope",
+    )
     parser.add_argument("--force-color", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--hide-plan", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--repo-path", type=Path)
@@ -3094,16 +3953,23 @@ if __name__ == "__main__":
     parser.add_argument("--output-path", type=Path)
     parser.add_argument("--metadata-path", type=Path)
     parser.add_argument("--task-id", dest="task_ids", action="append")
-    parser.add_argument("--repetitions", type=int, default=1)
+    parser.add_argument("--tasks", dest="task_selectors", help="comma-separated exact task IDs or task families")
+    parser.add_argument("--scope-sha256", help="resolved targeted-scope SHA-256 required for paid subsets")
+    parser.add_argument("--repetitions", type=int)
     parser.add_argument("--arm", default="all")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-legend", dest="show_legend", action="store_false", help=argparse.SUPPRESS)
     parser.add_argument("--max-wall-clock-seconds", type=float)
     args = parser.parse_args()
     if args.force_color and not args.render_results:
         parser.error("--force-color requires --render-results")
     if args.hide_plan and not args.render_results:
         parser.error("--hide-plan requires --render-results")
-    if args.render_results:
+    if args.resolve_tasks is not None:
+        if args.render_results:
+            parser.error("--resolve-tasks cannot be combined with --render-results")
+        print(json.dumps(resolve_task_selection(args.manifest_path, args.resolve_tasks), sort_keys=True))
+    elif args.render_results:
         render_result_rows(sys.stdin, sys.stdout, force_color=args.force_color, hide_plan=args.hide_plan)
     else:
         for option in ("repo_path", "model", "tasks_path"):
@@ -3111,6 +3977,7 @@ if __name__ == "__main__":
                 parser.error(f"--{option.replace('_', '-')} is required unless --render-results is used")
         arguments = vars(args)
         arguments.pop("render_results")
+        arguments.pop("resolve_tasks")
         arguments.pop("force_color")
         arguments.pop("hide_plan")
         main(**arguments)

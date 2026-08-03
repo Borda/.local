@@ -35,6 +35,8 @@ ARM_ORDER_POLICY = (
     "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
     "across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times"
 )
+TASK_SELECTION_REPETITIONS = 3
+TASK_SELECTION_COORDINATE_TIMEOUT_SECONDS = 600
 
 
 def _sha256(path: Path) -> str:
@@ -300,6 +302,53 @@ def _preregistered_cells(source: dict[str, Any]) -> dict[str, Any]:
     return cells
 
 
+def _task_selection_contract(source: dict[str, Any]) -> dict[str, Any]:
+    """Describe the generic nonpoolable ``--tasks`` selection contract."""
+    cells = _preregistered_cells(source)
+    task_ids = list(cells["structural_execution_task_ids"])
+    families = list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in task_ids))
+    return {
+        "arms": list(_arms()),
+        "allowed_families": families,
+        "allowed_task_ids": task_ids,
+        "complete_run_max_wall_clock_seconds": {
+            "derived_at_runtime": True,
+            "formula": "resolved_task_count × repetitions × arm_count × coordinate_timeout_seconds",
+        },
+        "confirmatory_product_acceptance": "ineligible",
+        "coordinate_timeout_seconds": TASK_SELECTION_COORDINATE_TIMEOUT_SECONDS,
+        "nonpoolable": True,
+        "pooling_eligibility": "ineligible",
+        "purpose": (
+            "Targeted task-family or exact-task study selected from the frozen structural execution IDs; "
+            "it estimates selected behavior only."
+        ),
+        "repetitions": TASK_SELECTION_REPETITIONS,
+        "resolution_policy": {
+            "exact_id_first": True,
+            "family_match": "a family token selects every matching allowed ID",
+            "order": "resolved IDs preserve frozen structural_execution_task_ids order",
+            "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
+            "reject": ["empty tokens", "unknown task IDs", "unknown families"],
+        },
+        "scope_digest": {
+            "canonical_fields": [
+                "active manifest SHA-256",
+                "resolved ordered task IDs",
+                "repetitions",
+                "arms",
+                "coordinate timeout seconds",
+                "derived complete-run wall-clock ceiling",
+            ],
+            "runtime_derived": True,
+            "stored_in_manifest": False,
+        },
+        "separator": ",",
+        "selector_option": "--tasks",
+        "study_mode": "selected_tasks",
+    }
+
+
 def _build_manifest() -> dict[str, Any]:
     """Build one deterministic experiment record from immutable source identities."""
     source = _load_json(SOURCE_MANIFEST)
@@ -429,6 +478,7 @@ def _build_manifest() -> dict[str, Any]:
         },
         "oracle_remediation": source["oracle_remediation"],
         "package_roster": ["codemap-py", "codex-rig"],
+        "task_selection": _task_selection_contract(source),
         "preregistered_cells": _preregistered_cells(source),
         "schema_version": "codex-integration-manifest-v1",
         "source_manifest": {
@@ -454,6 +504,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
     repetitions = manifest["preregistered_cells"]["confirmatory_repetitions"]
     arm_count = len(manifest["preregistered_cells"]["arms"])
     total_cells = execution_tasks * repetitions * arm_count
+    task_selection = manifest["task_selection"]
     lines = [
         f"# `{EXPERIMENT_ID}`",
         "",
@@ -504,7 +555,31 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         f"- Total cells: `{total_cells}` (`{execution_tasks} tasks × {repetitions} repetition × {arm_count} arms`).",
         "- Model-cell failures are recorded and do not stop the study after admission; integrity, interruption, and complete-run ceiling failures preserve a partial artifact and stop execution.",
         "",
-        "## Execution",
+        "## Selected-task scope",
+        "",
+        "- Use `--tasks=DI,GR` for family selection, `--tasks=DI-01,GR-03` for exact IDs, or `--tasks=DI,GR-03` for a mixed selection.",
+        "- Exact task IDs are resolved before family tokens; family tokens select all matching frozen IDs.",
+        "- Empty or unknown selectors fail closed; duplicate tokens and overlapping expansions are evaluated once.",
+        "- Resolved IDs always follow frozen manifest order, independent of selector order.",
+        "- Omit --tasks for the full confirmatory scope; providing --tasks requires separate targeted approval and cannot authorize or replace the full scope.",
+        f"- Selected-task runs use `{task_selection['repetitions']}` repetitions × `{len(task_selection['arms'])}` arms and `{task_selection['coordinate_timeout_seconds']}` seconds per coordinate.",
+        "- The complete-run ceiling is derived at runtime as `resolved tasks × repetitions × arms × coordinate seconds`.",
+        "- Selected-task runs are explicitly nonpoolable and ineligible for confirmatory or product acceptance.",
+        "- The runtime scope digest covers the active manifest SHA-256, resolved ordered IDs, and execution controls; it is derived at runtime and is not stored in this manifest.",
+        "",
+        "## Paid selected-task command",
+        "",
+        "Replace `DI,GR` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.",
+        "",
+        "```bash",
+        f"CODEX_PAID_APPROVAL={machine_sha256} \\",
+        '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
+        '    CODEX_RUN_DIR="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)" \\',
+        "    CODEX_MAX_WALL_CLOCK_SECONDS=<derived-ceiling> \\",
+        "    bash benchmarks/run-all.sh codex --tasks=DI,GR",
+        "```",
+        "",
+        "## Confirmatory execution",
         "",
         "Run the exact no-model Codex smoke and 165-coordinate plan first:",
         "",
@@ -512,7 +587,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "bash benchmarks/run-all.sh codex --dry-run",
         "```",
         "",
-        "After reviewing this manifest, launch the paid study with the manifest-bound command:",
+        "After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:",
         "",
         "```bash",
         f"CODEX_PAID_APPROVAL={machine_sha256} \\",

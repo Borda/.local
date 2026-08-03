@@ -31,6 +31,20 @@ _NOT_FOR_RE = re.compile(
 _SKILL_REF_RE = re.compile(r"[/$]codemap-py:([a-z][a-z-]*)")
 
 
+# Query routing is a product contract, not merely documentation style.  Both
+# surfaces must steer the model to the same supported high-leverage command.
+_QUERY_CODE_REQUIRED_SNIPPETS = (
+    "most-imported modules / highest in-degree | `central --top n`",
+    "internal-import coupling (not centrality)",
+    "fn-blast <module::symbol>",
+    "never `--depth`",
+    "never invent flags",
+    "ordinary repository reads remain allowed",
+    "distinct independent ast/oracle view",
+)
+_QUERY_CODE_FORBIDDEN_SNIPPETS = ("fn-blast <module::symbol> --depth",)
+
+
 # --------------------------------------------------------------------------------------
 # Roster exactness.
 # --------------------------------------------------------------------------------------
@@ -183,3 +197,17 @@ def test_not_for_checker_rejects_unsupported_cache_path_masquerading_as_skill_re
     claude_text = "NOT for: index rebuild (use `/codemap-py:scan-codebase`)."
     codex_text = "NOT for: index rebuild — no equivalent skill; edit `~/.claude/plugins/cache/foo` directly."
     assert _not_for_skill_refs(claude_text) != _not_for_skill_refs(codex_text)
+
+
+# --------------------------------------------------------------------------------------
+# Query-code routing parity — prevent expensive, incorrect substitutes.
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
+def test_query_code_routes_centrality_and_transitive_blast_to_supported_commands(runtime_dir: Path) -> None:
+    """Keep centrality and transitive caller requests off coupling and invented flags."""
+    skill_text = (runtime_dir / "query-code" / "SKILL.md").read_text(encoding="utf-8").lower()
+
+    assert all(snippet in skill_text for snippet in _QUERY_CODE_REQUIRED_SNIPPETS)
+    assert all(snippet not in skill_text for snippet in _QUERY_CODE_FORBIDDEN_SNIPPETS)

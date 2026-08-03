@@ -13,8 +13,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import TypedDict
 
-# Increment when the index JSON structure changes incompatibly.
-SCAN_VERSION: int = 11
+# Increment when persisted index data changes query semantics incompatibly.
+SCAN_VERSION: int = 12
 
 # Per-feature minimum index versions.
 # v4 and v5 were design epochs shipped together in one release (SCAN_VERSION 4–10).
@@ -31,7 +31,12 @@ SUBPROCESS_CALLS_MIN_VER: int = 8  # v5.2 — subprocess_calls per module, subpr
 FIXTURE_GRAPH_MIN_VER: int = 9  # v5.3 — fixture_uses per test module, fixture_exports per conftest
 COVERAGE_MIN_VER: int = 10  # v5.4 — coverage_pct, covered_by per symbol (requires --with-coverage build)
 ENTITY_TYPE_MIN_VER: int = 11  # v5.5 — entity_type ("pkg"|"test"|"docs"|"example"), package (top-level name)
+SYMBOL_ALIASES_MIN_VER: int = 12  # v5.6 — alias-aware reverse-call graph
 
+# v5.6 adds root ``symbol_aliases``: ``module::local_name -> canonical module::symbol``
+# for statically proven top-level ``from ... import ...`` aliases. It changes reverse-call
+# query semantics, so the persisted-index generation advances to v12 and old indexes rebuild.
+#
 # .pyi scope extension (plan §2.1) is additive at SCAN_VERSION 11 — no version bump: the
 # fields below are optional and absent on a stub-free tree, and the one-time post-migration
 # rebuild is driven by file_shas drift (``.pyi`` joins the git/MD5 hash set), not a version

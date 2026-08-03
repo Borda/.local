@@ -129,7 +129,7 @@
         },
         {
           "args": [
-            "lightning.pytorch.loggers.tensorboard::TensorBoardLogger.save",
+            "TensorBoardLogger.save",
             "--with-imports"
           ],
           "cmd": "symbol"
@@ -201,7 +201,7 @@
       "profiles": [
         "dev"
       ],
-      "prompt": "Before refactoring `is_overridden` in `lightning.pytorch.utilities.model_helpers`, identify every production function that statically calls it. List the full qualified names in the form `module::function`. Exclude test files.",
+      "prompt": "Before refactoring `is_overridden` in `lightning.pytorch.utilities.model_helpers`, identify every non-test function that statically calls it, including callers under `examples/**`. List the full qualified names in the form `module::function`. Exclude test files only.",
       "type": "fn_call_graph",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
@@ -696,7 +696,7 @@
       "profiles": [
         "dev"
       ],
-      "prompt": "Run a documentation gate on `lightning.pytorch.core.module` before the v2.4.0 release. Report these two views separately: (1) Codemap's total undocumented declaration findings, which can contain repeated qualified names; and (2) the benchmark's independent AST count of unique public qualified symbols without docstrings, followed by those unique names. Do not present the two counts as interchangeable.",
+      "prompt": "Run a documentation gate on `lightning.pytorch.core.module` before the v2.4.0 release. Report these two views separately: (1) Codemap's total undocumented declaration findings, which can contain repeated qualified names; and (2) the benchmark's independent AST count of unique public qualified symbols without docstrings, followed by those unique names. Do not present the two counts as interchangeable. Use exactly this conclusion format:\n## Answer\ncodemap_static_count: <N>\nindependent_ast_count: <N>\n## Symbols\n<one independent-AST qualified name per line>.",
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
@@ -783,7 +783,7 @@
       },
       "id": "CQ-02",
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
-      "prompt": "Run the benchmark's independent AST oracle coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. The oracle counts each unique public declaration (no qualified-name component begins with `_`) whose simple name is absent from every AST `Name` and `Attribute` identifier in test files and from the final dotted component of every string argument to `patch(...)`, `patch.object(...)`, or `mock.patch(...)`. Identify all such symbols and report the total count. This independent AST view is distinct from Codemap's static `uncovered` findings; use ordinary repository reads when that distinct evidence is absent from the query output.",
+      "prompt": "Run the benchmark's independent AST oracle coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. The oracle counts each unique public declaration (no qualified-name component begins with `_`) whose simple name is absent from every AST `Name` and `Attribute` identifier in test files and from the final dotted component of every string argument to `patch(...)`, `patch.object(...)`, or `mock.patch(...)`. Identify all such symbols and report the total count. This independent AST view is distinct from Codemap's static `uncovered` findings; use ordinary repository reads when that distinct evidence is absent from the query output. Use exactly this conclusion format:\n## Answer\ncodemap_static_count: <N>\nindependent_ast_count: <N>\n## Symbols\n<one independent-AST qualified name per line>.",
       "self_consistency": false,
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
@@ -915,7 +915,7 @@
       },
       "id": "CQ-05",
       "primary_module": "lightning.pytorch.loggers.tensorboard",
-      "prompt": "Generate a health snapshot for `lightning.pytorch.loggers.tensorboard` for the release notes. Report: (1) how many public symbols lack docstrings and (2) how many public symbols are not covered by tests.",
+      "prompt": "Generate a health snapshot for `lightning.pytorch.loggers.tensorboard` for the release notes. Report: (1) how many public symbols lack docstrings and (2) how many public symbols are not covered by tests. Use exactly this conclusion format:\n## Answer\nundocumented_count: <N>\nuncovered_count: <N>.",
       "self_consistency": true,
       "type": "code_quality",
       "workflow_subtype": "pre_implementation_research",
@@ -972,7 +972,7 @@
       "profiles": [
         "dev"
       ],
-      "prompt": "You are about to change how `is_overridden` detects method overrides in `lightning.pytorch.utilities.model_helpers`. Before writing any code, perform a blast-radius assessment: list every production function that statically calls `is_overridden`. Report callers as `module::function` qualified names and exclude test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
+      "prompt": "You are about to change how `is_overridden` detects method overrides in `lightning.pytorch.utilities.model_helpers`. Before writing any code, perform a blast-radius assessment: list every non-test function that statically calls `is_overridden`, including callers under `examples/**`. Report callers as `module::function` qualified names and exclude test files only. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
       "type": "develop_blast_radius",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "query"
@@ -1503,6 +1503,15 @@
         "raw_caller_count": 102,
         "unique_caller_count": 102
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.exceptions::MisconfigurationException",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "id": "BR-09",
       "primary_fn": "lightning.fabric.utilities.exceptions::MisconfigurationException",
       "primary_module": "lightning.fabric.utilities.exceptions",
@@ -1518,7 +1527,12 @@
       "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
-        "symbol lightning.pytorch.callbacks.timer::Timer._check_time_remaining"
+        {
+          "args": [
+            "Timer._check_time_remaining"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "file": "src/lightning/pytorch/callbacks/timer.py",
@@ -1541,7 +1555,12 @@
       "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
-        "symbol lightning.pytorch.utilities.model_helpers::is_overridden"
+        {
+          "args": [
+            "is_overridden"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "file": "src/lightning/pytorch/utilities/model_helpers.py",
@@ -1561,7 +1580,12 @@
       "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
-        "symbol lightning.fabric.utilities.seed::reset_seed"
+        {
+          "args": [
+            "reset_seed"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "file": "src/lightning/fabric/utilities/seed.py",
@@ -1581,7 +1605,12 @@
       "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
-        "symbol lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_checkpoint"
+        {
+          "args": [
+            "ModelCheckpoint._save_checkpoint"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "file": "src/lightning/pytorch/callbacks/model_checkpoint.py",
@@ -1601,7 +1630,12 @@
       "benchmark_shaped": true,
       "difficulty": "hard",
       "expected_queries": [
-        "symbol lightning.pytorch.trainer.call::_call_lightning_module_hook"
+        {
+          "args": [
+            "_call_lightning_module_hook"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "file": "src/lightning/pytorch/trainer/call.py",
@@ -1621,7 +1655,12 @@
       "benchmark_shaped": true,
       "difficulty": "hard",
       "expected_queries": [
-        "symbol lightning.pytorch.trainer.trainer::Trainer._run_stage"
+        {
+          "args": [
+            "Trainer._run_stage"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "file": "src/lightning/pytorch/trainer/trainer.py",
@@ -1641,11 +1680,21 @@
       "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
-        "symbols lightning.pytorch.callbacks.finetuning",
-        "symbol lightning.pytorch.callbacks.finetuning::BaseFinetuning.freeze"
+        {
+          "args": [
+            "lightning.pytorch.callbacks.finetuning"
+          ],
+          "cmd": "symbols"
+        },
+        {
+          "args": [
+            "BackboneFinetuning.finetune_function"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
-        "entry_point": "BaseFinetuning.freeze",
+        "entry_point": "BackboneFinetuning.finetune_function",
         "primary_file": "src/lightning/pytorch/callbacks/finetuning.py"
       },
       "id": "FT-01",
@@ -1653,9 +1702,9 @@
       "profiles": [
         "dev"
       ],
-      "prompt": "We want to add a `freeze_until_epoch` capability to the finetuning callback so users can defer layer unfreezing without subclassing. Locate the primary extension point: the module and the class.method where the freezing behaviour is implemented and where this feature would be added. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "prompt": "We want to add a `freeze_until_epoch` capability to the finetuning callback so users can defer layer unfreezing without subclassing. Locate the primary extension point: the module and the class.method where epoch-controlled freezing and unfreezing are implemented and where this feature would be added. Use exactly this final format:\n## Files\nprimary_file: <repository-relative path>\nentry_point: <ClassName.method_name>.",
       "scoreable": true,
-      "symbol_name": "BaseFinetuning.freeze",
+      "symbol_name": "BackboneFinetuning.finetune_function",
       "type": "feature_scaffolding",
       "workflow_subtype": "pre_implementation_research",
       "workflow_type": "feature"
@@ -1664,8 +1713,18 @@
       "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
-        "symbols lightning.pytorch.callbacks.early_stopping",
-        "symbol lightning.pytorch.callbacks.early_stopping::EarlyStopping._evaluate_stopping_criteria"
+        {
+          "args": [
+            "lightning.pytorch.callbacks.early_stopping"
+          ],
+          "cmd": "symbols"
+        },
+        {
+          "args": [
+            "EarlyStopping._evaluate_stopping_criteria"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "entry_point": "EarlyStopping._evaluate_stopping_criteria",
@@ -1673,7 +1732,7 @@
       },
       "id": "FT-02",
       "primary_module": "lightning.pytorch.callbacks.early_stopping",
-      "prompt": "We want to add a `relative_threshold` mode to the EarlyStopping callback so improvement can be judged as a fraction of the current best rather than an absolute delta. Locate the primary extension point: the module and the class.method that decides whether the stopping criteria are met. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "prompt": "We want to add a `relative_threshold` mode to the EarlyStopping callback so improvement can be judged as a fraction of the current best rather than an absolute delta. Locate the primary extension point: the module and the class.method that decides whether the stopping criteria are met. Use exactly this final format:\n## Files\nprimary_file: <repository-relative path>\nentry_point: <ClassName.method_name>.",
       "scoreable": true,
       "symbol_name": "EarlyStopping._evaluate_stopping_criteria",
       "type": "feature_scaffolding",
@@ -1684,8 +1743,18 @@
       "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
-        "symbols lightning.pytorch.callbacks.model_checkpoint",
-        "symbol lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_checkpoint"
+        {
+          "args": [
+            "lightning.pytorch.callbacks.model_checkpoint"
+          ],
+          "cmd": "symbols"
+        },
+        {
+          "args": [
+            "ModelCheckpoint._save_checkpoint"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "entry_point": "ModelCheckpoint._save_checkpoint",
@@ -1693,7 +1762,7 @@
       },
       "id": "FT-03",
       "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
-      "prompt": "We want to add optional checkpoint compression (gzip) to ModelCheckpoint so saved files take less disk space. Locate the primary extension point: the module and the class.method that performs the actual checkpoint write, where compression would hook in. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "prompt": "We want to add optional checkpoint compression (gzip) to ModelCheckpoint so saved files take less disk space. Locate the primary extension point: the module and the class.method that performs the actual checkpoint write, where compression would hook in. Use exactly this final format:\n## Files\nprimary_file: <repository-relative path>\nentry_point: <ClassName.method_name>.",
       "scoreable": true,
       "symbol_name": "ModelCheckpoint._save_checkpoint",
       "type": "feature_scaffolding",
@@ -1704,8 +1773,18 @@
       "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
-        "symbols lightning.pytorch.callbacks.timer",
-        "symbol lightning.pytorch.callbacks.timer::Timer._check_time_remaining"
+        {
+          "args": [
+            "lightning.pytorch.callbacks.timer"
+          ],
+          "cmd": "symbols"
+        },
+        {
+          "args": [
+            "Timer._check_time_remaining"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "entry_point": "Timer._check_time_remaining",
@@ -1713,7 +1792,7 @@
       },
       "id": "FT-04",
       "primary_module": "lightning.pytorch.callbacks.timer",
-      "prompt": "We want the Timer callback to emit a warning when the elapsed time crosses a configurable fraction (e.g. 90%) of the allotted duration, so users get an early heads-up before training is stopped. Locate the primary extension point: the module and the class.method that compares elapsed time against the duration, where the warning logic would be added. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "prompt": "We want the Timer callback to emit a warning when the elapsed time crosses a configurable fraction (e.g. 90%) of the allotted duration, so users get an early heads-up before training is stopped. Locate the primary extension point: the module and the class.method that compares elapsed time against the duration, where the warning logic would be added. Use exactly this final format:\n## Files\nprimary_file: <repository-relative path>\nentry_point: <ClassName.method_name>.",
       "scoreable": true,
       "symbol_name": "Timer._check_time_remaining",
       "type": "feature_scaffolding",
@@ -1724,8 +1803,18 @@
       "benchmark_shaped": true,
       "difficulty": "hard",
       "expected_queries": [
-        "symbols lightning.fabric.utilities.seed",
-        "symbol lightning.fabric.utilities.seed::seed_everything"
+        {
+          "args": [
+            "lightning.fabric.utilities.seed"
+          ],
+          "cmd": "symbols"
+        },
+        {
+          "args": [
+            "seed_everything"
+          ],
+          "cmd": "symbol"
+        }
       ],
       "ground_truth": {
         "entry_point": "seed_everything",
@@ -1733,7 +1822,7 @@
       },
       "id": "FT-05",
       "primary_module": "lightning.fabric.utilities.seed",
-      "prompt": "We want to add deterministic CUDA seeding to the seed utilities so that GPU runs can be made fully reproducible from a single entry point. Locate the primary extension point: the module and the top-level function that sets all RNG seeds, where the new CUDA-determinism option would be wired in. Report: primary file path (relative to repo root) and the entry point as the function name.",
+      "prompt": "We want to add deterministic CUDA seeding to the seed utilities so that GPU runs can be made fully reproducible from a single entry point. Locate the primary extension point: the module and the top-level function that sets all RNG seeds, where the new CUDA-determinism option would be wired in. Use exactly this final format:\n## Files\nprimary_file: <repository-relative path>\nentry_point: <function_name>.",
       "scoreable": true,
       "symbol_name": "seed_everything",
       "type": "feature_scaffolding",
@@ -1897,121 +1986,43 @@
       "difficulty": "medium",
       "ground_truth": {
         "fn_callers": [
-          "lightning.fabric.connector::_Connector._check_and_init_precision",
-          "lightning.fabric.connector::_Connector._check_strategy_and_fallback",
-          "lightning.fabric.connector::_convert_precision_to_unified_args",
-          "lightning.fabric.fabric::Fabric._move_model_to_device",
-          "lightning.fabric.fabric::Fabric.call",
-          "lightning.fabric.fabric::Fabric.no_backward_sync",
-          "lightning.fabric.loggers.csv_logs::_ExperimentWriter._check_log_dir_exists",
-          "lightning.fabric.loggers.tensorboard::TensorBoardLogger.log_graph",
-          "lightning.fabric.plugins.environments.slurm::SLURMEnvironment._validate_srun_used",
-          "lightning.fabric.plugins.environments.torchelastic::TorchElasticEnvironment.main_address",
-          "lightning.fabric.plugins.environments.torchelastic::TorchElasticEnvironment.main_port",
-          "lightning.fabric.plugins.precision.fsdp::FSDPPrecision.mixed_precision_config",
-          "lightning.fabric.plugins.precision.transformer_engine::_convert_layers",
-          "lightning.fabric.strategies.deepspeed::_validate_state_keys",
-          "lightning.fabric.strategies.fsdp::FSDPStrategy.setup_module",
-          "lightning.fabric.strategies.fsdp::_setup_activation_checkpointing",
-          "lightning.fabric.strategies.xla_fsdp::XLAFSDPStrategy.load_checkpoint",
-          "lightning.fabric.strategies.xla_fsdp::XLAFSDPStrategy.setup_module",
-          "lightning.fabric.utilities.data::has_len",
-          "lightning.fabric.utilities.init::_materialize_distributed_module",
-          "lightning.fabric.utilities.seed::seed_everything",
-          "lightning.fabric.utilities.throughput::get_available_flops",
-          "lightning.pytorch.callbacks.batch_size_finder::BatchSizeFinder.setup",
-          "lightning.pytorch.callbacks.early_stopping::EarlyStopping._validate_condition_metric",
-          "lightning.pytorch.callbacks.finetuning::BaseFinetuning.filter_on_optimizer",
-          "lightning.pytorch.callbacks.gradient_accumulation_scheduler::GradientAccumulationScheduler.on_train_start",
-          "lightning.pytorch.callbacks.lr_monitor::LearningRateMonitor.on_train_start",
-          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.__warn_if_dir_not_empty",
-          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.on_train_batch_end",
-          "lightning.pytorch.callbacks.progress.progress_bar::ProgressBar.get_metrics",
-          "lightning.pytorch.callbacks.stochastic_weight_avg::StochasticWeightAveraging.on_train_epoch_start",
-          "lightning.pytorch.callbacks.throughput_monitor::ThroughputMonitor._update",
-          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.on_load_checkpoint",
-          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.setup",
-          "lightning.pytorch.cli::LightningCLI._instantiate_trainer",
-          "lightning.pytorch.cli::LightningCLI.parse_arguments",
-          "lightning.pytorch.cli::_get_short_description",
-          "lightning.pytorch.core.module::LightningModule.configure_optimizers",
-          "lightning.pytorch.core.module::LightningModule.log",
-          "lightning.pytorch.core.module::LightningModule.training_step",
-          "lightning.pytorch.core.optimizer::_configure_schedulers_automatic_opt",
-          "lightning.pytorch.core.optimizer::_configure_schedulers_manual_opt",
-          "lightning.pytorch.core.optimizer::_init_optimizers_and_lr_schedulers",
-          "lightning.pytorch.core.optimizer::_validate_optim_conf",
-          "lightning.pytorch.core.saving::_load_from_checkpoint",
-          "lightning.pytorch.core.saving::_load_state",
-          "lightning.pytorch.core.saving::load_hparams_from_tags_csv",
-          "lightning.pytorch.core.saving::load_hparams_from_yaml",
-          "lightning.pytorch.loggers.mlflow::MLFlowLogger.log_metrics",
-          "lightning.pytorch.loggers.tensorboard::TensorBoardLogger.__init__",
-          "lightning.pytorch.loggers.tensorboard::TensorBoardLogger.log_graph",
-          "lightning.pytorch.loggers.wandb::WandbLogger.experiment",
-          "lightning.pytorch.loops.fit_loop::_FitLoop._warn_if_modules_in_eval_mode",
-          "lightning.pytorch.loops.fit_loop::_FitLoop.setup_data",
-          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop._update_learning_rates",
-          "lightning.pytorch.loops.training_epoch_loop::_TrainingEpochLoop.reset",
-          "lightning.pytorch.loops.utilities::_parse_loop_limits",
-          "lightning.pytorch.loops.utilities::_select_data_fetcher",
-          "lightning.pytorch.plugins.precision.fsdp::FSDPPrecision.mixed_precision_config",
-          "lightning.pytorch.profilers.pytorch::PyTorchProfiler.stop.on_trace_ready",
-          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.init_deepspeed",
-          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy.lightning_restore_optimizer",
-          "lightning.pytorch.strategies.fsdp::FSDPStrategy._setup_model",
-          "lightning.pytorch.trainer.call::_call_callbacks_on_load_checkpoint",
-          "lightning.pytorch.trainer.configuration_validator::__verify_train_val_loop_configuration",
-          "lightning.pytorch.trainer.configuration_validator::__warn_dataloader_iter_limitations",
-          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._check_and_init_precision",
-          "lightning.pytorch.trainer.connectors.accelerator_connector::_set_torch_flags",
-          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector._parse_ckpt_path",
-          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector._select_ckpt_path",
-          "lightning.pytorch.trainer.connectors.data_connector::_DataConnector._resolve_sampler",
-          "lightning.pytorch.trainer.connectors.data_connector::_process_dataloader",
-          "lightning.pytorch.trainer.connectors.data_connector::_resolve_overfit_batches",
-          "lightning.pytorch.trainer.connectors.data_connector::_worker_check",
-          "lightning.pytorch.trainer.connectors.logger_connector.result::_ResultMetric._wrap_compute.wrapped_func",
-          "lightning.pytorch.trainer.setup::_log_device_info",
-          "lightning.pytorch.trainer.trainer::Trainer.init_module",
-          "lightning.pytorch.tuner.batch_size_scaling::_scale_batch_size",
-          "lightning.pytorch.tuner.lr_finder::_lr_find",
-          "lightning.pytorch.utilities.data::_dataloader_init_kwargs_resolve_sampler",
-          "lightning.pytorch.utilities.data::has_len_all_ranks",
-          "lightning.pytorch.utilities.imports::_try_import_module",
-          "lightning.pytorch.utilities.migration.migration::_drop_apex_amp_state",
-          "lightning.pytorch.utilities.migration.migration::_migrate_model_checkpoint_save_on_train_epoch_end_default",
-          "lightning.pytorch.utilities.migration.utils::migrate_checkpoint",
-          "lightning.pytorch.utilities.model_summary.model_summary::ModelSummary.__init__",
-          "lightning.pytorch.utilities.parsing::clean_namespace",
-          "lightning.pytorch.utilities.parsing::save_hyperparameters"
+          "lightning.fabric.fabric::Fabric.log_dict",
+          "lightning.pytorch.trainer.connectors.logger_connector.logger_connector::_LoggerConnector.log_metrics",
+          "lightning.pytorch.trainer.connectors.logger_connector.result::_ResultCollection.metrics",
+          "lightning.pytorch.trainer.trainer::Trainer._test_impl",
+          "lightning.pytorch.trainer.trainer::Trainer._validate_impl"
         ],
         "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
         "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
-        "test_module_count": 5,
+        "test_module_count": 1,
         "test_modules": [
-          "tests_fabric.conftest",
-          "tests_fabric.utilities.test_rank_zero",
-          "tests_fabric.utilities.test_warnings",
-          "tests_pytorch.conftest",
-          "tests_pytorch.models.test_torchscript"
+          "tests_fabric.utilities.test_apply_func"
         ],
-        "unique_caller_count": 88
+        "unique_caller_count": 5
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func::convert_tensors_to_scalars",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "id": "DI-01",
-      "primary_fn": "lightning.fabric.utilities.rank_zero::rank_zero_warn",
-      "primary_module": "lightning.fabric.utilities.rank_zero",
+      "primary_fn": "lightning.fabric.utilities.apply_func::convert_tensors_to_scalars",
+      "primary_module": "lightning.fabric.utilities.apply_func",
       "profiles": [
         "dev"
       ],
-      "prompt": "A change is being staged to `rank_zero_warn` in `lightning.fabric.utilities.rank_zero` (a widely-used function). Assess the blast radius BEFORE reviewing: (1) list every production caller of the changed function as `module::function`, and (2) list the test modules that must be re-run because they import `lightning.fabric.utilities.rank_zero`. Put callers under a `## Callers` heading and test modules under a `## Tests` heading, one qualified name per line. Use the exact format `lightning.module.path::ClassName.method_name`.",
+      "prompt": "A change is being staged to `convert_tensors_to_scalars` in `lightning.fabric.utilities.apply_func` (a locally defined utility). Assess the blast radius BEFORE reviewing: (1) list every non-test caller of the changed function, including callers under `examples/**`, as `module::function`, and (2) list the test modules that must be re-run because they import `lightning.fabric.utilities.apply_func`. Put callers under a `## Callers` heading and test modules under a `## Tests` heading, one qualified name per line. Use the exact format `lightning.module.path::ClassName.method_name`.",
       "scoreable": true,
       "stage": [
         {
-          "file": "src/lightning/fabric/utilities/rank_zero.py",
-          "find": "def rank_zero_warn(",
-          "replace": "def rank_zero_warn(*, dedup: bool = False,  # DI-01 staged param\n    "
+          "file": "src/lightning/fabric/utilities/apply_func.py",
+          "find": "def convert_tensors_to_scalars(data: Any) -> Any:",
+          "replace": "def convert_tensors_to_scalars(data: Any, *, preserve_scalars: bool = True) -> Any:  # DI-01 staged param"
         }
       ],
       "type": "diff_impact",
@@ -2057,6 +2068,15 @@
         ],
         "unique_caller_count": 22
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.cloud_io::get_filesystem",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "id": "DI-02",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
       "primary_module": "lightning.fabric.utilities.cloud_io",
@@ -2115,6 +2135,15 @@
         ],
         "unique_caller_count": 26
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.utilities.model_helpers::is_overridden",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "id": "DI-03",
       "primary_fn": "lightning.pytorch.utilities.model_helpers::is_overridden",
       "primary_module": "lightning.pytorch.utilities.model_helpers",
@@ -2168,6 +2197,15 @@
         ],
         "unique_caller_count": 18
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.distributed::_distributed_is_initialized",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "id": "DI-04",
       "primary_fn": "lightning.fabric.utilities.distributed::_distributed_is_initialized",
       "primary_module": "lightning.fabric.utilities.distributed",
@@ -2188,63 +2226,41 @@
       "difficulty": "hard",
       "ground_truth": {
         "fn_callers": [
-          "examples.pytorch.domain_templates.computer_vision_fine_tuning::TransferLearningModel.configure_optimizers",
-          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_monitor_checkpoint",
-          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._update_best_and_save",
-          "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint.on_exception",
-          "lightning.pytorch.callbacks.stochastic_weight_avg::StochasticWeightAveraging.on_train_epoch_start",
-          "lightning.pytorch.callbacks.timer::Timer._check_time_remaining",
-          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.on_load_checkpoint",
-          "lightning.pytorch.callbacks.weight_averaging::WeightAveraging.on_save_checkpoint",
-          "lightning.pytorch.loops.fit_loop::_FitLoop.done",
-          "lightning.pytorch.overrides.distributed::_register_ddp_comm_hook",
-          "lightning.pytorch.strategies.ddp::DDPStrategy.teardown",
-          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._initialize_deepspeed_train",
-          "lightning.pytorch.strategies.deepspeed::DeepSpeedStrategy._load_config",
-          "lightning.pytorch.strategies.fsdp::FSDPStrategy.setup",
-          "lightning.pytorch.trainer.call::_call_and_handle_interrupt",
-          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._check_and_init_precision",
-          "lightning.pytorch.trainer.connectors.accelerator_connector::_AcceleratorConnector._set_devices_flag_if_auto_passed",
-          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._attach_model_callbacks",
-          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._configure_model_summary_callback",
-          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._configure_timer_callback",
-          "lightning.pytorch.trainer.connectors.callback_connector::_CallbackConnector._maybe_show_litmodels_tip",
-          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector.resume_end",
-          "lightning.pytorch.trainer.connectors.checkpoint_connector::_CheckpointConnector.resume_start",
-          "lightning.pytorch.trainer.connectors.logger_connector.logger_connector::_LoggerConnector.configure_logger",
-          "lightning.pytorch.trainer.connectors.signal_connector::_SignalConnector._slurm_sigusr_handler_fn",
-          "lightning.pytorch.trainer.setup::_determine_batch_limits",
-          "lightning.pytorch.trainer.setup::_init_debugging_flags",
-          "lightning.pytorch.trainer.setup::_log_device_info",
-          "lightning.pytorch.trainer.trainer::Trainer.__init__",
-          "lightning.pytorch.trainer.trainer::Trainer._run",
-          "lightning.pytorch.trainer.trainer::Trainer.estimated_stepping_batches",
-          "lightning.pytorch.tuner.batch_size_scaling::_adjust_batch_size",
-          "lightning.pytorch.tuner.batch_size_scaling::_run_binsearch_scaling",
-          "lightning.pytorch.tuner.batch_size_scaling::_run_power_scaling"
+          "lightning.fabric.utilities.seed::seed_everything",
+          "lightning.pytorch.loggers.comet::CometLogger.__init__"
         ],
         "gt_pending": false,
         "gt_source": "ast-caller-oracle + test-import-oracle",
-        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle).",
-        "test_module_count": 4,
+        "note": "GT independently computed against the locked target tree by generate-tasks-bench.py --update (AST caller oracle + test-import oracle). Replaces the former external rank_zero_info re-export, which cannot be staged or queried as a repository function.",
+        "test_module_count": 5,
         "test_modules": [
-          "tests_pytorch.callbacks.test_device_stats_monitor",
+          "tests_fabric.conftest",
+          "tests_fabric.utilities.test_rank_zero",
+          "tests_fabric.utilities.test_warnings",
           "tests_pytorch.conftest",
-          "tests_pytorch.loggers.test_logger",
-          "tests_pytorch.plugins.test_cluster_integration"
+          "tests_pytorch.models.test_torchscript"
         ],
-        "unique_caller_count": 34
+        "unique_caller_count": 2
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.rank_zero::_get_rank",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "id": "DI-05",
-      "primary_fn": "lightning.pytorch.utilities.rank_zero::rank_zero_info",
-      "primary_module": "lightning.pytorch.utilities.rank_zero",
-      "prompt": "A change is being staged to `rank_zero_info` in `lightning.pytorch.utilities.rank_zero` (a widely-used function). Assess the blast radius BEFORE reviewing: (1) list every production caller of the changed function as `module::function`, and (2) list the test modules that must be re-run because they import `lightning.pytorch.utilities.rank_zero`. Put callers under a `## Callers` heading and test modules under a `## Tests` heading, one qualified name per line. Use the exact format `lightning.module.path::ClassName.method_name`.",
+      "primary_fn": "lightning.fabric.utilities.rank_zero::_get_rank",
+      "primary_module": "lightning.fabric.utilities.rank_zero",
+      "prompt": "A change is being staged to `_get_rank` in `lightning.fabric.utilities.rank_zero` (the local rank-detection helper used by rank-zero coordination). Assess the blast radius BEFORE reviewing: (1) list every production caller of the changed function as `module::function`, and (2) list the test modules that must be re-run because they import `lightning.fabric.utilities.rank_zero`. Put callers under a `## Callers` heading and test modules under a `## Tests` heading, one qualified name per line. Use the exact format `lightning.module.path::ClassName.method_name`.",
       "scoreable": true,
       "stage": [
         {
-          "file": "src/lightning/pytorch/utilities/rank_zero.py",
-          "find": "def rank_zero_info(",
-          "replace": "def rank_zero_info(  # DI-05 staged param add\n    "
+          "file": "src/lightning/fabric/utilities/rank_zero.py",
+          "find": "def _get_rank() -> Optional[int]:",
+          "replace": "def _get_rank(*, prefer_local_rank: bool = True) -> Optional[int]:  # DI-05 staged rank-resolution change"
         }
       ],
       "type": "diff_impact",
@@ -2262,6 +2278,7 @@
           "lightning.fabric.utilities.apply_func::convert_to_tensors",
           "lightning.fabric.utilities.optimizer::_optimizer_to_device",
           "lightning.fabric.wrappers::_FabricDataLoader.__iter__",
+          "lightning.pytorch.core.hooks::DataHooks.transfer_batch_to_device",
           "lightning.pytorch.loops.prediction_loop::_PredictionLoop._predict_step",
           "lightning.pytorch.strategies.launchers.multiprocessing::_MultiProcessingLauncher._wrapping_function",
           "lightning.pytorch.strategies.launchers.xla::_XLALauncher._wrapping_function",
@@ -2274,8 +2291,17 @@
         "test_modules": [
           "tests_fabric.utilities.test_apply_func"
         ],
-        "unique_caller_count": 11
+        "unique_caller_count": 12
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.apply_func::move_data_to_device",
+            "--exclude-tests"
+          ],
+          "cmd": "fn-rdeps"
+        }
+      ],
       "id": "DI-06",
       "primary_fn": "lightning.fabric.utilities.apply_func::move_data_to_device",
       "primary_module": "lightning.fabric.utilities.apply_func",
@@ -2355,6 +2381,16 @@
         "note": "GT independently computed against the locked target tree by --update (AST central oracle, in-degree ranking).",
         "top": 10
       },
+      "expected_queries": [
+        {
+          "args": [
+            "--top",
+            "10",
+            "--exclude-tests"
+          ],
+          "cmd": "central"
+        }
+      ],
       "id": "GR-01",
       "profiles": [
         "dev"
@@ -2381,6 +2417,15 @@
         "source": "lightning.pytorch.trainer.trainer",
         "target": "lightning.fabric.utilities.rank_zero"
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.trainer.trainer",
+            "lightning.fabric.utilities.rank_zero"
+          ],
+          "cmd": "path"
+        }
+      ],
       "id": "GR-02",
       "prompt": "Find an import path from `lightning.pytorch.trainer.trainer` to `lightning.fabric.utilities.rank_zero` \u2014 the chain of modules where each step directly imports the next. Report the chain under a `## Path` heading, one dotted module name per line in order from source to target.",
       "scoreable": true,
@@ -2430,6 +2475,14 @@
         "gt_source": "ast-fn-blast-oracle",
         "note": "GT independently computed against the locked target tree by --update (AST fn-blast oracle, depth-N closure)."
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.cloud_io::get_filesystem"
+          ],
+          "cmd": "fn-blast"
+        }
+      ],
       "id": "GR-03",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
       "primary_module": "lightning.fabric.utilities.cloud_io",
@@ -2530,6 +2583,16 @@
         "note": "GT independently computed against the locked target tree by --update (AST central oracle, in-degree ranking).",
         "top": 15
       },
+      "expected_queries": [
+        {
+          "args": [
+            "--top",
+            "15",
+            "--exclude-tests"
+          ],
+          "cmd": "central"
+        }
+      ],
       "id": "GR-04",
       "prompt": "List the 15 most-imported modules in the codebase (the modules imported by the most other modules). Put them under a `## Modules` heading, one dotted module name per line (e.g. `lightning.pytorch.trainer.trainer`).",
       "scoreable": true,
@@ -2596,6 +2659,15 @@
           "lightning.pytorch.utilities.data"
         ]
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.utilities.exceptions",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "id": "MB-01",
       "primary_module": "lightning.pytorch.utilities.exceptions",
       "profiles": [
@@ -2687,6 +2759,15 @@
           "lightning.pytorch.utilities.types"
         ]
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.types",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "id": "MB-02",
       "primary_module": "lightning.fabric.utilities.types",
       "profiles": [
@@ -2768,6 +2849,15 @@
           "lightning.pytorch.utilities.parsing"
         ]
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.utilities.rank_zero",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "id": "MB-03",
       "primary_module": "lightning.pytorch.utilities.rank_zero",
       "profiles": [
@@ -2822,6 +2912,15 @@
           "lightning.pytorch.utilities.model_summary.model_summary"
         ]
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.fabric.utilities.imports",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "id": "MB-04",
       "primary_module": "lightning.fabric.utilities.imports",
       "profiles": [
@@ -2867,6 +2966,15 @@
           "lightning.pytorch.utilities.data"
         ]
       },
+      "expected_queries": [
+        {
+          "args": [
+            "lightning.pytorch.trainer.states",
+            "--exclude-tests"
+          ],
+          "cmd": "rdeps"
+        }
+      ],
       "id": "MB-05",
       "primary_module": "lightning.pytorch.trainer.states",
       "profiles": [

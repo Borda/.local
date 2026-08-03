@@ -1324,11 +1324,11 @@ def _max_turns_for_task(task: dict) -> int:
 # ---------------------------------------------------------------------------
 
 _EVAL_VER_NAME_RECALL = "v5"  # _evaluate_develop_br (v5: drop .md file-dump M-10; precision-tighten fuzzy tiers M-11)
-_EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
+_EVAL_VER_SYMBOL = "v2"  # _evaluate_symbol — accepts conventional source-location ranges
 _EVAL_VER_REVIEW = "v7"  # _evaluate_rv — natural direct-import and uncovered-count grammar
-_EVAL_VER_OSS = "v5"  # _evaluate_oss — complete ordered coupled-ranking components
+_EVAL_VER_OSS = "v7"  # _evaluate_oss — explicit label-first count grammar for required AST components
 _EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching (review H-1)
-_EVAL_VER_FEATURE = "v2"  # _evaluate_feature — v2: structured-block + stem-blocklist matching (review H-1)
+_EVAL_VER_FEATURE = "v3"  # _evaluate_feature — exact labelled entry point and primary file
 _EVAL_VER_REAL_ISSUE = "v2"  # _evaluate_real_issue — v2: path-with-parent matching in answer block (review H-1)
 
 # review H-1 — substring-inflation guard. Common single-token file/symbol stems that saturate any
@@ -1698,13 +1698,20 @@ def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
         if m:
             got_start = int(m.group(1))
 
-    # 3. Explicit range "Lines N-M" → first number is start (fallback; can match import ranges)
+    # 3. Compact ``path.py:N-M`` source locations are common final answers and carry an
+    # unambiguous source-file anchor; accept them before the deliberately broader prose range.
+    if got_start is None:
+        m = re.search(r"(?:^|\s)[\w./-]+\.py:(\d+)\s*[-–]\s*\d+\b", cleaned)
+        if m:
+            got_start = int(m.group(1))
+
+    # 4. Explicit range "Lines N-M" → first number is start (fallback; can match import ranges)
     if got_start is None:
         m = re.search(r"\blines?\W+(\d+)\s*[-–]\s*\d+", cleaned, re.IGNORECASE)
         if m:
             got_start = int(m.group(1))
 
-    # 4. "line N" near the short symbol name (last component of qualified name)
+    # 5. "line N" near the short symbol name (last component of qualified name)
     if got_start is None:
         short = re.escape(qname.split(".")[-1])
         m = re.search(r"line\s+(\d+).*?" + short, cleaned, re.IGNORECASE | re.DOTALL)
@@ -1943,23 +1950,58 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
             },
         )
 
-    if check in ("undocumented", "combined_health"):
+    if check == "combined_health":
+        undocumented_expected = gt.get("undocumented_count", 0)
+        uncovered_expected = gt.get("uncovered_count", 0)
+        undocumented_got = _extract_count_answer_first(
+            output_text,
+            [r"undocumented[\s_-]+count\s*[:=]\s*(\d+)"],
+        )
+        uncovered_got = _extract_count_answer_first(
+            output_text,
+            [r"uncovered[\s_-]+count\s*[:=]\s*(\d+)"],
+        )
+        return _score_required_components(
+            count_components=[
+                ("undocumented_count", undocumented_expected, undocumented_got),
+                ("uncovered_count", uncovered_expected, uncovered_got),
+            ],
+            symbol_components=[],
+            evaluator_used="_evaluate_oss",
+            evaluator_version=_EVAL_VER_OSS,
+            check=check,
+        )
+
+    if check == "undocumented":
         oracle_views = gt.get("oracle_views")
         independent_ast = oracle_views.get("independent_ast", {}) if isinstance(oracle_views, Mapping) else {}
         expected = independent_ast.get("count", gt.get("undocumented_count", 0))
+        required_components = gt.get("required_answer_components", [])
+        count_patterns = [
+            r"independent[\s_-]+ast[\s_-]+count\s*[:=]\s*(\d+)",
+        ]
+        if "independent_ast_count" in required_components:
+            count_patterns.extend(
+                [
+                    r"independent\s+ast(?:\s+view)?\s*[:=]\s*(\d+)\s+(?:unique\s+)?(?:qualified\s+)?(?:names|symbols)\b",
+                ]
+            )
+        if "independent_ast_count" not in required_components:
+            count_patterns.extend(
+                [
+                    r"independent\s+AST(?:\s+view)?\s*[:—–-]?\s*(\d+)",
+                    r"(\d+)\s+unique\s+(?:undocumented\s+)?(?:qualified\s+)?(?:names|symbols)",
+                    r"(\d+)\s+undocumented",
+                    r"undocumented[:\s]+(\d+)",
+                    r"undocumented[^:\n]*[:\s—–]+(\d+)",
+                    r"(\d+)\s+(?:public\s+)?symbols?\s+lack",
+                    r"without\s+docstring.*?(\d+)",
+                ]
+            )
         got = _extract_count_answer_first(
             output_text,
-            [
-                r"independent\s+AST(?:\s+view)?\s*[:—–-]?\s*(\d+)",
-                r"(\d+)\s+unique\s+(?:undocumented\s+)?(?:qualified\s+)?(?:names|symbols)",
-                r"(\d+)\s+undocumented",
-                r"undocumented[:\s]+(\d+)",
-                r"undocumented[^:\n]*[:\s—–]+(\d+)",  # "Undocumented public symbols — 3" (no-newline stops greedy bleed)
-                r"(\d+)\s+(?:public\s+)?symbols?\s+lack",  # "3 public symbols lack docstrings"
-                r"without\s+docstring.*?(\d+)",
-            ],
+            count_patterns,
         )
-        required_components = gt.get("required_answer_components", [])
         expected_symbols = independent_ast.get("symbols", gt.get("undocumented_symbols"))
         symbol_components: list[tuple[str, list[str], str, bool]] = []
         if (
@@ -1981,17 +2023,33 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
 
     if check == "uncovered":
         expected = gt.get("uncovered_count", 0)
+        required_components = gt.get("required_answer_components", [])
+        count_patterns = [
+            r"independent[\s_-]+ast[\s_-]+count\s*[:=]\s*(\d+)",
+        ]
+        if "independent_ast_count" in required_components:
+            count_patterns.extend(
+                [
+                    r"(\d+)\s+uncovered\s+(?:public\s+)?symbols?\b",
+                    r"uncovered\s+(?:public\s+)?symbols?\s*[:=]\s*(\d+)",
+                    r"uncovered\s+(?:public\s+)?symbols?\s*\(\s*(\d+)\s*\)",
+                ]
+            )
+        if "independent_ast_count" not in required_components:
+            count_patterns.extend(
+                [
+                    r"(\d+)\s+uncovered",
+                    r"(\d+)\s+(?:public\s+)?symbols?\s+uncovered",
+                    r"uncovered[:\s]+(\d+)",
+                    r"uncovered\s+public\s+symbols?[:\s—–]+(\d+)",
+                    r"uncovered\s+(?:public\s+)?symbols?\s*\(\s*(\d+)\s*\)",
+                    r"without\s+test.*?(\d+)",
+                ]
+            )
         got = _extract_count_answer_first(
             output_text,
-            [
-                r"(\d+)\s+uncovered",
-                r"(\d+)\s+(?:public\s+)?symbols?\s+uncovered",  # "20 public symbols uncovered"
-                r"uncovered[:\s]+(\d+)",
-                r"uncovered\s+public\s+symbols?[:\s—–]+(\d+)",  # "Uncovered public symbols: 25"
-                r"without\s+test.*?(\d+)",
-            ],
+            count_patterns,
         )
-        required_components = gt.get("required_answer_components", [])
         expected_symbols = gt.get("uncovered_symbols")
         symbol_components: list[tuple[str, list[str], str, bool]] = []
         if (
@@ -2456,10 +2514,11 @@ def _evaluate_debug(task: dict, output_text: str) -> BenchQuality:
 
 
 def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate feature_scaffolding task: entry_point method + primary_file basename.
+    """Evaluate feature_scaffolding task: exact labelled entry point and file path.
 
-    Correct when both the method name (last component of entry_point) and the
-    primary_file basename appear in the output.
+    Correct when the answer explicitly labels the task's full entry point and
+    repository-relative primary file. This prevents exploratory prose from
+    accidentally crediting a different final recommendation.
 
     Args:
         task: Task dict with ground_truth.entry_point, .primary_file.
@@ -2471,13 +2530,13 @@ def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
     gt = task["ground_truth"]
     entry_point: str = gt.get("entry_point", "")
     primary_file: str = gt.get("primary_file", "")
-    method = entry_point.split(".")[-1] if "." in entry_point else entry_point
-    file_stem = primary_file.split("/")[-1].replace(".py", "")
-
-    # review H-1: score inside the structured answer block; blocklisted file stems must be qualified.
+    # Score only explicit conclusion fields. A Class.method can appear during exploration while the
+    # final answer names a different extension point, so substring matching is not a valid oracle.
     region, degraded = _answer_region(output_text, _ANSWER_LABELS_FILES)
-    ep_found = bool(method) and bool(re.search(r"\b" + re.escape(method) + r"\b", region, re.IGNORECASE))
-    file_found = bool(file_stem) and _stem_matches(file_stem, region)
+    entry_pattern = r"(?im)^\s*(?:[-*]\s*)?entry[\s_-]*point\s*:\s*`?" + re.escape(entry_point) + r"`?\s*$"
+    file_pattern = r"(?im)^\s*(?:[-*]\s*)?primary[\s_-]*file\s*:\s*`?" + re.escape(primary_file) + r"`?\s*$"
+    ep_found = bool(entry_point) and bool(re.search(entry_pattern, region))
+    file_found = bool(primary_file) and bool(re.search(file_pattern, region))
 
     total = sum([bool(entry_point), bool(primary_file)])
     hits = sum([ep_found, file_found])
@@ -2497,7 +2556,7 @@ def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
             "primary_file": primary_file,
             "file_found": file_found,
             "recall": recall,
-            "method": "answer_block_stem_match",
+            "method": "labelled_entry_point_and_primary_file",
         },
     )
 

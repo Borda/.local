@@ -28,7 +28,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping
 
 import fire
 
@@ -45,6 +45,82 @@ from _utilities import resolve_index_path as _util_resolve_index_path  # noqa: E
 # Test-file / test-directory detection — mirrors scan-index ``_TEST_PATH_RE`` so the AST oracle
 # excludes the same test modules scan-query does (review N1). Matched against repo-relative paths.
 _TEST_PATH_RE = re.compile(r"(^|/)tests?/|/test_[^/]+\.py$|/[^/]+_test\.py$|/conftest\.py$")
+
+# Kept in sync with ``scan-query --help`` by the benchmark test suite.  Query
+# contracts are execution metadata, so an unsupported command must fail before
+# a B/C preflight or paid coordinate starts.
+_SUPPORTED_EXPECTED_QUERY_COMMANDS: frozenset[str] = frozenset(
+    {
+        "deps",
+        "rdeps",
+        "central",
+        "coupled",
+        "path",
+        "list",
+        "packages",
+        "symbol",
+        "symbols",
+        "find-symbol",
+        "fn-deps",
+        "fn-rdeps",
+        "fn-central",
+        "fn-blast",
+        "test-impact",
+        "mock-rdeps",
+        "subprocess-deps",
+        "subprocess-rdeps",
+        "fixture-rdeps",
+        "fixture-graph",
+        "import-types",
+        "undocumented",
+        "uncovered",
+        "coverage",
+        "coverage-gap",
+        "xrefs",
+        "dead-symbols",
+        "dead-modules",
+        "diff-impact",
+        "batch",
+    }
+)
+
+
+def _expected_query_contract_errors(
+    tasks: Iterable[Mapping[str, Any]], *, executable_task_types: frozenset[str] | None = None
+) -> list[str]:
+    """Return structural and command-support defects in executable task query contracts.
+
+    ``real_issue`` tasks retain historical provenance and are not execution
+    coordinates for the locked provider-parity study. When
+    ``executable_task_types`` is supplied, only those validator-backed task
+    types are checked; this lets the generator retain its fail-closed unknown
+    task reporting without a schema error hiding it. Every checked task must
+    declare at least one exact ``{cmd, args}`` query so B/C preflight can
+    verify use without interpreting natural-language prompts.
+    """
+    errors: list[str] = []
+    for task in tasks:
+        task_id = task.get("id", "<unknown>")
+        task_type = task.get("type")
+        if task_type == "real_issue" or (executable_task_types is not None and task_type not in executable_task_types):
+            continue
+        queries = task.get("expected_queries")
+        if not isinstance(queries, list) or not queries:
+            errors.append(f"{task_id}: expected_queries must be a non-empty list")
+            continue
+        for position, query in enumerate(queries, start=1):
+            if not isinstance(query, Mapping):
+                errors.append(f"{task_id}: expected query {position} must be an object")
+                continue
+            command = query.get("cmd")
+            arguments = query.get("args")
+            if not isinstance(command, str) or not command:
+                errors.append(f"{task_id}: expected query {position} needs a non-empty cmd")
+            elif command not in _SUPPORTED_EXPECTED_QUERY_COMMANDS:
+                errors.append(f"{task_id}: expected query {position} has unsupported cmd {command!r}")
+            if not isinstance(arguments, list) or not all(isinstance(argument, str) for argument in arguments):
+                errors.append(f"{task_id}: expected query {position} args must be a string list")
+    return errors
 
 
 def _src_root_from_config(repo: Path) -> Path | None:
@@ -450,13 +526,23 @@ def _bare_import_modules(tree: ast.Module, rel_module: str) -> dict[tuple[str, .
     return collector.bindings
 
 
-def _is_direct_reexport(
-    repo: Path, source_module: str, target_module: str, name: str, cache: dict[tuple[str, str, str], bool]
+def _reexports_symbol(
+    repo: Path,
+    source_module: str,
+    target_module: str,
+    name: str,
+    cache: dict[tuple[str, str, str], bool],
+    visiting: set[tuple[str, str, str]] | None = None,
 ) -> bool:
-    """Return whether *source_module* directly re-exports *name* from *target_module*."""
+    """Return whether *source_module* re-exports *name* from *target_module* through import facades."""
     key = (source_module, target_module, name)
     if key in cache:
         return cache[key]
+    if visiting is None:
+        visiting = set()
+    if key in visiting:
+        return False
+    visiting.add(key)
     package_parts = source_module.split(".")[:-1]
     source_paths = [
         candidate
@@ -480,12 +566,16 @@ def _is_direct_reexport(
                 imported_module = ".".join([*package_parts[:keep], node.module])
             else:
                 imported_module = node.module
-            if imported_module == target_module and any(
-                alias.name == name and (alias.asname or alias.name) == name for alias in node.names
+            if not any(alias.name == name and (alias.asname or alias.name) == name for alias in node.names):
+                continue
+            if imported_module == target_module or _reexports_symbol(
+                repo, imported_module, target_module, name, cache, visiting
             ):
                 cache[key] = True
+                visiting.remove(key)
                 return True
     cache[key] = False
+    visiting.remove(key)
     return False
 
 
@@ -541,7 +631,7 @@ def _walk_caller_sets(primary_fn: str, repo: Path) -> tuple[set[str], set[str], 
             if (
                 imported_name == target_simple
                 and bound_module != target_module
-                and _is_direct_reexport(repo, bound_module, target_module, target_simple, reexport_cache)
+                and _reexports_symbol(repo, bound_module, target_module, target_simple, reexport_cache)
             ):
                 scope_bindings[target_simple] = (target_module, target_simple)
         _QualifiedCallFinder(
@@ -1404,14 +1494,14 @@ def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
         return False, None, "review task requires a non-empty sub_questions list"
 
     count_questions = 0
-    for index, sq_item in enumerate(sub_questions, start=1):
+    for ordinal, sq_item in enumerate(sub_questions, start=1):
         if not isinstance(sq_item, dict):
-            return False, None, f"review sub-question {index} must be an object"
+            return False, None, f"review sub-question {ordinal} must be an object"
         sq_id = sq_item.get("id")
         match_type = sq_item.get("match")
         expected_gt = sq_item.get("ground_truth")
         if not isinstance(sq_id, str) or not sq_id:
-            return False, None, f"review sub-question {index} requires a non-empty id"
+            return False, None, f"review sub-question {ordinal} requires a non-empty id"
         if not isinstance(expected_gt, dict):
             return False, None, f"review sub-question {sq_id!r} requires ground_truth"
         if match_type == "integer_extract":
@@ -2434,6 +2524,13 @@ def main(
         repo_meta = {}
         tasks = _raw
         _tasks_wrapper = None
+
+    query_contract_errors = _expected_query_contract_errors(tasks, executable_task_types=frozenset(VALIDATORS))
+    if query_contract_errors:
+        print("ERROR: invalid expected query contracts:")
+        for error in query_contract_errors:
+            print(f"  - {error}")
+        sys.exit(1)
 
     # Resolve repo path
     if repo_path:

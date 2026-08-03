@@ -91,9 +91,9 @@ class TestScanVersion:
         """Version must be a positive number (≥1)."""
         assert SCAN_VERSION >= 1
 
-    def test_value_is_eleven(self) -> None:
-        """v5.5 bumps SCAN_VERSION to 11 for entity_type / package per module."""
-        assert SCAN_VERSION == 11
+    def test_value_is_twelve(self) -> None:
+        """v5.6 bumps SCAN_VERSION for alias-aware reverse-call semantics."""
+        assert SCAN_VERSION == 12
 
 
 class TestPerFeatureVersionConstants:
@@ -112,6 +112,7 @@ class TestPerFeatureVersionConstants:
             "SUBPROCESS_CALLS_MIN_VER",
             "FIXTURE_GRAPH_MIN_VER",
             "COVERAGE_MIN_VER",
+            "SYMBOL_ALIASES_MIN_VER",
         ):
             assert isinstance(getattr(_schema, name), int), f"{name} must be int"
 
@@ -128,6 +129,7 @@ class TestPerFeatureVersionConstants:
             "SUBPROCESS_CALLS_MIN_VER",
             "FIXTURE_GRAPH_MIN_VER",
             "COVERAGE_MIN_VER",
+            "SYMBOL_ALIASES_MIN_VER",
         ):
             assert getattr(_schema, name) > 0, f"{name} must be positive"
 

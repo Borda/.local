@@ -61,12 +61,14 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     arms = builder["_arms"]()
     controls = builder["_execution_controls"](source)
     cells = builder["_preregistered_cells"](source)
+    task_selection = builder["_task_selection_contract"](source)
     telemetry = builder["_telemetry_admission"]()
     human_manifest = {
         "codemap_candidate": {"package_manifest_sha256": "0" * 64, "version": "test"},
         "codex_cli": {"available": False},
         "codex_rig_candidate": {"version": "test"},
         "execution_controls": controls,
+        "task_selection": task_selection,
         "preregistered_cells": cells,
         "source_manifest": {"path": "test.json", "sha256": "0" * 64},
     }
@@ -82,10 +84,25 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     assert controls["arm_order"] == arm_order
     assert cells["arm_order"] == arm_order
     assert controls["token_prompt_cache_policy"] == token_prompt_cache_policy
+    assert task_selection["repetitions"] == 3
+    assert task_selection["coordinate_timeout_seconds"] == 600
+    assert task_selection["nonpoolable"] is True
+    assert task_selection["allowed_task_ids"] == cells["structural_execution_task_ids"]
+    assert task_selection["allowed_families"] == list(
+        dict.fromkeys(task_id.split("-", 1)[0] for task_id in cells["structural_execution_task_ids"])
+    )
+    assert task_selection["resolution_policy"]["exact_id_first"] is True
+    assert task_selection["resolution_policy"]["deduplicate"].startswith("selector tokens")
+    assert task_selection["scope_digest"]["runtime_derived"] is True
+    assert task_selection["scope_digest"]["stored_in_manifest"] is False
     assert '`"$CODEMAP_BIN" query --compact <subcommand> [arguments]`' in human
     assert "every arm occupies every ordinal 18 or 19 times" in human
     assert "Console and primary efficiency reports use gross provider input tokens only." in human
     assert "without claiming cache elimination" in human
+    assert "--tasks=DI,GR" in human
+    assert "--tasks=DI-01,GR-03" in human
+    assert "--tasks=DI,GR-03" in human
+    assert "cannot authorize or replace the full scope" in human
 
 
 def test_generator_is_current_and_never_rewrites_methodology_source() -> None:
@@ -277,6 +294,60 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     }
 
 
+def test_integration_manifest_locks_generic_nonpoolable_task_selection() -> None:
+    """Selected task studies are generic, deterministic, and nonpoolable."""
+    manifest = _load(MANIFEST)
+    scope = manifest["task_selection"]
+
+    execution_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
+    assert scope["selector_option"] == "--tasks"
+    assert scope["separator"] == ","
+    assert scope["allowed_task_ids"] == execution_ids
+    assert scope["allowed_families"] == list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in execution_ids))
+    assert scope["resolution_policy"] == {
+        "exact_id_first": True,
+        "family_match": "a family token selects every matching allowed ID",
+        "order": "resolved IDs preserve frozen structural_execution_task_ids order",
+        "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
+        "reject": ["empty tokens", "unknown task IDs", "unknown families"],
+    }
+    assert scope["arms"] == ["A_plain", "B_direct_required", "C_skill_required"]
+    assert scope["repetitions"] == 3
+    assert scope["coordinate_timeout_seconds"] == 600
+    assert scope["complete_run_max_wall_clock_seconds"] == {
+        "derived_at_runtime": True,
+        "formula": "resolved_task_count × repetitions × arm_count × coordinate_timeout_seconds",
+    }
+    assert scope["nonpoolable"] is True
+    assert scope["pooling_eligibility"] == "ineligible"
+    assert scope["confirmatory_product_acceptance"] == "ineligible"
+    assert scope["study_mode"] == "selected_tasks"
+    assert scope["scope_digest"] == {
+        "canonical_fields": [
+            "active manifest SHA-256",
+            "resolved ordered task IDs",
+            "repetitions",
+            "arms",
+            "coordinate timeout seconds",
+            "derived complete-run wall-clock ceiling",
+        ],
+        "runtime_derived": True,
+        "stored_in_manifest": False,
+    }
+
+    human = HUMAN_MANIFEST.read_text(encoding="utf-8")
+    assert "## Selected-task scope" in human
+    assert "--tasks=DI,GR" in human
+    assert "--tasks=DI-01,GR-03" in human
+    assert "--tasks=DI,GR-03" in human
+    assert "duplicate tokens and overlapping expansions are evaluated once" in human
+    assert "derived at runtime" in human
+    assert "## Paid selected-task command" in human
+    assert "bash benchmarks/run-all.sh codex --tasks=DI,GR" in human
+    assert "post-fix diagnostic" not in human
+    assert human.index("## Paid selected-task command") < human.index("## Confirmatory execution")
+
+
 def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authorization() -> None:
     """Committed records use self-contained names and a manifest-bound launch authorization."""
     for path in (SOURCE_MANIFEST, GENERATOR, MANIFEST, HUMAN_MANIFEST):
@@ -292,6 +363,7 @@ def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authoriz
     assert "Console and primary efficiency reports use gross provider input tokens only." in human
     assert "without claiming cache elimination" in human
     assert "Runtime smoke and exact coordinate-plan validation are required before paid execution." in human
+    assert "## Confirmatory execution" in human
     assert "no separate chat authorization is required" in human
     assert "CODEX_PAID_APPROVAL" in human
     assert "bash benchmarks/run-all.sh codex --dry-run" in human

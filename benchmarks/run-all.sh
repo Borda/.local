@@ -6,6 +6,7 @@
 #   bash benchmarks/run-all.sh claude  # fail-fast Claude smoke, then full Claude batches
 #   bash benchmarks/run-all.sh codex --dry-run  # smoke + exact 165-cell Codex plan, no model
 #   bash benchmarks/run-all.sh codex   # fail-fast Codex smoke, then full 55-task A/B/C study
+#   bash benchmarks/run-all.sh codex --tasks=DI,GR [--dry-run]  # selected, nonpoolable task study
 #
 # The Codex mode fails before setup unless the caller supplies the exact active
 # plain/CLI/skill manifest SHA-256, a private auth source, a new run directory, and
@@ -23,17 +24,26 @@ REPO="${REPO:-$MANAGED_REPO}"
 INDEX_PATH="$REPO/.cache/codemap/$(basename "$REPO").json"
 MODE="${1:-}"
 CODEX_DRY_RUN=false
+CODEX_TASKS=""
+CODEX_SELECTION_SCOPE_SHA=""
+CODEX_SELECTION_REPETITIONS=""
+CODEX_SELECTION_WALL_CLOCK=""
+CODEX_SELECTION_TASK_IDS=()
 MANIFEST_PATH="$ROOT/benchmarks/manifests/codex-integration.json"
+METHODOLOGY_PATH="$ROOT/benchmarks/manifests/provider-parity-methodology.json"
 MANIFEST_CHECKER="$ROOT/benchmarks/build-codex-integration-manifest.py"
+METHODOLOGY_CHECKER="$ROOT/benchmarks/build-provider-parity-methodology-manifest.py"
 CODEMAP_BIN="${CODEMAP_BIN:-$ROOT/plugins/codemap-py/bin/codemap-py}"
 INDEX_PREPARER="$ROOT/benchmarks/prepare-codex-index.py"
-LOCKED_INDEX_SHA="b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045"
+SCHEMA_PATH="$ROOT/plugins/codemap-py/src/codemap_py/schema.py"
+LOCKED_INDEX_SHA=""
+LOCKED_INDEX_SCAN_VERSION=""
 
 usage() {
-  echo "usage: bash benchmarks/run-all.sh {smoke | claude | codex [--dry-run]}" >&2
+  echo "usage: bash benchmarks/run-all.sh {smoke | claude | codex [--dry-run] [--tasks=TASK[,TASK...]]}" >&2
 }
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
   usage
   exit 2
 fi
@@ -45,13 +55,32 @@ case "$MODE" in
     fi
     ;;
   codex)
-    if [ "$#" -eq 2 ]; then
-      if [ "$2" != "--dry-run" ]; then
-        usage
-        exit 2
-      fi
-      CODEX_DRY_RUN=true
-    fi
+    for option in "${@:2}"; do
+      case "$option" in
+        --dry-run)
+          if [ "$CODEX_DRY_RUN" = true ]; then
+            usage
+            exit 2
+          fi
+          CODEX_DRY_RUN=true
+          ;;
+        --tasks=*)
+          if [ -n "$CODEX_TASKS" ]; then
+            usage
+            exit 2
+          fi
+          CODEX_TASKS="${option#--tasks=}"
+          if [ -z "$CODEX_TASKS" ]; then
+            usage
+            exit 2
+          fi
+          ;;
+        *)
+          usage
+          exit 2
+          ;;
+      esac
+    done
     ;;
   *)
     usage
@@ -74,7 +103,40 @@ sha256_file() {
 
 validate_generated_manifest() {
   echo "== CHECK generated Codex integration manifest (no model) =="
+  python3 "$METHODOLOGY_CHECKER" --check
   python3 "$MANIFEST_CHECKER" --check
+}
+
+load_index_contract() {
+  local contract_json
+  if ! contract_json="$(python3 "$INDEX_PREPARER" \
+    --manifest-path "$MANIFEST_PATH" \
+    --methodology-path "$METHODOLOGY_PATH" \
+    --schema-path "$SCHEMA_PATH" \
+    --print-contract 2>&1)"; then
+    echo "ERROR: active index contract validation failed:" >&2
+    echo "$contract_json" >&2
+    exit 1
+  fi
+  LOCKED_INDEX_SHA="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["raw_sha256"])' <<<"$contract_json")"
+  LOCKED_INDEX_SCAN_VERSION="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["scan_version"])' <<<"$contract_json")"
+  echo "→ index contract: scan_version=$LOCKED_INDEX_SCAN_VERSION sha256=$LOCKED_INDEX_SHA"
+}
+
+verify_current_index() {
+  local verification
+  if verification="$(python3 "$INDEX_PREPARER" \
+    --index-path "$INDEX_PATH" \
+    --manifest-path "$MANIFEST_PATH" \
+    --methodology-path "$METHODOLOGY_PATH" \
+    --schema-path "$SCHEMA_PATH" \
+    --require-hash \
+    --verify 2>&1)"; then
+    echo "$verification"
+    return 0
+  fi
+  echo "⚠ existing index failed the active contract; rebuilding: $verification" >&2
+  return 1
 }
 
 ensure_repo() {
@@ -97,18 +159,29 @@ ensure_repo() {
 
 prepare_locked_inputs() {
   validate_generated_manifest
+  load_index_contract
   ensure_repo
   echo "== PREPARE frozen parity index =="
-  if [ ! -f "$INDEX_PATH" ]; then
-    echo "→ build missing index from the locked target"
-    CODEMAP_PYTHON="/opt/homebrew/bin/python3.11" "$CODEMAP_BIN" index --root "$REPO"
-    index_sha="$(sha256_file "$INDEX_PATH")"
-    if [ "$index_sha" != "$LOCKED_INDEX_SHA" ]; then
-      python3 "$INDEX_PREPARER" \
-        --index-path "$INDEX_PATH" \
-        --source-root "$REPO" \
-        --manifest-path "$MANIFEST_PATH"
+  if [ ! -f "$INDEX_PATH" ] || ! verify_current_index; then
+    if [ -f "$INDEX_PATH" ]; then
+      echo "→ existing index is stale or schema-incompatible; rebuild from the locked target"
+    else
+      echo "→ build missing index from the locked target"
     fi
+    CODEMAP_PYTHON="/opt/homebrew/bin/python3.11" "$CODEMAP_BIN" index --root "$REPO"
+  fi
+  index_sha="$(sha256_file "$INDEX_PATH")"
+  if [ "$index_sha" != "$LOCKED_INDEX_SHA" ]; then
+    python3 "$INDEX_PREPARER" \
+      --index-path "$INDEX_PATH" \
+      --source-root "$REPO" \
+      --manifest-path "$MANIFEST_PATH" \
+      --methodology-path "$METHODOLOGY_PATH" \
+      --schema-path "$SCHEMA_PATH"
+  fi
+  if ! verify_current_index; then
+    echo "ERROR: rebuilt index failed the active schema contract (scan_version=$LOCKED_INDEX_SCAN_VERSION)" >&2
+    exit 1
   fi
   index_sha="$(sha256_file "$INDEX_PATH")"
   if [ "$index_sha" != "$LOCKED_INDEX_SHA" ]; then
@@ -150,6 +223,7 @@ claude_preflight() {
 }
 
 codex_smoke_preflight() {
+  local legend_arg="${1:-}"
   echo "== CODEX PREFLIGHT (no model) =="
   validate_codex_cli
   python3 benchmarks/run-codex-structural.py \
@@ -163,7 +237,8 @@ codex_smoke_preflight() {
     --reasoning-effort high \
     --task-id FN-02 \
     --arm all \
-    --dry-run
+    --dry-run \
+    $legend_arg
 }
 
 smoke() {
@@ -199,9 +274,16 @@ require_codex_paid_inputs() {
     exit 2
   fi
   active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
-  approved_wall_clock="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_controls"]["confirmatory_max_wall_clock_seconds"])' "$MANIFEST_PATH")"
-  if [ "${CODEX_PAID_APPROVAL:-}" != "$active_manifest_sha" ]; then
-    echo "ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=$active_manifest_sha" >&2
+  if [ -n "$CODEX_TASKS" ]; then
+    ensure_codex_scope_resolved
+    approved_approval="$CODEX_SELECTION_SCOPE_SHA"
+    approved_wall_clock="$CODEX_SELECTION_WALL_CLOCK"
+  else
+    approved_approval="$active_manifest_sha"
+    approved_wall_clock="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_controls"]["confirmatory_max_wall_clock_seconds"])' "$MANIFEST_PATH")"
+  fi
+  if [ "${CODEX_PAID_APPROVAL:-}" != "$approved_approval" ]; then
+    echo "ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=$approved_approval" >&2
     print_codex_paid_guidance
     exit 2
   fi
@@ -233,21 +315,65 @@ require_codex_paid_inputs() {
 }
 
 print_codex_paid_guidance() {
-  run_dir_hint="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)"
+  if [ -n "$CODEX_TASKS" ]; then
+    ensure_codex_scope_resolved
+    run_dir_hint="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)"
+    mode_args=" --tasks=$CODEX_TASKS"
+    approval_hint="$CODEX_SELECTION_SCOPE_SHA"
+    scope_guidance="Selected task study: $CODEX_TASKS; $CODEX_SELECTION_REPETITIONS repetitions × A/B/C = $(( ${#CODEX_SELECTION_TASK_IDS[@]} * CODEX_SELECTION_REPETITIONS * 3 )) cells; 600 seconds per coordinate; $CODEX_SELECTION_WALL_CLOCK seconds complete run. It is nonpoolable."
+  else
+    run_dir_hint="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)"
+    mode_args=""
+    approval_hint="$active_manifest_sha"
+    scope_guidance=""
+  fi
   cat >&2 <<EOF
 
 Review the exact no-model plan first:
-  bash benchmarks/run-all.sh codex --dry-run
+  bash benchmarks/run-all.sh codex${mode_args} --dry-run
 
 Then launch the paid study with one manifest-bound command:
-  CODEX_PAID_APPROVAL=$active_manifest_sha \\
+  CODEX_PAID_APPROVAL=$approval_hint \\
   CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \\
   CODEX_RUN_DIR="$run_dir_hint" \\
   CODEX_MAX_WALL_CLOCK_SECONDS=$approved_wall_clock \\
-    bash benchmarks/run-all.sh codex
+    bash benchmarks/run-all.sh codex${mode_args}
 
 The command itself records paid authorization for this exact manifest; no separate chat approval is needed when you run it. CODEX_RUN_DIR must not already exist. Review benchmarks/manifests/codex-integration.md for the locked scope.
+${scope_guidance:+$'\n'"$scope_guidance"$'\n'}
 EOF
+}
+
+resolve_codex_tasks() {
+  local selection_json
+  if ! selection_json="$(python3 benchmarks/run-codex-structural.py \
+    --manifest-path "$MANIFEST_PATH" \
+    --resolve-tasks "$CODEX_TASKS" 2>&1)"; then
+    echo "ERROR: invalid Codex task selection '$CODEX_TASKS':" >&2
+    echo "$selection_json" >&2
+    return 2
+  fi
+  if ! CODEX_SELECTION_SCOPE_SHA="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["scope_sha256"])' <<<"$selection_json" 2>/dev/null)" \
+    || ! CODEX_SELECTION_REPETITIONS="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["repetitions"])' <<<"$selection_json" 2>/dev/null)" \
+    || ! CODEX_SELECTION_WALL_CLOCK="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["complete_run_max_wall_clock_seconds"])' <<<"$selection_json" 2>/dev/null)"; then
+    echo "ERROR: Codex task resolver returned malformed selection metadata:" >&2
+    echo "$selection_json" >&2
+    return 2
+  fi
+  CODEX_SELECTION_TASK_IDS=()
+  while IFS= read -r task_id; do
+    [ -n "$task_id" ] && CODEX_SELECTION_TASK_IDS+=("$task_id")
+  done < <(python3 -c 'import json,sys; print(*json.loads(sys.stdin.read())["task_ids"], sep="\n")' <<<"$selection_json")
+  if [ "${#CODEX_SELECTION_TASK_IDS[@]}" -eq 0 ]; then
+    echo "ERROR: Codex task resolver returned no task IDs." >&2
+    return 2
+  fi
+}
+
+ensure_codex_scope_resolved() {
+  if [ -n "$CODEX_TASKS" ] && [ -z "$CODEX_SELECTION_SCOPE_SHA" ]; then
+    resolve_codex_tasks
+  fi
 }
 
 configure_codex_plan() {
@@ -282,29 +408,71 @@ configure_codex_plan() {
   )
 }
 
+configure_codex_selected_plan() {
+  ensure_codex_scope_resolved
+  active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
+  selected_task_count="${#CODEX_SELECTION_TASK_IDS[@]}"
+  selected_cells=$((selected_task_count * CODEX_SELECTION_REPETITIONS * 3))
+  echo "== CODEX SELECTED A/B/C STUDY =="
+  echo "→ design: $selected_cells cells ($selected_task_count tasks × $CODEX_SELECTION_REPETITIONS runs × 3 arms; nonpoolable)"
+  echo "→ tasks: ${CODEX_TASKS}"
+  echo "→ model: gpt-5.6-luna; reasoning effort: high"
+  echo "→ limits: 600 seconds per coordinate; $CODEX_SELECTION_WALL_CLOCK seconds complete run"
+  echo "→ selection scope: $CODEX_SELECTION_SCOPE_SHA"
+  common_args=(
+    --repo-path "$REPO" \
+    --tasks-path benchmarks/suites/tasks-bench.json \
+    --manifest-path "$MANIFEST_PATH" \
+    --index-path "$INDEX_PATH" \
+    --marketplace-root "$ROOT" \
+    --codemap-bin "$CODEMAP_BIN" \
+    --model gpt-5.6-luna \
+    --reasoning-effort high \
+    --tasks "$CODEX_TASKS" \
+    --repetitions "$CODEX_SELECTION_REPETITIONS" \
+    --arm all \
+    --scope-sha256 "$CODEX_SELECTION_SCOPE_SHA" \
+    --max-wall-clock-seconds "$CODEX_SELECTION_WALL_CLOCK"
+  )
+}
+
 run_codex_plan() {
   # Paid execution wraps this function in a tee pipeline. Explicit propagation
   # prevents the full plan or paid cells from starting after a failed smoke.
   query_check || return "$?"
-  codex_smoke_preflight || return "$?"
-  configure_codex_plan || return "$?"
-  echo "== CODEX CONFIRMATORY A/B/C PREFLIGHT (no model) =="
+  codex_smoke_preflight --no-legend || return "$?"
+  if [ -n "$CODEX_TASKS" ]; then
+    configure_codex_selected_plan || return "$?"
+  else
+    configure_codex_plan || return "$?"
+  fi
+  if [ -n "$CODEX_TASKS" ]; then
+    echo "== CODEX SELECTED A/B/C PREFLIGHT (no model) =="
+  else
+    echo "== CODEX CONFIRMATORY A/B/C PREFLIGHT (no model) =="
+  fi
   python3 benchmarks/run-codex-structural.py "${common_args[@]}" --dry-run || return "$?"
 }
 
 run_codex_study() {
   run_codex_plan || return "$?"
-  echo "== CODEX CONFIRMATORY A/B/C STUDY (paid model runs) =="
+  if [ -n "$CODEX_TASKS" ]; then
+    echo "== CODEX SELECTED A/B/C STUDY (paid model runs) =="
+  else
+    echo "== CODEX CONFIRMATORY A/B/C STUDY (paid model runs) =="
+  fi
   python3 benchmarks/run-codex-structural.py \
     "${common_args[@]}" \
     --auth-source "$CODEX_AUTH_SOURCE" \
+    --no-legend \
     --output-path "$CODEX_RUN_DIR/telemetry.jsonl" \
     --metadata-path "$CODEX_RUN_DIR/run-metadata.json"
 }
 
 run_codex_with_artifacts() {
   # Keep the artifact log lossless; the structural runner renders only the console stream.
-  if run_codex_study 2>&1 | tee "$CODEX_RUN_DIR/run.log" | python3 "$ROOT/benchmarks/run-codex-structural.py" --render-results --hide-plan; then
+  local study_runner="$1"
+  if "$study_runner" 2>&1 | tee "$CODEX_RUN_DIR/run.log" | python3 "$ROOT/benchmarks/run-codex-structural.py" --render-results --hide-plan; then
     run_status=0
   else
     run_status=$?
@@ -316,6 +484,11 @@ run_codex_with_artifacts() {
       shasum -a 256 "$CODEX_RUN_DIR/$artifact" >> "$checksum_path"
     fi
   done
+  if [ -d "$CODEX_RUN_DIR/inputs" ]; then
+    while IFS= read -r input_artifact; do
+      shasum -a 256 "$input_artifact" >> "$checksum_path"
+    done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
+  fi
   echo "→ artifact checksums: $checksum_path"
   return "$run_status"
 }
@@ -330,6 +503,9 @@ case "$MODE" in
     claude
     ;;
   codex)
+    if [ -n "$CODEX_TASKS" ]; then
+      ensure_codex_scope_resolved
+    fi
     if [ "$CODEX_DRY_RUN" = true ]; then
       prepare_locked_inputs
       run_codex_plan
@@ -337,7 +513,7 @@ case "$MODE" in
       require_codex_paid_inputs
       prepare_locked_inputs
       mkdir -p "$CODEX_RUN_DIR"
-      run_codex_with_artifacts
+      run_codex_with_artifacts run_codex_study
     fi
     ;;
 esac

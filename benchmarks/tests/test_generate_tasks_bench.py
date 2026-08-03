@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,67 @@ class TestTasksFile:
         assert isinstance(data, dict)
         tasks = data.get("tasks", [])
         assert len(tasks) > 0
+
+    def test_every_execution_task_has_a_supported_structured_expected_query(self, script_gen_bench: Any) -> None:
+        """Every benchmark coordinate has a machine-checkable Codemap query contract.
+
+        Prevents B/C preflight from discovering malformed or absent query
+        metadata only after a paid benchmark has started.
+        """
+        data = json.loads(script_gen_bench.TASKS_FILE.read_text(encoding="utf-8"))
+        tasks = [task for task in data["tasks"] if task["type"] != "real_issue"]
+
+        assert len(tasks) == 55
+        assert script_gen_bench._expected_query_contract_errors(tasks) == []
+
+    def test_expected_query_commands_are_supported_by_scan_query(self, script_gen_bench: Any) -> None:
+        """The benchmark's declared command allowlist stays within the live CLI surface."""
+        launcher = script_gen_bench.git_toplevel() / "plugins" / "codemap-py" / "bin" / "scan-query"
+        result = subprocess.run([str(launcher), "--help"], capture_output=True, text=True, check=True)
+        match = re.search(r"\{([^}]+)\}", result.stdout)
+
+        assert match is not None
+        supported = set(match.group(1).split(","))
+        assert script_gen_bench._SUPPORTED_EXPECTED_QUERY_COMMANDS <= supported
+
+    @pytest.mark.parametrize(
+        ("task", "expected_error"),
+        [
+            pytest.param(
+                {"id": "Q-01", "type": "query"},
+                "Q-01: expected_queries must be a non-empty list",
+                id="missing-query-list",
+            ),
+            pytest.param(
+                {"id": "Q-02", "type": "query", "expected_queries": ["symbol module::name"]},
+                "Q-02: expected query 1 must be an object",
+                id="legacy-string-entry",
+            ),
+            pytest.param(
+                {"id": "Q-03", "type": "query", "expected_queries": [{"cmd": "unknown", "args": []}]},
+                "Q-03: expected query 1 has unsupported cmd 'unknown'",
+                id="unsupported-command",
+            ),
+        ],
+    )
+    def test_expected_query_contract_rejects_unrepresentable_execution_task(
+        self, script_gen_bench: Any, task: dict[str, Any], expected_error: str
+    ) -> None:
+        """Malformed execution metadata fails before any benchmark coordinate runs."""
+        assert script_gen_bench._expected_query_contract_errors([task]) == [expected_error]
+
+    def test_every_diff_impact_task_requires_its_own_fn_rdeps_query(self, script_gen_bench: Any) -> None:
+        """Diff-impact compliance must prove a direct query of the staged target.
+
+        A nearby module or a generic symbol search can look useful while
+        failing to establish the requested blast-radius evidence.
+        """
+        tasks = json.loads(script_gen_bench.TASKS_FILE.read_text(encoding="utf-8"))["tasks"]
+        for task in (task for task in tasks if task["type"] == "diff_impact"):
+            assert {
+                "cmd": "fn-rdeps",
+                "args": [task["primary_fn"], "--exclude-tests"],
+            } in task["expected_queries"]
 
 
 # ===========================================================================
@@ -753,6 +815,28 @@ class TestValidateRv:
 
         assert ok is True
         assert reason == ""
+
+    def test_preserves_index_path_after_enumerating_review_subquestions(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """The scan-query call receives its `Path`, never a sub-question ordinal.
+
+        Prevents the deterministic full-suite crash where `_validate_rv`
+        shadows its `index` parameter with `enumerate(..., start=1)`.
+        """
+        index_path = tmp_path / "idx.json"
+        task = self._task([{"id": "sq1", "match": "integer_extract", "ground_truth": {"count": 3}}])
+        query = MagicMock(return_value={"count": 3, "called_by": []})
+
+        with (
+            patch.object(script_gen_bench, "_rv_ast_value", return_value=(3, True, None)),
+            patch.object(script_gen_bench, "run_scan_query", query),
+        ):
+            ok, _live_gt, reason = script_gen_bench._validate_rv(task, MagicMock(), index_path, tmp_path)
+
+        assert ok is True
+        assert reason == ""
+        assert query.call_args.args[2] == index_path
 
     def test_fails_when_integer_count_differs(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Returns failure reason naming sub-question id when count differs.
@@ -1640,6 +1724,33 @@ class TestQualifiedCallerOracle:
         assert qualified == {"target_user::use_target_reexport"}
         assert loose == {"external_user::use_external", "target_user::use_target_reexport"}
 
+    def test_bare_call_imported_through_two_hop_target_reexport_is_credited(
+        self, script_gen_bench: Any, tmp_path: Path
+    ) -> None:
+        """Credits a caller reached through two package re-export hops.
+
+        Prevents the AST oracle from silently omitting real production callers
+        when a public facade re-exports a symbol through an intermediate
+        package, as ``lightning.pytorch.utilities`` does for
+        ``move_data_to_device``.
+        """
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "target.py").write_text("def move_data_to_device():\n    pass\n")
+        (package / "middle.py").write_text("from pkg.target import move_data_to_device\n")
+        (package / "facade.py").write_text("from pkg.middle import move_data_to_device\n")
+        (tmp_path / "consumer.py").write_text(
+            "from pkg.facade import move_data_to_device\n\n\n"
+            "class DataHooks:\n"
+            "    def transfer_batch_to_device(self):\n"
+            "        return move_data_to_device()\n"
+        )
+
+        qualified, _loose, err = script_gen_bench._walk_caller_sets("pkg.target::move_data_to_device", tmp_path)
+
+        assert err is None
+        assert qualified == {"consumer::DataHooks.transfer_batch_to_device"}
+
     def test_unbound_bare_call_preserves_local_fallback(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Preserves the conservative fallback for a bare call with no import binding.
 
@@ -2471,8 +2582,18 @@ class TestMainUnitBehavior:
                 {
                     "repo": {},
                     "tasks": [
-                        {"id": "P-01", "type": "passing", "ground_truth": {}},
-                        {"id": "F-01", "type": "failing", "ground_truth": {}},
+                        {
+                            "id": "P-01",
+                            "type": "passing",
+                            "ground_truth": {},
+                            "expected_queries": [{"cmd": "symbol", "args": ["passing"]}],
+                        },
+                        {
+                            "id": "F-01",
+                            "type": "failing",
+                            "ground_truth": {},
+                            "expected_queries": [{"cmd": "symbol", "args": ["failing"]}],
+                        },
                         {"id": "S-01", "type": "unknown", "ground_truth": {}},
                     ],
                 }
@@ -2518,8 +2639,18 @@ class TestMainUnitBehavior:
                 {
                     "repo": {},
                     "tasks": [
-                        {"id": "SE-01", "type": "unknown_type", "ground_truth": {}},
-                        {"id": "SE-02", "type": "unknown_type", "ground_truth": {}},
+                        {
+                            "id": "SE-01",
+                            "type": "unknown_type",
+                            "ground_truth": {},
+                            "expected_queries": [{"cmd": "symbol", "args": ["selected"]}],
+                        },
+                        {
+                            "id": "SE-02",
+                            "type": "unknown_type",
+                            "ground_truth": {},
+                            "expected_queries": [{"cmd": "symbol", "args": ["unselected"]}],
+                        },
                     ],
                 }
             )
@@ -2592,8 +2723,18 @@ class TestMainUnitBehavior:
                 {
                     "repo": {},
                     "tasks": [
-                        {"id": "A-01", "type": "t", "ground_truth": {}},
-                        {"id": "A-02", "type": "t", "ground_truth": {}},
+                        {
+                            "id": "A-01",
+                            "type": "t",
+                            "ground_truth": {},
+                            "expected_queries": [{"cmd": "symbol", "args": ["first"]}],
+                        },
+                        {
+                            "id": "A-02",
+                            "type": "t",
+                            "ground_truth": {},
+                            "expected_queries": [{"cmd": "symbol", "args": ["second"]}],
+                        },
                     ],
                 }
             )

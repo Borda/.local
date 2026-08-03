@@ -568,7 +568,98 @@ def classify_imports(imports: list[str], internal_prefixes: set[str]) -> dict[st
     return {"stdlib": stdlib, "third_party": third_party, "internal": internal}
 
 
-def _recompute_metrics(modules: list[dict], module_aliases: dict[str, str] | None = None) -> None:
+def _canonicalize_symbol_aliases(modules: list[dict]) -> dict[str, str]:
+    """Canonicalize statically proven symbol aliases for reverse-call queries.
+
+    The scanner preserves direct top-level import provenance per module. This
+    cross-module pass is intentionally strict: a terminal target must be either a
+    known project symbol or an external module, and alias cycles or imports of an
+    indexed module as though it were a symbol are discarded. This prevents
+    package re-export spelling from splitting a reverse-call graph without using
+    fuzzy suffix matching.
+
+    Args:
+        modules: parsed module entries carrying direct alias provenance.
+
+    Returns:
+        Persistable ``alias_qname -> canonical_qname`` mappings.
+    """
+    indexed_modules = {m["name"] for m in modules if m.get("status") == "ok"}
+    symbols = {
+        f"{module['name']}::{symbol['qualified_name']}"
+        for module in modules
+        if module.get("status") == "ok"
+        for symbol in module.get("symbols", [])
+    }
+    direct: dict[str, str] = {}
+    for module in modules:
+        if module.get("status") != "ok":
+            continue
+        for local_name, target in (module.get("symbol_aliases") or {}).items():
+            if isinstance(local_name, str) and isinstance(target, str) and "::" in target:
+                direct[f"{module['name']}::{local_name}"] = target
+
+    resolved: dict[str, str] = {}
+    invalid: set[str] = set()
+
+    def _resolve(alias: str, trail: set[str]) -> str | None:
+        if alias in resolved:
+            return resolved[alias]
+        if alias in invalid or alias in trail:
+            invalid.update(trail)
+            return None
+        target = direct.get(alias)
+        if target is None:
+            return alias
+        terminal = _resolve(target, {*trail, alias}) if target in direct else target
+        if terminal is None:
+            invalid.add(alias)
+            return None
+        target_module, separator, _symbol = terminal.partition("::")
+        if not separator or (terminal not in symbols and target_module in indexed_modules):
+            invalid.add(alias)
+            return None
+        resolved[alias] = terminal
+        return terminal
+
+    for alias in sorted(direct):
+        _resolve(alias, set())
+
+    return dict(sorted(resolved.items()))
+
+
+def _collect_symbol_alias_limitations(modules: list[dict]) -> list[dict[str, str]]:
+    """Return sorted target-specific evidence for rejected alias paths.
+
+    These records do not alter call edges. They preserve why a scanner deliberately
+    omitted an otherwise recognizable alias so reverse-call queries can decline to
+    claim completeness for that exact canonical target.
+    """
+    records: set[tuple[str, str, str]] = set()
+    for module in modules:
+        if module.get("status") != "ok":
+            continue
+        for record in module.get("symbol_alias_limitations", []):
+            if not isinstance(record, dict):
+                continue
+            alias_qname = record.get("alias_qname")
+            target_qname = record.get("target_qname")
+            reason = record.get("reason")
+            if all(isinstance(value, str) and "::" in value for value in (alias_qname, target_qname)) and isinstance(
+                reason, str
+            ):
+                records.add((alias_qname, target_qname, reason))
+    return [
+        {"alias_qname": alias_qname, "target_qname": target_qname, "reason": reason}
+        for alias_qname, target_qname, reason in sorted(records)
+    ]
+
+
+def _recompute_metrics(
+    modules: list[dict],
+    module_aliases: dict[str, str] | None = None,
+    symbol_aliases: dict[str, str] | None = None,
+) -> None:
     """Recompute rdep_count and rcall_count in-place from the current module list.
 
     Also computes the v4.1 reverse indexes (``mock_rdep_count`` per module and
@@ -581,8 +672,10 @@ def _recompute_metrics(modules: list[dict], module_aliases: dict[str, str] | Non
         modules: list of module entry dicts (mutated in-place).
         module_aliases: optional ``bare_name -> full_dotted_name`` map from
             ``_collect_module_aliases`` (conftest.py ``sys.path`` shims).
+        symbol_aliases: optional static ``alias_qname -> canonical_qname`` map.
     """
     aliases = module_aliases or {}
+    canonical_symbols = symbol_aliases or {}
     rdep_counts: dict[str, int] = {}
     rcall_counts: dict[str, int] = {}
     # fn_rdep_test_count: per fully-qualified target ("module::symbol") -> count of test callers.
@@ -598,10 +691,11 @@ def _recompute_metrics(modules: list[dict], module_aliases: dict[str, str] | Non
             for edge in sym.get("calls", []):
                 if edge["resolution"] != "import":
                     continue
-                target_module = edge["target"].split("::")[0]
+                target = canonical_symbols.get(edge["target"], edge["target"])
+                target_module = target.split("::")[0]
                 rcall_counts[target_module] = rcall_counts.get(target_module, 0) + 1
                 if caller_is_test:
-                    fn_test_caller_counts[edge["target"]] = fn_test_caller_counts.get(edge["target"], 0) + 1
+                    fn_test_caller_counts[target] = fn_test_caller_counts.get(target, 0) + 1
         # mock_patches: only present on test modules; map each unique (target, file) once.
         for entry in m.get("mock_patches", []) or []:
             target = entry.get("target")
@@ -1052,7 +1146,9 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
     indexed_names = {m["name"] for m in modules if m.get("status") == "ok"}
     module_aliases = _collect_module_aliases(conftest_paths, indexed_names, root)
 
-    _recompute_metrics(modules, module_aliases)
+    symbol_aliases = _canonicalize_symbol_aliases(modules)
+    symbol_alias_limitations = _collect_symbol_alias_limitations(modules)
+    _recompute_metrics(modules, module_aliases, symbol_aliases)
     # Phase 3: config-file refs — scan pyproject.toml, setup.cfg, *.yml, *.yaml.
     _apply_config_refs(root, modules)
     # Phase 4 (v4.5): collect xrefs from .rst and docs/**/*.md and build reverse index.
@@ -1088,6 +1184,8 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
         "doc_xrefs": doc_xrefs,
         "sphinx_xref_count": sphinx_xref_count,
         "module_aliases": module_aliases,
+        "symbol_aliases": symbol_aliases,
+        "symbol_alias_limitations": symbol_alias_limitations,
         "subprocess_rdep_count": subprocess_rdep_count,
         "fixture_rdep_count": fixture_rdep_count,
         "excluded_roots": excluded_roots,
@@ -1164,7 +1262,9 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
     indexed_names = {m["name"] for m in modules if m.get("status") == "ok"}
     module_aliases = _collect_module_aliases(conftest_paths, indexed_names, root)
 
-    _recompute_metrics(modules, module_aliases)
+    symbol_aliases = _canonicalize_symbol_aliases(modules)
+    symbol_alias_limitations = _collect_symbol_alias_limitations(modules)
+    _recompute_metrics(modules, module_aliases, symbol_aliases)
     _apply_config_refs(root, modules)
     # v4.5: rebuild doc_xrefs / sphinx_xref_count — cheap full re-scan beats trying
     # to invalidate per-file (RST/MD files have no module entry to update).
@@ -1199,6 +1299,8 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
         "doc_xrefs": doc_xrefs,
         "sphinx_xref_count": sphinx_xref_count,
         "module_aliases": module_aliases,
+        "symbol_aliases": symbol_aliases,
+        "symbol_alias_limitations": symbol_alias_limitations,
         "subprocess_rdep_count": subprocess_rdep_count,
         "fixture_rdep_count": fixture_rdep_count,
         "excluded_roots": excluded_roots,
@@ -1224,7 +1326,7 @@ def _build_index(args: argparse.Namespace, root: Path, out_path: Path) -> dict:
         if int(old_index.get("scan_version", 0)) >= SCAN_VERSION and old_index.get("file_shas"):
             print(f"[codemap] Incremental scan {root} ...", file=sys.stderr)
             return incremental_scan(root, old_index, coverage_path=coverage_path)
-        print("[codemap] v2 index found — falling back to full scan ...", file=sys.stderr)
+        print("[codemap] pre-v12 index found — falling back to full scan ...", file=sys.stderr)
         return scan(root, coverage_path=coverage_path)
     if args.incremental:
         print("[codemap] No existing index found — running full scan ...", file=sys.stderr)

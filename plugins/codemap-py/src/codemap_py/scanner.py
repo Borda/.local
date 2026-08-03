@@ -934,7 +934,199 @@ def _extract_imports_and_scope(
             imports.add(node.module)
             _process_ast_import_from(node, package, name_map, star_imports)
 
+    _drop_top_level_rebindings(tree, name_map, module_map)
     return sorted(imports), name_map, module_map, star_imports
+
+
+def _drop_top_level_rebindings(tree: ast.Module, name_map: dict[str, str], module_map: dict[str, str]) -> None:
+    """Drop direct import names overwritten later in module scope.
+
+    The general import scope intentionally includes function-local imports for
+    call extraction. This narrow post-pass only corrects a module-level import
+    that is replaced by a later module-level binding; treating that call as the
+    original import would create a false reverse edge.
+    """
+    imported_at: dict[str, int] = {}
+    rebound_at: dict[str, int] = {}
+    conditional_names: set[str] = set()
+
+    def _record_targets(target: ast.expr, position: int) -> None:
+        if isinstance(target, ast.Name):
+            rebound_at[target.id] = position
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for item in target.elts:
+                _record_targets(item, position)
+
+    def _conditional_bindings(node: ast.AST) -> set[str]:
+        """Collect bindings nested under a conditional scope, excluding local bodies."""
+        names: set[str] = set()
+        pending = list(ast.iter_child_nodes(node))
+        while pending:
+            current = pending.pop()
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(current.name)
+                continue
+            if isinstance(current, ast.Import):
+                names.update(alias.asname or alias.name.split(".")[0] for alias in current.names)
+            elif isinstance(current, ast.ImportFrom):
+                names.update(alias.asname or alias.name for alias in current.names if alias.name != "*")
+            elif isinstance(current, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                targets = current.targets if isinstance(current, ast.Assign) else [current.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        names.add(target.id)
+            elif isinstance(current, (ast.For, ast.AsyncFor)) and isinstance(current.target, ast.Name):
+                names.add(current.target.id)
+            elif isinstance(current, (ast.With, ast.AsyncWith)):
+                names.update(
+                    item.optional_vars.id for item in current.items if isinstance(item.optional_vars, ast.Name)
+                )
+            elif isinstance(current, ast.ExceptHandler) and current.name:
+                names.add(current.name)
+            pending.extend(ast.iter_child_nodes(current))
+        return names
+
+    for position, node in enumerate(tree.body):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported_at[alias.asname or alias.name.split(".")[0]] = position
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    imported_at[alias.asname or alias.name] = position
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            rebound_at[node.name] = position
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                _record_targets(target, position)
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.With, ast.AsyncWith, ast.Try, ast.If, ast.Match)):
+            for name in _conditional_bindings(node):
+                rebound_at[name] = position
+                conditional_names.add(name)
+
+    for name, imported_position in imported_at.items():
+        if rebound_at.get(name, -1) > imported_position:
+            name_map.pop(name, None)
+            module_map.pop(name, None)
+    for name in conditional_names:
+        name_map.pop(name, None)
+        module_map.pop(name, None)
+
+
+def _symbol_alias_provenance(
+    tree: ast.Module, module_name: str, is_package_init: bool
+) -> tuple[dict[str, str], list[dict[str, str]]]:
+    """Return static aliases and explicit limits for rejected top-level bindings.
+
+    Only direct module-body ``from ... import name`` statements qualify. Nested
+    imports are conditional or function-local, and are deliberately excluded. A
+    subsequent direct module binding removes the alias, so a rebound import never
+    rewrites a call edge. The graph layer validates chains against the complete
+    module set and rejects cycles or module-as-symbol ambiguity.
+
+    Args:
+        tree: parsed source module.
+        module_name: dotted name assigned to the source module.
+        is_package_init: whether the source is a package ``__init__.py``.
+
+    Returns:
+        Proven aliases plus rejected ``alias_qname``/``target_qname`` records.
+    """
+    package = module_name if is_package_init else module_name.rsplit(".", 1)[0] if "." in module_name else ""
+    aliases: dict[str, str] = {}
+    limitations: set[tuple[str, str, str]] = set()
+
+    def _target_names(target: ast.expr) -> set[str]:
+        if isinstance(target, ast.Name):
+            return {target.id}
+        if isinstance(target, ast.Starred):
+            return _target_names(target.value)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            return {name for item in target.elts for name in _target_names(item)}
+        return set()
+
+    def _reject(names: set[str], reason: str) -> None:
+        for local_name in names:
+            target = aliases.pop(local_name, None)
+            if target is not None:
+                limitations.add((f"{module_name}::{local_name}", target, reason))
+
+    def _conditional_bindings(node: ast.AST) -> tuple[set[str], list[tuple[str, str]]]:
+        """Collect module bindings/import aliases without entering local bodies."""
+        names: set[str] = set()
+        imports: list[tuple[str, str]] = []
+        pending = list(ast.iter_child_nodes(node))
+        while pending:
+            current = pending.pop()
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(current.name)
+                continue
+            if isinstance(current, ast.Import):
+                names.update(alias.asname or alias.name.split(".")[0] for alias in current.names)
+            elif isinstance(current, ast.ImportFrom):
+                names.update(alias.asname or alias.name for alias in current.names if alias.name != "*")
+                base = _resolve_import_from_base(current, package)
+                if base:
+                    imports.extend(
+                        (imported.asname or imported.name, f"{base}::{imported.name}")
+                        for imported in current.names
+                        if imported.name != "*"
+                    )
+            elif isinstance(current, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                targets = current.targets if isinstance(current, ast.Assign) else [current.target]
+                names.update(name for target in targets for name in _target_names(target))
+            elif isinstance(current, (ast.For, ast.AsyncFor)):
+                names.update(_target_names(current.target))
+            elif isinstance(current, (ast.With, ast.AsyncWith)):
+                names.update(
+                    name for item in current.items if item.optional_vars for name in _target_names(item.optional_vars)
+                )
+            elif isinstance(current, ast.ExceptHandler) and current.name:
+                names.add(current.name)
+            pending.extend(ast.iter_child_nodes(current))
+        return names, imports
+
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            base = _resolve_import_from_base(node, package)
+            if not base:
+                continue
+            for imported in node.names:
+                if imported.name != "*":
+                    aliases[imported.asname or imported.name] = f"{base}::{imported.name}"
+        elif isinstance(node, ast.Import):
+            _reject({imported.asname or imported.name.split(".")[0] for imported in node.names}, "top_level_rebinding")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            _reject({node.name}, "top_level_rebinding")
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                _reject(_target_names(target), "top_level_rebinding")
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.With, ast.AsyncWith, ast.Try, ast.If, ast.Match)):
+            # Conditional control flow can bind a module name only on some paths.
+            # Excluding it is conservative: no alias provenance is better than a
+            # false canonical edge.
+            names, imports = _conditional_bindings(node)
+            _reject(names, "conditional_binding")
+            for local_name, target in imports:
+                limitations.add((f"{module_name}::{local_name}", target, "conditional_import"))
+    return aliases, [
+        {"alias_qname": alias_qname, "target_qname": target_qname, "reason": reason}
+        for alias_qname, target_qname, reason in sorted(limitations)
+    ]
+
+
+def extract_module_symbol_aliases(tree: ast.Module, module_name: str, is_package_init: bool) -> dict[str, str]:
+    """Return statically proven top-level ``local_name -> target_qname`` aliases."""
+    return _symbol_alias_provenance(tree, module_name, is_package_init)[0]
+
+
+def extract_module_symbol_alias_limitations(
+    tree: ast.Module, module_name: str, is_package_init: bool
+) -> list[dict[str, str]]:
+    """Return target-specific evidence for rejected static alias paths."""
+    return _symbol_alias_provenance(tree, module_name, is_package_init)[1]
 
 
 def resolve_call_chain(func_node: ast.expr) -> str | None:
@@ -2635,6 +2827,9 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
         entity_type, pkg = _classify_entity(rel_path, name)
         sphinx_xrefs = extract_sphinx_xrefs(tree, filepath, root, name)
         exports = extract_module_exports(tree)
+        symbol_aliases, symbol_alias_limitations = _symbol_alias_provenance(
+            tree, name, filepath.name in {"__init__.py", "__init__.pyi"}
+        )
         symbol_dicts = [s.as_dict() for s in symbols]
         if filepath.suffix == ".pyi":
             _strip_stub_call_edges(symbol_dicts)
@@ -2651,6 +2846,8 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             "package": pkg,
             "has_star_imports": bool(star_imports),
             "exports": exports,
+            "symbol_aliases": symbol_aliases,
+            "symbol_alias_limitations": symbol_alias_limitations,
             "sphinx_xrefs": sphinx_xrefs,
             "status": "ok",
         }

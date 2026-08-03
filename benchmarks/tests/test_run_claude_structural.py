@@ -1056,6 +1056,7 @@ class TestEvaluateSymbol:
             ("start_line: 106", 100, False),  # just outside +5
             ("start_line: 94", 100, False),  # just outside -5
             ("Lines 100-110 of the file", 100, True),  # range pattern fallback
+            ("src/lightning/trainer/trainer.py:100-110", 100, True),  # source-location range
             ("starts at line 100 in the file", 100, True),  # "starts at line N"
             ("start_line: `100`", 100, True),  # backticked value (markdown inline code)
             ("file_path: `x.py`  start_line: `104`  end_line: `110`", 100, True),  # full backticked format
@@ -1116,6 +1117,18 @@ class TestEvaluateSymbol:
         result = script_run_bench._evaluate_symbol(task, "start_line: 50")
         assert result.scoring_detail["threshold"] == 5
         assert result.scoring_detail["method"] == "line_tolerance"
+
+    def test_source_location_range_does_not_need_generic_line_prose(self, script_run_bench: Any) -> None:
+        """A conventional ``path.py:start-end`` answer remains scoreable.
+
+        Prevents a valid compact symbol answer from being marked wrong merely because it
+        omits the redundant word ``Lines``.
+        """
+        task = _se_task(start_line=1110)
+        result = script_run_bench._evaluate_symbol(
+            task, "file_path: src/lightning/trainer/trainer.py:1110\N{EN DASH}1125"
+        )
+        assert result.correct is True
 
 
 # ===========================================================================
@@ -1489,12 +1502,160 @@ class TestEvaluateOss:
         assert result.scored is True
         assert result.correct is True
 
-    def test_undocumented_combined_health_variant(self, script_run_bench: Any) -> None:
-        """combined_health check uses the same undocumented_count field."""
-        task = self._oss_task("combined_health", undocumented_count=5)
-        result = script_run_bench._evaluate_oss(task, "5 undocumented symbols")
+    def test_combined_health_accepts_both_explicit_counts(self, script_run_bench: Any) -> None:
+        """combined_health requires and accepts its two labelled count fields."""
+        task = self._oss_task("combined_health", undocumented_count=5, uncovered_count=8)
+        result = script_run_bench._evaluate_oss(task, "## Answer\nundocumented_count: 5\nuncovered_count: 8\n")
         assert result.scored is True
         assert result.correct is True
+
+    def test_independent_ast_count_wins_over_codemap_static_count(self, script_run_bench: Any) -> None:
+        """Multi-view answers must score the explicitly labelled independent AST count.
+
+        Prevents the first Codemap static count in an otherwise correct answer from
+        being mistaken for the independently scored benchmark oracle.
+        """
+        task = self._oss_task(
+            "undocumented",
+            undocumented_count=7,
+            undocumented_symbols=["Thing.one"],
+            required_answer_components=["independent_ast_count", "independent_ast_symbols"],
+            oracle_views={"independent_ast": {"count": 7, "symbols": ["Thing.one"]}},
+        )
+        output = "## Answer\ncodemap_static_count: 11\nindependent_ast_count: 7\n## Symbols\nThing.one\n"
+
+        result = script_run_bench._evaluate_oss(task, output)
+
+        assert result.correct is True
+        assert result.extracted_metric["independent_ast_count"] == 7
+
+    @pytest.mark.parametrize(
+        ("check", "count_field", "count", "answer"),
+        [
+            pytest.param(
+                "undocumented",
+                "undocumented_count",
+                7,
+                "Independent AST: 7 unique names.",
+                id="independent-ast-label",
+            ),
+            pytest.param(
+                "undocumented",
+                "undocumented_count",
+                7,
+                "Independent AST view: 7 unique names.",
+                id="independent-ast-view-label",
+            ),
+            pytest.param(
+                "uncovered",
+                "uncovered_count",
+                11,
+                "11 uncovered symbols.",
+                id="count-first-uncovered-label",
+            ),
+            pytest.param(
+                "uncovered",
+                "uncovered_count",
+                11,
+                "Uncovered public symbols: 11.",
+                id="label-first-uncovered-count",
+            ),
+        ],
+    )
+    def test_required_count_label_preserves_count_fitness_without_symbol_list(
+        self,
+        script_run_bench: Any,
+        check: str,
+        count_field: str,
+        count: int,
+        answer: str,
+    ) -> None:
+        """Explicit count labels retain count credit while required symbols remain missing."""
+        task = self._oss_task(
+            check,
+            **{
+                count_field: count,
+                "required_answer_components": ["independent_ast_count", "independent_ast_symbols"],
+                "oracle_views": {"independent_ast": {"count": count, "symbols": ["Thing.one"]}},
+                "undocumented_symbols": ["Thing.one"],
+                "uncovered_symbols": ["Thing.one"],
+            },
+        )
+
+        result = script_run_bench._evaluate_oss(task, answer)
+
+        assert result.correct is False
+        assert result.recall == pytest.approx(0.5)
+        assert result.extraction_failed is True
+
+    @pytest.mark.parametrize(
+        ("check", "count_field", "count", "answer"),
+        [
+            pytest.param(
+                "undocumented",
+                "undocumented_count",
+                7,
+                "Independent AST found names after 7 passes.",
+                id="ast-not-a-label",
+            ),
+            pytest.param(
+                "uncovered",
+                "uncovered_count",
+                11,
+                "After 11 checks, uncovered symbols remain.",
+                id="uncovered-not-a-count-label",
+            ),
+            pytest.param(
+                "uncovered",
+                "uncovered_count",
+                11,
+                "Uncovered symbols in 11 files.",
+                id="uncovered-count-describes-files",
+            ),
+        ],
+    )
+    def test_required_count_rejects_incidental_numbers(
+        self,
+        script_run_bench: Any,
+        check: str,
+        count_field: str,
+        count: int,
+        answer: str,
+    ) -> None:
+        """Incidental numbers cannot satisfy a required count component."""
+        task = self._oss_task(
+            check,
+            **{
+                count_field: count,
+                "required_answer_components": ["independent_ast_count"],
+                "oracle_views": {"independent_ast": {"count": count}},
+            },
+        )
+
+        result = script_run_bench._evaluate_oss(task, answer)
+
+        assert result.correct is False
+        assert result.recall == pytest.approx(0.0)
+        assert result.extraction_failed is True
+
+    def test_uncovered_parenthesized_label_count_is_parsed(self, script_run_bench: Any) -> None:
+        """A label-first parenthesized uncovered count is a valid explicit answer."""
+        task = self._oss_task("uncovered", uncovered_count=11)
+
+        result = script_run_bench._evaluate_oss(task, "## Answer\nUncovered symbols (11)\n")
+
+        assert result.correct is True
+        assert result.metric_got == 11
+
+    def test_combined_health_requires_both_explicit_count_components(self, script_run_bench: Any) -> None:
+        """A correct docstring count cannot hide a wrong uncovered count."""
+        task = self._oss_task("combined_health", undocumented_count=3, uncovered_count=7)
+        output = "## Answer\nundocumented_count: 3\nuncovered_count: 6\n"
+
+        result = script_run_bench._evaluate_oss(task, output)
+
+        assert result.correct is False
+        assert result.scoring_detail["components"]["uncovered_count"]["correct"] is False
 
     def test_uncovered_correct_within_tolerance(self, script_run_bench: Any) -> None:
         """uncovered check: correct when extracted count is within 10%."""
@@ -1639,19 +1800,39 @@ class TestEvaluateFeature:
             },
         }
 
-    def test_correct_when_method_and_file_found(self, script_run_bench: Any) -> None:
-        """correct=True when both the method and file basename appear in output."""
+    def test_correct_when_exact_entry_point_and_file_found(self, script_run_bench: Any) -> None:
+        """correct=True when labelled Class.method and file path appear in output."""
         task = self._feature_task()
-        result = script_run_bench._evaluate_feature(task, "Add validate method to trainer.py")
+        result = script_run_bench._evaluate_feature(
+            task, "## Files\nprimary_file: src/lightning/trainer/trainer.py\nentry_point: Trainer.validate\n"
+        )
         assert result.scored is True
         assert result.correct is True
 
-    def test_only_last_component_of_entry_point_matched(self, script_run_bench: Any) -> None:
-        """Only the last component of entry_point (after the final dot) is matched."""
+    def test_bare_method_name_is_not_an_entry_point(self, script_run_bench: Any) -> None:
+        """A bare method name cannot substitute for the requested Class.method."""
         task = self._feature_task(entry_point="Trainer.validate")
-        # "validate" alone is sufficient; full qualified name not required
-        result = script_run_bench._evaluate_feature(task, "implement validate inside trainer.py")
-        assert result.correct is True
+        result = script_run_bench._evaluate_feature(
+            task, "## Files\nprimary_file: src/lightning/trainer/trainer.py\nentry_point: validate\n"
+        )
+        assert result.correct is False
+
+    def test_exploration_prose_cannot_credit_a_different_entry_point(self, script_run_bench: Any) -> None:
+        """An exploratory mention of the GT method cannot override the final labelled answer."""
+        task = self._feature_task(
+            entry_point="BaseFinetuning.freeze",
+            primary_file="src/lightning/pytorch/callbacks/finetuning.py",
+        )
+        output = (
+            "I inspected BaseFinetuning.freeze while narrowing the change.\n"
+            "## Files\n"
+            "primary_file: src/lightning/pytorch/callbacks/finetuning.py\n"
+            "entry_point: BackboneFinetuning.finetune_function\n"
+        )
+
+        result = script_run_bench._evaluate_feature(task, output)
+
+        assert result.correct is False
 
     def test_incorrect_when_file_missing_from_output(self, script_run_bench: Any) -> None:
         """correct=False when the file basename is absent from the output."""

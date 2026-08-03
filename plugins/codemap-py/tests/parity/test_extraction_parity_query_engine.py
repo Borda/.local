@@ -423,6 +423,7 @@ def _error_suffix(stderr: str) -> str:
 
 
 _ADDITIVE_QUERY_KEYS = frozenset({"unique_total", "unique_qualified_names", "count_semantics"})
+_V12_QUERY_ADDITIONS = {"fn-rdeps": frozenset({"resolved_qname"})}
 _COUNT_SEMANTIC_KEYS = {
     "undocumented": frozenset({"total", "unique_total"}),
     "uncovered": frozenset({"definition", "total", "showing", "unique_total"}),
@@ -436,6 +437,15 @@ def _assert_golden_query_parity(
     assert old.returncode == new.returncode
     assert old.stderr == new.stderr
     command = case[0]
+    if command in _V12_QUERY_ADDITIONS:
+        legacy = json.loads(old.stdout)
+        current = json.loads(new.stdout)
+        assert isinstance(legacy, dict)
+        assert isinstance(current, dict)
+        assert set(current) == set(legacy) | _V12_QUERY_ADDITIONS[command]
+        assert {key: current[key] for key in legacy} == legacy
+        assert current["resolved_qname"] == legacy["qname"]
+        return
     if command not in _COUNT_SEMANTIC_KEYS:
         assert old.stdout == new.stdout
         return

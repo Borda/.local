@@ -87,7 +87,7 @@ python plugins/codemap-py/scripts/probe_claude_install.py --report /tmp/claude-p
 
 ### `probe_codex_install.py`
 
-**Purpose.** The Codex-side mirror of `probe_claude_install.py`: stages a disposable copy, builds a candidate, writes a local Codex marketplace manifest (`.agents/plugins/marketplace.json`, using Codex's object-form `source` discriminator), and runs `codex plugin marketplace add` + `codex plugin add codemap-py@<mkt> --json` against a scratch `CODEX_HOME`. It verifies the installed bytes against the current zero-roster contract (no `skills` key, no `codex-skills/` directory, empty Codex roster in `package-manifest.json` — the pre-Phase-4 baseline for this plugin), then runs the same source-independent runtime proof as the Claude probe.
+**Purpose.** The Codex-side mirror of `probe_claude_install.py`: stages a disposable copy, builds a candidate, writes a local Codex marketplace manifest (`.agents/plugins/marketplace.json`, using Codex's object-form `source` discriminator), and runs `codex plugin marketplace add` + `codex plugin add codemap-py@<mkt> --json` against a scratch `CODEX_HOME`. It verifies a Codex skill source referencing `codex-skills/`, a non-empty installed Codex roster, and that `claude-skills/` is not registered as the Codex source. Package validation separately requires the shipped `./codex-skills/` source and the six-skill Claude/Codex parity. The probe then deletes the disposable source and proves `doctor`/`index`/`query` run only from installed cache bytes under a scrubbed environment.
 
 **Usage.**
 

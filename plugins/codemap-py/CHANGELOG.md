@@ -6,6 +6,10 @@ repository directory, and skill namespace change. Pre-`0.25.0` history was recor
 `codemap` under `plugins/codemap/` — see the repository git history for that line; it is
 not reproduced here.
 
+## 0.28.0
+
+- Add alias-aware import and symbol resolution across scanning, graph construction, structural queries, and integration probes.
+
 ## 0.27.3
 
 - Clarify query command contracts and improve structural-query discoverability for Codex.

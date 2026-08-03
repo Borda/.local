@@ -19,10 +19,16 @@ SCRIPT = BENCHMARKS_DIR / "run-all.sh"
 LEGACY_SCRIPT = BENCHMARKS_DIR / "run-all-claude.sh"
 ACTIVE_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 ACTIVE_MANIFEST_SHA = hashlib.sha256(ACTIVE_MANIFEST.read_bytes()).hexdigest()
-LOCKED_INDEX_SHA = "b0e4a5c9ae7da6503cf1e831d39c73abac6eb696be849fc0080f61bce6c1f045"
+ACTIVE_MANIFEST_DATA = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))
+LOCKED_INDEX_SHA = ACTIVE_MANIFEST_DATA["index"]["raw_sha256"]
+LOCKED_INDEX_SCAN_VERSION = ACTIVE_MANIFEST_DATA["index"]["scan_version"]
 CONFIRMATORY_TASK_IDS = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))["preregistered_cells"][
     "structural_execution_task_ids"
 ]
+SELECTED_SCOPE_SHA = "selection-scope-di-gr"
+SELECTED_TASK_IDS = ("DI-01", "GR-01")
+SELECTED_REPETITIONS = 2
+SELECTED_WALL_CLOCK = 7200
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -38,7 +44,7 @@ def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
     (repo / ".git").mkdir(parents=True)
     index_path = repo / ".cache" / "codemap" / "target.json"
     index_path.parent.mkdir(parents=True)
-    index_path.write_text("locked-index", encoding="utf-8")
+    index_path.write_text(json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "modules": []}), encoding="utf-8")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     call_log = tmp_path / "calls.log"
@@ -54,6 +60,25 @@ def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         bin_dir / "python3",
         f"""if [ "$1" = "-c" ]; then exec {sys.executable} "$@"; fi
 printf "python %s\\n" "$*" >> "$CALL_LOG"
+if [[ "$*" == *"--resolve-tasks"* ]]; then
+  if [[ "$*" == *"INVALID"* ]]; then
+    printf "invalid task selector\\n" >&2
+    exit 2
+  fi
+  printf '{{"task_ids":["DI-01","GR-01"],"repetitions":{SELECTED_REPETITIONS},"total_cells":12,"complete_run_max_wall_clock_seconds":{SELECTED_WALL_CLOCK},"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
+  exit 0
+fi
+if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--print-contract"* ]]; then
+  printf '{{"raw_sha256":"{LOCKED_INDEX_SHA}","scan_version":{LOCKED_INDEX_SCAN_VERSION}}}\\n'
+  exit 0
+fi
+if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--verify"* ]]; then
+  if grep -q '"scan_version": {LOCKED_INDEX_SCAN_VERSION}' "$3" && grep -q '"modules": \[\]' "$3"; then
+    printf "verified: %s\\n" "$3"
+    exit 0
+  fi
+  exit 43
+fi
 if [[ "$*" == *"build-codex-integration-manifest.py"* && "$*" == *"--check"* ]]; then
   if [ -n "${{FAIL_MANIFEST_CHECK:-}}" ]; then
     printf "stale generated Codex manifest\\n" >&2
@@ -68,6 +93,9 @@ if [[ "$*" == *"--render-results"* ]]; then
     exit 43
   fi
   exec {sys.executable} "$@"
+fi
+if [[ "$*" == *"run-codex-structural.py"* && "$*" != *"--no-legend"* ]]; then
+  printf "LEGEND\n  treatments: A_plain=no Codemap, B_direct=direct Codemap required, C_skill=Codemap Skill required\nEND LEGEND\n"
 fi
 if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PLAN    FN-02  rep=1  A_plain\\n"
@@ -84,7 +112,7 @@ fi""",
     _write_executable(bin_dir / "codex", 'printf "codex-cli 0.146.0\\n"')
     _write_executable(
         bin_dir / "shasum",
-        f"""if [ "$(sed -n '1p' "$3")" = "locked-index" ]; then
+        f"""if [[ "$3" == "$REPO/"* && "$(sed -n '1p' "$3")" == *'"scan_version": {LOCKED_INDEX_SCAN_VERSION}'* && "$(sed -n '1p' "$3")" == *'"modules": []'* ]]; then
   printf "{LOCKED_INDEX_SHA}  %s\\n" "$3"
 elif [ "$3" = "{ACTIVE_MANIFEST}" ]; then
   printf "{ACTIVE_MANIFEST_SHA}  %s\\n" "$3"
@@ -108,7 +136,7 @@ fi""",
     }
     _write_executable(
         bin_dir / "codemap-py",
-        'root="${!#}"; mkdir -p "$root/.cache/codemap"; printf "locked-index" > "$root/.cache/codemap/$(basename "$root").json"',
+        f'''root="${{!#}}"; mkdir -p "$root/.cache/codemap"; printf '{{"scan_version": {LOCKED_INDEX_SCAN_VERSION}, "modules": []}}' > "$root/.cache/codemap/$(basename "$root").json"''',
     )
     return env, call_log
 
@@ -220,6 +248,83 @@ def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Pat
     assert "165 cells" in completed.stdout
 
 
+def test_codex_tasks_dry_run_dispatches_resolved_scope(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A task selector resolves to an explicit nonpoolable runner scope."""
+    env, call_log = batch_env
+    for name in (
+        "CODEX_PAID_APPROVAL",
+        "CODEX_AUTH_SOURCE",
+        "CODEX_RUN_DIR",
+        "CODEX_MAX_WALL_CLOCK_SECONDS",
+    ):
+        env.pop(name)
+
+    completed = _run_batch("codex", env, "--tasks=DI,GR", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    codex_calls = [
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-structural.py" in line and "--resolve-tasks" not in line
+    ]
+    assert len(codex_calls) == 2
+    selected = next(line for line in codex_calls if "--scope-sha256" in line)
+    assert "--dry-run" in selected
+    assert "--tasks DI,GR" in selected
+    assert "--task-id DI-01" not in selected
+    assert f"--repetitions {SELECTED_REPETITIONS}" in selected
+    assert f"--max-wall-clock-seconds {SELECTED_WALL_CLOCK}" in selected
+    assert f"--scope-sha256 {SELECTED_SCOPE_SHA}" in selected
+    assert "--auth-source" not in selected
+    assert "--output-path" not in selected
+    assert "12 cells" in completed.stdout
+    assert "nonpoolable" in completed.stdout
+
+
+def test_codex_rejects_removed_diagnostic_switch(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The former asymmetric diagnostic switch is no longer part of the CLI."""
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--diagnostic")
+
+    assert completed.returncode == 2
+    assert "--tasks=TASK" in completed.stderr
+    assert not call_log.exists()
+
+
+def test_codex_tasks_reject_invalid_selector_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Resolver syntax errors propagate before target/index preparation."""
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--tasks=INVALID", "--dry-run")
+
+    assert completed.returncode == 2
+    assert "invalid Codex task selection" in completed.stderr
+    assert not any("prepare-codex-index.py" in line for line in call_log.read_text(encoding="utf-8").splitlines())
+
+
+@pytest.mark.parametrize("args", [("--tasks=DI,GR", "--dry-run"), ("--dry-run", "--tasks=DI,GR")])
+def test_codex_tasks_accepts_option_ordering(batch_env: tuple[dict[str, str], Path], args: tuple[str, str]) -> None:
+    """Task selection composes with dry-run regardless of option order."""
+    env, call_log = batch_env
+    completed = _run_batch("codex", env, *args)
+
+    assert completed.returncode == 0, completed.stderr
+    selected = next(
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-structural.py" in line and "--scope-sha256" in line
+    )
+    assert "--dry-run" in selected
+    assert f"--scope-sha256 {SELECTED_SCOPE_SHA}" in selected
+
+
 def test_smoke_checks_claude_and_codex_without_paid_codex(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
@@ -241,6 +346,38 @@ def test_smoke_checks_claude_and_codex_without_paid_codex(
     assert "--auth-source" not in codex_call
     assert f"--manifest-path {ACTIVE_MANIFEST}" in codex_call
     assert f"--codemap-bin {env['CODEMAP_BIN']}" in codex_call
+    assert "--no-legend" not in codex_call
+
+
+@pytest.mark.parametrize(
+    ("mode", "args", "wall_clock"),
+    [
+        ("smoke", (), "86400"),
+        ("codex", ("--dry-run",), "86400"),
+        ("codex", (), "86400"),
+        ("codex", ("--tasks=DI,GR", "--dry-run"), str(SELECTED_WALL_CLOCK)),
+        ("codex", ("--tasks=DI,GR",), str(SELECTED_WALL_CLOCK)),
+    ],
+    ids=["smoke", "codex-dry-run", "codex-paid", "tasks-dry-run", "tasks-paid"],
+)
+def test_top_level_provider_invocation_emits_one_bounded_legend(
+    batch_env: tuple[dict[str, str], Path],
+    mode: str,
+    args: tuple[str, ...],
+    wall_clock: str,
+) -> None:
+    """Launcher suppresses nested runner legends and retains one invocation legend."""
+    env, _ = batch_env
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = wall_clock
+    if "--tasks=DI,GR" in args:
+        env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-selected-run"))
+        env["CODEX_PAID_APPROVAL"] = SELECTED_SCOPE_SHA
+
+    completed = _run_batch(mode, env, *args)
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.count("END LEGEND") == 1
+    assert sum(line == "LEGEND" for line in completed.stdout.splitlines()) == 1
 
 
 @pytest.mark.parametrize(
@@ -270,21 +407,41 @@ def test_provider_smoke_failure_prevents_full_dispatch(
     assert full_marker not in calls
 
 
-def test_smoke_rejects_mismatched_locked_index_before_provider_commands(
+def test_smoke_rebuilds_mismatched_locked_index_before_provider_commands(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """Prevent any provider preflight after the frozen parity index bytes drift."""
+    """Rebuild an old or malformed index before provider preflights."""
     env, call_log = batch_env
     index_path = Path(env["REPO"]) / ".cache" / "codemap" / "target.json"
     index_path.write_text("stale-index", encoding="utf-8")
 
     completed = _run_batch("smoke", env)
 
-    assert completed.returncode == 1
-    assert "locked parity index SHA-256 mismatch" in completed.stderr
+    assert completed.returncode == 0, completed.stderr
+    assert "stale or schema-incompatible" in completed.stdout
     calls = call_log.read_text(encoding="utf-8")
-    assert "run-claude-" not in calls
-    assert "run-codex-structural.py" not in calls
+    assert "run-claude-" in calls
+    assert "run-codex-structural.py" in calls
+
+
+def test_smoke_rebuilds_wrong_bytes_with_current_schema_before_provider_commands(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A v12-shaped but wrong graph must not reach either provider."""
+    env, call_log = batch_env
+    index_path = Path(env["REPO"]) / ".cache" / "codemap" / "target.json"
+    index_path.write_text(
+        json.dumps({"scan_version": LOCKED_INDEX_SCAN_VERSION, "modules": [{"wrong": True}]}),
+        encoding="utf-8",
+    )
+
+    completed = _run_batch("smoke", env)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "stale or schema-incompatible" in completed.stdout
+    calls = call_log.read_text(encoding="utf-8")
+    assert "run-claude-" in calls
+    assert "run-codex-structural.py" in calls
 
 
 def test_stale_generated_manifest_blocks_provider_preflights(
@@ -414,8 +571,12 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     smoke_call = next(line for line in codex_lines if "--task-id FN-02 --arm all --dry-run" in line)
     full_dry_run = next(line for line in codex_lines if "--dry-run" in line and "--task-id FN-02 --arm all" not in line)
     assert "--repetitions 1" not in smoke_call
+    assert "--no-legend" in smoke_call
     assert full_dry_run.count("--task-id") == len(CONFIRMATORY_TASK_IDS)
     assert "--repetitions 1" in full_dry_run
+    assert "--no-legend" not in full_dry_run
+    paid_call = next(line for line in codex_lines if "--auth-source" in line)
+    assert "--no-legend" in paid_call
     assert any(
         "--dry-run" not in line and "--output-path" in line and "--metadata-path" in line for line in codex_lines
     )
@@ -424,6 +585,40 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert (run_dir / "run.log").is_file()
     checksums = (run_dir / "checksums.sha256").read_text(encoding="utf-8")
     assert "run.log" in checksums
+
+
+def test_paid_codex_tasks_runs_only_resolved_scope(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A paid selected run uses the resolver scope for approval, budget, and cells."""
+    env, call_log = batch_env
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(SELECTED_WALL_CLOCK)
+    env["CODEX_PAID_APPROVAL"] = SELECTED_SCOPE_SHA
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-selected-run"))
+
+    completed = _run_batch("codex", env, "--tasks=DI,GR")
+
+    assert completed.returncode == 0, completed.stderr
+    codex_calls = [
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-structural.py" in line and "--render-results" not in line and "--resolve-tasks" not in line
+    ]
+    assert len(codex_calls) == 3
+    paid = next(line for line in codex_calls if "--auth-source" in line)
+    assert "--scope-sha256" in paid
+    assert f"--scope-sha256 {SELECTED_SCOPE_SHA}" in paid
+    assert "--dry-run" not in paid
+    assert "--no-legend" in paid
+    assert "--tasks DI,GR" in paid
+    assert "--task-id DI-01" not in paid
+    assert f"--repetitions {SELECTED_REPETITIONS}" in paid
+    assert f"--max-wall-clock-seconds {SELECTED_WALL_CLOCK}" in paid
+    assert "--task-id FN-02" not in paid
+    diagnostic_smoke = next(line for line in codex_calls if "--task-id FN-02 --arm all --dry-run" in line)
+    assert "--no-legend" in diagnostic_smoke
+    selected_plan = next(line for line in codex_calls if "--scope-sha256" in line and "--dry-run" in line)
+    assert "--no-legend" not in selected_plan
 
 
 def test_paid_codex_checksums_include_canonical_telemetry_sidecar(
@@ -454,7 +649,9 @@ def test_codex_mode_reconstructs_a_missing_locked_index_before_dispatch(
     completed = _run_batch("codex", env)
 
     assert completed.returncode == 0, completed.stderr
-    assert index_path.read_text(encoding="utf-8") == "locked-index"
+    rebuilt = json.loads(index_path.read_text(encoding="utf-8"))
+    assert rebuilt["scan_version"] == LOCKED_INDEX_SCAN_VERSION
+    assert rebuilt["modules"] == []
     assert "run-codex-structural.py" in call_log.read_text(encoding="utf-8")
 
 
@@ -470,6 +667,8 @@ def test_paid_codex_noninteractive_output_and_artifact_log_remain_plain(
     run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
     assert "\x1b[" not in completed.stdout
     assert "\x1b[" not in run_log
+    assert run_log.count("END LEGEND") == 1
+    assert sum(line == "LEGEND" for line in run_log.splitlines()) == 1
     script = SCRIPT.read_text(encoding="utf-8")
     assert "PLAN " not in completed.stdout
     assert "PLAN " in run_log

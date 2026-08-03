@@ -2,9 +2,9 @@
 """Non-interactive Codex install probe for the disposable codemap-py candidate.
 
 Feasibility probe, not a CI test: it drives the real ``codex`` CLI against a
-throwaway ``CODEX_HOME`` to prove the built candidate installs and — for the 0.25.0
-pre-Phase-4 roster — exposes ZERO Codex skills. It never touches the user's real
-``~/.codex`` — every mutation is scoped to a fresh temporary home removed on exit.
+throwaway ``CODEX_HOME`` to prove the built candidate installs with its declared
+``./codex-skills/`` roster. It never touches the user's real ``~/.codex`` — every
+mutation is scoped to a fresh temporary home removed on exit.
 
 Flow (all inside the disposable home):
 
@@ -13,11 +13,10 @@ Flow (all inside the disposable home):
 2. Write a local marketplace at ``<root>/.agents/plugins/marketplace.json`` whose one
    entry points at the candidate with a ``./``-relative ``source.path``.
 3. ``codex plugin marketplace add <root>`` then ``codex plugin add codemap-py@<mkt> --json``.
-4. Statically verify the installed bytes against the zero-roster contract: a
-   ``.codex-plugin/plugin.json`` with the expected name/version and NO ``skills`` key, no
-   ``codex-skills/`` (and no default ``skills/``) directory, and a ``package-manifest.json``
-   whose Codex roster is empty. When a future release declares a ``skills`` source it must be
-   ``codex-skills`` (never a bundled ``claude-skills``) with a matching non-empty roster.
+4. Statically verify the installed bytes: ``.codex-plugin/plugin.json`` has the expected
+   name/version and a Codex skill source referencing ``codex-skills`` (never a bundled
+   ``claude-skills``), with a non-empty installed Codex skill directory. The package validator
+   separately requires the shipped ``./codex-skills/`` source and its six-skill Claude parity.
 5. Source-independent runtime proof (``_probe_runtime.runtime_proof``): DELETE the whole disposable
    source tree (copy checkout + candidate + marketplace) BEFORE any execution — the source the
    installed bytes came from is now literally unavailable (§9.4 step 03) — then run
@@ -111,12 +110,11 @@ def _package_codex_roster(installed_path: Path) -> list | None:
 def verify_codex_install(installed_path: Path) -> dict:
     """Statically check the installed Codex plugin bytes; return a checks/issues report.
 
-    Verifies the manifest identity, then checks the skill roster AGAINST the
-    manifest's own contract: when the manifest declares a ``skills`` source it
-    must be ``codex-skills`` (never a bundled ``claude-skills``) and that
-    directory must hold at least one skill; when the manifest declares no
-    ``skills`` key the plugin intentionally ships zero Codex skills, so no
-    ``codex-skills/`` directory (and no default ``skills/``) may be present.
+    Verifies the manifest identity, then checks the skill roster against the
+    manifest's own contract. The shipped plugin declares ``./codex-skills/``;
+    the probe requires a Codex source rather than ``claude-skills`` and a
+    non-empty installed directory. The undeclared-source fallback rejects
+    unexpected roster directories and requires an empty package-manifest roster.
 
     Examples:
         >>> verify_codex_install(Path("/nonexistent"))["ok"]
@@ -148,7 +146,7 @@ def verify_codex_install(installed_path: Path) -> dict:
     skill_dirs = sorted(p.name for p in skills_dir.iterdir() if p.is_dir()) if skills_dir.is_dir() else []
     package_codex_roster = _package_codex_roster(installed_path)
     if skills_field is None:
-        # Zero-roster contract: no declared source, no roster directories, empty package roster.
+        # Undeclared-source fallback: no roster directories and an empty package roster.
         checks["no_roster_dirs_when_undeclared"] = not skills_dir.is_dir() and not (installed_path / "skills").is_dir()
         if not checks["no_roster_dirs_when_undeclared"]:
             issues.append("manifest declares no skills, but a roster directory is present")

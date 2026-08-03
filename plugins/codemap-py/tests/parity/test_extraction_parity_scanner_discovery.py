@@ -114,6 +114,8 @@ def _assert_is_monolith(name: str, content: str) -> None:
 # Top-level index keys that legitimately vary between two scans of identical
 # source (matches test_grammar.py's convention).
 _VOLATILE_KEYS = ("scanned_at", "git_sha")
+_V12_ROOT_ADDITIONS = frozenset({"symbol_aliases", "symbol_alias_limitations"})
+_V12_MODULE_ADDITIONS = frozenset({"symbol_aliases", "symbol_alias_limitations"})
 
 _PATH_CLASSES = [
     pytest.param("proj", id="normal"),
@@ -143,12 +145,53 @@ def old_scan_index(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return _materialize_old_bin(tmp_path_factory.mktemp("old_bin_scanner_discovery"))
 
 
-def _strip_volatile(index: dict) -> dict:
-    return {k: v for k, v in index.items() if k not in _VOLATILE_KEYS}
+def _legacy_index(index: dict) -> dict:
+    """Remove only volatile and explicitly declared v12 index additions."""
+    legacy = {
+        key: value
+        for key, value in index.items()
+        if key not in _VOLATILE_KEYS and key not in _V12_ROOT_ADDITIONS and key != "scan_version"
+    }
+    legacy["modules"] = [
+        {key: value for key, value in module.items() if key not in _V12_MODULE_ADDITIONS} for module in index["modules"]
+    ]
+    return legacy
 
 
 def _canonical(index: dict) -> str:
     return json.dumps(index, sort_keys=True, ensure_ascii=False)
+
+
+def _assert_v12_index_delta(old: dict, new: dict) -> None:
+    """Prove frozen v11 content is identical except the declared v12 alias fields."""
+    assert old["scan_version"] == 11
+    assert new["scan_version"] == 12
+    assert set(new) == set(old) | _V12_ROOT_ADDITIONS
+    assert len(old["modules"]) == len(new["modules"])
+    for legacy_module, current_module in zip(old["modules"], new["modules"], strict=True):
+        additions = _V12_MODULE_ADDITIONS if current_module["status"] == "ok" else frozenset()
+        assert set(current_module) == set(legacy_module) | additions
+        if additions:
+            assert isinstance(current_module["symbol_aliases"], dict)
+            assert isinstance(current_module["symbol_alias_limitations"], list)
+    assert isinstance(new["symbol_aliases"], dict)
+    assert isinstance(new["symbol_alias_limitations"], list)
+    assert _canonical(_legacy_index(old)) == _canonical(_legacy_index(new))
+
+
+def test_v12_normalization_rejects_unrelated_legacy_change() -> None:
+    """The v12 allowance cannot mask a changed pre-v12 field."""
+    old = {"scan_version": 11, "project": "legacy", "modules": [{"name": "mod", "status": "ok"}]}
+    new = {
+        "scan_version": 12,
+        "project": "changed",
+        "modules": [{"name": "mod", "status": "ok", "symbol_aliases": {}, "symbol_alias_limitations": []}],
+        "symbol_aliases": {},
+        "symbol_alias_limitations": [],
+    }
+
+    with pytest.raises(AssertionError):
+        _assert_v12_index_delta(old, new)
 
 
 def _run_scan(
@@ -257,7 +300,7 @@ def test_full_scan_byte_identical_old_vs_new(tmp_path: Path, old_scan_index: Pat
     assert old_stdout == new_result.stdout == ""
     assert old_stderr == new_result.stderr
     assert old_index is not None and new_index is not None
-    assert _canonical(_strip_volatile(old_index)) == _canonical(_strip_volatile(new_index))
+    _assert_v12_index_delta(old_index, new_index)
 
 
 def test_full_scan_matches_via_python_module_entrypoint(tmp_path: Path, old_scan_index: Path) -> None:
@@ -290,7 +333,7 @@ def test_full_scan_matches_via_python_module_entrypoint(tmp_path: Path, old_scan
     new_index = json.loads((index_dir / f"{root.name}.json").read_text())
 
     assert new_result.returncode == 0, new_result.stderr
-    assert _canonical(_strip_volatile(old_index)) == _canonical(_strip_volatile(new_index))
+    _assert_v12_index_delta(old_index, new_index)
 
 
 # --- incremental scan ---------------------------------------------------
@@ -321,7 +364,7 @@ def test_incremental_scan_matches_old_vs_new(tmp_path: Path, old_scan_index: Pat
 
     assert old_inc.returncode == new_inc.returncode == 0
     assert old_index is not None and new_index is not None
-    assert _canonical(_strip_volatile(old_index)) == _canonical(_strip_volatile(new_index))
+    _assert_v12_index_delta(old_index, new_index)
 
 
 # --- exclusions ----------------------------------------------------------
@@ -343,7 +386,7 @@ def test_exclusions_prune_vendored_copy_identically(tmp_path: Path, old_scan_ind
     assert not any("vendored" in path for path in old_index["file_shas"])
     assert not any("vendored" in path for path in new_index["file_shas"])
     assert old_index["excluded_roots"] == new_index["excluded_roots"]
-    assert _canonical(_strip_volatile(old_index)) == _canonical(_strip_volatile(new_index))
+    _assert_v12_index_delta(old_index, new_index)
 
 
 # --- degraded module + stats output ---------------------------------------
