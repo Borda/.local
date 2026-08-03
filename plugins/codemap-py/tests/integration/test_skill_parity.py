@@ -44,6 +44,24 @@ _QUERY_CODE_REQUIRED_SNIPPETS = (
     "distinct independent ast/oracle view",
 )
 _QUERY_CODE_FORBIDDEN_SNIPPETS = ("fn-blast <module::symbol> --depth",)
+_DIRECT_CALLER_ROUTING_RULE = (
+    "for caller requests, use `fn-rdeps <module::symbol> --exclude-tests` for direct, every, all, production, "
+    "and blast-radius wording; use `fn-blast <module::symbol>` only when the user explicitly asks for transitive "
+    "callers, closure, hops, or all levels."
+)
+_DIRECT_TEST_IMPORT_ROUTING_SNIPPETS = (
+    "directly import a module",
+    "`rdeps <module>`",
+    "filter/report test modules",
+    "reserve `test-impact <target>` for transitive affected-test selection",
+)
+
+
+def _direct_caller_routing_violations(skill_text: str) -> list[str]:
+    """Return a violation when ambiguous caller wording can select a transitive query."""
+    if _DIRECT_CALLER_ROUTING_RULE in skill_text.lower():
+        return []
+    return ["ambiguous direct-caller wording lacks the fn-rdeps routing rule"]
 
 
 # --------------------------------------------------------------------------------------
@@ -212,3 +230,38 @@ def test_query_code_routes_centrality_and_transitive_blast_to_supported_commands
 
     assert all(snippet in skill_text for snippet in _QUERY_CODE_REQUIRED_SNIPPETS)
     assert all(snippet not in skill_text for snippet in _QUERY_CODE_FORBIDDEN_SNIPPETS)
+
+
+@pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
+def test_query_code_routes_ambiguous_caller_requests_to_direct_production_callers(runtime_dir: Path) -> None:
+    """Prevent `fn-blast` for direct caller requests phrased as a blast radius or every caller."""
+    skill_text = (runtime_dir / "query-code" / "SKILL.md").read_text(encoding="utf-8").lower()
+
+    assert _direct_caller_routing_violations(skill_text) == []
+
+
+def test_direct_caller_routing_contract_rejects_transitive_substitute() -> None:
+    """Ensure a plausible `fn-blast` substitute cannot satisfy the direct-caller routing contract."""
+    wrong_rule = _DIRECT_CALLER_ROUTING_RULE.replace(
+        "`fn-rdeps <module::symbol> --exclude-tests`", "`fn-blast <module::symbol>`"
+    )
+
+    assert _direct_caller_routing_violations(wrong_rule) == [
+        "ambiguous direct-caller wording lacks the fn-rdeps routing rule"
+    ]
+
+
+@pytest.mark.parametrize(
+    "contract_path",
+    (
+        _CLAUDE_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CODEX_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CAPABILITY_CONTRACT,
+    ),
+    ids=("claude", "codex", "shared-contract"),
+)
+def test_query_code_routes_direct_test_importers_to_module_rdeps(contract_path: Path) -> None:
+    """Keep direct test-module importer requests on ``rdeps`` in every truth-claim surface."""
+    skill_text = " ".join(contract_path.read_text(encoding="utf-8").lower().split())
+
+    assert all(snippet in skill_text for snippet in _DIRECT_TEST_IMPORT_ROUTING_SNIPPETS)

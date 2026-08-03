@@ -1684,13 +1684,32 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: str
     )
 
 
+def _production_rdep_counts(index: dict) -> dict[str, int]:
+    """Return incoming import counts after removing every test-module edge.
+
+    ``rdep_count`` is stored during index construction and intentionally includes
+    test importers. ``central --exclude-tests`` needs a separate count so it
+    describes the production import graph rather than merely hiding test
+    candidates. Module aliases use the same canonicalization as graph metrics.
+    """
+    aliases = index.get("module_aliases", {})
+    counts: dict[str, int] = {}
+    for importer in index.get("modules", []):
+        if importer.get("is_test"):
+            continue
+        for imported in importer.get("direct_imports", []):
+            target = aliases.get(imported, imported)
+            counts[target] = counts.get(target, 0) + 1
+    return counts
+
+
 def cmd_central(index: dict, top: int, exclude_tests: bool = False, entity: str | None = None) -> None:
     """Print the top N most-imported modules ranked by reverse-dependency count.
 
     Args:
         index: parsed codemap index dict.
         top: number of top-ranked modules to return.
-        exclude_tests: if True, exclude test modules.
+        exclude_tests: if True, exclude test modules and their importer edges.
         entity: if set, restrict to this entity_type ("pkg", "test", "docs", "example").
     """
     candidates = [m for m in index.get("modules", []) if m.get("status") != "degraded"]
@@ -1698,12 +1717,22 @@ def cmd_central(index: dict, top: int, exclude_tests: bool = False, entity: str 
         candidates = [m for m in candidates if not m.get("is_test")]
     if entity:
         candidates = [m for m in candidates if _entity_type(m) == entity]
-    ranked = sorted(candidates, key=lambda m: m.get("rdep_count", 0), reverse=True)[:top]
+    if exclude_tests:
+        rdep_counts = _production_rdep_counts(index)
+        ranked = sorted(candidates, key=lambda m: (-rdep_counts.get(m["name"], 0), m["name"]))[:top]
+    else:
+        rdep_counts = {}
+        ranked = sorted(candidates, key=lambda m: m.get("rdep_count", 0), reverse=True)[:top]
     _print(
         json.dumps(
             {
                 "central": [
-                    {"name": m["name"], "rdep_count": m.get("rdep_count", 0), "path": m.get("path", "")} for m in ranked
+                    {
+                        "name": m["name"],
+                        "rdep_count": rdep_counts.get(m["name"], m.get("rdep_count", 0)),
+                        "path": m.get("path", ""),
+                    }
+                    for m in ranked
                 ],
                 "index": _cmd_coverage(
                     index,

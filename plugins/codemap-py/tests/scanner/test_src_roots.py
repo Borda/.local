@@ -20,6 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 # Phase 3 slices 3+4 (plan §12) moved scan-index's implementation into the package:
 # discovery/parsing (incl. former bin/_exclusions.py content) -> codemap_py.scanner,
 # graph/dedup/index-write -> codemap_py.graph. bin/scan-index is now a thin launcher,
@@ -39,6 +41,7 @@ _under_root_rank = _graph_mod._under_root_rank
 _dedup_key = _graph_mod._dedup_key
 _dedup_modules = _graph_mod._dedup_modules
 _resolve_src_roots = _graph_mod._resolve_src_roots
+_parse_file = _scanner_mod._parse_file
 
 
 _PYPROJECT_TWO_ROOTS = '[tool.codemap]\nsrc_roots = ["libs/core/src", "services/api/src"]\n'
@@ -326,6 +329,52 @@ class TestNoConfigRegression:
         ctx = _resolve_src_roots(tmp_path)
         assert ctx.configured == ()
         assert ctx.dedup_rels(tmp_path) == ()
+
+
+class TestPackageIdentityOutsideDetectedRoot:
+    """Package descendants outside a preferred root retain importable names."""
+
+    @pytest.mark.parametrize(
+        ("prefix", "prefix_is_package", "package_init", "configured_root", "expected"),
+        [
+            pytest.param("tests", False, "__init__.py", None, "tests_fabric.worker", id="tests-prefix"),
+            pytest.param("tests", False, "__init__.pyi", None, "tests_fabric.worker", id="stub-package-init"),
+            pytest.param("namespace", False, "__init__.py", None, "tests_fabric.worker", id="namespace-prefix"),
+            pytest.param("tests", True, "__init__.py", None, "tests.tests_fabric.worker", id="real-tests-package"),
+            pytest.param(
+                "ignored", False, "__init__.py", "configured/src", "tests_fabric.worker", id="configured-root"
+            ),
+        ],
+    )
+    def test_nested_package_drops_only_non_package_prefix(
+        self,
+        tmp_path: Path,
+        prefix: str,
+        prefix_is_package: bool,
+        package_init: str,
+        configured_root: str | None,
+        expected: str,
+    ) -> None:
+        """A source-root mismatch uses the outermost real package as the import root."""
+        source_root = tmp_path / (configured_root or "src")
+        production = source_root / "production"
+        production.mkdir(parents=True)
+        (production / "__init__.py").write_text("")
+        if configured_root:
+            (tmp_path / "pyproject.toml").write_text(f'[tool.codemap]\nsrc_roots = ["{configured_root}"]\n')
+
+        package_parent = tmp_path / prefix
+        package = package_parent / "tests_fabric"
+        package.mkdir(parents=True)
+        if prefix_is_package:
+            (package_parent / "__init__.py").write_text("")
+        (package / package_init).write_text("")
+        worker = package / "worker.py"
+        worker.write_text("def run():\n    return 1\n")
+
+        context = _resolve_src_roots(tmp_path)
+        entry = _parse_file(worker, tmp_path, context.name_root_for(worker))
+        assert entry["name"] == expected
 
 
 class TestMonorepoIncrementalScan:

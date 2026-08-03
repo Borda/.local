@@ -125,6 +125,78 @@ class TestModuleQueries:
         assert {"alpha", "beta", "gamma", "pkg", "pkg.delta"}.issubset(names)
 
 
+class TestCentralExcludingTests:
+    """``central --exclude-tests`` ranks the production import graph."""
+
+    @staticmethod
+    def _module(
+        name: str,
+        *,
+        direct_imports: list[str] | None = None,
+        is_test: bool = False,
+        rdep_count: int = 0,
+    ) -> dict:
+        """Build the minimum index module entry consumed by ``cmd_central``."""
+        return {
+            "name": name,
+            "status": "ok",
+            "path": f"{name.replace('.', '/')}.py",
+            "direct_imports": direct_imports or [],
+            "is_test": is_test,
+            "rdep_count": rdep_count,
+        }
+
+    @staticmethod
+    def _production_indegree(index: dict) -> dict[str, int]:
+        """Compute production-only import counts without consulting stored metrics."""
+        aliases = index.get("module_aliases", {})
+        counts: dict[str, int] = {}
+        for module in index["modules"]:
+            if module["is_test"]:
+                continue
+            for imported in module["direct_imports"]:
+                target = aliases.get(imported, imported)
+                counts[target] = counts.get(target, 0) + 1
+        return counts
+
+    @pytest.mark.parametrize("exclude_tests", [False, True], ids=["all-importers", "production-only"])
+    def test_central_uses_expected_importer_set(self, capsys, exclude_tests: bool):
+        """The flag removes test candidates and recomputes their incoming edges."""
+        index = {
+            "module_aliases": {"target_alias": "target"},
+            "modules": [
+                self._module("target", rdep_count=40),
+                self._module("aaa", rdep_count=8),
+                self._module("zzz", rdep_count=8),
+                self._module("prod.one", direct_imports=["target", "aaa"]),
+                self._module("prod.two", direct_imports=["target_alias", "zzz"]),
+                self._module("tests.test_target", direct_imports=["target"], is_test=True, rdep_count=1),
+            ],
+        }
+
+        _scan_query_mod.cmd_central(index, top=10, exclude_tests=exclude_tests)
+        central = json.loads(capsys.readouterr().out)["central"]
+
+        if not exclude_tests:
+            assert central[0] == {"name": "target", "rdep_count": 40, "path": "target.py"}
+            return
+
+        production_indegree = self._production_indegree(index)
+        expected = sorted(
+            (
+                {
+                    "name": module["name"],
+                    "rdep_count": production_indegree.get(module["name"], 0),
+                    "path": module["path"],
+                }
+                for module in index["modules"]
+                if not module["is_test"]
+            ),
+            key=lambda module: (-module["rdep_count"], module["name"]),
+        )
+        assert central == expected
+
+
 class TestSymbolQueries:
     """Symbol-level queries: lookup by name, by module, and by regex."""
 

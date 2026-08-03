@@ -107,6 +107,8 @@ with a "requires vN+ index" message (upgrade path: re-run auto-build or `scan-co
   a missing index is a hard refusal (exit non-zero) rather than a silent skip.
 - Direction matters: `rdeps` = callers/blast-radius, `deps` = forward imports — swapping them is the
   most common misuse and is called out explicitly to both rosters.
+- For requests for test modules that directly import a module, use `rdeps <module>` and filter/report test
+  modules; reserve `test-impact <target>` for transitive affected-test selection.
 - Symbol staleness: `stale: true` + empty source → fall back to a file read; `stale: false` + empty
   → source genuinely unavailable, re-scan required.
 - Result truncation at 20 items is a real cap, not an exhaustive list, unless `--limit 0` is passed.

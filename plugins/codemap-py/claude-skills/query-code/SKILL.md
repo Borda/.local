@@ -30,6 +30,7 @@ Direction matters: "affected if X changes" means reverse dependencies.
 | Goal | Query subcommand |
 | --- | --- |
 | module importers / blast radius | `rdeps <module> [--exclude-tests]` |
+| direct test-module importers | `rdeps <module>` then filter/report test modules |
 | module imports | `deps <module>` |
 | shortest import chain | `path <from> <to>` |
 | production centrality / highest in-degree | `central --top N --exclude-tests` |
@@ -40,10 +41,14 @@ Direction matters: "affected if X changes" means reverse dependencies.
 | direct imports / callees | `fn-deps <module::symbol>` |
 | transitive callers / function blast | `fn-blast <module::symbol>` |
 | changed-code blast radius | `diff-impact [--base REF]` |
-| affected tests / mocks | `test-impact <target>` · `mock-rdeps <target>` |
+| transitive affected tests / mocks | `test-impact <target>` · `mock-rdeps <target>` |
 | pytest fixtures | `fixture-rdeps <name>` · `fixture-graph <test-file>` |
 | subprocess relationships | `subprocess-deps <module>` · `subprocess-rdeps <module>` |
 | coverage / documentation gaps | `coverage <target>` · `coverage-gap [module]` · `undocumented [module]` |
+
+For caller requests, use `fn-rdeps <module::symbol> --exclude-tests` for direct, every, all, production, and blast-radius wording; use `fn-blast <module::symbol>` only when the user explicitly asks for transitive callers, closure, hops, or all levels.
+
+For requests for test modules that directly import a module, use `rdeps <module>` and filter/report test modules; reserve `test-impact <target>` for transitive affected-test selection.
 
 Use `codemap-py query --help` only when needed.
 

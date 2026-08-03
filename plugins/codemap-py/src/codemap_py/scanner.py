@@ -1386,6 +1386,27 @@ def path_to_module(filepath: Path, src_root: Path) -> str:
     return ".".join(parts)
 
 
+def _package_src_root(filepath: Path, root: Path) -> Path:
+    """Return the parent of the outermost regular package containing ``filepath``.
+
+    A file outside the configured or detected source root can still belong to a
+    regular package. Its dotted name must start at that package, not at an
+    arbitrary non-package directory such as ``tests/``. Files outside a regular
+    package retain the repository-root fallback used by older indexes.
+    """
+    package_dir = filepath.parent
+    if not _is_package_dir(package_dir):
+        return root
+    while _is_package_dir(package_dir):
+        parent = package_dir.parent
+        if parent == root:
+            return root
+        if root not in parent.parents:
+            return root
+        package_dir = parent
+    return package_dir
+
+
 def _effective_src_root(filepath: Path, configured_roots: tuple[Path, ...], default_root: Path) -> Path:
     """Return the source root a file's dotted name should be computed relative to.
 
@@ -2791,7 +2812,7 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
     try:
         name = path_to_module(filepath, src_root)
     except ValueError:
-        name = path_to_module(filepath, root)
+        name = path_to_module(filepath, _package_src_root(filepath, root))
 
     file_size = filepath.stat().st_size
     if file_size > _MAX_FILE_SIZE_BYTES:
