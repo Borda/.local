@@ -220,11 +220,11 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 import fire
 import pandas as pd
@@ -252,20 +252,117 @@ from _utilities import fmt_time, fmt_tok  # noqa: E402
 
 # Re-exported for call-site/test compatibility (tests reference it via this module's namespace).
 from _utilities import resolve_relative_base  # noqa: E402,F401
+from agentic_contracts import (  # noqa: E402
+    AGENTIC_ARMS,
+    DEFAULT_REPETITIONS,
+    AgenticOracle,  # noqa: F401
+    AnswerScore,  # noqa: F401
+    build_oracle,
+    materialize_agentic_prompt,
+    parse_labeled_answer,
+    score_answer,
+)
 from provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     PARITY_TIMEOUT_SECONDS,
     canonical_task_hash,
     load_task_policies,
     load_task_suite,
-    prompt_hash,
+    materialize_task_prompt,
     semantic_suite_hash,
 )
 
 _console = _Console()
 
-PARITY_MANIFEST_PATH = Path(__file__).resolve().parent / "results" / "manifests" / "provider-parity-v1.json"
+PARITY_MANIFEST_PATH = Path(__file__).resolve().parent / "manifests" / "provider-parity-methodology.json"
 LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
+
+
+def _manifest_sha256(manifest_path: Path) -> str:
+    """Return the exact provider-neutral manifest identity used by a scope."""
+    try:
+        return hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ValueError("provider-parity manifest is unavailable") from exc
+
+
+def resolve_agentic_scope(
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    *,
+    task_ids: Sequence[str] | None = None,
+    arms: Sequence[str] = AGENTIC_ARMS,
+    models: Sequence[str] | None = None,
+    repetitions: int = DEFAULT_REPETITIONS,
+) -> dict[str, object]:
+    """Resolve one deterministic manifest-bound Claude agentic scope."""
+    if repetitions < 1:
+        raise ValueError("agentic repetitions must be at least 1")
+    try:
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("provider-parity manifest is unavailable or malformed") from exc
+    contract = manifest.get("agentic_execution_contract")
+    if not isinstance(contract, Mapping):
+        raise ValueError("provider-parity manifest lacks the agentic execution contract")
+    locked_task_ids = contract.get("task_ids")
+    if not isinstance(locked_task_ids, list) or not all(isinstance(task_id, str) for task_id in locked_task_ids):
+        raise ValueError("provider-parity manifest has invalid agentic task IDs")
+    selected_task_ids = list(locked_task_ids if task_ids is None else task_ids)
+    if not selected_task_ids or len(set(selected_task_ids)) != len(selected_task_ids):
+        raise ValueError("agentic scope requires unique manifest-bound task IDs")
+    if any(task_id not in locked_task_ids for task_id in selected_task_ids):
+        raise ValueError("agentic scope includes a task outside the manifest")
+    ordered_task_ids = [task_id for task_id in locked_task_ids if task_id in set(selected_task_ids)]
+    selected_arms = list(arms)
+    if (
+        not selected_arms
+        or len(set(selected_arms)) != len(selected_arms)
+        or any(arm not in AGENTIC_ARMS for arm in selected_arms)
+    ):
+        raise ValueError("Claude agentic scope requires unique canonical A/B/C arms")
+    selected_models = list(MODELS if models is None else models)
+    if (
+        not selected_models
+        or len(set(selected_models)) != len(selected_models)
+        or any(model not in MODELS for model in selected_models)
+    ):
+        raise ValueError("Claude agentic scope requires unique supported model aliases")
+    coordinate_timeout_seconds = contract.get("coordinate_timeout_seconds")
+    if coordinate_timeout_seconds != PARITY_TIMEOUT_SECONDS:
+        raise ValueError("provider-parity manifest must lock the canonical coordinate timeout")
+    total_cells = len(ordered_task_ids) * len(selected_arms) * len(selected_models) * repetitions
+    payload: dict[str, object] = {
+        "provider": "claude",
+        "manifest_sha256": _manifest_sha256(Path(manifest_path)),
+        "experiment_revision": manifest.get("experiment_revision"),
+        "task_ids": ordered_task_ids,
+        "arms": selected_arms,
+        "models": selected_models,
+        "repetitions": repetitions,
+        "coordinate_timeout_seconds": coordinate_timeout_seconds,
+        "total_cells": total_cells,
+        "complete_run_max_wall_clock_seconds": total_cells * coordinate_timeout_seconds,
+        "nonpoolable": True,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def _delivered_task_prompt(task: Mapping[str, object], *, canonical: bool) -> str:
+    """Return the exact provider-visible prompt for one task.
+
+    Canonical cells add the shared JSON response contract after the materialized
+    task prose. Explicit legacy arms retain their historical prose-only prompt.
+    """
+    if canonical:
+        return materialize_agentic_prompt(task)
+    return materialize_task_prompt(task)
+
+
+def _delivered_prompt_hash(task: Mapping[str, object], *, canonical: bool) -> str:
+    """Return the SHA-256 identity of the exact prompt delivered to Claude."""
+    return hashlib.sha256(_delivered_task_prompt(task, canonical=canonical).encode("utf-8")).hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -427,6 +524,11 @@ class BenchmarkRun:
     oracle_class: str = ""
     headline_eligible_v1: bool = False
     scoreable: bool = True
+    answer_scored: bool = False
+    answer_quality_score: float | None = None
+    answer_correct: bool | None = None
+    answer_components: dict[str, float] = field(default_factory=dict)
+    answer_error: str = ""
     tools: ToolCounts = field(default_factory=ToolCounts)
     # Token metrics
     input_tokens: int = 0
@@ -482,6 +584,7 @@ class Task:
     oracle_class: str = ""
     headline_eligible_v1: bool = False
     scoreable: bool = True
+    answer_task: dict[str, object] = field(default_factory=dict, repr=False)
 
 
 def parity_arm_identity(arm: str) -> str | None:
@@ -546,7 +649,7 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
             raise ValueError(f"no locked manifest task for {task_id!r}")
         if canonical_task_hash(raw_task) != manifest_task.get("canonical_task_sha256"):
             raise ValueError(f"task hash mismatch for {task_id!r}")
-        if prompt_hash(raw_task) != manifest_task.get("prompt_sha256"):
+        if _delivered_prompt_hash(raw_task, canonical=True) != manifest_task.get("prompt_sha256"):
             raise ValueError(f"prompt hash mismatch for {task_id!r}")
     raw_task_ids = [task["id"] for task in raw_tasks]
     matching_suites = [
@@ -559,13 +662,12 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
     for raw_task in raw_tasks:
         task_id = raw_task["id"]
         actual_task_hash = canonical_task_hash(raw_task)
-        actual_prompt_hash = prompt_hash(raw_task)
         policy = policies[task_id]
         loaded.append(
             Task(
                 id=task_id,
                 type=raw_task["type"],
-                prompt=raw_task["prompt"],
+                prompt=_delivered_task_prompt(raw_task, canonical=True),
                 primary_module=raw_task.get("primary_module", ""),
                 difficulty=raw_task.get("difficulty", "unknown"),
                 skill=raw_task.get("skill", ""),
@@ -578,12 +680,13 @@ def load_tasks_with_provenance(tasks_path: Path, manifest_path: Path = PARITY_MA
                 test_target=raw_task.get("test_target", ""),
                 experiment_revision=policy.experiment_revision,
                 task_hash=actual_task_hash,
-                prompt_hash=actual_prompt_hash,
+                prompt_hash=_delivered_prompt_hash(raw_task, canonical=True),
                 suite_hash=suite_hash,
                 suite_raw_hash=raw_suite_hash,
                 oracle_class=policy.oracle_class,
                 headline_eligible_v1=policy.headline_eligible_v1,
                 scoreable=policy.scoreable,
+                answer_task=dict(raw_task),
             )
         )
     return loaded
@@ -598,7 +701,7 @@ def load_legacy_tasks(tasks_path: Path) -> list[Task]:
         Task(
             id=raw_task["id"],
             type=raw_task["type"],
-            prompt=raw_task["prompt"],
+            prompt=_delivered_task_prompt(raw_task, canonical=False),
             primary_module=raw_task.get("primary_module", ""),
             difficulty=raw_task.get("difficulty", "unknown"),
             skill=raw_task.get("skill", ""),
@@ -610,9 +713,10 @@ def load_legacy_tasks(tasks_path: Path) -> list[Task]:
             expected_files=raw_task.get("expected_files", []),
             test_target=raw_task.get("test_target", ""),
             task_hash=canonical_task_hash(raw_task),
-            prompt_hash=prompt_hash(raw_task),
+            prompt_hash=_delivered_prompt_hash(raw_task, canonical=False),
             suite_hash=suite_hash,
             suite_raw_hash=suite_raw_hash,
+            answer_task=dict(raw_task),
         )
         for raw_task in raw_tasks
     ]
@@ -1545,9 +1649,9 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         """Build the system prompt for one arm × task-type combination.
 
         The shared ``_EFFICIENCY`` sentence is appended for every task family (fix, read_crop,
-        and rdep) so no arm is uniquely nudged toward more or fewer tool calls (review N3). The
-        rdep-only ``_ANSWER_FORMAT`` block is not appended to fix / read_crop prompts — those are
-        scored by diff / keyword recall, not by a reverse-dependency list.
+        and rdep) so no arm is uniquely nudged toward more or fewer tool calls (review N3).
+        Canonical parity tasks put their exact labelled JSON answer contract in the user prompt;
+        legacy tasks retain their historical reverse-dependency output format.
         """
         if task_type == "fix_single":
             supplement = {
@@ -1584,8 +1688,11 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             supplement = self._COMBINED_SUPPLEMENT.format(repo_path=self.repo_path)
         else:
             supplement = self._PLAIN_SUPPLEMENT
-        # Efficiency sentence and answer format are shared across all four arms (review C-4).
-        return base + self._EFFICIENCY + supplement + self._ANSWER_FORMAT
+        # Canonical tasks carry their exact JSON contract in the user prompt. Keeping the legacy
+        # format out of that path avoids contradictory output instructions while preserving it for
+        # explicitly selected historical arms.
+        answer_format = "" if parity_arm_identity(arm) else self._ANSWER_FORMAT
+        return base + self._EFFICIENCY + supplement + answer_format
 
     def __init__(
         self,
@@ -2596,7 +2703,7 @@ class Benchmark:
         index_path: Path,
         output_path: Path,
         log_path: Path,
-        repeat: int = 1,
+        repeat: int = DEFAULT_REPETITIONS,
     ) -> None:
         self.tasks = tasks
         self.arms = arms
@@ -2608,6 +2715,11 @@ class Benchmark:
         self.log_path = log_path
         self.repeat = max(1, repeat)
         self.gt = GroundTruth(index_path, tasks, repo_path=repo_path)
+        self.answer_oracles: dict[str, AgenticOracle] = {
+            task.id: build_oracle(task.answer_task, repo_path)
+            for task in tasks
+            if any(parity_arm_identity(arm) for arm in arms) and task.answer_task.get("answer_contract") is not None
+        }
         self.results: list[BenchmarkRun] = []
 
     def _iter_combos(self) -> Iterator[tuple[Task, str, str, str, int]]:
@@ -2676,6 +2788,36 @@ class Benchmark:
             skill_result_text=result.skill_result_text or None,
             semble_result_text=semble_corpus,
         )
+        answer_oracle = self.answer_oracles.get(task.id)
+        if result.parity_arm and answer_oracle is not None:
+            result.answer_scored = True
+            try:
+                parsed_answer = parse_labeled_answer(task.answer_task, result.output_text)
+            except ValueError as exc:
+                # A process-complete run without the exact shared envelope is a scored incorrect
+                # answer, not a transport failure. Preserve the parser reason for diagnosis.
+                result.answer_quality_score = 0.0
+                result.answer_correct = False
+                result.answer_error = str(exc)
+                result.quality.scored = True
+                result.quality.erec = 0.0
+                result.quality.rrec = 0.0
+                result.quality.deff = 0.0
+            else:
+                answer_score = score_answer(
+                    answer_oracle,
+                    parsed_answer,
+                    exposure_text=result.output_text,
+                    report_text=report_corpus,
+                    tool_calls=result.tools.total,
+                )
+                result.answer_quality_score = answer_score.quality_score
+                result.answer_correct = answer_score.correct
+                result.answer_components = dict(answer_score.components)
+                result.quality.scored = answer_score.scored
+                result.quality.erec = answer_score.erec
+                result.quality.rrec = answer_score.rrec
+                result.quality.deff = answer_score.deff
         # read_crop tasks have no rdeps ground truth — score by keyword recall instead,
         # and exempt them from the codemap-skill-required guard (they use scan-query symbol
         # via Bash, not the Skill tool).
@@ -2848,52 +2990,67 @@ class Benchmark:
 
 
 def main(
-    repo_path: Path,
+    repo_path: Path = None,
     index: Path = None,
     tasks_file: Path = Path("benchmarks/suites/tasks-agentic.json"),
+    manifest_path: Path = PARITY_MANIFEST_PATH,
     model: str = None,
     arm: str = None,
     run_all: bool = False,
     tasks: list[str] = None,
     report: bool = False,
     output: Path = None,
-    repeat: int = 1,
+    repeat: int = DEFAULT_REPETITIONS,
+    scope_sha256: str = None,
+    resolve_scope: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Codemap skill benchmark — agent exploration cost with vs without structural context.
 
     Args:
-        repo_path: Path to the indexed repo.
+        repo_path: Path to the indexed repo; omitted only for scope resolution.
         index: Explicit index path (auto-discovered if omitted).
         tasks_file: Task definition file.
+        manifest_path: Provider-neutral methodology lock defining the shared suite.
         model: Run a single model tier (default: all — haiku/sonnet/opus).
-        arm: Run only one arm (default: all four).
-        run_all: Run all tasks in both arms.
+        arm: Run one canonical or legacy arm. The default runs canonical A/B/C.
+        run_all: Run all tasks in the selected arms.
         tasks: Run specific task IDs only.
         report: Write markdown report alongside JSON.
         output: JSON output path (auto-named if omitted).
         repeat: Repeat runs per (task, arm, model) cell; median aggregated.
+        scope_sha256: Exact derived scope hash required for nondefault repetitions.
+        resolve_scope: Print the selected no-model scope as JSON and exit.
         dry_run: Print plan without running claude.
     """
     # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
-    repo_path = Path(repo_path)
     if index is not None:
         index = Path(index)
     tasks_file = Path(tasks_file)
+    manifest_path = Path(manifest_path)
     if output is not None:
         output = Path(output)
 
-    if not run_all and not tasks and not arm and not dry_run:
+    if not run_all and not tasks and not arm and not dry_run and not resolve_scope:
         sys.exit("Specify --run_all to run everything, or narrow with --tasks / --arm.")
+    if repeat < 1:
+        sys.exit("Agentic repeat must be a positive integer.")
 
-    arms = [arm] if arm else ["plain", "codemap", "semble"]
+    # The default is the locked provider-parity matrix. Legacy labels remain
+    # available as explicit one-arm compatibility runs without changing their
+    # historical prompts, timeouts, or success semantics.
+    arms = [arm] if arm else list(AGENTIC_ARMS)
     canonical_requested = any(candidate in ARM_CONTRACTS for candidate in arms)
 
     # ── Load tasks ────────────────────────────────────────────────────────
     if not tasks_file.exists():
         sys.exit(f"Tasks file not found: {tasks_file}")
     try:
-        all_tasks = load_tasks_with_provenance(tasks_file) if canonical_requested else load_legacy_tasks(tasks_file)
+        all_tasks = (
+            load_tasks_with_provenance(tasks_file, manifest_path)
+            if canonical_requested
+            else load_legacy_tasks(tasks_file)
+        )
     except ValueError as exc:
         sys.exit(str(exc))
     if tasks:
@@ -2901,22 +3058,46 @@ def main(
     if not all_tasks:
         sys.exit("No tasks to run.")
 
+    models_to_run: list[tuple[str, str]] = [(model, MODELS[model])] if model else list(MODELS.items())
+    if canonical_requested:
+        try:
+            scope = resolve_agentic_scope(
+                manifest_path,
+                task_ids=[task.id for task in all_tasks],
+                arms=arms,
+                models=[model_name for model_name, _ in models_to_run],
+                repetitions=repeat,
+            )
+        except (KeyError, ValueError) as exc:
+            sys.exit(str(exc))
+        if resolve_scope:
+            print(json.dumps(scope, sort_keys=True))
+            return
+        if repeat != DEFAULT_REPETITIONS and scope_sha256 != scope["scope_sha256"]:
+            sys.exit("Nondefault Claude agentic repetitions require the exact derived scope SHA-256.")
+        if scope_sha256 is not None and scope_sha256 != scope["scope_sha256"]:
+            sys.exit("Claude agentic scope SHA-256 does not match the selected coordinates.")
+    elif resolve_scope or scope_sha256 is not None:
+        sys.exit("Claude agentic scope hashes apply only to canonical A/B/C arms.")
+
+    if repo_path is None:
+        sys.exit("repo_path is required unless --resolve-scope is used.")
+    repo_path = Path(repo_path)
+
     # ── Locate prerequisites (validated before any run starts) ──────────
     repo_path = repo_path.resolve()
     index_path = find_index(repo_path, index)
 
     if not arm:
-        print("[→ note:        'all' excludes 'combined' — run with --arm combined to include it]")
+        print("[→ note:        defaulting to canonical A_plain/B_auto/C_required parity arms]")
     if canonical_requested:
         try:
-            _validate_parity_runtime(repo_path, index_path)
+            _validate_parity_runtime(repo_path, index_path, manifest_path)
         except (OSError, ValueError) as exc:
             sys.exit(str(exc))
 
     if "semble" in arms or "combined" in arms:
         check_semble_mcp()
-    repeat = max(1, repeat)
-    models_to_run: list[tuple[str, str]] = [(model, MODELS[model])] if model else list(MODELS.items())
     total_runs = len(all_tasks) * len(arms) * len(models_to_run) * repeat
 
     model_names = ", ".join(m for m, _ in models_to_run)
@@ -2962,6 +3143,7 @@ def main(
         "index": str(index_path),
         "task_count": len(all_tasks),
         "repeat": repeat,
+        "scope": scope if canonical_requested else None,
     }
 
     # ── Construct benchmark and show ground truth info ────────────────────

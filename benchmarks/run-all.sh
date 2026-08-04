@@ -4,11 +4,14 @@
 # Usage:
 #   bash benchmarks/run-all.sh smoke   # fail-fast Claude + Codex smoke only
 #   bash benchmarks/run-all.sh claude  # fail-fast Claude smoke, then full Claude batches
+#   bash benchmarks/run-all.sh claude --agentic --dry-run  # shared 144-cell Claude agentic plan, no model
+#   bash benchmarks/run-all.sh claude --agentic --repetitions=2 --dry-run  # scope-bound Claude repeat override
 #   bash benchmarks/run-all.sh codex --dry-run  # smoke + exact 165-cell Codex plan, no model
 #   bash benchmarks/run-all.sh codex   # fail-fast Codex smoke, then full 55-task A/B/C study
 #   bash benchmarks/run-all.sh codex --tasks=DI,GR [--dry-run]  # selected, nonpoolable task study
-#   bash benchmarks/run-all.sh codex --agentic --dry-run  # locked BA-01 agentic first-slice plan, no model
-#   bash benchmarks/run-all.sh codex --agentic  # paid locked BA-01 agentic first slice
+#   bash benchmarks/run-all.sh codex --agentic --dry-run  # shared 48-cell agentic plan, no model
+#   bash benchmarks/run-all.sh codex --agentic --repetitions=2 --dry-run  # scope-bound repeat override
+#   bash benchmarks/run-all.sh codex --agentic  # paid shared agentic study
 #
 # The Codex mode fails before setup unless the caller supplies the exact active
 # plain/CLI/skill manifest SHA-256, a private auth source, a new run directory, and
@@ -25,8 +28,13 @@ MANAGED_REPO="/private/tmp/codemap-provider-parity-pl-2.6.5"
 REPO="${REPO:-$MANAGED_REPO}"
 INDEX_PATH="$REPO/.cache/codemap/$(basename "$REPO").json"
 MODE="${1:-}"
-CODEX_DRY_RUN=false
-CODEX_AGENTIC=false
+DRY_RUN=false
+AGENTIC=false
+AGENTIC_REPETITIONS=1
+AGENTIC_REPETITIONS_SET=false
+AGENTIC_SCOPE_SHA=""
+AGENTIC_TOTAL_CELLS=""
+AGENTIC_WALL_CLOCK=""
 CODEX_TASKS=""
 CODEX_SELECTION_SCOPE_SHA=""
 CODEX_SELECTION_REPETITIONS=""
@@ -45,44 +53,57 @@ LOCKED_INDEX_SHA=""
 LOCKED_INDEX_SCAN_VERSION=""
 
 usage() {
-  echo "usage: bash benchmarks/run-all.sh {smoke | claude | codex [--dry-run] [--tasks=TASK[,TASK...]] | codex --agentic [--dry-run]}" >&2
+  echo "usage: bash benchmarks/run-all.sh {smoke | claude [--dry-run] [--agentic] [--repetitions=N] | codex [--dry-run] [--tasks=TASK[,TASK...]] | codex --agentic [--dry-run] [--repetitions=N]}" >&2
 }
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
+if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
   usage
   exit 2
 fi
 case "$MODE" in
-  smoke | claude)
+  smoke)
     if [ "$#" -ne 1 ]; then
       usage
       exit 2
     fi
     ;;
-  codex)
+  claude | codex)
     for option in "${@:2}"; do
       case "$option" in
         --dry-run)
-          if [ "$CODEX_DRY_RUN" = true ]; then
+          if [ "$DRY_RUN" = true ]; then
             usage
             exit 2
           fi
-          CODEX_DRY_RUN=true
+          DRY_RUN=true
           ;;
         --agentic)
-          if [ "$CODEX_AGENTIC" = true ]; then
+          if [ "$AGENTIC" = true ]; then
             usage
             exit 2
           fi
-          CODEX_AGENTIC=true
+          AGENTIC=true
           ;;
         --tasks=*)
-          if [ -n "$CODEX_TASKS" ]; then
+          if [ "$MODE" != "codex" ] || [ -n "$CODEX_TASKS" ]; then
             usage
             exit 2
           fi
           CODEX_TASKS="${option#--tasks=}"
           if [ -z "$CODEX_TASKS" ]; then
+            usage
+            exit 2
+          fi
+          ;;
+        --repetitions=*)
+          if [ "$AGENTIC_REPETITIONS_SET" = true ]; then
+            usage
+            exit 2
+          fi
+          AGENTIC_REPETITIONS_SET=true
+          AGENTIC_REPETITIONS="${option#--repetitions=}"
+          if ! [[ "$AGENTIC_REPETITIONS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ERROR: --repetitions must be a positive integer." >&2
             usage
             exit 2
           fi
@@ -93,8 +114,13 @@ case "$MODE" in
           ;;
       esac
     done
-    if [ "$CODEX_AGENTIC" = true ] && [ -n "$CODEX_TASKS" ]; then
-      echo "ERROR: --agentic is a fixed BA-01 first slice and cannot be combined with --tasks." >&2
+    if [ "$AGENTIC" = true ] && [ -n "$CODEX_TASKS" ]; then
+      echo "ERROR: --agentic uses the complete shared task suite and cannot be combined with --tasks." >&2
+      usage
+      exit 2
+    fi
+    if [ "$AGENTIC" != true ] && [ "$AGENTIC_REPETITIONS_SET" = true ]; then
+      echo "ERROR: --repetitions is available only with --agentic." >&2
       usage
       exit 2
     fi
@@ -127,6 +153,34 @@ validate_generated_manifest() {
 validate_generated_agentic_manifest() {
   echo "== CHECK generated Codex agentic manifest (no model) =="
   python3 "$AGENTIC_MANIFEST_CHECKER" --check
+}
+
+resolve_agentic_scope() {
+  local scope_json
+  local -a resolver
+  if [ "$MODE" = "claude" ]; then
+    resolver=(
+      python3 benchmarks/run-claude-agentic.py
+      --manifest-path "$METHODOLOGY_PATH"
+      --repeat "$AGENTIC_REPETITIONS"
+      --resolve-scope
+    )
+  else
+    resolver=(
+      python3 benchmarks/run-codex-agentic.py
+      --manifest-path "$AGENTIC_MANIFEST_PATH"
+      --repetitions "$AGENTIC_REPETITIONS"
+      --resolve-scope
+    )
+  fi
+  if ! scope_json="$("${resolver[@]}" 2>&1)"; then
+    echo "ERROR: invalid $MODE agentic scope:" >&2
+    echo "$scope_json" >&2
+    return 2
+  fi
+  AGENTIC_SCOPE_SHA="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["scope_sha256"])' <<<"$scope_json")"
+  AGENTIC_TOTAL_CELLS="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["total_cells"])' <<<"$scope_json")"
+  AGENTIC_WALL_CLOCK="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["complete_run_max_wall_clock_seconds"])' <<<"$scope_json")"
 }
 
 load_index_contract() {
@@ -287,7 +341,59 @@ claude() {
   done
 
   echo "== CLAUDE AGENTIC (paid model runs) =="
-  _step_full python3 benchmarks/run-claude-agentic.py "$REPO" --run-all --report
+  resolve_agentic_scope
+  _step_full python3 benchmarks/run-claude-agentic.py \
+    --repo-path "$REPO" \
+    --manifest-path "$METHODOLOGY_PATH" \
+    --run-all \
+    --repeat "$AGENTIC_REPETITIONS" \
+    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
+    --report
+}
+
+run_claude_agentic_plan() {
+  python3 "$METHODOLOGY_CHECKER" --check
+  resolve_agentic_scope
+  echo "== CLAUDE SHARED AGENTIC A/B/C PREFLIGHT (no model) =="
+  echo "→ design: $AGENTIC_TOTAL_CELLS cells (16 tasks × $AGENTIC_REPETITIONS repetitions × 3 arms × 3 models; nonpoolable)"
+  echo "→ scope: $AGENTIC_SCOPE_SHA"
+  python3 benchmarks/run-claude-agentic.py \
+    --repo-path "$REPO" \
+    --manifest-path "$METHODOLOGY_PATH" \
+    --run-all \
+    --repeat "$AGENTIC_REPETITIONS" \
+    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
+    --dry-run
+}
+
+run_claude_agentic_study() {
+  resolve_agentic_scope
+  echo "== CLAUDE SHARED AGENTIC A/B/C STUDY (paid model runs) =="
+  echo "→ design: $AGENTIC_TOTAL_CELLS cells (16 tasks × $AGENTIC_REPETITIONS repetitions × 3 arms × 3 models; nonpoolable)"
+  echo "→ limits: 600 seconds per coordinate; $AGENTIC_WALL_CLOCK seconds complete run"
+  echo "→ manifest: $METHODOLOGY_PATH ($(sha256_file "$METHODOLOGY_PATH"))"
+  echo "→ scope: $AGENTIC_SCOPE_SHA"
+  python3 benchmarks/run-claude-agentic.py \
+    --repo-path "$REPO" \
+    --manifest-path "$METHODOLOGY_PATH" \
+    --run-all \
+    --repeat "$AGENTIC_REPETITIONS" \
+    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
+    --report
+}
+
+run_claude_plan() {
+  query_check
+  claude_preflight
+  echo "== CLAUDE STRUCTURAL (no-model full plans) =="
+  for model in haiku sonnet opus; do
+    python3 benchmarks/run-claude-structural.py \
+      --repo-path "$REPO" \
+      --run-all \
+      --model "$model" \
+      --dry-run
+  done
+  run_claude_agentic_plan
 }
 
 require_codex_paid_inputs() {
@@ -392,20 +498,31 @@ EOF
 
 print_codex_agentic_paid_guidance() {
   local agentic_manifest_sha
+  local repetition_arg=""
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
+  if [ -z "$AGENTIC_SCOPE_SHA" ]; then
+    resolve_agentic_scope
+  fi
+  if [ "$AGENTIC_REPETITIONS" = "1" ]; then
+    approval_hint="$agentic_manifest_sha"
+  else
+    approval_hint="$AGENTIC_SCOPE_SHA"
+    repetition_arg=" --repetitions=$AGENTIC_REPETITIONS"
+  fi
   cat >&2 <<EOF
 
-Review the exact no-model BA-01 first-slice plan:
-  bash benchmarks/run-all.sh codex --agentic --dry-run
+Review the exact no-model shared agentic plan:
+  bash benchmarks/run-all.sh codex --agentic${repetition_arg} --dry-run
 
-Then launch the paid nine-cell study with one manifest-bound command:
-  CODEX_AGENTIC_PAID_APPROVAL=$agentic_manifest_sha \\
+Then launch the paid $AGENTIC_TOTAL_CELLS-cell study with one scope-bound command:
+  CODEX_AGENTIC_PAID_APPROVAL=$approval_hint \\
   CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \\
   CODEX_RUN_DIR="benchmarks/results/codex-agentic-$(date -u +%Y%m%dT%H%M%SZ)" \\
-  CODEX_MAX_WALL_CLOCK_SECONDS=5400 \\
-    bash benchmarks/run-all.sh codex --agentic
+  CODEX_MAX_WALL_CLOCK_SECONDS=$AGENTIC_WALL_CLOCK \\
+    bash benchmarks/run-all.sh codex --agentic${repetition_arg}
 
 CODEX_RUN_DIR must not already exist. Review benchmarks/manifests/codex-agentic.md for the locked scope before running the paid study.
+Credential warning: use an immutable, user-owned 0600 auth source. Do not run a concurrent Codex session with it; use an independently authenticated benchmark credential instead. The runner keeps private run state and atomically propagates valid refreshes between cells. A private sequential refresh can invalidate an unchanged source, so reauthenticate after the run if needed.
 EOF
 }
 
@@ -416,8 +533,14 @@ require_codex_agentic_paid_inputs() {
   fi
   local agentic_manifest_sha
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
-  if [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$agentic_manifest_sha" ]; then
-    echo "ERROR: paid Codex agentic mode requires CODEX_AGENTIC_PAID_APPROVAL=$agentic_manifest_sha" >&2
+  resolve_agentic_scope
+  if [ "$AGENTIC_REPETITIONS" = "1" ]; then
+    approval_hint="$agentic_manifest_sha"
+  else
+    approval_hint="$AGENTIC_SCOPE_SHA"
+  fi
+  if [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$approval_hint" ]; then
+    echo "ERROR: paid Codex agentic mode requires CODEX_AGENTIC_PAID_APPROVAL=$approval_hint" >&2
     print_codex_agentic_paid_guidance
     exit 2
   fi
@@ -436,8 +559,8 @@ require_codex_agentic_paid_inputs() {
     print_codex_agentic_paid_guidance
     exit 2
   fi
-  if [ "$CODEX_MAX_WALL_CLOCK_SECONDS" != "5400" ]; then
-    echo "ERROR: CODEX_MAX_WALL_CLOCK_SECONDS must equal the manifest lock: 5400" >&2
+  if [ "$CODEX_MAX_WALL_CLOCK_SECONDS" != "$AGENTIC_WALL_CLOCK" ]; then
+    echo "ERROR: CODEX_MAX_WALL_CLOCK_SECONDS must equal the resolved scope lock: $AGENTIC_WALL_CLOCK" >&2
     print_codex_agentic_paid_guidance
     exit 2
   fi
@@ -585,27 +708,32 @@ run_codex_study() {
 }
 
 run_codex_agentic_plan() {
-  # The agentic first slice reuses the structural target/index preparation
-  # contract but dispatches only its dedicated runner.
+  # Agentic execution reuses the structural target/index preparation contract
+  # but resolves its own shared task/repeat scope before dispatch.
   prepare_locked_inputs || return "$?"
   validate_codex_cli || return "$?"
   validate_generated_agentic_manifest || return "$?"
-  echo "== CODEX AGENTIC BA-01 FIRST-SLICE PREFLIGHT (no model) =="
+  resolve_agentic_scope || return "$?"
+  echo "== CODEX SHARED AGENTIC A/B/C PREFLIGHT (no model) =="
+  echo "→ design: $AGENTIC_TOTAL_CELLS cells (16 tasks × $AGENTIC_REPETITIONS repetitions × 3 arms; nonpoolable)"
+  echo "→ scope: $AGENTIC_SCOPE_SHA"
   python3 benchmarks/run-codex-agentic.py \
     --manifest-path "$AGENTIC_MANIFEST_PATH" \
-    --task-id BA-01 \
-    --repetitions 3 \
+    --repetitions "$AGENTIC_REPETITIONS" \
+    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
     --dry-run
 }
 
 run_codex_agentic_study() {
   local agentic_manifest_sha
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
-  echo "== CODEX AGENTIC BA-01 A/B/C STUDY =="
-  echo "→ design: 9 cells (BA-01 × 3 repetitions × 3 arms; exploratory, nonpoolable)"
+  resolve_agentic_scope
+  echo "== CODEX SHARED AGENTIC A/B/C STUDY =="
+  echo "→ design: $AGENTIC_TOTAL_CELLS cells (16 tasks × $AGENTIC_REPETITIONS repetitions × 3 arms; nonpoolable)"
   echo "→ model: gpt-5.6-luna; reasoning effort: high"
-  echo "→ limits: 600 seconds per coordinate; 5400 seconds complete run"
+  echo "→ limits: 600 seconds per coordinate; $AGENTIC_WALL_CLOCK seconds complete run"
   echo "→ manifest: $AGENTIC_MANIFEST_PATH ($agentic_manifest_sha)"
+  echo "→ scope: $AGENTIC_SCOPE_SHA"
   echo "ARTIFACTS  telemetry=$CODEX_RUN_DIR/telemetry.jsonl  metadata=$CODEX_RUN_DIR/run-metadata.json"
   python3 benchmarks/run-codex-agentic.py \
     --repo-path "$REPO" \
@@ -617,6 +745,8 @@ run_codex_agentic_study() {
     --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
     --run-dir "$CODEX_RUN_DIR" \
     --paid-approval "$CODEX_AGENTIC_PAID_APPROVAL" \
+    --repetitions "$AGENTIC_REPETITIONS" \
+    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
     --max-wall-clock-seconds "$CODEX_MAX_WALL_CLOCK_SECONDS"
 }
 
@@ -648,12 +778,17 @@ run_codex_with_artifacts() {
 }
 
 run_codex_agentic_with_artifacts() {
-  # Agentic owns its run metadata/log lifecycle; render a separate raw stream
-  # so the artifact log is complete without pre-creating run.log twice.
+  # Agentic owns its run metadata/log lifecycle. Capture outside the admitted
+  # run directory so Python still sees only the locked launcher at startup.
   local study_runner="$1"
-  local stream_path="$CODEX_RUN_DIR/.agentic-console.log"
+  local stream_path
   local render_status
   local -a pipeline_status
+  if ! stream_path="$(mktemp /tmp/codex-agentic-console.XXXXXX)"; then
+    echo "ERROR: failed to create the private Codex agentic console stream." >&2
+    print_codex_agentic_paid_guidance
+    return 2
+  fi
   if "$study_runner" 2>&1 | tee "$stream_path" | python3 "$ROOT/benchmarks/run-codex-structural.py" --render-results --hide-plan; then
     pipeline_status=("${PIPESTATUS[@]}")
   else
@@ -682,6 +817,10 @@ run_codex_agentic_with_artifacts() {
     shasum -a 256 "$CODEX_RUN_DIR/.launcher/run-all.sh" >> "$checksum_path"
   fi
   echo "→ artifact checksums: $checksum_path"
+  if [ "$run_status" -ne 0 ]; then
+    echo "ERROR: Codex agentic execution failed. Preserve the reported artifact for diagnosis; any retry requires a fresh CODEX_RUN_DIR." >&2
+    print_codex_agentic_paid_guidance
+  fi
   return "$run_status"
 }
 
@@ -692,11 +831,21 @@ case "$MODE" in
     ;;
   claude)
     prepare_locked_inputs
-    claude
+    if [ "$AGENTIC" = true ]; then
+      if [ "$DRY_RUN" = true ]; then
+        run_claude_agentic_plan
+      else
+        run_claude_agentic_study
+      fi
+    elif [ "$DRY_RUN" = true ]; then
+      run_claude_plan
+    else
+      claude
+    fi
     ;;
   codex)
-    if [ "$CODEX_AGENTIC" = true ]; then
-      if [ "$CODEX_DRY_RUN" = true ]; then
+    if [ "$AGENTIC" = true ]; then
+      if [ "$DRY_RUN" = true ]; then
         run_codex_agentic_plan
       else
         require_codex_agentic_paid_inputs
@@ -714,7 +863,7 @@ case "$MODE" in
     if [ -n "$CODEX_TASKS" ]; then
       ensure_codex_scope_resolved
     fi
-    if [ "$CODEX_DRY_RUN" = true ]; then
+    if [ "$DRY_RUN" = true ]; then
       prepare_locked_inputs
       run_codex_plan
     else

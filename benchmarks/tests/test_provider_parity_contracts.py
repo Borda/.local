@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from benchmarks import provider_parity_contracts as core
+from benchmarks import agentic_contracts
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
@@ -369,8 +370,8 @@ class TestArmContracts:
             == profile_manifest["codex_permission_profiles"]["treatment"]
         )
 
-    def test_active_manifest_locks_split_profiles_runtime_and_structural_only_runner(self) -> None:
-        """The active manifest must describe the exact tested Codex permission/runtime boundary."""
+    def test_active_manifest_locks_split_profiles_and_provider_adapters(self) -> None:
+        """The active manifest must describe the exact tested Codex permission and adapter boundary."""
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         profiles = manifest["codex_permission_profiles"]
 
@@ -390,7 +391,7 @@ class TestArmContracts:
             "scope": ["B_auto", "C_required"],
         }
         assert manifest["execution_controls"]["codex_transport"] == (
-            "run-codex-structural.py; no Codex agentic adapter is registered for the active manifest"
+            "run-codex-structural.py and run-codex-agentic.py provider adapters"
         )
 
 
@@ -808,3 +809,234 @@ class TestPairedEffects:
                 treatment_arm="B_auto",
                 policies=_synthetic_policies(),
             )
+
+
+class TestAgenticAnswerContracts:
+    """The shared agentic oracle scores explicit fields without provider heuristics."""
+
+    def test_oracle_scores_production_and_test_importers_with_stable_ranking(self, tmp_path: Path) -> None:
+        """AST truth excludes tests, self-imports, dynamic imports, and broken files.
+
+        A response that omits an expected-empty field or reverses a tied ranking
+        must lose its component instead of receiving credit from prose recall.
+        """
+        package = tmp_path / "pkg"
+        tests = tmp_path / "tests"
+        package.mkdir()
+        tests.mkdir()
+        for path, source in {
+            package / "__init__.py": "",
+            package / "target.py": "import pkg.target\n",
+            package / "alpha.py": "import pkg.target\n",
+            package / "beta.py": "from pkg import target\n",
+            package / "consumer.py": "import pkg.alpha\n",
+            package / "dynamic.py": "import importlib\nimportlib.import_module('pkg.target')\n",
+            package / "broken.py": "import pkg.target\nnot valid python\n",
+            tests / "test_target.py": "import pkg.target\n",
+        }.items():
+            path.write_text(source, encoding="utf-8")
+
+        task = {
+            "id": "T-01",
+            "primary_module": "pkg.target",
+            "answer_contract": {
+                "fields": [
+                    "production_importers",
+                    "test_importer_count",
+                    "rdep_counts",
+                    "ranking",
+                    "cross_namespace_importers",
+                ],
+                "params": {
+                    "ranking": {"candidate_set": "production_importers", "top_k": 2},
+                    "cross_namespace_importers": {"prefix": "other"},
+                },
+            },
+        }
+
+        oracle = agentic_contracts.build_oracle(task, tmp_path)
+        score = agentic_contracts.score_answer(
+            oracle,
+            {
+                "production_importers": ["pkg.alpha", "pkg.beta"],
+                "test_importer_count": 1,
+                "rdep_counts": {"pkg.alpha": 1, "pkg.beta": 0},
+                "ranking": ["pkg.alpha", "pkg.beta"],
+                "cross_namespace_importers": [],
+            },
+            exposure_text="pkg.alpha pkg.beta",
+            report_text="pkg.alpha",
+            tool_calls=2,
+        )
+
+        assert oracle.expected["production_importers"] == ("pkg.alpha", "pkg.beta")
+        assert oracle.expected["test_importer_count"] == 1
+        assert oracle.expected["rdep_counts"] == {"pkg.alpha": 1, "pkg.beta": 0}
+        assert score.components == {
+            "production_importers": 1.0,
+            "test_importer_count": 1.0,
+            "rdep_counts": 1.0,
+            "ranking": 1.0,
+            "cross_namespace_importers": 1.0,
+        }
+        assert score.quality_score == pytest.approx(1.0)
+        assert score.correct is True
+        assert score.erec == pytest.approx(1.0)
+        assert score.rrec == pytest.approx(0.5)
+        assert score.deff == pytest.approx(1.0)
+
+        incomplete = agentic_contracts.score_answer(
+            oracle,
+            {
+                "production_importers": ["pkg.alpha", "pkg.beta"],
+                "test_importer_count": 1,
+                "rdep_counts": {"pkg.alpha": 1, "pkg.beta": 0},
+                "ranking": ["pkg.beta", "pkg.alpha"],
+            },
+        )
+
+        assert incomplete.components["ranking"] == 0.0
+        assert incomplete.components["cross_namespace_importers"] == 0.0
+        assert incomplete.quality_score == pytest.approx(0.6)
+
+    def test_answer_contract_rejects_unbounded_or_unknown_field_parameters(self) -> None:
+        """A task cannot add evaluator behavior through an unreviewed parameter."""
+        task = {
+            "id": "T-02",
+            "primary_module": "pkg.target",
+            "answer_contract": {
+                "fields": ["ranking"],
+                "params": {"ranking": {"candidate_set": "production_importers", "top_k": 0}},
+            },
+        }
+
+        with pytest.raises(ValueError, match="top_k"):
+            agentic_contracts.validate_answer_contract(task)
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            pytest.param(
+                '{"production_importers": ["pkg.alpha"], "rdep_counts": {"pkg.alpha": 2}, "ranking": ["pkg.alpha"], "production_importer_count": 1, "isolation_verdict": "isolated"}',
+                {
+                    "production_importers": ["pkg.alpha"],
+                    "rdep_counts": {"pkg.alpha": 2},
+                    "ranking": ["pkg.alpha"],
+                    "production_importer_count": 1,
+                    "isolation_verdict": "isolated",
+                },
+                id="set-mapping-ranking-scalar-category",
+            ),
+            pytest.param(
+                '{"production_importers": "EMPTY", "rdep_counts": "EMPTY", "ranking": "EMPTY", "production_importer_count": 0, "isolation_verdict": "isolated"}',
+                {
+                    "production_importers": [],
+                    "rdep_counts": {},
+                    "ranking": [],
+                    "production_importer_count": 0,
+                    "isolation_verdict": "isolated",
+                },
+                id="explicit-empty",
+            ),
+        ],
+    )
+    def test_parse_labeled_answer_requires_exact_labels_and_preserves_declared_shapes(
+        self, payload: str, expected: dict[str, Any]
+    ) -> None:
+        """The shared parser accepts all canonical answer shapes without provider-specific extraction."""
+        task = {
+            "id": "T-03",
+            "primary_module": "pkg.target",
+            "answer_contract": {
+                "fields": [
+                    "production_importers",
+                    "rdep_counts",
+                    "ranking",
+                    "production_importer_count",
+                    "isolation_verdict",
+                ],
+                "params": {"ranking": {"candidate_set": "production_importers", "top_k": 1}},
+            },
+        }
+
+        parsed = agentic_contracts.parse_labeled_answer(task, f"notes\nBEGIN_ANSWER_JSON\n{payload}\nEND_ANSWER_JSON\n")
+
+        assert parsed == expected
+
+    def test_parse_labeled_answer_rejects_missing_contract_label(self) -> None:
+        """A partial answer cannot be converted into accidental component credit."""
+        task = {
+            "id": "T-04",
+            "primary_module": "pkg.target",
+            "answer_contract": {
+                "fields": ["production_importers", "production_importer_count"],
+                "params": {},
+            },
+        }
+
+        with pytest.raises(ValueError, match="missing"):
+            agentic_contracts.parse_labeled_answer(
+                task,
+                'BEGIN_ANSWER_JSON\n{"production_importers": []}\nEND_ANSWER_JSON',
+            )
+
+    def test_answer_contract_changes_the_shared_delivered_prompt_and_hash(self) -> None:
+        """Both providers must hash the same labelled-answer instruction bytes."""
+        task = {
+            "id": "T-05",
+            "prompt": "Inspect pkg.target.",
+            "primary_module": "pkg.target",
+            "answer_contract": {"fields": ["production_importers"], "params": {}},
+        }
+
+        delivered = agentic_contracts.materialize_agentic_prompt(task)
+
+        assert delivered == (
+            "Inspect pkg.target.\n\n"
+            "Return one JSON object containing exactly these labels: production_importers. "
+            "Put it between literal lines BEGIN_ANSWER_JSON and END_ANSWER_JSON."
+        )
+        assert core.prompt_hash(task) == hashlib.sha256(delivered.encode("utf-8")).hexdigest()
+
+    @pytest.mark.parametrize(
+        ("relative_path", "expected_test"),
+        [
+            pytest.param("tests/test_a.py", True, id="top-level-tests"),
+            pytest.param("tests_pytorch/test_a.py", True, id="pytorch-tests-root"),
+            pytest.param("tests_fabric/test_a.py", True, id="fabric-tests-root"),
+            pytest.param("pkg/tests/test_a.py", True, id="nested-tests"),
+            pytest.param("pkg/contest.py", False, id="production-substring"),
+        ],
+    )
+    def test_ast_oracle_test_detection_and_src_module_names(
+        self, tmp_path: Path, relative_path: str, expected_test: bool
+    ) -> None:
+        """Test roots do not contaminate production truth and ``src`` is not a namespace segment."""
+        source = tmp_path / "src" / relative_path
+        source.parent.mkdir(parents=True)
+        source.write_text("", encoding="utf-8")
+
+        modules = agentic_contracts._scan_modules(tmp_path)
+
+        module = next(iter(modules.values()))
+        assert module.name != "src." + module.name.removeprefix("src.")
+        assert module.is_test is expected_test
+
+    def test_ast_oracle_resolves_relative_imports_from_the_importer_package(self, tmp_path: Path) -> None:
+        """Single- and double-dot imports retain their local static dependency targets."""
+        for relative_path, source in {
+            "pkg/__init__.py": "",
+            "pkg/sub/__init__.py": "",
+            "pkg/sub/target.py": "",
+            "pkg/sub/client.py": "from . import target\n",
+            "pkg/sub/child/__init__.py": "",
+            "pkg/sub/child/client.py": "from .. import target\n",
+        }.items():
+            path = tmp_path / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+
+        modules = agentic_contracts._scan_modules(tmp_path)
+
+        assert "pkg.sub.target" in modules["pkg.sub.client"].imports
+        assert "pkg.sub.target" in modules["pkg.sub.child.client"].imports

@@ -27,7 +27,7 @@ POLICY_SEED = BENCHMARKS / "manifests" / "provider-parity-methodology-policy.jso
 POLICY_SEED_SHA256 = "62da64ed419bb988794ccd0e6ccc58a61f84a9e0f8b737ccb5ef372a3ec0384d"
 ARCHIVED_MANIFEST = BENCHMARKS / "results" / "manifests" / ("provider-parity-v1-b0-" + "r" + "6.json")
 ARCHIVED_MANIFEST_SHA256 = "971c6ad220c1e821ed72109396f4dce1d745f0a1b74b2790874f6b07e833627b"
-EXPERIMENT_REVISION = "provider-parity-shared-methodology-quality-and-query-contract-2026-08-04"
+EXPERIMENT_REVISION = "provider-parity-shared-structural-and-agentic-methodology-2026-08-04"
 INDEX_LOCK = {
     "change_reason": (
         "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; "
@@ -66,6 +66,13 @@ def _ledger_entry(identity_fields: list[str], reason: str) -> dict[str, Any]:
 
 
 TASK_CHANGE_LEDGER: dict[str, dict[str, Any]] = {
+    **{
+        f"BA-{number:02d}": _ledger_entry(
+            ["canonical_task_sha256", "prompt_sha256"],
+            "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable.",
+        )
+        for number in range(1, 17)
+    },
     "SE-05": _ledger_entry(["canonical_task_sha256"], "Structured expected query normalizes the symbol target."),
     "FN-01": _ledger_entry(
         ["canonical_task_sha256", "prompt_sha256"], "Prompt includes examples/** in the non-test caller scope."
@@ -240,13 +247,16 @@ def _changed_task_identity_fields(previous: Mapping[str, Any], active: Mapping[s
 def _artifact_hashes() -> dict[str, str]:
     """Lock shared provider-neutral implementation bytes used by both runners."""
     paths = {
+        "agentic_contracts": "benchmarks/agentic_contracts.py",
         "claude_query_skill": "plugins/codemap-py/claude-skills/query-code/SKILL.md",
         "codemap_graph": "plugins/codemap-py/src/codemap_py/graph.py",
         "codemap_query": "plugins/codemap-py/src/codemap_py/query.py",
         "codex_query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
         "provider_parity_contracts": "benchmarks/provider_parity_contracts.py",
         "run_all": "benchmarks/run-all.sh",
+        "run_claude_agentic": "benchmarks/run-claude-agentic.py",
         "run_claude_structural": "benchmarks/run-claude-structural.py",
+        "run_codex_agentic": "benchmarks/run-codex-agentic.py",
         "run_codex_structural": "benchmarks/run-codex-structural.py",
     }
     return {name: _sha256(ROOT / relative_path) for name, relative_path in paths.items()}
@@ -269,14 +279,19 @@ def _build_suites(archived: Mapping[str, Any]) -> list[dict[str, Any]]:
             row = copy.deepcopy(prior_rows[source_task["id"]])
             row["canonical_task_sha256"] = core.canonical_task_hash(source_task)
             row["prompt_sha256"] = core.prompt_hash(source_task)
+            if "answer_contract" in source_task:
+                row["answer_contract"] = copy.deepcopy(source_task["answer_contract"])
             rows.append(row)
         suite["raw_sha256"] = _sha256(ROOT / path)
         suite["task_count"] = len(rows)
         suite["tasks"] = rows
         suite["semantic_suite_sha256"] = core.semantic_suite_hash(source_tasks)
-        suite["current_consumer"] = suite["current_consumer"].replace(
-            "in r" + "6", "in the archived provider-parity study"
-        )
+        if path == "benchmarks/suites/tasks-agentic.json":
+            suite["current_consumer"] = "run-claude-agentic.py and run-codex-agentic.py defaults"
+        else:
+            suite["current_consumer"] = suite["current_consumer"].replace(
+                "in r" + "6", "in the archived provider-parity study"
+            )
         suites.append(suite)
     return suites
 
@@ -316,6 +331,30 @@ def _build_manifest() -> dict[str, Any]:
     manifest = copy.deepcopy(policy)
     manifest["experiment_revision"] = EXPERIMENT_REVISION
     manifest["evaluation_contract"] = _evaluation_contract(policy)
+    manifest["execution_controls"]["codex_transport"] = (
+        "run-codex-structural.py and run-codex-agentic.py provider adapters"
+    )
+    agentic_suite = next(suite for suite in suites if suite["path"] == "benchmarks/suites/tasks-agentic.json")
+    manifest["agentic_execution_contract"] = {
+        "arms": list(core.ARM_CONTRACTS),
+        "coordinate_timeout_seconds": core.PARITY_TIMEOUT_SECONDS,
+        "default_repetitions": 1,
+        "default_total_cells_by_provider": {
+            "claude": len(agentic_suite["ordered_task_ids"]) * len(core.ARM_CONTRACTS) * 3,
+            "codex": len(agentic_suite["ordered_task_ids"]) * len(core.ARM_CONTRACTS),
+        },
+        "models_by_provider": {"claude": ["haiku", "sonnet", "opus"], "codex": ["gpt-5.6-luna"]},
+        "providers": ["claude", "codex"],
+        "repeat_override": (
+            "Each provider adapter admits a nondefault positive repeat only with a deterministic scope hash binding "
+            "the provider, current manifest, ordered tasks, arms, models, repetitions, total cells, and exact wall-clock ceiling."
+        ),
+        "scoring": (
+            "Macro mean across every required answer_contract component; missing components score zero. "
+            "EREC and RREC remain diagnostic comparability metrics."
+        ),
+        "task_ids": agentic_suite["ordered_task_ids"],
+    }
     manifest["implementation_contract"]["artifact_sha256"] = _artifact_hashes()
     manifest["index"] = copy.deepcopy(INDEX_LOCK)
     manifest["methodology_change_ledger"] = copy.deepcopy(TASK_CHANGE_LEDGER)

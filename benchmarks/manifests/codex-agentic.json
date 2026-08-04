@@ -4,7 +4,7 @@
     "credentials": "no credential material, auth source, or credential path is part of this manifest",
     "paid_execution": "admitted",
     "required_before_paid_execution": [
-      "Run --dry-run and verify the deterministic 9-cell plan.",
+      "Run --dry-run and verify the deterministic 48-cell plan.",
       "Validate target commit/tree and frozen index bytes without model or credentials.",
       "Validate A/B/C isolation and C Skill-before-query evidence without model or credentials.",
       "Caller supplies CODEX_AGENTIC_PAID_APPROVAL equal to the exact reviewed machine-manifest SHA-256."
@@ -44,21 +44,21 @@
     "stop_behavior": "Stop on the first runtime or admission-integrity failure or complete-run wall-clock exhaustion; do not stop on an ordinary model, task, or treatment-nonadherence row; preserve every partial artifact and never pool partial or nonpoolable evidence."
   },
   "artifact_sha256": {
-    "claude_agentic_runner": "8a6cc8d1f3204b4dc8c076c0ddd3fea2a737413c4743640a785ed307451fa1a8",
+    "agentic_contracts": "8b815316d9d74f9e821023586ed42620a952666d3a3fa9825c3fe287098238f7",
     "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_plugin_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
     "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
-    "codex_agentic_runner": "77163512c00183465754537669da157d87b5b04226c579bd78b1c31c1a679532",
+    "codex_agentic_runner": "877548f922fc02345b2b548ef54905030751fffc604c77f89308a4ae75a444db",
     "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
-    "codex_structural_manifest": "0809a7f087eb3c2343048f848615690b704a79323fc919f3a4b5ec8b897a72be",
+    "codex_structural_manifest": "a86b0c6415d0f0dc22d311f20c350366e70c725ddebd86d83c15a3587723640d",
     "codex_structural_runner": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465",
-    "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995"
+    "run_all": "e945f1daf45278928c292b3387cbf70f9d4109841d60872e7fea789b37f93bb2"
   },
-  "experiment_id": "codex-agentic-ba01",
-  "experiment_revision": "codex-agentic-ba01-review-ready-2026-08-04",
+  "experiment_id": "codex-agentic",
+  "experiment_revision": "codex-agentic-shared-suite-2026-08-04",
   "frozen_index_contract": {
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
@@ -75,18 +75,18 @@
     "codemap_version": "0.28.3",
     "codex_rig_version": "0.4.1",
     "source_hashes": {
-      "claude_agentic_runner": "8a6cc8d1f3204b4dc8c076c0ddd3fea2a737413c4743640a785ed307451fa1a8",
+      "agentic_contracts": "8b815316d9d74f9e821023586ed42620a952666d3a3fa9825c3fe287098238f7",
       "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_plugin_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
       "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
-      "codex_agentic_runner": "77163512c00183465754537669da157d87b5b04226c579bd78b1c31c1a679532",
+      "codex_agentic_runner": "877548f922fc02345b2b548ef54905030751fffc604c77f89308a4ae75a444db",
       "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
-      "codex_structural_manifest": "0809a7f087eb3c2343048f848615690b704a79323fc919f3a4b5ec8b897a72be",
+      "codex_structural_manifest": "a86b0c6415d0f0dc22d311f20c350366e70c725ddebd86d83c15a3587723640d",
       "codex_structural_runner": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465",
-      "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995"
+      "run_all": "e945f1daf45278928c292b3387cbf70f9d4109841d60872e7fea789b37f93bb2"
     }
   },
   "preregistered_scope": {
@@ -96,18 +96,33 @@
       "B_auto",
       "C_required"
     ],
-    "complete_run_max_wall_clock_seconds": 5400,
+    "complete_run_max_wall_clock_seconds": 28800,
     "coordinate_timeout_seconds": 600,
     "nonpoolable": true,
     "pooling_eligibility": "ineligible; exploratory evidence only",
     "providers": [
       "codex"
     ],
-    "repetitions": 3,
+    "repetitions": 1,
     "task_ids": [
-      "BA-01"
+      "BA-01",
+      "BA-02",
+      "BA-03",
+      "BA-04",
+      "BA-05",
+      "BA-06",
+      "BA-07",
+      "BA-08",
+      "BA-09",
+      "BA-10",
+      "BA-11",
+      "BA-12",
+      "BA-13",
+      "BA-14",
+      "BA-15",
+      "BA-16"
     ],
-    "total_cells": 9
+    "total_cells": 48
   },
   "runner": "benchmarks/run-codex-agentic.py",
   "runtime_isolation": {
@@ -122,28 +137,26 @@
   "schema_version": "codex-agentic-manifest-v1",
   "scoring": {
     "implementation": {
-      "path": "benchmarks/run-claude-agentic.py",
-      "sha256": "8a6cc8d1f3204b4dc8c076c0ddd3fea2a737413c4743640a785ed307451fa1a8",
-      "symbol": "GroundTruth.score"
+      "path": "benchmarks/agentic_contracts.py",
+      "sha256": "8b815316d9d74f9e821023586ed42620a952666d3a3fa9825c3fe287098238f7",
+      "symbol": "score_answer"
     },
     "metrics": {
-      "DEFF": "erec_tp / max(tool_calls, 1)",
-      "E@10": "top10_tp / max(len(top10), 1)",
-      "EREC": "erec_tp / max(len(expected), 1)",
-      "RREC": "rrec_tp / max(len(expected), 1)"
+      "CORRECT": "every declared answer-contract field scores 1.0",
+      "SCORE": "mean(component score for each declared answer-contract field)"
     },
-    "provider": "claude_ground_truth_reused",
-    "quality_score": "shared GroundTruth score over the agent's final answer and exposure corpus"
+    "provider": "provider_neutral_answer_contract",
+    "quality_score": "shared answer-contract component mean over the labelled final answer"
   },
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "9738d21d607bbe16551a61e49a9ae82b586b7fc7fd29914f589486f260471054"
+    "sha256": "a014d33f0a3ae41b94afe7f76b61bcb37dda3acf543fbdbad40141c8d11cfca9"
   },
   "status": "review_ready_paid_execution_pending_human_launch",
   "suite": {
     "path": "benchmarks/suites/tasks-agentic.json",
-    "raw_sha256": "97e762235b57cd819ca5710052ab34426f96141c50b65717e58467a08dc503e9",
-    "semantic_suite_sha256": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
+    "raw_sha256": "adb94fde72b085119ae7ce082078bc86c76f89ed04bd1f27b7146dc3a01b5cfe",
+    "semantic_suite_sha256": "20d7b1a899f48bef19f82ff3ffdf24145593747b0f0ff3e7835b64afac3270d6",
     "task_count": 16,
     "task_ids": [
       "BA-01",
@@ -176,16 +189,134 @@
     "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
     "validation_worktree_clean": true
   },
-  "task": {
-    "canonical_task_sha256": "81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f",
-    "difficulty": "simple",
-    "effective_scoreable": true,
-    "headline_eligible_v1": false,
-    "id": "BA-01",
-    "oracle_class": "independent",
-    "primary_module": "lightning.pytorch.callbacks.timer",
-    "prompt": "The `Timer` callback in `lightning.pytorch.callbacks.timer` has a bug: when `duration` is expressed as a `timedelta`, it is compared against wall-clock seconds as if it were already a float, causing premature training stops on long runs.\n\nBefore touching the module, map the blast radius:\n1. Which modules directly import `lightning.pytorch.callbacks.timer`? List every one by full dotted name.\n2. For each direct importer, state how many other modules import it in turn \u2014 this is the second-order exposure.\n3. Identify the single importer with the highest second-order exposure; it carries the most amplified risk.\n\nProduce the direct-importer list with second-order counts and name the top-risk importer. Do not implement the fix.",
-    "prompt_sha256": "6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479",
-    "type": "blast_radius_analysis"
-  }
+  "tasks": [
+    {
+      "canonical_task_sha256": "d2eba4807f18891b58ee933bc6ec8f502548a5f18d44c1df7011ccce88b741a6",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-01",
+      "oracle_class": "independent",
+      "prompt_sha256": "74cf2aeebea015e465a8f2f969648b5dc0520fbc01c92d793eba1659edcdd55b"
+    },
+    {
+      "canonical_task_sha256": "ccc08d9a2c82f525a670a2698d070cf758aba4dc8471d097bf6ac1bdb92a7c65",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-02",
+      "oracle_class": "independent",
+      "prompt_sha256": "ac527389bfc33c732c3804ec3a511abc7dba49846af83f5ba864d7acc5f7b633"
+    },
+    {
+      "canonical_task_sha256": "55f987528d7b49671420fdb18f90b2adaec6cb2966e9a956b69a8456bba7ae9a",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-03",
+      "oracle_class": "independent",
+      "prompt_sha256": "a38f55839b169b0d06142c5ce13ca241aab58539a8b338a94a3fac7633a65343"
+    },
+    {
+      "canonical_task_sha256": "aed7fd958c6a8171e62cbb1d46a814bfb4e7ba47c88ccac57853634206e1fb9f",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-04",
+      "oracle_class": "independent",
+      "prompt_sha256": "d31e095c71d993922082585401c0c2d665e073804958441007a8db04fcf79c09"
+    },
+    {
+      "canonical_task_sha256": "09e4d9c470f498f20cabf7921a011d2f9a4f0e6d09d8598ef9555b911f9c603e",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-05",
+      "oracle_class": "independent",
+      "prompt_sha256": "694879e8422c7ef9176c69d7a41963e6573ef78e67b6af6c848a444b629f4bc3"
+    },
+    {
+      "canonical_task_sha256": "a2ffe109479ffc7da9a4c2f3d9c97030ae811501e38e37aaf4808a6809de1ad3",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-06",
+      "oracle_class": "independent",
+      "prompt_sha256": "d8f2fad0ede503f135c20b8ebd82b798efa254a330ff17ad823ee5a1b89ece23"
+    },
+    {
+      "canonical_task_sha256": "ff24b9072183c66518d3f9b3bcc487804cfc79dd676b52a364e12be54b2fee7e",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-07",
+      "oracle_class": "independent",
+      "prompt_sha256": "e9bbd76d41a7674da05f8046ce0b5b9501ad8b169ccbb21ba724375cefbe13e5"
+    },
+    {
+      "canonical_task_sha256": "2ecd185f21ac382f63b1c495c2a41f38e93ef38f0780ec6bc8d8480881faee11",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-08",
+      "oracle_class": "independent",
+      "prompt_sha256": "8fb8455d2e76c7e9526010623eeed15497efb737ab3e81c8483dc92c7e4ebdb5"
+    },
+    {
+      "canonical_task_sha256": "a6747354d1e02aa28ee3c4bda105916b8fa141033709bcb04bd6d1f4963f213f",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-09",
+      "oracle_class": "independent",
+      "prompt_sha256": "c47eb6c4fef930cba439e2779725e521e372fc17bcbf0c49ee01b19bab570f44"
+    },
+    {
+      "canonical_task_sha256": "967e364bc69e800c5a1b1adcad2a999077b96869c592979c4afe928b9f135c22",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-10",
+      "oracle_class": "independent",
+      "prompt_sha256": "4786ecf96aeb558bcae00cd4d1b33672ed40c2ef4b1e1c4809e82eca3a928dab"
+    },
+    {
+      "canonical_task_sha256": "4ff24dae61853e039c74327965bd83f51685b597debcfefd2c6e32754cadab83",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-11",
+      "oracle_class": "independent",
+      "prompt_sha256": "b0be44284a2b7abbea385a961d6b7f0adacc395af597925ebc579664eec15e09"
+    },
+    {
+      "canonical_task_sha256": "80b79e21c967d75c1e826d435100ed27a33a446a941467fd48d70579bf274d61",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-12",
+      "oracle_class": "independent",
+      "prompt_sha256": "878d8d821afc19ec89ea5af83dc84e896cbd8cbe5dd53c8cb3cae99a7102edc8"
+    },
+    {
+      "canonical_task_sha256": "739a667d6e24a4da8bdea76e84bc55e287ac91008075ca3399d4d8ca0b388142",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-13",
+      "oracle_class": "independent",
+      "prompt_sha256": "3c0e6dfc0647c0aa3a4d361bb2e818cb4516903ee3efbfc86d9e57128d1a8106"
+    },
+    {
+      "canonical_task_sha256": "d574bd92bb876c383c75edc01b926a502d74928958e461112026e3afb8f3e03d",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-14",
+      "oracle_class": "independent",
+      "prompt_sha256": "682569b222cf4ccb8a83feb6e59d7013ba28bab0b1c7a16aec4624401a5debc0"
+    },
+    {
+      "canonical_task_sha256": "1eaa1e187d435a57ee8918b7cf169119e29a41c177b7c5a8df5dd6454639ee79",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-15",
+      "oracle_class": "independent",
+      "prompt_sha256": "438f2221893451bd5bac4153d7390fa6dde856d633bebaf12b06718eef3e895c"
+    },
+    {
+      "canonical_task_sha256": "d3757420c71617a2ee53bc1bd4c2bbc0279b09816083194725e310968c7a5271",
+      "effective_scoreable": true,
+      "headline_eligible_v1": false,
+      "id": "BA-16",
+      "oracle_class": "independent",
+      "prompt_sha256": "3438d295bf96d5c0d9b0be62e27147bfc9166b8370080527a10528645f555303"
+    }
+  ]
 }

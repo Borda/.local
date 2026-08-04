@@ -1,33 +1,31 @@
-# `codex-agentic-ba01`
+# `codex-agentic`
 
-**Manifest SHA-256**: `b81e9a9574d150179396478b06b3afb0339bf41abd71f4cf7cd3c6ed364cfdf2`
+**Manifest SHA-256**: `939d64d1328d0e9167a2ca1bc0586c173186836f2e549787a88b29ee34ee6070`
 
 ## Status
 
 - No model or credentials were used to build this manifest.
 - Review-ready; human execution is pending.
 - Paid execution is admitted only when the caller supplies the exact reviewed machine-manifest SHA-256.
-- The 9-cell scope is exploratory and non-poolable.
+- The 48-cell default scope is exploratory and non-poolable.
 
 ## Locked experiment
 
-- Revision: `codex-agentic-ba01-review-ready-2026-08-04`
+- Revision: `codex-agentic-shared-suite-2026-08-04`
 - Model: `gpt-5.6-luna`, effort `high`.
 - Target: `2.6.5` at `be98784a1a03581b7051a355ae1084fd352d7cea`.
 - Frozen index SHA-256: `2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb`.
-- Suite: `benchmarks/suites/tasks-agentic.json`; raw SHA-256 `97e762235b57cd819ca5710052ab34426f96141c50b65717e58467a08dc503e9`.
+- Suite: `benchmarks/suites/tasks-agentic.json`; raw SHA-256 `adb94fde72b085119ae7ce082078bc86c76f89ed04bd1f27b7146dc3a01b5cfe`.
 
-## BA-01 identity
+## Task identities
 
-- `BA-01` `blast_radius_analysis` / `simple` on `lightning.pytorch.callbacks.timer`.
-- Canonical task SHA-256: `81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f`.
-- Prompt SHA-256: `6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479`.
-- Oracle: `independent`; Claude `GroundTruth.score` is reused.
+- Ordered task IDs: `['BA-01', 'BA-02', 'BA-03', 'BA-04', 'BA-05', 'BA-06', 'BA-07', 'BA-08', 'BA-09', 'BA-10', 'BA-11', 'BA-12', 'BA-13', 'BA-14', 'BA-15', 'BA-16']`.
+- Each task locks canonical and prompt SHA-256 plus its provider-neutral answer contract.
 
 ## Scope and arms
 
-- Tasks: `['BA-01']`; repetitions: `3`; arms: `['A_plain', 'B_auto', 'C_required']`.
-- Cells: `9`; coordinate budget: `600s`; complete-run ceiling: `5400s`.
+- Tasks: `['BA-01', 'BA-02', 'BA-03', 'BA-04', 'BA-05', 'BA-06', 'BA-07', 'BA-08', 'BA-09', 'BA-10', 'BA-11', 'BA-12', 'BA-13', 'BA-14', 'BA-15', 'BA-16']`; repetitions: `1`; arms: `['A_plain', 'B_auto', 'C_required']`.
+- Cells: `48`; coordinate budget: `600s`; complete-run ceiling: `28800s`.
 - `A_plain`: Codemap absent; no-call is valid.
 - `B_auto`: Codemap CLI available; use is optional, and adoption is measured.
 - `C_required`: exact Skill read must precede a successful compact query; noncompliant rows remain scored but are excluded from pooling.
@@ -39,8 +37,8 @@
 
 ## Shared scoring
 
-- `EREC = erec_tp / max(len(expected), 1)`; `E@10 = top10_tp / max(len(top10), 1)`.
-- `RREC = rrec_tp / max(len(expected), 1)`; `DEFF = erec_tp / max(tool_calls, 1)`.
+- `SCORE` is the mean component score for every declared answer-contract field.
+- `CORRECT` requires every declared answer-contract field to score 1.0.
 
 ## Runner
 
@@ -61,7 +59,7 @@ Then run the exact reviewed scope with a fresh run directory:
 CODEX_AGENTIC_PAID_APPROVAL=<MANIFEST_SHA256> \
 CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
 CODEX_RUN_DIR="benchmarks/results/codex-agentic-$(date -u +%Y%m%dT%H%M%SZ)" \
-CODEX_MAX_WALL_CLOCK_SECONDS=5400 \
+CODEX_MAX_WALL_CLOCK_SECONDS=28800 \
   bash benchmarks/run-all.sh codex --agentic
 ```
 

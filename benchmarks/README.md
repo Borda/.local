@@ -12,9 +12,11 @@ Two paid post-fix diagnostic attempts stopped before any model cell: the first o
 
 The provider-neutral library lives in `provider_parity_contracts.py`; it locks task/prompt identity, arm semantics, evaluator dispatch, continuous fitness components, capability strata, headline exclusions, and effort-aware paired construction. It does not generate tasks, run benchmarks, invoke models, or implement provider transport.
 
+The agentic benchmark uses the same provider-neutral contract. `agentic_contracts.py`, `suites/tasks-agentic.json`, `run-claude-agentic.py`, and `run-codex-agentic.py` share the 16 committed BA-01–BA-16 task objects, materialized prompts, answer envelopes, ground-truth oracle, continuous scorer, and paired metrics. The canonical arms are `A_plain`, `B_auto`, and `C_required`; provider adapters own only transport, isolation, and native event normalization. The default repeat count is one: Claude's default batch is 16 tasks × 3 arms × 3 model tiers = 144 cells, while Codex's default paid batch is 16 tasks × 3 arms = 48 cells. Either provider's run with more than one repetition is explicitly non-poolable and requires its exact derived scope SHA-256; Codex selected-task scopes use the same admission rule.
+
 The stopped partial artifacts `benchmarks/results/codex-integration-20260802T095824Z` and `benchmarks/results/codex-integration-20260803T191236Z` are audit-only and non-poolable; no treatment effect is inferred from either. The latter persisted 86/165 rows, first failed authentication at `execution_index=50`, and then recorded identical zero-token `401 Unauthorized` failures. Root fixes in the relock include zero-argument `coupled` canonical detection, CQ-03 ranking by internal import count with complete ordered five `name + dep_count` rows, and RV-02 acceptance of natural `N modules directly import/depend` forms.
 
-Final no-model verification is green: the full benchmark suite passed (1,653 passed, 4 skipped), and generated `--check` validation passes. Ruff, targeted Python compilation, Bash syntax, diff, package build/validation, and source/package identity checks pass. Generic plugin-creator validation remains a non-blocking residual because it does not model the existing multi-runtime `codex-skills/` layout; no layout change is proposed.
+Final no-model verification is green: the full benchmark suite passed (1,742 passed, 4 skipped), and generated `--check` validation passes. Ruff, targeted Python compilation, Bash syntax, diff, package build/validation, and source/package identity checks pass. Generic plugin-creator validation remains a non-blocking residual because it does not model the existing multi-runtime `codex-skills/` layout; no layout change is proposed.
 
 The historical paid run used shared RV evaluator v6 and remains immutable/non-poolable. Its raw answers contain the correct RV-02 count `64 modules directly import` in all A/B/C rows; v6 failed to extract these natural forms. The relocked evaluator accepts optional `directly` and natural `[unique] [public] symbols [are] uncovered` phrasing; immutable tests preserve RV-05's real `2/5` symbol loss and aggregate score `0.7` with `correct=false`. It does not retroactively rescore historical telemetry.
 
@@ -41,7 +43,7 @@ Existing Claude and exploratory Codex results remain historical evidence and are
 | Claude only      | `run-claude-structural.py`      | Structural and real-code A/B/C plus legacy Claude arms                   |
 | Claude only      | `run-claude-agentic.py`         | Agentic Claude/semble comparison plus canonical Claude arms              |
 | Codex only       | `run-codex-structural.py`       | Canonical structural Codex A/B/C transport                               |
-| Codex only       | `run-codex-agentic.py`          | Approval-gated BA-01 agentic A/B/C execution and artifact persistence    |
+| Codex only       | `run-codex-agentic.py`          | Approval-gated 16-task agentic A/B/C execution and artifact persistence  |
 | Provider-neutral | `run-all.sh`                    | Safe dispatcher for smoke, Claude, or Codex batch workflows              |
 | Provider-neutral | `run-codemap-cli.py`            | Deterministic scan/query correctness and performance; no model           |
 | Provider-neutral | `provider_parity_contracts.py`  | Shared task, arm, scoring, provenance, and pairing library; not a runner |
@@ -52,35 +54,38 @@ Archived manifests retain historical consumer labels from before this rename. Ac
 
 ## Benchmark overview
 
-| Benchmark                                                      | Provider         | Script                     | LLM | Arms                       | Tasks                                                                       | Primary question                                                                                      |
-| -------------------------------------------------------------- | ---------------- | -------------------------- | --- | -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [Agentic](#agentic-benchmark-run-claude-agenticpy)             | Claude           | `run-claude-agentic.py`    | Yes | Legacy 4; parity 3 (A/B/C) | 16 import-graph tasks                                                       | Does codemap/semble reduce exploration overhead vs grep?                                              |
-| [Structural](#real-codebase-benchmark-run-claude-structuralpy) | Claude           | `run-claude-structural.py` | Yes | Legacy 2; parity 3 (A/B/C) | 60 tasks — 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) | Does scan-query reduce token cost and improve structural recall on pre-implementation research tasks? |
-| Provider parity                                                | Codex            | `run-codex-structural.py`  | Yes | Parity 3 (A/B/C)           | Locked structural `tasks-bench.json` tasks                                  | Does Codemap provide an objective within-Codex advantage under the same shared contracts?             |
-| Codex agentic first slice                                      | Codex            | `run-codex-agentic.py`     | Yes | Parity 3 (A/B/C)           | BA-01 × three exploratory repetitions                                       | Does Codemap change agentic exploration recall, efficiency, or adoption in a bounded exploratory run? |
-| [Query](#query-benchmark-run-codemap-clipy)                    | Provider-neutral | `run-codemap-cli.py`       | No  | —                          | Deterministic query/correctness suites                                      | Is scan-query correct, complete, and fast enough?                                                     |
+| Benchmark                                                      | Provider         | Script                     | LLM | Arms                                   | Tasks                                                                       | Primary question                                                                                      |
+| -------------------------------------------------------------- | ---------------- | -------------------------- | --- | -------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [Agentic](#agentic-benchmark-shared-claudecodex-contract)      | Claude           | `run-claude-agentic.py`    | Yes | Canonical 3 (A/B/C); legacy 4 explicit | 16 import-graph tasks                                                       | Does Codemap change agentic exploration recall, efficiency, or adoption under the shared contract?    |
+| [Structural](#real-codebase-benchmark-run-claude-structuralpy) | Claude           | `run-claude-structural.py` | Yes | Legacy 2; parity 3 (A/B/C)             | 60 tasks — 11 series (SE / FN / RV / CQ / BR / DG / FT / RI / DI / GR / MB) | Does scan-query reduce token cost and improve structural recall on pre-implementation research tasks? |
+| Provider parity                                                | Codex            | `run-codex-structural.py`  | Yes | Parity 3 (A/B/C)                       | Locked structural `tasks-bench.json` tasks                                  | Does Codemap provide an objective within-Codex advantage under the same shared contracts?             |
+| Codex agentic parity                                           | Codex            | `run-codex-agentic.py`     | Yes | Canonical 3 (A/B/C)                    | 16 tasks × one repetition                                                   | Does Codemap change agentic exploration recall, efficiency, or adoption under the shared contract?    |
+| [Query](#query-benchmark-run-codemap-clipy)                    | Provider-neutral | `run-codemap-cli.py`       | No  | —                                      | Deterministic query/correctness suites                                      | Is scan-query correct, complete, and fast enough?                                                     |
 
 Run **Query** first — validates the index before spending LLM tokens on agentic runs.
 
-### Codex agentic first slice
+### Codex agentic parity study
 
-The current Codex agentic adapter freezes only BA-01 across `A_plain`, `B_auto`, and `C_required`, with three exploratory repetitions. It reuses the Claude AST oracle and EREC, E@10, RREC, and DEFF formulas. The bounded study is exploratory and non-poolable. Validate its exact plan without credentials or a model:
+The current Codex agentic adapter uses all 16 committed BA tasks across `A_plain`, `B_auto`, and `C_required`, with one repetition by default. It consumes the shared prompt materializer, answer-contract parser, AST oracle, and EREC, E@10, RREC, and DEFF/fitness scorer used by Claude. Validate the exact 48-cell plan without credentials or a model:
 
 ```bash
 bash benchmarks/run-all.sh codex --agentic --dry-run
 ```
 
-The deterministic review lock is `benchmarks/manifests/codex-agentic.json`; regenerate or verify it with `python3 benchmarks/build-codex-agentic-manifest.py [--check]`. The first authorized paid attempt, `results/codex-agentic-20260804T162856Z`, persisted 0/9 cells before model launch because B and C shared one coordination root that snapshot teardown cleaned twice. The runner now cleans each unique coordination root once while preserving strict missing-root rejection. Its console also reuses the structural Rich renderer: one legend panel, yellow A rows, cyan B rows, and magenta C rows on a terminal; redirected output and `run.log` remain plain. Failure-before regressions, 1,705 benchmark tests with 4 skips, generated-manifest checks, changed-file pre-commit, and the exact no-model dry run pass. The current machine SHA-256 is `b81e9a9574d150179396478b06b3afb0339bf41abd71f4cf7cd3c6ed364cfdf2`. Review the 5,400-second ceiling, artifact package, and relocked human launch command in `benchmarks/manifests/codex-agentic.md`; supplying the current SHA in `CODEX_AGENTIC_PAID_APPROVAL` is the human authorization and stale-lock guard.
+The deterministic review lock is `benchmarks/manifests/codex-agentic.json`; regenerate or verify it with `python3 benchmarks/build-codex-agentic-manifest.py [--check]`. The dedicated human companion records the current manifest SHA, task order, treatment contract, exact approval variable, and derived wall-clock ceiling. No-model dry runs require no credentials and no paid approval. A paid default run requires the exact active machine-manifest SHA, private auth source, new result directory, and the manifest-derived 28,800-second ceiling. A non-default repetition or selected scope must additionally present the resolver's scope SHA-256 and its derived ceiling.
 
-The completed frozen run `results/codex-agentic-20260804T172617Z` persisted all 9/9 cells under its archived machine manifest `f8490d39e2dbade395600423e4096cee94d7f87d1ada4cbe0a876fa74052fa8c`. Direct-importer exposure and final-report recall were `1.0` in every arm and repetition. Relative to `A_plain`, `B_auto` reduced mean input tokens by 39.6%, output tokens by 58.4%, and elapsed time by 52.5%; `C_required` reduced them by 66.3%, 71.9%, and 69.6%, respectively. These are bounded exploratory means from one task and three fixed-order repetitions, not a general provider claim. The current scorer does not validate every requested second-order count or risk ranking, `B_auto` used Codemap in two of three repetitions, and the task text does not explicitly resolve the production-only oracle's treatment of test modules. The next prospective revision therefore keeps this artifact immutable while making one repetition the default, expanding Codex to the same 16-task suite used by Claude, and moving task, oracle, and scoring corrections into one provider-neutral contract consumed by both adapters.
+The stopped directory `results/codex-agentic-20260804T205639Z` is infrastructure-only evidence with zero model cells. The launcher previously opened its console capture inside the new result directory before the runner's strict launcher-only admission check, so the runner rejected the launcher's own file. Console capture now uses a private temporary file outside the result directory, while the strict admission invariant remains unchanged. Any supported-entrypoint failure preserves the reported artifact and prints the exact dry-run command plus a fresh timestamped paid command; reuse of an existing result directory remains forbidden.
+
+The completed frozen run `results/codex-agentic-20260804T172617Z` is historical immutable evidence: it persisted 9/9 BA-01 cells under archived machine manifest `f8490d39e2dbade395600423e4096cee94d7f87d1ada4cbe0a876fa74052fa8c`. Direct-importer exposure and final-report recall were `1.0` in every arm and repetition. Relative to `A_plain`, `B_auto` reduced mean input tokens by 39.6%, output tokens by 58.4%, and elapsed time by 52.5%; `C_required` reduced them by 66.3%, 71.9%, and 69.6%, respectively. These bounded exploratory means from one task and three repetitions are not the current default, are not pooled with the 16-task study, and do not define provider-wide performance.
 
 ## Unified batch entrypoint
 
-`run-all.sh` is the only batch orchestrator. It requires one mode; Codex structural and agentic paths accept `--dry-run`. Missing or unknown arguments do nothing:
+`run-all.sh` is the only batch orchestrator. It requires one mode; both providers accept `--dry-run` and the provider-neutral agentic flags `--agentic [--repetitions=N]`. Missing or unknown arguments do nothing:
 
 ```bash
 bash benchmarks/run-all.sh smoke
 bash benchmarks/run-all.sh claude
+bash benchmarks/run-all.sh claude --agentic --dry-run
 bash benchmarks/run-all.sh codex --dry-run
 bash benchmarks/run-all.sh codex --tasks=DI,GR --dry-run
 bash benchmarks/run-all.sh codex --agentic --dry-run
@@ -95,12 +100,14 @@ Modes:
 
 - `smoke` — validate the frozen active index, run the deterministic query check, and execute Claude and Codex dry-run/preflight paths. It invokes no model.
 - `claude` — validate the frozen index and preflight, then run the existing paid Claude structural tiers and agentic batch.
+- `claude --agentic --dry-run` — validate the shared 16-task methodology, resolve the exact one-repeat 144-cell scope across three Claude model tiers, and print the complete no-model plan. `--repetitions=N` derives and passes a distinct scope SHA-256; the same flag without `--agentic` is rejected.
+- `claude --agentic` — run only the shared 16-task canonical A/B/C Claude study. The default is one repetition; a higher explicit repetition is admitted only with the launcher's exact derived scope SHA-256.
 - `codex --dry-run` — validate the frozen index, run the deterministic query check and FN-02 Codex smoke, then print the exact 165-coordinate plan. It needs no paid approval, authentication source, or result directory and invokes no model.
 - `codex --tasks=DI,GR --dry-run` — resolve the requested families, validate the selected scope, exercise the selected no-model preflight, and print the exact 90-coordinate plan. Selected scopes are targeted and non-poolable; they need no paid approval or authentication source for dry-run.
 - `codex` — validate the frozen index, run the fail-fast FN-02 A/B/C smoke and exact no-model plan, then execute the complete 55-task × one-repetition × three-arm study. Cell outcomes are recorded without fail-fast after admission. It fails before setup unless the exact active-manifest SHA-256, a private auth source, a new run directory, and the manifest-locked complete-run ceiling are supplied.
 - `codex --tasks=DI,GR` — execute only the selected, non-poolable scope after the same smoke and admission gates. The resolved selection scope SHA-256 is printed and must authorize that scope; the full-run machine-manifest SHA-256 remains the approval for an unselected complete study.
-- `codex --agentic --dry-run` — validate the dedicated BA-01 agentic lock, target, index, and A/B/C capability probes, then print exactly nine planned cells without credentials or a model.
-- `codex --agentic` — execute BA-01 across A/B/C for three repetitions with the dedicated exact-SHA approval, private auth source, new result directory, and 5,400-second ceiling documented in `manifests/codex-agentic.md`. Runtime/admission integrity failures stop and preserve partial artifacts; ordinary model/task/treatment outcomes remain measurable and do not fail fast.
+- `codex --agentic --dry-run` — validate the shared 16-task agentic lock, target, index, and A/B/C capability probes, then print exactly 48 planned cells without credentials or a model.
+- `codex --agentic` — execute BA-01–BA-16 across A/B/C for one repetition with the exact active-manifest approval, private auth source, new result directory, and manifest-derived 28,800-second ceiling documented in `manifests/codex-agentic.md`. Runtime/admission integrity failures stop and preserve partial artifacts; ordinary model/task/treatment outcomes remain measurable and do not fail fast. Add `--repetitions=N` only with the resolver's matching scope SHA-256 and derived wall-clock ceiling.
 
 #### Codex task selection
 
@@ -145,15 +152,15 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 </details>
 
 - **Order**: validate frozen index → query (gates the index, no LLM) → real-codebase → agentic. Per-benchmark options live in each section's **Quick start** below.
-- **Scale**: real-codebase = 55 × 2 × 3 = 330 model runs; agentic = 16 × 4 × 3 = 192. ~500+ agent invocations — hours of wall time and real token cost. That is why the script smoke-checks first.
+- **Scale**: real-codebase = 55 × 2 × 3 = 330 model runs; Claude agentic default = 16 × 3 × 3 = 144; Codex agentic default = 16 × 3 = 48. These are separate provider studies with shared task, prompt, oracle, and scorer contracts.
 - **Model tiers** (`MODELS` map in each runner): `haiku` → `claude-haiku-4-5`, `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`.
-- **Agentic arms**: the `semble` / `combined` arms need the semble MCP configured; without it, add `--arm codemap` to run the structural arm only.
+- **Agentic arms**: canonical runs use `A_plain`, `B_auto`, and `C_required`. Legacy Claude `semble` / `combined` arms remain explicit historical compatibility paths and need the semble MCP configured.
 - **Cheaper option**: swap the three bench lines for the tiered strategy (`--tiered`, see [Cost profiles](#cost-profiles)) — full suite on haiku, dev subset on sonnet, only cross-tier disagreements on opus.
 - **Results** land in `benchmarks/results/` — `code-<date>.md`, `bench-<model>-<ts>.jsonl`, and agentic JSON (`.md` with `--report`).
 
 ## Contents
 
-- [Agentic benchmark](#agentic-benchmark-run-claude-agenticpy) — Claude-only 4-arm import-graph navigation with semble support
+- [Agentic benchmark](#agentic-benchmark-shared-claudecodex-contract) — shared 16-task A/B/C import-graph navigation for Claude and Codex
 - [Real-codebase benchmark](#real-codebase-benchmark-run-claude-structuralpy) — Claude-only structural navigation on pytorch-lightning
 - [Query benchmark](#query-benchmark-run-codemap-clipy) — provider-neutral scan-query correctness and latency, no LLM
 - [Results](#results)
@@ -166,19 +173,20 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 | `manifests/provider-parity-methodology.json` | Provider-neutral | Committed shared task, evaluator, target, index, and analysis identities used to regenerate the Codex execution lock                                              |
 | `manifests/codex-integration.json`           | Codex            | Machine-enforced plain/direct-CLI/Skill execution contract                                                                                                        |
 | `manifests/codex-integration.md`             | Codex            | Human-readable manifest review and paid-run instructions                                                                                                          |
-| `manifests/codex-agentic.json`               | Codex            | Machine-readable BA-01 agentic execution lock, exact-SHA admission, runtime limits, and artifact contract                                                         |
-| `manifests/codex-agentic.md`                 | Codex            | Human-readable BA-01 agentic scope, treatment, scorer, approval, and launch review                                                                                |
-| `build-codex-agentic-manifest.py`            | Codex            | Deterministically regenerates or verifies the BA-01 agentic machine and human manifests                                                                           |
+| `manifests/codex-agentic.json`               | Codex            | Machine-readable 16-task agentic A/B/C execution lock, exact-SHA admission, runtime limits, and artifact contract                                                 |
+| `manifests/codex-agentic.md`                 | Codex            | Human-readable 16-task agentic scope, treatment, scorer, approval, and launch review                                                                              |
+| `build-codex-agentic-manifest.py`            | Codex            | Deterministically regenerates or verifies the shared 16-task agentic machine and human manifests                                                                  |
+| `agentic_contracts.py`                       | Provider-neutral | Shared agentic arms, prompt materialization, answer contracts, oracle, parsing, scoring, and paired metrics                                                       |
 | `provider_parity_contracts.py`               | Provider-neutral | Canonical task identity, A/B/C semantics, evaluator dispatch, headline eligibility, and paired effects; not a runner or generator                                 |
 | `run-claude-agentic.py`                      | Claude           | Agentic benchmark measuring how Codemap/semble structural context changes Claude exploration                                                                      |
 | `run-claude-structural.py`                   | Claude           | Repo-agnostic structural benchmark driven by the `tasks-bench.json` repository header                                                                             |
 | `run-all.sh`                                 | Provider-neutral | Sole batch dispatcher: no-model cross-provider smoke, paid Claude batches, or approval-gated Codex structural and agentic studies                                 |
 | `run-codemap-cli.py`                         | Provider-neutral | Query-level correctness, coverage, and latency against a real repository                                                                                          |
 | `run-codex-structural.py`                    | Codex            | Codex structural provider-parity transport for canonical A/B/C cells with isolated plugin homes, native telemetry normalization, and shared structural evaluators |
-| `run-codex-agentic.py`                       | Codex            | BA-01-only Codex agentic runner with Claude-parity scoring, treatment isolation, paid admission, telemetry, and partial-artifact preservation                     |
+| `run-codex-agentic.py`                       | Codex            | 16-task Codex agentic runner with shared Claude-parity scoring, treatment isolation, paid admission, telemetry, and partial-artifact preservation                 |
 | `generate-tasks-bench.py`                    | Provider-neutral | Validates or refreshes shared structural oracle fields; it does not author prompts                                                                                |
 | `generate-tasks-real-issues.py`              | Provider-neutral | Refreshes shared real-issue evidence                                                                                                                              |
-| `suites/tasks-agentic.json`                  | Provider-neutral | 16 blast-radius navigation tasks (BA-01–BA-16), 4 difficulty tiers, used by the agentic benchmark                                                                 |
+| `suites/tasks-agentic.json`                  | Provider-neutral | Shared 16 blast-radius navigation tasks (BA-01–BA-16), answer contracts, and difficulty tiers used by both agentic adapters                                       |
 | `suites/tasks-bench.json`                    | Provider-neutral | 60 tasks across 11 series plus the target repository header                                                                                                       |
 | `suites/tasks-code.json`                     | Provider-neutral | 15 code-level tasks used by the scan-query benchmark                                                                                                              |
 | `suites/tasks-patch.json`                    | Provider-neutral | 5 end-to-end patch tasks requiring patch application and tests                                                                                                    |
@@ -189,9 +197,21 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 
 </details>
 
-## Agentic benchmark (`run-claude-agentic.py`)
+## Agentic benchmark (shared Claude/Codex contract)
 
-Runs the same 16 import-graph tasks under four arms:
+Runs the same committed 16 import-graph tasks under the canonical three arms. Claude runs all three model tiers by default; Codex runs one repetition by default and requires exact scope approval for any expanded repetition count.
+
+| Arm          | Codex treatment                                                       | Claude treatment                                                      |
+| ------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `A_plain`    | Codemap absent and inaccessible                                       | Codemap absent and inaccessible                                       |
+| `B_auto`     | Direct Codemap CLI available; use is optional                         | Codemap available; use is optional                                    |
+| `C_required` | Codemap Skill available; at least one successful compact query needed | Codemap Skill available; at least one successful compact query needed |
+
+The shared answer envelope is materialized from each task's committed `answer_contract`. The shared parser and oracle score exact fields plus continuous component fitness; `EREC`, `RREC`, and `DEFF` remain diagnostic metrics. Missing or malformed required fields score zero for that component without changing transport/admission status.
+
+### Legacy Claude-only arms
+
+Historical Claude compatibility runs can still be selected explicitly under these four arms; they are not part of the current provider-parity default and are not pooled with canonical A/B/C results:
 
 | Arm        | Tools available                                                                           |
 | ---------- | ----------------------------------------------------------------------------------------- |
@@ -200,7 +220,7 @@ Runs the same 16 import-graph tasks under four arms:
 | `semble`   | + `mcp__semble__search` MCP tool (hybrid semantic + lexical search); Skill + Bash blocked |
 | `combined` | Both `/codemap:query` and `mcp__semble__search`; no restrictions                          |
 
-**Prompt symmetry (2026-07-03)**: all four arms share one neutral base prompt — identical task framing, identical "Required answer format" block, and one shared efficiency sentence ("Answer in as few tool calls as possible; do not re-verify results you already have."). Arm supplements carry tool availability + invocation syntax only. Earlier versions steered arms asymmetrically (plain coached toward more grepping; codemap capped at 3 calls and forbidden to verify; semble/combined given prescriptive protocols) — that steering contaminated efficiency metrics, so results produced before this date are not comparable with new runs.
+**Legacy prompt symmetry (2026-07-03)**: the four historical arms share one neutral base prompt — identical task framing, identical "Required answer format" block, and one shared efficiency sentence ("Answer in as few tool calls as possible; do not re-verify results you already have."). Arm supplements carry tool availability + invocation syntax only. Earlier versions steered arms asymmetrically (plain coached toward more grepping; codemap capped at 3 calls and forbidden to verify; semble/combined given prescriptive protocols) — that steering contaminated efficiency metrics, so results produced before this date are not comparable with new runs. Canonical A/B/C runs use the provider-neutral materialized prompt and answer contract described above.
 
 **Ground truth (2026-07-03)**: expected rdeps come from an independent AST scan of the repo (absolute, aliased, `from`-import, and relative forms resolved), not from the codemap index. The index-derived list is kept as a diagnostic; divergence is printed per task as `[gt-divergence] BA-XX: ast=N index=M ...` — a divergence now signals a potential plugin bug instead of being invisible.
 
@@ -248,7 +268,7 @@ pip install --group pyproject.toml:bench   # or: uv sync --only-group bench
 # 2. Build codemap index once (excluded from benchmark timing)
 python plugins/codemap-py/bin/scan-index --root /path/to/repo
 
-# 3. Run all tasks, all arms, all model tiers
+# 3. Run the shared 16-task canonical A/B/C suite across all Claude model tiers
 python benchmarks/run-claude-agentic.py --repo-path /path/to/repo --run-all --report
 
 # 4. Spot-check one task
@@ -278,28 +298,31 @@ claude mcp add semble -s user -- uvx --from "semble[mcp]" semble
 <details>
 <summary><strong>CLI flags</strong></summary>
 
-| Flag                                                                  | Default       | Description                                                              |
-| --------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------ |
-| `--repo-path PATH`                                                    | required      | Absolute path to the repo under test                                     |
-| `--index PATH`                                                        | auto-detected | Override index path (default: `<repo>/.cache/scan/<name>.json`)          |
-| `--arm plain\|codemap\|semble\|combined\|A_plain\|B_auto\|C_required` | all four      | Run a single legacy or canonical arm only                                |
-| `--model haiku\|sonnet\|opus`                                         | all three     | Run a single model tier only                                             |
-| `--tasks "['BA-01','BA-02',...]"`                                     | all 16        | Run specific task IDs (Python list literal — e.g. `"['BA-01','BA-02']"`) |
-| `--run-all`                                                           | off           | Run all tasks (required unless `--tasks` given)                          |
-| `--report`                                                            | off           | Write markdown report to `results/` after run                            |
-| `--dry-run`                                                           | off           | Print the selected plan without invoking Claude or writing model results |
+| Flag                                                                  | Default         | Description                                                              |
+| --------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------ |
+| `--repo-path PATH`                                                    | required        | Absolute path to the repo under test                                     |
+| `--index PATH`                                                        | auto-detected   | Override index path (default: `<repo>/.cache/scan/<name>.json`)          |
+| `--arm plain\|codemap\|semble\|combined\|A_plain\|B_auto\|C_required` | canonical A/B/C | Run a single legacy or canonical arm only                                |
+| `--model haiku\|sonnet\|opus`                                         | all three       | Run a single model tier only                                             |
+| `--tasks "['BA-01','BA-02',...]"`                                     | all 16          | Run specific task IDs (Python list literal — e.g. `"['BA-01','BA-02']"`) |
+| `--run-all`                                                           | off             | Run all tasks (required unless `--tasks` given)                          |
+| `--report`                                                            | off             | Write markdown report to `results/` after run                            |
+| `--repeat N`                                                          | `1`             | Repeat each selected cell; values above one require `--scope-sha256`     |
+| `--scope-sha256 SHA`                                                  | none            | Admit the exact derived nondefault canonical scope                       |
+| `--resolve-scope`                                                     | off             | Print the selected canonical scope and SHA-256 without running a model   |
+| `--dry-run`                                                           | off             | Print the selected plan without invoking Claude or writing model results |
 
 </details>
 
 ### Output
 
-Each run prints one coloured line:
+Each run prints one coloured line; canonical labels are `A_plain`, `B_auto`, and `C_required`:
 
 ```
-[NN/TT] BA-01 (fix) | haiku  | codemap  | elapsed= 45.2s | tokens= 120.3k | calls= 3 (grep=  0; glob= 0; bash=  0; skill= 1; semble= 0) | erec= 94% rrec= 88%  sc=100%
+[NN/TT] BA-01 (fix) | haiku  | C_required | elapsed= 45.2s | tokens= 120.3k | calls= 3 (grep=  0; glob= 0; bash=  0; skill= 1; semble= 0) | erec= 94% rrec= 88%  sc=100%
 ```
 
-Colour: yellow = plain · cyan = codemap · blue = semble · green = combined · red = failure.
+Colour: canonical `A_plain` = yellow · `B_auto` = cyan · `C_required` = magenta; legacy `semble`/`combined` colors remain for explicitly selected compatibility runs; red = failure.
 
 JSON snapshot written to `results/agentic-YYYY-MM-DD[-N].json` after every run (partial results survive interruptions). Markdown report written to `results/agentic-YYYY-MM-DD[-N].md` with `--report`.
 

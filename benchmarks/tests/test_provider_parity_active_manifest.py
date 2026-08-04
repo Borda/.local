@@ -117,6 +117,19 @@ def test_methodology_builder_is_deterministic_and_check_mode_rejects_stale_outpu
     assert expected == builder["_manifest_bytes"](builder["_build_manifest"]())
 
 
+def test_agentic_execution_contract_records_provider_specific_default_cells() -> None:
+    """The shared lock must not erase Claude's three-model multiplicity."""
+    contract = _load(METHODOLOGY_MANIFEST)["agentic_execution_contract"]
+
+    assert contract["default_repetitions"] == 1
+    assert contract["default_total_cells_by_provider"] == {"claude": 144, "codex": 48}
+    assert contract["models_by_provider"] == {
+        "claude": ["haiku", "sonnet", "opus"],
+        "codex": ["gpt-5.6-luna"],
+    }
+    assert "Each provider adapter admits" in contract["repeat_override"]
+
+
 def test_methodology_builder_rejects_tampered_passthrough_policy_seed(tmp_path: Path) -> None:
     """A generated methodology file can never bootstrap changed policy into acceptance."""
     builder = runpy.run_path(str(METHODOLOGY_BUILDER))
@@ -255,13 +268,16 @@ def test_methodology_manifest_locks_luna_high_and_exact_implementation_identitie
         "strict_config": True,
     }
     assert implementation["artifact_sha256"] == {
+        "agentic_contracts": _sha256(BENCHMARKS / "agentic_contracts.py"),
         "claude_query_skill": _sha256(ROOT / "plugins/codemap-py/claude-skills/query-code/SKILL.md"),
         "codemap_graph": _sha256(ROOT / "plugins/codemap-py/src/codemap_py/graph.py"),
         "codemap_query": _sha256(ROOT / "plugins/codemap-py/src/codemap_py/query.py"),
         "codex_query_skill": _sha256(ROOT / "plugins/codemap-py/codex-skills/query-code/SKILL.md"),
         "provider_parity_contracts": _sha256(BENCHMARKS / "provider_parity_contracts.py"),
         "run_all": _sha256(BENCHMARKS / "run-all.sh"),
+        "run_claude_agentic": _sha256(BENCHMARKS / "run-claude-agentic.py"),
         "run_claude_structural": _sha256(BENCHMARKS / "run-claude-structural.py"),
+        "run_codex_agentic": _sha256(BENCHMARKS / "run-codex-agentic.py"),
         "run_codex_structural": _sha256(BENCHMARKS / "run-codex-structural.py"),
     }
     assert "CODEMAP_BIN" in manifest["codex_permission_profiles"]["shell_environment"]["set_allowlist"]

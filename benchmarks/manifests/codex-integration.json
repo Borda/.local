@@ -33,7 +33,7 @@
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-    "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995",
+    "run_all": "e945f1daf45278928c292b3387cbf70f9d4109841d60872e7fea789b37f93bb2",
     "run_codex_structural": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465"
   },
   "codemap_candidate": {
@@ -324,7 +324,7 @@
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-      "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995",
+      "run_all": "e945f1daf45278928c292b3387cbf70f9d4109841d60872e7fea789b37f93bb2",
       "run_codex_structural": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
@@ -552,12 +552,12 @@
   "schema_version": "codex-integration-manifest-v2",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "9738d21d607bbe16551a61e49a9ae82b586b7fc7fd29914f589486f260471054"
+    "sha256": "a014d33f0a3ae41b94afe7f76b61bcb37dda3acf543fbdbad40141c8d11cfca9"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
     "semantic_suite_sha256": {
-      "benchmarks/suites/tasks-agentic.json": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
+      "benchmarks/suites/tasks-agentic.json": "20d7b1a899f48bef19f82ff3ffdf24145593747b0f0ff3e7835b64afac3270d6",
       "benchmarks/suites/tasks-bench.json": "6d05bb66b97961251f34215ab9c4381bf30cc80b19dc821074bd31ba5330dda8",
       "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
@@ -572,7 +572,7 @@
   },
   "suites": [
     {
-      "current_consumer": "run-claude-agentic.py default; no Codex agentic runner in the archived provider-parity study",
+      "current_consumer": "run-claude-agentic.py and run-codex-agentic.py defaults",
       "generation_provenance": "committed_static_prompts_runtime_ast_oracle",
       "ordered_task_ids": [
         "BA-01",
@@ -593,13 +593,26 @@
         "BA-16"
       ],
       "path": "benchmarks/suites/tasks-agentic.json",
-      "raw_sha256": "97e762235b57cd819ca5710052ab34426f96141c50b65717e58467a08dc503e9",
+      "raw_sha256": "adb94fde72b085119ae7ce082078bc86c76f89ed04bd1f27b7146dc3a01b5cfe",
       "root_shape": "object_with_tasks",
-      "semantic_suite_sha256": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
+      "semantic_suite_sha256": "20d7b1a899f48bef19f82ff3ffdf24145593747b0f0ff3e7835b64afac3270d6",
       "task_count": 16,
       "tasks": [
         {
-          "canonical_task_sha256": "81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "rdep_counts",
+              "ranking"
+            ],
+            "params": {
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 1
+              }
+            }
+          },
+          "canonical_task_sha256": "d2eba4807f18891b58ee933bc6ec8f502548a5f18d44c1df7011ccce88b741a6",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -607,7 +620,7 @@
           "id": "BA-01",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479",
+          "prompt_sha256": "74cf2aeebea015e465a8f2f969648b5dc0520fbc01c92d793eba1659edcdd55b",
           "providers": [
             "claude",
             "codex"
@@ -618,7 +631,20 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "0de13f8f8578ffccbba5ae57a6de5a7f37f17c476af01de16a5db9224e18189e",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "rdep_counts",
+              "ranking"
+            ],
+            "params": {
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 2
+              }
+            }
+          },
+          "canonical_task_sha256": "ccc08d9a2c82f525a670a2698d070cf758aba4dc8471d097bf6ac1bdb92a7c65",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -626,7 +652,7 @@
           "id": "BA-02",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "ddb83160b1ea5aefff19a5c046cf22bb5911a8c633735f47667ee5404d6de251",
+          "prompt_sha256": "ac527389bfc33c732c3804ec3a511abc7dba49846af83f5ba864d7acc5f7b633",
           "providers": [
             "claude",
             "codex"
@@ -637,7 +663,27 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "8dc7726fe78280d4ed7a19cfe4fe57bb0bd919ce85772f8c34f2430506d26dd2",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "buckets",
+              "ranking"
+            ],
+            "params": {
+              "buckets": {
+                "labels": [
+                  "trainer-core",
+                  "callbacks",
+                  "everything-else"
+                ]
+              },
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 1
+              }
+            }
+          },
+          "canonical_task_sha256": "55f987528d7b49671420fdb18f90b2adaec6cb2966e9a956b69a8456bba7ae9a",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -645,7 +691,7 @@
           "id": "BA-03",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "503b9f0ce2f90815d273a41d83cdf22be60494d3f1c17163c430690830cc09f4",
+          "prompt_sha256": "a38f55839b169b0d06142c5ce13ca241aab58539a8b338a94a3fac7633a65343",
           "providers": [
             "claude",
             "codex"
@@ -656,7 +702,22 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "4153aa0ee0d076ed3b1736aa51a787d9d9331608c58b2d5325d3b448da0ced6c",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "high_centrality",
+              "affected_module_count"
+            ],
+            "params": {
+              "affected_module_count": {
+                "min_rdep_count": 10
+              },
+              "high_centrality": {
+                "min_rdep_count": 10
+              }
+            }
+          },
+          "canonical_task_sha256": "aed7fd958c6a8171e62cbb1d46a814bfb4e7ba47c88ccac57853634206e1fb9f",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -664,7 +725,7 @@
           "id": "BA-04",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "073473cfd5f7d7713d20dd58fbf1a112ab0d575fbe7b2a86213bf6f2811784cb",
+          "prompt_sha256": "d31e095c71d993922082585401c0c2d665e073804958441007a8db04fcf79c09",
           "providers": [
             "claude",
             "codex"
@@ -675,7 +736,26 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "c2fd3d325ce22e8ca8ab85127cc9cd794fbb9b87dca9ddc8465b038e2fb8860c",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "buckets",
+              "ranking"
+            ],
+            "params": {
+              "buckets": {
+                "labels": [
+                  "public",
+                  "internal"
+                ]
+              },
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 1
+              }
+            }
+          },
+          "canonical_task_sha256": "09e4d9c470f498f20cabf7921a011d2f9a4f0e6d09d8598ef9555b911f9c603e",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -683,7 +763,7 @@
           "id": "BA-05",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "0845059673f7b8ac52302659241640fc7cec0a5d00f48300469a25317b76e019",
+          "prompt_sha256": "694879e8422c7ef9176c69d7a41963e6573ef78e67b6af6c848a444b629f4bc3",
           "providers": [
             "claude",
             "codex"
@@ -694,7 +774,24 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "3b38a8f28ae16cd659a52faa61eba38eab7ee504d66114422dd5a853b006e9ca",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "ranking",
+              "dependency_chain"
+            ],
+            "params": {
+              "dependency_chain": {
+                "source": "lightning.pytorch.trainer.trainer",
+                "target": "lightning.fabric.utilities.load"
+              },
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 2
+              }
+            }
+          },
+          "canonical_task_sha256": "a2ffe109479ffc7da9a4c2f3d9c97030ae811501e38e37aaf4808a6809de1ad3",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -702,7 +799,7 @@
           "id": "BA-06",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "457df7e3deb5492160f9724c0b52e6d18d22e76268b71a3d117e390cb1be8644",
+          "prompt_sha256": "d8f2fad0ede503f135c20b8ebd82b798efa254a330ff17ad823ee5a1b89ece23",
           "providers": [
             "claude",
             "codex"
@@ -713,7 +810,25 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "2dc2b714ce85bb13de0296dc8b4486db31a98bc8307445ba5ea8775a1743bcfb",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "overlap_importers",
+              "ranking"
+            ],
+            "params": {
+              "overlap_importers": {
+                "targets": [
+                  "lightning.pytorch.utilities.rank_zero"
+                ]
+              },
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 3
+              }
+            }
+          },
+          "canonical_task_sha256": "ff24b9072183c66518d3f9b3bcc487804cfc79dd676b52a364e12be54b2fee7e",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -721,7 +836,7 @@
           "id": "BA-07",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "6674fbfd76cfb6eb00c4228537a632686dc550cae856a45acc77a162a092b56a",
+          "prompt_sha256": "e9bbd76d41a7674da05f8046ce0b5b9501ad8b169ccbb21ba724375cefbe13e5",
           "providers": [
             "claude",
             "codex"
@@ -732,7 +847,24 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "393431378f34baf3200e08008b0d80e53eaab3562efd494241b5182fd4f54d10",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "cross_namespace_importers",
+              "ranking",
+              "production_importer_count"
+            ],
+            "params": {
+              "cross_namespace_importers": {
+                "prefix": "lightning.pytorch"
+              },
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 5
+              }
+            }
+          },
+          "canonical_task_sha256": "2ecd185f21ac382f63b1c495c2a41f38e93ef38f0780ec6bc8d8480881faee11",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -740,7 +872,7 @@
           "id": "BA-08",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "ff52a9b1aa9c4cae6df5e8c3f34ca46d05cde85accf0a2774070ea521dd66ddb",
+          "prompt_sha256": "8fb8455d2e76c7e9526010623eeed15497efb737ab3e81c8483dc92c7e4ebdb5",
           "providers": [
             "claude",
             "codex"
@@ -751,7 +883,26 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "00485f9f4c9d4fb295043ef4f4f64189175c79e2904046cd9406a67cfb6c1374",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "buckets",
+              "ranking"
+            ],
+            "params": {
+              "buckets": {
+                "labels": [
+                  "helper-dependent",
+                  "class-only"
+                ]
+              },
+              "ranking": {
+                "candidate_set": "helper_dependent_importers",
+                "top_k": 100
+              }
+            }
+          },
+          "canonical_task_sha256": "a6747354d1e02aa28ee3c4bda105916b8fa141033709bcb04bd6d1f4963f213f",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -759,7 +910,7 @@
           "id": "BA-09",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "b5e1fb5175ef2c89967111b41c91a455083d14fe16d500a6f24f669e8b08c698",
+          "prompt_sha256": "c47eb6c4fef930cba439e2779725e521e372fc17bcbf0c49ee01b19bab570f44",
           "providers": [
             "claude",
             "codex"
@@ -770,7 +921,20 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "a8d5cb0fbf81ef0b29a0c50d6cb3cedc1361cab4bf5972d288a15497a02920bb",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "rdep_counts",
+              "ranking"
+            ],
+            "params": {
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 2
+              }
+            }
+          },
+          "canonical_task_sha256": "967e364bc69e800c5a1b1adcad2a999077b96869c592979c4afe928b9f135c22",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -778,7 +942,7 @@
           "id": "BA-10",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "fcc1f9f35a16f4c33a4fbf9fe6ef1522acd9b80cdbaf211182c3baba222f3451",
+          "prompt_sha256": "4786ecf96aeb558bcae00cd4d1b33672ed40c2ef4b1e1c4809e82eca3a928dab",
           "providers": [
             "claude",
             "codex"
@@ -789,7 +953,23 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "e20a788f40bc257b6b0fb41e8b37517cfef5f868ce3eecc4aeb7245c782b2938",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "ranking",
+              "cross_namespace_importers"
+            ],
+            "params": {
+              "cross_namespace_importers": {
+                "prefix": "lightning.pytorch"
+              },
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 5
+              }
+            }
+          },
+          "canonical_task_sha256": "4ff24dae61853e039c74327965bd83f51685b597debcfefd2c6e32754cadab83",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -797,7 +977,7 @@
           "id": "BA-11",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "48fed2c622e304ecfbe7077d39d07830a24ba2c45fea38ded3164623580cef8f",
+          "prompt_sha256": "b0be44284a2b7abbea385a961d6b7f0adacc395af597925ebc579664eec15e09",
           "providers": [
             "claude",
             "codex"
@@ -808,7 +988,21 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "bf5b72f8e4dcfe8e8712aca572bd7d5c7913feb6e4e1ce613cdbdacb213ae21a",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "test_importer_count",
+              "ranking",
+              "production_importer_count"
+            ],
+            "params": {
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 10
+              }
+            }
+          },
+          "canonical_task_sha256": "80b79e21c967d75c1e826d435100ed27a33a446a941467fd48d70579bf274d61",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -816,7 +1010,7 @@
           "id": "BA-12",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "8345bac9f4d86785816156ecf59d8eef9cfdd7adcaf0f93f0658de723dcf78f4",
+          "prompt_sha256": "878d8d821afc19ec89ea5af83dc84e896cbd8cbe5dd53c8cb3cae99a7102edc8",
           "providers": [
             "claude",
             "codex"
@@ -827,7 +1021,15 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "007da9a3ce2fb9cc8dc4c856b87a88ecd802b13d8afba61e2a5705bca04a33f9",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "rdep_counts",
+              "isolation_verdict"
+            ],
+            "params": {}
+          },
+          "canonical_task_sha256": "739a667d6e24a4da8bdea76e84bc55e287ac91008075ca3399d4d8ca0b388142",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -835,7 +1037,7 @@
           "id": "BA-13",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "18cd371d7c4c3f977fa5645bfdd00554929409db5b85774e7816f0426fa6dbef",
+          "prompt_sha256": "3c0e6dfc0647c0aa3a4d361bb2e818cb4516903ee3efbfc86d9e57128d1a8106",
           "providers": [
             "claude",
             "codex"
@@ -846,7 +1048,27 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "22bb73877419419748da4524bb19e2e6c47e74d6bacfd6c0ab4090a84d97a31e",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "overlap_importers",
+              "overlap_count",
+              "ranking"
+            ],
+            "params": {
+              "overlap_count": {
+                "prefix": "lightning.fabric.plugins.precision."
+              },
+              "overlap_importers": {
+                "prefix": "lightning.fabric.plugins.precision."
+              },
+              "ranking": {
+                "candidate_set": "production_importers",
+                "top_k": 3
+              }
+            }
+          },
+          "canonical_task_sha256": "d574bd92bb876c383c75edc01b926a502d74928958e461112026e3afb8f3e03d",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -854,7 +1076,7 @@
           "id": "BA-14",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "4063164d306c14c13ce7b523591cbc925c0ca64ac9e2f01e63a0f04c8902b16d",
+          "prompt_sha256": "682569b222cf4ccb8a83feb6e59d7013ba28bab0b1c7a16aec4624401a5debc0",
           "providers": [
             "claude",
             "codex"
@@ -865,7 +1087,30 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "00bac84a381e1867be422fec2d3089286f28bddbdc2fba056bc2c718c9b3a989",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "overlap_importers",
+              "ranking"
+            ],
+            "params": {
+              "overlap_importers": {
+                "targets": [
+                  "lightning.pytorch.utilities.rank_zero",
+                  "lightning.pytorch.utilities.enums"
+                ]
+              },
+              "ranking": {
+                "candidate_set": "non_migrated_importers",
+                "exclude_overlap_targets": [
+                  "lightning.pytorch.utilities.rank_zero",
+                  "lightning.pytorch.utilities.enums"
+                ],
+                "top_k": 100
+              }
+            }
+          },
+          "canonical_task_sha256": "1eaa1e187d435a57ee8918b7cf169119e29a41c177b7c5a8df5dd6454639ee79",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -873,7 +1118,7 @@
           "id": "BA-15",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "0419f1641a34cc1e3f72cbb763ea41b937923f6659637251cc695e9cfb8779e0",
+          "prompt_sha256": "438f2221893451bd5bac4153d7390fa6dde856d633bebaf12b06718eef3e895c",
           "providers": [
             "claude",
             "codex"
@@ -884,7 +1129,21 @@
           "validation_status": "not_in_tasks_bench_validator"
         },
         {
-          "canonical_task_sha256": "945a97bf8a6d7478942e12c9ed38497368b68f0323543ef93c5cf849a4bb059c",
+          "answer_contract": {
+            "fields": [
+              "production_importers",
+              "high_centrality",
+              "test_importer_count",
+              "production_importer_count",
+              "risk_tier"
+            ],
+            "params": {
+              "high_centrality": {
+                "min_rdep_count": 10
+              }
+            }
+          },
+          "canonical_task_sha256": "d3757420c71617a2ee53bc1bd4c2bbc0279b09816083194725e310968c7a5271",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -892,7 +1151,7 @@
           "id": "BA-16",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "5b253f3120c42cb01f30f7ec799e0605ee7f796784148b5097d5d97a833f23bc",
+          "prompt_sha256": "3438d295bf96d5c0d9b0be62e27147bfc9166b8370080527a10528645f555303",
           "providers": [
             "claude",
             "codex"

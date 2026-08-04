@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build or verify the no-model Codex BA-01 agentic manifest.
+"""Build or verify the no-model Codex shared agentic manifest.
 
 The manifest freezes the shared task/prompt/scoring identity before any paid
 Codex agentic run.  It intentionally records no credential paths or auth
@@ -23,15 +23,16 @@ SOURCE_MANIFEST = MANIFESTS / "provider-parity-methodology.json"
 TASKS_PATH = BENCHMARKS / "suites" / "tasks-agentic.json"
 OUTPUT_MANIFEST = MANIFESTS / "codex-agentic.json"
 OUTPUT_HUMAN_MANIFEST = MANIFESTS / "codex-agentic.md"
-EXPERIMENT_ID = "codex-agentic-ba01"
-EXPERIMENT_REVISION = "codex-agentic-ba01-review-ready-2026-08-04"
-TASK_ID = "BA-01"
-ARMS = ("A_plain", "B_auto", "C_required")
-REPETITIONS = 3
-COORDINATE_TIMEOUT_SECONDS = 600
-
+EXPERIMENT_ID = "codex-agentic"
+EXPERIMENT_REVISION = "codex-agentic-shared-suite-2026-08-04"
 sys.path.insert(0, str(BENCHMARKS))
-from provider_parity_contracts import canonical_task_hash, prompt_hash, semantic_suite_hash  # noqa: E402
+from agentic_contracts import AGENTIC_ARMS, DEFAULT_REPETITIONS, materialize_agentic_prompt  # noqa: E402
+from provider_parity_contracts import canonical_task_hash, semantic_suite_hash  # noqa: E402
+
+
+ARMS = AGENTIC_ARMS
+REPETITIONS = DEFAULT_REPETITIONS
+COORDINATE_TIMEOUT_SECONDS = 600
 
 
 def _sha256(path: Path) -> str:
@@ -52,39 +53,43 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _ba01_task() -> tuple[dict[str, Any], dict[str, Any]]:
-    """Return the raw and methodology-locked BA-01 rows after identity checks."""
+def _agentic_tasks() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return every raw and methodology-locked agentic row after identity checks."""
     suite = _load_json(TASKS_PATH)
     raw_tasks = suite.get("tasks")
     if not isinstance(raw_tasks, list):
         raise ValueError("agentic suite requires a tasks list")
-    matches = [task for task in raw_tasks if isinstance(task, dict) and task.get("id") == TASK_ID]
-    if len(matches) != 1:
-        raise ValueError("agentic suite must contain exactly one BA-01 task")
-    raw_task = matches[0]
+    if not all(isinstance(task, dict) for task in raw_tasks):
+        raise ValueError("agentic suite tasks must be objects")
     source = _load_json(SOURCE_MANIFEST)
     suites = source.get("suites")
     if not isinstance(suites, list):
         raise ValueError("methodology manifest requires suites")
-    locked_task: dict[str, Any] | None = None
+    locked_tasks: list[dict[str, Any]] | None = None
+    suite_lock: dict[str, Any] | None = None
     for source_suite in suites:
         if source_suite.get("path") != "benchmarks/suites/tasks-agentic.json":
             continue
-        locked_task = next((task for task in source_suite.get("tasks", []) if task.get("id") == TASK_ID), None)
+        locked_tasks = source_suite.get("tasks")
+        suite_lock = source_suite
         break
-    if locked_task is None:
-        raise ValueError("methodology manifest has no locked BA-01 task")
-    if canonical_task_hash(raw_task) != locked_task.get("canonical_task_sha256"):
-        raise ValueError("BA-01 canonical task identity drifted")
-    if prompt_hash(raw_task) != locked_task.get("prompt_sha256"):
-        raise ValueError("BA-01 prompt identity drifted")
-    if semantic_suite_hash(raw_tasks) != next(
-        suite["semantic_suite_sha256"]
-        for suite in suites
-        if suite.get("path") == "benchmarks/suites/tasks-agentic.json"
-    ):
+    if not isinstance(locked_tasks, list) or suite_lock is None:
+        raise ValueError("methodology manifest has no locked agentic suite")
+    locked_by_id = {task.get("id"): task for task in locked_tasks if isinstance(task, dict)}
+    raw_task_ids = [task.get("id") for task in raw_tasks]
+    if raw_task_ids != suite_lock.get("ordered_task_ids") or set(locked_by_id) != set(raw_task_ids):
+        raise ValueError("agentic task order or identity set drifted")
+    for raw_task in raw_tasks:
+        task_id = raw_task["id"]
+        locked_task = locked_by_id[task_id]
+        if canonical_task_hash(raw_task) != locked_task.get("canonical_task_sha256"):
+            raise ValueError(f"{task_id} canonical task identity drifted")
+        delivered_hash = hashlib.sha256(materialize_agentic_prompt(raw_task).encode("utf-8")).hexdigest()
+        if delivered_hash != locked_task.get("prompt_sha256"):
+            raise ValueError(f"{task_id} prompt identity drifted")
+    if semantic_suite_hash(raw_tasks) != suite_lock.get("semantic_suite_sha256"):
         raise ValueError("agentic semantic suite identity drifted")
-    return raw_task, locked_task
+    return raw_tasks, [locked_by_id[task_id] for task_id in raw_task_ids]
 
 
 def _artifact_hashes() -> dict[str, str]:
@@ -100,31 +105,30 @@ def _artifact_hashes() -> dict[str, str]:
         "codex_agentic_runner": "benchmarks/run-codex-agentic.py",
         "codex_structural_runner": "benchmarks/run-codex-structural.py",
         "codex_structural_manifest": "benchmarks/manifests/codex-integration.json",
-        "claude_agentic_runner": "benchmarks/run-claude-agentic.py",
+        "agentic_contracts": "benchmarks/agentic_contracts.py",
         "run_all": "benchmarks/run-all.sh",
     }
     return {name: _sha256(ROOT / relative_path) for name, relative_path in paths.items()}
 
 
 def _build_manifest() -> dict[str, Any]:
-    """Build one deterministic BA-01 manifest from locked repository inputs."""
+    """Build one deterministic shared-suite manifest from locked repository inputs."""
     source = _load_json(SOURCE_MANIFEST)
-    raw_task, locked_task = _ba01_task()
+    raw_tasks, locked_tasks = _agentic_tasks()
     suite_lock = next(suite for suite in source["suites"] if suite["path"] == "benchmarks/suites/tasks-agentic.json")
     artifact_hashes = _artifact_hashes()
-    task_identity = {
-        "id": TASK_ID,
-        "type": raw_task["type"],
-        "difficulty": raw_task["difficulty"],
-        "primary_module": raw_task["primary_module"],
-        "canonical_task_sha256": locked_task["canonical_task_sha256"],
-        "prompt_sha256": locked_task["prompt_sha256"],
-        "prompt": raw_task["prompt"],
-        "oracle_class": locked_task["oracle_class"],
-        "effective_scoreable": locked_task["effective_scoreable"],
-        "headline_eligible_v1": locked_task["headline_eligible_v1"],
-    }
-    cells = len(ARMS) * REPETITIONS
+    task_identities = [
+        {
+            "id": raw_task["id"],
+            "canonical_task_sha256": locked_task["canonical_task_sha256"],
+            "prompt_sha256": locked_task["prompt_sha256"],
+            "oracle_class": locked_task["oracle_class"],
+            "effective_scoreable": locked_task["effective_scoreable"],
+            "headline_eligible_v1": locked_task["headline_eligible_v1"],
+        }
+        for raw_task, locked_task in zip(raw_tasks, locked_tasks, strict=True)
+    ]
+    cells = len(raw_tasks) * len(ARMS) * REPETITIONS
     return {
         "experiment_id": EXPERIMENT_ID,
         "experiment_revision": EXPERIMENT_REVISION,
@@ -146,7 +150,7 @@ def _build_manifest() -> dict[str, Any]:
             "task_count": suite_lock["task_count"],
             "task_ids": suite_lock["ordered_task_ids"],
         },
-        "task": task_identity,
+        "tasks": task_identities,
         "arms": {
             "A_plain": {
                 "codemap_available": False,
@@ -169,31 +173,29 @@ def _build_manifest() -> dict[str, Any]:
             },
         },
         "preregistered_scope": {
-            "task_ids": [TASK_ID],
+            "task_ids": [task["id"] for task in raw_tasks],
             "arms": list(ARMS),
             "providers": ["codex"],
             "repetitions": REPETITIONS,
             "total_cells": cells,
             "coordinate_timeout_seconds": COORDINATE_TIMEOUT_SECONDS,
-            "complete_run_max_wall_clock_seconds": 5400,
+            "complete_run_max_wall_clock_seconds": cells * COORDINATE_TIMEOUT_SECONDS,
             "nonpoolable": True,
             "pooling_eligibility": "ineligible; exploratory evidence only",
             "arm_order": "deterministic lexical arm order within each repetition",
         },
         "scoring": {
-            "provider": "claude_ground_truth_reused",
+            "provider": "provider_neutral_answer_contract",
             "implementation": {
-                "path": "benchmarks/run-claude-agentic.py",
-                "sha256": artifact_hashes["claude_agentic_runner"],
-                "symbol": "GroundTruth.score",
+                "path": "benchmarks/agentic_contracts.py",
+                "sha256": artifact_hashes["agentic_contracts"],
+                "symbol": "score_answer",
             },
             "metrics": {
-                "EREC": "erec_tp / max(len(expected), 1)",
-                "E@10": "top10_tp / max(len(top10), 1)",
-                "RREC": "rrec_tp / max(len(expected), 1)",
-                "DEFF": "erec_tp / max(tool_calls, 1)",
+                "SCORE": "mean(component score for each declared answer-contract field)",
+                "CORRECT": "every declared answer-contract field scores 1.0",
             },
-            "quality_score": "shared GroundTruth score over the agent's final answer and exposure corpus",
+            "quality_score": "shared answer-contract component mean over the labelled final answer",
         },
         "artifact_sha256": artifact_hashes,
         "plugin_runtime": {
@@ -207,7 +209,7 @@ def _build_manifest() -> dict[str, Any]:
             "status": "review-ready; no model or auth used; human execution pending",
             "credentials": "no credential material, auth source, or credential path is part of this manifest",
             "required_before_paid_execution": [
-                "Run --dry-run and verify the deterministic 9-cell plan.",
+                "Run --dry-run and verify the deterministic 48-cell plan.",
                 "Validate target commit/tree and frozen index bytes without model or credentials.",
                 "Validate A/B/C isolation and C Skill-before-query evidence without model or credentials.",
                 "Caller supplies CODEX_AGENTIC_PAID_APPROVAL equal to the exact reviewed machine-manifest SHA-256.",
@@ -249,7 +251,6 @@ def _json_bytes(manifest: dict[str, Any]) -> bytes:
 
 def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
     """Render the concise human review record from machine content."""
-    task = manifest["task"]
     scope = manifest["preregistered_scope"]
     lines = [
         f"# `{manifest['experiment_id']}`",
@@ -261,7 +262,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "- No model or credentials were used to build this manifest.",
         "- Review-ready; human execution is pending.",
         "- Paid execution is admitted only when the caller supplies the exact reviewed machine-manifest SHA-256.",
-        "- The 9-cell scope is exploratory and non-poolable.",
+        "- The 48-cell default scope is exploratory and non-poolable.",
         "",
         "## Locked experiment",
         "",
@@ -271,12 +272,10 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         f"- Frozen index SHA-256: `{manifest['frozen_index_contract']['raw_sha256']}`.",
         f"- Suite: `{manifest['suite']['path']}`; raw SHA-256 `{manifest['suite']['raw_sha256']}`.",
         "",
-        "## BA-01 identity",
+        "## Task identities",
         "",
-        f"- `{task['id']}` `{task['type']}` / `{task['difficulty']}` on `{task['primary_module']}`.",
-        f"- Canonical task SHA-256: `{task['canonical_task_sha256']}`.",
-        f"- Prompt SHA-256: `{task['prompt_sha256']}`.",
-        f"- Oracle: `{task['oracle_class']}`; Claude `GroundTruth.score` is reused.",
+        f"- Ordered task IDs: `{scope['task_ids']}`.",
+        "- Each task locks canonical and prompt SHA-256 plus its provider-neutral answer contract.",
         "",
         "## Scope and arms",
         "",
@@ -293,8 +292,8 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "",
         "## Shared scoring",
         "",
-        "- `EREC = erec_tp / max(len(expected), 1)`; `E@10 = top10_tp / max(len(top10), 1)`.",
-        "- `RREC = rrec_tp / max(len(expected), 1)`; `DEFF = erec_tp / max(tool_calls, 1)`.",
+        "- `SCORE` is the mean component score for every declared answer-contract field.",
+        "- `CORRECT` requires every declared answer-contract field to score 1.0.",
         "",
         "## Runner",
         "",
@@ -315,7 +314,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "CODEX_AGENTIC_PAID_APPROVAL=<MANIFEST_SHA256> \\",
         'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
         'CODEX_RUN_DIR="benchmarks/results/codex-agentic-$(date -u +%Y%m%dT%H%M%SZ)" \\',
-        "CODEX_MAX_WALL_CLOCK_SECONDS=5400 \\",
+        f"CODEX_MAX_WALL_CLOCK_SECONDS={scope['complete_run_max_wall_clock_seconds']} \\",
         "  bash benchmarks/run-all.sh codex --agentic",
         "```",
         "",

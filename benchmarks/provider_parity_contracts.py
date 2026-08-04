@@ -205,7 +205,16 @@ def prompt_hash(task: Task) -> str:
     Raises:
         ValueError: If the task does not carry a string prompt.
     """
-    return hashlib.sha256(materialize_task_prompt(task).encode("utf-8")).hexdigest()
+    if "answer_contract" in task:
+        try:
+            from agentic_contracts import materialize_agentic_prompt
+        except ModuleNotFoundError:
+            from benchmarks.agentic_contracts import materialize_agentic_prompt
+
+        prompt = materialize_agentic_prompt(task)
+    else:
+        prompt = materialize_task_prompt(task)
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
 def materialize_task_prompt(task: Task) -> str:

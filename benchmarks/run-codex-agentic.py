@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Codex agentic provider-parity runner for the locked BA-01 first slice.
+"""Codex agentic provider-parity runner for the locked shared agentic suite.
 
-This module intentionally supports only the BA-01 agentic pilot coordinate and
-its A_plain, B_auto, and C_required treatments.  It reuses the Claude
-``GroundTruth`` scorer and the Codex structural runner's native JSONL parser
-instead of copying either implementation.  Both sibling runners have hyphens
-in their filenames, so ``importlib`` loading is the smallest safe way to keep
-their single-source contracts importable without renaming established scripts.
+This module runs every manifest-locked agentic task in the A_plain, B_auto, and
+C_required treatments. It reuses the provider-neutral answer-contract scorer
+and the Codex structural runner's native JSONL parser instead of copying either
+implementation.
 
-``--dry-run`` validates the locked BA-01 provenance and prints the
-deterministic 3×3 cell plan without reading credentials, invoking a model, or
+``--dry-run`` validates the locked shared provenance and prints the
+deterministic task × arm cell plan without reading credentials, invoking a model, or
 creating result files. Paid execution is separately admitted only by the agentic
 manifest and exact SHA approval; the structural manifest remains an isolated
 runtime adapter, never the agentic study definition.
@@ -25,20 +23,28 @@ import os
 import sys
 import tempfile
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 _BENCHMARKS_DIR = Path(__file__).resolve().parent
 if str(_BENCHMARKS_DIR) not in sys.path:
     sys.path.insert(0, str(_BENCHMARKS_DIR))
 
 from _utilities import fmt_time, fmt_tok  # noqa: E402
+from agentic_contracts import (  # noqa: E402
+    AGENTIC_ARMS,
+    DEFAULT_REPETITIONS,
+    build_oracle,
+    materialize_agentic_prompt,
+    parse_labeled_answer,
+    score_answer,
+    validate_answer_contract,
+)
 from provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     canonical_task_hash,
-    prompt_hash,
     semantic_suite_hash,
     treatment_adherence,
 )
@@ -46,9 +52,7 @@ from provider_parity_contracts import (  # noqa: E402
 
 _TASKS_PATH = _BENCHMARKS_DIR / "suites" / "tasks-agentic.json"
 _MANIFEST_PATH = _BENCHMARKS_DIR / "manifests" / "codex-agentic.json"
-AGENTIC_ARMS = ("A_plain", "B_auto", "C_required")
-AGENTIC_TASK_ID = "BA-01"
-AGENTIC_REPETITIONS = 3
+AGENTIC_DEFAULT_REPETITIONS = DEFAULT_REPETITIONS
 _NATIVE_HOME_ARM = {
     "A_plain": "A_plain",
     "B_auto": "B_direct_required",
@@ -59,11 +63,10 @@ _OUTPUT_LEGEND = (
     "  treatments: A_plain=no Codemap, B_auto=CLI available and optional, "
     "C_required=Codemap Skill read plus compact query required\n"
     "  metrics:\n"
-    "      EREC: expected direct-importer recall\n"
-    "      RREC: final-report recall\n"
-    "      DEFF: expected dependencies exposed per tool call\n"
+    "      SCORE: mean answer-contract component score\n"
+    "      correct: ✓ every declared answer field is correct; ✗ otherwise\n"
     "  status: ✓ completed, ✗ failed\n"
-    "  progress: N completed cells / 9 planned cells\n"
+    "  progress: N completed cells / manifest-scoped planned cells\n"
     "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
     "  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\n"
     "  input tokens: gross total; cached and fresh details remain in telemetry only\n"
@@ -86,11 +89,7 @@ def _load_sibling(module_name: str, filename: str) -> ModuleType:
     return module
 
 
-_claude = _load_sibling("_codex_agentic_claude", "run-claude-agentic.py")
 _structural = _load_sibling("_codex_agentic_structural", "run-codex-structural.py")
-GroundTruth = _claude.GroundTruth
-Task = _claude.Task
-QualityScore = _claude.QualityScore
 
 
 @dataclass(frozen=True)
@@ -126,7 +125,8 @@ class AgenticRun:
     error_type: str
     output_text: str
     report_text: str
-    quality: QualityScore
+    quality: Any | None
+    answer_error: str = ""
     elapsed_s: float = 0.0
     retry_count: int = 0
     raw_events: list[dict[str, Any]] | None = None
@@ -153,7 +153,7 @@ def prepare_isolated_home(arm: str, **kwargs: Any) -> Any:
     The underlying A/B/C homes already prevent host-plugin and credential
     inheritance.  B_auto maps to the direct-Codemap availability home only;
     optional use remains an agentic admission rule, not a home capability.
-    This function is intentionally never called by the first-slice dry run.
+    No-model dry runs probe the policy without creating a disposable home.
     """
     if arm not in AGENTIC_ARMS:
         raise ValueError(f"unsupported Codex agentic arm {arm!r}")
@@ -169,58 +169,65 @@ def probe_isolated_home(home: Any, arm: str) -> dict[str, Any]:
     return evidence
 
 
-def load_ba01_task(tasks_path: Path = _TASKS_PATH, manifest_path: Path = _MANIFEST_PATH) -> Task:
-    """Load exactly BA-01 after validating the dedicated first-slice lock."""
+def load_agentic_tasks(tasks_path: Path = _TASKS_PATH, manifest_path: Path = _MANIFEST_PATH) -> list[dict[str, Any]]:
+    """Load every manifest-locked task after validating suite and task identities."""
     tasks_path = Path(tasks_path)
     manifest_path = Path(manifest_path)
-    raw_tasks = _claude.load_task_suite(tasks_path)
-    matches = [task for task in raw_tasks if task.get("id") == AGENTIC_TASK_ID]
-    if len(matches) != 1:
-        raise ValueError(f"agentic first slice requires exactly one {AGENTIC_TASK_ID} task")
-    raw_task = matches[0]
+    try:
+        suite = json.loads(tasks_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("agentic task suite is unavailable or malformed") from exc
+    raw_tasks = suite.get("tasks") if isinstance(suite, Mapping) else None
+    if not isinstance(raw_tasks, list) or not all(isinstance(task, dict) for task in raw_tasks):
+        raise ValueError("agentic task suite requires a task object list")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         suite_lock = manifest["suite"]
-        task_lock = manifest["task"]
+        task_locks = manifest["tasks"]
+        scope = manifest["preregistered_scope"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("agentic first-slice manifest is unavailable or malformed") from exc
+        raise ValueError("agentic shared manifest is unavailable or malformed") from exc
+    if not isinstance(task_locks, list) or not isinstance(scope, Mapping):
+        raise ValueError("agentic shared manifest lacks task identities or scope")
+    task_locks_by_id = {task.get("id"): task for task in task_locks if isinstance(task, Mapping)}
+    task_ids = scope.get("task_ids")
+    if not isinstance(task_ids, list) or task_ids != [task.get("id") for task in raw_tasks]:
+        raise ValueError("agentic shared task order drifted")
     if (
         suite_lock.get("path") != "benchmarks/suites/tasks-agentic.json"
         or suite_lock.get("raw_sha256") != hashlib.sha256(tasks_path.read_bytes()).hexdigest()
         or suite_lock.get("semantic_suite_sha256") != semantic_suite_hash(raw_tasks)
-        or task_lock.get("id") != AGENTIC_TASK_ID
-        or task_lock.get("canonical_task_sha256") != canonical_task_hash(raw_task)
-        or task_lock.get("prompt_sha256") != prompt_hash(raw_task)
     ):
-        raise ValueError("agentic first-slice task or suite identity drifted")
-    task = Task(
-        id=str(raw_task["id"]),
-        type=str(raw_task["type"]),
-        prompt=str(raw_task["prompt"]),
-        primary_module=str(raw_task.get("primary_module", "")),
-        difficulty=str(raw_task.get("difficulty", "unknown")),
-        experiment_revision=str(manifest.get("experiment_revision", "")),
-        task_hash=str(task_lock["canonical_task_sha256"]),
-        prompt_hash=str(task_lock["prompt_sha256"]),
-        suite_hash=str(suite_lock["semantic_suite_sha256"]),
-        suite_raw_hash=str(suite_lock["raw_sha256"]),
-        oracle_class=str(task_lock.get("oracle_class", "unknown")),
-        headline_eligible_v1=bool(task_lock.get("headline_eligible_v1", False)),
-        scoreable=bool(task_lock.get("effective_scoreable", False)),
-    )
-    if task.type != "blast_radius_analysis" or not task.scoreable:
-        raise ValueError(f"{AGENTIC_TASK_ID} must retain blast_radius_analysis semantics")
-    return task
+        raise ValueError("agentic shared suite identity drifted")
+    if set(task_locks_by_id) != set(task_ids):
+        raise ValueError("agentic shared task identity set drifted")
+
+    tasks: list[dict[str, Any]] = []
+    for raw_task in raw_tasks:
+        task_id = str(raw_task["id"])
+        task_lock = task_locks_by_id[task_id]
+        delivered_prompt = materialize_agentic_prompt(raw_task)
+        if (
+            task_lock.get("canonical_task_sha256") != canonical_task_hash(raw_task)
+            or task_lock.get("prompt_sha256") != hashlib.sha256(delivered_prompt.encode("utf-8")).hexdigest()
+        ):
+            raise ValueError(f"agentic task identity drifted for {task_id}")
+        if raw_task.get("type") != "blast_radius_analysis" or not task_lock.get("effective_scoreable"):
+            raise ValueError(f"agentic task {task_id} must retain scoreable blast-radius semantics")
+        validate_answer_contract(raw_task)
+        tasks.append({**raw_task, "prompt": delivered_prompt})
+    return tasks
 
 
 def parse_agentic_stream(
     stream: str | bytes | Iterable[str | bytes],
     *,
     arm: str,
-    task: Task,
-    ground_truth: GroundTruth,
+    task: Mapping[str, Any],
+    oracle: Any | None = None,
     repetition: int = 1,
     skill_path: Path | None = None,
+    ground_truth: Any | None = None,
 ) -> AgenticRun:
     """Normalize one native stream and score it with the shared Claude oracle.
 
@@ -230,8 +237,12 @@ def parse_agentic_stream(
     """
     if arm not in AGENTIC_ARMS:
         raise ValueError(f"unsupported Codex agentic arm {arm!r}")
-    if task.id != AGENTIC_TASK_ID:
-        raise ValueError(f"agentic first slice supports only {AGENTIC_TASK_ID}")
+    if not isinstance(task.get("id"), str) or not task["id"]:
+        raise ValueError("agentic task requires a non-empty id")
+    if oracle is None:
+        oracle = ground_truth
+    if oracle is None:
+        raise ValueError("agentic stream scoring requires a shared task oracle")
     if repetition < 1:
         raise ValueError("repetition must be at least 1")
     if arm == "C_required" and skill_path is None:
@@ -257,16 +268,24 @@ def parse_agentic_stream(
         contaminated=contaminated,
     )
     report_text = parsed.output_text[parsed.last_tool_text_offset :].lstrip("\n")
-    quality = ground_truth.score(
-        task.id,
-        parsed.output_text,
-        parsed.output_text,
-        report_text,
-        tool_calls=parsed.command_calls,
-    )
+    quality: Any | None = None
+    answer_error = ""
+    if parsed.success:
+        try:
+            answer = parse_labeled_answer(task, report_text)
+            quality = score_answer(
+                oracle,
+                answer,
+                exposure_text=parsed.output_text,
+                report_text=report_text,
+                tool_calls=parsed.command_calls,
+            )
+        except ValueError as exc:
+            answer_error = str(exc)
+            quality = score_answer(oracle, {}, exposure_text="", report_text="", tool_calls=0)
     return AgenticRun(
         arm=arm,
-        task_id=task.id,
+        task_id=str(task["id"]),
         repetition=repetition,
         success=parsed.success,
         input_tokens=parsed.input_tokens,
@@ -281,11 +300,12 @@ def parse_agentic_stream(
         contaminated=contaminated,
         incomplete=parsed.incomplete,
         malformed_lines=parsed.malformed_lines,
-        error=parsed.error,
-        error_type=parsed.error_type,
+        error=parsed.error or answer_error,
+        error_type=parsed.error_type if not answer_error else "answer_contract_failed",
         output_text=parsed.output_text,
         report_text=report_text,
         quality=quality,
+        answer_error=answer_error,
         raw_events=parsed.raw_events,
     )
 
@@ -309,8 +329,56 @@ def _manifest_sha256(manifest_path: Path) -> str:
         raise ValueError("Codex agentic manifest is unavailable") from exc
 
 
+def resolve_agentic_scope(
+    manifest_path: Path = _MANIFEST_PATH,
+    *,
+    task_ids: Sequence[str] | None = None,
+    repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
+) -> dict[str, Any]:
+    """Resolve and hash one manifest-bound Codex agentic coordinate scope.
+
+    The manifest is the immutable source lock. A caller may explicitly narrow
+    its ordered task set or increase positive repetitions, but the derived
+    scope hash binds every resulting coordinate and its wall-clock ceiling.
+    """
+    if repetitions < 1:
+        raise ValueError("agentic repetitions must be at least 1")
+    manifest_path = Path(manifest_path)
+    manifest = _read_agentic_manifest(manifest_path)
+    preregistered = manifest.get("preregistered_scope")
+    if not isinstance(preregistered, Mapping):
+        raise ValueError("Codex agentic manifest lacks preregistered scope")
+    locked_task_ids = preregistered.get("task_ids")
+    if not isinstance(locked_task_ids, list) or not all(isinstance(task_id, str) for task_id in locked_task_ids):
+        raise ValueError("Codex agentic manifest has invalid task IDs")
+    selected_task_ids = list(locked_task_ids if task_ids is None else task_ids)
+    if not selected_task_ids or len(set(selected_task_ids)) != len(selected_task_ids):
+        raise ValueError("agentic scope requires unique manifest-bound task IDs")
+    if any(task_id not in locked_task_ids for task_id in selected_task_ids):
+        raise ValueError("agentic scope includes a task outside the manifest")
+    ordered_task_ids = [task_id for task_id in locked_task_ids if task_id in set(selected_task_ids)]
+    coordinate_timeout_seconds = preregistered.get("coordinate_timeout_seconds")
+    if coordinate_timeout_seconds != 600:
+        raise ValueError("Codex agentic manifest must lock a 600-second coordinate budget")
+    total_cells = len(ordered_task_ids) * len(AGENTIC_ARMS) * repetitions
+    complete_run_max_wall_clock_seconds = total_cells * coordinate_timeout_seconds
+    payload = {
+        "manifest_sha256": _manifest_sha256(manifest_path),
+        "experiment_revision": manifest.get("experiment_revision"),
+        "task_ids": ordered_task_ids,
+        "arms": list(AGENTIC_ARMS),
+        "repetitions": repetitions,
+        "coordinate_timeout_seconds": coordinate_timeout_seconds,
+        "total_cells": total_cells,
+        "complete_run_max_wall_clock_seconds": complete_run_max_wall_clock_seconds,
+        "nonpoolable": True,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
 def validate_paid_admission(manifest_path: Path, approval_sha256: str) -> dict[str, Any]:
-    """Fail closed unless the agentic manifest admits this exact paid BA-01 study."""
+    """Fail closed unless the agentic manifest admits the default paid study."""
     manifest_path = Path(manifest_path)
     observed_hash = _manifest_sha256(manifest_path)
     if approval_sha256 != observed_hash:
@@ -323,11 +391,11 @@ def validate_paid_admission(manifest_path: Path, approval_sha256: str) -> dict[s
         raise ValueError("Codex agentic manifest lacks admission, model, or scope")
     expected_scope = {
         "arms": list(AGENTIC_ARMS),
-        "task_ids": [AGENTIC_TASK_ID],
-        "repetitions": AGENTIC_REPETITIONS,
+        "task_ids": [f"BA-{number:02d}" for number in range(1, 17)],
+        "repetitions": AGENTIC_DEFAULT_REPETITIONS,
         "coordinate_timeout_seconds": 600,
-        "complete_run_max_wall_clock_seconds": 5400,
-        "total_cells": 9,
+        "complete_run_max_wall_clock_seconds": 28800,
+        "total_cells": 48,
     }
     if (
         manifest.get("schema_version") != "codex-agentic-manifest-v1"
@@ -337,7 +405,7 @@ def validate_paid_admission(manifest_path: Path, approval_sha256: str) -> dict[s
         or model.get("reasoning_effort") != "high"
         or model.get("strict_config") is not True
     ):
-        raise ValueError("Codex agentic manifest does not admit the fixed BA-01 paid scope")
+        raise ValueError("Codex agentic manifest does not admit the default shared paid scope")
     artifact_hashes = manifest.get("artifact_sha256")
     if not isinstance(artifact_hashes, Mapping):
         raise ValueError("Codex agentic manifest lacks artifact hashes")
@@ -350,22 +418,24 @@ def validate_paid_admission(manifest_path: Path, approval_sha256: str) -> dict[s
     return manifest
 
 
-def _agentic_envelope(arm: str) -> str:
-    """Return the agentic arm instruction without importing structural task policy."""
+def _agentic_envelope(arm: str, task: Mapping[str, Any]) -> str:
+    """Return the arm instruction and labelled answer contract for one task."""
     if arm == "A_plain":
-        return "Codemap is absent and inaccessible. Solve using ordinary provider tools only."
-    if arm == "B_auto":
-        return (
+        treatment = "Codemap is absent and inaccessible. Solve using ordinary provider tools only."
+    elif arm == "B_auto":
+        treatment = (
             "Codemap's direct CLI is available as $CODEMAP_BIN. Use it when useful, but ordinary reads and shell "
             "tools remain allowed and no Codemap call is required."
         )
-    if arm == "C_required":
-        return (
+    elif arm == "C_required":
+        treatment = (
             'Use the installed Codemap Skill before answering: first execute exactly cat "$CODEMAP_SKILL_FILE", '
             "then complete at least one successful $CODEMAP_BIN query --compact structural query. Other reads and "
             "shell commands remain allowed."
         )
-    raise ValueError(f"unsupported Codex agentic arm {arm!r}")
+    else:
+        raise ValueError(f"unsupported Codex agentic arm {arm!r}")
+    return treatment
 
 
 class AgenticCodexRunner:
@@ -476,8 +546,21 @@ class AgenticCodexRunner:
             if operation_error is None and cleanup_errors:
                 raise cleanup_errors[0]
 
-    def run(self, task: Task, arm: str, *, repetition: int, ground_truth: GroundTruth, deadline: float) -> AgenticRun:
+    def run(
+        self,
+        task: Mapping[str, Any],
+        arm: str,
+        *,
+        repetition: int,
+        oracle: Any | None = None,
+        deadline: float,
+        ground_truth: Any | None = None,
+    ) -> AgenticRun:
         """Run one agentic coordinate, retrying only empty retryable transport failures."""
+        if oracle is None:
+            oracle = ground_truth
+        if oracle is None:
+            raise ValueError("agentic runner requires a shared task oracle")
         home: Any | None = None
         started = time.monotonic()
         attempts: list[list[dict[str, Any]]] = []
@@ -488,7 +571,7 @@ class AgenticCodexRunner:
         if self.transport is None:
             home = self.adapter._prepare_verified_home(_NATIVE_HOME_ARM[arm])
         try:
-            command = self.adapter.build_command(f"{_agentic_envelope(arm)}\n\n{task.prompt}")
+            command = self.adapter.build_command(f"{_agentic_envelope(arm, task)}\n\n{task['prompt']}")
             for attempt in range(3):
                 remaining = min(600.0 - (time.monotonic() - started), deadline - time.monotonic())
                 if remaining <= 0:
@@ -497,7 +580,7 @@ class AgenticCodexRunner:
                         timeout_stream,
                         arm=arm,
                         task=task,
-                        ground_truth=ground_truth,
+                        oracle=oracle,
                         repetition=repetition,
                         skill_path=home.codemap_skill_path if arm == "C_required" and home is not None else None,
                     )
@@ -511,7 +594,7 @@ class AgenticCodexRunner:
                     stream,
                     arm=arm,
                     task=task,
-                    ground_truth=ground_truth,
+                    oracle=oracle,
                     repetition=repetition,
                     skill_path=home.codemap_skill_path if arm == "C_required" and home is not None else None,
                 )
@@ -664,24 +747,30 @@ def dry_run(
     *,
     tasks_path: Path = _TASKS_PATH,
     manifest_path: Path = _MANIFEST_PATH,
-    repetitions: int = AGENTIC_REPETITIONS,
+    task_ids: Sequence[str] | None = None,
+    repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
 ) -> list[str]:
-    """Validate the BA-01 contract and return its exact no-model cell plan."""
-    if repetitions != AGENTIC_REPETITIONS:
-        raise ValueError(f"agentic first slice requires exactly {AGENTIC_REPETITIONS} repetitions")
-    task = load_ba01_task(tasks_path, manifest_path)
+    """Validate one resolved scope and return its exact no-model cell plan."""
+    scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
+    tasks = load_agentic_tasks(tasks_path, manifest_path)
+    tasks_by_id = {task["id"]: task for task in tasks}
     if set(AGENTIC_ARMS) != set(ARM_CONTRACTS):
         raise ValueError("agentic arm contracts drifted from the shared provider policy")
     lines = [_format_probe(probe_arm(arm)) for arm in AGENTIC_ARMS]
-    for repetition in range(1, repetitions + 1):
-        for arm in AGENTIC_ARMS:
-            lines.append(_format_plan(task.id, repetition, arm))
+    for task_id in scope["task_ids"]:
+        if task_id not in tasks_by_id:
+            raise ValueError(f"agentic scope task {task_id} is not loadable")
+        for repetition in range(1, repetitions + 1):
+            for arm in AGENTIC_ARMS:
+                lines.append(_format_plan(task_id, repetition, arm))
     return lines
 
 
 def _append_telemetry(path: Path, run: AgenticRun, execution_index: int) -> None:
     """Append one immutable raw agentic row before updating derived evidence."""
-    row = asdict(run)
+    row = vars(run).copy()
+    if run.quality is not None:
+        row["quality"] = {**vars(run.quality), "components": dict(run.quality.components)}
     row["execution_index"] = execution_index
     row["fresh_input_tokens"] = _structural.fresh_input_tokens(run.input_tokens, run.cached_input_tokens)
     row["token_accounting_inconsistent"] = _structural.token_accounting_inconsistent(
@@ -691,10 +780,10 @@ def _append_telemetry(path: Path, run: AgenticRun, execution_index: int) -> None
         handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
-def _write_canonical_telemetry(raw_path: Path) -> str:
+def _write_canonical_telemetry(raw_path: Path, task_ids: Sequence[str]) -> str:
     """Publish the derived agentic canonical order without rewriting raw JSONL."""
     rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines() if line]
-    canonical = _structural.canonical_result_rows(rows, task_order=(AGENTIC_TASK_ID,), arm_order=AGENTIC_ARMS)
+    canonical = _structural.canonical_result_rows(rows, task_order=task_ids, arm_order=AGENTIC_ARMS)
     payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in canonical).encode("utf-8")
     output = raw_path.with_name("telemetry-canonical.jsonl")
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix=f".{output.name}.", delete=False) as handle:
@@ -716,17 +805,19 @@ def _write_checksums(run_dir: Path) -> None:
     (run_dir / "checksums.sha256").write_text(payload, encoding="utf-8")
 
 
-def _progress_line(execution_index: int, run: AgenticRun) -> str:
+def _progress_line(execution_index: int, total_cells: int, run: AgenticRun) -> str:
     """Render one compact agentic result after its immutable telemetry row is persisted."""
-    quality = run.quality
     status = "✓" if run.success else "✗"
     treatment = "✓" if run.treatment_adherence else "✗"
     used = "✓" if run.codemap_used else "✗"
+    score = "n/a" if run.quality is None else f"{run.quality.quality_score:.3f}"
+    correct = "✗" if run.quality is None else ("✓" if run.quality.correct else "✗")
     return (
-        f"({execution_index}/9) {status}  {run.task_id:<5}  rep={run.repetition}  {run.arm:<10}"
+        f"({execution_index}/{total_cells}) {status}  {run.task_id:<5}  rep={run.repetition}  {run.arm:<10}"
         f"  in={fmt_tok(run.input_tokens):>6}  out={fmt_tok(run.output_tokens):>6}"
-        f"  time={fmt_time(run.elapsed_s):>5}  EREC={quality.erec:.3f}  RREC={quality.rrec:.3f}"
-        f"  DEFF={quality.deff:.3f}  treatment:{treatment}  codemap-used:{used}"
+        f"  time={fmt_time(run.elapsed_s):>5}  SCORE={score}  EREC={run.quality.erec if run.quality else 0.0:.3f}"
+        f"  RREC={run.quality.rrec if run.quality else 0.0:.3f}  DEFF={run.quality.deff if run.quality else 0.0:.3f}  correct:{correct}"
+        f"  treatment:{treatment}  codemap-used:{used}"
     )
 
 
@@ -742,14 +833,15 @@ def _initial_metadata(
     manifest_path: Path,
     approval_sha256: str,
     run_dir: Path,
-    task: Task,
-    max_wall_clock_seconds: float,
+    tasks: Sequence[Mapping[str, Any]],
+    scope: Mapping[str, Any],
     invocation_launcher_path: Path,
 ) -> dict[str, Any]:
     """Build compact provenance before the first paid coordinate is scheduled."""
     coordinates = [
-        {"task_id": task.id, "repetition": repetition, "arm": arm}
-        for repetition in range(1, AGENTIC_REPETITIONS + 1)
+        {"task_id": task["id"], "repetition": repetition, "arm": arm}
+        for task in tasks
+        for repetition in range(1, int(scope["repetitions"]) + 1)
         for arm in AGENTIC_ARMS
     ]
     return {
@@ -759,13 +851,15 @@ def _initial_metadata(
         "persisted_cells": 0,
         "last_persisted_coordinate": None,
         "error": None,
-        "manifest": {"path": str(manifest_path.resolve()), "sha256": approval_sha256},
+        "manifest": {"path": str(manifest_path.resolve()), "sha256": _manifest_sha256(manifest_path)},
+        "approval_sha256": approval_sha256,
+        "scope": dict(scope),
         "invocation_launcher": {"path": str(invocation_launcher_path.resolve())},
         "execution": {
             "model": "gpt-5.6-luna",
             "reasoning_effort": "high",
             "cell_wall_clock_seconds": 600,
-            "max_wall_clock_seconds": max_wall_clock_seconds,
+            "max_wall_clock_seconds": scope["complete_run_max_wall_clock_seconds"],
             "coordinates": coordinates,
             "pooling_eligible": False,
         },
@@ -803,22 +897,34 @@ def run_paid(
     marketplace_root: Path | None = None,
     codemap_bin: Path | None = None,
     invocation_launcher_path: Path | None = None,
-    max_wall_clock_seconds: float = 5400,
+    task_ids: Sequence[str] | None = None,
+    repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
+    scope_sha256: str | None = None,
+    max_wall_clock_seconds: float | None = None,
     runner_factory: Callable[..., Any] | None = None,
 ) -> Path:
-    """Execute the admitted BA-01 nine-cell study with immutable partial evidence.
+    """Execute one admitted shared-task scope with immutable partial evidence.
 
     Test fixtures may inject ``runner_factory``; production always uses the
     structural adapter for credential lifecycle, permissions, and native Codex
     transport.  The function never records the auth path or credential bytes.
     """
-    if max_wall_clock_seconds != 5400:
-        raise ValueError("agentic complete-run wall-clock limit must equal the admitted 5400 seconds")
     if not auth_source:
         raise ValueError("paid Codex agentic execution requires an auth source")
     if invocation_launcher_path is None:
         raise ValueError("paid Codex agentic execution requires the invocation launcher path")
-    manifest = validate_paid_admission(manifest_path, approval_sha256)
+    scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
+    is_default_scope = task_ids is None and repetitions == AGENTIC_DEFAULT_REPETITIONS
+    if is_default_scope:
+        manifest = validate_paid_admission(manifest_path, approval_sha256)
+        if scope_sha256 is not None and scope_sha256 != scope["scope_sha256"]:
+            raise ValueError("default agentic scope hash does not match the manifest-bound scope")
+    else:
+        manifest = validate_paid_admission(manifest_path, _manifest_sha256(Path(manifest_path)))
+        if approval_sha256 != scope["scope_sha256"] or scope_sha256 != scope["scope_sha256"]:
+            raise ValueError("nondefault agentic scope requires its exact derived scope SHA-256 approval")
+    if max_wall_clock_seconds is not None and max_wall_clock_seconds != scope["complete_run_max_wall_clock_seconds"]:
+        raise ValueError("agentic complete-run wall-clock limit must equal the resolved scope ceiling")
     repo_path = Path(repo_path).resolve()
     index_path = Path(index_path).resolve()
     _validate_agentic_runtime(manifest, repo_path, index_path)
@@ -838,13 +944,15 @@ def run_paid(
     run_log = run_dir / "run.log"
     run_log.touch(exist_ok=False)
     metadata_path = run_dir / "run-metadata.json"
-    task = load_ba01_task(_TASKS_PATH, manifest_path)
+    all_tasks = load_agentic_tasks(_TASKS_PATH, manifest_path)
+    tasks_by_id = {task["id"]: task for task in all_tasks}
+    tasks = [tasks_by_id[task_id] for task_id in scope["task_ids"]]
     metadata = _initial_metadata(
         manifest_path=Path(manifest_path),
         approval_sha256=approval_sha256,
         run_dir=run_dir,
-        task=task,
-        max_wall_clock_seconds=max_wall_clock_seconds,
+        tasks=tasks,
+        scope=scope,
         invocation_launcher_path=invocation_launcher_path,
     )
     _structural._write_run_metadata(metadata_path, metadata)
@@ -853,9 +961,9 @@ def run_paid(
         handle.write(_OUTPUT_LEGEND + "\n")
     factory = runner_factory or AgenticCodexRunner
     runner: Any | None = None
-    deadline = time.monotonic() + max_wall_clock_seconds
+    deadline = time.monotonic() + float(scope["complete_run_max_wall_clock_seconds"])
     try:
-        truth = GroundTruth(index_path, [task], repo_path=repo_path)
+        oracles = {task["id"]: build_oracle(task, repo_path) for task in tasks}
         runner = factory(
             repo_path=repo_path,
             index_path=index_path,
@@ -874,24 +982,37 @@ def run_paid(
             }
             _structural._write_run_metadata(metadata_path, metadata)
             _write_checksums(run_dir)
-        for repetition in range(1, AGENTIC_REPETITIONS + 1):
-            for arm in AGENTIC_ARMS:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("agentic complete-run wall-clock limit exhausted before next cell")
-                run = runner.run(task, arm, repetition=repetition, ground_truth=truth, deadline=deadline)
-                _validate_agentic_runtime(manifest, repo_path, index_path)
-                _structural._validate_invocation_launcher(invocation_launcher_path, launcher_hash)
-                _append_telemetry(raw_path, run, int(metadata["persisted_cells"]))
-                metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
-                metadata["last_persisted_coordinate"] = {"task_id": task.id, "repetition": repetition, "arm": arm}
-                metadata["artifacts"]["canonical_telemetry_sha256"] = _write_canonical_telemetry(raw_path)
-                _structural._write_run_metadata(metadata_path, metadata)
-                _emit_run_line(run_log, _progress_line(int(metadata["persisted_cells"]), run))
-                _write_checksums(run_dir)
+        for task in tasks:
+            for repetition in range(1, repetitions + 1):
+                for arm in AGENTIC_ARMS:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("agentic complete-run wall-clock limit exhausted before next cell")
+                    run = runner.run(task, arm, repetition=repetition, oracle=oracles[task["id"]], deadline=deadline)
+                    _validate_agentic_runtime(manifest, repo_path, index_path)
+                    _structural._validate_invocation_launcher(invocation_launcher_path, launcher_hash)
+                    _append_telemetry(raw_path, run, int(metadata["persisted_cells"]))
+                    metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
+                    metadata["last_persisted_coordinate"] = {
+                        "task_id": task["id"],
+                        "repetition": repetition,
+                        "arm": arm,
+                    }
+                    metadata["artifacts"]["canonical_telemetry_sha256"] = _write_canonical_telemetry(
+                        raw_path, scope["task_ids"]
+                    )
+                    _structural._write_run_metadata(metadata_path, metadata)
+                    _emit_run_line(
+                        run_log,
+                        _progress_line(int(metadata["persisted_cells"]), int(scope["total_cells"]), run),
+                    )
+                    _write_checksums(run_dir)
         metadata["status"] = "completed"
         metadata["completed_at"] = _structural._utc_now()
         _structural._write_run_metadata(metadata_path, metadata)
-        _emit_run_line(run_log, f"SUMMARY  status=completed  persisted_cells={metadata['persisted_cells']}/9")
+        _emit_run_line(
+            run_log,
+            f"SUMMARY  status=completed  persisted_cells={metadata['persisted_cells']}/{scope['total_cells']}",
+        )
         _write_checksums(run_dir)
         return run_dir
     except BaseException as exc:
@@ -900,7 +1021,8 @@ def run_paid(
         metadata["error"] = {"type": type(exc).__name__, "message": str(exc)[:1000]}
         _structural._write_run_metadata(metadata_path, metadata)
         _emit_run_line(
-            run_log, f"SUMMARY  status={metadata['status']}  persisted_cells={metadata['persisted_cells']}/9"
+            run_log,
+            f"SUMMARY  status={metadata['status']}  persisted_cells={metadata['persisted_cells']}/{scope['total_cells']}",
         )
         _write_checksums(run_dir)
         raise
@@ -910,13 +1032,14 @@ def run_paid(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the no-model preflight or the separately admitted paid BA-01 study."""
+    """Run a no-model scope preflight or a separately admitted paid study."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="print the fixed BA-01 no-model plan")
+    parser.add_argument("--dry-run", action="store_true", help="print the resolved no-model plan")
+    parser.add_argument("--resolve-scope", action="store_true", help="print the resolved scope JSON and exit")
     parser.add_argument("--tasks-path", type=Path, default=_TASKS_PATH)
     parser.add_argument("--manifest-path", type=Path, default=_MANIFEST_PATH)
-    parser.add_argument("--task-id", default=AGENTIC_TASK_ID)
-    parser.add_argument("--repetitions", type=int, default=AGENTIC_REPETITIONS)
+    parser.add_argument("--task-id", action="append", help="select one manifest-bound task; may be repeated")
+    parser.add_argument("--repetitions", type=int, default=AGENTIC_DEFAULT_REPETITIONS)
     parser.add_argument("--repo-path", type=Path)
     parser.add_argument("--index-path", type=Path)
     parser.add_argument("--marketplace-root", type=Path)
@@ -925,13 +1048,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--invocation-launcher-path", type=Path)
     parser.add_argument("--run-dir", type=Path)
     parser.add_argument("--paid-approval", help="exact SHA-256 of the reviewed admitted agentic manifest")
-    parser.add_argument("--max-wall-clock-seconds", type=float, default=5400)
+    parser.add_argument("--scope-sha256", help="exact SHA-256 of a nondefault resolved scope")
+    parser.add_argument("--max-wall-clock-seconds", type=float)
     args = parser.parse_args(argv)
-    if args.task_id != AGENTIC_TASK_ID:
-        parser.error(f"agentic first slice supports only --task-id {AGENTIC_TASK_ID}")
+    try:
+        scope = resolve_agentic_scope(
+            args.manifest_path,
+            task_ids=args.task_id,
+            repetitions=args.repetitions,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.scope_sha256 is not None and args.scope_sha256 != scope["scope_sha256"]:
+        parser.error("--scope-sha256 does not match the resolved agentic scope")
+    if args.resolve_scope:
+        print(json.dumps(scope, sort_keys=True))
+        return 0
     if args.dry_run:
         _emit_output_legend()
-        for line in dry_run(tasks_path=args.tasks_path, manifest_path=args.manifest_path, repetitions=args.repetitions):
+        for line in dry_run(
+            tasks_path=args.tasks_path,
+            manifest_path=args.manifest_path,
+            task_ids=args.task_id,
+            repetitions=args.repetitions,
+        ):
             print(line)
         return 0
     required = {
@@ -955,6 +1095,9 @@ def main(argv: list[str] | None = None) -> int:
         marketplace_root=args.marketplace_root,
         codemap_bin=args.codemap_bin,
         invocation_launcher_path=args.invocation_launcher_path,
+        task_ids=args.task_id,
+        repetitions=args.repetitions,
+        scope_sha256=args.scope_sha256,
         max_wall_clock_seconds=args.max_wall_clock_seconds,
     )
     return 0

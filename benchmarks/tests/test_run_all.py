@@ -7,6 +7,7 @@ import errno
 import json
 import os
 import pty
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,21 @@ ACTIVE_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 ACTIVE_MANIFEST_SHA = hashlib.sha256(ACTIVE_MANIFEST.read_bytes()).hexdigest()
 AGENTIC_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-agentic.json"
 AGENTIC_MANIFEST_SHA = hashlib.sha256(AGENTIC_MANIFEST.read_bytes()).hexdigest()
+AGENTIC_MANIFEST_DATA = json.loads(AGENTIC_MANIFEST.read_text(encoding="utf-8"))
+AGENTIC_TOTAL_CELLS = AGENTIC_MANIFEST_DATA["preregistered_scope"]["total_cells"]
+AGENTIC_WALL_CLOCK = AGENTIC_MANIFEST_DATA["preregistered_scope"]["complete_run_max_wall_clock_seconds"]
+AGENTIC_SCOPE_SHA = "agentic-default-scope"
+AGENTIC_REPEAT_TWO_SCOPE_SHA = "agentic-repeat-two-scope"
+METHODOLOGY_MANIFEST = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
+METHODOLOGY_MANIFEST_DATA = json.loads(METHODOLOGY_MANIFEST.read_text(encoding="utf-8"))
+CLAUDE_AGENTIC_TOTAL_CELLS = METHODOLOGY_MANIFEST_DATA["agentic_execution_contract"]["default_total_cells_by_provider"][
+    "claude"
+]
+CLAUDE_AGENTIC_WALL_CLOCK = (
+    CLAUDE_AGENTIC_TOTAL_CELLS * METHODOLOGY_MANIFEST_DATA["agentic_execution_contract"]["coordinate_timeout_seconds"]
+)
+CLAUDE_AGENTIC_SCOPE_SHA = "claude-agentic-default-scope"
+CLAUDE_AGENTIC_REPEAT_TWO_SCOPE_SHA = "claude-agentic-repeat-two-scope"
 ACTIVE_MANIFEST_DATA = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))
 LOCKED_INDEX_SHA = ACTIVE_MANIFEST_DATA["index"]["raw_sha256"]
 LOCKED_INDEX_SCAN_VERSION = ACTIVE_MANIFEST_DATA["index"]["scan_version"]
@@ -70,6 +86,22 @@ if [[ "$*" == *"--resolve-tasks"* ]]; then
   printf '{{"task_ids":["DI-01","GR-01"],"repetitions":{SELECTED_REPETITIONS},"total_cells":12,"complete_run_max_wall_clock_seconds":{SELECTED_WALL_CLOCK},"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
   exit 0
 fi
+if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--resolve-scope"* ]]; then
+  if [[ "$*" == *"--repetitions 2"* ]]; then
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":2,"total_cells":96,"complete_run_max_wall_clock_seconds":57600,"scope_sha256":"{AGENTIC_REPEAT_TWO_SCOPE_SHA}"}}\n'
+  else
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{AGENTIC_TOTAL_CELLS},"complete_run_max_wall_clock_seconds":{AGENTIC_WALL_CLOCK},"scope_sha256":"{AGENTIC_SCOPE_SHA}"}}\n'
+  fi
+  exit 0
+fi
+if [[ "$*" == *"run-claude-agentic.py"* && "$*" == *"--resolve-scope"* ]]; then
+  if [[ "$*" == *"--repeat 2"* ]]; then
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":2,"total_cells":{CLAUDE_AGENTIC_TOTAL_CELLS * 2},"complete_run_max_wall_clock_seconds":{CLAUDE_AGENTIC_WALL_CLOCK * 2},"scope_sha256":"{CLAUDE_AGENTIC_REPEAT_TWO_SCOPE_SHA}"}}\n'
+  else
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{CLAUDE_AGENTIC_TOTAL_CELLS},"complete_run_max_wall_clock_seconds":{CLAUDE_AGENTIC_WALL_CLOCK},"scope_sha256":"{CLAUDE_AGENTIC_SCOPE_SHA}"}}\n'
+  fi
+  exit 0
+fi
 if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--print-contract"* ]]; then
   printf '{{"raw_sha256":"{LOCKED_INDEX_SHA}","scan_version":{LOCKED_INDEX_SCAN_VERSION}}}\\n'
   exit 0
@@ -113,13 +145,17 @@ if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PLAN    BA-01  rep=1  A_plain\\n"
 fi
 if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--auth-source"* ]]; then
-  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_required=Codemap Skill read plus compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / 9 planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
+  if [ -n "${{ASSERT_AGENTIC_ADMISSION_FRESH:-}}" ] && [ -e "$CODEX_RUN_DIR/.agentic-console.log" ]; then
+    printf "agentic console artifact existed before paid Python admission\\n" >&2
+    exit 49
+  fi
+  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_required=Codemap Skill read plus compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / {AGENTIC_TOTAL_CELLS} planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
   printf "agentic raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
   printf "agentic canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
   printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
   printf "agentic checksums\\n" > "$CODEX_RUN_DIR/checksums.sha256"
-  printf "SUMMARY  status=completed  persisted_cells=9/9\\n" > "$CODEX_RUN_DIR/run.log"
-  printf "SUMMARY  status=completed  persisted_cells=9/9\\n"
+  printf "SUMMARY  status=completed  persisted_cells={AGENTIC_TOTAL_CELLS}/{AGENTIC_TOTAL_CELLS}\\n" > "$CODEX_RUN_DIR/run.log"
+  printf "SUMMARY  status=completed  persisted_cells={AGENTIC_TOTAL_CELLS}/{AGENTIC_TOTAL_CELLS}\\n"
 fi
 if [[ "$*" == *"--auth-source"* ]]; then
   if [[ "$*" != *"run-codex-agentic.py"* ]]; then
@@ -232,14 +268,17 @@ def test_batch_entrypoint_accepts_exactly_three_modes(batch_env: tuple[dict[str,
     )
 
     assert missing.returncode == 2
-    assert "smoke | claude | codex" in missing.stderr
+    assert "smoke | claude" in missing.stderr
+    assert "| codex" in missing.stderr
     for obsolete in ("all", "full", "refresh", "unknown"):
         rejected = _run_batch(obsolete, env)
         assert rejected.returncode == 2
-        assert "smoke | claude | codex" in rejected.stderr
-    for mode in ("smoke", "claude"):
-        rejected = _run_batch(mode, env, "--dry-run")
-        assert rejected.returncode == 2
+        assert "smoke | claude" in rejected.stderr
+        assert "| codex" in rejected.stderr
+    rejected = _run_batch("smoke", env, "--dry-run")
+    assert rejected.returncode == 2
+    rejected = _run_batch("claude", env, "--unknown")
+    assert rejected.returncode == 2
     rejected = _run_batch("codex", env, "--unknown")
     assert rejected.returncode == 2
     assert not call_log.exists()
@@ -273,10 +312,14 @@ def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Pat
     assert "165 cells" in completed.stdout
 
 
-def test_codex_agentic_dry_run_dispatches_only_the_fixed_first_slice(
+def test_codex_agentic_dry_run_dispatches_the_default_shared_scope_once(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """The agentic entrypoint exposes BA-01's locked no-model plan without paid state."""
+    """The launcher advertises the 16-task, three-arm, one-repeat dry-run plan.
+
+    Prevents launcher drift where the runner is correct but ``run-all.sh`` still
+    dispatches only BA-01 or supplies the retired three-repeat default.
+    """
     env, call_log = batch_env
     for name in (
         "CODEX_AGENTIC_PAID_APPROVAL",
@@ -290,18 +333,127 @@ def test_codex_agentic_dry_run_dispatches_only_the_fixed_first_slice(
 
     assert completed.returncode == 0, completed.stderr
     calls = call_log.read_text(encoding="utf-8").splitlines()
-    agentic_call = next(line for line in calls if "run-codex-agentic.py" in line)
+    agentic_call = next(line for line in calls if "run-codex-agentic.py" in line and "--dry-run" in line)
     assert f"--manifest-path {AGENTIC_MANIFEST}" in agentic_call
-    assert "--task-id BA-01" in agentic_call
-    assert "--repetitions 3" in agentic_call
+    assert "--task-id" not in agentic_call
+    assert "--repetitions 1" in agentic_call
     assert "--dry-run" in agentic_call
     assert "--auth-source" not in agentic_call
     assert "--output-path" not in agentic_call
     assert "--metadata-path" not in agentic_call
     assert "run-codex-structural.py" not in "\n".join(calls)
     assert "PROBE   A_plain" in completed.stdout
-    assert "PLAN    BA-01" in completed.stdout
+    assert "48 cells" in completed.stdout
     assert not Path(env.get("CODEX_RUN_DIR", "unused")).exists()
+
+
+def test_codex_agentic_launcher_resolves_a_positive_repeat_override_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A positive override binds the paid plan to its derived 96-cell scope.
+
+    Prevents the launcher from retaining the retired fixed-repeat admission or
+    dispatching a larger scope without forwarding its explicit scope identity.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--agentic", "--dry-run", "--repetitions=2")
+
+    assert completed.returncode == 0, completed.stderr
+    agentic_call = next(
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-codex-agentic.py" in line and "--dry-run" in line
+    )
+    assert "--repetitions 2" in agentic_call
+    assert "--scope-sha256" in agentic_call
+    assert "96 cells" in completed.stdout
+
+
+def test_claude_agentic_dry_run_dispatches_only_the_default_shared_scope(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The Claude launcher binds the 144-cell dry-run to its resolved scope.
+
+    Prevents the two providers from exposing incompatible agentic flags or from
+    retaining Claude's historical full-batch path for the shared suite.
+    """
+    env, call_log = batch_env
+
+    completed = _run_batch("claude", env, "--agentic", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    claude_agentic_calls = [line for line in calls if "run-claude-agentic.py" in line]
+    assert len(claude_agentic_calls) == 2
+    resolver_call = next(line for line in claude_agentic_calls if "--resolve-scope" in line)
+    plan_call = next(line for line in claude_agentic_calls if "--dry-run" in line)
+    assert f"--manifest-path {METHODOLOGY_MANIFEST}" in resolver_call
+    assert "--repeat 1" in resolver_call
+    assert "--dry-run" not in resolver_call
+    assert f"--manifest-path {METHODOLOGY_MANIFEST}" in plan_call
+    assert "--repeat 1" in plan_call
+    assert f"--scope-sha256 {CLAUDE_AGENTIC_SCOPE_SHA}" in plan_call
+    assert "--dry-run" in plan_call
+    assert "--tasks" not in plan_call
+    assert "--arm" not in plan_call
+    assert "--model" not in plan_call
+    assert not any("run-claude-structural.py" in line for line in calls)
+    assert not any("run-codex-" in line for line in calls)
+    assert f"{CLAUDE_AGENTIC_TOTAL_CELLS} cells" in completed.stdout
+
+
+def test_claude_agentic_launcher_binds_repeat_override_to_its_exact_scope(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A nondefault Claude repeat forwards its distinct resolved scope hash."""
+    env, call_log = batch_env
+
+    completed = _run_batch("claude", env, "--agentic", "--dry-run", "--repetitions=2")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    claude_agentic_calls = [line for line in calls if "run-claude-agentic.py" in line]
+    assert len(claude_agentic_calls) == 2
+    resolver_call = next(line for line in claude_agentic_calls if "--resolve-scope" in line)
+    plan_call = next(line for line in claude_agentic_calls if "--dry-run" in line)
+    assert "--repeat 2" in resolver_call
+    assert "--repeat 2" in plan_call
+    assert f"--scope-sha256 {CLAUDE_AGENTIC_REPEAT_TWO_SCOPE_SHA}" in plan_call
+    assert f"{CLAUDE_AGENTIC_TOTAL_CELLS * 2} cells" in completed.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--repetitions=2",),
+        ("--agentic", "--agentic"),
+        ("--agentic", "--dry-run", "--dry-run"),
+        ("--agentic", "--repetitions=0"),
+        ("--agentic", "--repetitions=invalid"),
+        ("--agentic", "--unknown"),
+    ],
+    ids=[
+        "repeat-without-agentic",
+        "duplicate-agentic",
+        "duplicate-dry-run",
+        "zero-repeat",
+        "invalid-repeat",
+        "unknown-flag",
+    ],
+)
+def test_claude_agentic_launcher_rejects_invalid_or_duplicate_flags_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+    args: tuple[str, ...],
+) -> None:
+    """Claude flag validation is symmetric with Codex and runs before setup."""
+    env, call_log = batch_env
+
+    completed = _run_batch("claude", env, *args)
+
+    assert completed.returncode == 2
+    assert "usage: bash benchmarks/run-all.sh" in completed.stderr
+    assert not call_log.exists()
 
 
 @pytest.mark.parametrize(
@@ -339,9 +491,11 @@ def test_codex_agentic_rejects_missing_paid_inputs_before_setup(
     assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
     assert "CODEX_AUTH_SOURCE=" in completed.stderr
     assert "CODEX_RUN_DIR=" in completed.stderr
-    assert "CODEX_MAX_WALL_CLOCK_SECONDS=5400" in completed.stderr
+    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={AGENTIC_WALL_CLOCK}" in completed.stderr
     assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
-    assert not call_log.exists()
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 1
+    assert "--resolve-scope" in calls[0]
 
 
 def test_codex_agentic_rejects_reused_run_directory_before_setup(
@@ -350,23 +504,36 @@ def test_codex_agentic_rejects_reused_run_directory_before_setup(
     """Agentic evidence cannot overwrite an earlier paid run directory."""
     env, call_log = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = "5400"
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     Path(env["CODEX_RUN_DIR"]).mkdir()
 
     completed = _run_batch("codex", env, "--agentic")
 
     assert completed.returncode == 2
     assert "CODEX_RUN_DIR already exists" in completed.stderr
-    assert not call_log.exists()
+    assert "Traceback" not in completed.stderr
+    assert "Review the exact no-model shared agentic plan:" in completed.stderr
+    assert "bash benchmarks/run-all.sh codex --agentic --dry-run" in completed.stderr
+    assert f"Then launch the paid {AGENTIC_TOTAL_CELLS}-cell study with one scope-bound command:" in completed.stderr
+    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
+    assert re.search(r'CODEX_RUN_DIR="benchmarks/results/codex-agentic-\d{8}T\d{6}Z"', completed.stderr)
+    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={AGENTIC_WALL_CLOCK}" in completed.stderr
+    assert "bash benchmarks/run-all.sh codex --agentic" in completed.stderr
+    assert "CODEX_RUN_DIR must not already exist." in completed.stderr
+    assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    assert len(calls) == 1
+    assert "--resolve-scope" in calls[0]
 
 
 def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """The paid first slice passes only the admitted manifest-bound controls."""
+    """The paid default scope passes only the admitted manifest-bound controls."""
     env, call_log = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = "5400"
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-run"))
 
     completed = _run_batch("codex", env, "--agentic")
@@ -385,7 +552,7 @@ def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
         ("--invocation-launcher-path", str(launcher_snapshot)),
         ("--run-dir", env["CODEX_RUN_DIR"]),
         ("--paid-approval", AGENTIC_MANIFEST_SHA),
-        ("--max-wall-clock-seconds", "5400"),
+        ("--max-wall-clock-seconds", str(AGENTIC_WALL_CLOCK)),
     ):
         assert f"{flag} {value}" in paid_call
     assert "--dry-run" not in paid_call
@@ -395,12 +562,52 @@ def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
     assert "\x1b[" not in run_log
     assert run_log.count("END LEGEND") == 1
     assert sum(line == "LEGEND" for line in run_log.splitlines()) == 1
-    assert "SUMMARY  status=completed  persisted_cells=9/9" in run_log
+    assert f"SUMMARY  status=completed  persisted_cells={AGENTIC_TOTAL_CELLS}/{AGENTIC_TOTAL_CELLS}" in run_log
     assert (Path(env["CODEX_RUN_DIR"]) / "checksums.sha256").is_file()
-    assert "== CODEX AGENTIC BA-01 A/B/C STUDY ==" in completed.stdout
+    assert "== CODEX SHARED AGENTIC A/B/C STUDY ==" in completed.stdout
     assert sum(line == "LEGEND" for line in completed.stdout.splitlines()) == 1
     assert sum(line == "END LEGEND" for line in completed.stdout.splitlines()) == 1
     assert "PLAN " not in completed.stdout
+
+
+def test_paid_codex_agentic_admits_the_run_directory_before_console_capture(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The wrapper leaves the paid runner's launcher-only directory untouched on admission."""
+    env, _ = batch_env
+    env["ASSERT_AGENTIC_ADMISSION_FRESH"] = "1"
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-admission-run"))
+
+    completed = _run_batch("codex", env, "--agentic")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "agentic console artifact existed before paid Python admission" not in completed.stdout
+
+
+def test_paid_codex_agentic_failure_preserves_artifacts_and_prints_fresh_command(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A failed paid runner preserves diagnostics and explains the fresh retry contract."""
+    env, _ = batch_env
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-failed-run"))
+    env["FAIL_WHEN_ARGS_CONTAIN"] = "--auth-source"
+
+    completed = _run_batch("codex", env, "--agentic")
+
+    assert completed.returncode == 41
+    assert "Preserve the reported artifact for diagnosis" in completed.stderr
+    assert "any retry requires a fresh CODEX_RUN_DIR" in completed.stderr
+    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
+    assert re.search(r'CODEX_RUN_DIR="benchmarks/results/codex-agentic-\d{8}T\d{6}Z"', completed.stderr)
+    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={AGENTIC_WALL_CLOCK}" in completed.stderr
+    assert "bash benchmarks/run-all.sh codex --agentic" in completed.stderr
+    assert (Path(env["CODEX_RUN_DIR"]) / "run.log").is_file()
+    assert (Path(env["CODEX_RUN_DIR"]) / "checksums.sha256").is_file()
 
 
 def test_paid_codex_agentic_tty_output_uses_shared_renderer(
@@ -409,7 +616,7 @@ def test_paid_codex_agentic_tty_output_uses_shared_renderer(
     """Interactive agentic runs show one colored shared legend, not raw plan output."""
     env, _ = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = "5400"
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-tty-run"))
 
     completed = _run_batch_tty("codex", env, "--agentic")
@@ -427,7 +634,7 @@ def test_paid_codex_agentic_tty_output_uses_shared_renderer(
 def test_codex_agentic_rejects_task_selection_before_setup(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """The fixed BA-01 slice cannot silently become a selected structural run."""
+    """The shared 16-task agentic suite cannot become a selected structural run."""
     env, call_log = batch_env
 
     completed = _run_batch("codex", env, "--agentic", "--tasks=DI")

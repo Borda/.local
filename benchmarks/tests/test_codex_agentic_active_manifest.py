@@ -1,4 +1,4 @@
-"""No-model checks for the Codex BA-01 agentic manifest."""
+"""No-model checks for the Codex agentic manifest."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ BENCHMARKS = ROOT / "benchmarks"
 BUILDER = BENCHMARKS / "build-codex-agentic-manifest.py"
 MANIFEST = BENCHMARKS / "manifests" / "codex-agentic.json"
 HUMAN_MANIFEST = BENCHMARKS / "manifests" / "codex-agentic.md"
+AGENTIC_TASK_IDS = tuple(f"BA-{number:02d}" for number in range(1, 17))
+AGENTIC_ARMS = ("A_plain", "B_auto", "C_required")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -54,22 +56,19 @@ def test_manifest_is_current_and_regeneration_is_byte_stable() -> None:
     assert _run_builder("--check").returncode == 0
 
 
-def test_manifest_locks_ba01_scope_and_shared_identity() -> None:
-    """The locked scope is exactly BA-01, three arms, three repetitions, and nine cells."""
+def test_manifest_locks_shared_scope_and_identity() -> None:
+    """The default scope is the complete shared suite once in each canonical arm."""
     manifest = _load(MANIFEST)
-    assert manifest["experiment_id"] == "codex-agentic-ba01"
+    assert manifest["experiment_id"] == "codex-agentic"
     assert manifest["model"] == {"name": "gpt-5.6-luna", "reasoning_effort": "high", "strict_config": True}
-    assert manifest["task"]["id"] == "BA-01"
-    assert manifest["task"]["type"] == "blast_radius_analysis"
-    assert manifest["task"]["primary_module"] == "lightning.pytorch.callbacks.timer"
-    assert len(manifest["task"]["prompt"]) > 200
+    assert tuple(task["id"] for task in manifest["tasks"]) == AGENTIC_TASK_IDS
     scope = manifest["preregistered_scope"]
-    assert scope["task_ids"] == ["BA-01"]
-    assert scope["arms"] == ["A_plain", "B_auto", "C_required"]
-    assert scope["repetitions"] == 3
-    assert scope["total_cells"] == 9
+    assert tuple(scope["task_ids"]) == AGENTIC_TASK_IDS
+    assert tuple(scope["arms"]) == AGENTIC_ARMS
+    assert scope["repetitions"] == 1
+    assert scope["total_cells"] == 48
     assert scope["coordinate_timeout_seconds"] == 600
-    assert scope["complete_run_max_wall_clock_seconds"] == 5400
+    assert scope["complete_run_max_wall_clock_seconds"] == 28800
     assert scope["nonpoolable"] is True
     assert scope["pooling_eligibility"] == "ineligible; exploratory evidence only"
     assert manifest["target_source"]["tag"] == "2.6.5"
@@ -79,15 +78,84 @@ def test_manifest_locks_ba01_scope_and_shared_identity() -> None:
     )
 
 
+def test_manifest_locks_the_full_shared_agentic_scope_with_one_default_repeat() -> None:
+    """The Codex study uses every shared agentic task once in each canonical arm.
+
+    Prevents an apparently valid Codex manifest from silently retaining the
+    incomplete task subset, using a noncanonical arm label, or multiplying the
+    default study beyond the reviewed 16 × 3 × 1 coordinate set.
+    """
+    manifest = _load(MANIFEST)
+    methodology = _load(BENCHMARKS / "manifests" / "provider-parity-methodology.json")
+    shared_suite = next(
+        suite for suite in methodology["suites"] if suite["path"] == "benchmarks/suites/tasks-agentic.json"
+    )
+    scope = manifest["preregistered_scope"]
+
+    assert tuple(shared_suite["ordered_task_ids"]) == AGENTIC_TASK_IDS
+    assert tuple(scope["task_ids"]) == AGENTIC_TASK_IDS
+    assert tuple(scope["arms"]) == AGENTIC_ARMS
+    assert scope["repetitions"] == 1
+    assert scope["total_cells"] == 48
+
+
+def test_human_launch_guidance_uses_complete_run_ceiling() -> None:
+    """Launch guidance must use the machine manifest's complete-run ceiling.
+
+    Prevents stale historical timeout guidance from truncating the
+    preregistered complete scope while the machine lock advertises a larger ceiling.
+    """
+    builder = runpy.run_path(str(BUILDER))
+    manifest = builder["_build_manifest"]()
+    machine = builder["_json_bytes"](manifest)
+    human = builder["_human_bytes"](manifest, hashlib.sha256(machine).hexdigest()).decode("utf-8")
+    ceiling = manifest["preregistered_scope"]["complete_run_max_wall_clock_seconds"]
+
+    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={ceiling}" in human
+    assert "5400" not in human
+    assert "first-slice" not in human.lower()
+
+
+def test_ba12_and_ba16_declare_every_answer_contract_field_for_scoring() -> None:
+    """Prompt-required counts and verdicts cannot disappear behind importer recall.
+
+    Prevents a production-only oracle from grading only the importer list while
+    treating BA-12's excluded-test count or BA-16's separate test/production
+    counts and risk verdict as unscored prose. A plausibly wrong scorer that
+    preserves EREC/RREC alone fails this declaration-level contract.
+    """
+    suite = _load(BENCHMARKS / "suites" / "tasks-agentic.json")
+    tasks = {task["id"]: task for task in suite["tasks"]}
+
+    assert tasks["BA-12"]["answer_contract"]["fields"] == [
+        "production_importers",
+        "test_importer_count",
+        "ranking",
+        "production_importer_count",
+    ]
+    assert tasks["BA-12"]["answer_contract"]["params"]["ranking"] == {
+        "candidate_set": "production_importers",
+        "top_k": 10,
+    }
+    assert tasks["BA-16"]["answer_contract"]["fields"] == [
+        "production_importers",
+        "high_centrality",
+        "test_importer_count",
+        "production_importer_count",
+        "risk_tier",
+    ]
+    assert tasks["BA-16"]["answer_contract"]["params"]["high_centrality"] == {
+        "min_rdep_count": 10,
+    }
+
+
 def test_manifest_has_exact_shared_scoring_and_plugin_hashes() -> None:
     """The scorer formulas and all integration/runtime identities are explicit."""
     manifest = _load(MANIFEST)
-    assert manifest["scoring"]["implementation"]["symbol"] == "GroundTruth.score"
+    assert manifest["scoring"]["implementation"]["symbol"] == "score_answer"
     assert manifest["scoring"]["metrics"] == {
-        "EREC": "erec_tp / max(len(expected), 1)",
-        "E@10": "top10_tp / max(len(top10), 1)",
-        "RREC": "rrec_tp / max(len(expected), 1)",
-        "DEFF": "erec_tp / max(tool_calls, 1)",
+        "SCORE": "mean(component score for each declared answer-contract field)",
+        "CORRECT": "every declared answer-contract field scores 1.0",
     }
     hashes = manifest["artifact_sha256"]
     assert len(hashes) == 12

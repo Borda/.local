@@ -20,8 +20,12 @@ import pytest
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 AGENTIC_SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-agentic.json"
-PARITY_MANIFEST_PATH = BENCHMARKS_DIR / "results" / "manifests" / "provider-parity-v1.json"
-ACTIVE_REVISION = json.loads(PARITY_MANIFEST_PATH.read_text(encoding="utf-8"))["experiment_revision"]
+PARITY_MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
+ACTIVE_MANIFEST = json.loads(PARITY_MANIFEST_PATH.read_text(encoding="utf-8"))
+ACTIVE_REVISION = ACTIVE_MANIFEST["experiment_revision"]
+ACTIVE_AGENTIC_SUITE = next(
+    suite for suite in ACTIVE_MANIFEST["suites"] if suite["path"] == "benchmarks/suites/tasks-agentic.json"
+)
 
 
 # ===========================================================================
@@ -178,10 +182,11 @@ class TestProviderParityTaskIntegration:
         """The agentic loader keeps raw task identity and attaches its locked policy revision."""
         tasks = script_run_agentic.load_tasks_with_provenance(AGENTIC_SUITE_PATH, PARITY_MANIFEST_PATH)
         task = next(item for item in tasks if item.id == "BA-01")
+        locked_task = next(item for item in ACTIVE_AGENTIC_SUITE["tasks"] if item["id"] == "BA-01")
 
         assert task.experiment_revision == ACTIVE_REVISION
-        assert task.task_hash == "81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f"
-        assert task.prompt_hash == "6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479"
+        assert task.task_hash == locked_task["canonical_task_sha256"]
+        assert task.prompt_hash == locked_task["prompt_sha256"]
         assert task.oracle_class == "independent"
         assert task.headline_eligible_v1 is False
         assert task.scoreable is True
@@ -248,6 +253,202 @@ class TestProviderParityTaskIntegration:
         assert "Skill(codemap:query-code)" in script_run_agentic.ModelRunner._ARM_ALLOWED["C_required"][1]
         assert "must use Codemap at least once" not in runner._system_prompt("fix", "B_auto")
         assert "must use Codemap at least once" in runner._system_prompt("fix", "C_required")
+
+    def test_default_dry_run_schedules_the_full_canonical_matrix(
+        self, tmp_index: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], script_run_agentic: Any
+    ) -> None:
+        """The default 16-task agentic execution plan uses A/B/C once per cell.
+
+        Legacy arm labels remain available only when explicitly selected, so a
+        normal ``--run_all`` invocation cannot silently produce an unpaired
+        legacy experiment instead of the locked provider-parity matrix.
+        """
+        tasks = [script_run_agentic.Task(id=f"BA-{number:02d}", type="fix", prompt="p") for number in range(1, 17)]
+
+        with (
+            patch.object(script_run_agentic, "load_tasks_with_provenance", return_value=tasks),
+            patch.object(script_run_agentic, "find_index", return_value=tmp_index),
+            patch.object(script_run_agentic, "_validate_parity_runtime"),
+        ):
+            script_run_agentic.main(repo_path=tmp_path, run_all=True, dry_run=True)
+
+        output = capsys.readouterr().out
+        assert "tasks:       16, arms: 3, models: 3, repeat: 1" in output
+        assert "total runs:  144" in output
+        assert output.count("[DRY RUN]") == 144
+        assert "| A_plain | rep=1/1" in output
+        assert "| B_auto | rep=1/1" in output
+        assert "| C_required | rep=1/1" in output
+        assert "| plain |" not in output
+
+    def test_resolve_agentic_scope_binds_the_default_claude_matrix(self, script_run_agentic: Any) -> None:
+        """The public resolver fingerprints every default Claude coordinate.
+
+        Prevents a scope token that omits the provider, model cohort, task
+        order, or time ceiling. Those omissions could authorize a different
+        paid study than the one a reviewer inspected.
+        """
+        first = script_run_agentic.resolve_agentic_scope()
+        second = script_run_agentic.resolve_agentic_scope()
+        payload = {key: value for key, value in first.items() if key != "scope_sha256"}
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+        assert first == second
+        assert first["provider"] == "claude"
+        assert first["task_ids"] == [f"BA-{number:02d}" for number in range(1, 17)]
+        assert first["arms"] == ["A_plain", "B_auto", "C_required"]
+        assert first["models"] == list(script_run_agentic.MODELS)
+        assert first["repetitions"] == 1
+        assert first["coordinate_timeout_seconds"] == 600
+        assert first["total_cells"] == 144
+        assert first["complete_run_max_wall_clock_seconds"] == 86400
+        assert first["manifest_sha256"] == hashlib.sha256(PARITY_MANIFEST_PATH.read_bytes()).hexdigest()
+        assert first["scope_sha256"] == hashlib.sha256(encoded).hexdigest()
+
+    def test_nondefault_repeat_requires_its_exact_scope_hash(
+        self, tmp_index: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], script_run_agentic: Any
+    ) -> None:
+        """An expanded Claude run is rejected until its exact derived scope is supplied.
+
+        The regression is an accidental repeat override running without a
+        separately reviewable authorization token. The paired successful call
+        proves a valid scope hash is not rejected merely because it is
+        nondefault.
+        """
+        tasks = [script_run_agentic.Task(id=f"BA-{number:02d}", type="fix", prompt="p") for number in range(1, 17)]
+        scope = script_run_agentic.resolve_agentic_scope(repetitions=2)
+
+        with (
+            patch.object(script_run_agentic, "load_tasks_with_provenance", return_value=tasks),
+            patch.object(script_run_agentic, "find_index", return_value=tmp_index),
+            patch.object(script_run_agentic, "_validate_parity_runtime"),
+        ):
+            with pytest.raises(SystemExit, match="scope.*SHA|SHA.*scope"):
+                script_run_agentic.main(repo_path=tmp_path, run_all=True, repeat=2, dry_run=True)
+
+            script_run_agentic.main(
+                repo_path=tmp_path,
+                run_all=True,
+                repeat=2,
+                dry_run=True,
+                scope_sha256=scope["scope_sha256"],
+            )
+
+        output = capsys.readouterr().out
+        assert "tasks:       16, arms: 3, models: 3, repeat: 2" in output
+        assert "total runs:  288" in output
+        assert output.count("[DRY RUN]") == 288
+
+    def test_canonical_loader_uses_the_shared_labelled_answer_prompt(
+        self, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """A canonical Task keeps the exact shared prompt bytes used for its hash.
+
+        The provider-visible prompt must include the shared labelled JSON
+        instruction, while an explicit legacy load keeps only the task prose.
+        """
+        raw_task = {
+            "id": "BA-CONTRACT",
+            "type": "blast_radius_analysis",
+            "prompt": "List the production importers.",
+            "primary_module": "package.target",
+            "answer_contract": {"fields": ["production_importers"]},
+        }
+        suite_path = tmp_path / "suite.json"
+        suite_path.write_text(json.dumps([raw_task]), encoding="utf-8")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "experiment_revision": "fixture-revision",
+                    "suites": [
+                        {
+                            "tasks": [
+                                {
+                                    "id": raw_task["id"],
+                                    "canonical_task_sha256": script_run_agentic.canonical_task_hash(raw_task),
+                                    "prompt_sha256": script_run_agentic._delivered_prompt_hash(
+                                        raw_task, canonical=True
+                                    ),
+                                    "oracle_class": "independent",
+                                    "headline_eligible_v1": False,
+                                    "effective_scoreable": True,
+                                }
+                            ]
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        task = script_run_agentic.load_tasks_with_provenance(suite_path, manifest_path)[0]
+
+        assert task.prompt == script_run_agentic.materialize_agentic_prompt(raw_task)
+        assert task.prompt_hash == hashlib.sha256(task.prompt.encode("utf-8")).hexdigest()
+        assert "BEGIN_ANSWER_JSON" in task.prompt
+        assert script_run_agentic.load_legacy_tasks(suite_path)[0].prompt == raw_task["prompt"]
+
+    def test_canonical_result_uses_the_shared_labelled_answer_oracle(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """Canonical results parse the labelled response before shared answer scoring."""
+        raw_task = {
+            "id": "BA-CONTRACT",
+            "type": "blast_radius_analysis",
+            "prompt": "List the production importers.",
+            "primary_module": "package.target",
+            "answer_contract": {"fields": ["production_importers"]},
+        }
+        task = script_run_agentic.Task(
+            id=raw_task["id"],
+            type=raw_task["type"],
+            prompt=script_run_agentic.materialize_agentic_prompt(raw_task),
+            primary_module=raw_task["primary_module"],
+            answer_task=raw_task,
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["A_plain"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+        native_result = script_run_agentic.BenchmarkRun(
+            arm="A_plain",
+            task_id=task.id,
+            task_type=task.type,
+            model="haiku",
+            success=True,
+            output_text='BEGIN_ANSWER_JSON\n{"production_importers": []}\nEND_ANSWER_JSON',
+        )
+
+        with (
+            patch.object(script_run_agentic.ModelRunner, "run", return_value=native_result),
+            patch.object(script_run_agentic, "score_answer", wraps=script_run_agentic.score_answer) as score_answer,
+        ):
+            result = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "A_plain",
+                1,
+                1,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        assert result.answer_scored is True
+        assert result.answer_quality_score == 1.0
+        assert result.answer_correct is True
+        assert result.answer_components == {"production_importers": 1.0}
+        assert score_answer.call_args.kwargs == {
+            "exposure_text": native_result.output_text,
+            "report_text": native_result.output_text,
+            "tool_calls": 0,
+        }
 
     def test_run_single_copies_task_provenance_to_provider_native_result(
         self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
