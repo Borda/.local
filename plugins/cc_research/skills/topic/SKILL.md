@@ -118,10 +118,17 @@ DATE=$(date +%Y-%m-%d)  # timeout: 3000
 # Anti-overwrite: resolve counter-suffix (quality-gates.md rule)
 AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE.md"
 _N=2; while [ -e "$AGENT_OUT" ]; do AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
-mkdir -p .temp  # timeout: 3000
+mkdir -p .temp .reports/research  # timeout: 3000
+# Step 3 report path resolved here, not at Step 3 — the hook gate below must exist from the
+# moment the run is committed to producing a report, not from the moment it remembers to
+BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; _RN=2
+while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${_RN}.md"; _RN=$((_RN+1)); done  # timeout: 5000
 echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch-${CSID}"
 echo "$DATE" > "${TMPDIR:-/tmp}/topic-date-${CSID}"
 echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out-${CSID}"
+echo "$REPORT_OUT" > "${TMPDIR:-/tmp}/topic-report-out-${CSID}"
+# Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
+echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```
 
 Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of top 5 papers found via WebSearch/WebFetch: extract method, key idea, benchmark results, compute cost, code availability. Write full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
@@ -144,7 +151,7 @@ IFS= read -r _AGENT_OUT < "${TMPDIR:-/tmp}/topic-agent-out-${CSID}" 2>/dev/null 
 IFS= read -r _BRANCH < "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || _BRANCH=""
 IFS= read -r _DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || _DATE=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/topic-keep-items-${CSID}" 2>/dev/null || _KEEP=""
-_REPORT_OUT=".reports/research/topic-${_BRANCH}-${_DATE}.md"
+IFS= read -r _REPORT_OUT < "${TMPDIR:-/tmp}/topic-report-out-${CSID}" 2>/dev/null || _REPORT_OUT=".reports/research/topic-${_BRANCH}-${_DATE}.md"
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
 mkdir -p .temp/state  # timeout: 5000
 {
@@ -222,9 +229,15 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload from Step 2a bash block (Check 41: fresh shell per call)
 IFS= read -r BRANCH < "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
 IFS= read -r DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || DATE=$(date +%Y-%m-%d)
-# Anti-overwrite counter-suffix loop (per quality-gates.md output routing rule)
-BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; COUNT=2
-while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
+# Report path (anti-overwrite counter-suffix per quality-gates.md) resolved at Step 2a — reuse it
+# verbatim; re-resolving here would drift from the path the hook gate is watching
+IFS= read -r REPORT_OUT < "${TMPDIR:-/tmp}/topic-report-out-${CSID}" 2>/dev/null || REPORT_OUT=""
+if [ -z "$REPORT_OUT" ]; then
+    BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; COUNT=2
+    while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
+    echo "$REPORT_OUT" > "${TMPDIR:-/tmp}/topic-report-out-${CSID}"
+    echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
+fi
 ```
 
 Write full report to `$REPORT_OUT` using Write tool (resolved by counter-suffix loop above) — **do not print full report to terminal**.
@@ -244,6 +257,8 @@ Confidence:  [aggregate score] — [key gaps]
 → saved to .reports/research/topic-$BRANCH-$DATE.md
 ---
 ```
+
+**Hook-enforced**: `hooks/enforce-topic-header.js` (PreToolUse on `AskUserQuestion`) denies the `## Follow-up gate` call while the report file named by the `research-topic-report-file` sentinel (written at Step 2a) is missing or empty. A denial reading `research:topic report gate` means the report was never written — write it to that exact path, print its `---` header, then re-issue the question. The hook sees only whether the report exists, not whether the print happened; the "Print report header" task remains the check for the print itself.
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
@@ -280,7 +295,7 @@ Follow `modes/plan.md` (loaded above) and execute its workflow.
 
 ## Follow-up gate
 
-**Hard gate**: check "Print report header" task status before anything else here. Not `completed` → the report header has not actually been printed yet — go back and do it now (Step 3 / team.md / plan.md, whichever path ran), then mark the task `completed`, before calling `AskUserQuestion` below.
+**Hard gate**: check "Print report header" task status before anything else here. Not `completed` → the report header has not actually been printed yet — go back and do it now (Step 3 / team.md / plan.md, whichever path ran), then mark the task `completed`, before calling `AskUserQuestion` below. `hooks/enforce-topic-header.js` backs this gate structurally — the `AskUserQuestion` below is denied outright while the run's report file is absent or empty on disk.
 
 ```bash
 rm -f .temp/state/skill-contract.md  # clear contract — topic research complete (compaction-contract.md §Lifecycle)  # timeout: 5000

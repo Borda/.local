@@ -572,6 +572,15 @@ ______________________________________________________________________
 
 **Optional plugin integrations** detected automatically at runtime. Install any optional plugin from [Install](#install) — skills use them next invocation, no config changes.
 
+**Hooks** register automatically from `hooks/hooks.json` when the plugin is enabled — no `settings.json` edits needed:
+
+| Hook                        | Event                            | Behaviour                                                                                                                                                                                                               |
+| --------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-router.js`           | `PreToolUse` (`Agent`)           | Reroutes `Agent()` calls when the requested agent is not installed: exact match → semantic match → `general-purpose`.                                                                                                   |
+| `sentinel-read-allow.js`    | `PreToolUse` (`Bash`)            | Auto-allows the pre-canned TMPDIR sentinel-read and `$(date +FMT)` idioms inside read-only commands, so skill bash blocks stop raising "Contains expansion" prompts. Everything else falls through to normal checks.    |
+| `enforce-review-header.js`  | `PreToolUse` (`AskUserQuestion`) | Denies `/oss:review`'s follow-up question until the consolidated `review-report.md` exists, so the report header always reaches the terminal first. Silent unless a review run is in flight.                            |
+| `enforce-analyse-header.js` | `PreToolUse` (`AskUserQuestion`) | Same gate for `/oss:analyse`: denies the Step 6a follow-up question until the running mode (thread, vitality or ecosystem) has written its report under `.reports/analyse/`. Silent unless an analyse run is in flight. |
+
 **Cache location:** `.cache/gh/` at project root. Cached responses: 30-day TTL. Force fresh fetch: delete relevant cache file or entire `.cache/gh/` directory.
 
 **Artifact directories** created by `oss` skills:
@@ -604,6 +613,14 @@ ______________________________________________________________________
 **`/oss:review` skips Tier 2 agents**
 
 Tier 2 runs only when Tier 1 (Codex pre-pass) finds no blocking issue alone. Tier 1 flags blocking → shows in report. Install `codex` plugin to enable pre-pass; without it, `/oss:review` goes directly to Tier 2.
+
+**A question is blocked with "oss:review report gate"**
+
+`enforce-review-header.js` denied an `AskUserQuestion` call because `.reports/review/<timestamp>/review-report.md` does not exist — the review reached agent launch but never consolidated its findings into a report. Finish the consolidation step and print the report `---` header; the question then goes through. The gate deactivates two hours after a run starts, so an aborted review never blocks later questions permanently.
+
+**A question is blocked with "oss:analyse report gate"**
+
+`enforce-analyse-header.js` denied an `AskUserQuestion` call because the report the running mode announced — `.reports/analyse/thread/…`, `.reports/analyse/vitality/…` or `.reports/analyse/ecosystem/…` — is missing or empty, so the follow-up question would offer next steps for an analysis that was never saved. Write the report, print its `---` header, then re-ask. Same two-hour deactivation as the review gate; the window is measured from the point the mode announces its report path, not from the start of the run.
 
 **`/oss:review` uses general-purpose agents instead of specialist agents**
 

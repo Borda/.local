@@ -154,9 +154,9 @@ Searches AI/ML literature for topic, builds method comparison table, produces re
 - `--team`: spawn 2–3 researcher instances on competing method families in parallel. Use when 3+ distinct method families, no clear SOTA consensus. ~7x token cost vs single-agent.
 - `--keep "<items>"`: preserve extra items through context compaction. Named items appended to compaction contract — survive auto-compaction during Step 2 literature gather.
 
-**Output**: full report → `.temp/output-research-<branch>-<date>.md`; compact summary → terminal.
+**Output**: full report → `.reports/research/topic-<branch>-<date>.md`; compact summary → terminal. The `---` header of that report always reaches the terminal before the follow-up question — `enforce-topic-header.js` denies the question until the report file exists (see [Hooks](#hooks)).
 
-**Plan mode**: after `/research:topic`, run `/research:topic plan` → phased implementation roadmap (written to `.temp/output-research-plan-<branch>-<date>.md`), ready for `/develop:feature`.
+**Plan mode**: after `/research:topic`, run `/research:topic plan` → phased implementation roadmap (written to `.reports/research/topic-plan-<branch>-<date>.md`), ready for `/develop:feature`.
 
 **Realistic example**:
 
@@ -773,9 +773,21 @@ Setup (before running `--colab`):
 
 `--colab=H100` specified → run validates GPU identity via `torch.cuda.get_device_name()` each iteration; halts on hardware mismatch.
 
+<a id="hooks"></a>
+
+### Hooks
+
+**Hooks** register automatically from `hooks/hooks.json` when the plugin is enabled — no `settings.json` edits needed:
+
+| Hook                      | Event                            | Behaviour                                                                                                                                                                                                            |
+| ------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-router.js`         | `PreToolUse` (`Agent`)           | Reroutes `Agent()` calls when the requested agent is not installed: exact match → semantic match → `general-purpose`.                                                                                                |
+| `sentinel-read-allow.js`  | `PreToolUse` (`Bash`)            | Auto-allows the pre-canned TMPDIR sentinel-read and `$(date +FMT)` idioms inside read-only commands, so skill bash blocks stop raising "Contains expansion" prompts. Everything else falls through to normal checks. |
+| `enforce-topic-header.js` | `PreToolUse` (`AskUserQuestion`) | Denies `/research:topic`'s follow-up question until its report file exists under `.reports/research/`, so the report header always reaches the terminal first. Silent unless a topic run is in flight.               |
+
 ### Artifact layout
 
-All outputs under `.experiments/` and `.temp/` at project root. Gitignored.
+All outputs under `.experiments/`, `.reports/research/`, and `.temp/` at project root. Gitignored.
 
 ```text
 .experiments/
@@ -784,8 +796,10 @@ All outputs under `.experiments/` and `.temp/` at project root. Gitignored.
   verify-<ts>/             <- scientist audit output (research:verify)
   fortify-<ts>/            <- ablation worktrees and results (research:fortify)
   retro-<ts>/              <- analysis scripts, hypotheses.jsonl (research:retro)
+.reports/research/
+  topic-*.md               <- topic reports and plan-mode roadmaps
 .temp/
-  output-research-*.md     <- topic reports
+  output-research-*.md     <- topic agent/teammate handover files
   output-judge-*.md        <- judge reports
   output-optimize-run-*.md <- run final reports
   output-verify-*.md       <- verify reports
@@ -810,6 +824,10 @@ ______________________________________________________________________
 **"No program.md found" when running `/research:judge` or `/research:run`**
 
 Run `/research:plan "<goal>"` first — writes `program.md` to project root by default. Wrote manually or saved elsewhere → pass path explicitly: `/research:judge path/to/plan.md`.
+
+**A question is blocked with "research:topic report gate"**
+
+`enforce-topic-header.js` denied an `AskUserQuestion` call because the report file under `.reports/research/` does not exist — the topic run reached its follow-up question without writing a report, so no report header could have been printed. Write the report to that exact path and print its `---` header; the question then goes through. The gate deactivates two hours after a run resolves its report path, so an aborted run never blocks later questions permanently.
 
 **"Metric command failed or produced no numeric output" during judge or run**
 

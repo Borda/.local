@@ -108,8 +108,13 @@ TaskUpdate "Step 3 Assemble Scores" completed.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# Reload $GH_OWNER, $GH_REPO — fresh shell (Check 41); an empty pair would name a report the gate below cannot find
+IFS= read -r GH_OWNER < "${TMPDIR:-/tmp}/vitality-gh-owner-${CSID}" 2>/dev/null || GH_OWNER=""
+IFS= read -r GH_REPO < "${TMPDIR:-/tmp}/vitality-gh-repo-${CSID}" 2>/dev/null || GH_REPO=""
 REPORT_TIMESTAMP=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
 REPORT_FILE=".reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-${REPORT_TIMESTAMP}.md"
+# Sentinel rewritten here, before the report exists — enforce-analyse-header.js gates SKILL.md Step 6a on this path
+echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file-${CSID}"  # timeout: 5000
 
 # Provenance metadata — embedded for self-complete, deterministic output
 _VER_FILE=$(ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/.claude-plugin/plugin.json 2>/dev/null | sort | tail -1)  # timeout: 5000
@@ -204,6 +209,8 @@ IFS= read -r FOUNDRY_SHARED < "${TMPDIR:-/tmp}/analyse-foundry-shared-${CSID}" 2
 [ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
 Compact block format (loaded above). File absent → warn "run /foundry:setup — printing plain terminal output instead."
+
+**Hook-enforced**: `hooks/enforce-analyse-header.js` (PreToolUse on `AskUserQuestion`) denies SKILL.md Step 6a's follow-up question while the `$REPORT_FILE` written in Step 4 is missing or empty. A denial reading `oss:analyse report gate` means Step 4 never produced the report — write it, print the block below, then re-issue the question. The hook sees only whether the report exists, not whether the block was printed; this step remains the check for that.
 
 Print compact block to terminal. Three sections: header, exec summary, simplified scorecard. Axis rows must appear in numeric order 1–9; never reorder by score, weight, or status:
 

@@ -21,12 +21,18 @@ Produce sequenced, dependency-ordered implementation plan from SOTA research fin
 
 Before spawning in Steps P2–P3, pre-compute output path components:
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date +%Y-%m-%d)  # timeout: 3000
 # Anti-overwrite: resolve counter-suffix before each spawn (quality-gates.md rule)
 CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE.md"
 _N=2; while [ -e "$CODEBASE_OUT" ]; do CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
-mkdir -p .temp  # timeout: 3000
+mkdir -p .temp .reports/research  # timeout: 3000
+# Step P3 plan report — same anti-overwrite rule as SKILL.md Step 3 (quality-gates.md)
+_PBASE=".reports/research/topic-plan-$BRANCH-$DATE.md"; PLAN_OUT="$_PBASE"; _PN=2
+while [ -f "$PLAN_OUT" ]; do PLAN_OUT="${_PBASE%.md}-${_PN}.md"; _PN=$((_PN+1)); done  # timeout: 5000
+# Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
+echo "$PWD/$PLAN_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```
 <!-- same branch/date pattern as Step 2a block -->
 
@@ -50,7 +56,7 @@ Return ONLY a compact JSON envelope on your final line — nothing else after it
 
 ### Step P3: Synthesize plan
 
-Read both files (research findings from P1 + codebase analysis from P2). Produce phased plan, write to `.reports/research/topic-plan-$BRANCH-$DATE.md`:
+Read both files (research findings from P1 + codebase analysis from P2). Produce phased plan, write to `$PLAN_OUT` (resolved path from P1 bash block):
 
 ```markdown
 ## Implementation Roadmap: [method name]
@@ -90,7 +96,9 @@ Topic: [original $ARGUMENTS]
 - Full plan approved → create `.plans/active/todo_<method>.md` with phases as task groups
 ```
 
-Print compact terminal summary:
+TaskUpdate "Print report header" → `in_progress`.
+
+Print compact terminal summary — MANDATORY, same turn as the write above; TaskUpdate "Print report header" → `completed` only once it has actually appeared in this response. **Hook-enforced**: `hooks/enforce-topic-header.js` (PreToolUse on `AskUserQuestion`) denies SKILL.md's Follow-up gate call while `$PLAN_OUT` (sentinel path from P1) is missing or empty. The hook sees only whether the plan file exists, not whether the print happened; the task above remains the check for the print itself.
 
 ```text
 ---

@@ -42,7 +42,20 @@ Top action:  [single most urgent recommendation]
 - [create migration guide / add deprecation warning / notify maintainers directly]
 ```
 
-Run `mkdir -p .reports/analyse/ecosystem` then write full report to `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md` via Write tool — **no full analysis to terminal**.
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# Reload TODAY — fresh shell (Check 41); repeated `date` calls may straddle midnight
+IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
+mkdir -p .reports/analyse/ecosystem  # timeout: 5000
+REPORT_FILE=".reports/analyse/ecosystem/output-analyse-ecosystem-$TODAY.md"
+# Sentinel rewritten here, before the report exists — enforce-analyse-header.js gates SKILL.md Step 6a on this path
+echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file-${CSID}"  # timeout: 5000
+echo "[analyse] report → $REPORT_FILE"
+```
+
+Write full report to `$REPORT_FILE` (echoed above) via Write tool — **no full analysis to terminal**.
+
+**Hook-enforced**: `hooks/enforce-analyse-header.js` (PreToolUse on `AskUserQuestion`) denies SKILL.md Step 6a's follow-up question while `$REPORT_FILE` is missing or empty. A denial reading `oss:analyse report gate` means this write never happened — write the report, print its header block, then re-issue the question. The hook sees only whether the report exists, not whether the header was printed; the print step below remains the check for that.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -50,7 +63,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r FOUNDRY_SHARED < "${TMPDIR:-/tmp}/analyse-foundry-shared-${CSID}" 2>/dev/null || FOUNDRY_SHARED=""
 [ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
-Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Ecosystem Impact Summary** template. Replace `[skill-specific path]` with `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md`. Terminal block: `---` on own line, entity line next, `→ saved to <path>` at end, `---` close. Print by reading lines 1–6 of report file, append `→ saved to <path>`. Report already has block — no separate prepend needed
+Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Ecosystem Impact Summary** template. Replace `[skill-specific path]` with `$REPORT_FILE`. Terminal block: `---` on own line, entity line next, `→ saved to <path>` at end, `---` close. Print by reading lines 1–6 of report file, append `→ saved to <path>`. Report already has block — no separate prepend needed
 
 </workflow>
 

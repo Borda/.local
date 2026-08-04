@@ -223,14 +223,18 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r REPLY_MODE < "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}" 2>/dev/null || REPLY_MODE="false"
 IFS= read -r DIRECT_PATH_MODE < "${TMPDIR:-/tmp}/analyse-direct-path-mode-${CSID}" 2>/dev/null || DIRECT_PATH_MODE="false"
 IFS= read -r REPORT_FILE < "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" 2>/dev/null || REPORT_FILE=""
+# Both aborts drop the sentinel: a leftover path to a report that will never be written would make
+# enforce-analyse-header.js deny the follow-up question the user needs after the error (Step 6a note).
 if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "false" ]; then
     echo "! Error: report path '$REPORT_FILE' passed without --reply."
     echo "  Re-run as: /oss:analyse $REPORT_FILE --reply"
     echo "  Or use:    /oss:analyse <N> | vitality | ecosystem"
+    rm -f "${TMPDIR:-/tmp}/analyse-report-file-${CSID}"
     exit 1
 fi
 if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "true" ] && [ ! -f "$REPORT_FILE" ]; then
     echo "! Error: report not found at $REPORT_FILE"
+    rm -f "${TMPDIR:-/tmp}/analyse-report-file-${CSID}"
     exit 1
 fi
 if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "true" ] && [ -f "$REPORT_FILE" ]; then
@@ -433,6 +437,8 @@ mkdir -p .temp/state  # timeout: 5000
 `REPLY_MODE=false` — do NOT proceed to Step 7. Execute both sub-steps below, then end response.
 
 ### 6a — Follow-up gate
+
+**Hook-enforced**: `hooks/enforce-analyse-header.js` (PreToolUse on `AskUserQuestion`) denies this call while the report path each mode file writes to `${TMPDIR:-/tmp}/analyse-report-file-${CSID}` names a missing or empty file. A denial reading `oss:analyse report gate` means the mode never wrote its report — write it, print its `---` header, then re-issue the question.
 
 Invoke `AskUserQuestion`. Options depend on mode:
 

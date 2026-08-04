@@ -1,0 +1,237 @@
+"""Subprocess tests for ``hooks/enforce-analyse-header.js``.
+
+The hook is a ``PreToolUse`` gate on ``AskUserQuestion``. Its contract:
+
+* **Scoped to in-flight analyses** — it acts only when
+  ``${TMPDIR:-/tmp}/analyse-report-file-<CSID>`` names a report under
+  ``.reports/analyse/``; without it every ``AskUserQuestion`` passes through
+  untouched (empty stdout, exit 0).
+* **Denies a missing report** — sentinel present but the report it names absent
+  or empty means the mode file never wrote its report, so SKILL.md Step 6a's
+  follow-up question is denied with an actionable reason.
+* **Covers all three modes** — thread, vitality and ecosystem each rewrite the
+  same sentinel with their own path just before their report Write.
+* **Fails open** — stale sentinel, empty sentinel (SKILL.md Step 1, mode not yet
+  reached), implausible sentinel content, unparsable payload: every can't-tell
+  case allows the call.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+import pytest
+
+HOOK = Path(__file__).resolve().parent.parent / "hooks" / "enforce-analyse-header.js"
+
+CSID = "test-session-1234"
+SENTINEL_NAME = f"analyse-report-file-{CSID}"
+TWO_HOURS_S = 2 * 60 * 60
+
+# One report path per sub-mode, as the mode files build them.
+MODE_REPORTS = {
+    "thread": ".reports/analyse/thread/output-analyse-thread-42-2026-08-04.md",
+    "vitality": ".reports/analyse/vitality/output-analyse-vitality-owner-repo-2026-08-04T10-00-00Z.md",
+    "ecosystem": ".reports/analyse/ecosystem/output-analyse-ecosystem-2026-08-04.md",
+}
+
+pytestmark = pytest.mark.skipif(
+    shutil.which("node") is None,
+    reason="requires node to execute the hook",
+)
+
+
+def _ask_payload(**overrides: object) -> dict:
+    """Build a PreToolUse AskUserQuestion payload, applying `overrides`."""
+    payload: dict = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "AskUserQuestion",
+        "tool_input": {"questions": [{"question": "What next?"}]},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _run(tmp_path: Path, payload: dict, *, session_id_env: str | None = CSID, tmpdir_suffix: str = "") -> dict:
+    """Invoke the hook with `payload` on stdin and return parsed stdout (or {})."""
+    env = {**os.environ, "TMPDIR": f"{tmp_path}{tmpdir_suffix}"}
+    env.pop("CLAUDE_CODE_SESSION_ID", None)
+    if session_id_env is not None:
+        env["CLAUDE_CODE_SESSION_ID"] = session_id_env
+    proc = subprocess.run(
+        ["node", str(HOOK)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+    assert proc.returncode == 0, f"hook exited {proc.returncode}: {proc.stderr}"
+    out = proc.stdout.strip()
+    return json.loads(out) if out else {}
+
+
+def _denial_reason(result: dict) -> str | None:
+    """Denial reason emitted by the hook, or None when it did not deny."""
+    hook_output = result.get("hookSpecificOutput", {})
+    if hook_output.get("permissionDecision") != "deny":
+        return None
+    return hook_output.get("permissionDecisionReason", "")
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """Working directory an analyse run reports against."""
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    return repo_dir
+
+
+@pytest.fixture
+def analyse_run(tmp_path: Path, repo: Path) -> Path:
+    """Stage a thread-mode run that reached its sentinel write but not its report Write."""
+    sentinel = tmp_path / SENTINEL_NAME
+    sentinel.write_text(f"{MODE_REPORTS['thread']}\n", encoding="utf-8")
+    return sentinel
+
+
+# ── Gate fires only for an in-flight analyse missing its report ───────────────
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [pytest.param(name, id=name) for name in MODE_REPORTS],
+)
+def test_missing_report_is_denied_for_every_mode(tmp_path: Path, repo: Path, mode: str) -> None:
+    """Each sub-mode's report path, unwritten → deny, naming the file and the tool."""
+    (tmp_path / SENTINEL_NAME).write_text(f"{MODE_REPORTS[mode]}\n", encoding="utf-8")
+
+    reason = _denial_reason(_run(tmp_path, _ask_payload(cwd=str(repo))))
+
+    assert reason is not None, "AskUserQuestion must be denied while the report is missing"
+    assert str(repo / MODE_REPORTS[mode]) in reason
+    assert "AskUserQuestion only after" in reason
+
+
+def test_empty_report_is_denied(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """A zero-byte report counts as not written → deny."""
+    report = repo / MODE_REPORTS["thread"]
+    report.parent.mkdir(parents=True)
+    report.touch()
+
+    assert _denial_reason(_run(tmp_path, _ask_payload(cwd=str(repo)))) is not None
+
+
+def test_written_report_passes_through(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """Report on disk → hook stays silent and the follow-up question proceeds."""
+    report = repo / MODE_REPORTS["thread"]
+    report.parent.mkdir(parents=True)
+    report.write_text("---\nTitle: oss:analyse — thread\n---\n", encoding="utf-8")
+
+    assert _run(tmp_path, _ask_payload(cwd=str(repo))) == {}
+
+
+def test_absolute_sentinel_path_ignores_cwd(tmp_path: Path, repo: Path) -> None:
+    """An absolute report path is honoured as-is, independent of the payload cwd."""
+    absolute = repo / MODE_REPORTS["vitality"]
+    (tmp_path / SENTINEL_NAME).write_text(f"{absolute}\n", encoding="utf-8")
+
+    assert _denial_reason(_run(tmp_path, _ask_payload(cwd="/nonexistent"))) is not None
+
+
+def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """macOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
+    assert _denial_reason(_run(tmp_path, _ask_payload(cwd=str(repo)), tmpdir_suffix="/")) is not None
+
+
+def test_sentinel_resolved_from_payload_session_id(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """CSID falls back to the payload's session_id when the env var is unset."""
+    result = _run(tmp_path, _ask_payload(cwd=str(repo), session_id=CSID), session_id_env=None)
+
+    assert _denial_reason(result) is not None
+
+
+# ── Everything outside an in-flight analyse passes through ───────────────────
+
+
+def test_no_sentinel_passes_through(tmp_path: Path, repo: Path) -> None:
+    """No oss:analyse run started → unrelated questions are never gated."""
+    assert _run(tmp_path, _ask_payload(cwd=str(repo))) == {}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(_ask_payload(tool_name="Bash"), id="other-tool"),
+        pytest.param(_ask_payload(hook_event_name="PostToolUse"), id="other-event"),
+    ],
+)
+def test_non_matching_payloads_pass_through(tmp_path: Path, repo: Path, analyse_run: Path, payload: dict) -> None:
+    """Only PreToolUse AskUserQuestion is inspected; anything else is untouched."""
+    assert _run(tmp_path, {**payload, "cwd": str(repo)}) == {}
+
+
+def test_stale_sentinel_passes_through(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """Sentinel older than the enforcement window is treated as a crashed run."""
+    stale = time.time() - (TWO_HOURS_S + 600)
+    os.utime(analyse_run, (stale, stale))
+
+    assert _run(tmp_path, _ask_payload(cwd=str(repo))) == {}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param("", id="step-1-placeholder"),
+        pytest.param("   \n", id="whitespace"),
+        pytest.param("docs/handover.md\n", id="outside-reports-analyse"),
+        pytest.param(".reports/review/2026-08-04T10-00-00Z/review-report.md\n", id="other-skill-report"),
+    ],
+)
+def test_implausible_sentinel_content_passes_through(tmp_path: Path, repo: Path, content: str) -> None:
+    """Sentinel not naming a .reports/analyse/ report is ignored."""
+    (tmp_path / SENTINEL_NAME).write_text(content, encoding="utf-8")
+
+    assert _run(tmp_path, _ask_payload(cwd=str(repo))) == {}
+
+
+def test_missing_cwd_falls_back_to_process_cwd(tmp_path: Path) -> None:
+    """No cwd in the payload → relative path resolves against the hook's own cwd."""
+    # tmp_path's name keeps the relative path unique, so it cannot collide with a
+    # real report in the working directory the test process happens to run from.
+    relative = f".reports/analyse/thread/output-analyse-thread-{tmp_path.name}.md"
+    (tmp_path / SENTINEL_NAME).write_text(f"{relative}\n", encoding="utf-8")
+
+    assert _denial_reason(_run(tmp_path, _ask_payload())) is not None
+
+
+@pytest.mark.parametrize(
+    "session_id",
+    [
+        pytest.param("../../etc/passwd", id="traversal"),
+        pytest.param("has space", id="space"),
+        pytest.param("", id="blank"),
+    ],
+)
+def test_unsafe_csid_passes_through(tmp_path: Path, repo: Path, analyse_run: Path, session_id: str) -> None:
+    """A CSID that cannot name a sentinel file is discarded, never path-joined."""
+    assert _run(tmp_path, _ask_payload(cwd=str(repo)), session_id_env=session_id) == {}
+
+
+def test_malformed_stdin_passes_through(tmp_path: Path) -> None:
+    """A hook bug or unparsable payload must never strand the session."""
+    proc = subprocess.run(
+        ["node", str(HOOK)],
+        input="not json",
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env={**os.environ, "TMPDIR": str(tmp_path)},
+    )
+
+    assert (proc.returncode, proc.stdout.strip()) == (0, "")

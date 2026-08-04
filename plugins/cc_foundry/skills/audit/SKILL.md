@@ -82,7 +82,8 @@ cat "$_FS/task-hygiene.md"
 - Phase 3: system-wide checks (Step 4) → in_progress on start, completed when all checks done
 - **Phases 2 and 3 launch simultaneously** — mark both in_progress same update; independent, must not serialize
 - Phase 4: aggregate + fix (Steps 5–10) → in_progress, completed when fixes land; **do NOT mark completed until EITHER: (a) follow-up gate fires (Step 7) AND fixes applied or user chose skip; OR (b) `--skip-gate` active — gate suppressed, complete after Step 5 aggregation; Step 5 aggregation alone does NOT complete Phase 4 in normal mode**
-- Phase 5: final report (Step 11) → in_progress, completed before output
+- Phase 5: write final report (Step 11a) → in_progress, completed only once `$RUN_DIR/report.md` exists on disk — assembling the report in context does not complete this phase
+- Phase 6: print report header (Step 11b) → `blockedBy` Phase 5; mark completed immediately BEFORE emitting the header block (task-lifecycle.md §TaskUpdate before long output), then print
 - On loop retry or scope change → new task; do not reuse completed task
 
 Surface progress at milestones: after system-wide checks ("✓ Checks 1-21 complete, N findings so far — spawning per-file audits"), after agent reports ("Agent reports received — N medium, N low findings"), before each fix batch ("Fixing N medium findings in parallel").
@@ -352,12 +353,13 @@ Execute Steps 8–10 loaded above inline (state on disk in `summary.jsonl`, `$RU
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || RUN_DIR=""
 cat "$AUDIT_TPL/report-template.md"
 ```
 
-Emit the complete audit report following the template and instructions loaded above.
+**Step 11a — assemble and persist** — assemble the complete audit report following the template and instructions loaded above, then **Write it to `$RUN_DIR/report.md`** using the Write tool. Set the template's `Path:` field to that same real path. This Write is mandatory, not optional: the terminal step below reads the header back from this file, and the report is the run's only durable artifact once the session ends. Skipping it leaves `Path:` pointing at a file that was never created.
 
-**Terminal output** — per quality-gates.md universal rule: read the `---` header block from the top of the report file (all fields from opening `---` up to and including closing `---`) and print verbatim as the FIRST content of the reply. Then print `→ <report path>`. Then executive summary. Omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers).
+**Step 11b — terminal output** — per quality-gates.md universal rule: read the `---` header block from the top of `$RUN_DIR/report.md` (all fields from opening `---` up to and including closing `---`) and print verbatim as the FIRST content of the reply. Then print `→ $RUN_DIR/report.md`. Then executive summary. Omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers).
 
 **Completion marker** — on successful completion, write `$RUN_DIR/result.jsonl` with one JSONL line summarising the run (severity totals, scope, pass count). On any abort/error path before completion, leave `result.jsonl` absent — the TTL cleanup hook (artifact-lifecycle.md) intentionally skips run directories without `result.jsonl`, preserving incomplete runs for post-mortem debugging. To force cleanup of a known-bad incomplete run, write `{"status":"incomplete","reason":"<one-line>"}` to `result.jsonl` so TTL can age it out.
 

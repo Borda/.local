@@ -602,6 +602,8 @@ This `---` block IS the reply header — print/omit-box handling per quality-gat
 
 **Known failure mode this guards against**: a prior run spawned the consolidator, received its one-liner, and jumped straight to Step 7's `AskUserQuestion` + confidence block — skipping this print entirely, even though `AskUserQuestion` itself (a hard tool call) fired correctly. The task above exists so this step is exactly as trackable as the tool calls around it — do not treat "Step 5: Consolidate findings" completing as covering this step; they are separate tasks for this reason.
 
+**Hook-enforced**: `hooks/enforce-review-header.js` (PreToolUse on `AskUserQuestion`) denies Step 7a's call while `$REPORT_DIR/review-report.md` is missing or empty. A denial reading `oss:review report gate` means Step 5 never produced the report — spawn the consolidator, print the header, then re-issue the question. The hook cannot see whether the print happened, only whether the report exists; the task above remains the check for the print itself.
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Compaction contract — boundary 2: after consolidation, before --reply (compaction-contract.md §Lifecycle)

@@ -1,7 +1,16 @@
 {
-  "description": "develop plugin hooks: agent routing fallback + blueprint sentinel-read auto-allow",
+  "description": "develop plugin hooks: agent routing fallback + blueprint sentinel-read auto-allow + develop:review report-header gate",
   "hooks": {
     "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/enforce-review-header.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "AskUserQuestion"
+      },
       {
         "hooks": [
           {

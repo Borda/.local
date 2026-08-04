@@ -601,6 +601,16 @@ Codemap-py auto-enabled in all skills when plugin installed and index exists. No
 
 Quality stack auto-detects project tooling at skill start via shared runner-detection file. No configuration needed — finds `uv`, `ruff`, `mypy`, `pytest` if on path. Tool absent → stack step skipped with note in final report.
 
+### Hooks
+
+Hooks register automatically from `hooks/hooks.json` when the plugin is enabled — no `settings.json` edits needed:
+
+| Hook                       | Event                            | Behaviour                                                                                                                                                                                                            |
+| -------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-router.js`          | `PreToolUse` (`Agent`)           | Reroutes `Agent()` calls when the requested agent is not installed: exact match → semantic match → `general-purpose`.                                                                                                |
+| `sentinel-read-allow.js`   | `PreToolUse` (`Bash`)            | Auto-allows the pre-canned TMPDIR sentinel-read and `$(date +FMT)` idioms inside read-only commands, so skill bash blocks stop raising "Contains expansion" prompts. Everything else falls through to normal checks. |
+| `enforce-review-header.js` | `PreToolUse` (`AskUserQuestion`) | Denies `/develop:review`'s follow-up question until the consolidated `review-report.md` exists, so the report header always reaches the terminal first. Silent unless a review run is in flight.                     |
+
 ### Artifact directories
 
 Skills write to these dirs at project root (all gitignored):
@@ -633,6 +643,10 @@ Quality stack reads shared file from `foundry` plugin. Not installed → lint/ty
 ```bash
 claude plugin install foundry@borda-ai-rig
 ```
+
+### A question is blocked with "develop:review report gate"
+
+`enforce-review-header.js` denied an `AskUserQuestion` call because `.reports/review/<timestamp>/review-report.md` does not exist — the review reached agent launch but never consolidated its findings into a report. Finish the consolidation step and print the report `---` header; the question then goes through. The gate deactivates two hours after a run starts, so an aborted review never blocks later questions permanently.
 
 ### Demo gate passes (exit 0) when it should fail
 

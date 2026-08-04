@@ -275,7 +275,21 @@ _Legend: ✅ present · ⚠️ partial · ❌ missing · 🔵 N/A_
 [Critical / High / Medium / Low] — [rationale]  ← omit for discussions
 ````
 
-Run `mkdir -p .reports/analyse/thread` then write full report to `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md` using Write tool — **do not print full analysis to terminal**.
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# Reload NUMBER + TODAY — fresh shell (Check 41)
+IFS= read -r NUMBER < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || NUMBER=""
+IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
+mkdir -p .reports/analyse/thread  # timeout: 5000
+REPORT_FILE=".reports/analyse/thread/output-analyse-thread-$NUMBER-$TODAY.md"
+# Sentinel rewritten here, before the report exists — enforce-analyse-header.js gates SKILL.md Step 6a on this path
+echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file-${CSID}"  # timeout: 5000
+echo "[analyse] report → $REPORT_FILE"
+```
+
+Write full report to `$REPORT_FILE` (echoed above) using Write tool — **do not print full analysis to terminal**.
+
+**Hook-enforced**: `hooks/enforce-analyse-header.js` (PreToolUse on `AskUserQuestion`) denies SKILL.md Step 6a's follow-up question while `$REPORT_FILE` is missing or empty. A denial reading `oss:analyse report gate` means this write never happened — write the report, print its `---` header, then re-issue the question. The hook sees only whether the report exists, not whether the header was printed; the print step below remains the check for that.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -283,7 +297,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r FOUNDRY_SHARED < "${TMPDIR:-/tmp}/analyse-foundry-shared-${CSID}" 2>/dev/null || FOUNDRY_SHARED=""
 [ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
-Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed
+Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `$REPORT_FILE`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed
 
 **⛔ DO NOT STOP — `REPLY_MODE=true`**: Skip Confidence block here — emitted in SKILL.md Step 6 after reply, or as last step of SKILL.md if not in reply mode. Proceed **immediately** to "Draft contributor reply" section in SKILL.md (Step 7). Response not complete until shepherd spawned and reply file written.
 

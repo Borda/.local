@@ -35,7 +35,7 @@ If $ARGUMENTS empty, default window is 24h.
 
 <workflow>
 
-**Task tracking**: TaskCreate one task ("Run analyzer + render report"); mark in_progress before Bash, completed before final output.
+**Task tracking**: TaskCreate two tasks up front — 1 "Run analyzer + render report" (Steps 1–3), 2 "Step 4b: Print report header" (Step 4). Mark each `in_progress` before its first tool call; 1 completed once `report.md` exists, 2 completed right after the header and path are printed, before the executive summary.
 
 ## Step 1: Parse args + create run dir
 
@@ -108,9 +108,11 @@ Write(file_path=".temp/output-profile-<branch>-<YYYY-MM-DD>.md", content=<full r
 
 Where `<branch>` = `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')`.
 
+Backed structurally by `hooks/enforce-profile-header.js`: while the Step 1 state file is live and `$REPORT_DIR/report.md` is absent, Step 5's `AskUserQuestion` is denied, so the gate can never be reached from an ad-hoc in-context summary.
+
 ## Step 5: Follow-up gate
 
-Invoke `AskUserQuestion`:
+Invoke `AskUserQuestion` (denied by `enforce-profile-header.js` until Step 2 has written `report.md` — if the analyzer found no sessions, report that and stop instead of asking):
 - (a) Drill into slowest session — re-run with `--session-id <id>`
 - (b) Re-run with different window (`--since 7d`, `--since 30d`)
 - (c) Skip — done
