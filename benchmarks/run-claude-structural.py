@@ -1328,7 +1328,7 @@ _EVAL_VER_SYMBOL = "v2"  # _evaluate_symbol — accepts conventional source-loca
 _EVAL_VER_REVIEW = "v7"  # _evaluate_rv — natural direct-import and uncovered-count grammar
 _EVAL_VER_OSS = "v7"  # _evaluate_oss — explicit label-first count grammar for required AST components
 _EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching (review H-1)
-_EVAL_VER_FEATURE = "v3"  # _evaluate_feature — exact labelled entry point and primary file
+_EVAL_VER_FEATURE = "v4"  # _evaluate_feature — accepts one terminal sentence period after the exact entry point
 _EVAL_VER_REAL_ISSUE = "v2"  # _evaluate_real_issue — v2: path-with-parent matching in answer block (review H-1)
 
 # review H-1 — substring-inflation guard. Common single-token file/symbol stems that saturate any
@@ -2533,7 +2533,7 @@ def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
     # Score only explicit conclusion fields. A Class.method can appear during exploration while the
     # final answer names a different extension point, so substring matching is not a valid oracle.
     region, degraded = _answer_region(output_text, _ANSWER_LABELS_FILES)
-    entry_pattern = r"(?im)^\s*(?:[-*]\s*)?entry[\s_-]*point\s*:\s*`?" + re.escape(entry_point) + r"`?\s*$"
+    entry_pattern = r"(?im)^\s*(?:[-*]\s*)?entry[\s_-]*point\s*:\s*`?" + re.escape(entry_point) + r"`?\.?\s*$"
     file_pattern = r"(?im)^\s*(?:[-*]\s*)?primary[\s_-]*file\s*:\s*`?" + re.escape(primary_file) + r"`?\s*$"
     ep_found = bool(entry_point) and bool(re.search(entry_pattern, region))
     file_found = bool(primary_file) and bool(re.search(file_pattern, region))

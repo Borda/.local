@@ -69,9 +69,10 @@ Each task × repetition × arm cell records:
 
   Diagnostics:
     command_calls, Codemap calls/successes/errors, fallback calls, required-arm
-    Codemap-use compliance, treatment adherence, extraction failure, contamination,
-    retry count, execution index, native item counts, raw Codex events, and
-    provider error classification
+    Codemap-use compliance, exact locked-query conformance, endpoint/target/option
+    fitness, treatment adherence, extraction failure, contamination, retry count,
+    execution index, native item counts, raw Codex events, and provider error
+    classification
 
 The runner writes raw cells; it does not declare an advantage. The manifest
 analysis compares paired log input-token ratios and quality deltas, then applies
@@ -217,7 +218,7 @@ PARITY_CODEX_MODEL = "gpt-5.6-luna"
 PARITY_CODEX_REASONING_EFFORT = "high"
 _CODEX_BIN = "codex"
 _PROVENANCE_KEY = "_codex_provenance"
-_NATIVE_ITEM_TELEMETRY_CONTRACT_ID = "canonical-skill-file-v1"
+_NATIVE_ITEM_TELEMETRY_CONTRACT_ID = "canonical-skill-file-locked-query-components-v2"
 _PLAIN_PERMISSION_PROFILE = "provider-parity-plain"
 _CODEMAP_PERMISSION_PROFILE = "provider-parity-codemap"
 _MIN_PERMISSION_PROFILE_VERSION = (0, 138, 0)
@@ -2920,8 +2921,11 @@ class CodexRun:
     codemap_skill_successful_calls: int = 0
     codemap_skill_compact_successful_calls: int = 0
     successful_query_arguments: list[list[str]] = field(default_factory=list)
-    codemap_semantic_compliance: bool | None = None
-    task_query_fitness: float | None = None
+    locked_query_conformance: bool | None = None
+    locked_query_fitness: float | None = None
+    locked_query_endpoint_fitness: float | None = None
+    locked_query_target_fitness: float | None = None
+    locked_query_option_fitness: float | None = None
     skill_delivery_observed: bool = False
     codemap_errors: int = 0
     fallback_calls: int = 0
@@ -2949,6 +2953,16 @@ class CodexRun:
     turn_budget_enforced: bool = False
 
 
+@dataclass(frozen=True)
+class LockedQueryFitness:
+    """Continuous exact-query similarity with independently visible components."""
+
+    overall: float
+    endpoint: float
+    target: float
+    options: float
+
+
 def _arm_compliance(arm: str, evidence: CodexParseResult | CodexRun) -> bool | None:
     """Evaluate the transport-specific required-use contract for one arm."""
     if arm == "B_direct_required":
@@ -2960,44 +2974,68 @@ def _arm_compliance(arm: str, evidence: CodexParseResult | CodexRun) -> bool | N
     raise ValueError(f"unknown benchmark arm {arm!r}")
 
 
-def _semantic_query_compliance(task: Mapping[str, Any], arm: str, run: CodexParseResult | CodexRun) -> bool | None:
-    """Require successful compact queries that satisfy the locked task contract."""
+def _locked_query_conformance(task: Mapping[str, Any], arm: str, run: CodexParseResult | CodexRun) -> bool | None:
+    """Report whether successful compact queries exactly match the locked contract."""
     if arm == "A_plain":
         return None
-    locked = _locked_semantic_queries(task)
+    locked = _locked_expected_queries(task)
     if not locked:
         return None
     observed = {
         normalized
         for arguments in run.successful_query_arguments
-        if arguments and (normalized := _normalize_semantic_query(arguments[0], arguments[1:])) is not None
+        if arguments and (normalized := _normalize_locked_query(arguments[0], arguments[1:])) is not None
     }
     if _expected_query_policy(task) == "all_required":
         return all(query in observed for query in locked)
     return any(query in observed for query in locked)
 
 
-def _task_query_fitness(task: Mapping[str, Any], arm: str, run: CodexParseResult | CodexRun) -> float | None:
-    """Score observed queries against locked task shape under its match policy."""
+def _locked_query_fitness(
+    task: Mapping[str, Any],
+    arm: str,
+    run: CodexParseResult | CodexRun,
+) -> LockedQueryFitness | None:
+    """Score exact-query similarity and expose endpoint, target, and option contributions."""
     if arm == "A_plain":
         return None
-    locked = _locked_semantic_queries(task)
+    locked = _locked_expected_queries(task)
     if not locked:
         return None
     observed = [
         normalized
         for arguments in run.successful_query_arguments
-        if arguments and (normalized := _normalize_semantic_query(arguments[0], arguments[1:])) is not None
+        if arguments and (normalized := _normalize_locked_query(arguments[0], arguments[1:])) is not None
     ]
     if not observed:
-        return 0.0
-    best_matches = [
-        max(_semantic_query_similarity(expected_query, actual_query) for actual_query in observed)
-        for expected_query in locked
-    ]
+        return LockedQueryFitness(0.0, 0.0, 0.0, 0.0)
+    best_matches = [_best_locked_query_match(expected_query, observed) for expected_query in locked]
     if _expected_query_policy(task) == "all_required":
-        return sum(best_matches) / len(best_matches)
-    return max(best_matches)
+        return _mean_locked_query_fitness(best_matches)
+    return max(
+        best_matches,
+        key=lambda match: (match.overall, match.endpoint, match.target, match.options),
+    )
+
+
+def _best_locked_query_match(
+    expected_query: tuple[str, ...],
+    observed_queries: list[tuple[str, ...]],
+) -> LockedQueryFitness:
+    """Return the single observed query most similar to one locked query."""
+    matches = [_locked_query_pair_fitness(expected_query, actual_query) for actual_query in observed_queries]
+    return max(matches, key=lambda match: (match.overall, match.endpoint, match.target, match.options))
+
+
+def _mean_locked_query_fitness(matches: list[LockedQueryFitness]) -> LockedQueryFitness:
+    """Average required-query fitness without mixing independently matched components."""
+    count = len(matches)
+    return LockedQueryFitness(
+        overall=sum(match.overall for match in matches) / count,
+        endpoint=sum(match.endpoint for match in matches) / count,
+        target=sum(match.target for match in matches) / count,
+        options=sum(match.options for match in matches) / count,
+    )
 
 
 _EXPECTED_QUERY_POLICIES = frozenset({"any_match", "all_required"})
@@ -3012,7 +3050,7 @@ def _expected_query_policy(task: Mapping[str, Any]) -> str:
     return policy
 
 
-def _locked_semantic_queries(task: Mapping[str, Any]) -> list[tuple[str, ...]]:
+def _locked_expected_queries(task: Mapping[str, Any]) -> list[tuple[str, ...]]:
     """Normalize every valid expected query declared by one task."""
     expected = task.get("expected_queries")
     if not isinstance(expected, list) or not expected:
@@ -3023,50 +3061,87 @@ def _locked_semantic_queries(task: Mapping[str, Any]) -> list[tuple[str, ...]]:
             continue
         arguments = query.get("args", [])
         if isinstance(arguments, list) and all(isinstance(value, str) for value in arguments):
-            normalized = _normalize_semantic_query(str(query["cmd"]), arguments)
+            normalized = _normalize_locked_query(str(query["cmd"]), arguments)
             if normalized is not None:
                 locked.append(normalized)
     return locked
 
 
-def _semantic_query_similarity(expected_query: tuple[str, ...], actual_query: tuple[str, ...]) -> float:
-    """Measure token-set overlap between one locked and one observed query."""
-    expected_tokens = set(expected_query)
-    actual_tokens = set(actual_query)
+def _locked_query_pair_fitness(
+    expected_query: tuple[str, ...],
+    actual_query: tuple[str, ...],
+) -> LockedQueryFitness:
+    """Measure overall and component similarity for one locked/observed pair."""
+    expected_endpoint, expected_targets, expected_options = _split_normalized_query(expected_query)
+    actual_endpoint, actual_targets, actual_options = _split_normalized_query(actual_query)
+    return LockedQueryFitness(
+        overall=_token_set_similarity(expected_query, actual_query),
+        endpoint=float(expected_endpoint == actual_endpoint),
+        target=_token_set_similarity(expected_targets, actual_targets),
+        options=_token_set_similarity(expected_options, actual_options),
+    )
+
+
+def _token_set_similarity(expected: tuple[str, ...], actual: tuple[str, ...]) -> float:
+    """Return Jaccard similarity, treating two empty query components as equal."""
+    expected_tokens = set(expected)
+    actual_tokens = set(actual)
+    if not expected_tokens and not actual_tokens:
+        return 1.0
     return len(expected_tokens & actual_tokens) / len(expected_tokens | actual_tokens)
 
 
-_SEMANTIC_BOOLEAN_OPTIONS = frozenset({"--broken", "--exclude-tests", "--with-imports"})
+_LOCKED_QUERY_BOOLEAN_OPTIONS = frozenset({"--broken", "--exclude-tests", "--with-imports"})
+_LOCKED_QUERY_VALUE_OPTIONS = frozenset({"--limit", "--top"})
 
 
-def _normalize_semantic_query(command: str, arguments: list[str]) -> tuple[str, ...] | None:
+def _split_normalized_query(query: tuple[str, ...]) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    """Separate a normalized query into endpoint, positional targets, and option groups."""
+    endpoint = query[0]
+    targets: list[str] = []
+    options: list[str] = []
+    index = 1
+    while index < len(query):
+        token = query[index]
+        if token in _LOCKED_QUERY_BOOLEAN_OPTIONS:
+            options.append(token)
+        elif token in _LOCKED_QUERY_VALUE_OPTIONS:
+            options.append(f"{token}={query[index + 1]}")
+            index += 1
+        else:
+            targets.append(token)
+        index += 1
+    return endpoint, tuple(targets), tuple(options)
+
+
+def _normalize_locked_query(command: str, arguments: list[str]) -> tuple[str, ...] | None:
     """Canonicalize the locked query grammar without weakening task semantics.
 
     Positional arguments retain their order.  Only the registered boolean
-    options may move, and ``--top`` accepts one non-negative decimal value.
+    options may move, and ``--limit``/``--top`` accept one non-negative decimal value.
     Unknown, duplicate, missing-value, and extra option tokens are rejected.
     """
     if not command or not isinstance(command, str):
         return None
     positionals: list[str] = []
     booleans: set[str] = set()
-    top: str | None = None
+    values: dict[str, str] = {}
     index = 0
     while index < len(arguments):
         argument = arguments[index]
         if not isinstance(argument, str) or not argument:
             return None
-        if argument in _SEMANTIC_BOOLEAN_OPTIONS:
+        if argument in _LOCKED_QUERY_BOOLEAN_OPTIONS:
             if argument in booleans:
                 return None
             booleans.add(argument)
-        elif argument == "--top":
-            if top is not None or index + 1 >= len(arguments):
+        elif argument in _LOCKED_QUERY_VALUE_OPTIONS:
+            if argument in values or index + 1 >= len(arguments):
                 return None
             value = arguments[index + 1]
             if not isinstance(value, str) or not re.fullmatch(r"[0-9]+", value):
                 return None
-            top = str(int(value))
+            values[argument] = str(int(value))
             index += 1
         elif argument.startswith("-"):
             return None
@@ -3074,8 +3149,8 @@ def _normalize_semantic_query(command: str, arguments: list[str]) -> tuple[str, 
             positionals.append(argument)
         index += 1
     normalized = [command, *positionals, *sorted(booleans)]
-    if top is not None:
-        normalized.extend(("--top", top))
+    for option, value in sorted(values.items()):
+        normalized.extend((option, value))
     return tuple(normalized)
 
 
@@ -3735,8 +3810,13 @@ class CodexRunner:
         run.error = parsed.error
         run.error_type = parsed.error_type
         run.compliance = _arm_compliance(arm, run)
-        run.codemap_semantic_compliance = _semantic_query_compliance(task, arm, run)
-        run.task_query_fitness = _task_query_fitness(task, arm, run)
+        run.locked_query_conformance = _locked_query_conformance(task, arm, run)
+        locked_query_fitness = _locked_query_fitness(task, arm, run)
+        if locked_query_fitness is not None:
+            run.locked_query_fitness = locked_query_fitness.overall
+            run.locked_query_endpoint_fitness = locked_query_fitness.endpoint
+            run.locked_query_target_fitness = locked_query_fitness.target
+            run.locked_query_option_fitness = locked_query_fitness.options
         if arm == "B_direct_required" and run.compliance:
             run.codemap_delivery = "direct_cli"
         elif arm == "C_skill_required" and run.compliance:
@@ -3931,7 +4011,10 @@ def _load_frozen_rescore_inputs(
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError("offline rescore metadata is not valid JSON") from exc
-    if not isinstance(metadata, dict) or metadata.get("schema_version") != "codex-structural-run-metadata-v1":
+    if not isinstance(metadata, dict) or metadata.get("schema_version") not in {
+        "codex-structural-run-metadata-v1",
+        "codex-structural-run-metadata-v2",
+    }:
         raise ValueError("offline rescore metadata schema is unsupported")
     if metadata.get("status") != "completed":
         raise ValueError("offline rescore requires completed run metadata")
@@ -4112,8 +4195,7 @@ def rescore_results(run_dir: Path) -> Path:
             "correct": evaluation.correct,
             "extraction_failed": evaluation.extraction_failed,
             "compliance": compliance,
-            "codemap_semantic_compliance": _semantic_query_compliance(task_by_id[task_id], str(arm), parsed),
-            "task_query_fitness": _task_query_fitness(task_by_id[task_id], str(arm), parsed),
+            "locked_query_conformance": _locked_query_conformance(task_by_id[task_id], str(arm), parsed),
             "contaminated": contaminated,
             "treatment_adherence": treatment_adherence(
                 str(arm),
@@ -4130,18 +4212,33 @@ def rescore_results(run_dir: Path) -> Path:
                 json.dumps(raw_events, separators=(",", ":"), sort_keys=True).encode("utf-8")
             ).hexdigest(),
         }
+        locked_query_fitness = _locked_query_fitness(task_by_id[task_id], str(arm), parsed)
+        row.update(
+            {
+                "locked_query_fitness": locked_query_fitness.overall if locked_query_fitness is not None else None,
+                "locked_query_endpoint_fitness": (
+                    locked_query_fitness.endpoint if locked_query_fitness is not None else None
+                ),
+                "locked_query_target_fitness": locked_query_fitness.target
+                if locked_query_fitness is not None
+                else None,
+                "locked_query_option_fitness": locked_query_fitness.options
+                if locked_query_fitness is not None
+                else None,
+            }
+        )
         rows.append(row)
     if seen_coordinates != allowed_coordinates:
         raise ValueError("offline rescore telemetry is incomplete for the frozen execution scope")
     payload = {
-        "schema_version": "codex-structural-offline-rescore-v1",
+        "schema_version": "codex-structural-offline-rescore-v2",
         "source": source,
         "rows": rows,
     }
     serialized_without_hash = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     payload["derived_sha256"] = hashlib.sha256(serialized_without_hash).hexdigest()
     serialized = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
-    artifact_path = root / (f"offline-rescore-v1-{source['telemetry_sha256'][:16]}-{source['runner_sha256'][:16]}.json")
+    artifact_path = root / (f"offline-rescore-v2-{source['telemetry_sha256'][:16]}-{source['runner_sha256'][:16]}.json")
     if artifact_path.exists():
         if artifact_path.read_bytes() != serialized:
             raise ValueError("offline rescore artifact already exists with different derived content")
@@ -4177,7 +4274,7 @@ def _initial_run_metadata(
         for arm in arms
     ]
     return {
-        "schema_version": "codex-structural-run-metadata-v1",
+        "schema_version": "codex-structural-run-metadata-v2",
         "status": "running",
         "started_at": _utc_now(),
         "completed_at": None,
@@ -4190,7 +4287,7 @@ def _initial_run_metadata(
             "extraction_failed": 0,
             "contaminated": 0,
             "compliance_failed": 0,
-            "semantic_query_failed": 0,
+            "locked_query_nonconforming": 0,
             "targeted": 0,
             "token_accounting_inconsistent": 0,
         },
@@ -4507,9 +4604,9 @@ def main(
                             run.arm in {"B_direct_required", "C_skill_required"} and not run.compliance,
                         ),
                         (
-                            "semantic_query_failed",
+                            "locked_query_nonconforming",
                             run.arm in {"B_direct_required", "C_skill_required"}
-                            and run.codemap_semantic_compliance is False,
+                            and run.locked_query_conformance is False,
                         ),
                         ("targeted", run.targeted),
                         ("token_accounting_inconsistent", run.token_accounting_inconsistent),

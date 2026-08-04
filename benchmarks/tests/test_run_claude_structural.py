@@ -1808,6 +1808,30 @@ class TestEvaluateFeature:
         )
         assert result.scored is True
         assert result.correct is True
+        assert result.evaluator_version == "v4"
+
+    @pytest.mark.parametrize(
+        ("entry_point_line", "expected_correct"),
+        [
+            pytest.param("entry_point: Trainer.validate.", True, id="terminal-period"),
+            pytest.param("entry_point: `Trainer.validate`.", True, id="backticked-terminal-period"),
+            pytest.param("entry_point: validate.", False, id="bare-method"),
+            pytest.param("entry_point: Other.validate.", False, id="wrong-class"),
+            pytest.param("entry_point: Trainer.validate_extra.", False, id="longer-entry-point"),
+            pytest.param("entry_point: Trainer.validate..", False, id="doubled-period"),
+        ],
+    )
+    def test_terminal_period_only_terminates_the_exact_labelled_entry_point(
+        self, script_run_bench: Any, entry_point_line: str, expected_correct: bool
+    ) -> None:
+        """A sentence period is accepted without relaxing exact entry-point matching."""
+        task = self._feature_task()
+        result = script_run_bench._evaluate_feature(
+            task,
+            f"## Files\nprimary_file: src/lightning/trainer/trainer.py\n{entry_point_line}\n",
+        )
+
+        assert result.correct is expected_correct
 
     def test_bare_method_name_is_not_an_entry_point(self, script_run_bench: Any) -> None:
         """A bare method name cannot substitute for the requested Class.method."""

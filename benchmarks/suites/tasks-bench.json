@@ -518,7 +518,8 @@
       "expected_queries": [
         {
           "args": [
-            "lightning.pytorch.trainer.call::_call_lightning_module_hook"
+            "lightning.pytorch.trainer.call::_call_lightning_module_hook",
+            "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
         }
@@ -546,7 +547,8 @@
       "expected_queries": [
         {
           "args": [
-            "lightning.pytorch.trainer.call::_call_callback_hooks"
+            "lightning.pytorch.trainer.call::_call_callback_hooks",
+            "--exclude-tests"
           ],
           "cmd": "fn-rdeps"
         }

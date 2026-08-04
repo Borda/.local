@@ -74,7 +74,7 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     }
     human = builder["_human_bytes"](human_manifest, "0" * 64).decode("utf-8")
 
-    assert builder["EXPERIMENT_REVISION"] == "codex-integration-single-run-confirmatory-2026-08-02"
+    assert builder["EXPERIMENT_REVISION"] == "codex-integration-prospective-locked-query-components-2026-08-04"
     assert arms["B_direct_required"]["requirement"] == (
         "Run at least one successful compact direct query in its own native command item containing exactly "
         '"$CODEMAP_BIN" query --compact <subcommand> [arguments]; '
@@ -149,7 +149,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     }
     assert manifest["package_roster"] == ["codemap-py", "codex-rig"]
     assert manifest["experiment_id"] == "codex-integration-v1"
-    assert manifest["experiment_revision"] == "codex-integration-single-run-confirmatory-2026-08-02"
+    assert manifest["schema_version"] == "codex-integration-manifest-v2"
+    assert manifest["experiment_revision"] == "codex-integration-prospective-locked-query-components-2026-08-04"
     assert manifest["preregistered_cells"]["arms"] == [
         "A_plain",
         "B_direct_required",
@@ -256,7 +257,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     assert set(validation["checks"].values()) == {"required"}
     assert len(validation["evidence"]) == 2
     assert manifest["telemetry_admission"] == {
-        "telemetry_contract_id": "canonical-skill-file-v1",
+        "telemetry_contract_id": "canonical-skill-file-locked-query-components-v2",
+        "run_metadata_schema": "codex-structural-run-metadata-v2",
         "auxiliary_item_policy": (
             "B/C may use additional reads and shell commands as separate native items. "
             "They are ignored for query attribution."
@@ -279,6 +281,14 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
             "required_exit_code": 0,
             "required_output": "one JSON document with index.query_complete=true and index.compact=true",
         },
+        "locked_query_components": {
+            "conformance": "locked_query_conformance",
+            "overall": "locked_query_fitness",
+            "endpoint": "locked_query_endpoint_fitness",
+            "target": "locked_query_target_fitness",
+            "options": "locked_query_option_fitness",
+            "semantics": "Conformance is exact tuple agreement; fitness is continuous component-level Jaccard similarity.",
+        },
         "skill_read": {
             "accepted_readers": ['cat "$CODEMAP_SKILL_FILE"'],
             "arm": "C_skill_required",
@@ -288,7 +298,7 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
             "required_output": "exact manifest-locked codemap_query_skill bytes",
         },
         "treatment_attribution": {
-            "B_direct_required": "at least one successful compact locked CLI query",
+            "B_direct_required": "at least one successful compact direct CLI query",
             "C_skill_required": ("dedicated exact Skill read item before at least one successful canonical query item"),
         },
     }

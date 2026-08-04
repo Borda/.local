@@ -229,6 +229,21 @@ def test_methodology_manifest_binds_every_review_subquestion_in_provider_prompt(
         assert manifest_tasks[task_id]["prompt_sha256"] == core.prompt_hash(task)
 
 
+def test_review_caller_tasks_lock_production_fn_rdeps_queries() -> None:
+    """RV-03/RV-04 must exclude tests, exactly as their prompts and counts require."""
+    tasks = {task["id"]: task for task in core.load_task_suite(ROOT / REPAIRED_SUITE_PATH)}
+    expected_targets = {
+        "RV-03": "lightning.pytorch.trainer.call::_call_lightning_module_hook",
+        "RV-04": "lightning.pytorch.trainer.call::_call_callback_hooks",
+    }
+
+    assert expected_targets.keys() <= tasks.keys()
+    for task_id, target in expected_targets.items():
+        task = tasks[task_id]
+        assert task["expected_queries"] == [{"cmd": "fn-rdeps", "args": [target, "--exclude-tests"]}]
+        assert "production functions (excluding test files)" in core.materialize_task_prompt(task)
+
+
 def test_methodology_manifest_locks_luna_high_and_exact_implementation_identities() -> None:
     """The shared methodology must bind the only allowed model and code bytes."""
     manifest = _load(METHODOLOGY_MANIFEST)

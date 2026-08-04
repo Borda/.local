@@ -28,8 +28,8 @@ SOURCE_MANIFEST = MANIFESTS / "provider-parity-methodology.json"
 OUTPUT_MANIFEST = MANIFESTS / "codex-integration.json"
 OUTPUT_HUMAN_MANIFEST = MANIFESTS / "codex-integration.md"
 EXPERIMENT_ID = "codex-integration-v1"
-EXPERIMENT_REVISION = "codex-integration-single-run-confirmatory-2026-08-02"
-TELEMETRY_CONTRACT_ID = "canonical-skill-file-v1"
+EXPERIMENT_REVISION = "codex-integration-prospective-locked-query-components-2026-08-04"
+TELEMETRY_CONTRACT_ID = "canonical-skill-file-locked-query-components-v2"
 CANONICAL_QUERY_FORM = '"$CODEMAP_BIN" query --compact <subcommand> [arguments]'
 ARM_ORDER_POLICY = (
     "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
@@ -249,6 +249,7 @@ def _telemetry_admission() -> dict[str, Any]:
     """Declare the canonical native-item evidence contract for paid Codex runs."""
     return {
         "telemetry_contract_id": TELEMETRY_CONTRACT_ID,
+        "run_metadata_schema": "codex-structural-run-metadata-v2",
         "auxiliary_item_policy": (
             "B/C may use additional reads and shell commands as separate native items. "
             "They are ignored for query attribution."
@@ -270,8 +271,16 @@ def _telemetry_admission() -> dict[str, Any]:
             "required_exit_code": 0,
             "required_output": "one JSON document with index.query_complete=true and index.compact=true",
         },
+        "locked_query_components": {
+            "conformance": "locked_query_conformance",
+            "overall": "locked_query_fitness",
+            "endpoint": "locked_query_endpoint_fitness",
+            "target": "locked_query_target_fitness",
+            "options": "locked_query_option_fitness",
+            "semantics": "Conformance is exact tuple agreement; fitness is continuous component-level Jaccard similarity.",
+        },
         "treatment_attribution": {
-            "B_direct_required": "at least one successful compact locked CLI query",
+            "B_direct_required": "at least one successful compact direct CLI query",
             "C_skill_required": ("dedicated exact Skill read item before at least one successful canonical query item"),
         },
         "rejected_evidence": [
@@ -480,7 +489,7 @@ def _build_manifest() -> dict[str, Any]:
         "package_roster": ["codemap-py", "codex-rig"],
         "task_selection": _task_selection_contract(source),
         "preregistered_cells": _preregistered_cells(source),
-        "schema_version": "codex-integration-manifest-v1",
+        "schema_version": "codex-integration-manifest-v2",
         "source_manifest": {
             "path": str(SOURCE_MANIFEST.relative_to(ROOT)),
             "sha256": _sha256(SOURCE_MANIFEST),

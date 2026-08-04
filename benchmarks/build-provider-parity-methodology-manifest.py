@@ -27,7 +27,7 @@ POLICY_SEED = BENCHMARKS / "manifests" / "provider-parity-methodology-policy.jso
 POLICY_SEED_SHA256 = "62da64ed419bb988794ccd0e6ccc58a61f84a9e0f8b737ccb5ef372a3ec0384d"
 ARCHIVED_MANIFEST = BENCHMARKS / "results" / "manifests" / ("provider-parity-v1-b0-" + "r" + "6.json")
 ARCHIVED_MANIFEST_SHA256 = "971c6ad220c1e821ed72109396f4dce1d745f0a1b74b2790874f6b07e833627b"
-EXPERIMENT_REVISION = "provider-parity-shared-methodology-quality-contract-2026-08-02"
+EXPERIMENT_REVISION = "provider-parity-shared-methodology-quality-and-query-contract-2026-08-04"
 INDEX_LOCK = {
     "change_reason": (
         "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; "
@@ -77,10 +77,12 @@ TASK_CHANGE_LEDGER: dict[str, dict[str, Any]] = {
         ["prompt_sha256"], "Provider prompt now contains the independently scored review questions."
     ),
     "RV-03": _ledger_entry(
-        ["prompt_sha256"], "Provider prompt now contains the independently scored review questions."
+        ["canonical_task_sha256", "prompt_sha256"],
+        "Production-only caller oracle adds the explicit --exclude-tests filter to the task query and prompt.",
     ),
     "RV-04": _ledger_entry(
-        ["prompt_sha256"], "Provider prompt now contains the independently scored review questions."
+        ["canonical_task_sha256", "prompt_sha256"],
+        "Production-only callback oracle adds the explicit --exclude-tests filter to the task query and prompt.",
     ),
     "RV-05": _ledger_entry(
         ["canonical_task_sha256", "prompt_sha256"],

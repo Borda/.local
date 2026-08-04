@@ -1925,7 +1925,7 @@ def test_result_exposes_native_telemetry_and_turn_limit_capability(script_run_co
     assert result.elapsed_s >= 0.0
     assert result.native_item_counts == {"agent_message": 1}
     assert result.native_attempt_events == [result.raw_events]
-    assert result.telemetry_contract_id == "canonical-skill-file-v1"
+    assert result.telemetry_contract_id == "canonical-skill-file-locked-query-components-v2"
     assert result.tool_elapsed_s is None
     assert result.tool_result_tokens is None
     assert result.error_type == ""
@@ -2376,6 +2376,7 @@ def test_main_records_cell_failures_and_continues_after_smoke(
                 input_tokens=1,
                 output_tokens=1,
                 compliance=task["id"] == "second",
+                locked_query_conformance=task["id"] == "second",
             )
 
     monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
@@ -2395,9 +2396,12 @@ def test_main_records_cell_failures_and_continues_after_smoke(
 
     assert len(output_path.read_text(encoding="utf-8").splitlines()) == 2
     metadata = json.loads((tmp_path / "admission-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["schema_version"] == "codex-structural-run-metadata-v2"
     assert metadata["status"] == "completed"
     assert metadata["persisted_cells"] == 2
     assert metadata["cell_outcomes"]["compliance_failed"] == 1
+    assert metadata["cell_outcomes"]["locked_query_nonconforming"] == 1
+    assert "semantic_query_failed" not in metadata["cell_outcomes"]
     assert metadata["artifacts"]["canonical_telemetry_pooling_eligible"] is False
     assert metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"] == ["required_use_missing"]
     stdout = capsys.readouterr().out
@@ -3769,14 +3773,14 @@ def test_canonical_native_query_allows_auxiliary_separate_events(script_run_code
         ),
     ],
 )
-def test_semantic_query_compliance_requires_task_locked_endpoint_and_target(
+def test_locked_query_conformance_requires_expected_endpoint_and_target(
     script_run_codex: Any,
     expected_queries: list[dict[str, Any]],
     expected_query_policy: str | None,
     actual: list[list[str]],
     expected: bool,
 ) -> None:
-    """Generic Codemap use cannot satisfy a task-shaped semantic contract."""
+    """Generic Codemap use cannot satisfy the exact locked query contract."""
     task = {"id": "GR-01", "expected_queries": expected_queries}
     if expected_query_policy is not None:
         task["expected_query_policy"] = expected_query_policy
@@ -3787,87 +3791,52 @@ def test_semantic_query_compliance_requires_task_locked_endpoint_and_target(
         model=script_run_codex.PARITY_CODEX_MODEL,
         successful_query_arguments=actual,
     )
-    assert script_run_codex._semantic_query_compliance(task, run.arm, run) is expected
+    assert script_run_codex._locked_query_conformance(task, run.arm, run) is expected
 
 
 @pytest.mark.parametrize(
-    ("expected_queries", "expected_query_policy", "actual", "expected"),
+    ("expected_query", "actual", "expected"),
     [
         pytest.param(
-            [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
-            None,
+            {"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]},
             [["fn-rdeps", "--exclude-tests", "qname"]],
-            1.0,
-            id="exact-option-permutation",
+            (1.0, 1.0, 1.0, 1.0),
+            id="exact",
         ),
         pytest.param(
-            [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
-            None,
+            {"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]},
+            [["fn-blast", "qname", "--exclude-tests"]],
+            (0.5, 0.0, 1.0, 1.0),
+            id="alternate-endpoint",
+        ),
+        pytest.param(
+            {"cmd": "symbol", "args": ["Timer.start"]},
+            [["symbol", "Timer.stop"]],
+            (1 / 3, 1.0, 0.0, 1.0),
+            id="target-mismatch",
+        ),
+        pytest.param(
+            {"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]},
             [["fn-rdeps", "qname"]],
-            2 / 3,
-            id="missing-production-filter",
+            (2 / 3, 1.0, 1.0, 0.0),
+            id="option-filter-mismatch",
         ),
         pytest.param(
-            [{"cmd": "fn-rdeps", "args": ["qname", "--exclude-tests"]}],
-            None,
-            [["fn-blast", "qname"]],
-            1 / 4,
-            id="wrong-endpoint-same-target",
-        ),
-        pytest.param(
-            [{"cmd": "central", "args": ["--top", "5"]}],
-            None,
-            [["central", "--top", "3"]],
-            1 / 2,
-            id="wrong-top-value",
-        ),
-        pytest.param(
-            [{"cmd": "central", "args": ["--top", "5"]}],
-            None,
-            [["central", "--unknown", "5"]],
-            0.0,
-            id="invalid-query-shape",
-        ),
-        pytest.param(
-            [{"cmd": "coupled", "args": []}, {"cmd": "central", "args": ["--top", "5"]}],
-            None,
-            [["coupled"], ["central", "--top", "3"]],
-            1.0,
-            id="best-successful-query",
-        ),
-        pytest.param(
-            [
-                {"cmd": "fn-rdeps", "args": ["pkg.core::target", "--exclude-tests"]},
-                {"cmd": "rdeps", "args": ["pkg.core"]},
-            ],
-            "all_required",
-            [["fn-rdeps", "pkg.core::target", "--exclude-tests"]],
-            0.5,
-            id="all-required-averages-missing-component",
-        ),
-        pytest.param(
-            [
-                {"cmd": "fn-rdeps", "args": ["pkg.core::target", "--exclude-tests"]},
-                {"cmd": "rdeps", "args": ["pkg.core"]},
-            ],
-            "all_required",
-            [["fn-rdeps", "--exclude-tests", "pkg.core::target"], ["rdeps", "pkg.core"]],
-            1.0,
-            id="all-required-averages-best-observed-match-per-component",
+            {"cmd": "symbol", "args": ["Timer.start", "--limit", "0"]},
+            [["symbol", "--limit", "0", "Timer.start"]],
+            (1.0, 1.0, 1.0, 1.0),
+            id="limit-value-option",
         ),
     ],
 )
-def test_task_query_fitness_reports_continuous_similarity_separate_from_treatment(
+def test_locked_query_fitness_reports_mismatch_components(
     script_run_codex: Any,
-    expected_queries: list[dict[str, Any]],
-    expected_query_policy: str | None,
+    expected_query: dict[str, Any],
     actual: list[list[str]],
-    expected: float,
+    expected: tuple[float, float, float, float],
 ) -> None:
-    """Query fitness distinguishes partial routing from transport adherence."""
-    task = {"id": "GR-01", "expected_queries": expected_queries}
-    if expected_query_policy is not None:
-        task["expected_query_policy"] = expected_query_policy
+    """Query fitness identifies endpoint, target, and option/filter mismatches."""
+    task = {"id": "GR-01", "expected_queries": [expected_query]}
     run = script_run_codex.CodexRun(
         arm="B_direct_required",
         task_id="GR-01",
@@ -3876,7 +3845,34 @@ def test_task_query_fitness_reports_continuous_similarity_separate_from_treatmen
         successful_query_arguments=actual,
     )
 
-    assert script_run_codex._task_query_fitness(task, run.arm, run) == pytest.approx(expected)
+    fitness = script_run_codex._locked_query_fitness(task, run.arm, run)
+
+    assert fitness is not None
+    assert (fitness.overall, fitness.endpoint, fitness.target, fitness.options) == pytest.approx(expected)
+
+
+def test_locked_query_fitness_averages_all_required_queries(script_run_codex: Any) -> None:
+    """Missing one required query reduces every component without cross-query mixing."""
+    task = {
+        "id": "DI-01",
+        "expected_query_policy": "all_required",
+        "expected_queries": [
+            {"cmd": "fn-rdeps", "args": ["pkg.core::target", "--exclude-tests"]},
+            {"cmd": "rdeps", "args": ["pkg.core"]},
+        ],
+    }
+    run = script_run_codex.CodexRun(
+        arm="B_direct_required",
+        task_id="DI-01",
+        task_type="diff_impact",
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        successful_query_arguments=[["fn-rdeps", "pkg.core::target", "--exclude-tests"]],
+    )
+
+    fitness = script_run_codex._locked_query_fitness(task, run.arm, run)
+
+    assert fitness is not None
+    assert (fitness.overall, fitness.endpoint, fitness.target, fitness.options) == pytest.approx((0.5, 0.5, 0.5, 0.5))
 
 
 def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
@@ -3891,8 +3887,11 @@ def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
         success=True,
         compliance=True,
         treatment_adherence=True,
-        codemap_semantic_compliance=False,
-        task_query_fitness=0.25,
+        locked_query_conformance=False,
+        locked_query_fitness=0.25,
+        locked_query_endpoint_fitness=0.0,
+        locked_query_target_fitness=1.0,
+        locked_query_option_fitness=1.0,
     )
 
     assert run.treatment_adherence is True
@@ -3900,7 +3899,7 @@ def test_query_mismatch_does_not_reclassify_successful_transport_or_pooling(
 
 
 def test_all_locked_execution_queries_accept_strict_option_permutations(script_run_codex: Any) -> None:
-    """Every current execution query must survive strict B/C semantic admission.
+    """Every current execution query must survive strict B/C conformance admission.
 
     The table is derived from the locked 55-task execution set (68 expected
     queries), rather than from the normalizer's option vocabulary.  This keeps
@@ -3955,7 +3954,7 @@ def test_all_locked_execution_queries_accept_strict_option_permutations(script_r
                 model=script_run_codex.PARITY_CODEX_MODEL,
                 successful_query_arguments=actual,
             )
-            assert script_run_codex._semantic_query_compliance(tasks_by_id[task_id], arm, run) is True, (
+            assert script_run_codex._locked_query_conformance(tasks_by_id[task_id], arm, run) is True, (
                 task_id,
                 query_index,
                 arm,
@@ -6188,6 +6187,7 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
         "prompt": "locate pkg.symbol",
         "type": "symbol_extraction",
         "scoreable": True,
+        "expected_queries": [{"cmd": "symbols", "args": ["pkg.symbol"]}],
         "ground_truth": {"start_line": 10, "qualified_name": "pkg.symbol"},
     }
     tasks_path = shared / "tasks-bench.json"
@@ -6244,6 +6244,8 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
         "model": script_run_codex.PARITY_CODEX_MODEL,
         "scoreable": True,
         "output_text": "stale answer",
+        "codemap_semantic_compliance": False,
+        "task_query_fitness": 0.25,
         "raw_events": raw_events,
     }
     skill_events = [
@@ -6309,7 +6311,7 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
     assert artifact_path.read_bytes() == first_bytes
     assert all(path.read_bytes() == contents for path, contents in source_bytes.items())
     artifact = json.loads(first_bytes)
-    assert artifact["schema_version"] == "codex-structural-offline-rescore-v1"
+    assert artifact["schema_version"] == "codex-structural-offline-rescore-v2"
     assert artifact["source"]["telemetry_sha256"] == hashlib.sha256(source_bytes[telemetry_path]).hexdigest()
     assert artifact["source"]["frozen_suite_semantic_sha256"] == core.semantic_suite_hash([task])
     rows = {row["arm"]: row for row in artifact["rows"]}
@@ -6317,6 +6319,10 @@ def test_rescore_results_replays_frozen_events_without_mutating_run_artifacts(
     assert rows["B_direct_required"]["output_text"] == "start_line: 10"
     assert rows["B_direct_required"]["codemap_direct_compact_successful_calls"] == 1
     assert rows["B_direct_required"]["treatment_adherence"] is True
+    assert rows["B_direct_required"]["locked_query_conformance"] is True
+    assert rows["B_direct_required"]["locked_query_fitness"] == 1.0
+    assert "codemap_semantic_compliance" not in rows["B_direct_required"]
+    assert "task_query_fitness" not in rows["B_direct_required"]
     assert rows["C_skill_required"]["skill_delivery_observed"] is True
     assert rows["C_skill_required"]["codemap_skill_compact_successful_calls"] == 1
     assert rows["C_skill_required"]["compliance"] is True

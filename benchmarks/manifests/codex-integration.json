@@ -20,13 +20,13 @@
     }
   },
   "artifact_sha256": {
-    "codemap_candidate_manifest": "b5e05f4990d6a8f62ec171977b038e7931b5fa5149b4d60223dbc1757149317c",
-    "codemap_query_skill": "ca5112c5b1adc03ba063797fc00855d1acc418ef45fad8c6bd54385fcab7688c",
+    "codemap_candidate_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
+    "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
     "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
     "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
     "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-    "codemap_runtime_query": "8eda62e6399e38972015842d24c9835fb97af43a2a9c7c1b32c39ade80a5b3b4",
+    "codemap_runtime_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
     "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
@@ -34,13 +34,13 @@
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
     "run_all": "ff7b7e28ae97e667ee148420fa2799f04c4897fa754b405b4951b3cdcd32aded",
-    "run_codex_structural": "0086d43ff15fbe4a719767e8bf47d231d1126c9407bdf8be7da2df2409d71827"
+    "run_codex_structural": "e21e9baa096389a6590cb9e116385885efda28e58c8fab76f0e520723edba806"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "f67ae0f13b8ba33317d59479324b8403afad9f942070ef98fb1a29d904cd069b",
+    "package_manifest_sha256": "6ffd24dbeff5e45771e11d61e0e6f527deda8fd3cbecbbdfd338222318db3e38",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
-    "version": "0.28.2"
+    "version": "0.28.3"
   },
   "codex_cli": {
     "available": true,
@@ -173,7 +173,7 @@
     "required_before_paid_execution": "Execute this compact query through B's staged launcher under the treatment permission profile; require exit 0, index.query_complete=true, and unchanged locked-index bytes."
   },
   "direct_cli_runtime": {
-    "aggregate_sha256": "14bbfd2be2ce554faaa37b4c47cbf3a114c5f28b39b656bf0841b6df0353f45b",
+    "aggregate_sha256": "06f776f238af02c49ec74641ea8ded39b892339cae562337264c9abf3230447a",
     "files": {
       "bin/_exclusions.py": "1aa5857b5012f1a433f7d2001e4eee07d275a951a80b6a87e026183e5bf7622e",
       "bin/codemap-py": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
@@ -184,7 +184,7 @@
       "src/codemap_py/graph.py": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
       "src/codemap_py/index_paths.py": "35b533c4d8080639d80dffcff0d1a4694eccd40869c2a719348704b6876faf00",
       "src/codemap_py/integration.py": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "src/codemap_py/query.py": "8eda62e6399e38972015842d24c9835fb97af43a2a9c7c1b32c39ade80a5b3b4",
+      "src/codemap_py/query.py": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
       "src/codemap_py/runtime_log.py": "2f8030bd31bf36413d851c0d49081913948a566758158b45faaed545dee9b0ac",
       "src/codemap_py/rwgate.py": "161b9f67aa87c30863ac2f2fe210a339af65b35fde3fada14ca2cd32e4f756a0",
       "src/codemap_py/scanner.py": "ebf5be8e3e9868d6c13ef744d538347fca59b35037d33f6dbdba02bd5047e7a1",
@@ -252,7 +252,7 @@
     "turn_budget_enforced": false
   },
   "experiment_id": "codex-integration-v1",
-  "experiment_revision": "codex-integration-single-run-confirmatory-2026-08-02",
+  "experiment_revision": "codex-integration-prospective-locked-query-components-2026-08-04",
   "headline_structural_v1": {
     "diagnostic_independent_ids": [
       "CQ-02",
@@ -311,13 +311,13 @@
   },
   "implementation_contract": {
     "artifact_sha256": {
-      "codemap_candidate_manifest": "b5e05f4990d6a8f62ec171977b038e7931b5fa5149b4d60223dbc1757149317c",
-      "codemap_query_skill": "ca5112c5b1adc03ba063797fc00855d1acc418ef45fad8c6bd54385fcab7688c",
+      "codemap_candidate_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
+      "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
       "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
       "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
       "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "codemap_runtime_query": "8eda62e6399e38972015842d24c9835fb97af43a2a9c7c1b32c39ade80a5b3b4",
+      "codemap_runtime_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
       "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
@@ -325,7 +325,7 @@
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
       "run_all": "ff7b7e28ae97e667ee148420fa2799f04c4897fa754b405b4951b3cdcd32aded",
-      "run_codex_structural": "0086d43ff15fbe4a719767e8bf47d231d1126c9407bdf8be7da2df2409d71827"
+      "run_codex_structural": "e21e9baa096389a6590cb9e116385885efda28e58c8fab76f0e520723edba806"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -549,16 +549,16 @@
       "MB-04"
     ]
   },
-  "schema_version": "codex-integration-manifest-v1",
+  "schema_version": "codex-integration-manifest-v2",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "3320c2d35e3189d43e3c2336603189083cc7ef8e76ac10dfb2f99ef47ee07afa"
+    "sha256": "5f613da7ff7c431ff30be9e44a3d9444d1246766a8505e38fc2c6e2908a18112"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
     "semantic_suite_sha256": {
       "benchmarks/suites/tasks-agentic.json": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
-      "benchmarks/suites/tasks-bench.json": "4df61b0778962453d8af9de6ebf02f41877fc2355426734468c4404cede59a02",
+      "benchmarks/suites/tasks-bench.json": "6d05bb66b97961251f34215ab9c4381bf30cc80b19dc821074bd31ba5330dda8",
       "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
       "benchmarks/suites/tasks-fix-single.json": "3ae89d8fe843d8d4aca46a9e5c4229eb7487090c525625fa1690a0cc8e5b5046",
@@ -970,9 +970,9 @@
         "MB-05"
       ],
       "path": "benchmarks/suites/tasks-bench.json",
-      "raw_sha256": "518239c494495c6fc91f00b13337ea61889fc76fdcfb84e12adcd5e33863e356",
+      "raw_sha256": "50c10fbadb12ec8c241e8a75958f532ef32b444462b4c0b2392ed5b2d8c382f7",
       "root_shape": "object_with_tasks",
-      "semantic_suite_sha256": "4df61b0778962453d8af9de6ebf02f41877fc2355426734468c4404cede59a02",
+      "semantic_suite_sha256": "6d05bb66b97961251f34215ab9c4381bf30cc80b19dc821074bd31ba5330dda8",
       "task_count": 60,
       "tasks": [
         {
@@ -1210,7 +1210,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "5826cd78da884b092fe69531bbdc5c1ed8848aeb77a45e60f6972aef34026b6e",
+          "canonical_task_sha256": "5a39e228f1228a9ae8c54574a28a075c5e509e87a0dd64788b35dc4a01683138",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "review_assistance",
@@ -1229,7 +1229,7 @@
           "validation_status": "pass"
         },
         {
-          "canonical_task_sha256": "2e6cee53f1ee63129a85245c63cee8956d00d76f0aefab53ea14896e898832f7",
+          "canonical_task_sha256": "047a4ac77df6fcb29cafcc66bbf818c898221acaad9129abba09c04eaf80db27",
           "difficulty": "medium",
           "effective_scoreable": true,
           "effective_type": "review_assistance",
@@ -3005,6 +3005,14 @@
   },
   "telemetry_admission": {
     "auxiliary_item_policy": "B/C may use additional reads and shell commands as separate native items. They are ignored for query attribution.",
+    "locked_query_components": {
+      "conformance": "locked_query_conformance",
+      "endpoint": "locked_query_endpoint_fitness",
+      "options": "locked_query_option_fitness",
+      "overall": "locked_query_fitness",
+      "semantics": "Conformance is exact tuple agreement; fitness is continuous component-level Jaccard similarity.",
+      "target": "locked_query_target_fitness"
+    },
     "query": {
       "accepted_form": "\"$CODEMAP_BIN\" query --compact <subcommand> [arguments]",
       "item_scope": "dedicated native command item",
@@ -3021,6 +3029,7 @@
       "query output that is not one JSON document with complete compact index evidence",
       "exact-path or non-CODEMAP_BIN launcher forms"
     ],
+    "run_metadata_schema": "codex-structural-run-metadata-v2",
     "skill_read": {
       "accepted_readers": [
         "cat \"$CODEMAP_SKILL_FILE\""
@@ -3031,9 +3040,9 @@
       "ordering": "before the credited query item",
       "required_output": "exact manifest-locked codemap_query_skill bytes"
     },
-    "telemetry_contract_id": "canonical-skill-file-v1",
+    "telemetry_contract_id": "canonical-skill-file-locked-query-components-v2",
     "treatment_attribution": {
-      "B_direct_required": "at least one successful compact locked CLI query",
+      "B_direct_required": "at least one successful compact direct CLI query",
       "C_skill_required": "dedicated exact Skill read item before at least one successful canonical query item"
     }
   },
