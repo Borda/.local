@@ -184,6 +184,39 @@ def test_tag_arg_emitted_in_version_section(
 
 
 # ---------------------------------------------------------------------------
+# pip-audit missing-tool signal — Check 6 (see templates/audit-checks.md
+# "Check 6 interpretation" for the AskUserQuestion install-or-skip gate)
+# ---------------------------------------------------------------------------
+
+
+def test_pip_audit_missing_emits_greppable_signal_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``pip-audit`` absent from PATH → machine-readable signal line printed, exit still 0."""
+    monkeypatch.setattr(rac, "which", lambda cmd: None if cmd == "pip-audit" else "/fake/" + cmd)
+    monkeypatch.setattr(rac.subprocess, "run", _happy_dispatch())
+    monkeypatch.chdir(tmp_path)
+    rc = rac.main(["--range", "v1.0.0..HEAD"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert rac.PIP_AUDIT_MISSING_SIGNAL in out
+    assert "install with: pip install pip-audit" in out
+
+
+def test_pip_audit_present_does_not_emit_missing_signal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``pip-audit`` on PATH → missing-tool signal absent from output."""
+    monkeypatch.setattr(rac, "which", lambda cmd: "/fake/" + cmd)
+    monkeypatch.setattr(rac.subprocess, "run", _happy_dispatch())
+    monkeypatch.chdir(tmp_path)
+    rc = rac.main(["--range", "v1.0.0..HEAD"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert rac.PIP_AUDIT_MISSING_SIGNAL not in out
+
+
+# ---------------------------------------------------------------------------
 # _grep_version_files
 # ---------------------------------------------------------------------------
 

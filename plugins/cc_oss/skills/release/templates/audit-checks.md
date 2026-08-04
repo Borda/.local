@@ -46,6 +46,24 @@ Weight ratio = `new_feature_weight / mean(comparable_weights)`. Flag as **HIGH**
 
 All version declarations from the `version-consistency` section must match. `$TARGET` given → verify or flag needs bump.
 
+### Check 6 interpretation: pip-audit gap (after data is in `$AUDIT_OUT`)
+
+`run_audit_checks.py` stays non-interactive — when `pip-audit` is missing it prints its own machine-readable line (`pip-audit-status: not-installed`) instead of prompting. Check for it:
+
+```bash
+echo "$AUDIT_OUT" | grep -q '^pip-audit-status: not-installed' && PIP_AUDIT_MISSING=1 || PIP_AUDIT_MISSING=0
+```
+
+`PIP_AUDIT_MISSING=1` → invoke `AskUserQuestion`: "pip-audit not installed — CVE dependency scan will be skipped. Install now (`pip install pip-audit`) and rerun the scan?" Options: (a) Skip CVE check for this run (b) Install and rerun — Recommended.
+
+- **Install and rerun**: install, then re-run only the CVE step directly (no need to re-run the whole data-gathering script — gh/git checks already captured in `$AUDIT_OUT`):
+  ```bash
+  pip install pip-audit  # timeout: 90000
+  pip-audit --format=json | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse_audit_json.py"  # timeout: 30000
+  ```
+  Fill the Dependency CVEs row with the real `N deps, M vulns` result, same as any other successful scan.
+- **Skip**: Dependency CVEs row stays `⚠ pip-audit not installed — CVE scan skipped` — informational soft gap, same convention as Phase A.5's "target version unknown" case (see `modes/audit.md`): never added to the Findings summary table as its own finding, doesn't block `READY` by itself.
+
 ### Output
 
 Print readiness report:

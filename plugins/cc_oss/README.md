@@ -359,6 +359,7 @@ SemVer-disciplined release pipeline. Six modes: from generating notes to auditin
 /oss:release notes --summary                        # notes + internal summary
 /oss:release notes v1.2->v2.0 --migration           # notes + migration guide
 /oss:release notes --changelog --summary --migration  # all four outputs
+/oss:release notes --append                         # integrate newly-landed commits into existing artifacts
 /oss:release prepare v2.1.0                         # full pipeline: audit → all artifacts
 /oss:release audit                                  # readiness check before tagging
 /oss:release demo                                   # story-telling notebook for the release
@@ -369,15 +370,16 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 
 **Modes and flags:**
 
-| Mode / Flag   | What it produces                                                                                                                          |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `notes`       | Release notes (`DRAFT.md`); add flags for extra outputs                                                                                   |
-| `--changelog` | CHANGELOG.md entry (no shepherd review)                                                                                                   |
-| `--summary`   | Internal summary saved to `.temp/`                                                                                                        |
-| `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                                                                  |
-| `prepare`     | Full pipeline: audit → all four artifacts + `demo.py` in `releases/<version>/`                                                            |
-| `audit`       | Readiness checklist: tests green, changelog present, version bumped, no uncommitted changes, doc proportionality for newly added features |
-| `demo`        | Story-telling jupytext notebook (`demo.py`) highlighting most significant contributions                                                   |
+| Mode / Flag   | What it produces                                                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `notes`       | Release notes (`DRAFT.md`); add flags for extra outputs                                                                                    |
+| `--changelog` | CHANGELOG.md entry (no shepherd review)                                                                                                    |
+| `--summary`   | Internal summary saved to `.temp/`                                                                                                         |
+| `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                                                                   |
+| `--append`    | Rerun the full pipeline scoped to newly-landed commits; integrate results into existing artifacts instead of a full regenerate (see below) |
+| `prepare`     | Full pipeline: audit → all four artifacts + `demo.py` in `releases/<version>/`                                                             |
+| `audit`       | Readiness checklist: tests green, changelog present, version bumped, no uncommitted changes, doc proportionality for newly added features  |
+| `demo`        | Story-telling jupytext notebook (`demo.py`) highlighting most significant contributions                                                    |
 
 **What each mode does:**
 
@@ -420,6 +422,8 @@ Added → Breaking Changes → Changed → Deprecated → Removed → Fixed → 
 **Deprecation tracking:** Uses `pyDeprecate` for deprecation lifecycle. Migration guides include before/after table with argument mapping for all renamed/removed parameters.
 
 **Shepherd review** applies to release notes + migration guides. CHANGELOG entries + summaries written directly, no review.
+
+**`--append`:** assumes an earlier `notes` run already produced `DRAFT.md` (and, when their flags were used, `CHANGELOG.md`/`SUMMARY.md`/`MIGRATION.md`) and reruns the full pipeline — unchanged, Gather changes through Draft executive summary — scoped to only the commits landed since then, tracked via a per-branch marker at `.temp/release-last-processed-<branch>`. Results integrate into every existing artifact in place via Read + Edit tool (no parsing script): DRAFT.md's Summary/Spotlights/Migration-guide/Notable-changes/Contributors sections all merge (not overwrite); root-level `SUMMARY.md`/`MIGRATION.md` merge the same way when their flags are set, guarded by a mechanical byte-count collapse guard against an accidental whole-file wipe. Purely additive — *except* when this cycle detects a commit reverting or materially changing something a prior cycle already wrote (cross-cycle revert/pivot detection): that stale entry is struck or superseded, never left stale beside a contradicting new one. A genuine `git revert` is resolved deterministically against a per-branch patch-id-keyed provenance store (`.temp/release-provenance-<branch>.json`, recording which commit's diff-content wrote which exact bullet — keyed on `git patch-id --stable` rather than raw commit sha, so a reword, rebase, or cherry-pick of the original commit since it was recorded doesn't defeat the lookup); a pivot (no literal revert commit) still relies on grep-narrowed semantic judgment. **After merge**, a post-merge re-validation pass re-runs Truth check, Identify highlights re-ranking, Validate migration docs, and Validate docs against the final merged content (not just this cycle's incremental diff) — catches prior-cycle content gone stale from this cycle's changes without a clean detected revert/pivot (e.g. a spotlight built on a commit a later cycle reverts gets replaced, not left beside the new set). No marker found (first use, or history rewritten by rebase/force-push) → falls back to the default `$LAST_TAG..HEAD` range and a full overwrite — identical to plain `notes` — establishing the baseline for the next `--append` run. Every successful `notes`-mode write refreshes the marker to current `HEAD`.
 
 **Output location:** `releases/<version>/` for `prepare` mode (including `demo.py` when version tag stable); `.temp/` for individual modes and demo on non-release branches.
 

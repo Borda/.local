@@ -14,6 +14,12 @@ Defaults:
     range = $LAST_TAG..HEAD where LAST_TAG falls back to last stable tag
             or the initial commit when no tags exist.
 
+Missing pip-audit:
+    Stays non-interactive — emits ``PIP_AUDIT_MISSING_SIGNAL`` as its own
+    output line instead of prompting. Caller (templates/audit-checks.md
+    "Check 6 interpretation") greps for it and offers an install-and-rerun
+    path via AskUserQuestion.
+
 Exit codes:
     0 — all data-gathering checks ran (warnings on optional/missing tools)
     1 — bad args
@@ -46,6 +52,11 @@ _EXCLUDE_TAG_FLAGS: tuple[str, ...] = (
 )
 _MAX_VERSION_LINES = 15
 _MAX_SIGNAL_LINES = 10
+# Machine-readable line the caller greps for to detect the missing-tool gap and
+# offer an install-and-rerun path — this script stays non-interactive, so the
+# banner is the only signal available to the skill-level AskUserQuestion gate
+# (see templates/audit-checks.md "Check 6 interpretation").
+PIP_AUDIT_MISSING_SIGNAL = "pip-audit-status: not-installed"
 
 
 def _resolve(cmd: str) -> str:
@@ -371,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("pip-audit ran but JSON parsing failed")
     else:
+        print(PIP_AUDIT_MISSING_SIGNAL)
         print("pip-audit not installed — CVE scan skipped; install with: pip install pip-audit")
 
     print("--- check: end ---")

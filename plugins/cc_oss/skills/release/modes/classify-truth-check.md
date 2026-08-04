@@ -4,7 +4,11 @@
 
 **Net-state principle**: classify only HEAD state, not development journey. Feature added then removed within range = net effect zero — omit.
 
+**Cross-cycle extension** (`--append` only): the Net-state principle above applies within `$RANGE`; Gather changes' "Cross-cycle revert/pivot detection" extends it *across* append cycles — a revert or symbol pivot that supersedes a bullet a PRIOR cycle already wrote into `DRAFT.md`/`$CHANGELOG_FILE` nets to a removal of that stale entry, not an additive one. See Gather changes for the detection rule; classify each in-scope item against `CROSS_CYCLE_MATCH` before finalizing this table.
+
 **PR accumulation**: list ALL contributing PR numbers for net-surviving entry. **Same category only** — two PRs merge under one bullet only when both classify into SAME section. Later PR fixing bug in same-range feature = own 🔧 Fixed entry. **Trivial-fix exception**: fix or doc tweak with no standalone user-visible effect folds into parent Added bullet. When in doubt: separate entries safer
+
+**SHA tracking (for provenance)**: alongside PR numbers, also retain the full 40-char commit sha(s) contributing to each net-surviving entry — already visible in context from Gather changes' `git log $RANGE --no-merges --format="--- %H%n%B"` output. Needed downstream by the Provenance record step (`release-draft-template.md` "Post-write bookkeeping"), which derives each sha's content-stable `git patch-id --stable` for the actual store key — a bullet folding N squashed commits keeps all N shas, each mapped to that one bullet's final text once written.
 
 Section order (fixed): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed → 🗑️ Deprecated → ❌ Removed → 🔧 Fixed → 🔒 Security → 🔄 Reverted
 

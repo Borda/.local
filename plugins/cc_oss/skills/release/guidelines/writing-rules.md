@@ -29,11 +29,11 @@ Bad/good examples:
 - **NEVER guess or hallucinate real name.** Wrong name in public release notes = serious error. When in doubt, omit name entirely.
 - **Name lookup protocol** — run for every human contributor @handle before writing entry:
   1. `gh api /users/<handle> --jq '.name'` — if non-null and non-empty, use as real name (high confidence)
-  2. Look up LinkedIn from GitHub profile: `gh api /users/<handle> --jq '.blog'` — if result is `linkedin.com/in/` URL, use directly. If blog field not LinkedIn, spawn `foundry:web-explorer` to fetch `https://github.com/<handle>` and extract any `linkedin.com/in/` URL from profile bio or Social accounts section. Use only URLs directly found on their GitHub profile — never search by name, never construct or guess from handle or name.
-  3. If still uncertain or foundry plugin unavailable: use `@handle` only — no name field
+  2. LinkedIn is already resolved by the **Extract contributors** phase (SKILL.md — ordered grounding chain: GitHub Social Accounts API → `.blog` field → personal-page scan → past-releases reuse; never by name at any step) — reuse the value carried in `$CONTRIBUTORS_FILE` verbatim, don't re-look-up or re-derive it here
+  3. If name still uncertain: use `@handle` only — no name field
 - Format when name confirmed: `* **Full Name** (@handle) ([LinkedIn](url)) – *noun phrase*`
 - Format when name not confirmed: `* @handle – *noun phrase*`
-- LinkedIn optional — include only if found via lookup; never construct URL by guessing
+- LinkedIn optional — include only when already resolved by Extract contributors; never construct URL by guessing, never re-look-up here
 - New contributors get welcome sentence above list
 - Maintainer always listed last with infra / CI / docs scope
 - Precede Contributors section with `---` separator
