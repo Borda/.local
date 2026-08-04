@@ -4685,9 +4685,31 @@ def _add_global_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+class _ScanQueryArgumentParser(argparse.ArgumentParser):
+    """Preserve argparse failures while guiding common invalid scan-query commands."""
+
+    def error(self, message: str) -> None:
+        """Append one explicit migration hint to a known invalid subcommand error."""
+        match = re.match(r"argument command: invalid choice: '([^']+)'", message)
+        suggestion = ""
+        if match:
+            command = match.group(1)
+            if command == "search":
+                suggestion = "use 'find-symbol' to search symbols."
+            elif command in {"callers", "find-references"}:
+                suggestion = "use 'fn-rdeps' for function callers."
+            elif command == "imports":
+                suggestion = "use 'rdeps' for importers or 'deps' for imports."
+            elif command == "help":
+                suggestion = "use '--help' to list commands."
+        if suggestion:
+            message = f"{message}\n\nHint: {suggestion}"
+        super().error(message)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the scan-query argument parser: every subcommand plus the shared global flags."""
-    parser = argparse.ArgumentParser(
+    parser = _ScanQueryArgumentParser(
         description="Query the codemap structural index.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

@@ -3589,3 +3589,47 @@ class TestArgvHardening:
         rc, data = self._run_raw(scan_query, root, index_path, "fn-rdeps", "gamma::nope")
         assert rc == 1
         assert "find-symbol" in data["error"]
+
+
+class TestInvalidCommandSuggestions:
+    """Unknown public CLI commands receive only their explicit migration hint."""
+
+    @pytest.mark.parametrize(
+        ("command", "hint"),
+        [
+            pytest.param("search", "Hint: use 'find-symbol' to search symbols.", id="search"),
+            pytest.param("callers", "Hint: use 'fn-rdeps' for function callers.", id="callers"),
+            pytest.param("find-references", "Hint: use 'fn-rdeps' for function callers.", id="find-references"),
+            pytest.param(
+                "imports",
+                "Hint: use 'rdeps' for importers or 'deps' for imports.",
+                id="imports",
+            ),
+            pytest.param("help", "Hint: use '--help' to list commands.", id="help"),
+        ],
+    )
+    def test_known_invalid_command_gets_actionable_hint(self, project, scan_query, command, hint):
+        """Each observed invalid command exits normally while naming its canonical replacement."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), command],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+
+        assert result.returncode == 2
+        assert hint in result.stderr
+
+    def test_unrelated_invalid_command_does_not_get_a_false_hint(self, project, scan_query):
+        """Only observed invalid command names receive migration guidance."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "not-a-command"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+
+        assert result.returncode == 2
+        assert "Hint:" not in result.stderr

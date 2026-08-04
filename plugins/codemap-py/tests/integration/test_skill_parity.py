@@ -34,6 +34,7 @@ _SKILL_REF_RE = re.compile(r"[/$]codemap-py:([a-z][a-z-]*)")
 # Query routing is a product contract, not merely documentation style.  Both
 # surfaces must steer the model to the same supported high-leverage command.
 _QUERY_CODE_REQUIRED_SNIPPETS = (
+    "production module importers / blast radius | `rdeps <module> --exclude-tests`",
     "production centrality / highest in-degree | `central --top n --exclude-tests`",
     "internal-import coupling (not centrality)",
     "direct production callers | `fn-rdeps <module::symbol> --exclude-tests`",
@@ -54,6 +55,15 @@ _DIRECT_TEST_IMPORT_ROUTING_SNIPPETS = (
     "`rdeps <module>`",
     "filter/report test modules",
     "reserve `test-impact <target>` for transitive affected-test selection",
+)
+_SYMBOL_TARGET_GRAMMAR_SNIPPETS = (
+    "`symbol <name>` accepts a bare function name",
+    "`authenticate`",
+    "`myclass.method`",
+    "`module::symbol` belongs to `fn-*` call-graph queries",
+    "query the requested qualified extension method",
+    "`symbol myclass.add_feature`",
+    "not a nearby `symbol myclass` or `symbols <module>` listing",
 )
 
 
@@ -265,3 +275,12 @@ def test_query_code_routes_direct_test_importers_to_module_rdeps(contract_path: 
     skill_text = " ".join(contract_path.read_text(encoding="utf-8").lower().split())
 
     assert all(snippet in skill_text for snippet in _DIRECT_TEST_IMPORT_ROUTING_SNIPPETS)
+
+
+@pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
+def test_query_code_preserves_symbol_target_grammar_for_feature_scaffolding(runtime_dir: Path) -> None:
+    """Feature scaffolding queries the named method, not a nearby class or module inventory."""
+    skill_path = runtime_dir / "query-code" / "SKILL.md"
+    skill_text = " ".join(skill_path.read_text(encoding="utf-8").lower().split())
+
+    assert all(snippet in skill_text for snippet in _SYMBOL_TARGET_GRAMMAR_SNIPPETS)

@@ -29,7 +29,7 @@ Direction matters: "affected if X changes" means reverse dependencies.
 
 | Goal | Query subcommand |
 | --- | --- |
-| module importers / blast radius | `rdeps <module> [--exclude-tests]` |
+| production module importers / blast radius | `rdeps <module> --exclude-tests` |
 | direct test-module importers | `rdeps <module>` then filter/report test modules |
 | module imports | `deps <module>` |
 | shortest import chain | `path <from> <to>` |
@@ -49,6 +49,13 @@ Direction matters: "affected if X changes" means reverse dependencies.
 For caller requests, use `fn-rdeps <module::symbol> --exclude-tests` for direct, every, all, production, and blast-radius wording; use `fn-blast <module::symbol>` only when the user explicitly asks for transitive callers, closure, hops, or all levels.
 
 For requests for test modules that directly import a module, use `rdeps <module>` and filter/report test modules; reserve `test-impact <target>` for transitive affected-test selection.
+
+`symbol <name>` accepts a bare function name such as `authenticate` or a
+qualified class method such as `MyClass.method`; `module::symbol` belongs to
+`fn-*` call-graph queries. For feature scaffolding, query the requested
+qualified extension method (for example, `symbol MyClass.add_feature`), not a
+nearby `symbol MyClass` or `symbols <module>` listing unless the user requests
+that broader scope.
 
 Use `codemap-py query --help` only when needed.
 
