@@ -1,0 +1,191 @@
+{
+  "admission": {
+    "authorization": "caller must supply the exact reviewed machine-manifest SHA-256 as CODEX_AGENTIC_PAID_APPROVAL",
+    "credentials": "no credential material, auth source, or credential path is part of this manifest",
+    "paid_execution": "admitted",
+    "required_before_paid_execution": [
+      "Run --dry-run and verify the deterministic 9-cell plan.",
+      "Validate target commit/tree and frozen index bytes without model or credentials.",
+      "Validate A/B/C isolation and C Skill-before-query evidence without model or credentials.",
+      "Caller supplies CODEX_AGENTIC_PAID_APPROVAL equal to the exact reviewed machine-manifest SHA-256."
+    ],
+    "status": "review-ready; no model or auth used; human execution pending"
+  },
+  "arms": {
+    "A_plain": {
+      "codemap_available": false,
+      "pooling": "eligible only when all other admission checks pass",
+      "requirement": "No Codemap package, launcher, or Skill is available; no Codemap call is valid."
+    },
+    "B_auto": {
+      "codemap_available": true,
+      "no_call_valid": true,
+      "pooling": "eligible only when all other admission checks pass",
+      "requirement": "Codemap is available through the plain CLI; use is optional and adoption is measured."
+    },
+    "C_required": {
+      "codemap_available": true,
+      "no_call_valid": false,
+      "pooling": "ineligible when the required Skill read or successful query is absent",
+      "requirement": "Read the exact installed Skill before a successful compact query.",
+      "row_retained_on_noncompliance": true,
+      "skill_path": "plugins/codemap-py/codex-skills/query-code/SKILL.md"
+    }
+  },
+  "artifact_package": {
+    "required_files": [
+      "run.log",
+      "telemetry.jsonl (raw)",
+      "telemetry-canonical.jsonl",
+      "run-metadata.json",
+      "inputs/ (frozen input snapshot)",
+      "checksums.sha256"
+    ],
+    "stop_behavior": "Stop on the first runtime or admission-integrity failure or complete-run wall-clock exhaustion; do not stop on an ordinary model, task, or treatment-nonadherence row; preserve every partial artifact and never pool partial or nonpoolable evidence."
+  },
+  "artifact_sha256": {
+    "claude_agentic_runner": "8a6cc8d1f3204b4dc8c076c0ddd3fea2a737413c4743640a785ed307451fa1a8",
+    "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
+    "codemap_plugin_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
+    "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
+    "codex_agentic_runner": "77163512c00183465754537669da157d87b5b04226c579bd78b1c31c1a679532",
+    "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
+    "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
+    "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
+    "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
+    "codex_structural_manifest": "0809a7f087eb3c2343048f848615690b704a79323fc919f3a4b5ec8b897a72be",
+    "codex_structural_runner": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465",
+    "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995"
+  },
+  "experiment_id": "codex-agentic-ba01",
+  "experiment_revision": "codex-agentic-ba01-review-ready-2026-08-04",
+  "frozen_index_contract": {
+    "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
+    "module_count": 645,
+    "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
+    "raw_sha256": "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb",
+    "scan_version": 12
+  },
+  "model": {
+    "name": "gpt-5.6-luna",
+    "reasoning_effort": "high",
+    "strict_config": true
+  },
+  "plugin_runtime": {
+    "codemap_version": "0.28.3",
+    "codex_rig_version": "0.4.1",
+    "source_hashes": {
+      "claude_agentic_runner": "8a6cc8d1f3204b4dc8c076c0ddd3fea2a737413c4743640a785ed307451fa1a8",
+      "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
+      "codemap_plugin_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
+      "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
+      "codex_agentic_runner": "77163512c00183465754537669da157d87b5b04226c579bd78b1c31c1a679532",
+      "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
+      "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
+      "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
+      "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
+      "codex_structural_manifest": "0809a7f087eb3c2343048f848615690b704a79323fc919f3a4b5ec8b897a72be",
+      "codex_structural_runner": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465",
+      "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995"
+    }
+  },
+  "preregistered_scope": {
+    "arm_order": "deterministic lexical arm order within each repetition",
+    "arms": [
+      "A_plain",
+      "B_auto",
+      "C_required"
+    ],
+    "complete_run_max_wall_clock_seconds": 5400,
+    "coordinate_timeout_seconds": 600,
+    "nonpoolable": true,
+    "pooling_eligibility": "ineligible; exploratory evidence only",
+    "providers": [
+      "codex"
+    ],
+    "repetitions": 3,
+    "task_ids": [
+      "BA-01"
+    ],
+    "total_cells": 9
+  },
+  "runner": "benchmarks/run-codex-agentic.py",
+  "runtime_isolation": {
+    "adapter": "benchmarks/run-codex-structural.py",
+    "manifest": "benchmarks/manifests/codex-integration.json",
+    "mapping": {
+      "A_plain": "A_plain",
+      "B_auto": "B_direct_required capability home; use remains optional",
+      "C_required": "C_skill_required"
+    }
+  },
+  "schema_version": "codex-agentic-manifest-v1",
+  "scoring": {
+    "implementation": {
+      "path": "benchmarks/run-claude-agentic.py",
+      "sha256": "8a6cc8d1f3204b4dc8c076c0ddd3fea2a737413c4743640a785ed307451fa1a8",
+      "symbol": "GroundTruth.score"
+    },
+    "metrics": {
+      "DEFF": "erec_tp / max(tool_calls, 1)",
+      "E@10": "top10_tp / max(len(top10), 1)",
+      "EREC": "erec_tp / max(len(expected), 1)",
+      "RREC": "rrec_tp / max(len(expected), 1)"
+    },
+    "provider": "claude_ground_truth_reused",
+    "quality_score": "shared GroundTruth score over the agent's final answer and exposure corpus"
+  },
+  "source_manifest": {
+    "path": "benchmarks/manifests/provider-parity-methodology.json",
+    "sha256": "9738d21d607bbe16551a61e49a9ae82b586b7fc7fd29914f589486f260471054"
+  },
+  "status": "review_ready_paid_execution_pending_human_launch",
+  "suite": {
+    "path": "benchmarks/suites/tasks-agentic.json",
+    "raw_sha256": "97e762235b57cd819ca5710052ab34426f96141c50b65717e58467a08dc503e9",
+    "semantic_suite_sha256": "aada43c540502967c05599f87e34cbe306c2248fc02688c0f4f382dbe17906ab",
+    "task_count": 16,
+    "task_ids": [
+      "BA-01",
+      "BA-02",
+      "BA-03",
+      "BA-04",
+      "BA-05",
+      "BA-06",
+      "BA-07",
+      "BA-08",
+      "BA-09",
+      "BA-10",
+      "BA-11",
+      "BA-12",
+      "BA-13",
+      "BA-14",
+      "BA-15",
+      "BA-16"
+    ]
+  },
+  "target_source": {
+    "archive_contract": "git archive --format=tar refs/tags/2.6.5",
+    "archive_sha256": "e4e823ea8f06ec8c179e4915b02cdc358257789603f75fe421a023313941fdb5",
+    "commit": "be98784a1a03581b7051a355ae1084fd352d7cea",
+    "materialization_contract": "materialize the clean tracked tree for refs/tags/2.6.5; reject every other commit or dirty target",
+    "repository": "https://github.com/Lightning-AI/pytorch-lightning",
+    "tag": "2.6.5",
+    "tag_ref": "refs/tags/2.6.5",
+    "tree": "812e327b141dd04a4ce25fe2f62c8acd111c7a8c",
+    "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
+    "validation_worktree_clean": true
+  },
+  "task": {
+    "canonical_task_sha256": "81593f20e4ba763226145cb9e3d56414c9f341f87086bbd551ea5375a542143f",
+    "difficulty": "simple",
+    "effective_scoreable": true,
+    "headline_eligible_v1": false,
+    "id": "BA-01",
+    "oracle_class": "independent",
+    "primary_module": "lightning.pytorch.callbacks.timer",
+    "prompt": "The `Timer` callback in `lightning.pytorch.callbacks.timer` has a bug: when `duration` is expressed as a `timedelta`, it is compared against wall-clock seconds as if it were already a float, causing premature training stops on long runs.\n\nBefore touching the module, map the blast radius:\n1. Which modules directly import `lightning.pytorch.callbacks.timer`? List every one by full dotted name.\n2. For each direct importer, state how many other modules import it in turn \u2014 this is the second-order exposure.\n3. Identify the single importer with the highest second-order exposure; it carries the most amplified risk.\n\nProduce the direct-importer list with second-order counts and name the top-risk importer. Do not implement the fix.",
+    "prompt_sha256": "6f184b152622b43506fc561cbc080a0fbc8093c1b475c7c3664f26a0be086479",
+    "type": "blast_radius_analysis"
+  }
+}

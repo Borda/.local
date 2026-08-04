@@ -465,6 +465,71 @@ def test_coordination_root_is_exact_safe_and_cleanup_keeps_the_locked_index(
     assert index_path.read_text(encoding="utf-8") == "locked"
 
 
+def test_coordination_root_cleanup_rejects_an_already_removed_root(script_run_codex: Any, tmp_path: Path) -> None:
+    """A missing coordination root remains an explicit lifecycle error."""
+    index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("locked", encoding="utf-8")
+    coordination_root = script_run_codex._prepare_coordination_root(index_path)
+
+    script_run_codex._cleanup_coordination_root(coordination_root)
+
+    with pytest.raises(ValueError, match="coordination root is unavailable"):
+        script_run_codex._cleanup_coordination_root(coordination_root)
+
+
+def test_structural_snapshot_cleans_a_shared_treatment_coordination_root_once(
+    script_run_codex: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """B/C snapshot homes release their common index-local root only once."""
+    events: list[str] = []
+    shared_root = tmp_path / ".index-rw"
+    live_roots = {shared_root}
+
+    class Home:
+        """Minimal snapshot home with the B/C shared coordination path."""
+
+        codemap_plugin_path = tmp_path / "codemap"
+        codex_rig_path = tmp_path / "codex-rig"
+        codemap_context_path = None
+
+        def __init__(self, arm: str) -> None:
+            self.arm = arm
+            self.path = tmp_path / arm
+            self.coordination_path = shared_root if arm != "A_plain" else None
+
+        def cleanup(self) -> None:
+            events.append(f"home:{self.arm}")
+
+    def cleanup(path: Path) -> None:
+        events.append(f"coordination:{path.name}")
+        if path not in live_roots:
+            raise ValueError("Codemap coordination root is unavailable")
+        live_roots.remove(path)
+
+    runner = object.__new__(script_run_codex.CodexRunner)
+    runner.index_path = tmp_path / "index.json"
+    runner.auth_source = None
+    monkeypatch.setattr(runner, "_prepare_verified_home", lambda arm: Home(arm))
+    monkeypatch.setattr(runner, "_preflight_expected_queries", lambda *_args: None)
+    monkeypatch.setattr(script_run_codex, "_write_input_snapshot", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", cleanup)
+
+    assert runner.create_input_snapshot(
+        tmp_path / "run",
+        tasks_path=SUITE_PATH,
+        manifest_path=MANIFEST_PATH,
+        tasks=[],
+        arms=["A_plain", "B_direct_required", "C_skill_required"],
+    ) == {"ok": True}
+    assert events == [
+        "home:A_plain",
+        "coordination:.index-rw",
+        "home:B_direct_required",
+        "home:C_skill_required",
+    ]
+
+
 @pytest.mark.parametrize("unsafe_entry", ["coord-symlink", "readers-symlink"], ids=["coord", "readers"])
 def test_coordination_root_rejects_symlinks_and_cannot_escape_its_index_directory(
     script_run_codex: Any, tmp_path: Path, unsafe_entry: str
@@ -698,6 +763,36 @@ def test_parse_codex_jsonl_preserves_agent_message_boundaries(script_run_codex: 
     parsed = script_run_codex.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
 
     assert parsed.output_text == "Checked the repository.\n## Callers\npkg.mod::caller"
+
+
+def test_parse_codex_jsonl_records_text_boundary_after_last_command(script_run_codex: Any) -> None:
+    """Agentic report scoring can exclude exploratory prose before the last tool."""
+    events = [
+        {
+            "type": "item.completed",
+            "item": {"id": "progress", "type": "agent_message", "text": "Candidate: pkg.first."},
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "query",
+                "type": "command_execution",
+                "command": '"$CODEMAP_BIN" query --compact rdeps pkg.target',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {"id": "answer", "type": "agent_message", "text": "Final: pkg.second."},
+        },
+        {"type": "turn.completed", "status": "completed"},
+    ]
+
+    parsed = script_run_codex.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
+
+    assert parsed.output_text[parsed.last_tool_text_offset :].lstrip("\n") == "Final: pkg.second."
 
 
 def _completed_stream(
@@ -3017,6 +3112,8 @@ def _render_result_stream(input_text: str, *args: str) -> subprocess.CompletedPr
         pytest.param("A_plain", "33", id="plain-yellow"),
         pytest.param("B_direct_required", "36", id="direct-cyan"),
         pytest.param("C_skill_required", "35", id="skill-magenta"),
+        pytest.param("B_auto", "36", id="agentic-auto-cyan"),
+        pytest.param("C_required", "35", id="agentic-required-magenta"),
     ],
 )
 def test_render_results_force_color_maps_each_arm_to_its_review_color(arm: str, color_code: str) -> None:
@@ -3498,6 +3595,22 @@ def test_codex_arm_envelopes_define_plain_cli_and_skill_treatments(script_run_co
             '{"index":{"query_complete":true,"compact":true}}',
             True,
             id="canonical-native-item",
+        ),
+        pytest.param(
+            "\"$CODEMAP_BIN\" query --compact find-symbol '^is_overridden$' --exclude-tests",
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            True,
+            id="single-quoted-literal-dollar-anchor",
+        ),
+        pytest.param(
+            '"$CODEMAP_BIN" query --compact find-symbol "$PATTERN" --exclude-tests',
+            "completed",
+            0,
+            '{"index":{"query_complete":true,"compact":true}}',
+            False,
+            id="double-quoted-query-expansion",
         ),
         pytest.param(
             "$CODEMAP_BIN query --compact fn-rdeps pkg.core",

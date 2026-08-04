@@ -19,6 +19,8 @@ SCRIPT = BENCHMARKS_DIR / "run-all.sh"
 LEGACY_SCRIPT = BENCHMARKS_DIR / "run-all-claude.sh"
 ACTIVE_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 ACTIVE_MANIFEST_SHA = hashlib.sha256(ACTIVE_MANIFEST.read_bytes()).hexdigest()
+AGENTIC_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-agentic.json"
+AGENTIC_MANIFEST_SHA = hashlib.sha256(AGENTIC_MANIFEST.read_bytes()).hexdigest()
 ACTIVE_MANIFEST_DATA = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))
 LOCKED_INDEX_SHA = ACTIVE_MANIFEST_DATA["index"]["raw_sha256"]
 LOCKED_INDEX_SCAN_VERSION = ACTIVE_MANIFEST_DATA["index"]["scan_version"]
@@ -85,6 +87,12 @@ if [[ "$*" == *"build-codex-integration-manifest.py"* && "$*" == *"--check"* ]];
     exit 47
   fi
 fi
+if [[ "$*" == *"build-codex-agentic-manifest.py"* && "$*" == *"--check"* ]]; then
+  if [ -n "${{FAIL_AGENTIC_MANIFEST_CHECK:-}}" ]; then
+    printf "stale generated Codex agentic manifest\\n" >&2
+    exit 48
+  fi
+fi
 if [ -n "${{FAIL_WHEN_ARGS_CONTAIN:-}}" ] && [[ "$*" == *"$FAIL_WHEN_ARGS_CONTAIN"* ]]; then
   exit 41
 fi
@@ -100,13 +108,28 @@ fi
 if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PLAN    FN-02  rep=1  A_plain\\n"
 fi
-if [[ "$*" == *"--auth-source"* ]]; then
-  printf "raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
-  printf "canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
+if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--dry-run"* ]]; then
+  printf "PROBE   A_plain    codemap=false skill-required=false\\n"
+  printf "PLAN    BA-01  rep=1  A_plain\\n"
+fi
+if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--auth-source"* ]]; then
+  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_required=Codemap Skill read plus compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / 9 planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
+  printf "agentic raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
+  printf "agentic canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
   printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
-  printf "PLAN    FN-02  rep=1  A_plain\\n"
-  printf "RESULT  completed  FN-02  rep=1  A_plain  in=1  out=1  time=1s  quality=1.0  compliance:✓\\n"
-  printf "ARTIFACTS  telemetry=%s/telemetry.jsonl  metadata=%s/run-metadata.json\\n" "$CODEX_RUN_DIR" "$CODEX_RUN_DIR"
+  printf "agentic checksums\\n" > "$CODEX_RUN_DIR/checksums.sha256"
+  printf "SUMMARY  status=completed  persisted_cells=9/9\\n" > "$CODEX_RUN_DIR/run.log"
+  printf "SUMMARY  status=completed  persisted_cells=9/9\\n"
+fi
+if [[ "$*" == *"--auth-source"* ]]; then
+  if [[ "$*" != *"run-codex-agentic.py"* ]]; then
+    printf "raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
+    printf "canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
+    printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
+    printf "PLAN    FN-02  rep=1  A_plain\\n"
+    printf "RESULT  completed  FN-02  rep=1  A_plain  in=1  out=1  time=1s  quality=1.0  compliance:✓\\n"
+    printf "ARTIFACTS  telemetry=%s/telemetry.jsonl  metadata=%s/run-metadata.json\\n" "$CODEX_RUN_DIR" "$CODEX_RUN_DIR"
+  fi
 fi""",
     )
     _write_executable(bin_dir / "codex", 'printf "codex-cli 0.146.0\\n"')
@@ -116,6 +139,8 @@ fi""",
   printf "{LOCKED_INDEX_SHA}  %s\\n" "$3"
 elif [ "$3" = "{ACTIVE_MANIFEST}" ]; then
   printf "{ACTIVE_MANIFEST_SHA}  %s\\n" "$3"
+elif [ "$3" = "{AGENTIC_MANIFEST}" ]; then
+  printf "{AGENTIC_MANIFEST_SHA}  %s\\n" "$3"
 elif [[ "$3" == "$CODEX_RUN_DIR/"* ]]; then
   exec /usr/bin/shasum -a 256 "$3"
 else
@@ -246,6 +271,170 @@ def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Pat
     assert all("--render-results" not in line for line in codex_calls)
     assert "PLAN " in completed.stdout
     assert "165 cells" in completed.stdout
+
+
+def test_codex_agentic_dry_run_dispatches_only_the_fixed_first_slice(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The agentic entrypoint exposes BA-01's locked no-model plan without paid state."""
+    env, call_log = batch_env
+    for name in (
+        "CODEX_AGENTIC_PAID_APPROVAL",
+        "CODEX_AUTH_SOURCE",
+        "CODEX_RUN_DIR",
+        "CODEX_MAX_WALL_CLOCK_SECONDS",
+    ):
+        env.pop(name, None)
+
+    completed = _run_batch("codex", env, "--agentic", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    agentic_call = next(line for line in calls if "run-codex-agentic.py" in line)
+    assert f"--manifest-path {AGENTIC_MANIFEST}" in agentic_call
+    assert "--task-id BA-01" in agentic_call
+    assert "--repetitions 3" in agentic_call
+    assert "--dry-run" in agentic_call
+    assert "--auth-source" not in agentic_call
+    assert "--output-path" not in agentic_call
+    assert "--metadata-path" not in agentic_call
+    assert "run-codex-structural.py" not in "\n".join(calls)
+    assert "PROBE   A_plain" in completed.stdout
+    assert "PLAN    BA-01" in completed.stdout
+    assert not Path(env.get("CODEX_RUN_DIR", "unused")).exists()
+
+
+@pytest.mark.parametrize(
+    ("missing", "expected_error"),
+    [
+        ("approval", "CODEX_AGENTIC_PAID_APPROVAL"),
+        ("auth", "CODEX_AUTH_SOURCE"),
+        ("run-dir", "CODEX_RUN_DIR"),
+        ("wall-clock", "CODEX_MAX_WALL_CLOCK_SECONDS"),
+    ],
+    ids=["missing-approval", "missing-auth", "missing-run-dir", "missing-wall-clock"],
+)
+def test_codex_agentic_rejects_missing_paid_inputs_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+    missing: str,
+    expected_error: str,
+) -> None:
+    """Every required paid input fails before setup, auth access, or model dispatch."""
+    env, call_log = batch_env
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env.pop(
+        {
+            "approval": "CODEX_AGENTIC_PAID_APPROVAL",
+            "auth": "CODEX_AUTH_SOURCE",
+            "run-dir": "CODEX_RUN_DIR",
+            "wall-clock": "CODEX_MAX_WALL_CLOCK_SECONDS",
+        }[missing]
+    )
+
+    completed = _run_batch("codex", env, "--agentic")
+
+    assert completed.returncode == 2
+    assert expected_error in completed.stderr
+    assert "bash benchmarks/run-all.sh codex --agentic --dry-run" in completed.stderr
+    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert "CODEX_AUTH_SOURCE=" in completed.stderr
+    assert "CODEX_RUN_DIR=" in completed.stderr
+    assert "CODEX_MAX_WALL_CLOCK_SECONDS=5400" in completed.stderr
+    assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
+    assert not call_log.exists()
+
+
+def test_codex_agentic_rejects_reused_run_directory_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Agentic evidence cannot overwrite an earlier paid run directory."""
+    env, call_log = batch_env
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = "5400"
+    Path(env["CODEX_RUN_DIR"]).mkdir()
+
+    completed = _run_batch("codex", env, "--agentic")
+
+    assert completed.returncode == 2
+    assert "CODEX_RUN_DIR already exists" in completed.stderr
+    assert not call_log.exists()
+
+
+def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The paid first slice passes only the admitted manifest-bound controls."""
+    env, call_log = batch_env
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = "5400"
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-run"))
+
+    completed = _run_batch("codex", env, "--agentic")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    paid_call = next(line for line in calls if "run-codex-agentic.py" in line and "--auth-source" in line)
+    launcher_snapshot = Path(env["CODEX_RUN_DIR"]) / ".launcher" / "run-all.sh"
+    for flag, value in (
+        ("--repo-path", env["REPO"]),
+        ("--index-path", f"{env['REPO']}/.cache/codemap/target.json"),
+        ("--marketplace-root", str(BENCHMARKS_DIR.parent)),
+        ("--codemap-bin", env["CODEMAP_BIN"]),
+        ("--manifest-path", str(AGENTIC_MANIFEST)),
+        ("--auth-source", env["CODEX_AUTH_SOURCE"]),
+        ("--invocation-launcher-path", str(launcher_snapshot)),
+        ("--run-dir", env["CODEX_RUN_DIR"]),
+        ("--paid-approval", AGENTIC_MANIFEST_SHA),
+        ("--max-wall-clock-seconds", "5400"),
+    ):
+        assert f"{flag} {value}" in paid_call
+    assert "--dry-run" not in paid_call
+    assert "run-codex-structural.py" not in paid_call
+    assert launcher_snapshot.read_bytes() == SCRIPT.read_bytes()
+    run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
+    assert "\x1b[" not in run_log
+    assert run_log.count("END LEGEND") == 1
+    assert sum(line == "LEGEND" for line in run_log.splitlines()) == 1
+    assert "SUMMARY  status=completed  persisted_cells=9/9" in run_log
+    assert (Path(env["CODEX_RUN_DIR"]) / "checksums.sha256").is_file()
+    assert "== CODEX AGENTIC BA-01 A/B/C STUDY ==" in completed.stdout
+    assert sum(line == "LEGEND" for line in completed.stdout.splitlines()) == 1
+    assert sum(line == "END LEGEND" for line in completed.stdout.splitlines()) == 1
+    assert "PLAN " not in completed.stdout
+
+
+def test_paid_codex_agentic_tty_output_uses_shared_renderer(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Interactive agentic runs show one colored shared legend, not raw plan output."""
+    env, _ = batch_env
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = "5400"
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-tty-run"))
+
+    completed = _run_batch_tty("codex", env, "--agentic")
+
+    assert completed.returncode == 0, completed.stdout
+    assert "Legend" in completed.stdout
+    assert "End legend" in completed.stdout
+    assert "\x1b[" in completed.stdout
+    assert "PLAN " not in completed.stdout
+    run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
+    assert "\x1b[" not in run_log
+    assert run_log.count("END LEGEND") == 1
+
+
+def test_codex_agentic_rejects_task_selection_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The fixed BA-01 slice cannot silently become a selected structural run."""
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--agentic", "--tasks=DI")
+
+    assert completed.returncode == 2
+    assert "cannot be combined with --tasks" in completed.stderr
+    assert not call_log.exists()
 
 
 def test_codex_tasks_dry_run_dispatches_resolved_scope(

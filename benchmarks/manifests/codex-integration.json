@@ -33,8 +33,8 @@
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-    "run_all": "ff7b7e28ae97e667ee148420fa2799f04c4897fa754b405b4951b3cdcd32aded",
-    "run_codex_structural": "e21e9baa096389a6590cb9e116385885efda28e58c8fab76f0e520723edba806"
+    "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995",
+    "run_codex_structural": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465"
   },
   "codemap_candidate": {
     "package_manifest_sha256": "6ffd24dbeff5e45771e11d61e0e6f527deda8fd3cbecbbdfd338222318db3e38",
@@ -324,8 +324,8 @@
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-      "run_all": "ff7b7e28ae97e667ee148420fa2799f04c4897fa754b405b4951b3cdcd32aded",
-      "run_codex_structural": "e21e9baa096389a6590cb9e116385885efda28e58c8fab76f0e520723edba806"
+      "run_all": "20005657943e623f2793846b0306a1836e5c328c777dc40b9c2ae3da7c45e995",
+      "run_codex_structural": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -552,7 +552,7 @@
   "schema_version": "codex-integration-manifest-v2",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "5f613da7ff7c431ff30be9e44a3d9444d1246766a8505e38fc2c6e2908a18112"
+    "sha256": "9738d21d607bbe16551a61e49a9ae82b586b7fc7fd29914f589486f260471054"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,

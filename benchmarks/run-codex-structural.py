@@ -235,13 +235,18 @@ _DISPLAY_ARM_LABELS = {
     "C_skill_required": "C_skill",
 }
 _DISPLAY_ARM_TO_CANONICAL = {label: arm for arm, label in _DISPLAY_ARM_LABELS.items()}
+_DISPLAY_ARM_TO_CANONICAL.update({"B_auto": "B_direct_required", "C_required": "C_skill_required"})
 _DISPLAY_ARM_COLUMN_WIDTH = max(len(label) for label in _DISPLAY_ARM_LABELS.values())
 _ARM_ROW_STYLES = {
     "A_plain": "yellow",
     "B_direct_required": "cyan",
     "C_skill_required": "magenta",
+    "B_auto": "cyan",
+    "C_required": "magenta",
 }
-_RESULT_ARM = re.compile(r"^\(\d+/\d+\)\s+.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill)\b")
+_RESULT_ARM = re.compile(
+    r"^\(\d+/\d+\)\s+.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill|B_auto|C_required)\b"
+)
 _OUTPUT_LEGEND = (
     "LEGEND\n"
     "  treatments: A_plain=no Codemap, B_direct=direct Codemap required, "
@@ -899,6 +904,7 @@ class CodexParseResult:
 
     thread_id: str = ""
     output_text: str = ""
+    last_tool_text_offset: int = 0
     input_tokens: int = 0
     cached_input_tokens: int = 0
     output_tokens: int = 0
@@ -1018,13 +1024,13 @@ def _unwrap_native_command(command: str) -> str | None:
     return parts[2]
 
 
-def _native_item_tokens(command: str) -> list[str] | None:
-    """Tokenize one dedicated native command while rejecting shell composition."""
+def _native_item_tokens(command: str, *, preserve_quotes: bool = False) -> list[str] | None:
+    """Tokenize one dedicated native command, optionally retaining quote context."""
     normalized = _unwrap_native_command(command)
     if normalized is None:
         return None
     try:
-        lexer = shlex.shlex(normalized, posix=True, punctuation_chars=";&|()<>")
+        lexer = shlex.shlex(normalized, posix=not preserve_quotes, punctuation_chars=";&|()<>")
         lexer.whitespace_split = True
         lexer.commenters = ""
         tokens = list(lexer)
@@ -1063,12 +1069,18 @@ def _canonical_query_arguments(command: str) -> list[str] | None:
     if _has_unquoted_comment(normalized):
         return None
     tokens = _native_item_tokens(command)
+    quoted_tokens = _native_item_tokens(command, preserve_quotes=True)
     if (
         tokens is None
+        or quoted_tokens is None
+        or len(tokens) != len(quoted_tokens)
         or len(tokens) < 4
         or tokens[0] not in {"$CODEMAP_BIN", "${CODEMAP_BIN}"}
         or tokens[1:3] != ["query", "--compact"]
-        or any("$" in token for token in tokens[3:])
+        or any(
+            "$" in token and not (len(token) >= 2 and token.startswith("'") and token.endswith("'"))
+            for token in quoted_tokens[3:]
+        )
     ):
         return None
     arguments = tokens[3:]
@@ -1242,6 +1254,7 @@ def parse_codex_jsonl(
                 if event_type == "item.completed" and item_id not in seen_items:
                     seen_items.add(item_id)
                     pending_items.discard(item_id)
+                    result.last_tool_text_offset = len(result.output_text)
                     result.command_calls += 1
                     duration_ms = item.get("duration_ms", item.get("elapsed_ms"))
                     if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool):
@@ -1292,6 +1305,7 @@ def parse_codex_jsonl(
                     text_item = {"text": str(block.get("text", ""))}
                     result.output_text = _append_message_text(result.output_text, text_item)
                 if block.get("type") == "tool_use":
+                    result.last_tool_text_offset = len(result.output_text)
                     name = str(block.get("name", ""))
                     command = _command_text(block)
                     if name.lower() in {"bash", "shell", "command_execution"}:
@@ -3555,10 +3569,13 @@ class CodexRunner:
                 arm_files=arm_files,
             )
         finally:
+            cleaned_coordination_paths: set[Path] = set()
             for home in homes:
-                if home.coordination_path is not None:
+                coordination_path = home.coordination_path
+                if coordination_path is not None and coordination_path not in cleaned_coordination_paths:
+                    cleaned_coordination_paths.add(coordination_path)
                     with contextlib.suppress(ValueError):
-                        _cleanup_coordination_root(home.coordination_path)
+                        _cleanup_coordination_root(coordination_path)
                 home.cleanup()
 
     def probe_arm(

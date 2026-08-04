@@ -1204,6 +1204,12 @@ class TestEvaluateRv:
                 id="plain-answer",
             ),
             pytest.param(
+                "I’ll scan the repository with ordinary text search only, identify files that import "
+                "`lightning.pytorch.utilities.rank_zero` directly, and count distinct modules.60 production "
+                "modules directly import `lightning.pytorch.utilities.rank_zero` (64 modules including 4 test modules).",
+                id="prospective-0283-plain-answer",
+            ),
+            pytest.param(
                 "I’ll verify this through Codemap’s native CLI, then cross-check the resulting import "
                 "count in the repository.The relevant Codemap query is reverse dependencies (`rdeps`) "
                 "for `lightning.pytorch.utilities.rank_zero`; I’m running the required compact query "

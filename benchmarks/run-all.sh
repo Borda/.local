@@ -7,6 +7,8 @@
 #   bash benchmarks/run-all.sh codex --dry-run  # smoke + exact 165-cell Codex plan, no model
 #   bash benchmarks/run-all.sh codex   # fail-fast Codex smoke, then full 55-task A/B/C study
 #   bash benchmarks/run-all.sh codex --tasks=DI,GR [--dry-run]  # selected, nonpoolable task study
+#   bash benchmarks/run-all.sh codex --agentic --dry-run  # locked BA-01 agentic first-slice plan, no model
+#   bash benchmarks/run-all.sh codex --agentic  # paid locked BA-01 agentic first slice
 #
 # The Codex mode fails before setup unless the caller supplies the exact active
 # plain/CLI/skill manifest SHA-256, a private auth source, a new run directory, and
@@ -24,14 +26,17 @@ REPO="${REPO:-$MANAGED_REPO}"
 INDEX_PATH="$REPO/.cache/codemap/$(basename "$REPO").json"
 MODE="${1:-}"
 CODEX_DRY_RUN=false
+CODEX_AGENTIC=false
 CODEX_TASKS=""
 CODEX_SELECTION_SCOPE_SHA=""
 CODEX_SELECTION_REPETITIONS=""
 CODEX_SELECTION_WALL_CLOCK=""
 CODEX_SELECTION_TASK_IDS=()
 MANIFEST_PATH="$ROOT/benchmarks/manifests/codex-integration.json"
+AGENTIC_MANIFEST_PATH="$ROOT/benchmarks/manifests/codex-agentic.json"
 METHODOLOGY_PATH="$ROOT/benchmarks/manifests/provider-parity-methodology.json"
 MANIFEST_CHECKER="$ROOT/benchmarks/build-codex-integration-manifest.py"
+AGENTIC_MANIFEST_CHECKER="$ROOT/benchmarks/build-codex-agentic-manifest.py"
 METHODOLOGY_CHECKER="$ROOT/benchmarks/build-provider-parity-methodology-manifest.py"
 CODEMAP_BIN="${CODEMAP_BIN:-$ROOT/plugins/codemap-py/bin/codemap-py}"
 INDEX_PREPARER="$ROOT/benchmarks/prepare-codex-index.py"
@@ -40,7 +45,7 @@ LOCKED_INDEX_SHA=""
 LOCKED_INDEX_SCAN_VERSION=""
 
 usage() {
-  echo "usage: bash benchmarks/run-all.sh {smoke | claude | codex [--dry-run] [--tasks=TASK[,TASK...]]}" >&2
+  echo "usage: bash benchmarks/run-all.sh {smoke | claude | codex [--dry-run] [--tasks=TASK[,TASK...]] | codex --agentic [--dry-run]}" >&2
 }
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
@@ -64,6 +69,13 @@ case "$MODE" in
           fi
           CODEX_DRY_RUN=true
           ;;
+        --agentic)
+          if [ "$CODEX_AGENTIC" = true ]; then
+            usage
+            exit 2
+          fi
+          CODEX_AGENTIC=true
+          ;;
         --tasks=*)
           if [ -n "$CODEX_TASKS" ]; then
             usage
@@ -81,6 +93,11 @@ case "$MODE" in
           ;;
       esac
     done
+    if [ "$CODEX_AGENTIC" = true ] && [ -n "$CODEX_TASKS" ]; then
+      echo "ERROR: --agentic is a fixed BA-01 first slice and cannot be combined with --tasks." >&2
+      usage
+      exit 2
+    fi
     ;;
   *)
     usage
@@ -105,6 +122,11 @@ validate_generated_manifest() {
   echo "== CHECK generated Codex integration manifest (no model) =="
   python3 "$METHODOLOGY_CHECKER" --check
   python3 "$MANIFEST_CHECKER" --check
+}
+
+validate_generated_agentic_manifest() {
+  echo "== CHECK generated Codex agentic manifest (no model) =="
+  python3 "$AGENTIC_MANIFEST_CHECKER" --check
 }
 
 load_index_contract() {
@@ -368,6 +390,74 @@ ${scope_guidance:+$'\n'"$scope_guidance"$'\n'}
 EOF
 }
 
+print_codex_agentic_paid_guidance() {
+  local agentic_manifest_sha
+  agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
+  cat >&2 <<EOF
+
+Review the exact no-model BA-01 first-slice plan:
+  bash benchmarks/run-all.sh codex --agentic --dry-run
+
+Then launch the paid nine-cell study with one manifest-bound command:
+  CODEX_AGENTIC_PAID_APPROVAL=$agentic_manifest_sha \\
+  CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \\
+  CODEX_RUN_DIR="benchmarks/results/codex-agentic-$(date -u +%Y%m%dT%H%M%SZ)" \\
+  CODEX_MAX_WALL_CLOCK_SECONDS=5400 \\
+    bash benchmarks/run-all.sh codex --agentic
+
+CODEX_RUN_DIR must not already exist. Review benchmarks/manifests/codex-agentic.md for the locked scope before running the paid study.
+EOF
+}
+
+require_codex_agentic_paid_inputs() {
+  if [ ! -f "$AGENTIC_MANIFEST_PATH" ]; then
+    echo "ERROR: active Codex agentic manifest is missing: $AGENTIC_MANIFEST_PATH" >&2
+    exit 2
+  fi
+  local agentic_manifest_sha
+  agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
+  if [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$agentic_manifest_sha" ]; then
+    echo "ERROR: paid Codex agentic mode requires CODEX_AGENTIC_PAID_APPROVAL=$agentic_manifest_sha" >&2
+    print_codex_agentic_paid_guidance
+    exit 2
+  fi
+  if [ -z "${CODEX_AUTH_SOURCE:-}" ] || [ ! -f "$CODEX_AUTH_SOURCE" ]; then
+    echo "ERROR: paid Codex agentic mode requires CODEX_AUTH_SOURCE pointing to a private auth.json." >&2
+    print_codex_agentic_paid_guidance
+    exit 2
+  fi
+  if [ -z "${CODEX_RUN_DIR:-}" ]; then
+    echo "ERROR: paid Codex agentic mode requires a new CODEX_RUN_DIR." >&2
+    print_codex_agentic_paid_guidance
+    exit 2
+  fi
+  if [ -z "${CODEX_MAX_WALL_CLOCK_SECONDS:-}" ]; then
+    echo "ERROR: paid Codex agentic mode requires CODEX_MAX_WALL_CLOCK_SECONDS." >&2
+    print_codex_agentic_paid_guidance
+    exit 2
+  fi
+  if [ "$CODEX_MAX_WALL_CLOCK_SECONDS" != "5400" ]; then
+    echo "ERROR: CODEX_MAX_WALL_CLOCK_SECONDS must equal the manifest lock: 5400" >&2
+    print_codex_agentic_paid_guidance
+    exit 2
+  fi
+  if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" = "1" ]; then
+    expected_launcher="$CODEX_RUN_DIR/.launcher/run-all.sh"
+    if [ "$0" != "$expected_launcher" ] || [ "${CODEX_INVOCATION_LAUNCHER:-}" != "$expected_launcher" ]; then
+      echo "ERROR: paid Codex agentic mode is not executing its private launcher snapshot." >&2
+      exit 2
+    fi
+    if [ "$(sha256_file "$expected_launcher")" != "${CODEX_LAUNCHER_SHA256:-}" ]; then
+      echo "ERROR: paid Codex agentic launcher snapshot changed before execution." >&2
+      exit 2
+    fi
+  elif [ -e "$CODEX_RUN_DIR" ]; then
+    echo "ERROR: CODEX_RUN_DIR already exists: $CODEX_RUN_DIR" >&2
+    print_codex_agentic_paid_guidance
+    exit 2
+  fi
+}
+
 resolve_codex_tasks() {
   local selection_json
   if ! selection_json="$(python3 benchmarks/run-codex-structural.py \
@@ -494,6 +584,42 @@ run_codex_study() {
     --metadata-path "$CODEX_RUN_DIR/run-metadata.json"
 }
 
+run_codex_agentic_plan() {
+  # The agentic first slice reuses the structural target/index preparation
+  # contract but dispatches only its dedicated runner.
+  prepare_locked_inputs || return "$?"
+  validate_codex_cli || return "$?"
+  validate_generated_agentic_manifest || return "$?"
+  echo "== CODEX AGENTIC BA-01 FIRST-SLICE PREFLIGHT (no model) =="
+  python3 benchmarks/run-codex-agentic.py \
+    --manifest-path "$AGENTIC_MANIFEST_PATH" \
+    --task-id BA-01 \
+    --repetitions 3 \
+    --dry-run
+}
+
+run_codex_agentic_study() {
+  local agentic_manifest_sha
+  agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
+  echo "== CODEX AGENTIC BA-01 A/B/C STUDY =="
+  echo "→ design: 9 cells (BA-01 × 3 repetitions × 3 arms; exploratory, nonpoolable)"
+  echo "→ model: gpt-5.6-luna; reasoning effort: high"
+  echo "→ limits: 600 seconds per coordinate; 5400 seconds complete run"
+  echo "→ manifest: $AGENTIC_MANIFEST_PATH ($agentic_manifest_sha)"
+  echo "ARTIFACTS  telemetry=$CODEX_RUN_DIR/telemetry.jsonl  metadata=$CODEX_RUN_DIR/run-metadata.json"
+  python3 benchmarks/run-codex-agentic.py \
+    --repo-path "$REPO" \
+    --index-path "$INDEX_PATH" \
+    --marketplace-root "$ROOT" \
+    --codemap-bin "$CODEMAP_BIN" \
+    --manifest-path "$AGENTIC_MANIFEST_PATH" \
+    --auth-source "$CODEX_AUTH_SOURCE" \
+    --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
+    --run-dir "$CODEX_RUN_DIR" \
+    --paid-approval "$CODEX_AGENTIC_PAID_APPROVAL" \
+    --max-wall-clock-seconds "$CODEX_MAX_WALL_CLOCK_SECONDS"
+}
+
 run_codex_with_artifacts() {
   # Keep the artifact log lossless; the structural runner renders only the console stream.
   local study_runner="$1"
@@ -502,6 +628,44 @@ run_codex_with_artifacts() {
   else
     run_status=$?
   fi
+  checksum_path="$CODEX_RUN_DIR/checksums.sha256"
+  : > "$checksum_path"
+  for artifact in run.log telemetry.jsonl telemetry-canonical.jsonl run-metadata.json; do
+    if [ -f "$CODEX_RUN_DIR/$artifact" ]; then
+      shasum -a 256 "$CODEX_RUN_DIR/$artifact" >> "$checksum_path"
+    fi
+  done
+  if [ -d "$CODEX_RUN_DIR/inputs" ]; then
+    while IFS= read -r input_artifact; do
+      shasum -a 256 "$input_artifact" >> "$checksum_path"
+    done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
+  fi
+  if [ -f "$CODEX_RUN_DIR/.launcher/run-all.sh" ]; then
+    shasum -a 256 "$CODEX_RUN_DIR/.launcher/run-all.sh" >> "$checksum_path"
+  fi
+  echo "→ artifact checksums: $checksum_path"
+  return "$run_status"
+}
+
+run_codex_agentic_with_artifacts() {
+  # Agentic owns its run metadata/log lifecycle; render a separate raw stream
+  # so the artifact log is complete without pre-creating run.log twice.
+  local study_runner="$1"
+  local stream_path="$CODEX_RUN_DIR/.agentic-console.log"
+  local render_status
+  local -a pipeline_status
+  if "$study_runner" 2>&1 | tee "$stream_path" | python3 "$ROOT/benchmarks/run-codex-structural.py" --render-results --hide-plan; then
+    pipeline_status=("${PIPESTATUS[@]}")
+  else
+    pipeline_status=("${PIPESTATUS[@]}")
+  fi
+  run_status="${pipeline_status[0]:-1}"
+  render_status="${pipeline_status[2]:-1}"
+  if [ "$run_status" -eq 0 ] && [ "$render_status" -ne 0 ]; then
+    run_status="$render_status"
+  fi
+  cp "$stream_path" "$CODEX_RUN_DIR/run.log"
+  rm -f "$stream_path"
   checksum_path="$CODEX_RUN_DIR/checksums.sha256"
   : > "$checksum_path"
   for artifact in run.log telemetry.jsonl telemetry-canonical.jsonl run-metadata.json; do
@@ -531,6 +695,22 @@ case "$MODE" in
     claude
     ;;
   codex)
+    if [ "$CODEX_AGENTIC" = true ]; then
+      if [ "$CODEX_DRY_RUN" = true ]; then
+        run_codex_agentic_plan
+      else
+        require_codex_agentic_paid_inputs
+        if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" != "1" ]; then
+          exec_codex_launcher_snapshot "$@"
+        fi
+        prepare_locked_inputs
+        validate_codex_cli
+        validate_generated_agentic_manifest
+        run_codex_agentic_with_artifacts run_codex_agentic_study
+      fi
+      echo "→ done. Results in benchmarks/results/"
+      exit 0
+    fi
     if [ -n "$CODEX_TASKS" ]; then
       ensure_codex_scope_resolved
     fi

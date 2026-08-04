@@ -1758,6 +1758,7 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
         r"(\d+)\s+(?:production\s+)?call\s*site",
         r"(\d+)\s+(?:production\s+)?calls?\b",
         r"(\d+)\s+(?:total\s+)?(?:unique\s+)?importers?",  # "61 total importers", "56 importers"
+        r"(\d+)\s+(?:total\s+)?modules?\s+including\s+\d+\s+test\s+modules?",
         r"(\d+)\s+(?:unique\s+)?modules?\s+(?:directly\s+)?(?:import|depend)",  # "N modules [directly] import"
         r"(\d+)\s+total\s+importer",
         r"total[:\s]+(\d+)",
