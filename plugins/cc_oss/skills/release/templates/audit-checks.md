@@ -1,4 +1,4 @@
-<!-- file: audit-checks.md — consumers: oss skills/release/modes/audit.md (Phase B), oss skills/release SKILL.md (Write release draft phase pre-flight) -->
+<!-- file: audit-checks.md — consumers: oss skills/release/modes/audit.md (Phase 2), oss skills/release SKILL.md (Write release draft phase pre-flight) -->
 
 ```bash
 TARGET=$(echo "$ARGUMENTS" | awk '{print $2}')  # optional target version
@@ -62,7 +62,7 @@ echo "$AUDIT_OUT" | grep -q '^pip-audit-status: not-installed' && PIP_AUDIT_MISS
   pip-audit --format=json | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse_audit_json.py"  # timeout: 30000
   ```
   Fill the Dependency CVEs row with the real `N deps, M vulns` result, same as any other successful scan.
-- **Skip**: Dependency CVEs row stays `⚠ pip-audit not installed — CVE scan skipped` — informational soft gap, same convention as Phase A.5's "target version unknown" case (see `modes/audit.md`): never added to the Findings summary table as its own finding, doesn't block `READY` by itself.
+- **Skip**: Dependency CVEs row stays `⚠ pip-audit not installed — CVE scan skipped` — informational soft gap, same convention as Phase 1a's "target version unknown" case (see `modes/audit.md`): never added to the Findings summary table as its own finding, doesn't block `READY` by itself.
 
 ### Output
 
@@ -93,6 +93,8 @@ Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 | Dependency CVEs       | ✓ Clean / ⚠ N vulns | [package names] |
 | Scheduled removals    | ✓ All removed / ✗ N still present | [symbol names with `remove_in` version] |
 | Doc proportionality   | ✓ / ⚠ N features undertreated | [feature names — no dedicated section / no example / thin coverage] |
+| Upstream review verdict | ✓ None blocking / ✗ Blocking | [review report path + outcome, Phase 1b] |
+| Codex adversarial audit | ✓ Clean / ⚠ N findings / — skipped (codex unavailable) | [finding summary, Phase 2a] |
 
 ### Verdict
 **READY** — no blockers. Run `/release prepare <version>` to write artifacts.

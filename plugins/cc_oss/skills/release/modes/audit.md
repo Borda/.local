@@ -11,11 +11,11 @@
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 ```
 
-### Phase A: Gather and explore changes
+### Phase 1: Gather and explore changes
 
-Use **Delegation strategy** above — spawn gather subagent for `$RANGE`, run gather/explore/validate phases, write findings to `GATHER_FILE`. Read returned JSON envelope only. Audit agent (Phase B) reads `GATHER_FILE` directly — don't pull into main context.
+Use **Delegation strategy** above — spawn gather subagent for `$RANGE`, run gather/explore/validate phases, write findings to `GATHER_FILE`. Read returned JSON envelope only. Audit agent (Phase 2) reads `GATHER_FILE` directly — don't pull into main context.
 
-### Phase A.5: Deprecation-removal check
+### Phase 1a: Deprecation-removal check
 
 Verify all APIs scheduled for removal at `$TARGET` absent from HEAD. Runs after gather, before readiness checks.
 
@@ -57,11 +57,24 @@ git -C "$REPO_ROOT" grep -n "^def <symbol>\|^class <symbol>\|    def <symbol>\| 
 
 **Outcomes per symbol**:
 - Absent from HEAD → ✓ correctly removed
-- Still present AND OVERDUE → ✗ **CRITICAL** — add to Phase B findings table as:
+- Still present AND OVERDUE → ✗ **CRITICAL** — add to Phase 2 findings table as:
   `| Scheduled removal overdue | ✗ \`<symbol>\` still present (remove_in="V.W") | <file:line> | critical |`
 - `$TARGET` not set → surface OVERDUE candidates as informational (`⚠ remove_in="V.W" scheduled but target version unknown`)
 
-### Phase B: Readiness checks
+### Phase 1b: Upstream review verdict check
+
+Verify no blocking `/oss:review` (or codex-lineage review) verdict already exists for the current branch before declaring readiness — closes the gap where `audit` re-derives blockers a prior review already found instead of surfacing them immediately as a pre-flight failure.
+
+```bash
+REVIEW_FILE=$(ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1)
+```
+
+- No match → skip this check (informational: no prior review on file).
+- Match under `.reports/review/*/review-report.md` (oss lineage) → grep its `Outcome:` YAML field. `✗` or `⚠ NEEDS_ATTENTION` with unresolved blocking findings → add to Phase 2 Findings summary: `| Upstream review blocking | ✗ <REVIEW_FILE> reports <Outcome value> | <path> | critical |`.
+- Match under `.reports/codex/review/*/review-notes.md` (codex lineage) → grep `Recommendation:` / `Blocking findings:` lines. `needs-more-work` with non-empty `Blocking findings:` → same critical finding, quoting the blocking finding IDs.
+- Only act on a review whose header/scope names the branch or PR currently being released — a review for a different branch/PR is not a blocker here; note it as informational context instead.
+
+### Phase 2: Readiness checks
 
 Execute all checks from `templates/audit-checks.md`. Checks cover: version consistency across manifests, docs/CHANGELOG alignment, open blocking issues, dependency CVE scan, unreleased commits since last tag.
 
@@ -76,6 +89,30 @@ After readiness table, if issues found, append **Findings summary** table:
 | 1 | <what is wrong> | <section or file> | critical/high/medium/low |
 
 Every finding needs explicit location, severity, action — matches structured output format of `notes` and `changelog` modes.
+
+### Phase 2a: Codex adversarial audit (if available)
+
+Checklist checks above (version/docs/CVE/deprecation) are static and can't catch semantic gaps — e.g. a public example contradicting the release's own behavior change, or a migration note describing the wrong version. When Codex is installed, dispatch it as an independent adversarial pass over the same `RANGE` before declaring a verdict.
+
+```bash
+claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=1 && echo "codex (openai-codex) available" || { CODEX_AVAILABLE=0; echo "⚠ codex (openai-codex) not found — skipping adversarial audit pass"; } # timeout: 15000
+```
+
+`CODEX_AVAILABLE=0` → skip this phase entirely, no finding added.
+
+`CODEX_AVAILABLE=1` →
+
+```text
+Agent(subagent_type="codex:codex-rescue", prompt="Adversarial release-readiness audit. Working directory: <REPO_ROOT>. Range: <RANGE>. Target version: <TARGET or 'next'>. Treat every user-facing claim as wrong until proven correct by reading the actual source at HEAD.
+
+Check specifically: (1) do public docs/examples touched or implied by this range still match current default behavior — not just changed files, but examples elsewhere in docs/ that call the same code path; (2) does the migration guide (if any) place new behavior under the correct version step, not backported into an earlier historical entry; (3) does the changelog/PR narrative account for every commit in range, including ones bundled into another PR; (4) any new or changed optional dependency reaching a platform without a recorded review/disposition.
+
+Write full findings to <ADVERSARIAL_AUDIT_FILE> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"critical\":N,\"high\":N,\"medium\":N,\"low\":N,\"confidence\":0.N}")
+```
+
+Expand `<REPO_ROOT>`, `<RANGE>`, `<TARGET>`, `<ADVERSARIAL_AUDIT_FILE>` (`.temp/release-codex-audit-$BRANCH-$DATE.md`) to literal values before spawning.
+
+Read the returned file. Every `critical`/`high` finding → add a row to the Findings summary table above (`severity: critical` or `high`), quoting the finding text. `medium`/`low` → append as `> ⚠ Codex audit notes: <summary>` below the table, non-blocking.
 
 ### Output routing
 

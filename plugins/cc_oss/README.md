@@ -303,6 +303,8 @@ Apply review findings to codebase. Reads live PR comments, saved review report, 
 | `55 report`      | pr + report    | Both, aggregated                  | Full close — deduplicates across both inputs                |
 | _(none)_         | review-handoff | Review-handoff                    | Continues directly from last `/oss:review` run this session |
 
+`report` / review-handoff discovery looks for the newest report across both `.reports/review/*/review-report.md` (`/oss:review`'s own output) and `.reports/codex/review/*/review-notes.md` (a Codex-native review run outside this plugin). Only the former's section schema is parsed — a codex-lineage report is detected and refused with an explicit message (rather than silently skipped or mis-parsed) so a blocking finding never goes unactioned; pass the PR number explicitly instead.
+
 **How it works:**
 
 Three phases:
@@ -370,36 +372,38 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 
 **Modes and flags:**
 
-| Mode / Flag   | What it produces                                                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `notes`       | Release notes (`DRAFT.md`); add flags for extra outputs                                                                                    |
-| `--changelog` | CHANGELOG.md entry (no shepherd review)                                                                                                    |
-| `--summary`   | Internal summary saved to `.temp/`                                                                                                         |
-| `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                                                                   |
-| `--append`    | Rerun the full pipeline scoped to newly-landed commits; integrate results into existing artifacts instead of a full regenerate (see below) |
-| `prepare`     | Full pipeline: audit → all four artifacts + `demo.py` in `releases/<version>/`                                                             |
-| `audit`       | Readiness checklist: tests green, changelog present, version bumped, no uncommitted changes, doc proportionality for newly added features  |
-| `demo`        | Story-telling jupytext notebook (`demo.py`) highlighting most significant contributions                                                    |
+| Mode / Flag   | What it produces                                                                                                                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notes`       | Release notes (`DRAFT.md`); add flags for extra outputs                                                                                                                                                                                             |
+| `--changelog` | CHANGELOG.md entry (no shepherd review)                                                                                                                                                                                                             |
+| `--summary`   | Internal summary saved to `.temp/`                                                                                                                                                                                                                  |
+| `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                                                                                                                                                                            |
+| `--append`    | Rerun the full pipeline scoped to newly-landed commits; integrate results into existing artifacts instead of a full regenerate (see below)                                                                                                          |
+| `prepare`     | Full pipeline: audit → all four artifacts + `demo.py` in `releases/<version>/`                                                                                                                                                                      |
+| `audit`       | Readiness checklist: tests green, changelog present, version bumped, no uncommitted changes, doc proportionality for newly added features, no blocking upstream `/oss:review` verdict on file, Codex adversarial pass (if `codex` plugin installed) |
+| `demo`        | Story-telling jupytext notebook (`demo.py`) highlighting most significant contributions                                                                                                                                                             |
 
 **What each mode does:**
 
-| Primitive             | `notes`       | `prepare` | `audit` | `demo` |
-| --------------------- | ------------- | --------- | ------- | ------ |
-| Read git log + PRs    | full          | diff      | full    | full   |
-| Classify changes      | ✓             | ✓         | -       | ✓      |
-| Explore codebase      | full          | diff      | full    | diff   |
-| Shepherd voice review | ✓             | ✓         | -       | -      |
-| DRAFT.md              | write         | write     | -       | -      |
-| CHANGELOG.md          | `--changelog` | write     | -       | -      |
-| SUMMARY.md            | `--summary`   | write     | -       | -      |
-| MIGRATION.md          | `--migration` | write¹    | -       | -      |
-| demo.py               | -             | -         | -       | write² |
-| Working tree          | -             | ✓         | ✓       | -      |
-| CI status             | -             | ✓         | ✓       | -      |
-| Open issues / PRs     | -             | ✓         | ✓       | -      |
-| Docs alignment        | -             | diff      | full    | -      |
-| Version consistency   | -             | ✓         | ✓       | -      |
-| CVEs                  | -             | ✓         | ✓       | -      |
+| Primitive               | `notes`       | `prepare` | `audit` | `demo` |
+| ----------------------- | ------------- | --------- | ------- | ------ |
+| Read git log + PRs      | full          | diff      | full    | full   |
+| Classify changes        | ✓             | ✓         | -       | ✓      |
+| Explore codebase        | full          | diff      | full    | diff   |
+| Shepherd voice review   | ✓             | ✓         | -       | -      |
+| DRAFT.md                | write         | write     | -       | -      |
+| CHANGELOG.md            | `--changelog` | write     | -       | -      |
+| SUMMARY.md              | `--summary`   | write     | -       | -      |
+| MIGRATION.md            | `--migration` | write¹    | -       | -      |
+| demo.py                 | -             | -         | -       | write² |
+| Working tree            | -             | ✓         | ✓       | -      |
+| CI status               | -             | ✓         | ✓       | -      |
+| Open issues / PRs       | -             | ✓         | ✓       | -      |
+| Docs alignment          | -             | diff      | full    | -      |
+| Version consistency     | -             | ✓         | ✓       | -      |
+| CVEs                    | -             | ✓         | ✓       | -      |
+| Upstream review verdict | -             | ✓         | ✓       | -      |
+| Codex adversarial pass  | -             | ✓         | ✓       | -      |
 
 Flag mark = output produced only when flag passed. ¹ Full guide when breaking changes detected; single-line stub otherwise. ² Jupytext percent-format Python script with `# %%` code cells and `# %% [markdown]` narrative cells; self-contained with references to additional resources.
 

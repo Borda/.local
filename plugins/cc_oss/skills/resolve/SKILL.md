@@ -27,7 +27,7 @@ Bare comment text → skip to Codex dispatch (Step 12).
 <inputs>
 
 - **$ARGUMENTS**: one of:
-  - Omitted → **review-handoff mode**: auto-detect PR from most recent `.reports/review/*/review-report.md`
+  - Omitted → **review-handoff mode**: auto-detect PR from most recent `.reports/review/*/review-report.md` (oss lineage) or `.reports/codex/review/*/review-notes.md` (codex lineage, detected but not parsed — see Step 0 lineage guard)
   - PR number (e.g. `42` or `#42`) or GitHub PR URL → **pr mode**
   - `report` (bare word) → **report mode**: latest review findings as action items; no GitHub re-fetch
   - `42 report` or `<URL> report` → **pr + report mode**: aggregate live GitHub comments + review report, deduplicated in one pass
@@ -162,12 +162,18 @@ Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step
 When `$ARGUMENTS` empty:
 
 ```bash
-# written by /review to .reports/review/
-REVIEW_FILE=$(ls -t .reports/review/*/review-report.md 2>/dev/null | head -1)
+# written by /review to .reports/review/ (oss lineage) or by codex review to .reports/codex/review/ (codex lineage)
+REVIEW_FILE=$(ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1)
 if [ -z "$REVIEW_FILE" ]; then
-    echo "No review output found in .reports/review/ — run /review <PR#> first, or provide a PR number"
+    echo "No review output found in .reports/review/ or .reports/codex/review/ — run /review <PR#> first, or provide a PR number"
     exit 1
 fi
+case "$REVIEW_FILE" in
+    .reports/codex/review/*)
+        echo "! BLOCKED — newest review is codex-lineage ($REVIEW_FILE); this parser reads oss:review's .reports/review/*/review-report.md section schema only, not codex's flat H1/H2/M1-bullet schema. Falling through would silently miss any blocking findings that review recorded. Provide a PR number explicitly (\`/oss:resolve <PR#>\`), or run /oss:review on this PR to produce a compatible report."
+        exit 1
+        ;;
+esac
 echo "→ Using: $REVIEW_FILE"
 ```
 
@@ -206,12 +212,12 @@ echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}"  # timeou
 <!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
 **Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent, --codemap, --no-codemap, --worktree}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`, `--codemap`, `--no-codemap`, `--worktree`.
 
-- `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode
-- `MODE="report"` → find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .reports/review/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present; no PR# in header → add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
+- `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode; newest match is codex-lineage (`.reports/codex/review/*/review-notes.md`) → this parser can't read its schema — warn `⚠ newest review is codex-lineage, unsupported by this parser — GitHub comments only, no report findings merged` and continue in pr mode (same non-fatal treatment as "no report found")
+- `MODE="report"` → find latest review report via `ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .reports/review/ or .reports/codex/review/ — run /review \<PR#> first, or provide a PR number"; newest match is codex-lineage → stop with the Step 0 lineage-guard message (same wording as the auto-detect block above); extract PR# from header if present; no PR# in header → add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
 - `MODE="pr"` → continue Step 2
 - `MODE="comment-dispatch"` → branch safety check before Step 12: `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }` → jump to Step 12
 
-## Step 1.5: Create all workflow tasks upfront
+## Step 1b: Create all workflow tasks upfront
 
 After `PR_NUMBER` and `MODE` resolved above, create all major-step tasks now.
 Store each returned `task_id` for step-level `TaskUpdate` calls.

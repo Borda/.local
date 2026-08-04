@@ -424,7 +424,7 @@ Config files consumed primarily by LLM at inference time. Formatting inconsisten
 mapfile -t MD_FILES < <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)  # timeout: 5000
 ```
 
-Via model reasoning, apply three sub-checks per file:
+Via model reasoning, apply four sub-checks per file:
 
 **41a — List marker uniformity**: scan all unordered list lines outside code fences. Collect distinct markers used (`-`, `*`, `+`). More than one distinct marker in same file = finding. Mixed markers = ambiguous parse order for LLM; `-` is canonical.
 
@@ -463,6 +463,21 @@ Via model reasoning per file: identify nested bullet blocks where each top-level
 
 Exception: skip when attributes vary per item (non-uniform schema — prose correct).
 
+**41d — Legacy mixed/decimal phase-step numbering**: canonical sub-step convention (precedent: `oss:review`'s `Step 3a`–`3e`, `oss:audit`'s `Step 5b`, Check 44 below) is **number-primary, letter-secondary, no separator** — `1b`, `3a`, `41a`. A `### Phase`/`Step`/`Check`/`Mode`/`Section` header using a decimal or letter-primary variant instead (`1.5`, `A.5`, `5.b`) is a legacy/inconsistent form that predates or bypassed that convention — same intent, wrong register, and outside Check 44's scope (whose regex only matches literal `Check N<letter>`, not general workflow headers).
+
+```bash
+printf "=== Check 41d: Legacy phase/step numbering ===\n"
+found41d=0
+for f in "${MD_FILES[@]}"; do  # timeout: 5000
+    [ -f "$f" ] || continue
+    hdr=$(grep -nE '^#{1,6}[[:space:]]+(Phase|Step|Check|Mode|Section)[[:space:]]+[A-Za-z]*[0-9]+\.[0-9A-Za-z]+' "$f" 2>/dev/null)
+    [ -n "$hdr" ] && { echo "$hdr" | sed "s|^|$f:|"; found41d=1; }
+done
+[ "$found41d" -eq 0 ] && printf "✓: Check 41d — no legacy decimal/mixed phase-step headers\n"
+```
+
+Via model reasoning: for each flagged header, find the file's own established sibling convention (existing `<N><letter>` sub-steps in the same file) and propose the matching rename. Before renaming, grep the same file (and, for cross-plugin shared files, every consumer) for every other mention of the flagged token — header and every prose cross-reference get renamed together in one pass, never left half-updated.
+
 **Severity**: P3 — report only. Never auto-fix; reformatting risks layout regression in rendered contexts. Flag only clear violations with concrete line references.
 
 | Sub-check | Severity | Auto-fix |
@@ -470,6 +485,7 @@ Exception: skip when attributes vary per item (non-uniform schema — prose corr
 | 41a — mixed list markers | low | no |
 | 41b — numbering register mismatch | medium | no |
 | 41c — nested prose where table fits | low | no |
+| 41d — legacy phase/step numbering | low | no |
 
 ## Check 44 — Sub-check naming symmetry
 
