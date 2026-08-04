@@ -48,6 +48,9 @@ repos:
       - id: pretty-format-json
         name: ✨ pretty-format-json
         args: ["--autofix"]
+        # Benchmark manifests and suites are identity-locked inputs/outputs. Their
+        # dedicated builders own deterministic serialization and hash validation.
+        exclude: ^benchmarks/(manifests|suites)/.*\.json$
 
   - repo: https://github.com/JoC0de/pre-commit-prettier
     rev: v3.9.4 # using tag; previously pinned SHA when tags were not persistent
@@ -92,7 +95,9 @@ repos:
     hooks:
       - id: mdformat
         name: 📝 mdformat (general)
-        exclude: ^(plugins/(?!.*README\.md$)|docs/)
+        # Generated benchmark review manifests are checked byte-for-byte by their
+        # builders; generic Markdown formatting would create false source drift.
+        exclude: ^(benchmarks/manifests/|plugins/(?!.*README\.md$)|docs/)
         args: ["--number", "--wrap=no"]
         additional_dependencies:
           - mdformat-gfm

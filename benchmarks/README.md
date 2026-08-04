@@ -665,31 +665,31 @@ python benchmarks/run-claude-agentic.py \
 
 The complete Codex run used the same 55 non-RI task objects, prompts, provider-neutral evaluators, target tree, and ground truth as the Claude structural benchmark. It ran one Claude-parity iteration over `A_plain`, `B_direct`, and `C_skill`: 165 cells, with 45 preregistered headline task blocks and 10 diagnostics reported separately.
 
-| Field | Locked value |
-| --- | --- |
-| Artifact | `benchmarks/results/codex-integration-20260803T211755Z` (local, ignored run output) |
-| Target | `pytorch-lightning` 2.6.5, commit `be98784a1a03581b7051a355ae1084fd352d7cea` |
-| Software | codemap-py 0.28.2, codex-rig 0.4.1, Codex CLI 0.146.0 |
-| Model | `gpt-5.6-luna`, high effort |
-| Design | 55 tasks × 1 repetition × 3 treatments = 165 cells; 45 headline blocks + 10 diagnostics |
-| Manifest | `568caefa6cdd1e876e2f35a5e2476d5e661d9672894191c930017f14a29305e4` |
+| Field              | Locked value                                                                                                                                                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Artifact           | `benchmarks/results/codex-integration-20260803T211755Z` (local, ignored run output)                                                                                                                                                                   |
+| Target             | `pytorch-lightning` 2.6.5, commit `be98784a1a03581b7051a355ae1084fd352d7cea`                                                                                                                                                                          |
+| Software           | codemap-py 0.28.2, codex-rig 0.4.1, Codex CLI 0.146.0                                                                                                                                                                                                 |
+| Model              | `gpt-5.6-luna`, high effort                                                                                                                                                                                                                           |
+| Design             | 55 tasks × 1 repetition × 3 treatments = 165 cells; 45 headline blocks + 10 diagnostics                                                                                                                                                               |
+| Manifest           | `568caefa6cdd1e876e2f35a5e2476d5e661d9672894191c930017f14a29305e4`                                                                                                                                                                                    |
 | Artifact checksums | Raw telemetry `44f0f734bda0f422605041d245442fdbe70115eb575bac976d005d276b381405`; canonical telemetry `0d5d06f730e8a39322781d27a9f82bf58b2e239c25d6bbf2b174a77e0f7e56f5`; metadata `b075e2c05313cfa4f3d186c829e2e5187f64de4092d0343c0362aed53e989831` |
 
 All 165 coordinates completed. All 491 listed artifact checksums verify; planned, raw, and canonical coordinate sets match; every arm followed its treatment; contamination, compliance, extraction, incomplete, token-accounting, and infrastructure failures are zero. A made no Codemap call; B and C made successful compact Codemap calls in all 55 cells; C delivered the exact installed Skill in all 55 cells. The run is pooling-eligible only under its historical 0.28.2 manifest; it cannot satisfy the active prospective 0.28.3 contract.
 
 Headline results use one task block as the paired unit (`n=45`). Ratios are paired geometric means. Intervals use 10,000 paired percentile bootstrap resamples under the manifest-derived deterministic seed; gross input is the locked primary token measure.
 
-| Arm | Correct | Mean quality | Mean gross input | Mean output | Mean elapsed |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `A_plain` | 34/45 | 0.8626 | 200.6k | 3,484 | 75.2 s |
-| `B_direct` | 42/45 | 0.9673 | 103.6k | 2,094 | 47.9 s |
-| `C_skill` | 40/45 | 0.9525 | 74.0k | 1,420 | 33.2 s |
+| Arm        | Correct | Mean quality | Mean gross input | Mean output | Mean elapsed |
+| ---------- | ------: | -----------: | ---------------: | ----------: | -----------: |
+| `A_plain`  |   34/45 |       0.8626 |           200.6k |       3,484 |       75.2 s |
+| `B_direct` |   42/45 |       0.9673 |           103.6k |       2,094 |       47.9 s |
+| `C_skill`  |   40/45 |       0.9525 |            74.0k |       1,420 |       33.2 s |
 
-| Comparison | Quality delta, 95% CI | Gross-input ratio, 95% CI | Output ratio, 95% CI | Elapsed ratio, 95% CI |
-| --- | ---: | ---: | ---: | ---: |
-| B/A | +0.1047 `[+0.0390, +0.1720]` | 0.735 `[0.580, 0.919]` | 0.775 `[0.596, 0.996]` | 0.800 `[0.644, 0.979]` |
-| C/A | **+0.0900 `[+0.0204, +0.1605]`** | **0.542 `[0.426, 0.681]`** | **0.520 `[0.408, 0.663]`** | **0.558 `[0.452, 0.685]`** |
-| C/B | -0.0147 `[-0.0522, +0.0169]` | **0.738 `[0.644, 0.847]`** | **0.672 `[0.602, 0.753]`** | **0.698 `[0.636, 0.770]`** |
+| Comparison |            Quality delta, 95% CI |  Gross-input ratio, 95% CI |       Output ratio, 95% CI |      Elapsed ratio, 95% CI |
+| ---------- | -------------------------------: | -------------------------: | -------------------------: | -------------------------: |
+| B/A        |     +0.1047 `[+0.0390, +0.1720]` |     0.735 `[0.580, 0.919]` |     0.775 `[0.596, 0.996]` |     0.800 `[0.644, 0.979]` |
+| C/A        | **+0.0900 `[+0.0204, +0.1605]`** | **0.542 `[0.426, 0.681]`** | **0.520 `[0.408, 0.663]`** | **0.558 `[0.452, 0.685]`** |
+| C/B        |     -0.0147 `[-0.0522, +0.0169]` | **0.738 `[0.644, 0.847]`** | **0.672 `[0.602, 0.753]`** | **0.698 `[0.636, 0.770]`** |
 
 **Historical judgment.** Under the completed 0.28.2 study contract, C met its then-locked product acceptance policy versus A: gross-input CI upper `<1.00`, quality mean `>=0`, quality CI lower `>-0.02` and also `>0`, with no repeated task-family block below `-0.10`. The installed Skill produced higher structural-answer quality with lower gross input, output, and elapsed time than plain Codex in that run. B also improved over A. C was materially more efficient than B, but the locked C-B quality interval did not establish Skill quality superiority or strict non-inferiority. These findings remain immutable historical evidence; acceptance under the prospective 0.28.3 contract requires the pending fresh 165-cell run.
 
@@ -697,29 +697,45 @@ Headline results use one task block as the paired unit (`n=45`). Ratios are pair
 
 **Diagnostics.** The 10 manifest-designated diagnostic tasks remain separate. Across all B/C execution cells, 44 successful queries did not exactly match the locked expected tuple; this is not a treatment or pooling failure, and 38/44 mismatch cells were binary-correct. The label currently mixes harmless exact-shape deviations with genuine routing gaps. Future reporting should call it exact locked-query conformance, split endpoint/target/option fitness, teach the Skill production `rdeps ... --exclude-tests` and feature-extension routing, and reconcile provider-neutral locks. The FT evaluator also rejects exact ground-truth entry points followed by the terminal period shown in its own prompt. A punctuation-tolerant post-hoc sensitivity changes mean quality A/B/C to `0.8848/0.9784/0.9859`; this supports robustness but does not replace the frozen score or telemetry.
 
+#### Prospective codemap-py 0.28.3 execution
+
+The fresh 0.28.3 run at `benchmarks/results/codex-integration-20260804T092013Z` completed all 165 cells under machine manifest `3a69c31a82db95526d8b3e7ab3edf3c9b3a49dd917683413dc43154ddd6f42f8`, and all 491 listed checksums verify. It does not replace the clean historical result or satisfy prospective acceptance: `RV-02/A_plain` failed extraction and `DG-02/B_direct` missed required treatment adherence, so run metadata correctly declares the canonical artifact pooling-ineligible for `extraction_failed` and `required_use_missing`. The four extraction failures across all 55 blocks are `RV-02/A_plain`, `RV-05/B_direct`, `CQ-03/A_plain`, and `CQ-04/C_skill`; only `RV-02` is headline-eligible.
+
+Removing the two invalid headline triplets leaves a common descriptive cohort of 43 tasks. This is a sensitivity view, not confirmatory inference. Mean quality A/B/C is `0.8907/0.9850/0.9759`; binary correctness is `35/43`, `41/43`, and `41/43`; arithmetic mean gross input is `179.7k/135.2k/71.0k` tokens; arithmetic mean elapsed time is `81.9/60.5/37.9` seconds.
+
+Gross-input ratios below are computed per task before aggregation. Geometric mean summarizes multiplicative efficiency; p10–p90 and observed min–max describe task heterogeneity, not confidence intervals or rerun variance.
+
+| Comparison | Geometric mean |   Median |        p10–p90 | Observed min–max | Lower-token tasks | Tasks at least 1.5× comparison baseline |
+| ---------- | -------------: | -------: | -------------: | ---------------: | ----------------: | --------------------------------------: |
+| B/A        |       `0.729×` | `0.815×` | `0.259–1.801×` |   `0.107–2.667×` |     26/43 (60.5%) |                            8/43 (18.6%) |
+| C/A        |       `0.493×` | `0.476×` | `0.252–1.194×` |   `0.053–1.317×` |     35/43 (81.4%) |                             0/43 (0.0%) |
+| C/B        |       `0.676×` | `0.727×` | `0.365–1.260×` |   `0.108–1.912×` |     35/43 (81.4%) |                             2/43 (4.7%) |
+
+The distribution matters: direct CLI has a substantial upper tail despite its aggregate saving, while the Skill never exceeds 1.5× plain input in the valid headline cohort. The worst B/A case is `BR-01` at `2.667×`; the worst C/A case is `DG-06` at `1.317×`. C can still cost more than B on individual tasks—the worst C/B case is `RV-03` at `1.912×`—so the result supports greater consistency, not a guarantee for every task. Raw telemetry SHA-256 is `def09bc4ee55957752da3e58a52fc309e1c58899e9b75f98a17f0db7b7ba55b8`; canonical telemetry is `575371ba0b4988356bfb16ee02e4222ab974fb0b9cad54235402c943621791ea`; metadata is `88d4ae24a109eba08d3b68acc49854a8cfe7b2819ebcdcde7cd5a82d6803e930`.
+
 <details>
 
 <summary>Historical selected and bounded Codex diagnostics</summary>
 
 The earlier selected Codex runs used the same frozen methodology to locate and repair integration defects. They are descriptive and explicitly non-poolable; they are not mixed with the completed headline result.
 
-| Field              | Locked value                                                                                                                                                                                                                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Artifact           | `benchmarks/results/codex-integration-selected-20260803T091057Z` (local, ignored run output)                                                                                                                                                                                                                                      |
-| Target             | `pytorch-lightning` 2.6.5, commit `be98784a1a03581b7051a355ae1084fd352d7cea`                                                                                                                                                                                                                                                        |
-| Software           | Codemap-py `0.28.2`, codex-rig 0.4.1, Codex CLI 0.146.0.                                                                                                                                                                                                                                                                                        |
-| Model              | `gpt-5.6-luna`, high effort                                                                                                                                                                                                                                                                                                         |
-| Design             | `DI-01`, `GR-01`, and `GR-03` × 3 repetitions × 3 treatments = 27 cells; explicitly selected and non-poolable                                                                                                                                                                                                                     |
+| Field              | Locked value                                                                                                                                                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Artifact           | `benchmarks/results/codex-integration-selected-20260803T091057Z` (local, ignored run output)                                                                                                                                                          |
+| Target             | `pytorch-lightning` 2.6.5, commit `be98784a1a03581b7051a355ae1084fd352d7cea`                                                                                                                                                                          |
+| Software           | Codemap-py `0.28.2`, codex-rig 0.4.1, Codex CLI 0.146.0.                                                                                                                                                                                              |
+| Model              | `gpt-5.6-luna`, high effort                                                                                                                                                                                                                           |
+| Design             | `DI-01`, `GR-01`, and `GR-03` × 3 repetitions × 3 treatments = 27 cells; explicitly selected and non-poolable                                                                                                                                         |
 | Artifact checksums | Raw telemetry `aebf677437c6b65d04681ea1d67b52030710df44e91b9cad4f9097e8591bed69`; canonical telemetry `15ab38a5fbda643032ee21bdf833b9229fe2e47856caeeffa5e2673ca743e5d3`; metadata `d9d8032fa10795935ae53811729adf50eb5fa82d79ce723b7549249a465bc0c3` |
-| Offline rescore    | `offline-rescore-v1-aebf677437c6b65d-cec6f4d18d3f5a6a.json`; SHA-256 `8458e5dc58957453fd3ba94507d27c8f2b1a8e9cdb4d6f2b5b205bd74b400e34`; derived SHA-256 `e9cca34f35da0672716bf12a6dd0fdd22e1d3158509856203d16cb93a2a1d987` |
+| Offline rescore    | `offline-rescore-v1-aebf677437c6b65d-cec6f4d18d3f5a6a.json`; SHA-256 `8458e5dc58957453fd3ba94507d27c8f2b1a8e9cdb4d6f2b5b205bd74b400e34`; derived SHA-256 `e9cca34f35da0672716bf12a6dd0fdd22e1d3158509856203d16cb93a2a1d987`                           |
 
 Offline-derived selected diagnostics (continuous quality is the mean per-cell fitness; input and elapsed values are arithmetic means):
 
-| Treatment  | Correctness by family | Quality by family | Gross input | Elapsed | Adherence |
-| ---------- | --------------------- | ----------------- | ----------- | ------- | --------- |
-| `A_plain`  | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.367`, GR-01 `0.767`, GR-03 `1.000` | see telemetry | see telemetry | 9/9 |
-| `B_direct` | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.500`, GR-01 `0.700`, GR-03 `1.000` | see telemetry | see telemetry | 9/9 |
-| `C_skill`  | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.333`, GR-01 `0.700`, GR-03 `1.000` | see telemetry | see telemetry | 9/9 |
+| Treatment  | Correctness by family                 | Quality by family                           | Gross input   | Elapsed       | Adherence |
+| ---------- | ------------------------------------- | ------------------------------------------- | ------------- | ------------- | --------- |
+| `A_plain`  | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.367`, GR-01 `0.767`, GR-03 `1.000` | see telemetry | see telemetry | 9/9       |
+| `B_direct` | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.500`, GR-01 `0.700`, GR-03 `1.000` | see telemetry | see telemetry | 9/9       |
+| `C_skill`  | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.333`, GR-01 `0.700`, GR-03 `1.000` | see telemetry | see telemetry | 9/9       |
 
 No pooled interval or treatment-effect estimate is reported for this selected scope: it is targeted, non-poolable diagnostic evidence with only three task families. Gross-input and elapsed comparisons remain available in the immutable telemetry for audit, but are not a headline result.
 
@@ -729,19 +745,19 @@ The selected run confirms the repaired parser and evaluator plumbing but also ke
 
 The follow-up 18-cell validation at `benchmarks/results/codex-integration-selected-20260803T160316Z` completed all coordinates with zero treatment, contamination, extraction, completeness, or token-accounting failures; all 491 checksums verify. Raw/canonical/metadata SHA-256 values are `26535b20a9e2511df30a3277e0364128c4d96ff6254d2f031c07fa62e21a5705`, `c240dd4e366028149cb8530efd37295bcedd1fe4af3d911ae8bbd309a20e289e`, and `bd8cd8ed0eeac3ed79e874fd97486cc219c937300441ca57fb2edfe645235da6`.
 
-| Task | A quality | B quality | C quality | B/A input · elapsed | C/A input · elapsed |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `DI-01` | `0.500` | `1.000` | `0.501` | `1.603×` · `0.909×` | `1.008×` · `0.989×` |
-| `GR-01` | `0.733` | `0.600` | `1.000` | `0.282×` · `0.136×` | `0.197×` · `0.089×` |
+| Task    | A quality | B quality | C quality | B/A input · elapsed | C/A input · elapsed |
+| ------- | --------: | --------: | --------: | ------------------: | ------------------: |
+| `DI-01` |   `0.500` |   `1.000` |   `0.501` | `1.603×` · `0.909×` | `1.008×` · `0.989×` |
+| `GR-01` |   `0.733` |   `0.600` |   `1.000` | `0.282×` · `0.136×` | `0.197×` · `0.089×` |
 
 These are paired geometric economy ratios and arithmetic mean quality over three repetitions. They are descriptive because the scope is targeted and non-poolable. C achieved quality parity on DI and improved GR while using much less input overall, but DI showed no stable input saving and B degraded on GR. Raw events establish deterministic causes: the GR prompt omitted the oracle's exclude-tests scope, while the Skill mapped DI's direct-import test request to transitive module `test-impact` and returned 247 tests. The semantic audit also checked only the caller half of DI. The shared task prompt now states production-only centrality; all DI tasks require exact caller and direct-importer queries; both runtime Skills reserve `test-impact` for transitive affected-test selection. A new bounded validation is required before the full study can be unlocked.
 
 The corrected bounded gate at `benchmarks/results/codex-integration-selected-20260803T172707Z` completed 18/18 cells and verified all 491 checksums under the current manifest and selected-scope locks. Raw/canonical/metadata SHA-256 values are `1b20bb6756d9e301215b20cbc6bd90b01c6798667ee2be7a261be819604e8c77`, `2c810e840f2f9f03c6b8bd2a976f13c12df1a4cee3e46051b255add7dff106cf`, and `d6f4e0a71a52cb05d849a10d7635e3b4579f13c570694cf871e2574ccfd0c8b4`.
 
-| Task | A quality | B quality | C quality | B/A input · output · elapsed | C/A input · output · elapsed |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `DI-01` | `0.500` | `1.000` | `1.000` | `0.842×` · `0.704×` · `0.826×` | `0.627×` · `0.494×` · `0.555×` |
-| `GR-01` | `0.800` | `1.000` | `1.000` | `0.356×` · `0.113×` · `0.300×` | `0.251×` · `0.081×` · `0.169×` |
+| Task    | A quality | B quality | C quality |   B/A input · output · elapsed |   C/A input · output · elapsed |
+| ------- | --------: | --------: | --------: | -----------------------------: | -----------------------------: |
+| `DI-01` |   `0.500` |   `1.000` |   `1.000` | `0.842×` · `0.704×` · `0.826×` | `0.627×` · `0.494×` · `0.555×` |
+| `GR-01` |   `0.800` |   `1.000` |   `1.000` | `0.356×` · `0.113×` · `0.300×` | `0.251×` · `0.081×` · `0.169×` |
 
 The run has zero treatment, contamination, extraction, completeness, token-accounting, or execution failures. Its three semantic-query misses are all DI-01/B_direct: the direct model omitted one or both exact locked query components but still used Codemap and returned every expected caller and test module. C_skill matched the exact caller-plus-direct-import route in every repetition. The methodology records exact query fitness independently from treatment delivery, so the misses remain discoverability diagnostics rather than exclusion failures. The bounded operational gate passes and permits the separately authorized complete 165-cell study; this targeted run remains non-poolable and cannot satisfy confirmatory product acceptance.
 
