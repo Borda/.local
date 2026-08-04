@@ -538,6 +538,12 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "- The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. Deterministic "
         "arm-order counterbalancing mitigates order exposure without claiming cache elimination.",
         "",
+        "## Credential safety",
+        "",
+        "- Use an immutable, user-owned `0600` auth source. Do not run a concurrent Codex session with it; use an independently authenticated benchmark credential instead.",
+        "- The runner keeps private run state and atomically propagates valid refreshes between cells. A private sequential refresh can invalidate an unchanged source, so reauthenticate after the run if needed.",
+        "- Known refresh-token authentication failures stop immediately; three matching unknown zero-token pre-response failures preserve partial artifacts and stop scheduling.",
+        "",
         "## Locked candidates",
         "",
         f"- `codemap-py` `{manifest['codemap_candidate']['version']}`.",

@@ -363,6 +363,7 @@ Then launch the paid study with one manifest-bound command:
     bash benchmarks/run-all.sh codex${mode_args}
 
 The command itself records paid authorization for this exact manifest; no separate chat approval is needed when you run it. CODEX_RUN_DIR must not already exist. Review benchmarks/manifests/codex-integration.md for the locked scope.
+Credential warning: use an immutable, user-owned 0600 auth source. Do not run a concurrent Codex session with it; use an independently authenticated benchmark credential instead. The runner keeps private run state and atomically propagates valid refreshes between cells. A private sequential refresh can invalidate an unchanged source, so reauthenticate after the run if needed. Known refresh-token authentication failures stop immediately; three matching unknown zero-token pre-response failures preserve partial artifacts and stop scheduling.
 ${scope_guidance:+$'\n'"$scope_guidance"$'\n'}
 EOF
 }

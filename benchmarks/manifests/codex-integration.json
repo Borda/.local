@@ -33,11 +33,11 @@
     "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
     "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
     "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-    "run_all": "d47dce19826ce7620c0753cd26dccac0122c33c763c791bad17688cd54a21917",
-    "run_codex_structural": "b81a3b6585881f8ad5b596bb9bb13c0ceed6e2a2956393455556e68dbf1fdda4"
+    "run_all": "ff7b7e28ae97e667ee148420fa2799f04c4897fa754b405b4951b3cdcd32aded",
+    "run_codex_structural": "0086d43ff15fbe4a719767e8bf47d231d1126c9407bdf8be7da2df2409d71827"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "a12cd6962e2a6d28cb407ac78174c9b3f0ee8054ff1ddb27b058800cd7b353cc",
+    "package_manifest_sha256": "f67ae0f13b8ba33317d59479324b8403afad9f942070ef98fb1a29d904cd069b",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
     "version": "0.28.2"
@@ -324,8 +324,8 @@
       "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
       "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
       "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-      "run_all": "d47dce19826ce7620c0753cd26dccac0122c33c763c791bad17688cd54a21917",
-      "run_codex_structural": "b81a3b6585881f8ad5b596bb9bb13c0ceed6e2a2956393455556e68dbf1fdda4"
+      "run_all": "ff7b7e28ae97e667ee148420fa2799f04c4897fa754b405b4951b3cdcd32aded",
+      "run_codex_structural": "0086d43ff15fbe4a719767e8bf47d231d1126c9407bdf8be7da2df2409d71827"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -552,7 +552,7 @@
   "schema_version": "codex-integration-manifest-v1",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "920f82eb626febf6b19bd2178b064f892be4b26f5d61bbc2d200f70b4d87b211"
+    "sha256": "3320c2d35e3189d43e3c2336603189083cc7ef8e76ac10dfb2f99ef47ee07afa"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,

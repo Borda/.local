@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -998,6 +999,153 @@ def test_retry_policy_only_retries_zero_token_transport_failures(
     assert runner.timeout == pytest.approx(600.0)
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        pytest.param("HTTP 401 Unauthorized: refresh token expired", id="expired-refresh-token"),
+        pytest.param("HTTP 401 Unauthorized: refresh token has already been used", id="used-refresh-token"),
+    ],
+)
+def test_retry_policy_does_not_repeat_non_retryable_authentication_failures(
+    script_run_codex: Any,
+    tmp_path: Path,
+    message: str,
+) -> None:
+    """An expired or consumed refresh token must stop at one attempt.
+
+    Prevents a permanent 401 from consuming two extra paid attempts before the
+    outer study can identify the shared infrastructure failure.  A classifier
+    that treats every zero-token error as transient would make two calls.
+    """
+    streams = iter(
+        [
+            json.dumps({"type": "error", "error": message, "error_type": "non_zero_exit"}),
+            _completed_stream(output="must not replace the 401"),
+        ]
+    )
+    calls = 0
+
+    def transport(*_args: Any, **_kwargs: Any) -> str:
+        nonlocal calls
+        calls += 1
+        return next(streams)
+
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        transport=transport,
+        evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+    )
+
+    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "A_plain")
+
+    assert calls == 1
+    assert result.retry_count == 0
+    assert result.incomplete is True
+    assert result.error == message
+
+
+def test_parser_keeps_refresh_authentication_classification_after_later_generic_401(script_run_codex: Any) -> None:
+    """A later generic provider error cannot make a consumed refresh token retryable.
+
+    Prevents the real event order—refresh-token reuse, ``turn.failed``, then a
+    generic non-zero 401—from losing its deterministic authentication class.
+    A parser that overwrites its classification with the final generic event
+    would spend retry attempts on an already-invalid credential.
+    """
+    stream = "\n".join(
+        json.dumps(event)
+        for event in (
+            {
+                "type": "error",
+                "error": "HTTP 401 Unauthorized: refresh token has already been used",
+                "error_type": "non_zero_exit",
+            },
+            {"type": "turn.failed", "error": "turn failed", "error_type": "turn_failed"},
+            {
+                "type": "error",
+                "error": "HTTP 401 Unauthorized: command exited non-zero",
+                "error_type": "non_zero_exit",
+            },
+        )
+    )
+
+    parsed = script_run_codex.parse_codex_jsonl(stream)
+
+    assert parsed.incomplete is True
+    assert parsed.error_type == "authentication_failed"
+    assert parsed.retryable is False
+
+
+@pytest.mark.parametrize(
+    ("header", "secret"),
+    [
+        pytest.param("Cookie: session=fixture-cookie", "fixture-cookie", id="cookie"),
+        pytest.param("Set-Cookie: session=fixture-set-cookie; HttpOnly", "fixture-set-cookie", id="set-cookie"),
+        pytest.param("Authorization: Basic fixture-authorization", "fixture-authorization", id="authorization"),
+    ],
+)
+def test_parser_redacts_textual_credential_headers_from_provider_and_telemetry(
+    script_run_codex: Any, header: str, secret: str
+) -> None:
+    """Credential-bearing textual errors must be safe in every persisted projection.
+
+    Prevents provider error strings from retaining Cookie, Set-Cookie, or
+    non-Bearer Authorization values in either the result error or raw events.
+    """
+    parsed = script_run_codex.parse_codex_jsonl(json.dumps({"type": "error", "error": f"provider failure: {header}"}))
+    persisted_projection = json.dumps({"error": parsed.error, "raw_events": parsed.raw_events})
+
+    assert secret not in persisted_projection
+    assert "<redacted>" in persisted_projection
+
+
+def test_retry_policy_preserves_partial_response_when_usage_is_absent(
+    script_run_codex: Any,
+    tmp_path: Path,
+) -> None:
+    """Partial provider output must remain auditable instead of being retried away.
+
+    Prevents a response event received before a transport failure, but without
+    a usage block, from being overwritten by a later attempt.  A zero-token
+    check alone would incorrectly replace ``partial answer`` here.
+    """
+    first_stream = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"id": "answer", "type": "agent_message", "text": "partial answer"},
+                }
+            ),
+            json.dumps({"type": "error", "error": "connection dropped", "error_type": "transport_error"}),
+        ]
+    )
+    streams = iter([first_stream, _completed_stream(output="replacement answer")])
+    calls = 0
+
+    def transport(*_args: Any, **_kwargs: Any) -> str:
+        nonlocal calls
+        calls += 1
+        return next(streams)
+
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        transport=transport,
+        evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+    )
+
+    result = runner.run({"id": "fixture", "prompt": "prompt", "type": "demo"}, "A_plain")
+
+    assert calls == 1
+    assert result.retry_count == 0
+    assert result.incomplete is True
+    assert result.output_text == "partial answer"
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0
+
+
 def test_retry_attempts_share_one_coordinate_wall_clock_budget(
     script_run_codex: Any,
     tmp_path: Path,
@@ -1400,12 +1548,109 @@ def test_auth_source_rejects_insecure_permissions_and_symlinks(script_run_codex:
     auth_source.chmod(0o600)
     auth_link = tmp_path / "auth-link.json"
     auth_link.symlink_to(auth_source)
-    with pytest.raises(ValueError, match="symlink"):
+    with pytest.raises(ValueError, match="path is unsafe"):
         script_run_codex.prepare_arm_home(
             "A_plain",
             root=tmp_path,
             auth_source=auth_link,
         )
+
+
+@pytest.mark.parametrize("violation", ["permissions", "owner"])
+def test_arm_home_cleanup_rejects_non_private_credential_directory(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    violation: str,
+) -> None:
+    """Credential homes may be removed only when their owner and mode are private.
+
+    Prevents cleanup from recursively deleting a path whose ownership or
+    permissions changed after creation.  A cleanup path that merely calls
+    ``rmtree`` would delete this fixture and fail the preservation assertion.
+    """
+    home_path = tmp_path / violation
+    home_path.mkdir()
+    home_path.chmod(0o700 if violation == "owner" else 0o755)
+    if violation == "owner":
+        current_uid = os.getuid()
+        monkeypatch.setattr(script_run_codex.os, "getuid", lambda: current_uid + 1)
+
+    home = script_run_codex.ArmHome("A_plain", home_path, {}, False)
+
+    with pytest.raises(RuntimeError, match="owned by the current user|permissions must be exactly 0700"):
+        home.cleanup()
+
+    assert home_path.is_dir()
+
+
+def test_prepare_verified_home_cleans_credential_home_after_keyboard_interrupt(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Interrupting authentication cannot retain a credential-bearing cell home.
+
+    Prevents the former ``except Exception`` cleanup path from missing
+    ``KeyboardInterrupt`` after the run auth state has seeded ``auth.json``.
+    """
+    auth_source = tmp_path / "source-auth.json"
+    auth_source.write_text('{"refresh_token":"fixture"}', encoding="utf-8")
+    auth_source.chmod(0o600)
+    created_homes: list[Any] = []
+    prepare_original = script_run_codex.prepare_arm_home
+
+    def prepare(arm: str, **kwargs: Any) -> Any:
+        home = prepare_original(arm, root=tmp_path, **kwargs)
+        created_homes.append(home)
+        return home
+
+    def interrupt_authentication(*_args: Any, **_kwargs: Any) -> None:
+        raise KeyboardInterrupt("fixture interrupt")
+
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path, auth_source=auth_source)
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare)
+    monkeypatch.setattr(script_run_codex, "_write_permission_config", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_authentication", interrupt_authentication)
+
+    try:
+        with pytest.raises(KeyboardInterrupt, match="fixture interrupt"):
+            runner._prepare_verified_home("A_plain")
+    finally:
+        runner.close()
+
+    assert len(created_homes) == 1
+    assert not created_homes[0].path.exists()
+
+
+def test_auth_source_path_validation_error_is_generic_and_does_not_expose_source_path(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Unsafe credential paths fail before a provider result can expose their location.
+
+    Prevents a symlink-component validation error from embedding the approved
+    auth-source path in terminal output or any later persisted provider row.
+    """
+    source_root = tmp_path / "source-root"
+    source_root.mkdir()
+    real_source = source_root / "auth.json"
+    real_source.write_text('{"refresh_token":"fixture"}', encoding="utf-8")
+    real_source.chmod(0o600)
+    alias = tmp_path / "source-alias"
+    alias.symlink_to(source_root, target_is_directory=True)
+    auth_source = alias / "auth.json"
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path, auth_source=auth_source)
+
+    with pytest.raises(ValueError) as raised:
+        runner._ensure_auth_state()
+
+    assert "path is unsafe" in str(raised.value)
+    assert raised.value.__cause__ is None
+    rendered = "".join(traceback.format_exception(raised.value))
+    for private_path in (auth_source, alias, real_source):
+        assert str(private_path) not in rendered
 
 
 def test_probe_verifies_authentication_without_disclosing_auth_source(
@@ -1484,6 +1729,125 @@ def test_runner_cleans_auth_home_when_transport_raises(
 
     assert homes
     assert all(not home.exists() for home in homes)
+
+
+def test_runner_reuses_rotated_auth_state_without_mutating_immutable_source(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refreshed cell credential seeds the next cell through one private chain.
+
+    Prevents each disposable home from recopying a now-consumed source refresh
+    state.  A source write-back, broad state directory, or retained second link
+    would fail an exact filesystem assertion.
+    """
+    source = tmp_path / "immutable-auth.json"
+    source_bytes = b'{"state":"seed"}'
+    rotated_bytes = b'{"state":"rotated"}'
+    source.write_bytes(source_bytes)
+    source.chmod(0o600)
+    seen: list[bytes] = []
+    index_path = tmp_path / "fixture-index.json"
+    index_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_plain_plugin_absent", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        script_run_codex, "_verify_authentication", lambda home, **_kwargs: setattr(home, "authenticated", True)
+    )
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        index_path=index_path,
+        auth_source=source,
+        evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+    )
+
+    def rotating_subprocess(_command: list[str], env: dict[str, str], **_kwargs: Any) -> str:
+        copied_auth = Path(env["CODEX_HOME"]) / "auth.json"
+        seen.append(copied_auth.read_bytes())
+        copied_auth.write_bytes(rotated_bytes)
+        copied_auth.chmod(0o600)
+        return _completed_stream()
+
+    monkeypatch.setattr(runner, "_subprocess", rotating_subprocess)
+    try:
+        runner.run({"id": "first", "prompt": "prompt", "type": "demo"}, "A_plain")
+        runner.run({"id": "second", "prompt": "prompt", "type": "demo"}, "A_plain")
+
+        assert seen == [source_bytes, rotated_bytes]
+        assert source.read_bytes() == source_bytes
+        state_dir = runner._auth_state_dir
+        assert state_dir is not None
+        assert state_dir.stat().st_mode & 0o777 == 0o700
+        state_auth = state_dir / "auth.json"
+        assert state_auth.read_bytes() == rotated_bytes
+        assert state_auth.stat().st_mode & 0o777 == 0o600
+        assert state_auth.stat().st_nlink == 1
+        assert not state_dir.is_relative_to(tmp_path / "results")
+    finally:
+        closer = getattr(runner, "close", None)
+        if callable(closer):
+            closer()
+
+    assert state_dir is not None
+    assert not state_dir.exists()
+    runner.close()
+
+
+def test_runner_rejects_auth_source_drift_before_the_next_model_call(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The immutable source cannot be swapped between authenticated cells.
+
+    Prevents a caller from silently replacing the reviewed source after the
+    run starts.  The transport call count proves detection occurs before the
+    next model process is launched.
+    """
+    source = tmp_path / "immutable-auth.json"
+    source.write_bytes(b'{"state":"seed"}')
+    source.chmod(0o600)
+    calls = 0
+    index_path = tmp_path / "fixture-index.json"
+    index_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_plain_plugin_absent", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        script_run_codex, "_verify_authentication", lambda home, **_kwargs: setattr(home, "authenticated", True)
+    )
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        index_path=index_path,
+        auth_source=source,
+        evaluator=lambda *_args: core.EvaluationResult(scored=True, correct=True, quality_score=1.0),
+    )
+
+    def subprocess_fixture(*_args: Any, **_kwargs: Any) -> str:
+        nonlocal calls
+        calls += 1
+        return _completed_stream()
+
+    monkeypatch.setattr(runner, "_subprocess", subprocess_fixture)
+    try:
+        runner.run({"id": "first", "prompt": "prompt", "type": "demo"}, "A_plain")
+        source.write_bytes(b'{"state":"changed"}')
+        source.chmod(0o600)
+
+        with pytest.raises(ValueError, match="auth source.*changed|changed.*auth source"):
+            runner.run({"id": "second", "prompt": "prompt", "type": "demo"}, "A_plain")
+    finally:
+        closer = getattr(runner, "close", None)
+        if callable(closer):
+            closer()
+
+    assert calls == 1
 
 
 def test_probe_requires_verified_treatment_home(script_run_codex: Any, tmp_path: Path) -> None:
@@ -2046,6 +2410,316 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     result_rows = [line for line in stdout.splitlines() if line.startswith("(")]
     assert len(result_rows) == 2
     assert str(output_path) not in "\n".join(result_rows)
+
+
+def test_main_stops_after_three_equivalent_unknown_infrastructure_failures(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three identical unknown pre-response infrastructure failures stop the study.
+
+    Prevents a shared provider outage from generating a long sequence of
+    zero-token cells after the third matching signature.  Known deterministic
+    authentication failures stop immediately; semantic failures continue.
+    """
+    tasks = [{"id": f"task-{index}", "prompt": "prompt", "type": "demo"} for index in range(1, 5)]
+    calls: list[tuple[str, str]] = []
+
+    class FixtureRunner:
+        """Return the same provider failure for every coordinate."""
+
+        def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            self.model = model
+
+        def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            calls.append((task["id"], arm))
+            return script_run_codex.CodexRun(
+                arm=arm,
+                task_id=task["id"],
+                task_type="demo",
+                model=self.model,
+                parity_arm=arm,
+                success=False,
+                scoreable=False,
+                incomplete=True,
+                error="provider temporarily unavailable",
+                error_type="transport_error",
+            )
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    output_path = tmp_path / "infrastructure.jsonl"
+
+    with pytest.raises(RuntimeError, match="infrastructure failure"):
+        script_run_codex.main(
+            repo_path=tmp_path,
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks_path=tmp_path / "tasks.json",
+            output_path=output_path,
+            arm="A_plain",
+            max_wall_clock_seconds=600.0,
+        )
+
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    assert calls == [("task-1", "A_plain"), ("task-2", "A_plain"), ("task-3", "A_plain")]
+    assert [(row["task_id"], row["error_type"]) for row in rows] == [
+        ("task-1", "transport_error"),
+        ("task-2", "transport_error"),
+        ("task-3", "transport_error"),
+    ]
+    metadata = json.loads((tmp_path / "infrastructure-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["status"] == "failed"
+    assert metadata["persisted_cells"] == 3
+    assert metadata["error"]["type"] == "RuntimeError"
+
+
+def test_main_stops_immediately_after_a_deterministic_authentication_failure(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A known expired or consumed refresh token requires no recurrence wait.
+
+    Prevents a deterministic credential failure from paying for two additional
+    cells merely to satisfy the generic unknown-infrastructure threshold.
+    """
+    tasks = [{"id": f"task-{index}", "prompt": "prompt", "type": "demo"} for index in range(1, 3)]
+    calls: list[tuple[str, str]] = []
+
+    class FixtureRunner:
+        """Return a recognized authentication failure for every coordinate."""
+
+        def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            self.model = model
+
+        def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            calls.append((task["id"], arm))
+            return script_run_codex.CodexRun(
+                arm=arm,
+                task_id=task["id"],
+                task_type="demo",
+                model=self.model,
+                parity_arm=arm,
+                success=False,
+                scoreable=False,
+                incomplete=True,
+                error="HTTP 401 Unauthorized: refresh token has already been used",
+                error_type="authentication_failed",
+            )
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    output_path = tmp_path / "authentication.jsonl"
+
+    with pytest.raises(RuntimeError, match="authentication failed"):
+        script_run_codex.main(
+            repo_path=tmp_path,
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks_path=tmp_path / "tasks.json",
+            output_path=output_path,
+            arm="A_plain",
+            max_wall_clock_seconds=600.0,
+        )
+
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    assert calls == [("task-1", "A_plain")]
+    assert [(row["task_id"], row["error_type"]) for row in rows] == [("task-1", "authentication_failed")]
+    metadata = json.loads((tmp_path / "authentication-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["status"] == "failed"
+    assert metadata["persisted_cells"] == 1
+
+
+def test_main_continues_after_semantic_or_model_quality_failures(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Low-quality scored answers must not trip the infrastructure circuit breaker.
+
+    Prevents the recurrence guard from changing the established full-study
+    rule: answer quality and task semantics remain evidence, not admission
+    failures.  A guard based on any unsuccessful result would stop after three.
+    """
+    tasks = [{"id": f"task-{index}", "prompt": "prompt", "type": "demo"} for index in range(1, 5)]
+    calls: list[tuple[str, str]] = []
+
+    class FixtureRunner:
+        """Return independent answer-quality failures with provider usage."""
+
+        def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            self.model = model
+
+        def run(self, task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            calls.append((task["id"], arm))
+            return script_run_codex.CodexRun(
+                arm=arm,
+                task_id=task["id"],
+                task_type="demo",
+                model=self.model,
+                parity_arm=arm,
+                success=False,
+                scoreable=True,
+                input_tokens=21,
+                output_tokens=3,
+                quality_score=0.0,
+                error="answer did not satisfy the task oracle",
+                error_type="semantic_quality_failure",
+            )
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    output_path = tmp_path / "semantic.jsonl"
+
+    script_run_codex.main(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        tasks_path=tmp_path / "tasks.json",
+        output_path=output_path,
+        arm="A_plain",
+        max_wall_clock_seconds=600.0,
+    )
+
+    assert calls == [(f"task-{index}", "A_plain") for index in range(1, 5)]
+    metadata = json.loads((tmp_path / "semantic-metadata.json").read_text(encoding="utf-8"))
+    assert metadata["status"] == "completed"
+    assert metadata["persisted_cells"] == 4
+
+
+@pytest.mark.parametrize("raise_from_run", [False, True], ids=["normal-exit", "exceptional-exit"])
+def test_main_closes_runner_auth_state_on_all_study_exits(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raise_from_run: bool,
+) -> None:
+    """The study owns and closes the runner's private auth state lifecycle.
+
+    Prevents normal completion or a mid-study exception from retaining a
+    refreshed credential chain beyond the run.  The concrete state-directory
+    permissions and deletion are exercised in the runner-level auth test.
+    """
+    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
+    closed = 0
+
+    class FixtureRunner:
+        """Expose a close seam without creating an authenticated process."""
+
+        def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
+            self.model = model
+
+        def run(self, selected_task: dict[str, Any], arm: str, **_kwargs: Any) -> Any:
+            if raise_from_run:
+                raise RuntimeError("fixture run failure")
+            return script_run_codex.CodexRun(
+                arm=arm,
+                task_id=selected_task["id"],
+                task_type="demo",
+                model=self.model,
+                parity_arm=arm,
+                success=True,
+                scoreable=True,
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+        def close(self) -> None:
+            nonlocal closed
+            closed += 1
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    output_path = tmp_path / f"runner-close-{raise_from_run}.jsonl"
+
+    if raise_from_run:
+        with pytest.raises(RuntimeError, match="fixture run failure"):
+            script_run_codex.main(
+                repo_path=tmp_path,
+                model=script_run_codex.PARITY_CODEX_MODEL,
+                tasks_path=tmp_path / "tasks.json",
+                output_path=output_path,
+                arm="A_plain",
+                max_wall_clock_seconds=600.0,
+            )
+    else:
+        script_run_codex.main(
+            repo_path=tmp_path,
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks_path=tmp_path / "tasks.json",
+            output_path=output_path,
+            arm="A_plain",
+            max_wall_clock_seconds=600.0,
+        )
+
+    assert closed == 1
+
+
+@pytest.mark.parametrize("failure_site", ["snapshot", "metadata", "metadata-write"])
+def test_main_closes_runner_when_setup_raises_before_the_first_cell(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_site: str,
+) -> None:
+    """Every pre-cell setup boundary closes runner-owned credential state.
+
+    Covers snapshot generation, metadata construction, and first metadata
+    persistence.  A narrow snapshot-only exception handler would leak a
+    refreshed auth chain when either subsequent setup action is interrupted.
+    """
+    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
+    closed = 0
+
+    class FixtureRunner:
+        """Expose the run-lifecycle seams without preparing a real credential."""
+
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def create_input_snapshot(self, *_args: Any, **_kwargs: Any) -> dict[str, str]:
+            if failure_site == "snapshot":
+                raise KeyboardInterrupt("snapshot interrupted")
+            return {"path": "fixture", "sha256": "fixture"}
+
+        def close(self) -> None:
+            nonlocal closed
+            closed += 1
+
+    def initial_metadata(**_kwargs: Any) -> dict[str, int]:
+        if failure_site == "metadata":
+            raise KeyboardInterrupt("metadata interrupted")
+        return {"persisted_cells": 0}
+
+    def write_metadata(*_args: Any, **_kwargs: Any) -> None:
+        if failure_site == "metadata-write":
+            raise KeyboardInterrupt("metadata write interrupted")
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    monkeypatch.setattr(script_run_codex, "_initial_run_metadata", initial_metadata)
+    monkeypatch.setattr(script_run_codex, "_write_run_metadata", write_metadata)
+
+    with pytest.raises(KeyboardInterrupt, match="interrupted"):
+        script_run_codex.main(
+            repo_path=tmp_path,
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks_path=tmp_path / "tasks.json",
+            output_path=tmp_path / f"{failure_site}.jsonl",
+            arm="A_plain",
+            max_wall_clock_seconds=600.0,
+        )
+
+    assert closed == 1
 
 
 def test_main_emits_plans_only_for_dry_runs_and_paths_only_in_artifact_announcement(
@@ -3903,6 +4577,7 @@ def test_diff_impact_preflight_exercises_stage_admission_and_strict_revert(
         admitted.append(arm)
         home_path = tmp_path / f"home-{arm}"
         home_path.mkdir()
+        home_path.chmod(0o700)
         return script_run_codex.ArmHome(arm, home_path, {}, False)
 
     monkeypatch.setattr(runner, "_prepare_verified_home", prepare)
@@ -4275,6 +4950,7 @@ def test_no_model_probe_removes_its_coordination_root(
     """A dry probe must not leave the index reader-coordination skeleton behind."""
     home_path = tmp_path / "home"
     home_path.mkdir()
+    home_path.chmod(0o700)
     config = home_path / "config.toml"
     config.write_text("", encoding="utf-8")
     config.chmod(0o600)

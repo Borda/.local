@@ -373,4 +373,14 @@ def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authoriz
     assert "no separate chat authorization is required" in human
     assert "CODEX_PAID_APPROVAL" in human
     assert "bash benchmarks/run-all.sh codex --dry-run" in human
+    assert "immutable, user-owned `0600` auth source" in human
+    assert "Do not run a concurrent Codex session with it" in human
+    assert "independently authenticated benchmark credential" in human
+    assert "The runner keeps private run state and atomically propagates valid refreshes between cells." in human
+    assert "reauthenticate after the run if needed" in human
+    assert "Known refresh-token authentication failures stop immediately" in human
+    assert (
+        "three matching unknown zero-token pre-response failures preserve partial artifacts and stop scheduling"
+        in human
+    )
     assert "This manifest rebuild used no model cell or authentication source." in human

@@ -224,6 +224,10 @@ _MIN_PERMISSION_PROFILE_VERSION = (0, 138, 0)
 _COORDINATION_NAME = ".index-rw"
 _REGISTRY_NAME = "registry.lock"
 _READERS_NAME = "readers"
+_AUTH_MAX_BYTES = 1024 * 1024
+_SENSITIVE_EVENT_KEYS = frozenset(
+    {"access_token", "refresh_token", "id_token", "authorization", "cookie", "set-cookie"}
+)
 _DISPLAY_ARM_LABELS = {
     "A_plain": "A_plain",
     "B_direct_required": "B_direct",
@@ -930,6 +934,52 @@ class CodexParseResult:
         return self.completed and not self.incomplete and not self.error
 
 
+def _is_refresh_token_authentication_failure(error: str) -> bool:
+    """Identify deterministic OAuth refresh failures that cannot succeed on retry."""
+    normalized = error.casefold()
+    return (
+        "401" in normalized
+        and "refresh token" in normalized
+        and ("expired" in normalized or "already been used" in normalized or "already used" in normalized)
+    )
+
+
+def _redact_sensitive_text(value: str) -> str:
+    """Remove standard credential representations from persisted provider errors."""
+    value = re.sub(
+        r"(?i)\b(authorization|cookie|set-cookie)\s*:\s*[^\r\n]*",
+        r"\1: <redacted>",
+        value,
+    )
+    value = re.sub(r"(?i)(bearer\s+)[^\s,;\]\}]+", r"\1<redacted>", value)
+    return re.sub(
+        r'(?i)(["\']?(?:access_token|refresh_token|id_token|authorization|cookie|set-cookie)["\']?\s*[:=]\s*["\'])[^"\']*',
+        r"\1<redacted>",
+        value,
+    )
+
+
+def _redact_sensitive_event(value: Any) -> Any:
+    """Return a telemetry-safe projection without credential-valued fields."""
+    if isinstance(value, Mapping):
+        return {
+            str(key): "<redacted>" if str(key).casefold() in _SENSITIVE_EVENT_KEYS else _redact_sensitive_event(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_event(item) for item in value]
+    if isinstance(value, str):
+        return _redact_sensitive_text(value)
+    return value
+
+
+def _redact_provider_error(value: Any) -> str:
+    """Render one provider error without persisting credential values."""
+    if isinstance(value, (Mapping, list)):
+        return json.dumps(_redact_sensitive_event(value), sort_keys=True, default=str)
+    return _redact_sensitive_text(str(value))
+
+
 def _as_int(value: Any) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
@@ -1144,6 +1194,7 @@ def parse_codex_jsonl(
     pending_items: set[str] = set()
     compact_query_attempt_seen = False
     saw_terminal = False
+    saw_authentication_failure = False
     for raw_line in _iter_lines(stream):
         line = raw_line.strip()
         if not line:
@@ -1156,7 +1207,7 @@ def parse_codex_jsonl(
         if not isinstance(event, dict):
             result.malformed_lines += 1
             continue
-        result.raw_events.append(event)
+        result.raw_events.append(_redact_sensitive_event(event))
         event_type = str(event.get("type", ""))
         if event_type == "thread.started":
             result.thread_id = str(event.get("thread_id", ""))
@@ -1265,7 +1316,7 @@ def parse_codex_jsonl(
             result.retryable = True
             result.incomplete = True
             error = event.get("error") or event.get("message") or event.get("detail")
-            result.error = str(error) if error else event_type
+            result.error = _redact_provider_error(error) if error else event_type
             native_error_type = event.get("error_type")
             if isinstance(native_error_type, str) and native_error_type:
                 result.error_type = native_error_type
@@ -1275,6 +1326,8 @@ def parse_codex_jsonl(
                 result.error_type = "response_failed"
             else:
                 result.error_type = "transport_error"
+            if _is_refresh_token_authentication_failure(result.error):
+                saw_authentication_failure = True
     if not saw_terminal and not result.error:
         result.incomplete = True
         result.error = "missing terminal event"
@@ -1290,6 +1343,9 @@ def parse_codex_jsonl(
         result.incomplete = True
         result.error = result.error or f"malformed JSONL ({result.malformed_lines} line(s))"
         result.error_type = result.error_type or "malformed_stream"
+    if saw_authentication_failure or _is_refresh_token_authentication_failure(result.error):
+        result.error_type = "authentication_failed"
+        result.retryable = False
     return result
 
 
@@ -1322,7 +1378,7 @@ class ArmHome:
 
     def cleanup(self) -> None:
         """Remove the disposable home after a run."""
-        shutil.rmtree(self.path, ignore_errors=True)
+        _remove_private_directory(self.path, description="disposable Codex home")
 
     def __enter__(self) -> "ArmHome":
         return self
@@ -1331,47 +1387,243 @@ class ArmHome:
         self.cleanup()
 
 
-def _copy_auth_source(auth_source: Path, home: Path) -> None:
-    """Copy one private regular credential file into a disposable Codex home."""
-    source = Path(auth_source)
-    try:
-        source_lstat = source.lstat()
-    except OSError as exc:
-        raise ValueError("auth source is unavailable") from exc
-    if stat.S_ISLNK(source_lstat.st_mode):
-        raise ValueError("auth source must not be a symlink")
+@dataclass(frozen=True)
+class _AuthFileIdentity:
+    """Stable metadata required for one private credential file."""
 
-    source_fd: int | None = None
-    target_fd: int | None = None
-    target = home / "auth.json"
-    try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        source_fd = os.open(source, flags)
-        source_stat = os.fstat(source_fd)
-        if not stat.S_ISREG(source_stat.st_mode):
-            raise ValueError("auth source must be a regular file")
-        if hasattr(os, "getuid") and source_stat.st_uid != os.getuid():
-            raise ValueError("auth source must be owned by the current user")
-        if stat.S_IMODE(source_stat.st_mode) & 0o077:
-            raise ValueError("auth source permissions must deny group and other access")
-        if (source_stat.st_dev, source_stat.st_ino) != (source_lstat.st_dev, source_lstat.st_ino):
-            raise ValueError("auth source changed while being opened")
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
 
-        target_fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(source_fd, "rb") as source_handle:
-            source_fd = None
-            with os.fdopen(target_fd, "wb") as target_handle:
-                target_fd = None
-                shutil.copyfileobj(source_handle, target_handle)
-        target.chmod(0o600)
-    except OSError as exc:
-        target.unlink(missing_ok=True)
-        raise ValueError("auth source could not be copied securely") from exc
+
+def _auth_identity(metadata: os.stat_result) -> _AuthFileIdentity:
+    """Return the immutable metadata tuple used for credential stability checks."""
+    return _AuthFileIdentity(
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _validate_auth_metadata(metadata: os.stat_result, *, description: str) -> None:
+    """Reject credentials that cannot safely carry mutable OAuth state."""
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"{description} must be a regular file")
+    if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+        raise ValueError(f"{description} must be owned by the current user")
+    if stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise ValueError(f"{description} permissions must be exactly 0600")
+    if metadata.st_nlink != 1:
+        raise ValueError(f"{description} must not be hard-linked")
+    if not 0 < metadata.st_size <= _AUTH_MAX_BYTES:
+        raise ValueError(f"{description} size is invalid")
+
+
+def _read_auth_payload(path: Path, *, description: str) -> tuple[bytes, _AuthFileIdentity]:
+    """Read one stable JSON-object credential through a no-follow descriptor."""
+    path = Path(path)
+    try:
+        _assert_safe_path_components(path)
+    except ValueError:
+        raise ValueError(f"{description} path is unsafe") from None
+    try:
+        before = path.lstat()
+    except OSError:
+        raise ValueError(f"{description} is unavailable") from None
+    if stat.S_ISLNK(before.st_mode):
+        raise ValueError(f"{description} must not be a symlink")
+    _validate_auth_metadata(before, description=description)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        opened = os.fstat(descriptor)
+        _validate_auth_metadata(opened, description=description)
+        if _auth_identity(opened) != _auth_identity(before):
+            raise ValueError(f"{description} changed while being opened")
+        chunks: list[bytes] = []
+        remaining = _AUTH_MAX_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        if len(payload) != opened.st_size or len(payload) > _AUTH_MAX_BYTES:
+            raise ValueError(f"{description} changed while being read")
+        after_descriptor = os.fstat(descriptor)
+    except OSError:
+        raise ValueError(f"{description} could not be read securely") from None
     finally:
-        if source_fd is not None:
-            os.close(source_fd)
-        if target_fd is not None:
-            os.close(target_fd)
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = path.lstat()
+    except OSError:
+        raise ValueError(f"{description} changed while being read") from None
+    identity = _auth_identity(before)
+    if _auth_identity(after_descriptor) != identity or _auth_identity(after) != identity:
+        raise ValueError(f"{description} changed while being read")
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{description} must contain a JSON object") from exc
+    if not isinstance(decoded, dict) or not decoded:
+        raise ValueError(f"{description} must contain a non-empty JSON object")
+    return payload, identity
+
+
+def _fsync_directory(path: Path) -> None:
+    """Durably publish a same-directory credential replacement when supported."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags)
+        os.fsync(descriptor)
+    except OSError:
+        # The payload has already been fsynced; directory fsync is unavailable
+        # on some supported filesystems and must not erase valid state.
+        return
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _atomic_write_auth_payload(destination: Path, payload: bytes, *, description: str) -> None:
+    """Atomically replace one validated credential while retaining prior state on failure."""
+    destination = Path(destination)
+    parent = destination.parent
+    try:
+        _assert_safe_path_components(parent)
+    except ValueError as exc:
+        raise ValueError(f"{description} parent path is unsafe") from exc
+    try:
+        parent_metadata = parent.lstat()
+    except OSError as exc:
+        raise ValueError(f"{description} parent is unavailable") from exc
+    if not stat.S_ISDIR(parent_metadata.st_mode) or stat.S_IMODE(parent_metadata.st_mode) != 0o700:
+        raise ValueError(f"{description} parent must be a private directory")
+    if hasattr(os, "getuid") and parent_metadata.st_uid != os.getuid():
+        raise ValueError(f"{description} parent must be owned by the current user")
+    if not 0 < len(payload) <= _AUTH_MAX_BYTES:
+        raise ValueError(f"{description} payload size is invalid")
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{description} payload must be a JSON object") from exc
+    if not isinstance(decoded, dict) or not decoded:
+        raise ValueError(f"{description} payload must be a non-empty JSON object")
+    temporary = parent / f".{destination.name}.{uuid4().hex}.tmp"
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        os.fchmod(descriptor, 0o600)
+        view = memoryview(payload)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("credential write returned no bytes")
+            view = view[written:]
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+        os.replace(temporary, destination)
+        _fsync_directory(parent)
+    except OSError as exc:
+        raise ValueError(f"{description} could not be updated securely") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+    _read_auth_payload(destination, description=description)
+
+
+def _remove_private_directory(path: Path, *, description: str, require_private: bool = True) -> None:
+    """Remove a private directory and fail if credential-bearing state remains."""
+    path = Path(path)
+    if not path.exists() and not path.is_symlink():
+        return
+    try:
+        _assert_safe_path_components(path.parent)
+    except ValueError as exc:
+        raise RuntimeError(f"{description} parent path is unsafe") from exc
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise RuntimeError(f"{description} could not be inspected for cleanup") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise RuntimeError(f"{description} is not a private directory")
+    if require_private:
+        if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+            raise RuntimeError(f"{description} is not owned by the current user")
+        if stat.S_IMODE(metadata.st_mode) != 0o700:
+            raise RuntimeError(f"{description} permissions must be exactly 0700")
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        raise RuntimeError(f"{description} could not be removed") from exc
+    if path.exists() or path.is_symlink():
+        raise RuntimeError(f"{description} remains after cleanup")
+
+
+class _RunAuthState:
+    """Private sequential OAuth state shared only between disposable cell homes."""
+
+    def __init__(self, source: Path) -> None:
+        self.source = Path(source)
+        payload, self._source_identity = _read_auth_payload(self.source, description="auth source")
+        root = Path(tempfile.gettempdir()).resolve(strict=True)
+        _assert_safe_path_components(root)
+        self.directory = Path(tempfile.mkdtemp(prefix="codex-benchmark-auth-", dir=root))
+        self.directory.chmod(0o700)
+        self.path = self.directory / "auth.json"
+        try:
+            _atomic_write_auth_payload(self.path, payload, description="run auth state")
+        except BaseException:
+            _remove_private_directory(self.directory, description="run auth state")
+            raise
+        self._closed = False
+
+    def assert_source_unchanged(self) -> None:
+        """Fail before a model call when the approved source metadata has drifted."""
+        _payload, identity = _read_auth_payload(self.source, description="auth source")
+        if identity != self._source_identity:
+            raise ValueError("auth source metadata changed during benchmark run")
+
+    def seed_home(self, home: Path) -> None:
+        """Copy the current private credential state into one disposable home."""
+        if self._closed:
+            raise RuntimeError("run auth state is closed")
+        payload, _identity = _read_auth_payload(self.path, description="run auth state")
+        _atomic_write_auth_payload(Path(home) / "auth.json", payload, description="cell auth state")
+
+    def refresh_from_home(self, home: Path) -> None:
+        """Atomically retain a valid credential refresh produced by one cell."""
+        if self._closed:
+            raise RuntimeError("run auth state is closed")
+        payload, _identity = _read_auth_payload(Path(home) / "auth.json", description="cell auth state")
+        _atomic_write_auth_payload(self.path, payload, description="run auth state")
+
+    def close(self) -> None:
+        """Remove private run credential state exactly once."""
+        if self._closed:
+            return
+        _remove_private_directory(self.directory, description="run auth state")
+        self._closed = True
+
+
+def _copy_auth_source(auth_source: Path, home: Path) -> None:
+    """Copy one validated source credential into a disposable Codex home."""
+    payload, _identity = _read_auth_payload(Path(auth_source), description="auth source")
+    _atomic_write_auth_payload(Path(home) / "auth.json", payload, description="cell auth state")
 
 
 def _assert_safe_path_components(path: Path) -> None:
@@ -1646,8 +1898,8 @@ def prepare_arm_home(
         if arm == "B_direct_required":
             _configure_direct_codemap_launcher(arm_home, codemap_bin)
         return arm_home
-    except Exception:
-        shutil.rmtree(home, ignore_errors=True)
+    except BaseException:
+        _remove_private_directory(home, description="disposable Codex home")
         raise
 
 
@@ -2854,6 +3106,27 @@ def _pooling_ineligibility_reasons(run: CodexRun) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _infrastructure_failure_signature(run: CodexRun) -> str | None:
+    """Return a recurrence key only for pre-response runner/provider failures."""
+    if run.success or not run.incomplete or run.input_tokens or run.output_tokens or run.output_text.strip():
+        return None
+    if run.error_type == "authentication_failed":
+        return "authentication_failed"
+    if run.error_type not in {
+        "authentication_state_failed",
+        "launch_os_error",
+        "missing_terminal",
+        "non_zero_exit",
+        "response_failed",
+        "transport_error",
+        "turn_failed",
+    }:
+        return None
+    normalized = run.error.casefold()
+    http_class = re.search(r"\b([45])\d\d\b", normalized)
+    return f"{run.error_type}:http_{http_class.group(1)}xx" if http_class else run.error_type
+
+
 @lru_cache(maxsize=1)
 def _reference_bench_module() -> Any:
     """Load the Claude reference module once to reuse its exact evaluator registry."""
@@ -2952,6 +3225,22 @@ class CodexRunner:
         self.command_runner = command_runner
         self.transport = transport
         self.evaluator = evaluator or _default_evaluator
+        self._auth_state: _RunAuthState | None = None
+        self._auth_state_dir: Path | None = None
+
+    def _ensure_auth_state(self) -> _RunAuthState | None:
+        """Lazily seed the private credential chain for this runner."""
+        if self.auth_source is None:
+            return None
+        if self._auth_state is None:
+            self._auth_state = _RunAuthState(self.auth_source)
+            self._auth_state_dir = self._auth_state.directory
+        return self._auth_state
+
+    def close(self) -> None:
+        """Remove the runner-owned private credential chain."""
+        if self._auth_state is not None:
+            self._auth_state.close()
 
     def build_command(self, prompt: str) -> list[str]:
         """Build this runner's canonical Codex command."""
@@ -2976,13 +3265,19 @@ class CodexRunner:
             self.manifest_path,
             diff_impact_stage,
         )
+        auth_state = self._ensure_auth_state()
+        if auth_state is not None:
+            auth_state.assert_source_unchanged()
         home = prepare_arm_home(
             arm,
-            auth_source=self.auth_source,
+            auth_source=None,
             codemap_bin=self.codemap_bin,
             plugin_installer=self.plugin_installer,
         )
         try:
+            if auth_state is not None:
+                auth_state.seed_home(home.path)
+                home.auth_provisioned = True
             if arm != "A_plain" and self.index_path is not None:
                 home.env["CODEMAP_PYTHON"] = _verify_locked_codemap_python(
                     manifest_path=self.manifest_path,
@@ -3060,9 +3355,11 @@ class CodexRunner:
                 )
             if home.auth_provisioned:
                 _verify_authentication(home, command_runner=self.command_runner)
+                if auth_state is not None:
+                    auth_state.refresh_from_home(home.path)
             if arm == "A_plain":
                 _verify_plain_plugin_absent(home, command_runner=self.command_runner)
-        except Exception:
+        except BaseException:
             if home.coordination_path is not None:
                 with contextlib.suppress(ValueError):
                     _cleanup_coordination_root(home.coordination_path)
@@ -3339,6 +3636,7 @@ class CodexRunner:
         attempt_events: list[list[dict[str, Any]]] = []
         parsed = CodexParseResult()
         postflight_error = ""
+        auth_state_error = ""
         command = self.build_command(command_prompt)
         try:
             for attempt in range(3):
@@ -3383,13 +3681,21 @@ class CodexRunner:
                         parsed.retryable = False
                         break
                 zero_token_transport_failure = (
-                    parsed.input_tokens == 0 and parsed.output_tokens == 0 and parsed.retryable
+                    parsed.input_tokens == 0
+                    and parsed.output_tokens == 0
+                    and not parsed.output_text.strip()
+                    and parsed.retryable
                 )
                 if not zero_token_transport_failure or attempt == 2:
                     break
         finally:
             run.elapsed_s = time.monotonic() - started_at
             if home is not None:
+                if self._auth_state is not None and home.auth_provisioned:
+                    try:
+                        self._auth_state.refresh_from_home(home.path)
+                    except (RuntimeError, ValueError) as exc:
+                        auth_state_error = str(exc)
                 if home.coordination_path is not None:
                     try:
                         _cleanup_coordination_root(home.coordination_path)
@@ -3448,6 +3754,11 @@ class CodexRunner:
             run.error = f"runtime contamination: {postflight_error}"
             run.error_type = "runtime_contamination"
             run.success = False
+        if auth_state_error:
+            run.incomplete = True
+            run.error = "run auth state could not be refreshed"
+            run.error_type = "authentication_state_failed"
+            run.success = False
         if run.contaminated and not run.error:
             run.error = "contaminated"
             run.success = False
@@ -3484,6 +3795,14 @@ class CodexRunner:
                     "type": "error",
                     "error": f"timeout ({attempt_timeout}s)",
                     "error_type": "timeout",
+                }
+            )
+        except OSError as exc:
+            return json.dumps(
+                {
+                    "type": "error",
+                    "error": f"Codex launch failed: {exc.strerror or type(exc).__name__}",
+                    "error_type": "launch_os_error",
                 }
             )
         if completed.returncode != 0:
@@ -3578,6 +3897,13 @@ def _write_run_metadata(metadata_path: Path, payload: Mapping[str, Any]) -> None
         os.replace(temporary, metadata_path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _close_runner(runner: Any) -> None:
+    """Close optional private runner state without constraining fixture runners."""
+    close = getattr(runner, "close", None)
+    if callable(close):
+        close()
 
 
 def _regular_file_within(path: Path, root: Path, *, description: str) -> Path:
@@ -4039,17 +4365,22 @@ def main(
     if show_legend:
         render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
     if dry_run:
-        for selected in ARMS if arm == "all" else (arm,):
-            evidence = runner.probe_arm(selected)
-            runtime = evidence.get("codemap_python") or "absent"
-            print(f"PROBE\t{selected}\tcodemap={str(evidence['codemap_available']).lower()}\tcodemap_python={runtime}")
-        selected_arms = ARMS if arm == "all" else (arm,)
-        preflight = getattr(runner, "preflight_expected_queries", None)
-        if callable(preflight):
-            preflight(tasks, selected_arms)
-        staged_preflight = getattr(runner, "preflight_diff_impact_stages", None)
-        if callable(staged_preflight):
-            staged_preflight(tasks, selected_arms)
+        try:
+            for selected in ARMS if arm == "all" else (arm,):
+                evidence = runner.probe_arm(selected)
+                runtime = evidence.get("codemap_python") or "absent"
+                print(
+                    f"PROBE\t{selected}\tcodemap={str(evidence['codemap_available']).lower()}\tcodemap_python={runtime}"
+                )
+            selected_arms = ARMS if arm == "all" else (arm,)
+            preflight = getattr(runner, "preflight_expected_queries", None)
+            if callable(preflight):
+                preflight(tasks, selected_arms)
+            staged_preflight = getattr(runner, "preflight_diff_impact_stages", None)
+            if callable(staged_preflight):
+                staged_preflight(tasks, selected_arms)
+        finally:
+            _close_runner(runner)
     if max_wall_clock_seconds is not None:
         print(
             f"CONTROL\tcell_wall_clock_seconds={PARITY_TIMEOUT_SECONDS:g}"
@@ -4090,43 +4421,49 @@ def main(
     assert output_path is not None
     assert metadata_path is not None
     snapshot_builder = getattr(runner, "create_input_snapshot", None)
-    input_snapshot = (
-        snapshot_builder(
-            output_path.parent,
-            tasks_path=tasks_path,
-            manifest_path=manifest_path,
-            invocation_launcher_path=invocation_launcher_path,
-            tasks=tasks,
-            arms=tuple(dict.fromkeys(selected for arms in task_arms.values() for selected in arms)),
+    try:
+        input_snapshot = (
+            snapshot_builder(
+                output_path.parent,
+                tasks_path=tasks_path,
+                manifest_path=manifest_path,
+                invocation_launcher_path=invocation_launcher_path,
+                tasks=tasks,
+                arms=tuple(dict.fromkeys(selected for arms in task_arms.values() for selected in arms)),
+            )
+            if callable(snapshot_builder)
+            else None
         )
-        if callable(snapshot_builder)
-        else None
-    )
-    metadata = _initial_run_metadata(
-        manifest_path=manifest_path,
-        repo_path=repo_path,
-        index_path=index_path,
-        output_path=output_path,
-        metadata_path=metadata_path,
-        model=model,
-        reasoning_effort=reasoning_effort,
-        repetitions=repetitions,
-        task_arms=task_arms,
-        max_wall_clock_seconds=max_wall_clock_seconds,
-        auth_provisioned=auth_source is not None,
-        input_snapshot=input_snapshot,
-        study_mode="targeted" if explicit_selection else "confirmatory",
-        targeted_scope=targeted_scope,
-    )
-    canonical_path = _canonical_telemetry_path(output_path)
-    task_order = tuple(str(task["id"]) for task in tasks)
-    _write_run_metadata(metadata_path, metadata)
+        metadata = _initial_run_metadata(
+            manifest_path=manifest_path,
+            repo_path=repo_path,
+            index_path=index_path,
+            output_path=output_path,
+            metadata_path=metadata_path,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            repetitions=repetitions,
+            task_arms=task_arms,
+            max_wall_clock_seconds=max_wall_clock_seconds,
+            auth_provisioned=auth_source is not None,
+            input_snapshot=input_snapshot,
+            study_mode="targeted" if explicit_selection else "confirmatory",
+            targeted_scope=targeted_scope,
+        )
+        canonical_path = _canonical_telemetry_path(output_path)
+        task_order = tuple(str(task["id"]) for task in tasks)
+        _write_run_metadata(metadata_path, metadata)
+    except BaseException:
+        _close_runner(runner)
+        raise
     run_deadline = time.monotonic() + max_wall_clock_seconds
     planned_cells = sum(len(arms) for arms in task_arms.values())
     printed_cells = 0
     pending_result_rows: list[tuple[str, str]] = []
     active_stager: Any | None = None
     active_diff_impact_stage: DiffImpactStageAdmission | None = None
+    consecutive_infrastructure_signature = ""
+    consecutive_infrastructure_failures = 0
     try:
         for task in tasks:
             for repetition in range(1, repetitions + 1):
@@ -4216,6 +4553,24 @@ def main(
                             ),
                         )
                     )
+                    infrastructure_signature = _infrastructure_failure_signature(run)
+                    if infrastructure_signature is None:
+                        consecutive_infrastructure_signature = ""
+                        consecutive_infrastructure_failures = 0
+                    elif run.error_type == "authentication_failed":
+                        raise RuntimeError(
+                            "infrastructure failure: authentication failed; reauthenticate before resuming the benchmark"
+                        )
+                    elif infrastructure_signature == consecutive_infrastructure_signature:
+                        consecutive_infrastructure_failures += 1
+                    else:
+                        consecutive_infrastructure_signature = infrastructure_signature
+                        consecutive_infrastructure_failures = 1
+                    if consecutive_infrastructure_failures >= 3:
+                        raise RuntimeError(
+                            "infrastructure failure recurred three times before a model response; "
+                            "preserved partial artifacts and stopped scheduling"
+                        )
                     if time.monotonic() >= run_deadline:
                         raise TimeoutError("complete-run wall-clock limit exhausted after persisted cell")
                 printed_cells = _print_result_block(
@@ -4255,6 +4610,28 @@ def main(
         _write_run_metadata(metadata_path, metadata)
         print(f"SUMMARY\tstatus={metadata['status']}\tpersisted_cells={metadata['persisted_cells']}")
         raise
+    finally:
+        try:
+            _close_runner(runner)
+        except BaseException as cleanup_exc:
+            prior_error = metadata.get("error")
+            metadata["status"] = "failed"
+            metadata["completed_at"] = _utc_now()
+            metadata["error"] = {
+                "type": type(cleanup_exc).__name__,
+                "message": f"runner credential cleanup failed: {cleanup_exc}"[:1000],
+                "prior_error": prior_error,
+            }
+            metadata["artifacts"]["telemetry_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
+            pooling_reasons = metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"]
+            if "run_not_completed" not in pooling_reasons:
+                pooling_reasons.append("run_not_completed")
+            if canonical_path.exists():
+                metadata["artifacts"]["canonical_telemetry_status"] = "partial"
+                metadata["artifacts"]["canonical_telemetry_pooling_eligible"] = False
+            _write_run_metadata(metadata_path, metadata)
+            print(f"SUMMARY\tstatus=failed\tpersisted_cells={metadata['persisted_cells']}")
+            raise
     if invocation_launcher_path is not None and invocation_launcher_sha256 is not None:
         _validate_invocation_launcher(invocation_launcher_path, invocation_launcher_sha256)
     metadata["status"] = "completed"

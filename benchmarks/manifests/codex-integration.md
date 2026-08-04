@@ -1,6 +1,6 @@
 # `codex-integration-v1`
 
-**Manifest SHA-256**: `9fca5b943eb69bec709a3bdf7742ffd2c1b75d55261f382657e7eb7a0c7bd627`
+**Manifest SHA-256**: `5de5f5af483613c3030605b922b9e629fc96062759035159f74a0e70a7eb799c`
 
 ## Purpose
 
@@ -27,13 +27,19 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 - Console and primary efficiency reports use gross provider input tokens only. Cached and fresh input counts are retained as raw telemetry diagnostics.
 - The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. Deterministic arm-order counterbalancing mitigates order exposure without claiming cache elimination.
 
+## Credential safety
+
+- Use an immutable, user-owned `0600` auth source. Do not run a concurrent Codex session with it; use an independently authenticated benchmark credential instead.
+- The runner keeps private run state and atomically propagates valid refreshes between cells. A private sequential refresh can invalidate an unchanged source, so reauthenticate after the run if needed.
+- Known refresh-token authentication failures stop immediately; three matching unknown zero-token pre-response failures preserve partial artifacts and stop scheduling.
+
 ## Locked candidates
 
 - `codemap-py` `0.28.2`.
-  Package manifest SHA-256: `a12cd6962e2a6d28cb407ac78174c9b3f0ee8054ff1ddb27b058800cd7b353cc`.
+  Package manifest SHA-256: `f67ae0f13b8ba33317d59479324b8403afad9f942070ef98fb1a29d904cd069b`.
 - `codex-rig` `0.4.1`.
 - Codex CLI: `{'available': True, 'path': '/opt/homebrew/bin/codex', 'version': 'codex-cli 0.146.0'}`.
-- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `920f82eb626febf6b19bd2178b064f892be4b26f5d61bbc2d200f70b4d87b211`.
+- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `3320c2d35e3189d43e3c2336603189083cc7ef8e76ac10dfb2f99ef47ee07afa`.
 
 ## Study scope
 
@@ -91,7 +97,7 @@ bash benchmarks/run-all.sh codex --dry-run
 After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:
 
 ```bash
-CODEX_PAID_APPROVAL=9fca5b943eb69bec709a3bdf7742ffd2c1b75d55261f382657e7eb7a0c7bd627 \
+CODEX_PAID_APPROVAL=5de5f5af483613c3030605b922b9e629fc96062759035159f74a0e70a7eb799c \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=86400 \

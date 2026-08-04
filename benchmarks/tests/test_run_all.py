@@ -532,6 +532,11 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
     assert "CODEX_MAX_WALL_CLOCK_SECONDS=86400" in completed.stderr
     assert "benchmarks/manifests/codex-integration.md" in completed.stderr
     assert "The command itself records paid authorization" in completed.stderr
+    assert "use an immutable, user-owned 0600 auth source" in completed.stderr
+    assert "Do not run a concurrent Codex session with it" in completed.stderr
+    assert "independently authenticated benchmark credential" in completed.stderr
+    assert "private sequential refresh can invalidate an unchanged source" in completed.stderr
+    assert "reauthenticate after the run if needed" in completed.stderr
 
 
 def test_provider_modes_dispatch_only_the_selected_provider(
