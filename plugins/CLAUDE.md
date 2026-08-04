@@ -2,15 +2,23 @@
 
 # Plugin Authoring Rules
 
+<!-- policy-sibling-sync: AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
+
+Any policy change in one listed instruction file must trigger a relevance review of the other two before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
+
 Plugins under `plugins/`. See `README.md` for user-facing detail.
 
 ## Markdown Annotation Convention
 
-In `.md` plugin files: prose annotations/notes/load directives → `>` blockquote. `#` only inside ` ```bash ``` ` or ` ```python ``` ` fences (valid comment there). `#` in plain text = H1 heading — corrupts hierarchy.
+In `.md` plugin files, prose annotations, notes, and load directives use `>` blockquotes. Use `#` for intentional Markdown headings and, inside fenced `bash` or `python` blocks, code comments; never use `#` as a fake prose comment or load directive because it changes heading hierarchy.
 
 ```
 > loads: modes/resume.md   ✓    # loads: modes/resume.md   ✗ (H1)
 ```
+
+## Markdown No-Wrap
+
+Never hard-wrap prose in any Markdown file. Keep each prose paragraph on one physical line; preserve intentional structural breaks in headings, lists, tables, blockquotes, links, HTML `<details>` blocks, and fenced code. Do not blindly unwrap or reflow a whole file; edit only the intended prose and retain its surrounding structure.
 
 **Code block comments — WHY vs example**:
 
@@ -84,7 +92,7 @@ Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`
 
 Some policies (safety rules, scoping rules, format conventions) get **restated in prose** across multiple files instead of cross-referenced, because each consumer needs the rule inline in its own reading context (a rule stub, an agent's shared-voice file, a plugin doc). A restated copy has no structural link back to its siblings — so when the policy is refined in one location, a plain grep for *violations of the old rule* won't surface the other locations that correctly state the *old, now-stale* version of it. That's a different failure mode than the orphan-file problem above, and needs a different marker.
 
-**Rule**: the first restatement of a policy (i.e. once it exists in ≥2 files) gets a `<!-- policy-sibling: <path1>, <path2>, ... -->` comment immediately under its heading/section in every copy, listing every other file that states the same policy. Before editing any policy-carrying section, `grep -rn "policy-sibling"` first to find every copy that needs the same edit — don't rely on remembering which files you touched last time.
+**Rule**: instruction documents that declare the same `policy-sibling-sync` set at the top use that single document-level contract instead of repeating markers under every shared section. A policy change in any listed document always triggers a relevance review of the others; synchronize applicable shared policy in either direction, but preserve intentional agent-specific differences. For a policy duplicated outside that declared instruction set, add a section-specific `<!-- policy-sibling: <path1>, <path2>, ... -->` marker in every copy and inspect every listed copy before completion.
 
 **Precedent**: GitHub `#`/`@` reference-scoping policy (this file's `## GitHub Reference Scoping` section) shipped a refinement to itself and to `shepherd-voice.md` but missed `plugins/cc_foundry/rules/git-commit.md` — caught only because the user noticed by hand. Marker added retroactively to all four copies (`plugins/CLAUDE.md`, `git-commit.md` stub + `_full`, `shepherd-voice.md`) — use as the reference example when adding a marker to a new duplicated policy.
 
@@ -186,6 +194,8 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 5. Write calculated version — must be exactly HEAD + single bump; anything higher = double-bump violation
 
 **One bump per commit session** — after writing once, all further edits to that plugin in same uncommitted session must NOT bump again. Step 2 catches this: on-disk already differs from HEAD. Never treat on-disk bumped value as new baseline to increment from.
+
+When a plugin ships additional runtime manifests such as `.codex-plugin/plugin.json`, keep every shipped manifest on the same bumped version and update CHANGELOG or release metadata when that plugin's convention requires it.
 
 ## Edit Quality Gate
 
