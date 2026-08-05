@@ -1,6 +1,6 @@
 ---
 name: scan-codebase
-description: Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics + symbol table). Explicit invocation only via `$codemap-py:scan-codebase [--root <path>] [--incremental]` — never auto-trigger this from conversation reasoning. Use when the index is missing, stale, or after significant project changes.
+description: "`$codemap-py:scan-codebase [flags]` only: Python index; never auto-invoke; skip query/integration."
 ---
 
 # Scan Codebase

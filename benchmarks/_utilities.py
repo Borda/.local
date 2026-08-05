@@ -314,6 +314,27 @@ def resolve_relative_base(
     return combined
 
 
+def _import_target_kept(name: str, keep: Optional[set[str]]) -> bool:
+    """Return True when a dotted import target survives the internal-module filter.
+
+    Args:
+        name: Dotted import target.
+        keep: Allowlist of internal modules; ``None`` keeps everything.
+
+    Returns:
+        True when ``keep`` is ``None`` or ``name`` is a member of it.
+
+    Examples:
+        >>> _import_target_kept("a.b", None)
+        True
+        >>> _import_target_kept("a.b", {"a.b"})
+        True
+        >>> _import_target_kept("c.d", {"a.b"})
+        False
+    """
+    return keep is None or name in keep
+
+
 def extract_import_targets(
     tree: ast.Module,
     *,
@@ -351,15 +372,11 @@ def extract_import_targets(
         ['a.b', 'c.d', 'c.d.e', 'f']
     """
     esc = not symbol_when_bare
-
-    def _keep(name: str) -> bool:
-        return keep is None or name in keep
-
     targets: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if _keep(alias.name):
+                if _import_target_kept(alias.name, keep):
                     targets.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.level == 0:
@@ -370,12 +387,12 @@ def extract_import_targets(
                 if symbol_when_bare:
                     targets.update(a.name for a in node.names if a.name != "*")
                 continue
-            if _keep(base):
+            if _import_target_kept(base, keep):
                 targets.add(base)
             if credit_submodules:
                 for alias in node.names:
                     full = f"{base}.{alias.name}"
-                    if alias.name != "*" and _keep(full):
+                    if alias.name != "*" and _import_target_kept(full, keep):
                         targets.add(full)
     return targets
 

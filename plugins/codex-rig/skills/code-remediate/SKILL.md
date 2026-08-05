@@ -1,6 +1,6 @@
 ---
 name: code-remediate
-description: 'Codex-native code-remediation loop: triage/apply code-review findings, rerun checks, publish unresolved gaps with measurable gates; `$code-remediate #123 +review` remediates a PR from latest matching code-review artifact.'
+description: "Apply selected code-review fixes; rerun gates/report gaps; PR +review uses latest matching artifact."
 ---
 
 # Code Remediate

@@ -1,6 +1,6 @@
 ---
 name: sync
-description: Dry-run-first Codex Rig installation drift and update workflow. Use to inspect the active plugin cache, refresh its GitHub marketplace, or reinstall the current plugin while coordinating separately managed agent shims.
+description: "Dry-run active plugin cache drift; refresh/reinstall only with approval; keep shims separate."
 ---
 
 # Sync

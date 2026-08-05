@@ -383,15 +383,15 @@ Without the plugin: pre-pass review is skipped gracefully (skills check with `cl
 
 → Install instructions: [rtk-ai/rtk](https://github.com/rtk-ai/rtk)
 
+> [!NOTE]
+>
+> RTK only compresses **Bash tool output** — shell commands like `git`, `cargo`, `pytest`, etc. It does not affect Claude Code's native tools (Read, Grep, Glob, Edit, Write), which run inside Claude's own engine and are already token-efficient by design.
+
 ### Codex CLI plugin
 
 [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) connects the Codex CLI to Claude Code as a local plugin — enabling the cross-validation, mechanical delegation, and diff pre-pass described in [Claude + Codex Integration](#-claude--codex-integration).
 
 → Install: `/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex` → `/reload-plugins`
-
-> [!NOTE]
->
-> RTK only compresses **Bash tool output** — shell commands like `git`, `cargo`, `pytest`, etc. It does not affect Claude Code's native tools (Read, Grep, Glob, Edit, Write), which run inside Claude's own engine and are already token-efficient by design.
 
 ### cc-Lens
 
@@ -399,19 +399,11 @@ Without the plugin: pre-pass review is skipped gracefully (skills check with `cl
 
 → Run: `npx cc-lens` — no install required
 
-### Colab-MCP
+### Colab-MCP (active testing)
 
 [colab-mcp](https://github.com/googlecolab/colab-mcp) connects Google Colab as a remote GPU executor. Pre-configured in `.mcp.json` (disabled by default) — used by `/research:run --colab` to offload metric-improvement iterations to a cloud GPU without a local CUDA setup. Supports hardware selection: `--colab=H100`, `--colab=L4`, `--colab=T4`, `--colab=A100`.
 
 → Enable: add `"colab-mcp"` to `enabledMcpjsonServers` in `settings.local.json`
-
-### Semble (semantic code search)
-
-[semble](https://github.com/MinishLab/semble) runs a local MCP server that adds hybrid semantic + lexical search across any repo. When available, the `develop` and `oss` skills automatically expose `mcp__semble__search` to agents as a gap-fill tool — used when the codemap index is non-exhaustive. No cloud, no API key; runs fully local via `uvx`.
-
-→ Install (global, all projects): `claude mcp add semble -s user -- uvx --from "semble[mcp]" semble`
-
-→ Install (this project only): `claude mcp add semble -s project -- uvx --from "semble[mcp]" semble`
 
 ### Caveman
 

@@ -19,6 +19,9 @@ BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = BENCHMARKS_DIR / "run-codex-structural.py"
 SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-bench.json"
 MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
+POSIX_SECURITY = pytest.mark.skipif(
+    sys.platform == "win32", reason="requires POSIX private-mode and executable-shell semantics"
+)
 
 
 @pytest.fixture(scope="module")
@@ -147,6 +150,7 @@ def test_required_compliance_needs_successful_compact_delivery_by_arm(script_run
     assert skill.codemap_delivery == "none"
 
 
+@POSIX_SECURITY
 def test_direct_cli_arm_never_installs_a_plugin(script_run_codex: Any, tmp_path: Path) -> None:
     """B must expose the supplied launcher without using Codex plugin setup."""
     launcher = _make_direct_runtime_bundle(tmp_path)
@@ -173,6 +177,7 @@ def test_direct_cli_arm_never_installs_a_plugin(script_run_codex: Any, tmp_path:
     assert installer_calls == []
 
 
+@POSIX_SECURITY
 def test_staged_direct_cli_admission_executes_a_task_shaped_query(script_run_codex: Any, tmp_path: Path) -> None:
     """B preflight must execute its staged CLI before any model can consume a cell."""
     repo_path = tmp_path / "target"
@@ -250,6 +255,7 @@ def test_staged_direct_cli_admission_executes_a_task_shaped_query(script_run_cod
     ]
 
 
+@POSIX_SECURITY
 def test_no_model_probe_removes_its_coordination_root(
     script_run_codex: Any,
     tmp_path: Path,
@@ -283,6 +289,7 @@ def test_no_model_probe_removes_its_coordination_root(
     assert not home_path.exists()
 
 
+@POSIX_SECURITY
 def test_direct_cli_launcher_must_match_its_manifest_hash(script_run_codex: Any, tmp_path: Path) -> None:
     """B rejects a direct executable unless its bytes are the locked runtime launcher."""
     launcher = _make_direct_runtime_bundle(tmp_path)

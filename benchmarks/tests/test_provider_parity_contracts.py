@@ -10,7 +10,6 @@ import hashlib
 import inspect
 import json
 import math
-import os
 from pathlib import Path
 from typing import Any
 
@@ -22,19 +21,8 @@ from benchmarks import agentic_contracts
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
-HISTORICAL_MANIFEST_DIR = BENCHMARKS_DIR / "results" / "manifests"
 SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-bench.json"
 EXPERIMENT_REVISION = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))["experiment_revision"]
-
-
-def _historical_manifest(name: str) -> Path:
-    """Return an opt-in archived manifest without making current tests depend on it."""
-    if os.environ.get("RUN_HISTORICAL_ARCHIVE_TESTS") != "1":
-        pytest.skip("historical archive checks require RUN_HISTORICAL_ARCHIVE_TESTS=1")
-    path = HISTORICAL_MANIFEST_DIR / name
-    if not path.is_file():
-        pytest.skip(f"historical archive is unavailable: {path}")
-    return path
 
 
 def _record(**overrides: Any) -> Any:
@@ -197,13 +185,13 @@ class TestArmContracts:
     def test_comparison_arm_registry_extends_claude_without_changing_its_lock(self) -> None:
         """Codex comparisons add direct/Skill arms without broadening Claude's arm contract."""
         assert core.COMPARISON_ARMS_BY_PROVIDER == {
-            "claude": frozenset({"A_plain", "B_auto", "C_required"}),
+            "claude": frozenset({"A_plain", "B_auto", "C_strict"}),
             "codex": frozenset({"A_plain", "B_direct_required", "C_skill_required"}),
         }
         assert core.COMPARISON_ARM_NAMES == frozenset(
-            {"A_plain", "B_auto", "C_required", "B_direct_required", "C_skill_required"}
+            {"A_plain", "B_auto", "C_strict", "B_direct_required", "C_skill_required"}
         )
-        assert set(core.ARM_CONTRACTS) == {"A_plain", "B_auto", "C_required"}
+        assert set(core.ARM_CONTRACTS) == {"A_plain", "B_auto", "C_strict"}
 
         with pytest.raises(TypeError):
             core.COMPARISON_ARMS_BY_PROVIDER["codex"] = frozenset()
@@ -231,7 +219,7 @@ class TestArmContracts:
             1,
         )
 
-        assert fixed_order == ("C_required", "B_auto", "A_plain")
+        assert fixed_order == ("B_auto", "A_plain", "C_strict")
         assert set(fixed_order) == set(core.ARM_CONTRACTS)
         revision_orders = {
             core.deterministic_arm_order(
@@ -314,62 +302,6 @@ class TestArmContracts:
         """The suite must expose named structural-capability strata."""
         assert core.capability_strata(task) == expected
 
-    def test_historical_archive_profile_revision_preserves_locked_benchmark_inputs(self) -> None:
-        """The archived profile relock preserves its predecessor's input identities."""
-        profile_manifest_path = _historical_manifest("provider-parity-v1-b0-r5.json")
-        profile_manifest = json.loads(profile_manifest_path.read_text(encoding="utf-8"))
-        base_manifest_path = _historical_manifest("provider-parity-v1-b0-r4.json")
-        base_manifest = json.loads(base_manifest_path.read_text(encoding="utf-8"))
-
-        def locked_identities(manifest: dict[str, Any]) -> list[tuple[str, str, list[tuple[str, str, str]]]]:
-            return [
-                (
-                    suite["path"],
-                    suite["raw_sha256"],
-                    [(task["id"], task["canonical_task_sha256"], task["prompt_sha256"]) for task in suite["tasks"]],
-                )
-                for suite in manifest["suites"]
-            ]
-
-        assert locked_identities(profile_manifest) == locked_identities(base_manifest)
-        assert profile_manifest["target_source"] == base_manifest["target_source"]
-        assert profile_manifest["index"] == base_manifest["index"]
-        assert profile_manifest["arms"].keys() == base_manifest["arms"].keys()
-        for arm in profile_manifest["arms"]:
-            assert profile_manifest["arms"][arm]["contract"] == base_manifest["arms"][arm]["contract"]
-            assert profile_manifest["arms"][arm]["contract_sha256"] == base_manifest["arms"][arm]["contract_sha256"]
-
-    def test_historical_archive_runtime_revision_preserves_locked_benchmark_inputs(self) -> None:
-        """The archived runtime relock preserves its predecessor's inputs except runtime."""
-        runtime_manifest_path = _historical_manifest("provider-parity-v1-b0-r6.json")
-        runtime_manifest = json.loads(runtime_manifest_path.read_text(encoding="utf-8"))
-        profile_manifest_path = _historical_manifest("provider-parity-v1-b0-r5.json")
-        profile_manifest = json.loads(profile_manifest_path.read_text(encoding="utf-8"))
-
-        def locked_identities(manifest: dict[str, Any]) -> list[tuple[str, str, list[tuple[str, str, str]]]]:
-            return [
-                (
-                    suite["path"],
-                    suite["raw_sha256"],
-                    [(task["id"], task["canonical_task_sha256"], task["prompt_sha256"]) for task in suite["tasks"]],
-                )
-                for suite in manifest["suites"]
-            ]
-
-        assert locked_identities(runtime_manifest) == locked_identities(profile_manifest)
-        assert runtime_manifest["target_source"] == profile_manifest["target_source"]
-        assert runtime_manifest["index"] == profile_manifest["index"]
-        assert runtime_manifest["arms"] == profile_manifest["arms"]
-        assert runtime_manifest["preregistered_cells"] == profile_manifest["preregistered_cells"]
-        assert (
-            runtime_manifest["codex_permission_profiles"]["plain"]
-            == profile_manifest["codex_permission_profiles"]["plain"]
-        )
-        assert (
-            runtime_manifest["codex_permission_profiles"]["treatment"]
-            == profile_manifest["codex_permission_profiles"]["treatment"]
-        )
-
     def test_active_manifest_locks_split_profiles_and_provider_adapters(self) -> None:
         """The active manifest must describe the exact tested Codex permission and adapter boundary."""
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -388,7 +320,7 @@ class TestArmContracts:
         assert profiles["treatment_runtime"] == {
             "environment": {"CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"},
             "required_major_minor": [3, 11],
-            "scope": ["B_auto", "C_required"],
+            "scope": ["B_auto", "C_strict"],
         }
         assert manifest["execution_controls"]["codex_transport"] == (
             "run-codex-structural.py and run-codex-agentic.py provider adapters"
@@ -500,7 +432,7 @@ class TestResultEligibility:
         ("provider", "baseline_arm", "treatment_arm", "invalid_arm"),
         [
             pytest.param("claude", "A_plain", "B_auto", "A_plain", id="plain-adherence-false"),
-            pytest.param("claude", "A_plain", "C_required", "C_required", id="claude-required-adherence-false"),
+            pytest.param("claude", "A_plain", "C_strict", "C_strict", id="claude-required-adherence-false"),
             pytest.param(
                 "codex", "A_plain", "B_direct_required", "B_direct_required", id="codex-direct-adherence-false"
             ),
@@ -552,6 +484,7 @@ class TestResultEligibility:
             pytest.param({"incomplete": True}, id="incomplete"),
             pytest.param({"extraction_failed": True}, id="extraction-failed"),
             pytest.param({"contaminated": True}, id="contaminated"),
+            pytest.param({"diagnostic_only": True}, id="diagnostic-only-semantic-score"),
         ],
     )
     def test_result_eligibility_rejects_excluded_result_class(self, overrides: dict[str, Any]) -> None:
@@ -578,7 +511,7 @@ class TestPairedEffects:
         ("baseline_arm", "treatment_arm"),
         [
             pytest.param("B_auto", "B_direct_required", id="claude-auto-vs-codex-direct"),
-            pytest.param("C_required", "C_skill_required", id="claude-required-vs-codex-skill"),
+            pytest.param("C_strict", "C_skill_required", id="claude-required-vs-codex-skill"),
         ],
     )
     def test_pair_effects_rejects_cross_experiment_estimands_without_records(
@@ -622,15 +555,15 @@ class TestPairedEffects:
         """Each task repetition produces its own log token ratio and quality delta."""
         records = [
             _record(arm="A_plain", repetition=1, input_tokens=100, quality_score=0.6),
-            _record(arm="C_required", repetition=1, input_tokens=50, quality_score=0.8),
+            _record(arm="C_strict", repetition=1, input_tokens=50, quality_score=0.8),
             _record(arm="A_plain", repetition=2, input_tokens=80, quality_score=1.0),
-            _record(arm="C_required", repetition=2, input_tokens=160, quality_score=0.5),
+            _record(arm="C_strict", repetition=2, input_tokens=160, quality_score=0.5),
         ]
 
         effects = core.pair_effects(
             records,
             baseline_arm="A_plain",
-            treatment_arm="C_required",
+            treatment_arm="C_strict",
             policies=_synthetic_policies(),
         )
         by_repetition = {effect.repetition: effect for effect in effects}
@@ -846,10 +779,12 @@ class TestAgenticAnswerContracts:
                     "rdep_counts",
                     "ranking",
                     "cross_namespace_importers",
+                    "high_centrality",
                 ],
                 "params": {
                     "ranking": {"candidate_set": "production_importers", "top_k": 2},
                     "cross_namespace_importers": {"prefix": "other"},
+                    "high_centrality": {"min_rdep_count": 1},
                 },
             },
         }
@@ -863,6 +798,7 @@ class TestAgenticAnswerContracts:
                 "rdep_counts": {"pkg.alpha": 1, "pkg.beta": 0},
                 "ranking": ["pkg.alpha", "pkg.beta"],
                 "cross_namespace_importers": [],
+                "high_centrality": {"pkg.alpha": 1},
             },
             exposure_text="pkg.alpha pkg.beta",
             report_text="pkg.alpha",
@@ -872,12 +808,14 @@ class TestAgenticAnswerContracts:
         assert oracle.expected["production_importers"] == ("pkg.alpha", "pkg.beta")
         assert oracle.expected["test_importer_count"] == 1
         assert oracle.expected["rdep_counts"] == {"pkg.alpha": 1, "pkg.beta": 0}
+        assert oracle.expected["high_centrality"] == {"pkg.alpha": 1}
         assert score.components == {
             "production_importers": 1.0,
             "test_importer_count": 1.0,
             "rdep_counts": 1.0,
             "ranking": 1.0,
             "cross_namespace_importers": 1.0,
+            "high_centrality": 1.0,
         }
         assert score.quality_score == pytest.approx(1.0)
         assert score.correct is True
@@ -897,7 +835,7 @@ class TestAgenticAnswerContracts:
 
         assert incomplete.components["ranking"] == 0.0
         assert incomplete.components["cross_namespace_importers"] == 0.0
-        assert incomplete.quality_score == pytest.approx(0.6)
+        assert incomplete.quality_score == pytest.approx(0.5)
 
     def test_answer_contract_rejects_unbounded_or_unknown_field_parameters(self) -> None:
         """A task cannot add evaluator behavior through an unreviewed parameter."""
@@ -963,6 +901,115 @@ class TestAgenticAnswerContracts:
 
         assert parsed == expected
 
+    @pytest.mark.parametrize(
+        ("text", "answer", "diagnostic_only", "error"),
+        [
+            pytest.param(
+                'BEGIN_ANSWER_JSON\n{"production_importers": ["pkg.caller"]}\nEND_ANSWER_JSON',
+                {"production_importers": ["pkg.caller"]},
+                False,
+                None,
+                id="strict-envelope",
+            ),
+            pytest.param(
+                '{"production_importers": ["pkg.caller"]}',
+                {"production_importers": ["pkg.caller"]},
+                True,
+                "BEGIN_ANSWER_JSON",
+                id="unique-bare-json-diagnostic-recovery",
+            ),
+            pytest.param(
+                '{"production_importers": ["pkg.first"]}\n{"production_importers": ["pkg.second"]}',
+                None,
+                False,
+                "exactly one bare JSON object",
+                id="ambiguous-bare-json-rejected",
+            ),
+            pytest.param(
+                '{"production_importers": ["pkg.caller"]',
+                None,
+                False,
+                "bare JSON is invalid",
+                id="malformed-bare-json-rejected",
+            ),
+        ],
+    )
+    def test_assess_answer_response_keeps_strict_validity_separate_from_diagnostic_recovery(
+        self, text: str, answer: dict[str, Any] | None, diagnostic_only: bool, error: str | None
+    ) -> None:
+        """Only one bare JSON object may supply a clearly ineligible diagnostic semantic answer."""
+        task = {
+            "id": "T-diagnostic",
+            "primary_module": "pkg.target",
+            "answer_contract": {"fields": ["production_importers"], "params": {}},
+        }
+
+        assessment = agentic_contracts.assess_answer_response(task, text)
+
+        assert assessment.answer == answer
+        assert assessment.strict_envelope_valid is (not diagnostic_only and answer is not None)
+        assert assessment.diagnostic_only is diagnostic_only
+        assert assessment.pooling_eligible is (not diagnostic_only and answer is not None)
+        if error is None:
+            assert assessment.error is None
+        else:
+            assert error in assessment.error
+
+    def test_bare_json_recovery_preserves_raw_evidence_metrics_without_pooling_eligibility(self) -> None:
+        """A missing envelope cannot turn observed importer mentions into zero recall."""
+        task = {
+            "id": "T-evidence",
+            "primary_module": "pkg.target",
+            "answer_contract": {"fields": ["production_importers"], "params": {}},
+        }
+        oracle = agentic_contracts.AgenticOracle(
+            task_id="T-evidence",
+            fields=("production_importers",),
+            expected={"production_importers": ("pkg.alpha", "pkg.beta")},
+        )
+
+        assessment = agentic_contracts.assess_answer_response(
+            task,
+            '{"production_importers": ["pkg.alpha", "pkg.beta"]}',
+        )
+        evidence = agentic_contracts.score_evidence_metrics(
+            oracle,
+            exposure_text="pkg.alpha pkg.beta",
+            report_text="pkg.alpha pkg.beta",
+            tool_calls=1,
+        )
+
+        assert assessment.diagnostic_only is True
+        assert assessment.pooling_eligible is False
+        assert evidence.erec == pytest.approx(1.0)
+        assert evidence.rrec == pytest.approx(1.0)
+        assert evidence.deff == pytest.approx(2.0)
+
+    @pytest.mark.parametrize(
+        "wrapper",
+        [
+            pytest.param("```json\n{payload}\n```", id="json-fence"),
+            pytest.param("```\n{payload}\n```", id="bare-fence"),
+        ],
+    )
+    def test_parse_labeled_answer_strips_cosmetic_markdown_fence(self, wrapper: str) -> None:
+        """A markdown code fence inside the envelope is cosmetic, not a scoring failure.
+
+        Scenario: some providers habitually fence JSON inside BEGIN/END_ANSWER_JSON;
+        the fenced payload must parse identically to the bare payload (previously it
+        was rejected as invalid JSON, zeroing erec/rrec on format alone).
+        """
+        task = {
+            "id": "T-03b",
+            "primary_module": "pkg.target",
+            "answer_contract": {"fields": ["production_importers"], "params": {}},
+        }
+        payload = wrapper.format(payload='{"production_importers": ["pkg.caller"]}')
+
+        parsed = agentic_contracts.parse_labeled_answer(task, f"notes\nBEGIN_ANSWER_JSON\n{payload}\nEND_ANSWER_JSON\n")
+
+        assert parsed == {"production_importers": ["pkg.caller"]}
+
     def test_parse_labeled_answer_rejects_missing_contract_label(self) -> None:
         """A partial answer cannot be converted into accidental component credit."""
         task = {
@@ -993,10 +1040,229 @@ class TestAgenticAnswerContracts:
 
         assert delivered == (
             "Inspect pkg.target.\n\n"
-            "Return one JSON object containing exactly these labels: production_importers. "
-            "Put it between literal lines BEGIN_ANSWER_JSON and END_ANSWER_JSON."
+            "Return one JSON object containing exactly these labels: production_importers.\n"
+            "Use exactly these JSON value shapes:\n"
+            "- production_importers: array of full dotted module-name strings.\n"
+            "Do not put objects or counts inside array fields. Values outside these shapes are invalid.\n"
+            "Example using synthetic values only:\n"
+            "BEGIN_ANSWER_JSON\n"
+            '{"production_importers":["pkg.consumer"]}\n'
+            "END_ANSWER_JSON"
         )
         assert core.prompt_hash(task) == hashlib.sha256(delivered.encode("utf-8")).hexdigest()
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            pytest.param(
+                {
+                    "production_importers": ["pkg.consumer"],
+                    "ranking": [{"module": "pkg.consumer", "rdep_count": 2}],
+                    "buckets": {"public": ["pkg.consumer"], "internal": []},
+                    "high_centrality": {"pkg.consumer": 2},
+                },
+                id="ranking-object",
+            ),
+            pytest.param(
+                {
+                    "production_importers": ["pkg.consumer"],
+                    "ranking": ["pkg.consumer"],
+                    "buckets": {"pkg.consumer": "public"},
+                    "high_centrality": {"pkg.consumer": 2},
+                },
+                id="inverted-buckets",
+            ),
+            pytest.param(
+                {
+                    "production_importers": ["pkg.consumer"],
+                    "ranking": ["pkg.consumer"],
+                    "buckets": {"public": ["pkg.consumer"], "internal": []},
+                    "high_centrality": [{"module": "pkg.consumer", "rdep_count": 2}],
+                },
+                id="high-centrality-object-list",
+            ),
+        ],
+    )
+    def test_parse_labeled_answer_rejects_shapes_not_advertised_to_models(self, payload: dict[str, Any]) -> None:
+        """Model-friendly rich shapes cannot be silently accepted and scored as zero."""
+        task = {
+            "id": "T-06",
+            "primary_module": "pkg.target",
+            "answer_contract": {
+                "fields": ["production_importers", "ranking", "buckets", "high_centrality"],
+                "params": {
+                    "ranking": {"candidate_set": "production_importers", "top_k": 1},
+                    "buckets": {"labels": ["public", "internal"]},
+                    "high_centrality": {"min_rdep_count": 1},
+                },
+            },
+        }
+
+        with pytest.raises(ValueError, match="shape"):
+            agentic_contracts.parse_labeled_answer(
+                task,
+                f"BEGIN_ANSWER_JSON\n{json.dumps(payload)}\nEND_ANSWER_JSON",
+            )
+
+    def test_ba04_requires_the_exact_deduplicated_affected_count(self) -> None:
+        """BA-04 cannot permit approximation while its scalar scorer requires equality."""
+        tasks = json.loads((Path(__file__).parents[1] / "suites" / "tasks-agentic.json").read_text(encoding="utf-8"))[
+            "tasks"
+        ]
+        prompt = next(task["prompt"] for task in tasks if task["id"] == "BA-04")
+
+        assert "may approximate" not in prompt
+        assert "exact total number of unique modules affected" in prompt
+
+    def test_ba03_declares_the_prefix_bucket_taxonomy_used_by_its_oracle(self, tmp_path: Path) -> None:
+        """Trainer-core excludes core and loop modules; callbacks remain a separate prefix bucket."""
+        for relative, source in {
+            "lightning/pytorch/utilities/model_helpers.py": "",
+            "lightning/pytorch/trainer/fit_loop.py": "import lightning.pytorch.utilities.model_helpers\n",
+            "lightning/pytorch/callbacks/early_stopping.py": "import lightning.pytorch.utilities.model_helpers\n",
+            "lightning/pytorch/core/module.py": "import lightning.pytorch.utilities.model_helpers\n",
+        }.items():
+            path = tmp_path / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        task = {
+            "id": "BA-03-synthetic",
+            "primary_module": "lightning.pytorch.utilities.model_helpers",
+            "answer_contract": {
+                "fields": ["buckets"],
+                "params": {"buckets": {"labels": ["trainer-core", "callbacks", "everything-else"]}},
+            },
+        }
+        prompt = next(
+            item["prompt"]
+            for item in json.loads(
+                (Path(__file__).parents[1] / "suites" / "tasks-agentic.json").read_text(encoding="utf-8")
+            )["tasks"]
+            if item["id"] == "BA-03"
+        )
+
+        oracle = agentic_contracts.build_oracle(task, tmp_path)
+
+        assert "only names beginning with `lightning.pytorch.trainer.`" in prompt
+        assert oracle.expected["buckets"] == {
+            "trainer-core": ("lightning.pytorch.trainer.fit_loop",),
+            "callbacks": ("lightning.pytorch.callbacks.early_stopping",),
+            "everything-else": ("lightning.pytorch.core.module",),
+        }
+
+    @pytest.mark.parametrize(
+        ("relative", "expected_bucket"),
+        [
+            pytest.param("lightning/pytorch/trainer/fit_loop.py", "trainer-core", id="trainer-descendant"),
+            pytest.param("lightning/pytorch/trainerfoo/fit_loop.py", "everything-else", id="trainer-impostor"),
+            pytest.param("lightning/pytorch/callbacks/early_stopping.py", "callbacks", id="callbacks-descendant"),
+            pytest.param(
+                "lightning/pytorch/callbacks_extra/early_stopping.py",
+                "everything-else",
+                id="callbacks-impostor",
+            ),
+        ],
+    )
+    def test_ba03_bucket_prefixes_require_a_dotted_segment_boundary(
+        self, tmp_path: Path, relative: str, expected_bucket: str
+    ) -> None:
+        """BA-03 accepts namespace descendants without admitting adjacent near-prefix names."""
+        primary = tmp_path / "lightning/pytorch/utilities/model_helpers.py"
+        primary.parent.mkdir(parents=True)
+        primary.write_text("", encoding="utf-8")
+        importer = tmp_path / relative
+        importer.parent.mkdir(parents=True)
+        importer.write_text("import lightning.pytorch.utilities.model_helpers\n", encoding="utf-8")
+        task = {
+            "id": "BA-03-prefix-boundary",
+            "primary_module": "lightning.pytorch.utilities.model_helpers",
+            "answer_contract": {
+                "fields": ["buckets"],
+                "params": {"buckets": {"labels": ["trainer-core", "callbacks", "everything-else"]}},
+            },
+        }
+        module_name = relative.removesuffix(".py").replace("/", ".")
+
+        oracle = agentic_contracts.build_oracle(task, tmp_path)
+
+        expected = {label: () for label in ("trainer-core", "callbacks", "everything-else")}
+        expected[expected_bucket] = (module_name,)
+        assert oracle.expected["buckets"] == expected
+
+    def test_ba05_declares_package_public_and_examples_internal_boundaries(self, tmp_path: Path) -> None:
+        """Package initializers are public; non-package and example importers are internal."""
+        for relative, source in {
+            "lightning/pytorch/callbacks/finetuning.py": "",
+            "lightning/pytorch/callbacks/__init__.py": "import lightning.pytorch.callbacks.finetuning\n",
+            "lightning/pytorch/callbacks/consumer.py": "import lightning.pytorch.callbacks.finetuning\n",
+            "examples/finetuning_demo.py": "import lightning.pytorch.callbacks.finetuning\n",
+        }.items():
+            path = tmp_path / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        task = {
+            "id": "BA-05-synthetic",
+            "primary_module": "lightning.pytorch.callbacks.finetuning",
+            "answer_contract": {
+                "fields": ["buckets"],
+                "params": {"buckets": {"labels": ["public", "internal"]}},
+            },
+        }
+        prompt = next(
+            item["prompt"]
+            for item in json.loads(
+                (Path(__file__).parents[1] / "suites" / "tasks-agentic.json").read_text(encoding="utf-8")
+            )["tasks"]
+            if item["id"] == "BA-05"
+        )
+
+        oracle = agentic_contracts.build_oracle(task, tmp_path)
+
+        assert "package initializer (`__init__.py`)" in prompt
+        assert "including `examples.*`" in prompt
+        assert oracle.expected["buckets"] == {
+            "public": ("lightning.pytorch.callbacks",),
+            "internal": ("examples.finetuning_demo", "lightning.pytorch.callbacks.consumer"),
+        }
+
+    def test_affected_count_uses_the_exact_deduplicated_second_wave(self, tmp_path: Path) -> None:
+        """Overlapping second-wave importers count once and an estimate loses only its scalar component."""
+        for relative, source in {
+            "pkg/__init__.py": "",
+            "pkg/target.py": "",
+            "pkg/alpha.py": "import pkg.target\n",
+            "pkg/beta.py": "import pkg.target\n",
+            "pkg/consumer_one.py": "import pkg.alpha\nimport pkg.beta\n",
+            "pkg/consumer_two.py": "import pkg.alpha\n",
+        }.items():
+            path = tmp_path / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        task = {
+            "id": "BA-04-synthetic",
+            "primary_module": "pkg.target",
+            "answer_contract": {
+                "fields": ["production_importers", "high_centrality", "affected_module_count"],
+                "params": {
+                    "high_centrality": {"min_rdep_count": 2},
+                    "affected_module_count": {"min_rdep_count": 2},
+                },
+            },
+        }
+        oracle = agentic_contracts.build_oracle(task, tmp_path)
+        exact = {
+            "production_importers": ["pkg.alpha", "pkg.beta"],
+            "high_centrality": {"pkg.alpha": 2},
+            "affected_module_count": 4,
+        }
+
+        exact_score = agentic_contracts.score_answer(oracle, exact)
+        estimated_score = agentic_contracts.score_answer(oracle, {**exact, "affected_module_count": 3})
+
+        assert oracle.expected["affected_module_count"] == 4
+        assert exact_score.correct is True
+        assert estimated_score.components["affected_module_count"] == 0.0
+        assert estimated_score.quality_score == pytest.approx(2 / 3)
 
     @pytest.mark.parametrize(
         ("relative_path", "expected_test"),

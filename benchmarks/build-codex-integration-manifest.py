@@ -9,11 +9,9 @@ human review records.
 
 from __future__ import annotations
 
-import argparse
 import copy
 import hashlib
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +35,7 @@ ARM_ORDER_POLICY = (
 )
 TASK_SELECTION_REPETITIONS = 3
 TASK_SELECTION_COORDINATE_TIMEOUT_SECONDS = 600
+LOCKED_CODEX_CLI_VERSION = "codex-cli 0.146.0"
 
 
 def _sha256(path: Path) -> str:
@@ -66,20 +65,8 @@ def _plugin_version(path: Path, expected_name: str) -> str:
 
 
 def _codex_cli_identity() -> dict[str, str | bool]:
-    """Record the locally resolvable Codex CLI version without using credentials."""
-    executable = shutil.which("codex")
-    if executable is None:
-        return {"available": False}
-    completed = subprocess.run(
-        [executable, "--version"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    version = completed.stdout.strip()
-    if completed.returncode != 0 or not version:
-        raise ValueError("local Codex CLI did not return a deterministic version")
-    return {"available": True, "path": executable, "version": version}
+    """Return the reviewed CLI identity without consulting the build host."""
+    return {"available": True, "path": "<codex-cli>", "version": LOCKED_CODEX_CLI_VERSION}
 
 
 def _artifact_hashes() -> dict[str, str]:
@@ -491,7 +478,7 @@ def _build_manifest() -> dict[str, Any]:
         "preregistered_cells": _preregistered_cells(source),
         "schema_version": "codex-integration-manifest-v2",
         "source_manifest": {
-            "path": str(SOURCE_MANIFEST.relative_to(ROOT)),
+            "path": SOURCE_MANIFEST.relative_to(ROOT).as_posix(),
             "sha256": _sha256(SOURCE_MANIFEST),
         },
         "suite_integrity": source["suite_integrity"],
@@ -589,7 +576,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "Run the matching no-model dry-run first and copy its `selection scope` SHA-256 (or the `scope_sha256` field from the resolver output) into the placeholder below. This targeted scope digest is distinct from the machine-manifest SHA-256.",
         "",
         "```bash",
-        "bash benchmarks/run-all.sh codex --tasks=DI,GR --dry-run",
+        "bash benchmarks/run-all.sh codex --struct --tasks=DI,GR --dry-run",
         "```",
         "",
         "Alternatively, resolve the selector directly and copy its `scope_sha256` value:",
@@ -603,7 +590,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
         '    CODEX_RUN_DIR="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)" \\',
         "    CODEX_MAX_WALL_CLOCK_SECONDS=<derived-ceiling> \\",
-        "    bash benchmarks/run-all.sh codex --tasks=DI,GR",
+        "    bash benchmarks/run-all.sh codex --struct --tasks=DI,GR",
         "```",
         "",
         "## Confirmatory execution",
@@ -611,7 +598,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "Run the exact no-model Codex smoke and 165-coordinate plan first:",
         "",
         "```bash",
-        "bash benchmarks/run-all.sh codex --dry-run",
+        "bash benchmarks/run-all.sh codex --struct --dry-run",
         "```",
         "",
         "After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:",
@@ -621,7 +608,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
         '    CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \\',
         f"    CODEX_MAX_WALL_CLOCK_SECONDS={manifest['execution_controls']['confirmatory_max_wall_clock_seconds']} \\",
-        "    bash benchmarks/run-all.sh codex",
+        "    bash benchmarks/run-all.sh codex --struct",
         "```",
         "",
         "Setting `CODEX_PAID_APPROVAL` to this exact machine-manifest SHA-256 in the launch command is the human authorization and stale-manifest lock; no separate chat authorization is required. The run directory must not already exist. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless the user deliberately exports them for review.",
@@ -639,32 +626,43 @@ def _write_or_check(path: Path, expected: bytes, check: bool) -> None:
     """Write one generated record or reject any byte drift in check mode."""
     if check:
         if not path.is_file() or path.read_bytes() != expected:
-            raise ValueError(f"generated record is stale: {path}; rerun without --check")
+            raise ValueError(
+                f"generated record is stale: {path}; run: python3 benchmarks/build-codex-integration-manifest.py"
+            )
         return
     path.write_bytes(expected)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Build the relock files or verify them without any model/task invocation."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if generated records differ from current inputs")
-    args = parser.parse_args(argv)
+def main(check: bool = False) -> None:
+    """Build the relock files or verify them without any model/task invocation.
 
+    Args:
+        check: Fail with exit status 1 if the generated records differ from the current
+            inputs instead of rewriting them (CLI flag: ``--check``).
+
+    Raises:
+        SystemExit: With status 1 when ``check`` is set and a generated record is stale.
+
+    Examples:
+        >>> main.__name__
+        'main'
+    """
     try:
         manifest = _build_manifest()
         machine_bytes = _json_bytes(manifest)
         machine_sha256 = hashlib.sha256(machine_bytes).hexdigest()
-        _write_or_check(OUTPUT_MANIFEST, machine_bytes, args.check)
-        _write_or_check(OUTPUT_HUMAN_MANIFEST, _human_bytes(manifest, machine_sha256), args.check)
+        _write_or_check(OUTPUT_MANIFEST, machine_bytes, check)
+        _write_or_check(OUTPUT_HUMAN_MANIFEST, _human_bytes(manifest, machine_sha256), check)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        raise SystemExit(1) from exc
 
-    action = "verified" if args.check else "wrote"
+    action = "verified" if check else "wrote"
     print(f"{action}: {OUTPUT_MANIFEST.relative_to(ROOT)}")
     print(f"{action}: {OUTPUT_HUMAN_MANIFEST.relative_to(ROOT)}")
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from fire import Fire
+
+    Fire(main)

@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: Minimal codex-native investigation loop. Use for unknown failures, code debugging, and root-cause narrowing with measurable gates.
+description: "Investigate code debugging and root-cause narrowing; use measurable gates before fixes."
 ---
 
 # Investigate

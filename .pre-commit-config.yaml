@@ -23,8 +23,10 @@ repos:
     hooks:
       - id: end-of-file-fixer
         name: 📄 end-of-file-fixer
+        exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: trailing-whitespace
         name: ✂️ trailing-whitespace
+        exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: check-json
         name: 🔍 check-json
       - id: check-yaml
@@ -45,12 +47,13 @@ repos:
       - id: mixed-line-ending
         name: ↩️ mixed-line-ending
         args: ["--fix=lf"]
+        exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: pretty-format-json
         name: ✨ pretty-format-json
         args: ["--autofix"]
-        # Benchmark manifests and suites are identity-locked inputs/outputs. Their
-        # dedicated builders own deterministic serialization and hash validation.
-        exclude: ^benchmarks/(manifests|suites)/.*\.json$
+        # Benchmark manifests, suites, and historical fixtures are identity-locked
+        # inputs/outputs. Their dedicated builders/tests own byte and hash validation.
+        exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
 
   - repo: https://github.com/JoC0de/pre-commit-prettier
     rev: v3.9.4 # using tag; previously pinned SHA when tags were not persistent
@@ -236,6 +239,18 @@ repos:
         # surface; a hardcoded path there breaks on every other machine. .claude/state
         # runtime dirs are gitignored and excluded from the pattern by not matching.
         files: ^plugins/[^/]+/(agents|skills|rules|hooks)/.*\.(md|js)$|^plugins/[^/]+/\.claude-plugin/[^/]+\.json$|^\.claude/(agents|skills|rules)/.*\.md$|^\.claude/hooks/[^/]+\.js$|^\.claude/settings\.json$|^\.codex/(agents|skills|rules)/.*\.md$|^\.codex/hooks/[^/]+\.js$|^\.codex/settings\.json$
+
+      - id: no-literal-tmp-in-hooks
+        name: 🌡️ No literal /tmp/ in hook source
+        language: pygrep
+        # Hooks must derive their temp base (os.tmpdir(), ${TMPDIR:-/tmp}, tempfile) rather than
+        # hardcode /tmp/ — see cc_foundry/rules/claude-config.md §TMPDIR Sentinel Scoping. Only a
+        # quoted or template-literal /tmp/ is a real path constant; prose mentions inside comments
+        # (commit-guard.js documents its sentinel path) carry no quote and stay unflagged.
+        entry: '["''`]/tmp/'
+        # Replaces tests/hooks/tmp-paths.test.js, which checked a hardcoded 6-file cc_foundry list
+        # and missed the other 16 plugin hooks; this glob picks up new hooks automatically.
+        files: ^plugins/[^/]+/hooks/.*\.(js|py)$|^\.claude/hooks/.*\.(js|py)$|^\.codex/hooks/.*\.(js|py)$
 
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1 # run `pre-commit autoupdate --repo https://github.com/jorisroovers/gitlint` to set

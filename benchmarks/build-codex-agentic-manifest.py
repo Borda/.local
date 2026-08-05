@@ -8,7 +8,6 @@ material.  ``--check`` is read-only and fails closed on generated-byte drift.
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import sys
@@ -24,7 +23,7 @@ TASKS_PATH = BENCHMARKS / "suites" / "tasks-agentic.json"
 OUTPUT_MANIFEST = MANIFESTS / "codex-agentic.json"
 OUTPUT_HUMAN_MANIFEST = MANIFESTS / "codex-agentic.md"
 EXPERIMENT_ID = "codex-agentic"
-EXPERIMENT_REVISION = "codex-agentic-shared-suite-2026-08-04"
+EXPERIMENT_REVISION = "codex-agentic-protocol-evidence-separation-2026-08-05"
 sys.path.insert(0, str(BENCHMARKS))
 from agentic_contracts import AGENTIC_ARMS, DEFAULT_REPETITIONS, materialize_agentic_prompt  # noqa: E402
 from provider_parity_contracts import canonical_task_hash, semantic_suite_hash  # noqa: E402
@@ -163,7 +162,7 @@ def _build_manifest() -> dict[str, Any]:
                 "no_call_valid": True,
                 "pooling": "eligible only when all other admission checks pass",
             },
-            "C_required": {
+            "C_strict": {
                 "codemap_available": True,
                 "requirement": "Read the exact installed Skill before a successful compact query.",
                 "skill_path": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
@@ -189,13 +188,20 @@ def _build_manifest() -> dict[str, Any]:
             "implementation": {
                 "path": "benchmarks/agentic_contracts.py",
                 "sha256": artifact_hashes["agentic_contracts"],
-                "symbol": "score_answer",
+                "semantic_symbol": "score_answer",
+                "response_symbol": "assess_answer_response",
+                "evidence_symbol": "score_evidence_metrics",
             },
             "metrics": {
-                "SCORE": "mean(component score for each declared answer-contract field)",
-                "CORRECT": "every declared answer-contract field scores 1.0",
+                "SCORE": "mean semantic component score for each declared answer-contract field",
+                "EREC": "expected-importer recall in all agent text, independent of answer-envelope validity",
+                "RREC": "expected-importer recall in the final report, independent of answer-envelope validity",
+                "DEFF": "unbounded expected-importer exposure hits per command",
             },
-            "quality_score": "shared answer-contract component mean over the labelled final answer",
+            "response_policy": (
+                "A strict labelled envelope is pooling-eligible. One complete bare JSON object may be semantically "
+                "recovered for diagnostic-only scoring; malformed or ambiguous responses remain semantically unscored."
+            ),
         },
         "artifact_sha256": artifact_hashes,
         "plugin_runtime": {
@@ -222,6 +228,7 @@ def _build_manifest() -> dict[str, Any]:
                 "telemetry-canonical.jsonl",
                 "run-metadata.json",
                 "inputs/ (frozen input snapshot)",
+                "runtime-isolation.jsonl (0600 expected/observed plugin identity evidence; may be empty)",
                 "checksums.sha256",
             ],
             "stop_behavior": (
@@ -230,15 +237,20 @@ def _build_manifest() -> dict[str, Any]:
                 "partial or nonpoolable evidence."
             ),
         },
-        "source_manifest": {"path": str(SOURCE_MANIFEST.relative_to(ROOT)), "sha256": _sha256(SOURCE_MANIFEST)},
+        "source_manifest": {"path": SOURCE_MANIFEST.relative_to(ROOT).as_posix(), "sha256": _sha256(SOURCE_MANIFEST)},
         "runner": "benchmarks/run-codex-agentic.py",
         "runtime_isolation": {
             "adapter": "benchmarks/run-codex-structural.py",
             "manifest": "benchmarks/manifests/codex-integration.json",
+            "plugin_source_policy": (
+                "Snapshot exact run-owned Codemap/Codex Rig source trees before the first paid cell; install C homes "
+                "directly from those immutable paths without marketplace name resolution, and validate source bytes "
+                "before every later cell."
+            ),
             "mapping": {
                 "A_plain": "A_plain",
                 "B_auto": "B_direct_required capability home; use remains optional",
-                "C_required": "C_skill_required",
+                "C_strict": "C_skill_required",
             },
         },
     }
@@ -283,7 +295,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         f"- Cells: `{scope['total_cells']}`; coordinate budget: `{scope['coordinate_timeout_seconds']}s`; complete-run ceiling: `{scope['complete_run_max_wall_clock_seconds']}s`.",
         "- `A_plain`: Codemap absent; no-call is valid.",
         "- `B_auto`: Codemap CLI available; use is optional, and adoption is measured.",
-        "- `C_required`: exact Skill read must precede a successful compact query; noncompliant rows remain scored but are excluded from pooling.",
+        "- `C_strict`: exact Skill read must precede a successful compact query; noncompliant rows remain scored but are excluded from pooling.",
         "",
         "## Artifact and stop contract",
         "",
@@ -292,8 +304,9 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "",
         "## Shared scoring",
         "",
-        "- `SCORE` is the mean component score for every declared answer-contract field.",
-        "- `CORRECT` requires every declared answer-contract field to score 1.0.",
+        "- `SCORE` is the mean semantic component score for every declared answer-contract field.",
+        "- `EREC` and `RREC` are raw-text recall diagnostics independent of answer-envelope validity; `DEFF` is unbounded expected-importer exposure hits per command.",
+        "- A strict labelled envelope is eligible under the response protocol. One complete bare JSON object is diagnostic-only and never poolable; malformed or ambiguous answers remain semantically unscored.",
         "",
         "## Runner",
         "",
@@ -327,31 +340,43 @@ def _write_or_check(path: Path, expected: bytes, *, check: bool) -> None:
     """Write one generated artifact or fail closed when it differs."""
     if check:
         if not path.is_file() or path.read_bytes() != expected:
-            raise ValueError(f"generated manifest is stale: {path}")
+            raise ValueError(
+                f"generated manifest is stale: {path}; run: python3 benchmarks/build-codex-agentic-manifest.py"
+            )
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(expected)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Build both manifest forms or verify their exact current bytes."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if generated files are stale")
-    args = parser.parse_args(argv)
+def main(check: bool = False) -> None:
+    """Build both manifest forms or verify their exact current bytes.
+
+    Args:
+        check: Fail with exit status 1 if the generated files are stale instead of
+            rewriting them (CLI flag: ``--check``).
+
+    Raises:
+        SystemExit: With status 1 when ``check`` is set and a generated file is stale.
+
+    Examples:
+        >>> main.__name__
+        'main'
+    """
     manifest = _build_manifest()
     machine = _json_bytes(manifest)
     human = _human_bytes(manifest, hashlib.sha256(machine).hexdigest())
     try:
-        _write_or_check(OUTPUT_MANIFEST, machine, check=args.check)
-        _write_or_check(OUTPUT_HUMAN_MANIFEST, human, check=args.check)
+        _write_or_check(OUTPUT_MANIFEST, machine, check=check)
+        _write_or_check(OUTPUT_HUMAN_MANIFEST, human, check=check)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    print(f"{'verified' if args.check else 'wrote'}: {OUTPUT_MANIFEST.relative_to(ROOT)}")
-    print(f"{'verified' if args.check else 'wrote'}: {OUTPUT_HUMAN_MANIFEST.relative_to(ROOT)}")
+        raise SystemExit(1) from exc
+    print(f"{'verified' if check else 'wrote'}: {OUTPUT_MANIFEST.relative_to(ROOT)}")
+    print(f"{'verified' if check else 'wrote'}: {OUTPUT_HUMAN_MANIFEST.relative_to(ROOT)}")
     print(f"manifest sha256: {hashlib.sha256(machine).hexdigest()}")
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from fire import Fire
+
+    Fire(main)

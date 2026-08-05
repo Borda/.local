@@ -19,7 +19,7 @@ BUILDER = BENCHMARKS / "build-codex-agentic-manifest.py"
 MANIFEST = BENCHMARKS / "manifests" / "codex-agentic.json"
 HUMAN_MANIFEST = BENCHMARKS / "manifests" / "codex-agentic.md"
 AGENTIC_TASK_IDS = tuple(f"BA-{number:02d}" for number in range(1, 17))
-AGENTIC_ARMS = ("A_plain", "B_auto", "C_required")
+AGENTIC_ARMS = ("A_plain", "B_auto", "C_strict")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -54,6 +54,14 @@ def test_manifest_is_current_and_regeneration_is_byte_stable() -> None:
     assert machine_before == MANIFEST.read_bytes()
     assert human_before == HUMAN_MANIFEST.read_bytes()
     assert _run_builder("--check").returncode == 0
+
+
+def test_builder_stale_error_names_exact_rebuild_command(tmp_path: Path) -> None:
+    """Internal check mode must identify the command that repairs generated drift."""
+    builder = runpy.run_path(str(BUILDER))
+
+    with pytest.raises(ValueError, match=r"run: python3 benchmarks/build-codex-agentic-manifest\.py$"):
+        builder["_write_or_check"](tmp_path / "stale.json", b"expected\n", check=True)
 
 
 def test_manifest_locks_shared_scope_and_identity() -> None:
@@ -97,6 +105,22 @@ def test_manifest_locks_the_full_shared_agentic_scope_with_one_default_repeat() 
     assert tuple(scope["arms"]) == AGENTIC_ARMS
     assert scope["repetitions"] == 1
     assert scope["total_cells"] == 48
+
+
+def test_claude_and_codex_load_identical_shared_agentic_prompts() -> None:
+    """Both provider loaders deliver the same ordered task prompts and locked hashes."""
+    suite_path = BENCHMARKS / "suites" / "tasks-agentic.json"
+    methodology_path = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
+    claude = runpy.run_path(str(BENCHMARKS / "run-claude-agentic.py"))
+    codex = runpy.run_path(str(BENCHMARKS / "run-codex-agentic.py"))
+    claude_tasks = claude["load_tasks_with_provenance"](suite_path, methodology_path)
+    codex_tasks = codex["load_agentic_tasks"](suite_path, MANIFEST)
+    locked_hashes = {task["id"]: task["prompt_sha256"] for task in _load(MANIFEST)["tasks"]}
+
+    assert [task.id for task in claude_tasks] == [task["id"] for task in codex_tasks]
+    for claude_task, codex_task in zip(claude_tasks, codex_tasks, strict=True):
+        assert claude_task.prompt == codex_task["prompt"]
+        assert hashlib.sha256(claude_task.prompt.encode("utf-8")).hexdigest() == locked_hashes[claude_task.id]
 
 
 def test_human_launch_guidance_uses_complete_run_ceiling() -> None:
@@ -152,17 +176,27 @@ def test_ba12_and_ba16_declare_every_answer_contract_field_for_scoring() -> None
 def test_manifest_has_exact_shared_scoring_and_plugin_hashes() -> None:
     """The scorer formulas and all integration/runtime identities are explicit."""
     manifest = _load(MANIFEST)
-    assert manifest["scoring"]["implementation"]["symbol"] == "score_answer"
+    assert manifest["scoring"]["implementation"]["semantic_symbol"] == "score_answer"
+    assert manifest["scoring"]["implementation"]["response_symbol"] == "assess_answer_response"
+    assert manifest["scoring"]["implementation"]["evidence_symbol"] == "score_evidence_metrics"
     assert manifest["scoring"]["metrics"] == {
-        "SCORE": "mean(component score for each declared answer-contract field)",
-        "CORRECT": "every declared answer-contract field scores 1.0",
+        "SCORE": "mean semantic component score for each declared answer-contract field",
+        "EREC": "expected-importer recall in all agent text, independent of answer-envelope validity",
+        "RREC": "expected-importer recall in the final report, independent of answer-envelope validity",
+        "DEFF": "unbounded expected-importer exposure hits per command",
     }
     hashes = manifest["artifact_sha256"]
     assert len(hashes) == 12
     assert all(len(value) == 64 for value in hashes.values())
     assert manifest["plugin_runtime"]["source_hashes"] == hashes
-    assert manifest["plugin_runtime"]["codemap_version"] == "0.28.3"
-    assert manifest["plugin_runtime"]["codex_rig_version"] == "0.4.1"
+    assert (
+        manifest["plugin_runtime"]["codemap_version"]
+        == _load(ROOT / "plugins/codemap-py/.codex-plugin/plugin.json")["version"]
+    )
+    assert (
+        manifest["plugin_runtime"]["codex_rig_version"]
+        == _load(ROOT / "plugins/codex-rig/.codex-plugin/plugin.json")["version"]
+    )
     assert manifest["runtime_isolation"]["manifest"] == "benchmarks/manifests/codex-integration.json"
     assert manifest["runtime_isolation"]["mapping"]["B_auto"].endswith("use remains optional")
     assert "run_all" in hashes
@@ -172,6 +206,7 @@ def test_manifest_has_exact_shared_scoring_and_plugin_hashes() -> None:
         "telemetry-canonical.jsonl",
         "run-metadata.json",
         "inputs/ (frozen input snapshot)",
+        "runtime-isolation.jsonl (0600 expected/observed plugin identity evidence; may be empty)",
         "checksums.sha256",
     ]
 
@@ -182,9 +217,9 @@ def test_arm_admission_semantics_are_explicit() -> None:
     assert arms["A_plain"]["codemap_available"] is False
     assert arms["B_auto"]["no_call_valid"] is True
     assert "adoption" in arms["B_auto"]["requirement"]
-    assert arms["C_required"]["no_call_valid"] is False
-    assert arms["C_required"]["row_retained_on_noncompliance"] is True
-    assert "installed Skill" in arms["C_required"]["requirement"]
+    assert arms["C_strict"]["no_call_valid"] is False
+    assert arms["C_strict"]["row_retained_on_noncompliance"] is True
+    assert "installed Skill" in arms["C_strict"]["requirement"]
 
 
 def test_manifest_contains_no_credentials_or_ignored_historical_paths() -> None:

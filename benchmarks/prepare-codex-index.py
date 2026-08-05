@@ -17,14 +17,33 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import ast
 import hashlib
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+
+def _cli_error(message: str) -> None:
+    """Report one CLI usage error and exit with argparse's usage status.
+
+    Args:
+        message: Human-readable description of the invalid invocation.
+
+    Raises:
+        SystemExit: Always, with status 2 (argparse's usage-error status).
+
+    Examples:
+        >>> _cli_error("--manifest-path is required")
+        Traceback (most recent call last):
+        ...
+        SystemExit: 2
+    """
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(2)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -193,54 +212,84 @@ def prepare_index(
     return digest
 
 
-def main() -> None:
-    """Parse CLI arguments and prepare one manifest-locked index."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--index-path", type=Path)
-    parser.add_argument("--source-root", type=Path)
-    parser.add_argument("--manifest-path", type=Path, required=True)
-    parser.add_argument("--methodology-path", type=Path)
-    parser.add_argument("--schema-path", type=Path)
-    parser.add_argument("--verify", action="store_true", help="verify index schema against the active lock")
-    parser.add_argument("--require-hash", action="store_true", help="require exact manifest-locked index bytes")
-    parser.add_argument("--print-contract", action="store_true", help="print the validated index contract as JSON")
-    args = parser.parse_args()
-    if args.print_contract:
+def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag with a default (0 required)
+    index_path: Path = None,
+    source_root: Path = None,
+    manifest_path: Path = None,
+    methodology_path: Path = None,
+    schema_path: Path = None,
+    verify: bool = False,
+    require_hash: bool = False,
+    print_contract: bool = False,
+) -> None:
+    """Prepare, verify, or describe one manifest-locked Codemap index.
+
+    Args:
+        index_path: Path to the fresh scan to normalize, verify, or install.
+        source_root: Root the fresh scan was taken from; its prefix is rewritten to the locked root.
+        manifest_path: Path to the active manifest carrying the index lock. Required on every path.
+        methodology_path: Path to the provider-neutral methodology manifest; when given, its index
+            lock and source_manifest identity are cross-checked against the Codex manifest.
+        schema_path: Path to the checked-out scanner schema source; when given, a manifest lock
+            older than the current ``SCAN_VERSION`` is rejected.
+        verify: Check an existing index against the active lock instead of installing a new one.
+        require_hash: With ``--verify``, also require the exact manifest-locked index bytes.
+        print_contract: Print the validated index contract as sorted JSON and exit.
+
+    Raises:
+        SystemExit: With status 2 when a required argument for the selected mode is missing.
+
+    Examples:
+        >>> main.__name__
+        'main'
+    """
+    if manifest_path is None:
+        _cli_error("--manifest-path is required")
+    # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
+    manifest_path = Path(manifest_path)
+    if index_path is not None:
+        index_path = Path(index_path)
+    if source_root is not None:
+        source_root = Path(source_root)
+    if methodology_path is not None:
+        methodology_path = Path(methodology_path)
+    if schema_path is not None:
+        schema_path = Path(schema_path)
+
+    if print_contract:
         print(
             json.dumps(
-                index_contract(
-                    args.manifest_path,
-                    methodology_path=args.methodology_path,
-                    schema_path=args.schema_path,
-                ),
+                index_contract(manifest_path, methodology_path=methodology_path, schema_path=schema_path),
                 sort_keys=True,
             )
         )
         return
-    if args.verify:
-        if args.index_path is None:
-            parser.error("--index-path is required with --verify")
+    if verify:
+        if index_path is None:
+            _cli_error("--index-path is required with --verify")
         verify_index(
-            args.index_path,
-            args.manifest_path,
-            methodology_path=args.methodology_path,
-            schema_path=args.schema_path,
-            require_hash=args.require_hash,
+            index_path,
+            manifest_path,
+            methodology_path=methodology_path,
+            schema_path=schema_path,
+            require_hash=require_hash,
         )
-        print(f"verified: {args.index_path}")
+        print(f"verified: {index_path}")
         return
-    if args.index_path is None or args.source_root is None:
-        parser.error("--index-path and --source-root are required unless --print-contract is used")
+    if index_path is None or source_root is None:
+        _cli_error("--index-path and --source-root are required unless --print-contract is used")
     print(
         prepare_index(
-            args.index_path,
-            args.source_root,
-            args.manifest_path,
-            methodology_path=args.methodology_path,
-            schema_path=args.schema_path,
+            index_path,
+            source_root,
+            manifest_path,
+            methodology_path=methodology_path,
+            schema_path=schema_path,
         )
     )
 
 
 if __name__ == "__main__":
-    main()
+    from fire import Fire
+
+    Fire(main)

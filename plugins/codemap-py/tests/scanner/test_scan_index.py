@@ -59,6 +59,7 @@ def test_scan_falls_back_to_serial_when_process_pool_is_forbidden(
             raise PermissionError(errno.EPERM, "Operation not permitted")
 
     monkeypatch.setattr(_graph_mod, "ProcessPoolExecutor", ForbiddenPool)
+    monkeypatch.setattr(_graph_mod.multiprocessing, "get_context", lambda _method: object())
     monkeypatch.setattr(_graph_mod.sys, "platform", "darwin")
 
     result = _graph_mod.scan(tmp_path)

@@ -1,6 +1,6 @@
 ---
 name: kaggle
-description: Generate or extend grounded Kaggle competition notebooks as Jupytext `# %%` Python scripts. Use for full training notebooks, EDA-only notebooks, checkpoint-based inference notebooks, or resuming an existing Kaggle script across classification, regression, segmentation, detection, tabular, time-series, point-cloud, and mixed-modality tasks.
+description: "Build/extend grounded Kaggle Jupytext notebooks for training, EDA, inference, or resume workflows."
 ---
 
 # Kaggle

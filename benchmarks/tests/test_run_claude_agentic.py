@@ -234,7 +234,7 @@ class TestProviderParityTaskIntegration:
             pytest.param("codemap", None, id="legacy-codemap-is-not-relabelled"),
             pytest.param("A_plain", "A_plain", id="canonical-plain"),
             pytest.param("B_auto", "B_auto", id="canonical-auto"),
-            pytest.param("C_required", "C_required", id="canonical-required"),
+            pytest.param("C_strict", "C_strict", id="canonical-required"),
         ],
     )
     def test_parity_arm_identity_never_relabels_legacy_agentic_results(
@@ -246,13 +246,13 @@ class TestProviderParityTaskIntegration:
     def test_auto_and_required_arms_have_distinct_no_call_semantics(
         self, script_run_agentic: Any, tmp_path: Path
     ) -> None:
-        """B_auto exposes Codemap without required use; C_required records the required-use instruction."""
+        """B_auto exposes Codemap without required use; C_strict records the required-use instruction."""
         runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path)
 
         assert "Skill(codemap:query-code)" in script_run_agentic.ModelRunner._ARM_ALLOWED["B_auto"][1]
-        assert "Skill(codemap:query-code)" in script_run_agentic.ModelRunner._ARM_ALLOWED["C_required"][1]
+        assert "Skill(codemap:query-code)" in script_run_agentic.ModelRunner._ARM_ALLOWED["C_strict"][1]
         assert "must use Codemap at least once" not in runner._system_prompt("fix", "B_auto")
-        assert "must use Codemap at least once" in runner._system_prompt("fix", "C_required")
+        assert "must use Codemap at least once" in runner._system_prompt("fix", "C_strict")
 
     def test_default_dry_run_schedules_the_full_canonical_matrix(
         self, tmp_index: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], script_run_agentic: Any
@@ -278,7 +278,7 @@ class TestProviderParityTaskIntegration:
         assert output.count("[DRY RUN]") == 144
         assert "| A_plain | rep=1/1" in output
         assert "| B_auto | rep=1/1" in output
-        assert "| C_required | rep=1/1" in output
+        assert "| C_strict | rep=1/1" in output
         assert "| plain |" not in output
 
     def test_resolve_agentic_scope_binds_the_default_claude_matrix(self, script_run_agentic: Any) -> None:
@@ -296,7 +296,7 @@ class TestProviderParityTaskIntegration:
         assert first == second
         assert first["provider"] == "claude"
         assert first["task_ids"] == [f"BA-{number:02d}" for number in range(1, 17)]
-        assert first["arms"] == ["A_plain", "B_auto", "C_required"]
+        assert first["arms"] == ["A_plain", "B_auto", "C_strict"]
         assert first["models"] == list(script_run_agentic.MODELS)
         assert first["repetitions"] == 1
         assert first["coordinate_timeout_seconds"] == 600
@@ -441,6 +441,9 @@ class TestProviderParityTaskIntegration:
             )
 
         assert result.answer_scored is True
+        assert result.answer_contract_valid is True
+        assert result.answer_diagnostic_only is False
+        assert result.answer_pooling_eligible is True
         assert result.answer_quality_score == 1.0
         assert result.answer_correct is True
         assert result.answer_components == {"production_importers": 1.0}
@@ -449,6 +452,96 @@ class TestProviderParityTaskIntegration:
             "report_text": native_result.output_text,
             "tool_calls": 0,
         }
+
+    @pytest.mark.parametrize(
+        ("output_text", "diagnostic_only", "semantic_scored"),
+        [
+            pytest.param(
+                '{"production_importers":["lightning.pytorch.loops.fit_loop","lightning.pytorch.trainer.trainer"]}',
+                True,
+                True,
+                id="unique-bare-json",
+            ),
+            pytest.param(
+                "The importers are lightning.pytorch.loops.fit_loop and lightning.pytorch.trainer.trainer.",
+                False,
+                False,
+                id="prose-with-evidence",
+            ),
+        ],
+    )
+    def test_answer_wire_failure_keeps_independent_evidence_metrics(
+        self,
+        tmp_index: Path,
+        tmp_path: Path,
+        script_run_agentic: Any,
+        output_text: str,
+        diagnostic_only: bool,
+        semantic_scored: bool,
+    ) -> None:
+        """Envelope failure cannot masquerade as zero retrieval or enter pooled evidence."""
+        raw_task = {
+            "id": "BA-CONTRACT",
+            "type": "blast_radius_analysis",
+            "prompt": "List the production importers.",
+            "primary_module": "lightning.pytorch.callbacks.timer",
+            "answer_contract": {"fields": ["production_importers"]},
+        }
+        task = script_run_agentic.Task(
+            id=raw_task["id"],
+            type=raw_task["type"],
+            prompt=script_run_agentic.materialize_agentic_prompt(raw_task),
+            primary_module=raw_task["primary_module"],
+            answer_task=raw_task,
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["A_plain"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+        benchmark.answer_oracles[task.id] = script_run_agentic.AgenticOracle(
+            task_id=task.id,
+            fields=("production_importers",),
+            expected={
+                "production_importers": (
+                    "lightning.pytorch.loops.fit_loop",
+                    "lightning.pytorch.trainer.trainer",
+                )
+            },
+        )
+        native_result = script_run_agentic.BenchmarkRun(
+            arm="A_plain",
+            task_id=task.id,
+            task_type=task.type,
+            model="haiku",
+            success=True,
+            output_text=output_text,
+        )
+
+        with patch.object(script_run_agentic.ModelRunner, "run", return_value=native_result):
+            result = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "A_plain",
+                1,
+                1,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        assert result.answer_contract_valid is False
+        assert result.answer_diagnostic_only is diagnostic_only
+        assert result.answer_pooling_eligible is False
+        assert result.answer_scored is semantic_scored
+        assert result.answer_error
+        assert result.quality.erec == 1.0
+        assert result.quality.rrec == 1.0
+        assert result.answer_quality_score == (1.0 if semantic_scored else None)
 
     def test_run_single_copies_task_provenance_to_provider_native_result(
         self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
@@ -671,7 +764,7 @@ class TestProviderParityTaskIntegration:
     def test_auto_no_call_remains_valid_while_required_no_call_is_separate_compliance_failure(
         self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
     ) -> None:
-        """B_auto preserves scoring on no-call; C_required records a use-compliance failure without erasing it."""
+        """B_auto preserves scoring on no-call; C_strict records a use-compliance failure without erasing it."""
         task = script_run_agentic.Task(
             id="BA-01",
             type="fix",
@@ -686,7 +779,7 @@ class TestProviderParityTaskIntegration:
         )
         benchmark = script_run_agentic.Benchmark(
             tasks=[task],
-            arms=["B_auto", "C_required"],
+            arms=["B_auto", "C_strict"],
             models=[("haiku", script_run_agentic.MODELS["haiku"])],
             repo_path=tmp_path,
             index_path=tmp_index,
@@ -717,7 +810,7 @@ class TestProviderParityTaskIntegration:
                 task,
                 "haiku",
                 script_run_agentic.MODELS["haiku"],
-                "C_required",
+                "C_strict",
                 2,
                 2,
                 print_fn=lambda _text: None,
@@ -730,7 +823,7 @@ class TestProviderParityTaskIntegration:
         assert required.success is True
         assert required.error == ""
         assert required.quality.scored is True
-        assert required.parity_arm == "C_required"
+        assert required.parity_arm == "C_strict"
         assert required.codemap_compliant is False
 
     def test_required_scan_query_call_satisfies_codemap_compliance(
@@ -751,7 +844,7 @@ class TestProviderParityTaskIntegration:
         )
         benchmark = script_run_agentic.Benchmark(
             tasks=[task],
-            arms=["C_required"],
+            arms=["C_strict"],
             models=[("haiku", script_run_agentic.MODELS["haiku"])],
             repo_path=tmp_path,
             index_path=tmp_index,
@@ -759,7 +852,7 @@ class TestProviderParityTaskIntegration:
             log_path=tmp_path / "tool-calls.jsonl",
         )
         native_result = script_run_agentic.BenchmarkRun(
-            arm="C_required",
+            arm="C_strict",
             task_id=task.id,
             task_type=task.type,
             model="haiku",
@@ -775,7 +868,7 @@ class TestProviderParityTaskIntegration:
                 task,
                 "haiku",
                 script_run_agentic.MODELS["haiku"],
-                "C_required",
+                "C_strict",
                 1,
                 1,
                 print_fn=lambda _text: None,
@@ -802,7 +895,7 @@ class TestProviderParityTaskIntegration:
         """A provider-native Bash event records both its tool class and Codemap invocation."""
         runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path)
         result = script_run_agentic.BenchmarkRun(
-            arm="C_required",
+            arm="C_strict",
             task_id="BA-01",
             task_type="fix",
             model="haiku",
@@ -827,7 +920,7 @@ class TestProviderParityTaskIntegration:
         """Provider telemetry retains total Skill calls while counting only Codemap for compliance."""
         runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path)
         result = script_run_agentic.BenchmarkRun(
-            arm="C_required",
+            arm="C_strict",
             task_id="BA-01",
             task_type="fix",
             model="haiku",
@@ -1423,11 +1516,32 @@ class TestGroundTruthScore:
         assert result.scored is True
         assert result.deff == pytest.approx(float(result.erec_tp))
 
-    def test_test_modules_excluded_from_expected_rdeps(self, script_run_agentic: Any, tmp_path: Path) -> None:
-        """GroundTruth excludes modules whose name starts with 'tests.' from expected.
+    @pytest.mark.parametrize(
+        "test_module",
+        [
+            pytest.param(
+                {"name": "tests.test_thing", "direct_imports": ["lightning.pytorch.core.thing"]},
+                id="tests-name-prefix",
+            ),
+            pytest.param(
+                {
+                    "name": "tests_pytorch.test_thing",
+                    "direct_imports": ["lightning.pytorch.core.thing"],
+                    "is_test": True,
+                },
+                id="is-test-flag-outside-tests-prefix",
+            ),
+        ],
+    )
+    def test_test_modules_excluded_from_expected_rdeps(
+        self, script_run_agentic: Any, tmp_path: Path, test_module: dict
+    ) -> None:
+        """GroundTruth excludes test modules (tests. prefix or is_test flag) from expected.
 
         Scenario: the index has a test module importing primary_module; it must
         not appear in the expected rdeps set (production callers only, per docs).
+        The scanner's is_test flag catches roots like tests_pytorch.* that the
+        name-prefix rule misses (BA-16 gt-divergence regression).
         """
         data = _minimal_index(
             [
@@ -1437,19 +1551,14 @@ class TestGroundTruthScore:
                     "dep_count": 0,
                     "status": "ok",
                 },
-                {
-                    "name": "tests.test_thing",
-                    "direct_imports": ["lightning.pytorch.core.thing"],
-                    "dep_count": 0,
-                    "status": "ok",
-                },
+                {"dep_count": 0, "status": "ok", **test_module},
             ]
         )
         index_file = tmp_path / "index.json"
         index_file.write_text(json.dumps(data))
         task = _make_task(script_run_agentic, id="X1", primary_module="lightning.pytorch.core.thing")
         gt = script_run_agentic.GroundTruth(index_file, [task])
-        assert "tests.test_thing" not in gt.expected.get("X1", set())
+        assert test_module["name"] not in gt.expected.get("X1", set())
 
     def test_skill_coverage_parsed_from_json_result(self, script_run_agentic: Any, ground_truth: Any) -> None:
         """score() computes skill_coverage from valid codemap JSON result.
@@ -1472,6 +1581,31 @@ class TestGroundTruthScore:
         assert result.scored is True
         assert result.skill_coverage == pytest.approx(0.5)
         assert result.skill_returned == 1
+
+    def test_skill_coverage_unions_multiple_one_line_json_results(
+        self, script_run_agentic: Any, ground_truth: Any
+    ) -> None:
+        """score() unions imported_by across several newline-joined one-line JSON results.
+
+        Scenario: the agent ran scan-query rdeps more than once, so skill_result_text
+        holds two one-line JSON objects joined by a newline — whole-text json.loads
+        fails with "Extra data", which previously yielded sc=None for every
+        multi-call run; each expected rdep appears in exactly one result.
+        """
+        skill_json = (
+            json.dumps({"module": "m1", "imported_by": ["lightning.pytorch.trainer.trainer"]})
+            + "\n"
+            + json.dumps({"module": "m2", "imported_by": ["lightning.pytorch.loops.fit_loop"]})
+        )
+        result = ground_truth.score(
+            task_id="BA-01",
+            output_text="",
+            exposure_corpus="",
+            report_corpus="",
+            skill_result_text=skill_json,
+        )
+        assert result.skill_coverage == pytest.approx(1.0)
+        assert result.skill_returned == 2
 
     def test_skill_coverage_is_none_when_skill_result_text_absent(
         self, script_run_agentic: Any, ground_truth: Any
@@ -1810,7 +1944,7 @@ class TestConfigIsolation:
         assert "--setting-sources" in cmd
         assert cmd[cmd.index("--setting-sources") + 1] == "project,local"
 
-    @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_required"])
+    @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_strict"])
     def test_canonical_commands_omit_fixed_turn_cap_while_legacy_keeps_40(
         self, script_run_agentic: Any, tmp_path: Path, arm: str
     ) -> None:
@@ -1844,11 +1978,26 @@ class TestConfigIsolation:
         """The control arm re-supplies nothing — no plugin, no MCP."""
         assert script_run_agentic.ModelRunner._arm_isolation_flags("plain") == []
 
+    def test_codemap_fixture_is_independent_of_empty_user_cache(
+        self, script_run_agentic: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The Codemap arm resolves the checked-out fixture when the user cache is empty."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        plugin_dir = script_run_agentic.ModelRunner._codemap_plugin_dir()
+        assert plugin_dir == str(BENCHMARKS_DIR.parent / "plugins" / "codemap-py")
+
     @pytest.mark.parametrize("arm", ["codemap", "combined"])
     def test_skill_arms_load_codemap_plugin(self, script_run_agentic: Any, arm: str) -> None:
         """codemap/combined re-supply the codemap plugin via --plugin-dir (Skill availability)."""
         flags = script_run_agentic.ModelRunner._arm_isolation_flags(arm)
         assert "--plugin-dir" in flags
+
+    @pytest.mark.parametrize("arm", ["codemap", "combined", "B_auto", "C_strict"])
+    def test_codemap_arms_fail_closed_when_plugin_fixture_is_missing(self, script_run_agentic: Any, arm: str) -> None:
+        """A missing Codemap fixture cannot silently produce a valid treatment arm."""
+        with patch.object(script_run_agentic.ModelRunner, "_codemap_plugin_dir", return_value=None):
+            with pytest.raises(RuntimeError, match="Codemap plugin fixture"):
+                script_run_agentic.ModelRunner._arm_isolation_flags(arm)
 
     @pytest.mark.parametrize("arm", ["semble", "combined"])
     def test_semble_arms_load_semble_mcp_strictly(self, script_run_agentic: Any, arm: str) -> None:

@@ -84,7 +84,7 @@ class TestProviderParityIntegration:
     def test_legacy_arms_keep_their_labels_and_have_no_parity_identity(self, script_run_bench: Any) -> None:
         """Existing transport labels stay available but cannot inherit A/B/C identity."""
         assert script_run_bench.ARMS == ("plain", "codemap")
-        assert script_run_bench.PARITY_ARMS == ("A_plain", "B_auto", "C_required")
+        assert script_run_bench.PARITY_ARMS == ("A_plain", "B_auto", "C_strict")
         assert script_run_bench.PARITY_ARM_BY_LEGACY_ARM == {}
 
     def test_runner_stamps_legacy_identity_without_relabelling_legacy_arm(
@@ -167,7 +167,7 @@ class TestProviderParityIntegration:
         with pytest.raises(ValueError, match="task.*hash|hash.*task"):
             runner.run(task, "A_plain")
 
-    def test_c_required_tracks_no_call_as_noncompliance_without_changing_quality(
+    def test_c_strict_tracks_no_call_as_noncompliance_without_changing_quality(
         self, script_run_bench: Any, tmp_path: Path
     ) -> None:
         """C records a missing Codemap call separately from the unscored task result."""
@@ -175,7 +175,7 @@ class TestProviderParityIntegration:
         task = {"id": "fixture", "prompt": "answer", "type": "fixture", "scoreable": False}
         runner._stream = lambda _cmd, result, _arm, update_fn=None: setattr(result, "success", True)
 
-        result = runner._execute(task, "C_required")
+        result = runner._execute(task, "C_strict")
 
         assert result.compliance is False
         assert result.quality == script_run_bench.BenchQuality(scored=False)
@@ -185,8 +185,8 @@ class TestProviderParityIntegration:
         [
             pytest.param("A_plain", 0, None, True, id="plain-clean"),
             pytest.param("B_auto", 0, None, True, id="auto-optional-no-call"),
-            pytest.param("C_required", 0, False, False, id="required-no-call"),
-            pytest.param("C_required", 1, True, True, id="required-call"),
+            pytest.param("C_strict", 0, False, False, id="required-no-call"),
+            pytest.param("C_strict", 1, True, True, id="required-call"),
         ],
     )
     def test_canonical_arm_records_treatment_adherence(
@@ -255,7 +255,7 @@ class TestProviderParityIntegration:
         assert persisted["contaminated"] is False
         assert persisted["treatment_adherence"] is True
 
-    @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_required"])
+    @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_strict"])
     def test_canonical_commands_omit_turn_caps_while_legacy_keeps_its_task_cap(
         self, script_run_bench: Any, tmp_path: Path, arm: str
     ) -> None:
@@ -315,7 +315,7 @@ class TestProviderParityIntegration:
         output = capsys.readouterr().out
         assert "FN-02\tA_plain" in output
         assert "FN-02\tB_auto" in output
-        assert "FN-02\tC_required" in output
+        assert "FN-02\tC_strict" in output
         assert runtime_inputs == [(tmp_path, index_path)]
 
     @pytest.mark.parametrize(

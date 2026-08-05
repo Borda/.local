@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Build or verify the provider-neutral benchmark methodology lock.
 
-This utility deliberately owns the shared methodology source used by Claude
-and Codex. It derives task, prompt, suite, capability, and implementation
-identities from committed inputs, while requiring every change from the
-immutable historical archive to appear in an explicit reviewed ledger.
+This utility derives the current lock from the committed policy seed and task
+suites. Test fixtures cover malformed or adversarial cases separately; prior
+benchmark runs are not inputs to the current methodology.
 ``--check`` writes nothing and fails closed on byte drift.
 """
 
 from __future__ import annotations
 
-import argparse
 import copy
 import hashlib
 import json
@@ -24,10 +22,10 @@ ROOT = Path(__file__).resolve().parents[1]
 BENCHMARKS = ROOT / "benchmarks"
 OUTPUT_MANIFEST = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 POLICY_SEED = BENCHMARKS / "manifests" / "provider-parity-methodology-policy.json"
-POLICY_SEED_SHA256 = "62da64ed419bb988794ccd0e6ccc58a61f84a9e0f8b737ccb5ef372a3ec0384d"
-ARCHIVED_MANIFEST = BENCHMARKS / "results" / "manifests" / ("provider-parity-v1-b0-" + "r" + "6.json")
-ARCHIVED_MANIFEST_SHA256 = "971c6ad220c1e821ed72109396f4dce1d745f0a1b74b2790874f6b07e833627b"
-EXPERIMENT_REVISION = "provider-parity-shared-structural-and-agentic-methodology-2026-08-04"
+POLICY_SEED_SHA256 = "a2eb3bb2a7a1a36b8afe40e3922c1971e0f044dffe8ef96c06b018f654e2097e"
+EXPERIMENT_REVISION = "provider-parity-shared-structural-and-agentic-protocol-evidence-methodology-2026-08-05"
+TASKS_BENCH = "benchmarks/suites/tasks-bench.json"
+TASKS_AGENTIC = "benchmarks/suites/tasks-agentic.json"
 INDEX_LOCK = {
     "change_reason": (
         "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; "
@@ -56,111 +54,49 @@ PRODUCT_ACCEPTANCE_POLICY = {
     "historical_evidence": "Historical nonpoolable evidence cannot satisfy this prospective policy.",
 }
 
+# These descriptions are current suite metadata, not snapshots of a previous
+# run. Task IDs, ordering, hashes, and policy rows are rebuilt from each suite.
+SUITE_METADATA: dict[str, dict[str, str]] = {
+    TASKS_AGENTIC: {
+        "current_consumer": "run-claude-agentic.py and run-codex-agentic.py defaults",
+        "generation_provenance": "committed_static_prompts_runtime_ast_oracle",
+        "root_shape": "object_with_tasks",
+    },
+    TASKS_BENCH: {
+        "current_consumer": "run-claude-structural.py and run-codex-structural.py defaults",
+        "generation_provenance": "committed_prompts_and_ground_truth; generate-tasks-bench.py validates_or_updates_ground_truth_only",
+        "root_shape": "object_with_tasks",
+    },
+    "benchmarks/suites/tasks-code.json": {
+        "current_consumer": "run-cli.py; optional external input to run-claude-structural.py",
+        "generation_provenance": "committed_cli_query_specs_without_materialized_llm_ground_truth",
+        "root_shape": "bare_list",
+    },
+    "benchmarks/suites/tasks-fix-multi.json": {
+        "current_consumer": "optional input to run-claude-agentic.py",
+        "generation_provenance": "committed_static_prompts_keyword_file_oracle",
+        "root_shape": "bare_list",
+    },
+    "benchmarks/suites/tasks-fix-single.json": {
+        "current_consumer": "optional input to run-claude-agentic.py",
+        "generation_provenance": "committed_static_prompts_keyword_file_oracle",
+        "root_shape": "bare_list",
+    },
+    "benchmarks/suites/tasks-patch.json": {
+        "current_consumer": "run-claude-structural.py patch extension",
+        "generation_provenance": "committed_real_issue_prompts_reference_patch_and_test_oracle",
+        "root_shape": "object_with_tasks",
+    },
+    "benchmarks/suites/tasks-readcrop.json": {
+        "current_consumer": "optional input to run-claude-agentic.py",
+        "generation_provenance": "committed_static_prompts_keyword_oracle",
+        "root_shape": "bare_list",
+    },
+}
+STATIC_REFERENCE_TYPES = frozenset({"symbol_extraction", "real_issue"})
+
 sys.path.insert(0, str(BENCHMARKS))
 import provider_parity_contracts as core  # noqa: E402
-
-
-def _ledger_entry(identity_fields: list[str], reason: str) -> dict[str, Any]:
-    """Return one compact, reviewable intentional task-identity declaration."""
-    return {"identity_fields": identity_fields, "reason": reason}
-
-
-TASK_CHANGE_LEDGER: dict[str, dict[str, Any]] = {
-    **{
-        f"BA-{number:02d}": _ledger_entry(
-            ["canonical_task_sha256", "prompt_sha256"],
-            "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable.",
-        )
-        for number in range(1, 17)
-    },
-    "SE-05": _ledger_entry(["canonical_task_sha256"], "Structured expected query normalizes the symbol target."),
-    "FN-01": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Prompt includes examples/** in the non-test caller scope."
-    ),
-    "RV-01": _ledger_entry(
-        ["prompt_sha256"], "Provider prompt now contains the independently scored review questions."
-    ),
-    "RV-02": _ledger_entry(
-        ["prompt_sha256"], "Provider prompt now contains the independently scored review questions."
-    ),
-    "RV-03": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"],
-        "Production-only caller oracle adds the explicit --exclude-tests filter to the task query and prompt.",
-    ),
-    "RV-04": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"],
-        "Production-only callback oracle adds the explicit --exclude-tests filter to the task query and prompt.",
-    ),
-    "RV-05": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"],
-        "Provider-visible review questions and diagnostic oracle policy are explicit.",
-    ),
-    "CQ-01": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Exact labelled conclusion format prevents incidental-text scoring."
-    ),
-    "CQ-02": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Exact labelled conclusion format prevents incidental-text scoring."
-    ),
-    "CQ-03": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Exact labelled conclusion format prevents incidental-text scoring."
-    ),
-    "CQ-05": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Exact labelled conclusion format prevents incidental-text scoring."
-    ),
-    "BR-01": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Prompt includes examples/** in the non-test blast-radius scope."
-    ),
-    "BR-09": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-caller query is required."),
-    "DG-01": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped symbol query is required."),
-    "DG-02": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped symbol query is required."),
-    "DG-03": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped symbol query is required."),
-    "DG-04": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped symbol query is required."),
-    "DG-05": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped symbol query is required."),
-    "DG-06": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped symbol query is required."),
-    "FT-01": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"],
-        "Corrected extension target, structured queries, and labelled answer contract.",
-    ),
-    "FT-02": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Structured queries and labelled answer contract."
-    ),
-    "FT-03": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Structured queries and labelled answer contract."
-    ),
-    "FT-04": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Structured queries and labelled answer contract."
-    ),
-    "FT-05": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"], "Structured queries and labelled answer contract."
-    ),
-    "DI-01": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"],
-        "Replaced an external re-export with a staged local target; caller and direct test-import queries are all required.",
-    ),
-    "DI-02": _ledger_entry(["canonical_task_sha256"], "Caller and direct test-import queries are all required."),
-    "DI-03": _ledger_entry(["canonical_task_sha256"], "Caller and direct test-import queries are all required."),
-    "DI-04": _ledger_entry(["canonical_task_sha256"], "Caller and direct test-import queries are all required."),
-    "DI-05": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"],
-        "Replaced an external re-export with a staged local target; caller and direct test-import queries are all required.",
-    ),
-    "DI-06": _ledger_entry(
-        ["canonical_task_sha256"],
-        "Corrected recursive re-export caller oracle; caller and direct test-import queries are all required.",
-    ),
-    "GR-01": _ledger_entry(
-        ["canonical_task_sha256", "prompt_sha256"],
-        "Production-only centrality scope is explicit and matches the exclude-tests oracle/query.",
-    ),
-    "GR-02": _ledger_entry(["canonical_task_sha256"], "Structured graph query is required."),
-    "GR-03": _ledger_entry(["canonical_task_sha256"], "Structured graph query is required."),
-    "GR-04": _ledger_entry(["canonical_task_sha256"], "Structured graph-centrality query is required."),
-    "MB-01": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-import query is required."),
-    "MB-02": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-import query is required."),
-    "MB-03": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-import query is required."),
-    "MB-04": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-import query is required."),
-    "MB-05": _ledger_entry(["canonical_task_sha256"], "Structured task-shaped reverse-import query is required."),
-}
 
 
 def _sha256(path: Path) -> str:
@@ -182,7 +118,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _load_policy_seed() -> dict[str, Any]:
-    """Load the immutable passthrough policy without trusting generated output."""
+    """Load the immutable policy without trusting generated output."""
     if _sha256(POLICY_SEED) != POLICY_SEED_SHA256:
         raise ValueError("immutable methodology policy seed SHA-256 changed")
     policy = _load_json(POLICY_SEED)
@@ -202,46 +138,100 @@ def _load_policy_seed() -> dict[str, Any]:
     return policy
 
 
-def _task_rows(manifest: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    """Return uniquely keyed task rows from one archived or generated manifest."""
-    rows: dict[str, dict[str, Any]] = {}
-    suites = manifest.get("suites")
-    if not isinstance(suites, list):
-        raise ValueError("methodology manifest requires suites")
-    for suite in suites:
-        if not isinstance(suite, Mapping) or not isinstance(suite.get("tasks"), list):
-            raise ValueError("methodology suite requires tasks")
-        for task in suite["tasks"]:
-            if not isinstance(task, Mapping) or not isinstance(task.get("id"), str):
-                raise ValueError("methodology task requires an id")
-            task_id = task["id"]
-            if task_id in rows:
-                raise ValueError(f"methodology manifest duplicates task id {task_id!r}")
-            rows[task_id] = dict(task)
-    return rows
-
-
 def _current_suite_tasks(path: str) -> list[dict[str, Any]]:
     """Load one committed suite using the shared raw-task contract."""
     return core.load_task_suite(ROOT / path)
 
 
-def _changed_task_identity_fields(previous: Mapping[str, Any], active: Mapping[str, Any]) -> dict[str, list[str]]:
-    """Return exact canonical/prompt identity changes between two methodology locks."""
-    before = _task_rows(previous)
-    after = _task_rows(active)
-    if before.keys() != after.keys():
-        raise ValueError("methodology task ids differ from the immutable archive")
-    changes: dict[str, list[str]] = {}
-    for task_id, prior in before.items():
-        fields = [
-            field
-            for field in ("canonical_task_sha256", "prompt_sha256")
-            if prior.get(field) != after[task_id].get(field)
-        ]
-        if fields:
-            changes[task_id] = fields
-    return changes
+def _task_row(
+    source_task: Mapping[str, Any],
+    suite_path: str,
+    headline_ids: set[str],
+    diagnostic_ids: set[str],
+    diagnostic_reason: str,
+) -> dict[str, Any]:
+    """Derive one current policy row from a raw committed task."""
+    task_id = source_task["id"]
+    raw_type = source_task.get("type")
+    raw_scoreable = source_task.get("scoreable")
+    self_consistency = False
+
+    if suite_path == TASKS_BENCH:
+        if not isinstance(raw_type, str) or not raw_type:
+            raise ValueError(f"tasks-bench task {task_id!r} requires type")
+        effective_type = raw_type
+        effective_scoreable = raw_scoreable if isinstance(raw_scoreable, bool) else True
+        self_consistency = bool(source_task.get("self_consistency", False))
+        if not effective_scoreable:
+            oracle_class = "unscoreable"
+        elif self_consistency:
+            oracle_class = "self_consistency"
+        elif raw_type in STATIC_REFERENCE_TYPES:
+            oracle_class = "static_reference"
+        else:
+            oracle_class = "independent"
+        validation_status = "pass"
+    elif suite_path.endswith("tasks-code.json"):
+        effective_type = "develop_skill"
+        effective_scoreable = False
+        oracle_class = "unscoreable"
+        validation_status = "not_in_tasks_bench_validator"
+    else:
+        if not isinstance(raw_type, str) or not raw_type:
+            raise ValueError(f"task {task_id!r} in {suite_path} requires type")
+        effective_type = raw_type
+        effective_scoreable = True
+        oracle_class = "independent" if suite_path == TASKS_AGENTIC else "static_reference"
+        validation_status = "not_in_tasks_bench_validator"
+
+    row: dict[str, Any] = {
+        "difficulty": source_task.get("difficulty"),
+        "effective_scoreable": effective_scoreable,
+        "effective_type": effective_type,
+        "headline_eligible_v1": task_id in headline_ids,
+        "id": task_id,
+        "oracle_class": oracle_class,
+        "profiles": copy.deepcopy(source_task.get("profiles", [])),
+        "providers": ["claude", "codex"],
+        "raw_scoreable": raw_scoreable,
+        "raw_type": raw_type,
+        "self_consistency": self_consistency,
+        "validation_status": validation_status,
+        "canonical_task_sha256": core.canonical_task_hash(source_task),
+        "prompt_sha256": core.prompt_hash(source_task),
+    }
+    if "answer_contract" in source_task:
+        row["answer_contract"] = copy.deepcopy(source_task["answer_contract"])
+    if task_id in diagnostic_ids:
+        row["oracle_limit"] = diagnostic_reason
+    return row
+
+
+def _build_suites(policy: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Build current suite metadata and policy rows from committed task inputs."""
+    headline_ids = set(policy["headline_structural_v1"]["task_ids"])
+    diagnostic_ids = set(policy["headline_structural_v1"]["diagnostic_independent_ids"])
+    diagnostic_reason = policy["headline_structural_v1"]["diagnostic_reason"]
+    suites: list[dict[str, Any]] = []
+    for path, metadata in SUITE_METADATA.items():
+        source_tasks = _current_suite_tasks(path)
+        task_ids = [task["id"] for task in source_tasks]
+        rows = [_task_row(task, path, headline_ids, diagnostic_ids, diagnostic_reason) for task in source_tasks]
+        suites.append(
+            {
+                **metadata,
+                "path": path,
+                "ordered_task_ids": task_ids,
+                "raw_sha256": _sha256(ROOT / path),
+                "semantic_suite_sha256": core.semantic_suite_hash(source_tasks),
+                "task_count": len(rows),
+                "tasks": rows,
+            }
+        )
+    bench_ids = {task["id"] for task in _current_suite_tasks(TASKS_BENCH)}
+    if not headline_ids <= bench_ids:
+        raise ValueError("headline policy names a task outside tasks-bench.json")
+    return suites
 
 
 def _artifact_hashes() -> dict[str, str]:
@@ -262,40 +252,6 @@ def _artifact_hashes() -> dict[str, str]:
     return {name: _sha256(ROOT / relative_path) for name, relative_path in paths.items()}
 
 
-def _build_suites(archived: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Recompute all suite/task identities while retaining archived classification policy."""
-    suites: list[dict[str, Any]] = []
-    for archived_suite in archived["suites"]:
-        suite = copy.deepcopy(archived_suite)
-        path = suite["path"]
-        source_tasks = _current_suite_tasks(path)
-        prior_rows = {task["id"]: task for task in suite["tasks"]}
-        source_ids = [task["id"] for task in source_tasks]
-        if source_ids != suite["ordered_task_ids"] or set(prior_rows) != set(source_ids):
-            raise ValueError(f"suite task ordering or ids drifted outside the declared methodology contract: {path}")
-
-        rows: list[dict[str, Any]] = []
-        for source_task in source_tasks:
-            row = copy.deepcopy(prior_rows[source_task["id"]])
-            row["canonical_task_sha256"] = core.canonical_task_hash(source_task)
-            row["prompt_sha256"] = core.prompt_hash(source_task)
-            if "answer_contract" in source_task:
-                row["answer_contract"] = copy.deepcopy(source_task["answer_contract"])
-            rows.append(row)
-        suite["raw_sha256"] = _sha256(ROOT / path)
-        suite["task_count"] = len(rows)
-        suite["tasks"] = rows
-        suite["semantic_suite_sha256"] = core.semantic_suite_hash(source_tasks)
-        if path == "benchmarks/suites/tasks-agentic.json":
-            suite["current_consumer"] = "run-claude-agentic.py and run-codex-agentic.py defaults"
-        else:
-            suite["current_consumer"] = suite["current_consumer"].replace(
-                "in r" + "6", "in the archived provider-parity study"
-            )
-        suites.append(suite)
-    return suites
-
-
 def _suite_integrity(suites: list[dict[str, Any]]) -> dict[str, Any]:
     """Return recomputed global cardinality, uniqueness, and semantic identities."""
     tasks = [task for suite in suites for task in suite["tasks"]]
@@ -314,7 +270,7 @@ def _suite_integrity(suites: list[dict[str, Any]]) -> dict[str, Any]:
 def _evaluation_contract(policy: Mapping[str, Any]) -> dict[str, Any]:
     """Recompute capability strata counts from the current structural suite."""
     contract = copy.deepcopy(policy["evaluation_contract"])
-    tasks = _current_suite_tasks("benchmarks/suites/tasks-bench.json")
+    tasks = _current_suite_tasks(TASKS_BENCH)
     counts = Counter(stratum for task in tasks for stratum in core.capability_strata(task))
     contract["capability_strata_counts"] = dict(sorted(counts.items()))
     contract["prospective_product_acceptance"] = copy.deepcopy(PRODUCT_ACCEPTANCE_POLICY)
@@ -323,18 +279,15 @@ def _evaluation_contract(policy: Mapping[str, Any]) -> dict[str, Any]:
 
 def _build_manifest() -> dict[str, Any]:
     """Build the only accepted current provider-neutral methodology record."""
-    if _sha256(ARCHIVED_MANIFEST) != ARCHIVED_MANIFEST_SHA256:
-        raise ValueError("immutable archived methodology manifest hash changed")
-    archived = _load_json(ARCHIVED_MANIFEST)
     policy = _load_policy_seed()
-    suites = _build_suites(archived)
+    suites = _build_suites(policy)
     manifest = copy.deepcopy(policy)
     manifest["experiment_revision"] = EXPERIMENT_REVISION
     manifest["evaluation_contract"] = _evaluation_contract(policy)
     manifest["execution_controls"]["codex_transport"] = (
         "run-codex-structural.py and run-codex-agentic.py provider adapters"
     )
-    agentic_suite = next(suite for suite in suites if suite["path"] == "benchmarks/suites/tasks-agentic.json")
+    agentic_suite = next(suite for suite in suites if suite["path"] == TASKS_AGENTIC)
     manifest["agentic_execution_contract"] = {
         "arms": list(core.ARM_CONTRACTS),
         "coordinate_timeout_seconds": core.PARITY_TIMEOUT_SECONDS,
@@ -350,24 +303,17 @@ def _build_manifest() -> dict[str, Any]:
             "the provider, current manifest, ordered tasks, arms, models, repetitions, total cells, and exact wall-clock ceiling."
         ),
         "scoring": (
-            "Macro mean across every required answer_contract component; missing components score zero. "
-            "EREC and RREC remain diagnostic comparability metrics."
+            "Macro mean across every required answer_contract component for a strict labelled envelope. Exactly one "
+            "complete bare JSON object may be scored as diagnostic-only and is never pooling-eligible; malformed or "
+            "ambiguous answers remain semantically unscored. EREC and RREC are raw-text recall diagnostics independent "
+            "of the answer protocol, and DEFF is their unbounded expected-importer exposure-hit count per command."
         ),
         "task_ids": agentic_suite["ordered_task_ids"],
     }
     manifest["implementation_contract"]["artifact_sha256"] = _artifact_hashes()
     manifest["index"] = copy.deepcopy(INDEX_LOCK)
-    manifest["methodology_change_ledger"] = copy.deepcopy(TASK_CHANGE_LEDGER)
     manifest["suite_integrity"] = _suite_integrity(suites)
     manifest["suites"] = suites
-
-    observed_changes = _changed_task_identity_fields(archived, manifest)
-    declared_changes = {task_id: entry["identity_fields"] for task_id, entry in TASK_CHANGE_LEDGER.items()}
-    if observed_changes != declared_changes:
-        raise ValueError(
-            "task identity changes differ from the declared methodology ledger: "
-            f"observed={observed_changes}, declared={declared_changes}"
-        )
     return manifest
 
 
@@ -380,24 +326,37 @@ def _write_or_check(path: Path, expected: bytes, *, check: bool) -> None:
     """Write generated output or fail closed when its exact bytes are stale."""
     if check:
         if not path.is_file() or path.read_bytes() != expected:
-            raise ValueError(f"generated methodology record is stale: {path}; rerun without --check")
+            raise ValueError(
+                f"generated methodology record is stale: {path}; "
+                "run: python3 benchmarks/build-provider-parity-methodology-manifest.py"
+            )
         return
     path.write_bytes(expected)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Build the methodology source or verify it without model or authentication access."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if the committed methodology differs from inputs")
-    args = parser.parse_args(argv)
+def main(check: bool = False) -> None:
+    """Build the methodology source or verify it without model or authentication access.
+
+    Args:
+        check: Fail with exit status 1 if the committed methodology differs from its
+            inputs instead of rewriting it (CLI flag: ``--check``).
+
+    Raises:
+        SystemExit: With status 1 when ``check`` is set and the committed bytes differ.
+
+    Examples:
+        >>> main.__name__
+        'main'
+    """
     try:
-        _write_or_check(OUTPUT_MANIFEST, _manifest_bytes(_build_manifest()), check=args.check)
+        _write_or_check(OUTPUT_MANIFEST, _manifest_bytes(_build_manifest()), check=check)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    print(f"{'verified' if args.check else 'wrote'}: {OUTPUT_MANIFEST.relative_to(ROOT)}")
-    return 0
+        raise SystemExit(1) from exc
+    print(f"{'verified' if check else 'wrote'}: {OUTPUT_MANIFEST.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from fire import Fire
+
+    Fire(main)

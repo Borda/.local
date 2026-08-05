@@ -313,6 +313,7 @@ class TestSentinelSymlinkSafety:
         assert flag_path != preplanted
         assert victim.read_text(encoding="utf-8") == "IMPORTANT ORIGINAL CONTENT\n"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX private-mode semantics")
     def test_written_files_are_mode_0600(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Both sentinel files are created owner-only readable/writable."""
         import os

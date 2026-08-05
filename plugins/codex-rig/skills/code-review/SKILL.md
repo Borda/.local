@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Tiered Codex-native multi-axis code review for local diffs or GitHub PRs, including `$code-review #123` (bare number = PR); uses mechanical scope gates, explicit specialist fan-out/substitutes, measurable gates, and a JSON artifact.
+description: "Review local diffs/PRs with scope gates, specialists, and JSON artifact; fix via code-remediate."
 ---
 
 # Code Review

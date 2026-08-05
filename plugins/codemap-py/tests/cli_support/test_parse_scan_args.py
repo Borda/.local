@@ -132,8 +132,11 @@ class TestMain:
 class TestSkillCallSiteRegression:
     """Golden invocation matching scan-codebase SKILL.md: blob positional + outer --nul-output."""
 
-    def test_nul_output_golden(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_nul_output_golden(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Exact SKILL.md argv shape writes NUL-delimited tokens; no stdout, exit 0."""
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
         args_file = tmp_path / "codemap-scan-args-nul"
         rc = main(["--root /abs/proj --incremental", "--nul-output", str(args_file)])
         assert rc == 0

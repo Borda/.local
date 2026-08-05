@@ -22,7 +22,7 @@ except ModuleNotFoundError:
     from benchmarks.provider_parity_contracts import materialize_task_prompt
 
 
-AGENTIC_ARMS = ("A_plain", "B_auto", "C_required")
+AGENTIC_ARMS = ("A_plain", "B_auto", "C_strict")
 DEFAULT_REPETITIONS = 1
 
 _ANSWER_FIELDS = frozenset(
@@ -82,7 +82,12 @@ class AgenticOracle:
 
 @dataclass(frozen=True)
 class AnswerScore:
-    """Deterministic component and aggregate score for one labelled answer."""
+    """Deterministic semantic components plus raw-text evidence diagnostics.
+
+    Set and mapping components are F1 values. ``erec`` and ``rrec`` are
+    expected-importer recall in the exposure and report text, while ``deff``
+    is the unbounded exposure-hit count per command.
+    """
 
     scored: bool
     quality_score: float
@@ -91,6 +96,30 @@ class AnswerScore:
     erec: float
     rrec: float
     deff: float
+
+
+@dataclass(frozen=True)
+class EvidenceMetrics:
+    """Raw-text expected-importer recall and unbounded exposure per command."""
+
+    erec: float
+    rrec: float
+    deff: float
+
+
+@dataclass(frozen=True)
+class AnswerResponseAssessment:
+    """Strict-envelope status and optional diagnostic-only semantic answer.
+
+    A recovered answer is intentionally ineligible for pooling: its semantic
+    score diagnoses response content, but cannot erase a failed wire contract.
+    """
+
+    answer: Mapping[str, Any] | None
+    strict_envelope_valid: bool
+    diagnostic_only: bool
+    pooling_eligible: bool
+    error: str | None
 
 
 def validate_answer_contract(task: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -122,12 +151,26 @@ def validate_answer_contract(task: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def answer_format_instruction(task: Mapping[str, Any]) -> str:
-    """Return the exact labelled JSON envelope required for one task response."""
+    """Return the exact typed JSON envelope required for one task response."""
     contract = validate_answer_contract(task)
     labels = ", ".join(contract["fields"])
-    return (
-        "Return one JSON object containing exactly these labels: "
-        f"{labels}. Put it between literal lines BEGIN_ANSWER_JSON and END_ANSWER_JSON."
+    specs: list[str] = []
+    example: dict[str, Any] = {}
+    for field in contract["fields"]:
+        description, example_value = _answer_field_spec(field, contract["params"].get(field, {}))
+        specs.append(f"- {field}: {description}.")
+        example[field] = example_value
+    return "\n".join(
+        [
+            f"Return one JSON object containing exactly these labels: {labels}.",
+            "Use exactly these JSON value shapes:",
+            *specs,
+            "Do not put objects or counts inside array fields. Values outside these shapes are invalid.",
+            "Example using synthetic values only:",
+            "BEGIN_ANSWER_JSON",
+            json.dumps(example, separators=(",", ":")),
+            "END_ANSWER_JSON",
+        ]
     )
 
 
@@ -153,14 +196,79 @@ def parse_labeled_answer(task: Mapping[str, Any], text: str) -> dict[str, Any]:
     end = "END_ANSWER_JSON"
     if text.count(start) != 1 or text.count(end) != 1:
         raise ValueError("answer requires exactly one BEGIN_ANSWER_JSON and END_ANSWER_JSON envelope")
-    before, payload = text.split(start, maxsplit=1)
-    payload, after = payload.split(end, maxsplit=1)
+    _, payload = text.split(start, maxsplit=1)
+    payload, _ = payload.split(end, maxsplit=1)
     if start in payload or end in payload or not payload.strip():
         raise ValueError("answer JSON envelope is malformed")
+    payload = payload.strip()
+    # Tolerate one cosmetic markdown code fence wrapping the payload (``` or ```json).
+    # Some providers fence JSON inside the envelope by habit; the BEGIN/END markers stay
+    # the contract and anything beyond a plain fence still fails closed at json.loads.
+    if payload.startswith("```"):
+        fence_lines = payload.splitlines()[1:]
+        if fence_lines and fence_lines[-1].strip() == "```":
+            fence_lines = fence_lines[:-1]
+        payload = "\n".join(fence_lines)
     try:
         answer = json.loads(payload)
     except json.JSONDecodeError as exc:
         raise ValueError(f"answer JSON is invalid: {exc.msg}") from exc
+    return _normalize_answer(contract, answer)
+
+
+def assess_answer_response(task: Mapping[str, Any], text: str) -> AnswerResponseAssessment:
+    """Keep strict envelope validity separate from recoverable diagnostic semantics.
+
+    Only one complete bare JSON object can recover semantic scoring after a
+    strict-envelope failure. Recovered answers are explicitly diagnostic-only
+    and cannot enter pooled treatment comparisons.
+    """
+    try:
+        answer = parse_labeled_answer(task, text)
+    except ValueError as strict_error:
+        try:
+            answer = _recover_unique_bare_answer(task, text)
+        except ValueError as recovery_error:
+            return AnswerResponseAssessment(
+                answer=None,
+                strict_envelope_valid=False,
+                diagnostic_only=False,
+                pooling_eligible=False,
+                error=f"{strict_error}; diagnostic recovery rejected: {recovery_error}",
+            )
+        return AnswerResponseAssessment(
+            answer=MappingProxyType(answer),
+            strict_envelope_valid=False,
+            diagnostic_only=True,
+            pooling_eligible=False,
+            error=str(strict_error),
+        )
+    return AnswerResponseAssessment(
+        answer=MappingProxyType(answer),
+        strict_envelope_valid=True,
+        diagnostic_only=False,
+        pooling_eligible=True,
+        error=None,
+    )
+
+
+def _recover_unique_bare_answer(task: Mapping[str, Any], text: str) -> dict[str, Any]:
+    """Recover one complete bare JSON object without weakening the strict parser."""
+    if not isinstance(text, str):
+        raise TypeError("labelled answer text must be a string")
+    payload = text.strip()
+    decoder = json.JSONDecoder()
+    try:
+        answer, end = decoder.raw_decode(payload)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"bare JSON is invalid: {exc.msg}") from exc
+    if payload[end:].strip():
+        raise ValueError("diagnostic recovery requires exactly one bare JSON object")
+    return _normalize_answer(validate_answer_contract(task), answer)
+
+
+def _normalize_answer(contract: Mapping[str, Any], answer: Any) -> dict[str, Any]:
+    """Validate closed labels and normalize the explicit collection-empty marker."""
     if not isinstance(answer, dict):
         raise ValueError("answer JSON must be an object")
     fields = set(contract["fields"])
@@ -174,15 +282,15 @@ def parse_labeled_answer(task: Mapping[str, Any], text: str) -> dict[str, Any]:
                 "production_importers",
                 "overlap_importers",
                 "cross_namespace_importers",
-                "high_centrality",
                 "ranking",
                 "dependency_chain",
             }:
                 answer[field] = []
-            elif field in {"rdep_counts", "buckets"}:
+            elif field in {"rdep_counts", "buckets", "high_centrality"}:
                 answer[field] = {}
             else:
                 raise ValueError(f"answer field {field!r} does not accept EMPTY")
+    _validate_answer_shapes(contract, answer)
     return answer
 
 
@@ -248,9 +356,11 @@ def score_answer(
 ) -> AnswerScore:
     """Score a parsed labelled answer with fixed component and tie rules.
 
-    Set fields use recall, mappings use correct-pair fraction, rankings use
-    position fraction, and scalar/path fields require exact equality. Empty
-    expected collections receive credit only from an explicit empty collection.
+    Set and mapping fields use F1, rankings use position fraction, and
+    scalar/path fields require exact equality. ``erec`` and ``rrec`` remain
+    raw-text expected-importer recall; ``deff`` is unbounded exposure hits per
+    command. Empty expected collections receive credit only from an explicit
+    empty collection.
     """
     if not isinstance(answer, Mapping):
         raise TypeError("answer must be a mapping parsed from the labelled JSON envelope")
@@ -258,14 +368,42 @@ def score_answer(
     for field in oracle.fields:
         expected = oracle.expected[field]
         actual = answer.get(field)
-        if field in {"production_importers", "overlap_importers", "cross_namespace_importers", "high_centrality"}:
-            components[field] = _set_recall(expected, actual)
-        elif field in {"rdep_counts", "buckets"}:
+        if field in {"production_importers", "overlap_importers", "cross_namespace_importers"}:
+            components[field] = _set_f1(expected, actual)
+        elif field in {"rdep_counts", "buckets", "high_centrality"}:
             components[field] = _mapping_fraction(expected, actual)
         elif field == "ranking":
             components[field] = _ranking_fraction(expected, actual)
         else:
             components[field] = 1.0 if _same_value(expected, actual) else 0.0
+    evidence = score_evidence_metrics(
+        oracle, exposure_text=exposure_text, report_text=report_text, tool_calls=tool_calls
+    )
+    quality_score = sum(components.values()) / len(components)
+    return AnswerScore(
+        scored=True,
+        quality_score=quality_score,
+        correct=all(component == 1.0 for component in components.values()),
+        components=MappingProxyType(components),
+        erec=evidence.erec,
+        rrec=evidence.rrec,
+        deff=evidence.deff,
+    )
+
+
+def score_evidence_metrics(
+    oracle: AgenticOracle,
+    *,
+    exposure_text: str = "",
+    report_text: str = "",
+    tool_calls: int = 0,
+) -> EvidenceMetrics:
+    """Score raw-text importer evidence independently of answer-envelope validity.
+
+    ``deff`` is deliberately unbounded: it counts expected importer mentions in
+    exposure text per command, so it is diagnostic evidence rather than a
+    normalized efficiency or treatment-effect metric.
+    """
     if not isinstance(exposure_text, str) or not isinstance(report_text, str):
         raise TypeError("exposure_text and report_text must be strings")
     if isinstance(tool_calls, bool) or not isinstance(tool_calls, int) or tool_calls < 0:
@@ -274,16 +412,125 @@ def score_answer(
     expected_count = max(len(expected_importers), 1)
     exposure_hits = sum(name in exposure_text for name in expected_importers)
     report_hits = sum(name in report_text for name in expected_importers)
-    quality_score = sum(components.values()) / len(components)
-    return AnswerScore(
-        scored=True,
-        quality_score=quality_score,
-        correct=all(component == 1.0 for component in components.values()),
-        components=MappingProxyType(components),
+    return EvidenceMetrics(
         erec=exposure_hits / expected_count,
         rrec=report_hits / expected_count,
         deff=exposure_hits / max(tool_calls, 1),
     )
+
+
+def _answer_field_spec(field: str, params: Mapping[str, Any]) -> tuple[str, Any]:
+    """Describe one scored field and provide a visibly synthetic valid value."""
+    if field in {"production_importers", "overlap_importers", "cross_namespace_importers"}:
+        return "array of full dotted module-name strings", ["pkg.consumer"]
+    if field == "ranking":
+        top_k = params["top_k"]
+        candidate_set = params["candidate_set"]
+        qualifiers: list[str] = []
+        if "exclude_overlap_targets" in params:
+            qualifiers.append(f"excluding modules that also import {params['exclude_overlap_targets']}")
+        if "min_rdep_count" in params:
+            qualifiers.append(f"including only modules with rdep count at least {params['min_rdep_count']}")
+        qualification = f", {' and '.join(qualifiers)}" if qualifiers else ""
+        return (
+            f"ordered array of at most {top_k} full dotted module-name strings from {candidate_set}{qualification}, sorted by rdep count descending then module name ascending",
+            ["pkg.consumer"],
+        )
+    if field == "dependency_chain":
+        return (
+            "lexically tie-broken shortest static dependency path as an ordered array of full dotted module-name strings; use [] only when the target is unreachable",
+            [
+                "pkg.source",
+                "pkg.target",
+            ],
+        )
+    if field in {"rdep_counts", "high_centrality"}:
+        qualifier = ""
+        if field == "high_centrality":
+            qualifier = f" for direct production importers with rdep count at least {params['min_rdep_count']}"
+        return f"object mapping full dotted module names to non-negative integer rdep counts{qualifier}", {
+            "pkg.consumer": 2
+        }
+    if field == "buckets":
+        labels = params["labels"]
+        example = {label: ["pkg.consumer"] if index == 0 else [] for index, label in enumerate(labels)}
+        return (
+            f"object with exactly keys {json.dumps(labels, separators=(',', ':'))}; each value is an array of full dotted module-name strings sorted lexically ascending",
+            example,
+        )
+    if field == "affected_module_count":
+        minimum = params["min_rdep_count"]
+        return (
+            f"exact non-negative integer count of the union of direct production importers and non-test direct importers of those with rdep count at least {minimum}",
+            2,
+        )
+    if field in {"production_importer_count", "excluded_test_importer_count", "test_importer_count", "overlap_count"}:
+        return "non-negative integer", 1
+    if field == "isolation_verdict":
+        return 'string enum "isolated" or "widely-imported"', "isolated"
+    if field == "risk_tier":
+        return 'string enum "low", "medium", "high", or "critical"', "high"
+    raise ValueError(f"unsupported answer field {field!r}")
+
+
+def _validate_answer_shapes(contract: Mapping[str, Any], answer: Mapping[str, Any]) -> None:
+    """Reject values that cannot be scored under the advertised field schema."""
+    list_fields = {
+        "production_importers",
+        "overlap_importers",
+        "cross_namespace_importers",
+        "ranking",
+        "dependency_chain",
+    }
+    count_fields = {
+        "affected_module_count",
+        "production_importer_count",
+        "excluded_test_importer_count",
+        "test_importer_count",
+        "overlap_count",
+    }
+    params = contract["params"]
+    for field in contract["fields"]:
+        value = answer[field]
+        if field in list_fields:
+            if (
+                not isinstance(value, list)
+                or any(not isinstance(item, str) or not item for item in value)
+                or len(value) != len(set(value))
+            ):
+                raise ValueError(f"answer field {field!r} has invalid shape; expected an array of strings")
+            if field == "ranking" and len(value) > params[field]["top_k"]:
+                raise ValueError(f"answer field {field!r} has invalid shape; exceeds top_k")
+        elif field in {"rdep_counts", "high_centrality"}:
+            if not isinstance(value, dict) or any(
+                not isinstance(name, str)
+                or not name
+                or isinstance(count, bool)
+                or not isinstance(count, int)
+                or count < 0
+                for name, count in value.items()
+            ):
+                raise ValueError(f"answer field {field!r} has invalid shape; expected string-to-count object")
+        elif field == "buckets":
+            labels = params[field]["labels"]
+            if (
+                not isinstance(value, dict)
+                or set(value) != set(labels)
+                or any(
+                    not isinstance(items, list)
+                    or any(not isinstance(item, str) or not item for item in items)
+                    or len(items) != len(set(items))
+                    for items in value.values()
+                )
+            ):
+                raise ValueError(f"answer field {field!r} has invalid shape; expected label-to-string-array object")
+        elif field in count_fields:
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"answer field {field!r} has invalid shape; expected a non-negative integer")
+        elif field == "isolation_verdict" and value not in {"isolated", "widely-imported"}:
+            raise ValueError(f"answer field {field!r} has invalid shape; expected an isolation enum")
+        elif field == "risk_tier" and value not in {"low", "medium", "high", "critical"}:
+            raise ValueError(f"answer field {field!r} has invalid shape; expected a risk-tier enum")
 
 
 def _validate_field_params(field: str, params: Any) -> None:
@@ -495,11 +742,11 @@ def _expected_values(
             expected[field] = len(affected)
         elif field == "high_centrality":
             minimum = params[field]["min_rdep_count"]
-            expected[field] = tuple(
-                name
+            expected[field] = {
+                name: production_rdeps[name]
                 for name in sorted(production, key=lambda name: (-production_rdeps[name], name))
                 if production_rdeps[name] >= minimum
-            )
+            }
         elif field == "isolation_verdict":
             expected[field] = (
                 "isolated" if all(count <= 5 for count in production_rdeps.values()) else "widely-imported"
@@ -539,14 +786,14 @@ def _bucket_values(
     buckets: dict[str, tuple[str, ...]] = {}
     for label in labels:
         if label == "trainer-core":
-            values = tuple(name for name in production if name.startswith("lightning.pytorch.trainer"))
+            values = tuple(name for name in production if name.startswith("lightning.pytorch.trainer."))
         elif label == "callbacks":
-            values = tuple(name for name in production if name.startswith("lightning.pytorch.callbacks"))
+            values = tuple(name for name in production if name.startswith("lightning.pytorch.callbacks."))
         elif label == "everything-else":
             values = tuple(
                 name
                 for name in production
-                if not name.startswith(("lightning.pytorch.trainer", "lightning.pytorch.callbacks"))
+                if not name.startswith(("lightning.pytorch.trainer.", "lightning.pytorch.callbacks."))
             )
         elif label == "public":
             values = tuple(name for name in production if modules[name].is_package)
@@ -598,7 +845,7 @@ def _shortest_chain(modules: Mapping[str, _SourceModule], source: str, target: s
     return ()
 
 
-def _set_recall(expected: Any, actual: Any) -> float:
+def _set_f1(expected: Any, actual: Any) -> float:
     """Score an explicit list as set F1, including the empty-set contract."""
     if not isinstance(actual, list) or not all(isinstance(item, str) for item in actual):
         return 0.0

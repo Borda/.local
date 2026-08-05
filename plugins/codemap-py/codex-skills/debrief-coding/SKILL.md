@@ -1,11 +1,6 @@
 ---
 name: debrief-coding
-description: |
-  Read local codemap telemetry logs and produce a diagnostic/usage report. Supports date filtering, session
-  filtering, and optional anonymization before sharing. Trigger with `$codemap-py:debrief-coding [--since
-  <YYYY-MM-DD>] [--session <id>] [--anonymize] [--output <path>]` to analyse recent codemap usage, debug query
-  patterns, investigate errors, or prepare a shareable anonymized report of how codemap skills and the CLI are
-  being used.
+description: "Telemetry report: `$codemap-py:debrief-coding [flags]`; skip integration/index/query."
 ---
 
 # Debrief Coding

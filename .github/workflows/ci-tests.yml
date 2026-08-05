@@ -10,6 +10,10 @@ on:
       - "pyproject.toml"
       - "sync.sh"
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   tests:
     runs-on: ${{ matrix.os }}
@@ -37,8 +41,11 @@ jobs:
       - name: 📦 Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: 🧪 Run JS hook smoke tests
-        run: node tests/hooks/tmp-paths.test.js
+      - name: 🔒 Verify deterministic benchmark manifests
+        run: |
+          uv run --only-group test --python ${{ matrix.python-version }} python benchmarks/build-provider-parity-methodology-manifest.py --check
+          uv run --only-group test --python ${{ matrix.python-version }} python benchmarks/build-codex-integration-manifest.py --check
+          uv run --only-group test --python ${{ matrix.python-version }} python benchmarks/build-codex-agentic-manifest.py --check
 
       - name: 🧪 Run plugin tests (Python bin/ + JS hooks)
         run: uv run --only-group test --python ${{ matrix.python-version }} pytest -W error::DeprecationWarning

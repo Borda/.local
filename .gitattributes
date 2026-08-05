@@ -12,6 +12,12 @@
 *.yml  text eol=lf
 *.toml text eol=lf
 
+# Codemap launchers include extensionless Python, POSIX-shell, and Windows-batch
+# files whose exact bytes are part of generated benchmark manifest identities.
+plugins/codemap-py/bin/* text eol=lf
+plugins/codemap-py/LICENSE text eol=lf
+plugins/codemap-py/NOTICE  text eol=lf
+
 # Extensionless Codex Rig package text participates in exact hash identity.
 plugins/codex-rig/LICENSE text eol=lf
 plugins/codex-rig/NOTICE  text eol=lf

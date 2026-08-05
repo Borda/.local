@@ -204,7 +204,9 @@ def test_sentinel_resolved_from_payload_session_id(tmp_path: Path, profile_run: 
 def test_assignment_forms_are_parsed(tmp_path: Path, profile_run: tuple[Path, Path, str], line: str) -> None:
     """Every form a shell would bind — quoting, indent, `export` — must not defeat the gate."""
     _, sentinel, cwd = profile_run
-    sentinel.write_text(_state_file(line), encoding="utf-8")
+    # Preserve the supplied CRLF bytes instead of letting Windows text I/O add
+    # an extra carriage return before the test parser receives the sentinel.
+    sentinel.write_bytes(_state_file(line).encode("utf-8"))
 
     assert _denial_reason(_run(tmp_path, _ask_payload(cwd=cwd))) is not None
 

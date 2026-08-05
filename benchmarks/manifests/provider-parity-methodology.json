@@ -3,7 +3,7 @@
     "arms": [
       "A_plain",
       "B_auto",
-      "C_required"
+      "C_strict"
     ],
     "coordinate_timeout_seconds": 600,
     "default_repetitions": 1,
@@ -26,7 +26,7 @@
       "codex"
     ],
     "repeat_override": "Each provider adapter admits a nondefault positive repeat only with a deterministic scope hash binding the provider, current manifest, ordered tasks, arms, models, repetitions, total cells, and exact wall-clock ceiling.",
-    "scoring": "Macro mean across every required answer_contract component; missing components score zero. EREC and RREC remain diagnostic comparability metrics.",
+    "scoring": "Macro mean across every required answer_contract component for a strict labelled envelope. Exactly one complete bare JSON object may be scored as diagnostic-only and is never pooling-eligible; malformed or ambiguous answers remain semantically unscored. EREC and RREC are raw-text recall diagnostics independent of the answer protocol, and DEFF is their unbounded expected-importer exposure-hit count per command.",
     "task_ids": [
       "BA-01",
       "BA-02",
@@ -88,7 +88,7 @@
     "treatment": {
       "arms": [
         "B_auto",
-        "C_required"
+        "C_strict"
       ],
       "coordination_root": "<locked-index-parent>/.index-rw",
       "extends": ":read-only",
@@ -112,7 +112,7 @@
       ],
       "scope": [
         "B_auto",
-        "C_required"
+        "C_strict"
       ]
     },
     "validated_cli_version": "0.145.0"
@@ -166,7 +166,7 @@
     "retry": "at most 2 retries only after retryable transport failure with zero input and output tokens",
     "turn_budget_enforced": false
   },
-  "experiment_revision": "provider-parity-shared-structural-and-agentic-methodology-2026-08-04",
+  "experiment_revision": "provider-parity-shared-structural-and-agentic-protocol-evidence-methodology-2026-08-05",
   "headline_structural_v1": {
     "diagnostic_independent_ids": [
       "CQ-02",
@@ -225,17 +225,17 @@
   },
   "implementation_contract": {
     "artifact_sha256": {
-      "agentic_contracts": "8b815316d9d74f9e821023586ed42620a952666d3a3fa9825c3fe287098238f7",
-      "claude_query_skill": "e988519edc1e5c2a95987b63ba6aa7c9b46a040083231b4e04558acc5b077900",
-      "codemap_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
+      "agentic_contracts": "fc229f2a618682d74990cee0a81b4ba8af085e12b221f908fd0a1bd1f570b0f4",
+      "claude_query_skill": "f3452552ee85f4ece88dd3489ba684f3f6e244be06154314eb4124cb80b13125",
+      "codemap_graph": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
       "codemap_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
-      "codex_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
-      "provider_parity_contracts": "0f7a6b7404fd06706c8bf502b1c1c9f4ceb313ca6e5e3d38ec6ef884ab8b485c",
-      "run_all": "e945f1daf45278928c292b3387cbf70f9d4109841d60872e7fea789b37f93bb2",
-      "run_claude_agentic": "70a6ba266bf85d48e655fd2a8a02601480220ecdf43a4b0130f121dd5e2c09a9",
-      "run_claude_structural": "8ebba930c21e4dcd183f59c33aa1af60840b0b1c122408e4d0ee46605c18c6de",
-      "run_codex_agentic": "877548f922fc02345b2b548ef54905030751fffc604c77f89308a4ae75a444db",
-      "run_codex_structural": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465"
+      "codex_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
+      "provider_parity_contracts": "2aab874d22d87a8fdd3ee47e581d7459f95f2c5785fd96bc8bd6bc6bab4961dd",
+      "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4",
+      "run_claude_agentic": "a14badb79b6f60e9d90c616a24292b844833d9e30df09fff5a2ee2da76cf3491",
+      "run_claude_structural": "7be75768e3859cb7577dd15f6885f8cf131b774a160dccadeb46244ce69dad45",
+      "run_codex_agentic": "361f8073fcd69909e1b4f793f82004398aec7ff0548d918675fe52c67b7f423d",
+      "run_codex_structural": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -255,371 +255,6 @@
     "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
     "scan_version": 12,
     "scanned_at": "2026-08-03T10:58:35.335616+00:00"
-  },
-  "methodology_change_ledger": {
-    "BA-01": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-02": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-03": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-04": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-05": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-06": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-07": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-08": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-09": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-10": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-11": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-12": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-13": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-14": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-15": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BA-16": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-neutral labelled answer contract makes every requested blast-radius field scoreable."
-    },
-    "BR-01": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Prompt includes examples/** in the non-test blast-radius scope."
-    },
-    "BR-09": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped reverse-caller query is required."
-    },
-    "CQ-01": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Exact labelled conclusion format prevents incidental-text scoring."
-    },
-    "CQ-02": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Exact labelled conclusion format prevents incidental-text scoring."
-    },
-    "CQ-03": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Exact labelled conclusion format prevents incidental-text scoring."
-    },
-    "CQ-05": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Exact labelled conclusion format prevents incidental-text scoring."
-    },
-    "DG-01": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped symbol query is required."
-    },
-    "DG-02": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped symbol query is required."
-    },
-    "DG-03": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped symbol query is required."
-    },
-    "DG-04": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped symbol query is required."
-    },
-    "DG-05": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped symbol query is required."
-    },
-    "DG-06": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped symbol query is required."
-    },
-    "DI-01": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Replaced an external re-export with a staged local target; caller and direct test-import queries are all required."
-    },
-    "DI-02": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Caller and direct test-import queries are all required."
-    },
-    "DI-03": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Caller and direct test-import queries are all required."
-    },
-    "DI-04": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Caller and direct test-import queries are all required."
-    },
-    "DI-05": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Replaced an external re-export with a staged local target; caller and direct test-import queries are all required."
-    },
-    "DI-06": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Corrected recursive re-export caller oracle; caller and direct test-import queries are all required."
-    },
-    "FN-01": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Prompt includes examples/** in the non-test caller scope."
-    },
-    "FT-01": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Corrected extension target, structured queries, and labelled answer contract."
-    },
-    "FT-02": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Structured queries and labelled answer contract."
-    },
-    "FT-03": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Structured queries and labelled answer contract."
-    },
-    "FT-04": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Structured queries and labelled answer contract."
-    },
-    "FT-05": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Structured queries and labelled answer contract."
-    },
-    "GR-01": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Production-only centrality scope is explicit and matches the exclude-tests oracle/query."
-    },
-    "GR-02": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured graph query is required."
-    },
-    "GR-03": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured graph query is required."
-    },
-    "GR-04": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured graph-centrality query is required."
-    },
-    "MB-01": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped reverse-import query is required."
-    },
-    "MB-02": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped reverse-import query is required."
-    },
-    "MB-03": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped reverse-import query is required."
-    },
-    "MB-04": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped reverse-import query is required."
-    },
-    "MB-05": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured task-shaped reverse-import query is required."
-    },
-    "RV-01": {
-      "identity_fields": [
-        "prompt_sha256"
-      ],
-      "reason": "Provider prompt now contains the independently scored review questions."
-    },
-    "RV-02": {
-      "identity_fields": [
-        "prompt_sha256"
-      ],
-      "reason": "Provider prompt now contains the independently scored review questions."
-    },
-    "RV-03": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Production-only caller oracle adds the explicit --exclude-tests filter to the task query and prompt."
-    },
-    "RV-04": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Production-only callback oracle adds the explicit --exclude-tests filter to the task query and prompt."
-    },
-    "RV-05": {
-      "identity_fields": [
-        "canonical_task_sha256",
-        "prompt_sha256"
-      ],
-      "reason": "Provider-visible review questions and diagnostic oracle policy are explicit."
-    },
-    "SE-05": {
-      "identity_fields": [
-        "canonical_task_sha256"
-      ],
-      "reason": "Structured expected query normalizes the symbol target."
-    }
   },
   "oracle_remediation": {
     "codex_runner_added": false,
@@ -655,7 +290,7 @@
     "arms": [
       "A_plain",
       "B_auto",
-      "C_required"
+      "C_strict"
     ],
     "confirmatory_repetitions": 5,
     "pilot_repetitions": 3,
@@ -730,7 +365,7 @@
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
     "semantic_suite_sha256": {
-      "benchmarks/suites/tasks-agentic.json": "20d7b1a899f48bef19f82ff3ffdf24145593747b0f0ff3e7835b64afac3270d6",
+      "benchmarks/suites/tasks-agentic.json": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
       "benchmarks/suites/tasks-bench.json": "6d05bb66b97961251f34215ab9c4381bf30cc80b19dc821074bd31ba5330dda8",
       "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
@@ -766,9 +401,9 @@
         "BA-16"
       ],
       "path": "benchmarks/suites/tasks-agentic.json",
-      "raw_sha256": "adb94fde72b085119ae7ce082078bc86c76f89ed04bd1f27b7146dc3a01b5cfe",
+      "raw_sha256": "f973a313c9bf7cf1f09e2b51a47b4a4cd77d9e83be385fc5ea075ffa4e54e177",
       "root_shape": "object_with_tasks",
-      "semantic_suite_sha256": "20d7b1a899f48bef19f82ff3ffdf24145593747b0f0ff3e7835b64afac3270d6",
+      "semantic_suite_sha256": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
       "task_count": 16,
       "tasks": [
         {
@@ -793,7 +428,7 @@
           "id": "BA-01",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "74cf2aeebea015e465a8f2f969648b5dc0520fbc01c92d793eba1659edcdd55b",
+          "prompt_sha256": "6d2ab4553da010ccb469f78ce37c6097c024c5a548766e60c77b38cad7f6af26",
           "providers": [
             "claude",
             "codex"
@@ -825,7 +460,7 @@
           "id": "BA-02",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "ac527389bfc33c732c3804ec3a511abc7dba49846af83f5ba864d7acc5f7b633",
+          "prompt_sha256": "ec7061546e15d0b61616fb57d391961166f1aaab3535036686e4b07dadf2fd28",
           "providers": [
             "claude",
             "codex"
@@ -856,7 +491,7 @@
               }
             }
           },
-          "canonical_task_sha256": "55f987528d7b49671420fdb18f90b2adaec6cb2966e9a956b69a8456bba7ae9a",
+          "canonical_task_sha256": "a29e871387277993cedb2a4459b726e69a87cacea70cf784ad1292f7fc0e45c7",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -864,7 +499,7 @@
           "id": "BA-03",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "a38f55839b169b0d06142c5ce13ca241aab58539a8b338a94a3fac7633a65343",
+          "prompt_sha256": "80011083962c585dfa3b3edfcf94298435f359c8b529105f65f16962abf3b4e9",
           "providers": [
             "claude",
             "codex"
@@ -890,7 +525,7 @@
               }
             }
           },
-          "canonical_task_sha256": "aed7fd958c6a8171e62cbb1d46a814bfb4e7ba47c88ccac57853634206e1fb9f",
+          "canonical_task_sha256": "44cbb2f91ce2c555052b2f85b984a28825e306f01ef45d9052036a9a3bc38c6d",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -898,7 +533,7 @@
           "id": "BA-04",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "d31e095c71d993922082585401c0c2d665e073804958441007a8db04fcf79c09",
+          "prompt_sha256": "09bb9449b1de80838bb97d8f0229f381db4f5583052f45d2b6f4cd2b5e24d402",
           "providers": [
             "claude",
             "codex"
@@ -928,7 +563,7 @@
               }
             }
           },
-          "canonical_task_sha256": "09e4d9c470f498f20cabf7921a011d2f9a4f0e6d09d8598ef9555b911f9c603e",
+          "canonical_task_sha256": "10075f895274e03be8b80096bfdeeb0ae928dae9dfe7cfded5eb96abb75b6aa0",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -936,7 +571,7 @@
           "id": "BA-05",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "694879e8422c7ef9176c69d7a41963e6573ef78e67b6af6c848a444b629f4bc3",
+          "prompt_sha256": "c5fc77b210bd90d6d035c57afdeb4acb8f8d8f68f18acf3b84fba1a00234aeae",
           "providers": [
             "claude",
             "codex"
@@ -972,7 +607,7 @@
           "id": "BA-06",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "d8f2fad0ede503f135c20b8ebd82b798efa254a330ff17ad823ee5a1b89ece23",
+          "prompt_sha256": "442be0e4ab59de4595a0a9ce4219fbba451b02e839558ff20959b793888e9972",
           "providers": [
             "claude",
             "codex"
@@ -1009,7 +644,7 @@
           "id": "BA-07",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "e9bbd76d41a7674da05f8046ce0b5b9501ad8b169ccbb21ba724375cefbe13e5",
+          "prompt_sha256": "05952cb4a98947285e2d1a141142a96ed6c638428fe2a149e8d2e90c7223bcd2",
           "providers": [
             "claude",
             "codex"
@@ -1045,7 +680,7 @@
           "id": "BA-08",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "8fb8455d2e76c7e9526010623eeed15497efb737ab3e81c8483dc92c7e4ebdb5",
+          "prompt_sha256": "368797051399f4eab3d9d905150f2cea50ff253e3d2f78afd016292f26f5287f",
           "providers": [
             "claude",
             "codex"
@@ -1083,7 +718,7 @@
           "id": "BA-09",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "c47eb6c4fef930cba439e2779725e521e372fc17bcbf0c49ee01b19bab570f44",
+          "prompt_sha256": "19aa6a66321a77dffb58aeb33e97a89cd1819d99cd1e49f0981541b8a8e38123",
           "providers": [
             "claude",
             "codex"
@@ -1115,7 +750,7 @@
           "id": "BA-10",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "4786ecf96aeb558bcae00cd4d1b33672ed40c2ef4b1e1c4809e82eca3a928dab",
+          "prompt_sha256": "f3bfec78ef1691ce1f611e5629acaa741faf6220869496fa36d634b5de2bdc66",
           "providers": [
             "claude",
             "codex"
@@ -1150,7 +785,7 @@
           "id": "BA-11",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "b0be44284a2b7abbea385a961d6b7f0adacc395af597925ebc579664eec15e09",
+          "prompt_sha256": "805962e3299f750aa5d43f2c62155f4f936c90f81e16e6235bfb473dc453817a",
           "providers": [
             "claude",
             "codex"
@@ -1183,7 +818,7 @@
           "id": "BA-12",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "878d8d821afc19ec89ea5af83dc84e896cbd8cbe5dd53c8cb3cae99a7102edc8",
+          "prompt_sha256": "dee2434d3369700bd3a40d55e1b43c81cd11f612af412c68c9531025871c83a2",
           "providers": [
             "claude",
             "codex"
@@ -1210,7 +845,7 @@
           "id": "BA-13",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "3c0e6dfc0647c0aa3a4d361bb2e818cb4516903ee3efbfc86d9e57128d1a8106",
+          "prompt_sha256": "fc539127a65ced45d1205281208432d653470f25099bad77af6d1e801a3920e9",
           "providers": [
             "claude",
             "codex"
@@ -1249,7 +884,7 @@
           "id": "BA-14",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "682569b222cf4ccb8a83feb6e59d7013ba28bab0b1c7a16aec4624401a5debc0",
+          "prompt_sha256": "e1514adb4aac07fc95bb549747aab26188c9189a8883811a2b3d51b8fefcb661",
           "providers": [
             "claude",
             "codex"
@@ -1291,7 +926,7 @@
           "id": "BA-15",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "438f2221893451bd5bac4153d7390fa6dde856d633bebaf12b06718eef3e895c",
+          "prompt_sha256": "b1876fe02811f0101d3eedb72df97da303f5c1f0152c0c4a9d6a2b8c021145ff",
           "providers": [
             "claude",
             "codex"
@@ -1324,7 +959,7 @@
           "id": "BA-16",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "3438d295bf96d5c0d9b0be62e27147bfc9166b8370080527a10528645f555303",
+          "prompt_sha256": "16cae5414ed77b5210e5f132f6f99563867b46c0f072edea840c934b531d2b4f",
           "providers": [
             "claude",
             "codex"
@@ -1687,7 +1322,7 @@
           "headline_eligible_v1": false,
           "id": "RV-05",
           "oracle_class": "independent",
-          "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
+          "oracle_limit": "uncovered coverage oracle is a source-level simple-name approximation, not executable coverage",
           "profiles": [],
           "prompt_sha256": "fd9a494bcd06d2a8feae24d10af044c171b8559d71163e670bda4f326e5cb42d",
           "providers": [
@@ -1728,7 +1363,7 @@
           "headline_eligible_v1": false,
           "id": "CQ-02",
           "oracle_class": "independent",
-          "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
+          "oracle_limit": "uncovered coverage oracle is a source-level simple-name approximation, not executable coverage",
           "profiles": [],
           "prompt_sha256": "110e4c9c6cea8d2aa87f40639f2449af97fc6d465172aa0face682b0c1039342",
           "providers": [
@@ -2899,7 +2534,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
+      "current_consumer": "optional input to run-claude-agentic.py",
       "generation_provenance": "committed_static_prompts_keyword_file_oracle",
       "ordered_task_ids": [
         "FM-01",
@@ -2972,7 +2607,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
+      "current_consumer": "optional input to run-claude-agentic.py",
       "generation_provenance": "committed_static_prompts_keyword_file_oracle",
       "ordered_task_ids": [
         "FS-01",
@@ -3178,7 +2813,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
+      "current_consumer": "optional input to run-claude-agentic.py",
       "generation_provenance": "committed_static_prompts_keyword_oracle",
       "ordered_task_ids": [
         "RC-01",

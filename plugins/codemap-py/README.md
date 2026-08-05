@@ -73,6 +73,10 @@ Output prepended to agent spawn prompt as structural context. Agent starts refac
 
 **Agentic benchmark (import-graph tasks on pytorch-lightning):** 2026-08-04 run killed by user at 62/144 cells (BA-01..BA-07 of 16 tasks; BA-08..BA-16 never ran) — preliminary, not a confirmatory result. Single repetition, target `pytorch-lightning` 2.6.5, three arms: `A_plain` (no tooling), `B_auto` (model chooses tools, may call the codemap-py skill), `C_required` (skill mandatory).
 
+<a id="claude-agentic-2026-08-04"></a>
+
+<!-- result-sync: duplicated in ../../benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished; changes require bidirectional updates or an explicit divergence note. -->
+
 | Model     | Arm        |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |
 | --------- | ---------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: |
 | Haiku 4.5 | A_plain    |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |
@@ -85,11 +89,31 @@ Output prepended to agent spawn prompt as structural context. Agent starts refac
 | Opus 5    | B_auto     |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** |
 | Opus 5    | C_required |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |
 
-Bold = best value per model per column (lower is better for tok/cost/elapsed s, higher for erec/rrec). `erec`/`rrec` = exposure/report recall of expected reverse-dependencies. Codemap-py arms cost less than `A_plain` on every axis for Haiku and Sonnet. **Opus splits**: `C_required` wins cost/tokens/elapsed, `B_auto` wins recall — `B_auto` costs more than plain (299.6k tokens / $0.529 vs 238.3k / $0.497) because opus calls the codemap-py skill and then keeps exploring with bash/grep on top of it instead of substituting for manual search, while `C_required` (skill mandatory, no plain-exploration path available) drops opus to 173.6k tokens / $0.344, the cheapest cell in the table. Full breakdown and caveats: [`benchmarks/README.md#agentic-blast-radius-run-2026-08-04-unfinished`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#agentic-blast-radius-run-2026-08-04-unfinished).
+Bold = best comparable value within each model tier and column (lower is better for tok/cost/elapsed s, higher for erec/rrec). `erec`/`rrec` = exposure/report recall of expected reverse-dependencies. Codemap-py arms cost less than `A_plain` on every axis for Haiku and Sonnet. **Opus splits**: `C_required` wins cost/tokens/elapsed, `B_auto` wins recall — `B_auto` costs more than plain (299.6k tokens / $0.529 vs 238.3k / $0.497) because opus calls the codemap-py skill and then keeps exploring with bash/grep on top of it instead of substituting for manual search, while `C_required` (skill mandatory, no plain-exploration path available) drops opus to 173.6k tokens / $0.344, the cheapest cell in the table. Full breakdown and caveats: [`benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished).
+
+**Codex agentic study (completed 2026-08-05):** 16 shared import-graph tasks × one repetition × `A_plain`, `B_auto`, and `C_strict` = 48/48 completed cells on `pytorch-lightning` 2.6.5 with `gpt-5.6-luna` at high effort, Codex CLI 0.146.0, codemap-py 0.28.4, and codex-rig 0.4.2.
+
+<a id="codex-agentic-2026-08-05"></a>
+
+<!-- result-sync: duplicated in ../../benchmarks/README.md#completed-48-cell-codex-run--2026-08-05; changes require bidirectional updates or an explicit divergence note. -->
+
+| Arm        | Mean semantic score | Mean EREC/RREC | Strict answers | Codemap used | Mean input | Mean output | Mean elapsed |
+| ---------- | ------------------: | -------------: | -------------: | -----------: | ---------: | ----------: | -----------: |
+| `A_plain`  |          **0.9024** |         0.9863 |      **15/16** |         0/16 |     282.8k |        7.0k |       165.1s |
+| `B_auto`   |              0.8032 |     **0.9967** |          14/16 |         9/16 |     230.9k |        4.0k |       114.2s |
+| `C_strict` |              0.8551 |     **0.9967** |          10/16 |        16/16 | **105.2k** |    **2.3k** |    **60.8s** |
+
+Bold = best comparable arm value per column (higher is better for semantic score, EREC/RREC, and strict answers; lower is better for input, output, and elapsed time). `Codemap used` is a treatment diagnostic, not a performance metric, so it is not bolded.
+
+`C_strict` reduced paired geometric-mean input/output/elapsed to `0.397×/0.339×/0.402×` of plain and used lower input on 14/16 tasks. Its mean semantic score was `0.0472` below plain, however, so the current result is a strong efficiency signal but not quality parity. C was both higher-quality on average (`+0.0519`) and lower-input on every task than optional B. The result is exploratory and nonpoolable: it has one run per task, 9/48 diagnostic bare-JSON recoveries, one repository/model, and an empty runtime-isolation sidecar omitted from the checksum ledger. The largest actionable quality gap is BA-04's multi-stage centrality/affected-count synthesis; full artifact interpretation and caveats: [`benchmarks/README.md#completed-48-cell-codex-run--2026-08-05`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#completed-48-cell-codex-run--2026-08-05).
 
 **Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap-py) × 3 model tiers on pytorch-lightning-master (646 modules, 8 task types). **Scope**: pre-implementation structural-query tasks (blast-radius enumeration, caller discovery) — end-to-end patch quality and test-pass rate not yet measured. Benchmark **repo-agnostic**: `tasks-bench.json` ships `repo` header so harness points at any Python codebase. Zero codemap-py timeouts; plain-arm agents hit 300-second hard limit on several tasks.
 
 **Codex integration study** — the completed confirmatory run used the same 55 non-RI task objects, prompts, evaluators, target, and ground truth as Claude, with one repetition across `A_plain`, `B_direct`, and `C_skill` (165 cells) on `pytorch-lightning` 2.6.5. It used `gpt-5.6-luna` at high effort, Codex CLI 0.146.0, codex-rig 0.4.1, and installed codemap-py 0.28.2. All 165 cells completed; every A/B/C treatment was followed; contamination, extraction, compliance, token-accounting, and infrastructure failures were zero; all 491 artifact checksums verify.
+
+<a id="codex-structural-2026-08-03"></a>
+
+<!-- result-sync: prose summary mirrors result tables in ../../benchmarks/README.md#codex-integration-study-a-b-c; changes require bidirectional updates or an explicit divergence note. -->
 
 On the 45 preregistered headline task blocks, mean quality was A/B/C `0.8626/0.9673/0.9525`. Relative to plain Codex, the installed Skill's paired mean quality delta was `+0.0900` with 95% task-bootstrap interval `[+0.0204, +0.1605]`; its paired gross-input ratio was `0.542×` `[0.426, 0.681]`, output ratio `0.520×` `[0.408, 0.663]`, and elapsed ratio `0.558×` `[0.452, 0.685]`. The Skill therefore meets the prospectively locked quality-and-efficiency acceptance path versus plain Codex on this study. Direct CLI also improved quality and efficiency versus plain Codex. Against direct CLI, the Skill used less gross input (`0.738×`), output (`0.672×`), and elapsed time (`0.698×`), but the locked C-B quality difference `-0.0147 [-0.0522, +0.0169]` does not establish Skill quality superiority or strict non-inferiority.
 
@@ -101,11 +125,15 @@ The run also records 44 exact locked-query mismatches across 110 B/C cells. Ever
 
 June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master.
 
-| Model      | Plain accuracy | Codemap-py accuracy | Accuracy lift | Safety-grade plain→codemap-py | Token ratio (median) | Token ratio range |
-| ---------- | -------------- | ------------------- | ------------- | ----------------------------- | -------------------- | ----------------- |
-| Haiku 4.5  | 85.3% (29/34)  | 93.9% (31/33)       | **+9 pp**     | 5/13 → 12/13                  | **0.38×**            | 0.04–68.2×†       |
-| Sonnet 4.6 | 83.8% (31/37)  | 91.9% (34/37)       | **+8 pp**     | 11/13 → 12/12                 | **0.22×**            | 0.05–1.21×        |
-| Opus 4.6   | 86.1% (31/36)  | 91.7% (33/36)       | **+6 pp**     | 13/13 → 12/12                 | **0.31×**            | 0.05–1.46×        |
+<!-- result-sync: duplicated in ../../benchmarks/README.md#multi-model-results-real-codebase-benchmark (historical table nested under Past experiments); changes require bidirectional updates or an explicit divergence note. -->
+
+| Model      | Plain accuracy    | Codemap-py accuracy | Accuracy lift | Safety-grade plain→codemap-py | Token ratio (median) | Token ratio range |
+| ---------- | ----------------- | ------------------- | ------------- | ----------------------------- | -------------------- | ----------------- |
+| Haiku 4.5  | 85.3% (29/34)     | **93.9% (31/33)**   | **+9 pp**     | 5/13 → **12/13**              | **0.38×**            | 0.04–68.2×†       |
+| Sonnet 4.6 | 83.8% (31/37)     | **91.9% (34/37)**   | **+8 pp**     | 11/13 → **12/12**             | **0.22×**            | 0.05–1.21×        |
+| Opus 4.6   | **86.1% (31/36)** | 91.7% (33/36)       | **+6 pp**     | **13/13** → 12/12             | **0.31×**            | 0.05–1.46×        |
+
+Bold = better plain/Codemap value within each model and metric (higher accuracy/safety is better; a token ratio below `1.0` favors Codemap). Positive lift is bolded; the range is descriptive and unbolded.
 
 Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0.90. **Accuracy** = fraction of tasks where recall ≥ 0.90 (task correct when rdep coverage meets threshold). Token savings model-independent; accuracy lift model-dependent. **Single-repo caveat**: all figures on pytorch-lightning-master; gains on other Python codebases directionally consistent, magnitude may differ.
 
@@ -123,13 +151,17 @@ Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0
 
 **By series** (opus — June 23 full run, `bench-opus-20260623-023648.jsonl`):
 
-| Series                 | plain | codemap-py | Notes                                                                    |
-| ---------------------- | ----- | ---------- | ------------------------------------------------------------------------ |
-| SE — symbol extraction | 5/5   | 5/5        | Both arms perfect; codemap-py saves 37–63% tokens                        |
-| FN — call graph        | 4/5   | 3/4        | Plain misses FN-01 (0.808); FN-03 codemap-py extraction failed           |
-| BR — blast radius      | 8/8   | 8/8        | Both arms perfect; codemap-py saves 49–97% tokens                        |
-| RV — review assistance | 2/5   | 3/5        | RV-03/04 over-count both arms; RV-05 codemap-py lift (0.80 → 1.00)       |
-| CQ — code quality      | —     | 5/5        | Count-based scoring (no recall); codemap-py hits all 5, plain unreliable |
+<a id="opus-series-2026-06-23"></a>
+
+<!-- result-sync: related historical discussion is in ../../benchmarks/README.md#multi-model-results-real-codebase-benchmark, but this June 23 table is distinct from the June 22 aggregate and its named JSONL is unavailable locally; do not synchronize values without recovering the source artifact. -->
+
+| Series                 | plain   | codemap-py | Notes                                                                    |
+| ---------------------- | ------- | ---------- | ------------------------------------------------------------------------ |
+| SE — symbol extraction | **5/5** | **5/5**    | Both arms perfect; codemap-py saves 37–63% tokens                        |
+| FN — call graph        | **4/5** | 3/4        | Plain misses FN-01 (0.808); FN-03 codemap-py extraction failed           |
+| BR — blast radius      | **8/8** | **8/8**    | Both arms perfect; codemap-py saves 49–97% tokens                        |
+| RV — review assistance | 2/5     | **3/5**    | RV-03/04 over-count both arms; RV-05 codemap-py lift (0.80 → 1.00)       |
+| CQ — code quality      | —       | 5/5        | Count-based scoring (no recall); codemap-py hits all 5, plain unreliable |
 
 > **FN-series = starkest signal for haiku and opus**: plain arm burns 0.85M–4.0M tokens, fails 2–3 of 5 call-graph tasks; codemap-py resolves full caller set in one query at 4–16% token cost. Sonnet inverts — strong reasoning compensates for missing structural index on FN, but codemap-py execution failure on two tasks pulls safety-grade below plain.
 
@@ -185,6 +217,8 @@ codemap-py not standalone tool — primary value = structural context fed into `
 | `/develop:feature`  | Active (integration) / Passive (new surface) | Integration target (`module::function` supplied): `fn-rdeps` fires for direct callers. Module-only target: `rdeps` for importers. Net-new surface (no existing symbol): central baseline only |
 
 ### Expected benefits per skill (based on benchmark data — haiku/sonnet, 28-task suite)
+
+<!-- result-sync: summary derived from ../../benchmarks/README.md#multi-model-results-real-codebase-benchmark; changes require bidirectional updates or an explicit divergence note. -->
 
 | Skill task type             | Token savings (codemap-py vs plain) | Accuracy lift                                                                                    |
 | --------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -435,6 +469,8 @@ ______________________________________________________________________
 
 ## 🔧 Skills reference
 
+> Codex skill frontmatter uses compact routing descriptions to conserve the skills catalog; full triggers, arguments, and skip boundaries remain in each skill body and this reference.
+
 Triggers below are the Claude Code `/codemap-py:<skill>` form. The identical six skills also ship as a Codex roster (`codex-skills/`), invoked `$codemap-py:<skill>` with the same truth claims — differing only in invocation syntax and tool bindings.
 
 ______________________________________________________________________
@@ -444,6 +480,8 @@ ______________________________________________________________________
 **Trigger**: `/codemap-py:integration check|plan|apply|sync|demo [--runtime {claude,codex,both}] ...`. Default (no args) is `check`. Also ships on the Codex side as `$codemap-py:integration`, same five modes, same truth claims — see [Identity, compatibility, and requirements](#identity-compatibility-and-requirements).
 
 Runtime adapter over the `codemap-py integrate` engine (`src/codemap_py/integration.py`). Five modes, matching the pinned CLI surface exactly — no `init` mode, no open-ended "discover every installed skill, score it, let you pick" flow. Either host runtime (Claude Code or Codex) can target Claude Code, Codex, or both via `--runtime`; the skill never invokes the other runtime's model, only its native plugin-manager CLI.
+
+Use `query-code` for structural queries and `scan-codebase` for explicit standalone index rebuilds; `integration` only audits, plans, applies, syncs, or demonstrates the supported consumer wiring.
 
 **Closed consumer set** — an explicit mapping, not a discovery registry:
 

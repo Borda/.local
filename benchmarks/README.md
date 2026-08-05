@@ -12,11 +12,17 @@ Two paid post-fix diagnostic attempts stopped before any model cell: the first o
 
 The provider-neutral library lives in `provider_parity_contracts.py`; it locks task/prompt identity, arm semantics, evaluator dispatch, continuous fitness components, capability strata, headline exclusions, and effort-aware paired construction. It does not generate tasks, run benchmarks, invoke models, or implement provider transport.
 
-The agentic benchmark uses the same provider-neutral contract. `agentic_contracts.py`, `suites/tasks-agentic.json`, `run-claude-agentic.py`, and `run-codex-agentic.py` share the 16 committed BA-01–BA-16 task objects, materialized prompts, answer envelopes, ground-truth oracle, continuous scorer, and paired metrics. The canonical arms are `A_plain`, `B_auto`, and `C_required`; provider adapters own only transport, isolation, and native event normalization. The default repeat count is one: Claude's default batch is 16 tasks × 3 arms × 3 model tiers = 144 cells, while Codex's default paid batch is 16 tasks × 3 arms = 48 cells. Either provider's run with more than one repetition is explicitly non-poolable and requires its exact derived scope SHA-256; Codex selected-task scopes use the same admission rule.
+The agentic benchmark uses the same provider-neutral contract. `agentic_contracts.py`, `suites/tasks-agentic.json`, `run-claude-agentic.py`, and `run-codex-agentic.py` share the 16 committed BA-01–BA-16 task objects, materialized prompts, answer envelopes, ground-truth oracle, continuous scorer, and paired metrics. The canonical arms are `A_plain`, `B_auto`, and `C_strict`; provider adapters own only transport, isolation, and native event normalization. The default repeat count is one: Claude's default batch is 16 tasks × 3 arms × 3 model tiers = 144 cells, while Codex's default paid batch is 16 tasks × 3 arms = 48 cells. Either provider's run with more than one repetition is explicitly non-poolable and requires its exact derived scope SHA-256; Codex selected-task scopes use the same admission rule.
+
+The interrupted `benchmarks/results/codex-agentic-20260804T212004Z` run persisted 31/48 cells and is invalid, non-poolable diagnostic evidence. Its shared prompt named answer labels without declaring the value shapes enforced by the scorer, so models often returned semantically reasonable rich structures that silently scored zero; BA-04 also permitted an estimated affected count while the oracle required exact equality. The stopped `benchmarks/results/codex-agentic-20260805T122121Z` run persisted 14/48 successful transports across BA-01–BA-05 before plugin-version admission failed while preparing the next cell. That run is also invalid and non-poolable: each C cell re-resolved plugins from mutable marketplace state, and the old response path discarded valid bare JSON plus raw EREC/RREC/DEFF evidence when the strict labelled envelope was absent. Its displayed zero scores therefore do not establish a Codex or Codemap quality failure.
+
+The repaired `codex-agentic-protocol-evidence-separation-2026-08-05` revision applies to both providers. It gives the same typed field instructions and synthetic JSON example, validates shapes before scoring, represents high-centrality modules as `module → rdep count`, defines BA-03 prefix buckets, defines BA-04's exact deduplicated second-wave set, and distinguishes BA-05 public initializers from internal examples. A strict labelled answer is pooling-eligible; one complete bare JSON object may be scored only as a diagnostic, while malformed or ambiguous responses remain semantically unscored. Raw EREC/RREC and unbounded DEFF are computed independently from response formatting. Codex snapshots the exact run-owned Codemap and Codex Rig source trees once, installs directly from those immutable paths, validates their bytes before later cells, and records expected/observed identities in private `runtime-isolation.jsonl`. The repaired revision completed its first full 48-cell Codex run on 2026-08-05; its bounded exploratory results are reported in [Codex agentic parity study](#codex-agentic-parity-study).
 
 The stopped partial artifacts `benchmarks/results/codex-integration-20260802T095824Z` and `benchmarks/results/codex-integration-20260803T191236Z` are audit-only and non-poolable; no treatment effect is inferred from either. The latter persisted 86/165 rows, first failed authentication at `execution_index=50`, and then recorded identical zero-token `401 Unauthorized` failures. Root fixes in the relock include zero-argument `coupled` canonical detection, CQ-03 ranking by internal import count with complete ordered five `name + dep_count` rows, and RV-02 acceptance of natural `N modules directly import/depend` forms.
 
-Final no-model verification is green: the full benchmark suite passed (1,742 passed, 4 skipped), and generated `--check` validation passes. Ruff, targeted Python compilation, Bash syntax, diff, package build/validation, and source/package identity checks pass. Generic plugin-creator validation remains a non-blocking residual because it does not model the existing multi-runtime `codex-skills/` layout; no layout change is proposed.
+The completed run is frozen at `results/codex-agentic-20260805T170347Z` under methodology SHA-256 `e1717b806ebad49111aac8b8b7703d0cdf241440d3ef0140f7e96cc3eff7804e`, agentic machine/human manifest SHA-256 values `9ee83804df5fa43b7a4d64ae9ea316005fffff1d974429cae452f0c90ad54185` / `52216b8e513538367ae1ce21c9e384a8ce440e96016ad308d147e280a447567a`, and default scope SHA-256 `a7dbcd13a33460db2f577c960f69f640d73000c217281ff3940a5c5c44f2457a`. All 48 coordinates persisted with treatment adherence, stable token accounting, and no contamination or infrastructure failure. The checksum ledger verifies every listed entry but omits the permitted empty `runtime-isolation.jsonl` sidecar, so the artifact supports an exploratory performance summary but not a claim of complete checksum coverage or independent runtime-identity attestation.
+
+After the run, the terminal legends were clarified with metric directionality without changing task, prompt, oracle, scorer, transport, or treatment behavior. The prospective generated locks are methodology `597a7928a6e096d453e277d923a4eecc1bff7ca01ecb3e018a3ce10019518946`, structural machine/human `62d27a3a155e8c105f373bbc66c42e7d885c81ae4fb213aaf1f754e47ec20f34` / `1cff24fa6f415534d056edf0f3a0adcf5b891816d7a30a9ca68cdb0db3ecba3c`, agentic machine/human `7a4ce9bcbba1b729a2af766e9b0f3160eff5a2940ee8cec7aa3c5677b39e19f4` / `f96c5d1898a37d047b230448a73c8b02e4c64d39eca8328cdd3fd825f8c737cc`, and default agentic scope `2f1f17c8ba968bf7cc51225da584434ee7a6480886b72a298c82fdbef603a94f`. The archived paid runner differs from the prospective runner only in those legend strings, so this presentation-only relock does not require another paid run and does not rewrite the frozen result hashes.
 
 The historical paid run used shared RV evaluator v6 and remains immutable/non-poolable. Its raw answers contain the correct RV-02 count `64 modules directly import` in all A/B/C rows; v6 failed to extract these natural forms. The relocked evaluator accepts optional `directly` and natural `[unique] [public] symbols [are] uncovered` phrasing; immutable tests preserve RV-05's real `2/5` symbol loss and aggregate score `0.7` with `correct=false`. It does not retroactively rescore historical telemetry.
 
@@ -26,7 +32,7 @@ Claude is the mature, repeatedly debugged reference adapter, but it is not an un
 
 - **`A_plain`** — Codemap is absent and inaccessible.
 - **`B_auto`** — Codemap is available; the model may use it, and no-call is valid.
-- **`C_required`** — Codemap is available and must be used at least once; no-call is recorded as a separate compliance failure while task scoring remains independent.
+- **`C_strict`** — Codemap is available and must be used at least once; no-call is recorded as a separate compliance failure while task scoring remains independent.
 
 Canonical runs load the locked task/prompt/evaluator policy and fail closed unless the target commit/tree, clean worktree, and index bytes/metadata match the manifest; result records carry task, suite, evaluator, envelope, arm-contract, repository, and index provenance. Legacy labels (`plain`, `codemap`, `semble`, `combined`) retain their historical behavior and remain `legacy-unversioned`; they are not retroactively mapped to A/B/C. `--dry-run` prints the selected plan without invoking Claude or writing model results; the real-code runner's default `--arm all` plan is A/B/C and validates the locked inputs, while the agentic runner validates them when a canonical arm is selected.
 
@@ -66,7 +72,7 @@ Run **Query** first — validates the index before spending LLM tokens on agenti
 
 ### Codex agentic parity study
 
-The current Codex agentic adapter uses all 16 committed BA tasks across `A_plain`, `B_auto`, and `C_required`, with one repetition by default. It consumes the shared prompt materializer, answer-contract parser, AST oracle, and EREC, E@10, RREC, and DEFF/fitness scorer used by Claude. Validate the exact 48-cell plan without credentials or a model:
+The current Codex agentic adapter uses all 16 committed BA tasks across `A_plain`, `B_auto`, and `C_strict`, with one repetition by default. It consumes the shared prompt materializer, response assessor, AST oracle, semantic component scorer, and raw EREC/RREC/DEFF evidence scorer used by Claude. DEFF is an unbounded exposure-hit count per command, not a normalized quality score. Validate the exact 48-cell plan without credentials or a model:
 
 ```bash
 bash benchmarks/run-all.sh codex --agentic --dry-run
@@ -74,44 +80,68 @@ bash benchmarks/run-all.sh codex --agentic --dry-run
 
 The deterministic review lock is `benchmarks/manifests/codex-agentic.json`; regenerate or verify it with `python3 benchmarks/build-codex-agentic-manifest.py [--check]`. The dedicated human companion records the current manifest SHA, task order, treatment contract, exact approval variable, and derived wall-clock ceiling. No-model dry runs require no credentials and no paid approval. A paid default run requires the exact active machine-manifest SHA, private auth source, new result directory, and the manifest-derived 28,800-second ceiling. A non-default repetition or selected scope must additionally present the resolver's scope SHA-256 and its derived ceiling.
 
+#### Completed 48-cell Codex run — 2026-08-05
+
+The frozen `results/codex-agentic-20260805T170347Z` run completed all 16 tasks once across the three arms with `gpt-5.6-luna` at high effort, Codex CLI 0.146.0, codemap-py 0.28.4, and codex-rig 0.4.2. Every arm followed its treatment contract; A used Codemap in 0/16 cells, optional B in 9/16, and strict C in 16/16. The manifest declares the study exploratory and nonpoolable, so the following values are paired descriptive evidence rather than causal or release-acceptance estimates.
+
+<!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#codex-agentic-2026-08-05; update both files or record an explicit divergence note. -->
+
+| Arm        | Mean semantic score | Perfect score | Mean EREC/RREC | Strict answers | Codemap used | Mean input | Mean output | Mean elapsed |
+| ---------- | ------------------: | ------------: | -------------: | -------------: | -----------: | ---------: | ----------: | -----------: |
+| `A_plain`  |          **0.9024** |     **10/16** |         0.9863 |      **15/16** |         0/16 |     282.8k |        7.0k |       165.1s |
+| `B_auto`   |              0.8032 |          7/16 |     **0.9967** |          14/16 |         9/16 |     230.9k |        4.0k |       114.2s |
+| `C_strict` |              0.8551 |          9/16 |     **0.9967** |          10/16 |        16/16 | **105.2k** |    **2.3k** |    **60.8s** |
+
+Bold = best comparable arm value per column (higher is better for semantic score, perfect score, EREC/RREC, and strict answers; lower is better for input, output, and elapsed time). `Codemap used` is a treatment diagnostic, not a performance metric, so it is not bolded.
+
+Relative to `A_plain`, `C_strict` used a paired geometric-mean `0.397×` input, `0.339×` output, and `0.402×` elapsed time, with lower input on 14/16 tasks. Its mean semantic-score delta was `-0.0472` with 2 wins, 10 ties, and 4 losses, so this run demonstrates a large efficiency gain but does not establish quality parity. Relative to `B_auto`, `C_strict` used less input on all 16 tasks, with paired geometric ratios `0.469×` input, `0.578×` output, and `0.583×` elapsed; its mean score was `+0.0519` higher.
+
+The dominant C-vs-A quality loss is BA-04 (`-0.6667`): C recovered every direct importer but issued a long per-importer reverse-dependency sequence and failed to synthesize the required high-centrality mapping and exact deduplicated affected count. BA-16 (`-0.1644`) found the importer/count evidence but assigned `high` rather than the audited `critical` risk tier; BA-12 is difficult across all arms and remains a shared task/oracle audit target. Nine cells used diagnostic bare-JSON recovery rather than the strict labelled envelope, including 6/16 C cells, so strict-answer reliability is a separate integration gap even where semantic fields were recoverable. EREC/RREC are near ceiling and do not explain the remaining semantic-score differences; DEFF remains task-specific and unbounded and must not be aggregated as a cross-task quality metric.
+
 The stopped directory `results/codex-agentic-20260804T205639Z` is infrastructure-only evidence with zero model cells. The launcher previously opened its console capture inside the new result directory before the runner's strict launcher-only admission check, so the runner rejected the launcher's own file. Console capture now uses a private temporary file outside the result directory, while the strict admission invariant remains unchanged. Any supported-entrypoint failure preserves the reported artifact and prints the exact dry-run command plus a fresh timestamped paid command; reuse of an existing result directory remains forbidden.
 
-The completed frozen run `results/codex-agentic-20260804T172617Z` is historical immutable evidence: it persisted 9/9 BA-01 cells under archived machine manifest `f8490d39e2dbade395600423e4096cee94d7f87d1ada4cbe0a876fa74052fa8c`. Direct-importer exposure and final-report recall were `1.0` in every arm and repetition. Relative to `A_plain`, `B_auto` reduced mean input tokens by 39.6%, output tokens by 58.4%, and elapsed time by 52.5%; `C_required` reduced them by 66.3%, 71.9%, and 69.6%, respectively. These bounded exploratory means from one task and three repetitions are not the current default, are not pooled with the 16-task study, and do not define provider-wide performance.
+The stopped directory `results/codex-agentic-20260805T122121Z` contains 14 successful transport rows but is infrastructure/scoring diagnostic evidence only. Runtime identity drift stopped admission before the fifteenth cell, and the superseded response path conflated strict-envelope failure with absent semantic and raw-text evidence. The prospective runner freezes plugin source bytes before the first cell, preserves identity evidence even when initial C admission fails, and records semantic validity, diagnostic recovery, pooling eligibility, EREC, RREC, and DEFF as separate fields.
+
+The stopped directory `results/codex-agentic-20260805T144950Z` contains one successful A row and is infrastructure-only evidence. The snapshot archive preserved the B launcher bytes but stripped its executable mode from `0755` to `0600`, so B admission failed before a model call. The repaired archive writes executable inputs as private `0700`, writes other inputs as `0600`, records each mode in the snapshot ledger, and fails closed on later byte or mode drift.
+
+The completed frozen run `results/codex-agentic-20260804T172617Z` is historical immutable evidence: it persisted 9/9 BA-01 cells under archived machine manifest `f8490d39e2dbade395600423e4096cee94d7f87d1ada4cbe0a876fa74052fa8c`. Direct-importer exposure and final-report recall were `1.0` in every arm and repetition. Relative to `A_plain`, `B_auto` reduced mean input tokens by 39.6%, output tokens by 58.4%, and elapsed time by 52.5%; the then-named `C_required` arm reduced them by 66.3%, 71.9%, and 69.6%, respectively. These bounded exploratory means from one task and three repetitions are not the current default, are not pooled with the 16-task study, and do not define provider-wide performance.
 
 ## Unified batch entrypoint
 
-`run-all.sh` is the only batch orchestrator. It requires one mode; both providers accept `--dry-run` and the provider-neutral agentic flags `--agentic [--repetitions=N]`. Missing or unknown arguments do nothing:
+`run-all.sh` is the only batch orchestrator. It requires one provider mode; both providers accept the mutually exclusive `--struct` and `--agentic` workload selectors plus `--dry-run`. `--repetitions=N` is agentic-only. Omitting a workload selector preserves compatibility: Claude runs structural and agentic batches, while Codex runs structural. Missing or unknown arguments do nothing:
 
 ```bash
 bash benchmarks/run-all.sh smoke
 bash benchmarks/run-all.sh claude
+bash benchmarks/run-all.sh claude --struct --dry-run
 bash benchmarks/run-all.sh claude --agentic --dry-run
-bash benchmarks/run-all.sh codex --dry-run
-bash benchmarks/run-all.sh codex --tasks=DI,GR --dry-run
+bash benchmarks/run-all.sh codex --struct --dry-run
+bash benchmarks/run-all.sh codex --struct --tasks=DI,GR --dry-run
 bash benchmarks/run-all.sh codex --agentic --dry-run
 CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-integration.json | awk '{print $1}')" \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \
     CODEX_MAX_WALL_CLOCK_SECONDS=86400 \
-    bash benchmarks/run-all.sh codex
+    bash benchmarks/run-all.sh codex --struct
 ```
 
 Modes:
 
 - `smoke` — validate the frozen active index, run the deterministic query check, and execute Claude and Codex dry-run/preflight paths. It invokes no model.
 - `claude` — validate the frozen index and preflight, then run the existing paid Claude structural tiers and agentic batch.
+- `claude --struct [--dry-run]` — run or plan only the Claude structural tiers; the agentic preflight and batch are excluded.
 - `claude --agentic --dry-run` — validate the shared 16-task methodology, resolve the exact one-repeat 144-cell scope across three Claude model tiers, and print the complete no-model plan. `--repetitions=N` derives and passes a distinct scope SHA-256; the same flag without `--agentic` is rejected.
 - `claude --agentic` — run only the shared 16-task canonical A/B/C Claude study. The default is one repetition; a higher explicit repetition is admitted only with the launcher's exact derived scope SHA-256.
-- `codex --dry-run` — validate the frozen index, run the deterministic query check and FN-02 Codex smoke, then print the exact 165-coordinate plan. It needs no paid approval, authentication source, or result directory and invokes no model.
-- `codex --tasks=DI,GR --dry-run` — resolve the requested families, validate the selected scope, exercise the selected no-model preflight, and print the exact 90-coordinate plan. Selected scopes are targeted and non-poolable; they need no paid approval or authentication source for dry-run.
-- `codex` — validate the frozen index, run the fail-fast FN-02 A/B/C smoke and exact no-model plan, then execute the complete 55-task × one-repetition × three-arm study. Cell outcomes are recorded without fail-fast after admission. It fails before setup unless the exact active-manifest SHA-256, a private auth source, a new run directory, and the manifest-locked complete-run ceiling are supplied.
-- `codex --tasks=DI,GR` — execute only the selected, non-poolable scope after the same smoke and admission gates. The resolved selection scope SHA-256 is printed and must authorize that scope; the full-run machine-manifest SHA-256 remains the approval for an unselected complete study.
+- `codex --struct --dry-run` — validate the frozen index, run the deterministic query check and FN-02 Codex smoke, then print the exact 165-coordinate structural plan. It needs no paid approval, authentication source, or result directory and invokes no model.
+- `codex --struct --tasks=DI,GR --dry-run` — resolve the requested structural families, validate the selected scope, exercise the selected no-model preflight, and print the exact 90-coordinate plan. Selected scopes are targeted and non-poolable; they need no paid approval or authentication source for dry-run.
+- `codex --struct` — validate the frozen index, run the fail-fast FN-02 A/B/C smoke and exact no-model plan, then execute the complete 55-task × one-repetition × three-arm structural study. Cell outcomes are recorded without fail-fast after admission. It fails before setup unless the exact active-manifest SHA-256, a private auth source, a new run directory, and the manifest-locked complete-run ceiling are supplied.
+- `codex --struct --tasks=DI,GR` — execute only the selected, non-poolable structural scope after the same smoke and admission gates. The resolved selection scope SHA-256 is printed and must authorize that scope; the full-run machine-manifest SHA-256 remains the approval for an unselected complete study.
 - `codex --agentic --dry-run` — validate the shared 16-task agentic lock, target, index, and A/B/C capability probes, then print exactly 48 planned cells without credentials or a model.
 - `codex --agentic` — execute BA-01–BA-16 across A/B/C for one repetition with the exact active-manifest approval, private auth source, new result directory, and manifest-derived 28,800-second ceiling documented in `manifests/codex-agentic.md`. Runtime/admission integrity failures stop and preserve partial artifacts; ordinary model/task/treatment outcomes remain measurable and do not fail fast. Add `--repetitions=N` only with the resolver's matching scope SHA-256 and derived wall-clock ceiling.
 
 #### Codex task selection
 
-`--tasks=<selector[,selector...]>` is the systematic selector for targeted Codex work; the former asymmetric `--diagnostic` switch is removed from the active interface. Selectors accept exact task IDs or two-letter families, case-insensitively: `--tasks=DI,GR` selects all Diff Impact and Graph Reasoning tasks, while `--tasks=DI-01,GR-03` selects exactly two tasks. Mixed selections are allowed, duplicates are removed, and the locked manifest order is retained. Exact IDs resolve before family expansion, so a selector is deterministic and auditable.
+`--tasks=<selector[,selector...]>` is the systematic selector for targeted Codex structural work and composes with `--struct`; the former asymmetric `--diagnostic` switch is removed from the active interface. Selectors accept exact task IDs or two-letter families, case-insensitively: `--tasks=DI,GR` selects all Diff Impact and Graph Reasoning tasks, while `--tasks=DI-01,GR-03` selects exactly two tasks. Mixed selections are allowed, duplicates are removed, and the locked manifest order is retained. Exact IDs resolve before family expansion, so a selector is deterministic and auditable.
 
 Empty selectors, unknown IDs/families, selectors resolving to no executable task, excluded RI tasks, and invalid mixtures fail before target setup or paid admission. Every selected task runs three repetitions across A/B/C (three arms), with the retry-inclusive 600-second coordinate budget; the selected scope's complete-run ceiling is derived and printed (for `DI,GR`, 90 cells and 54,000 seconds). A selection is explicitly targeted and non-poolable. The resolver prints the selection scope SHA-256 for selected-run approval; the complete unselected study uses the full machine-manifest SHA-256.
 
@@ -154,7 +184,7 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 - **Order**: validate frozen index → query (gates the index, no LLM) → real-codebase → agentic. Per-benchmark options live in each section's **Quick start** below.
 - **Scale**: real-codebase = 55 × 2 × 3 = 330 model runs; Claude agentic default = 16 × 3 × 3 = 144; Codex agentic default = 16 × 3 = 48. These are separate provider studies with shared task, prompt, oracle, and scorer contracts.
 - **Model tiers** (`MODELS` map in each runner): `haiku` → `claude-haiku-4-5`, `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`.
-- **Agentic arms**: canonical runs use `A_plain`, `B_auto`, and `C_required`. Legacy Claude `semble` / `combined` arms remain explicit historical compatibility paths and need the semble MCP configured.
+- **Agentic arms**: canonical runs use `A_plain`, `B_auto`, and `C_strict`. Legacy Claude `semble` / `combined` arms remain explicit historical compatibility paths and need the semble MCP configured.
 - **Cheaper option**: swap the three bench lines for the tiered strategy (`--tiered`, see [Cost profiles](#cost-profiles)) — full suite on haiku, dev subset on sonnet, only cross-tier disagreements on opus.
 - **Results** land in `benchmarks/results/` — `code-<date>.md`, `bench-<model>-<ts>.jsonl`, and agentic JSON (`.md` with `--report`).
 
@@ -201,11 +231,11 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 
 Runs the same committed 16 import-graph tasks under the canonical three arms. Claude runs all three model tiers by default; Codex runs one repetition by default and requires exact scope approval for any expanded repetition count.
 
-| Arm          | Codex treatment                                                       | Claude treatment                                                      |
-| ------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `A_plain`    | Codemap absent and inaccessible                                       | Codemap absent and inaccessible                                       |
-| `B_auto`     | Direct Codemap CLI available; use is optional                         | Codemap available; use is optional                                    |
-| `C_required` | Codemap Skill available; at least one successful compact query needed | Codemap Skill available; at least one successful compact query needed |
+| Arm        | Codex treatment                                                       | Claude treatment                                                      |
+| ---------- | --------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `A_plain`  | Codemap absent and inaccessible                                       | Codemap absent and inaccessible                                       |
+| `B_auto`   | Direct Codemap CLI available; use is optional                         | Codemap available; use is optional                                    |
+| `C_strict` | Codemap Skill available; at least one successful compact query needed | Codemap Skill available; at least one successful compact query needed |
 
 The shared answer envelope is materialized from each task's committed `answer_contract`. The shared parser and oracle score exact fields plus continuous component fitness; `EREC`, `RREC`, and `DEFF` remain diagnostic metrics. Missing or malformed required fields score zero for that component without changing transport/admission status.
 
@@ -298,31 +328,31 @@ claude mcp add semble -s user -- uvx --from "semble[mcp]" semble
 <details>
 <summary><strong>CLI flags</strong></summary>
 
-| Flag                                                                  | Default         | Description                                                              |
-| --------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------ |
-| `--repo-path PATH`                                                    | required        | Absolute path to the repo under test                                     |
-| `--index PATH`                                                        | auto-detected   | Override index path (default: `<repo>/.cache/scan/<name>.json`)          |
-| `--arm plain\|codemap\|semble\|combined\|A_plain\|B_auto\|C_required` | canonical A/B/C | Run a single legacy or canonical arm only                                |
-| `--model haiku\|sonnet\|opus`                                         | all three       | Run a single model tier only                                             |
-| `--tasks "['BA-01','BA-02',...]"`                                     | all 16          | Run specific task IDs (Python list literal — e.g. `"['BA-01','BA-02']"`) |
-| `--run-all`                                                           | off             | Run all tasks (required unless `--tasks` given)                          |
-| `--report`                                                            | off             | Write markdown report to `results/` after run                            |
-| `--repeat N`                                                          | `1`             | Repeat each selected cell; values above one require `--scope-sha256`     |
-| `--scope-sha256 SHA`                                                  | none            | Admit the exact derived nondefault canonical scope                       |
-| `--resolve-scope`                                                     | off             | Print the selected canonical scope and SHA-256 without running a model   |
-| `--dry-run`                                                           | off             | Print the selected plan without invoking Claude or writing model results |
+| Flag                                                                | Default         | Description                                                              |
+| ------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------ |
+| `--repo-path PATH`                                                  | required        | Absolute path to the repo under test                                     |
+| `--index PATH`                                                      | auto-detected   | Override index path (default: `<repo>/.cache/scan/<name>.json`)          |
+| `--arm plain\|codemap\|semble\|combined\|A_plain\|B_auto\|C_strict` | canonical A/B/C | Run a single legacy or canonical arm only                                |
+| `--model haiku\|sonnet\|opus`                                       | all three       | Run a single model tier only                                             |
+| `--tasks "['BA-01','BA-02',...]"`                                   | all 16          | Run specific task IDs (Python list literal — e.g. `"['BA-01','BA-02']"`) |
+| `--run-all`                                                         | off             | Run all tasks (required unless `--tasks` given)                          |
+| `--report`                                                          | off             | Write markdown report to `results/` after run                            |
+| `--repeat N`                                                        | `1`             | Repeat each selected cell; values above one require `--scope-sha256`     |
+| `--scope-sha256 SHA`                                                | none            | Admit the exact derived nondefault canonical scope                       |
+| `--resolve-scope`                                                   | off             | Print the selected canonical scope and SHA-256 without running a model   |
+| `--dry-run`                                                         | off             | Print the selected plan without invoking Claude or writing model results |
 
 </details>
 
 ### Output
 
-Each run prints one coloured line; canonical labels are `A_plain`, `B_auto`, and `C_required`:
+Each run prints one coloured line; canonical labels are `A_plain`, `B_auto`, and `C_strict`:
 
 ```
-[NN/TT] BA-01 (fix) | haiku  | C_required | elapsed= 45.2s | tokens= 120.3k | calls= 3 (grep=  0; glob= 0; bash=  0; skill= 1; semble= 0) | erec= 94% rrec= 88%  sc=100%
+[NN/TT] BA-01 (fix) | haiku  | C_strict | elapsed= 45.2s | tokens= 120.3k | calls= 3 (grep=  0; glob= 0; bash=  0; skill= 1; semble= 0) | erec= 94% rrec= 88%  sc=100%
 ```
 
-Colour: canonical `A_plain` = yellow · `B_auto` = cyan · `C_required` = magenta; legacy `semble`/`combined` colors remain for explicitly selected compatibility runs; red = failure.
+Colour: canonical `A_plain` = yellow · `B_auto` = cyan · `C_strict` = magenta; legacy `semble`/`combined` colors remain for explicitly selected compatibility runs; red = failure.
 
 JSON snapshot written to `results/agentic-YYYY-MM-DD[-N].json` after every run (partial results survive interruptions). Markdown report written to `results/agentic-YYYY-MM-DD[-N].md` with `--report`.
 
@@ -417,21 +447,21 @@ python benchmarks/run-claude-structural.py \
 <details>
 <summary><strong>CLI flags</strong></summary>
 
-| Flag                                                     | Default       | Description                                                                                                                                                                                              |
-| -------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--repo-path PATH`                                       | auto          | Path to repo clone (default: `repo.local_path` from `tasks-bench.json`)                                                                                                                                  |
-| `--index-path PATH`                                      | auto          | Override index; checks `.cache/codemap/` then `.cache/scan/`                                                                                                                                             |
-| `--tasks "['SE-01','FN-02',...]"`                        | all           | Run specific task IDs (Python list literal — e.g. `"['SE-01','FN-02']"`)                                                                                                                                 |
-| `--task-type TYPE`                                       | all           | Filter by type: `symbol_extraction`, `fn_call_graph`, `review_assistance`, `code_quality`, `develop_blast_radius`, `debug_from_trace`, `feature_scaffolding`, `real_issue`                               |
-| `--arm plain\|codemap\|A_plain\|B_auto\|C_required\|all` | `all`         | Run one legacy arm, one canonical A/B/C arm, or both legacy arms                                                                                                                                         |
-| `--model haiku\|sonnet\|opus`                            | `haiku`       | Model tier                                                                                                                                                                                               |
-| `--run-all`                                              | off           | Required when `--tasks` and `--task-type` both absent                                                                                                                                                    |
-| `--no-save`                                              | off           | Skip writing JSONL results to `results/bench-<model>-<ts>.jsonl`                                                                                                                                         |
-| `--timeout N`                                            | model default | Per-run wall-clock timeout in seconds                                                                                                                                                                    |
-| `--resume`                                               | off           | Reuse a matching prior result (same `task_id`/`arm`/`model` + `repo_sha`/`index_sha`/`task_hash` provenance) from `results/bench-*.jsonl` instead of re-executing it; reused lines carry `resumed: true` |
-| `--profile dev\|release`                                 | none          | Cost profile — `dev` = haiku-only stratified subset (fast regression signal), `release` = full matrix incl. RI. Absent → current behavior unchanged                                                      |
-| `--tiered`                                               | off           | Tiered protocol (release companion): run one tier per `--model` (haiku full → sonnet dev-subset → opus disagreements). See **Cost profiles** below                                                       |
-| `--dry-run`                                              | off           | Validate locked canonical inputs and print the planned A/B/C cells; never invoke Claude or write model results                                                                                           |
+| Flag                                                   | Default       | Description                                                                                                                                                                                              |
+| ------------------------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--repo-path PATH`                                     | auto          | Path to repo clone (default: `repo.local_path` from `tasks-bench.json`)                                                                                                                                  |
+| `--index-path PATH`                                    | auto          | Override index; checks `.cache/codemap/` then `.cache/scan/`                                                                                                                                             |
+| `--tasks "['SE-01','FN-02',...]"`                      | all           | Run specific task IDs (Python list literal — e.g. `"['SE-01','FN-02']"`)                                                                                                                                 |
+| `--task-type TYPE`                                     | all           | Filter by type: `symbol_extraction`, `fn_call_graph`, `review_assistance`, `code_quality`, `develop_blast_radius`, `debug_from_trace`, `feature_scaffolding`, `real_issue`                               |
+| `--arm plain\|codemap\|A_plain\|B_auto\|C_strict\|all` | `all`         | Run one legacy arm, one canonical A/B/C arm, or both legacy arms                                                                                                                                         |
+| `--model haiku\|sonnet\|opus`                          | `haiku`       | Model tier                                                                                                                                                                                               |
+| `--run-all`                                            | off           | Required when `--tasks` and `--task-type` both absent                                                                                                                                                    |
+| `--no-save`                                            | off           | Skip writing JSONL results to `results/bench-<model>-<ts>.jsonl`                                                                                                                                         |
+| `--timeout N`                                          | model default | Per-run wall-clock timeout in seconds                                                                                                                                                                    |
+| `--resume`                                             | off           | Reuse a matching prior result (same `task_id`/`arm`/`model` + `repo_sha`/`index_sha`/`task_hash` provenance) from `results/bench-*.jsonl` instead of re-executing it; reused lines carry `resumed: true` |
+| `--profile dev\|release`                               | none          | Cost profile — `dev` = haiku-only stratified subset (fast regression signal), `release` = full matrix incl. RI. Absent → current behavior unchanged                                                      |
+| `--tiered`                                             | off           | Tiered protocol (release companion): run one tier per `--model` (haiku full → sonnet dev-subset → opus disagreements). See **Cost profiles** below                                                       |
+| `--dry-run`                                            | off           | Validate locked canonical inputs and print the planned A/B/C cells; never invoke Claude or write model results                                                                                           |
 
 When `--resume` is set, provenance is fingerprinted per run: `repo_sha` = `git -C <repo> rev-parse HEAD` (or `"unknown"`), `index_sha` = sha256 of the index head-meta (`scan_version`, `scanned_at`, `git_sha`, `project`, `scan_root`), and `task_hash` = sha256 of the task's canonical JSON. These three fields are written on **every** result line (not only under `--resume`), so any prior run is resumable later. A resume match reuses the stored line verbatim and skips the `claude` subprocess entirely.
 
@@ -705,6 +735,28 @@ python benchmarks/run-claude-agentic.py \
 | `bench-<model>-<YYYYMMDD-HHMMSS>.jsonl` | Real-codebase benchmark JSONL results |
 | `code-YYYY-MM-DD[-N].md`                | Query benchmark markdown report       |
 
+### Agentic blast-radius run — 2026-08-04 (⚠ unfinished)
+
+`code-2026-08-04.json` / `code-2026-08-04.md` — killed by user at 62/144 cells (BA-01..BA-07 of 16 tasks; BA-08..BA-16 never ran). Single repetition (n=1), target `pytorch-lightning` 2.6.5. Numbers below describe what ran, not a confirmatory result.
+
+<!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#claude-agentic-2026-08-04; update both files or record an explicit divergence note. -->
+
+| Model  | Arm        |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |      aqs |  correct |
+| ------ | ---------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: | -------: | -------: |
+| haiku  | A_plain    |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |     0.27 | **0.00** |
+| haiku  | B_auto     |   7 | **281.3k** | **3.6k** | **0.091** |  **48.0** | **0.86** | **0.86** | **0.35** | **0.00** |
+| haiku  | C_required |   7 |     362.1k |     4.2k |     0.097 |      57.2 |     0.85 |     0.85 |     0.30 | **0.00** |
+| sonnet | A_plain    |   7 |     722.4k |    17.8k |     0.636 |     179.3 |     0.97 |     0.97 |     0.51 |     0.00 |
+| sonnet | B_auto     |   7 | **251.6k** | **4.3k** | **0.310** |  **57.3** | **1.00** | **1.00** | **0.58** | **0.14** |
+| sonnet | C_required |   7 |     370.0k |     4.9k |     0.311 |      60.1 |     0.97 |     0.97 |     0.57 | **0.14** |
+| opus   | A_plain    |   7 |     238.3k |     9.2k |     0.497 |     116.8 |     0.57 |     0.57 |     0.32 |     0.00 |
+| opus   | B_auto     |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** | **0.61** |     0.00 |
+| opus   | C_required |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |     0.49 | **0.17** |
+
+Bold = best value per model per column (lower is better for tok/cost/elapsed s, higher for erec/rrec/aqs/correct); ties bolded on both rows. `erec`/`rrec` = exposure/report recall of expected reverse-dependencies; `aqs` = mean `answer_quality_score`; `correct` = exact-match `answer_correct` fraction. Opus `C_required` n=6 — one cell excluded (`answer_error`).
+
+**No single arm wins everywhere.** `B_auto` sweeps every metric on haiku and sonnet — cheapest and best recall, meaning the skill genuinely substitutes for manual exploration on those two models. Opus splits: `C_required` wins cost/tokens/elapsed/correct, `B_auto` wins recall/quality — opus under `B_auto` pays extra to explore on top of the skill without recovering any recall `C_required` didn't already have, making `C_required` the stronger opus arm on this partial data. Opus `A_plain` erec (0.57) is partly a markdown-fence parse artifact (fixed this session, not yet applied to this snapshot — see `rescore-claude-agentic.py`) but not entirely: 2 of 3 failing cells have genuinely malformed answer shapes even after unfencing. Full breakdown, per-cell `answer_error` list, and caveats: `code-2026-08-04.md`.
+
 ### Codex integration study (A/B/C)
 
 The complete Codex run used the same 55 non-RI task objects, prompts, provider-neutral evaluators, target tree, and ground truth as the Claude structural benchmark. It ran one Claude-parity iteration over `A_plain`, `B_direct`, and `C_skill`: 165 cells, with 45 preregistered headline task blocks and 10 diagnostics reported separately.
@@ -723,17 +775,23 @@ All 165 coordinates completed. All 491 listed artifact checksums verify; planned
 
 Headline results use one task block as the paired unit (`n=45`). Ratios are paired geometric means. Intervals use 10,000 paired percentile bootstrap resamples under the manifest-derived deterministic seed; gross input is the locked primary token measure.
 
-| Arm        | Correct | Mean quality | Mean gross input | Mean output | Mean elapsed |
-| ---------- | ------: | -----------: | ---------------: | ----------: | -----------: |
-| `A_plain`  |   34/45 |       0.8626 |           200.6k |       3,484 |       75.2 s |
-| `B_direct` |   42/45 |       0.9673 |           103.6k |       2,094 |       47.9 s |
-| `C_skill`  |   40/45 |       0.9525 |            74.0k |       1,420 |       33.2 s |
+<!-- result-sync: summarized in ../plugins/codemap-py/README.md#codex-structural-2026-08-03; update both files or record an explicit divergence note. -->
 
-| Comparison |            Quality delta, 95% CI |  Gross-input ratio, 95% CI |       Output ratio, 95% CI |      Elapsed ratio, 95% CI |
-| ---------- | -------------------------------: | -------------------------: | -------------------------: | -------------------------: |
-| B/A        |     +0.1047 `[+0.0390, +0.1720]` |     0.735 `[0.580, 0.919]` |     0.775 `[0.596, 0.996]` |     0.800 `[0.644, 0.979]` |
-| C/A        | **+0.0900 `[+0.0204, +0.1605]`** | **0.542 `[0.426, 0.681]`** | **0.520 `[0.408, 0.663]`** | **0.558 `[0.452, 0.685]`** |
-| C/B        |     -0.0147 `[-0.0522, +0.0169]` | **0.738 `[0.644, 0.847]`** | **0.672 `[0.602, 0.753]`** | **0.698 `[0.636, 0.770]`** |
+| Arm        |   Correct | Mean quality | Mean gross input | Mean output | Mean elapsed |
+| ---------- | --------: | -----------: | ---------------: | ----------: | -----------: |
+| `A_plain`  |     34/45 |       0.8626 |           200.6k |       3,484 |       75.2 s |
+| `B_direct` | **42/45** |   **0.9673** |           103.6k |       2,094 |       47.9 s |
+| `C_skill`  |     40/45 |       0.9525 |        **74.0k** |   **1,420** |   **33.2 s** |
+
+Bold = best comparable arm value per column (higher is better for correct and quality; lower is better for input, output, and elapsed time).
+
+<!-- result-sync: summarized in ../plugins/codemap-py/README.md#codex-structural-2026-08-03; update both files or record an explicit divergence note. These pairwise rows use different baselines and are not cross-row comparable; retain values unbolded. -->
+
+| Comparison |        Quality delta, 95% CI | Gross-input ratio, 95% CI |   Output ratio, 95% CI |  Elapsed ratio, 95% CI |
+| ---------- | ---------------------------: | ------------------------: | ---------------------: | ---------------------: |
+| B/A        | +0.1047 `[+0.0390, +0.1720]` |    0.735 `[0.580, 0.919]` | 0.775 `[0.596, 0.996]` | 0.800 `[0.644, 0.979]` |
+| C/A        | +0.0900 `[+0.0204, +0.1605]` |    0.542 `[0.426, 0.681]` | 0.520 `[0.408, 0.663]` | 0.558 `[0.452, 0.685]` |
+| C/B        | -0.0147 `[-0.0522, +0.0169]` |    0.738 `[0.644, 0.847]` | 0.672 `[0.602, 0.753]` | 0.698 `[0.636, 0.770]` |
 
 **Historical judgment.** Under the completed 0.28.2 study contract, C met its then-locked product acceptance policy versus A: gross-input CI upper `<1.00`, quality mean `>=0`, quality CI lower `>-0.02` and also `>0`, with no repeated task-family block below `-0.10`. The installed Skill produced higher structural-answer quality with lower gross input, output, and elapsed time than plain Codex in that run. B also improved over A. C was materially more efficient than B, but the locked C-B quality interval did not establish Skill quality superiority or strict non-inferiority. These findings remain immutable historical evidence; acceptance under the prospective 0.28.3 contract requires the pending fresh 165-cell run.
 
@@ -775,11 +833,11 @@ The earlier selected Codex runs used the same frozen methodology to locate and r
 
 Offline-derived selected diagnostics (continuous quality is the mean per-cell fitness; input and elapsed values are arithmetic means):
 
-| Treatment  | Correctness by family                 | Quality by family                           | Gross input   | Elapsed       | Adherence |
-| ---------- | ------------------------------------- | ------------------------------------------- | ------------- | ------------- | --------- |
-| `A_plain`  | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.367`, GR-01 `0.767`, GR-03 `1.000` | see telemetry | see telemetry | 9/9       |
-| `B_direct` | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.500`, GR-01 `0.700`, GR-03 `1.000` | see telemetry | see telemetry | 9/9       |
-| `C_skill`  | DI-01 `0/3`, GR-01 `3/3`, GR-03 `3/3` | DI-01 `0.333`, GR-01 `0.700`, GR-03 `1.000` | see telemetry | see telemetry | 9/9       |
+| Treatment  | Correctness by family                             | Quality by family                                   | Gross input   | Elapsed       | Adherence |
+| ---------- | ------------------------------------------------- | --------------------------------------------------- | ------------- | ------------- | --------- |
+| `A_plain`  | DI-01 **`0/3`**, GR-01 **`3/3`**, GR-03 **`3/3`** | DI-01 `0.367`, GR-01 **`0.767`**, GR-03 **`1.000`** | see telemetry | see telemetry | **9/9**   |
+| `B_direct` | DI-01 **`0/3`**, GR-01 **`3/3`**, GR-03 **`3/3`** | DI-01 **`0.500`**, GR-01 `0.700`, GR-03 **`1.000`** | see telemetry | see telemetry | **9/9**   |
+| `C_skill`  | DI-01 **`0/3`**, GR-01 **`3/3`**, GR-03 **`3/3`** | DI-01 `0.333`, GR-01 `0.700`, GR-03 **`1.000`**     | see telemetry | see telemetry | **9/9**   |
 
 No pooled interval or treatment-effect estimate is reported for this selected scope: it is targeted, non-poolable diagnostic evidence with only three task families. Gross-input and elapsed comparisons remain available in the immutable telemetry for audit, but are not a headline result.
 
@@ -791,8 +849,8 @@ The follow-up 18-cell validation at `benchmarks/results/codex-integration-select
 
 | Task    | A quality | B quality | C quality | B/A input · elapsed | C/A input · elapsed |
 | ------- | --------: | --------: | --------: | ------------------: | ------------------: |
-| `DI-01` |   `0.500` |   `1.000` |   `0.501` | `1.603×` · `0.909×` | `1.008×` · `0.989×` |
-| `GR-01` |   `0.733` |   `0.600` |   `1.000` | `0.282×` · `0.136×` | `0.197×` · `0.089×` |
+| `DI-01` |   `0.500` | **1.000** |   `0.501` | `1.603×` · `0.909×` | `1.008×` · `0.989×` |
+| `GR-01` |   `0.733` |   `0.600` | **1.000** | `0.282×` · `0.136×` | `0.197×` · `0.089×` |
 
 These are paired geometric economy ratios and arithmetic mean quality over three repetitions. They are descriptive because the scope is targeted and non-poolable. C achieved quality parity on DI and improved GR while using much less input overall, but DI showed no stable input saving and B degraded on GR. Raw events establish deterministic causes: the GR prompt omitted the oracle's exclude-tests scope, while the Skill mapped DI's direct-import test request to transitive module `test-impact` and returned 247 tests. The semantic audit also checked only the caller half of DI. The shared task prompt now states production-only centrality; all DI tasks require exact caller and direct-importer queries; both runtime Skills reserve `test-impact` for transitive affected-test selection. A new bounded validation is required before the full study can be unlocked.
 
@@ -800,8 +858,8 @@ The corrected bounded gate at `benchmarks/results/codex-integration-selected-202
 
 | Task    | A quality | B quality | C quality |   B/A input · output · elapsed |   C/A input · output · elapsed |
 | ------- | --------: | --------: | --------: | -----------------------------: | -----------------------------: |
-| `DI-01` |   `0.500` |   `1.000` |   `1.000` | `0.842×` · `0.704×` · `0.826×` | `0.627×` · `0.494×` · `0.555×` |
-| `GR-01` |   `0.800` |   `1.000` |   `1.000` | `0.356×` · `0.113×` · `0.300×` | `0.251×` · `0.081×` · `0.169×` |
+| `DI-01` |   `0.500` | **1.000** | **1.000** | `0.842×` · `0.704×` · `0.826×` | `0.627×` · `0.494×` · `0.555×` |
+| `GR-01` |   `0.800` | **1.000** | **1.000** | `0.356×` · `0.113×` · `0.300×` | `0.251×` · `0.081×` · `0.169×` |
 
 The run has zero treatment, contamination, extraction, completeness, token-accounting, or execution failures. Its three semantic-query misses are all DI-01/B_direct: the direct model omitted one or both exact locked query components but still used Codemap and returned every expected caller and test module. C_skill matched the exact caller-plus-direct-import route in every repetition. The methodology records exact query fitness independently from treatment delivery, so the misses remain discoverability diagnostics rather than exclusion failures. The bounded operational gate passes and permits the separately authorized complete 165-cell study; this targeted run remains non-poolable and cannot satisfy confirmatory product acceptance.
 
@@ -819,11 +877,15 @@ Full summary + per-task reading: [`results/bench-summary-2026-07-29.md`](results
 
 **Two value axes — read separately, never blended.** (1) **Reliability/quality**: safety-grade + structural recall — codemap **13/13 safety-grade every tier** vs plain 8/13 → 12/13 → 13/13; the primary proposition, holds up-tier. (2) **Economy (cost/tokens/time)**: read at *matched caller fan-in* — the win grows with fan-in (cost 0.35× haiku / 0.54× opus on high-fan-in tasks); raw median token ratio is a *secondary, caveated* number that → 1 as models get terser. Accuracy Δ is a saturation-sensitive tie-breaker, not a headline.
 
-| Tier      | Plain accuracy | Codemap accuracy | Δ accuracy  | Safety-grade plain | Safety-grade codemap | Token× med / mean | Cost× med / mean |
-| --------- | -------------- | ---------------- | ----------- | ------------------ | -------------------- | ----------------- | ---------------- |
-| Haiku 4.5 | 66.7% (24/36)  | 91.7% (33/36)    | **+25 pp**  | 8/13               | 13/13                | **0.57 / 0.65**   | 0.81 / 0.73      |
-| Sonnet 5  | 82.4% (28/34)  | 94.3% (33/35)    | **+12 pp**  | 12/13              | 13/13                | **0.82 / 0.93**   | 0.97 / 0.91      |
-| Opus 5    | 88.6% (31/35)  | 80.6% (29/36)    | **−8 pp ⚠** | 13/13              | 13/13                | 0.83 / 0.96       | 0.95 / 0.91      |
+<!-- result-sync: this is the canonical July 29 table; ../plugins/codemap-py/README.md#three-model-comparison contains the distinct June 22 legacy run, so do not synchronize their values. -->
+
+| Tier      | Plain accuracy    | Codemap accuracy  | Δ accuracy | Safety-grade plain | Safety-grade codemap | Token× med / mean | Cost× med / mean |
+| --------- | ----------------- | ----------------- | ---------- | ------------------ | -------------------- | ----------------- | ---------------- |
+| Haiku 4.5 | 66.7% (24/36)     | **91.7% (33/36)** | **+25 pp** | 8/13               | **13/13**            | **0.57 / 0.65**   | **0.81 / 0.73**  |
+| Sonnet 5  | 82.4% (28/34)     | **94.3% (33/35)** | **+12 pp** | 12/13              | **13/13**            | **0.82 / 0.93**   | **0.97 / 0.91**  |
+| Opus 5    | **88.6% (31/35)** | 80.6% (29/36)     | −8 pp ⚠    | **13/13**          | **13/13**            | **0.83 / 0.96**   | **0.95 / 0.91**  |
+
+Bold = better arm within each model and metric (higher accuracy/safety is better; token and cost ratios below `1.0` favor Codemap). Positive accuracy deltas are bolded; the audited Opus regression remains unbolded and caveated below.
 
 Per-workflow codemap accuracy: query (n=28) 92.0 / 95.8 / 84.0%; debug (n=6) 100 / 100 / 100%; feature (n=5) 80 / 80 / **40% ⚠** (haiku / sonnet / opus).
 
@@ -840,11 +902,15 @@ Per-workflow codemap accuracy: query (n=28) 92.0 / 95.8 / 84.0%; debug (n=6) 100
 
 Results — June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master. **Models** `claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-opus-4-6` · **codemap version not recorded in these result lines** (predates the v0.13.2 agentic run; ~mid-June 2026) · **codemap-favoring steering harness** (not comparable with the July run above — see comparability note).
 
-| Model      | Plain accuracy | Codemap accuracy | Accuracy lift | Safety-grade plain | Safety-grade codemap | Token ratio (median) | Token ratio range |
-| ---------- | -------------- | ---------------- | ------------- | ------------------ | -------------------- | -------------------- | ----------------- |
-| Haiku 4.5  | 85.3% (29/34)  | 93.9% (31/33)    | **+9 pp**     | 5/13               | 12/13                | **0.38×**            | 0.04–68.2×        |
-| Sonnet 4.6 | 83.8% (31/37)  | 91.9% (34/37)    | **+8 pp**     | 11/13              | 12/12                | **0.22×**            | 0.05–1.21×        |
-| Opus 4.6   | 86.1% (31/36)  | 91.7% (33/36)    | **+6 pp**     | 13/13              | 12/12                | **0.31×**            | 0.05–1.46×        |
+<!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#three-model-comparison; update both files or record an explicit divergence note. All result tables in this historical block are canonical sources for downstream summaries. -->
+
+| Model      | Plain accuracy    | Codemap accuracy  | Accuracy lift | Safety-grade plain | Safety-grade codemap | Token ratio (median) | Token ratio range |
+| ---------- | ----------------- | ----------------- | ------------- | ------------------ | -------------------- | -------------------- | ----------------- |
+| Haiku 4.5  | 85.3% (29/34)     | **93.9% (31/33)** | **+9 pp**     | 5/13               | **12/13**            | **0.38×**            | 0.04–68.2×        |
+| Sonnet 4.6 | 83.8% (31/37)     | **91.9% (34/37)** | **+8 pp**     | 11/13              | **12/12**            | **0.22×**            | 0.05–1.21×        |
+| Opus 4.6   | **86.1% (31/36)** | 91.7% (33/36)     | **+6 pp**     | **13/13**          | 12/12                | **0.31×**            | 0.05–1.46×        |
+
+Bold = better arm within each model and metric (higher accuracy/safety is better; a token ratio below `1.0` favors Codemap). Positive lift is bolded; the range is descriptive and unbolded.
 
 Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0.90. Token ratio = codemap / plain input tokens. June 22 Haiku tok× max of 68.2× is RI-04 codemap `error_max_turns` (token spiral, fixed June 23). June 22 Opus codemap safety-grade 10/12: FN-02/BR-03 regressions fixed June 23 (both recall=1.000) — corrected post-fix safety-grade is **12/12**.
 
@@ -852,10 +918,12 @@ Per-workflow-type breakdown (codemap arm, tok× = median codemap/plain token rat
 
 | Workflow type          | n tasks | Haiku tok× | Haiku cm_acc | Sonnet tok× | Sonnet cm_acc | Opus tok× | Opus cm_acc |
 | ---------------------- | ------- | ---------- | ------------ | ----------- | ------------- | --------- | ----------- |
-| query (SE/FN/RV/CQ/BR) | 28      | 0.28×      | 95.0%        | 0.14×       | 95.5%         | 0.23×     | 86.4%       |
-| debug (DG)             | 6       | 0.33×      | 100%         | 0.31×       | 100%          | 0.39×     | 100%        |
-| feature (FT)           | 5       | 0.55×      | 100%         | 0.71×       | 80%           | 0.58×     | 100%        |
-| real_issue (RI)        | 5       | 3.36× ⚠    | 50%          | 0.85×       | 75%           | 0.41×     | 100%        |
+| query (SE/FN/RV/CQ/BR) | 28      | **0.28×**  | 95.0%        | **0.14×**   | 95.5%         | **0.23×** | 86.4%       |
+| debug (DG)             | 6       | **0.33×**  | 100%         | **0.31×**   | 100%          | **0.39×** | 100%        |
+| feature (FT)           | 5       | **0.55×**  | 100%         | **0.71×**   | 80%           | **0.58×** | 100%        |
+| real_issue (RI)        | 5       | 3.36× ⚠    | 50%          | **0.85×**   | 75%           | **0.41×** | 100%        |
+
+Bold token ratios below `1.0` indicate lower Codemap input than the same-model plain arm. Codemap-only accuracy columns have no displayed plain comparator and remain unbolded.
 
 #### Haiku 4.5 — `results/bench-haiku-20260622-223206.jsonl`
 
@@ -865,7 +933,7 @@ Per-workflow-type breakdown (codemap arm, tok× = median codemap/plain token rat
 
 | Statistic | Value                                                              |
 | --------- | ------------------------------------------------------------------ |
-| Median    | **0.38×** (62% reduction)                                          |
+| Median    | 0.38× (62% reduction)                                              |
 | Min       | 0.04× (FN-04)                                                      |
 | Max       | 68.2× (RI-04, error_max_turns — arm-permission bug, fixed June 23) |
 
@@ -875,21 +943,21 @@ Note: max of 68.2× was RI-04 arm-permission bug (token spiral, fixed June 23) �
 
 | Arm     | Score     | Correct/Scored | extraction_failed              | incomplete                       |
 | ------- | --------- | -------------- | ------------------------------ | -------------------------------- |
-| plain   | **85.3%** | 29/34          | 4 (SE-05, CQ-01, CQ-05, RI-04) | 2 (CQ-01, BR-04)                 |
-| codemap | **93.9%** | 31/33          | 3 (SE-05, CQ-03, CQ-05)        | 2 (RI-02, RI-04) ⟵ fixed June 23 |
+| plain   | 85.3%     | 29/34          | 4 (SE-05, CQ-01, CQ-05, RI-04) | 2 (CQ-01, BR-04)                 |
+| codemap | **93.9%** | **31/33**      | 3 (SE-05, CQ-03, CQ-05)        | 2 (RI-02, RI-04) ⟵ fixed June 23 |
 
 By series:
 
-| Series       | plain | codemap | Notes                                                                                                                       |
-| ------------ | ----- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| SE (5 tasks) | 4/4   | 4/4     | SE-05 ext-fail both arms                                                                                                    |
-| FN (5 tasks) | 5/5   | 5/5     | Plain struggles (FN-01=0.769, FN-03=0.917); codemap perfect                                                                 |
-| RV (5 tasks) | n/a   | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth    |
-| CQ (5 tasks) | 1/3   | 2/3     | CQ-01 plain timeout; CQ-05 ext-fail both; CQ-03 codemap ext-fail                                                            |
-| BR (8 tasks) | 8/8   | 7/8     | BR-07 codemap recall=0.778 < plain=0.889 ⚠                                                                                  |
-| DG (6 tasks) | 6/6   | 6/6     | Both arms perfect; codemap saves 19–58% tokens                                                                              |
-| FT (5 tasks) | 5/5   | 5/5     | Both arms perfect                                                                                                           |
-| RI (5 tasks) | 4/5   | 1/3     | RI-01 codemap recall=0.667; RI-02/RI-04 codemap `error_max_turns` ⚠ (arm-permission bug — fixed June 23, both recall=1.000) |
+| Series       | plain   | codemap | Notes                                                                                                                       |
+| ------------ | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| SE (5 tasks) | **4/4** | **4/4** | SE-05 ext-fail both arms                                                                                                    |
+| FN (5 tasks) | **5/5** | **5/5** | Plain struggles (FN-01=0.769, FN-03=0.917); codemap perfect                                                                 |
+| RV (5 tasks) | n/a     | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth    |
+| CQ (5 tasks) | 1/3     | **2/3** | CQ-01 plain timeout; CQ-05 ext-fail both; CQ-03 codemap ext-fail                                                            |
+| BR (8 tasks) | **8/8** | 7/8     | BR-07 codemap recall=0.778 < plain=0.889 ⚠                                                                                  |
+| DG (6 tasks) | **6/6** | **6/6** | Both arms perfect; codemap saves 19–58% tokens                                                                              |
+| FT (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                           |
+| RI (5 tasks) | **4/5** | 1/3     | RI-01 codemap recall=0.667; RI-02/RI-04 codemap `error_max_turns` ⚠ (arm-permission bug — fixed June 23, both recall=1.000) |
 
 **Safety-grade**: plain 5/13 → codemap 12/13 (June 22 run). BR-07 codemap recall=0.778 is the one miss. RI-02/RI-04 codemap `error_max_turns` were arm-permission bugs fixed June 23 (see `results/bench-haiku-20260623-003825.jsonl`, both recall=1.000).
 
@@ -899,31 +967,31 @@ By series:
 
 **Token efficiency** (codemap/plain ratio):
 
-| Statistic | Value                     |
-| --------- | ------------------------- |
-| Median    | **0.22×** (78% reduction) |
-| Min       | 0.05× (BR-05)             |
-| Max       | 1.21× (BR-03)             |
+| Statistic | Value                 |
+| --------- | --------------------- |
+| Median    | 0.22× (78% reduction) |
+| Min       | 0.05× (BR-05)         |
+| Max       | 1.21× (BR-03)         |
 
 **Accuracy** (scored tasks only):
 
 | Arm     | Score     | Correct/Scored | extraction_failed | incomplete |
 | ------- | --------- | -------------- | ----------------- | ---------- |
-| plain   | **83.8%** | 31/37          | 1 (FT-03)         | 0          |
-| codemap | **91.9%** | 34/37          | 1 (FN-03)         | 0          |
+| plain   | 83.8%     | 31/37          | 1 (FT-03)         | 0          |
+| codemap | **91.9%** | **34/37**      | 1 (FN-03)         | 0          |
 
 By series:
 
-| Series       | plain | codemap | Notes                                                                                                                    |
-| ------------ | ----- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| SE (5 tasks) | 5/5   | 5/5     | Both arms perfect                                                                                                        |
-| FN (5 tasks) | 4/5   | 3/4     | FN-02 plain=0.108 → codemap=1.000; FN-03 codemap ext-fail                                                                |
-| RV (5 tasks) | n/a   | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth |
-| CQ (5 tasks) | 3/5   | 4/5     | CQ-05 plain recall=^3.333 (over-count); codemap 4/5 correct                                                              |
-| BR (8 tasks) | 8/8   | 8/8     | Both arms perfect; codemap saves 14–94% tokens                                                                           |
-| DG (6 tasks) | 6/6   | 6/6     | Both arms perfect                                                                                                        |
-| FT (5 tasks) | 4/4   | 4/5     | FT-03 plain ext-fail; FT-03 codemap recall=0.500 ⚠                                                                       |
-| RI (5 tasks) | 4/5   | 4/5     | RI-01 both arms 0.667; RI-05 n/a both                                                                                    |
+| Series       | plain   | codemap | Notes                                                                                                                    |
+| ------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| SE (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                        |
+| FN (5 tasks) | **4/5** | 3/4     | FN-02 plain=0.108 → codemap=1.000; FN-03 codemap ext-fail                                                                |
+| RV (5 tasks) | n/a     | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth |
+| CQ (5 tasks) | 3/5     | **4/5** | CQ-05 plain recall=^3.333 (over-count); codemap 4/5 correct                                                              |
+| BR (8 tasks) | **8/8** | **8/8** | Both arms perfect; codemap saves 14–94% tokens                                                                           |
+| DG (6 tasks) | **6/6** | **6/6** | Both arms perfect                                                                                                        |
+| FT (5 tasks) | 4/4     | **4/5** | FT-03 plain ext-fail; FT-03 codemap recall=0.500 ⚠                                                                       |
+| RI (5 tasks) | **4/5** | **4/5** | RI-01 both arms 0.667; RI-05 n/a both                                                                                    |
 
 **Safety-grade**: plain 11/13 → codemap 12/12. Token savings primary codemap benefit at sonnet tier — query workflow median 0.14×.
 
@@ -933,33 +1001,38 @@ By series:
 
 **Token efficiency** (codemap/plain ratio):
 
-| Statistic | Value                     |
-| --------- | ------------------------- |
-| Median    | **0.31×** (69% reduction) |
-| Min       | 0.05× (BR-01)             |
-| Max       | 1.46× (BR-02)             |
+| Statistic | Value                 |
+| --------- | --------------------- |
+| Median    | 0.31× (69% reduction) |
+| Min       | 0.05× (BR-01)         |
+| Max       | 1.46× (BR-02)         |
 
 **Accuracy** (scored tasks only):
 
 | Arm     | Score     | Correct/Scored | extraction_failed | incomplete |
 | ------- | --------- | -------------- | ----------------- | ---------- |
-| plain   | **86.1%** | 31/36          | 2 (CQ-01, CQ-05)  | 0          |
-| codemap | **91.7%** | 33/36          | 2 (FN-03, RI-02)  | 0          |
+| plain   | 86.1%     | 31/36          | 2 (CQ-01, CQ-05)  | 0          |
+| codemap | **91.7%** | **33/36**      | 2 (FN-03, RI-02)  | 0          |
 
 By series:
 
-| Series       | plain | codemap | Notes                                                                                                                    |
-| ------------ | ----- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| SE (5 tasks) | 5/5   | 5/5     | Both arms perfect                                                                                                        |
-| FN (5 tasks) | 4/5   | 2/4     | **🔴 FN-02**: codemap recall=0.027 vs plain=1.000 (Δ=−0.97); FN-03 codemap ext-fail                                      |
-| RV (5 tasks) | n/a   | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth |
-| CQ (5 tasks) | 2/3   | 4/5     | CQ-02 codemap recall=0.100 < plain=0.250; CQ-03/04/05 codemap perfect; CQ-03 plain=0.265 → codemap=1.000                 |
-| BR (8 tasks) | 7/8   | 6/7     | **🔴 BR-03**: codemap recall=0.042 vs plain=1.000 (Δ=−0.96)                                                              |
-| DG (6 tasks) | 6/6   | 6/6     | Both arms perfect                                                                                                        |
-| FT (5 tasks) | 5/5   | 5/5     | Both arms perfect                                                                                                        |
-| RI (5 tasks) | 4/5   | 3/4     | RI-01 codemap recall=1.000 vs plain=0.667 (+0.33); RI-02 codemap ext-fail                                                |
+| Series       | plain   | codemap | Notes                                                                                                                    |
+| ------------ | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| SE (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                        |
+| FN (5 tasks) | **4/5** | 2/4     | 🔴 FN-02: codemap recall=0.027 vs plain=1.000 (Δ=−0.97); FN-03 codemap ext-fail                                          |
+| RV (5 tasks) | n/a     | n/a     | Scored in current runs (RV-01/05: symbol recall ≥0.70; RV-02/03/04: count ±10%); pre-June-23 runs had no RV ground truth |
+| CQ (5 tasks) | 2/3     | **4/5** | CQ-02 codemap recall=0.100 < plain=0.250; CQ-03/04/05 codemap perfect; CQ-03 plain=0.265 → codemap=1.000                 |
+| BR (8 tasks) | **7/8** | 6/7     | 🔴 BR-03: codemap recall=0.042 vs plain=1.000 (Δ=−0.96)                                                                  |
+| DG (6 tasks) | **6/6** | **6/6** | Both arms perfect                                                                                                        |
+| FT (5 tasks) | **5/5** | **5/5** | Both arms perfect                                                                                                        |
+| RI (5 tasks) | **4/5** | 3/4     | RI-01 codemap recall=1.000 vs plain=0.667 (+0.33); RI-02 codemap ext-fail                                                |
 
 **Safety-grade**: plain 13/13 → codemap 10/12 (June 22 run). FN-02 and BR-03 regressions were evaluator bugs — fixed June 23 (see `results/bench-opus-20260623-003745.jsonl`, both recall=1.000).
+
+<details>
+<summary><strong>Historical agentic benchmark — plain vs codemap vs semble — 2026-06-27 (obsolete)</strong></summary>
+
+> **Outdated (2026-06-27).** This obsolete section reports Claude Haiku 4.5, Sonnet 4.6, and Opus 4.6. The exact Codemap execution version is unresolved: the section label says v0.13.2, while the run note records a v0.13.1 cache; the Semble package/MCP version was not recorded. Do not compare or pool these values with current results.
 
 ### Agentic benchmark — plain vs codemap vs semble — 2026-06-27 (v0.13.2)
 
@@ -1015,5 +1088,7 @@ Results above include all three arms. Combined arm excluded from default "all" r
 ### Previous: agentic benchmark — 2026-04-29
 
 `results/agentic-2026-04-29.md` — pytorch-lightning, 4 arms × 3 models × 8 tasks = 96 runs.
+
+</details>
 
 </details>

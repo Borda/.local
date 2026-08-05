@@ -6,6 +6,14 @@ repository directory, and skill namespace change. Pre-`0.25.0` history was recor
 `codemap` under `plugins/codemap/` — see the repository git history for that line; it is
 not reproduced here.
 
+## 0.28.5
+
+- Harden cross-platform test isolation and publish synchronized structural and agentic benchmark evidence.
+
+## 0.28.4
+
+- Harden runtime state handling, temporary-file safety, path containment, and cross-runtime skill guidance after the plugin audit.
+
 ## 0.28.3
 
 - Add actionable hints for invalid query commands and align mirrored production-importer, feature-scaffolding, and symbol-routing guidance with the supported CLI contracts.

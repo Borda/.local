@@ -20,31 +20,31 @@
     }
   },
   "artifact_sha256": {
-    "codemap_candidate_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
-    "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
+    "codemap_candidate_manifest": "3ed5b171e3028582a76c2744675bed79ac9b1b0468e72dab32640a14a46aeb47",
+    "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
     "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-    "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
+    "codemap_runtime_graph": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
     "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
     "codemap_runtime_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
-    "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
+    "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
-    "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
-    "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
-    "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-    "run_all": "e945f1daf45278928c292b3387cbf70f9d4109841d60872e7fea789b37f93bb2",
-    "run_codex_structural": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465"
+    "codex_rig_package_manifest": "f0dbefd5cd4f69ec6348f910e90d263ffb71da6c2d69e16a42b629b5e2cbbcf1",
+    "codex_rig_plugin_manifest": "0a49fcb7e4dd59bd0b59e1fed041ead909397681338d7cfa6ef716d707042f8c",
+    "prepare_codex_index": "055f7b842992064d4f6dd431e844fda45b2506638d4096dad3b191d55f6d50ea",
+    "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4",
+    "run_codex_structural": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "6ffd24dbeff5e45771e11d61e0e6f527deda8fd3cbecbbdfd338222318db3e38",
+    "package_manifest_sha256": "982e634ba30ef8a6fb0612263b94c9f85caa263d1e0e59ca8b3c348192cb48fa",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
-    "version": "0.28.3"
+    "version": "0.28.5"
   },
   "codex_cli": {
     "available": true,
-    "path": "/opt/homebrew/bin/codex",
+    "path": "<codex-cli>",
     "version": "codex-cli 0.146.0"
   },
   "codex_permission_profiles": {
@@ -154,7 +154,7 @@
   "codex_rig_candidate": {
     "package_manifest": "plugins/codex-rig/package-manifest.json",
     "plugin_manifest": "plugins/codex-rig/.codex-plugin/plugin.json",
-    "version": "0.4.1"
+    "version": "0.4.3"
   },
   "codex_rig_integration_admission": {
     "adapter": "plugins/codex-rig/shared/codemap_adapter.py",
@@ -173,7 +173,7 @@
     "required_before_paid_execution": "Execute this compact query through B's staged launcher under the treatment permission profile; require exit 0, index.query_complete=true, and unchanged locked-index bytes."
   },
   "direct_cli_runtime": {
-    "aggregate_sha256": "06f776f238af02c49ec74641ea8ded39b892339cae562337264c9abf3230447a",
+    "aggregate_sha256": "55c042f4b2aa828a2178c23e31c0dece291893d035125dee6d7196576f5115a2",
     "files": {
       "bin/_exclusions.py": "1aa5857b5012f1a433f7d2001e4eee07d275a951a80b6a87e026183e5bf7622e",
       "bin/codemap-py": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
@@ -181,7 +181,7 @@
       "src/codemap_py/__init__.py": "06a6ab7c0099412092c6bf7a9cc8e1743e2d2abff893b5d88f01efb455f3492f",
       "src/codemap_py/__main__.py": "19ed5044f96af22c034fd9c816dc9398eacced444c7d884782388a9ad98a988c",
       "src/codemap_py/cli.py": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-      "src/codemap_py/graph.py": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
+      "src/codemap_py/graph.py": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
       "src/codemap_py/index_paths.py": "35b533c4d8080639d80dffcff0d1a4694eccd40869c2a719348704b6876faf00",
       "src/codemap_py/integration.py": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
       "src/codemap_py/query.py": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
@@ -311,21 +311,21 @@
   },
   "implementation_contract": {
     "artifact_sha256": {
-      "codemap_candidate_manifest": "ab99d9cd1e795ae8dc032c1fc67cded2a58c306fe696d30349196d167b235ef0",
-      "codemap_query_skill": "028ff6caaa87aecf6321eea64cbaae603a74f35ddb22e81140d6f2b73b2ad419",
+      "codemap_candidate_manifest": "3ed5b171e3028582a76c2744675bed79ac9b1b0468e72dab32640a14a46aeb47",
+      "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
       "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-      "codemap_runtime_graph": "4f509a07e1f843d392736e8ae4cde628ffded3cab068915254a7191964314ed5",
+      "codemap_runtime_graph": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
       "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
       "codemap_runtime_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
-      "codex_rig_adapter": "0634f5e685e45f0c784b98496c06c2295eae7d93208a95963d78988b9e11f4f4",
+      "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
-      "codex_rig_package_manifest": "4538189e9bbf4f5ac621422cdd2e25a018b1257afe751b0a69fa871262cd7688",
-      "codex_rig_plugin_manifest": "5e35663186dd86afa343da44c5c26a95a76f689e3215a6d700be4b11e557e13d",
-      "prepare_codex_index": "ec858a53588a785592101a200b6798826c497c4cb30262633eb3de52116d8660",
-      "run_all": "e945f1daf45278928c292b3387cbf70f9d4109841d60872e7fea789b37f93bb2",
-      "run_codex_structural": "dd5bd6cb5df1ea40990b03f499c5488fad3b6571a0c0bf2978b814996564d465"
+      "codex_rig_package_manifest": "f0dbefd5cd4f69ec6348f910e90d263ffb71da6c2d69e16a42b629b5e2cbbcf1",
+      "codex_rig_plugin_manifest": "0a49fcb7e4dd59bd0b59e1fed041ead909397681338d7cfa6ef716d707042f8c",
+      "prepare_codex_index": "055f7b842992064d4f6dd431e844fda45b2506638d4096dad3b191d55f6d50ea",
+      "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4",
+      "run_codex_structural": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -552,12 +552,12 @@
   "schema_version": "codex-integration-manifest-v2",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "a014d33f0a3ae41b94afe7f76b61bcb37dda3acf543fbdbad40141c8d11cfca9"
+    "sha256": "4e579394797c0adde4c26575e4cb2bccc2e4792d8c63b2584e7f8a47465cb5f8"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
     "semantic_suite_sha256": {
-      "benchmarks/suites/tasks-agentic.json": "20d7b1a899f48bef19f82ff3ffdf24145593747b0f0ff3e7835b64afac3270d6",
+      "benchmarks/suites/tasks-agentic.json": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
       "benchmarks/suites/tasks-bench.json": "6d05bb66b97961251f34215ab9c4381bf30cc80b19dc821074bd31ba5330dda8",
       "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
@@ -593,9 +593,9 @@
         "BA-16"
       ],
       "path": "benchmarks/suites/tasks-agentic.json",
-      "raw_sha256": "adb94fde72b085119ae7ce082078bc86c76f89ed04bd1f27b7146dc3a01b5cfe",
+      "raw_sha256": "f973a313c9bf7cf1f09e2b51a47b4a4cd77d9e83be385fc5ea075ffa4e54e177",
       "root_shape": "object_with_tasks",
-      "semantic_suite_sha256": "20d7b1a899f48bef19f82ff3ffdf24145593747b0f0ff3e7835b64afac3270d6",
+      "semantic_suite_sha256": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
       "task_count": 16,
       "tasks": [
         {
@@ -620,7 +620,7 @@
           "id": "BA-01",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "74cf2aeebea015e465a8f2f969648b5dc0520fbc01c92d793eba1659edcdd55b",
+          "prompt_sha256": "6d2ab4553da010ccb469f78ce37c6097c024c5a548766e60c77b38cad7f6af26",
           "providers": [
             "claude",
             "codex"
@@ -652,7 +652,7 @@
           "id": "BA-02",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "ac527389bfc33c732c3804ec3a511abc7dba49846af83f5ba864d7acc5f7b633",
+          "prompt_sha256": "ec7061546e15d0b61616fb57d391961166f1aaab3535036686e4b07dadf2fd28",
           "providers": [
             "claude",
             "codex"
@@ -683,7 +683,7 @@
               }
             }
           },
-          "canonical_task_sha256": "55f987528d7b49671420fdb18f90b2adaec6cb2966e9a956b69a8456bba7ae9a",
+          "canonical_task_sha256": "a29e871387277993cedb2a4459b726e69a87cacea70cf784ad1292f7fc0e45c7",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -691,7 +691,7 @@
           "id": "BA-03",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "a38f55839b169b0d06142c5ce13ca241aab58539a8b338a94a3fac7633a65343",
+          "prompt_sha256": "80011083962c585dfa3b3edfcf94298435f359c8b529105f65f16962abf3b4e9",
           "providers": [
             "claude",
             "codex"
@@ -717,7 +717,7 @@
               }
             }
           },
-          "canonical_task_sha256": "aed7fd958c6a8171e62cbb1d46a814bfb4e7ba47c88ccac57853634206e1fb9f",
+          "canonical_task_sha256": "44cbb2f91ce2c555052b2f85b984a28825e306f01ef45d9052036a9a3bc38c6d",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -725,7 +725,7 @@
           "id": "BA-04",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "d31e095c71d993922082585401c0c2d665e073804958441007a8db04fcf79c09",
+          "prompt_sha256": "09bb9449b1de80838bb97d8f0229f381db4f5583052f45d2b6f4cd2b5e24d402",
           "providers": [
             "claude",
             "codex"
@@ -755,7 +755,7 @@
               }
             }
           },
-          "canonical_task_sha256": "09e4d9c470f498f20cabf7921a011d2f9a4f0e6d09d8598ef9555b911f9c603e",
+          "canonical_task_sha256": "10075f895274e03be8b80096bfdeeb0ae928dae9dfe7cfded5eb96abb75b6aa0",
           "difficulty": "simple",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -763,7 +763,7 @@
           "id": "BA-05",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "694879e8422c7ef9176c69d7a41963e6573ef78e67b6af6c848a444b629f4bc3",
+          "prompt_sha256": "c5fc77b210bd90d6d035c57afdeb4acb8f8d8f68f18acf3b84fba1a00234aeae",
           "providers": [
             "claude",
             "codex"
@@ -799,7 +799,7 @@
           "id": "BA-06",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "d8f2fad0ede503f135c20b8ebd82b798efa254a330ff17ad823ee5a1b89ece23",
+          "prompt_sha256": "442be0e4ab59de4595a0a9ce4219fbba451b02e839558ff20959b793888e9972",
           "providers": [
             "claude",
             "codex"
@@ -836,7 +836,7 @@
           "id": "BA-07",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "e9bbd76d41a7674da05f8046ce0b5b9501ad8b169ccbb21ba724375cefbe13e5",
+          "prompt_sha256": "05952cb4a98947285e2d1a141142a96ed6c638428fe2a149e8d2e90c7223bcd2",
           "providers": [
             "claude",
             "codex"
@@ -872,7 +872,7 @@
           "id": "BA-08",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "8fb8455d2e76c7e9526010623eeed15497efb737ab3e81c8483dc92c7e4ebdb5",
+          "prompt_sha256": "368797051399f4eab3d9d905150f2cea50ff253e3d2f78afd016292f26f5287f",
           "providers": [
             "claude",
             "codex"
@@ -910,7 +910,7 @@
           "id": "BA-09",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "c47eb6c4fef930cba439e2779725e521e372fc17bcbf0c49ee01b19bab570f44",
+          "prompt_sha256": "19aa6a66321a77dffb58aeb33e97a89cd1819d99cd1e49f0981541b8a8e38123",
           "providers": [
             "claude",
             "codex"
@@ -942,7 +942,7 @@
           "id": "BA-10",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "4786ecf96aeb558bcae00cd4d1b33672ed40c2ef4b1e1c4809e82eca3a928dab",
+          "prompt_sha256": "f3bfec78ef1691ce1f611e5629acaa741faf6220869496fa36d634b5de2bdc66",
           "providers": [
             "claude",
             "codex"
@@ -977,7 +977,7 @@
           "id": "BA-11",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "b0be44284a2b7abbea385a961d6b7f0adacc395af597925ebc579664eec15e09",
+          "prompt_sha256": "805962e3299f750aa5d43f2c62155f4f936c90f81e16e6235bfb473dc453817a",
           "providers": [
             "claude",
             "codex"
@@ -1010,7 +1010,7 @@
           "id": "BA-12",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "878d8d821afc19ec89ea5af83dc84e896cbd8cbe5dd53c8cb3cae99a7102edc8",
+          "prompt_sha256": "dee2434d3369700bd3a40d55e1b43c81cd11f612af412c68c9531025871c83a2",
           "providers": [
             "claude",
             "codex"
@@ -1037,7 +1037,7 @@
           "id": "BA-13",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "3c0e6dfc0647c0aa3a4d361bb2e818cb4516903ee3efbfc86d9e57128d1a8106",
+          "prompt_sha256": "fc539127a65ced45d1205281208432d653470f25099bad77af6d1e801a3920e9",
           "providers": [
             "claude",
             "codex"
@@ -1076,7 +1076,7 @@
           "id": "BA-14",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "682569b222cf4ccb8a83feb6e59d7013ba28bab0b1c7a16aec4624401a5debc0",
+          "prompt_sha256": "e1514adb4aac07fc95bb549747aab26188c9189a8883811a2b3d51b8fefcb661",
           "providers": [
             "claude",
             "codex"
@@ -1118,7 +1118,7 @@
           "id": "BA-15",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "438f2221893451bd5bac4153d7390fa6dde856d633bebaf12b06718eef3e895c",
+          "prompt_sha256": "b1876fe02811f0101d3eedb72df97da303f5c1f0152c0c4a9d6a2b8c021145ff",
           "providers": [
             "claude",
             "codex"
@@ -1151,7 +1151,7 @@
           "id": "BA-16",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "3438d295bf96d5c0d9b0be62e27147bfc9166b8370080527a10528645f555303",
+          "prompt_sha256": "16cae5414ed77b5210e5f132f6f99563867b46c0f072edea840c934b531d2b4f",
           "providers": [
             "claude",
             "codex"
@@ -1514,7 +1514,7 @@
           "headline_eligible_v1": false,
           "id": "RV-05",
           "oracle_class": "independent",
-          "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
+          "oracle_limit": "uncovered coverage oracle is a source-level simple-name approximation, not executable coverage",
           "profiles": [],
           "prompt_sha256": "fd9a494bcd06d2a8feae24d10af044c171b8559d71163e670bda4f326e5cb42d",
           "providers": [
@@ -1555,7 +1555,7 @@
           "headline_eligible_v1": false,
           "id": "CQ-02",
           "oracle_class": "independent",
-          "oracle_limit": "source-level simple-name AST coverage approximation; diagnostic only",
+          "oracle_limit": "uncovered coverage oracle is a source-level simple-name approximation, not executable coverage",
           "profiles": [],
           "prompt_sha256": "110e4c9c6cea8d2aa87f40639f2449af97fc6d465172aa0face682b0c1039342",
           "providers": [
@@ -2726,7 +2726,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
+      "current_consumer": "optional input to run-claude-agentic.py",
       "generation_provenance": "committed_static_prompts_keyword_file_oracle",
       "ordered_task_ids": [
         "FM-01",
@@ -2799,7 +2799,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
+      "current_consumer": "optional input to run-claude-agentic.py",
       "generation_provenance": "committed_static_prompts_keyword_file_oracle",
       "ordered_task_ids": [
         "FS-01",
@@ -3005,7 +3005,7 @@
       ]
     },
     {
-      "current_consumer": "optional input to run-claude-agentic.py; no Codex agentic runner in the archived provider-parity study",
+      "current_consumer": "optional input to run-claude-agentic.py",
       "generation_provenance": "committed_static_prompts_keyword_oracle",
       "ordered_task_ids": [
         "RC-01",

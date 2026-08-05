@@ -14,7 +14,8 @@ import pytest
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 AGENTIC_TASK_IDS = tuple(f"BA-{number:02d}" for number in range(1, 17))
-AGENTIC_ARMS = ("A_plain", "B_auto", "C_required")
+AGENTIC_ARMS = ("A_plain", "B_auto", "C_strict")
+POSIX_SECURITY = pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX private-mode semantics")
 
 
 def _load_agentic() -> Any:
@@ -110,7 +111,7 @@ def test_dry_run_has_three_probes_and_default_shared_coordinates(agentic: Any) -
     assert len(probes) == 3
     assert len(plan) == len(AGENTIC_TASK_IDS) * len(AGENTIC_ARMS)
     assert plan[0] == "PLAN    BA-01  rep=1  A_plain"
-    assert plan[-1] == "PLAN    BA-16  rep=1  C_required"
+    assert plan[-1] == "PLAN    BA-16  rep=1  C_strict"
 
 
 def test_dry_run_default_coordinates_equal_the_shared_16_task_scope(agentic: Any) -> None:
@@ -154,15 +155,79 @@ def test_dry_run_accepts_a_positive_explicit_repeat_override(agentic: Any) -> No
         agentic.dry_run(repetitions=0)
 
 
+def test_dry_run_preflights_snapshot_bound_c_admission_without_auth_or_model(
+    agentic: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """run-all's no-model preflight must reach the later snapshot-bound C admission.
+
+    Prevents the pure plan renderer from declaring a runnable agentic study even
+    though later C homes cannot install their archived plugins. The probe raises
+    before any transport/model call; a planner that skips runtime admission must
+    therefore fail this test.
+    """
+    index_path = tmp_path / "locked-index.json"
+    index_path.write_text("{}", encoding="utf-8")
+    marketplace_root = tmp_path / "marketplace"
+    marketplace_root.mkdir()
+    codemap_bin = tmp_path / "codemap-py"
+    codemap_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    codemap_bin.chmod(0o755)
+    calls: list[dict[str, Any]] = []
+
+    class SnapshotAdmissionProbe:
+        """Reject only after the dry run has entered later C snapshot admission."""
+
+        def __init__(self, **kwargs: Any) -> None:
+            assert kwargs["auth_source"] is None
+            assert kwargs["repo_path"] == tmp_path.resolve()
+            assert kwargs["index_path"] == index_path.resolve()
+            assert kwargs["marketplace_root"] == marketplace_root
+            assert kwargs["codemap_bin"] == codemap_bin
+            calls.append(kwargs)
+
+        def preflight_snapshot_bound_admission(self) -> None:
+            """Make reaching the required no-model runtime transition observable."""
+            raise RuntimeError("fixture later C snapshot admission")
+
+        def close(self) -> None:
+            """Match the production runner cleanup protocol."""
+
+    monkeypatch.setattr(agentic, "AgenticCodexRunner", SnapshotAdmissionProbe)
+
+    with pytest.raises(RuntimeError, match="fixture later C snapshot admission"):
+        agentic.main(
+            dry_run=True,
+            repo_path=tmp_path,
+            index_path=index_path,
+            marketplace_root=marketplace_root,
+            codemap_bin=codemap_bin,
+        )
+
+    assert len(calls) == 1
+
+
 def test_agentic_output_legend_uses_shared_renderer_contract(agentic: Any) -> None:
     """Agentic output declares its treatments and metrics in one shared-renderer block."""
     legend = agentic._OUTPUT_LEGEND
     assert legend.startswith("LEGEND\n")
     assert legend.endswith("END LEGEND")
     assert legend.count("LEGEND") == 2
-    assert "treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_required=Codemap Skill read" in legend
-    assert "SCORE: mean answer-contract component score" in legend
-    assert "correct: ✓ every declared answer field is correct" in legend
+    assert "treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=Codemap Skill read" in legend
+    assert "SCORE: mean semantic answer-component score" in legend
+    assert (
+        "SCORE: mean semantic answer-component score; n/a when no answer can be recovered (higher is better)" in legend
+    )
+    assert "EREC: expected-importer recall in all agent text (higher is better)" in legend
+    assert "RREC: expected-importer recall in the final report (higher is better)" in legend
+    assert (
+        "DEFF: unbounded expected-importer exposure hits per command (higher is better within the same task)" in legend
+    )
+    assert (
+        "input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)"
+        in legend
+    )
+    assert "answer: ✓ strict envelope, △ diagnostic bare-JSON recovery (not poolable), ✗ absent or invalid" in legend
+    assert "correct:" not in legend
 
 
 @pytest.mark.parametrize(
@@ -170,7 +235,7 @@ def test_agentic_output_legend_uses_shared_renderer_contract(agentic: Any) -> No
     [
         pytest.param("A_plain", "A_plain", False, id="plain"),
         pytest.param("B_auto", "B_direct_required", True, id="optional-direct-home"),
-        pytest.param("C_required", "C_skill_required", True, id="required-skill-home"),
+        pytest.param("C_strict", "C_skill_required", True, id="required-skill-home"),
     ],
 )
 def test_isolated_home_adapter_uses_existing_structural_isolation(
@@ -246,7 +311,7 @@ def test_auto_no_call_is_valid(task_and_truth: tuple[Any, Any], agentic: Any) ->
 def test_required_skill_read_precedes_compact_query(
     task_and_truth: tuple[Any, Any], agentic: Any, tmp_path: Path
 ) -> None:
-    """C_required credits only an exact installed Skill read before a compact query."""
+    """C_strict credits only an exact installed Skill read before a compact query."""
     task, truth = task_and_truth
     skill_path = tmp_path / "SKILL.md"
     skill_path.write_text("# locked Codemap skill\n", encoding="utf-8")
@@ -258,7 +323,7 @@ def test_required_skill_read_precedes_compact_query(
             "command": 'cat "$CODEMAP_SKILL_FILE"',
             "status": "completed",
             "exit_code": 0,
-            "aggregated_output": skill_path.read_text(encoding="utf-8"),
+            "aggregated_output": skill_path.read_bytes().decode("utf-8"),
         },
     }
     result = agentic.parse_agentic_stream(
@@ -268,7 +333,7 @@ def test_required_skill_read_precedes_compact_query(
             _message(_labelled("lightning.pytorch.trainer.trainer and lightning.pytorch.loops.fit_loop.", truth)),
             _completed(),
         ),
-        arm="C_required",
+        arm="C_strict",
         task=task,
         ground_truth=truth,
         skill_path=skill_path,
@@ -339,7 +404,7 @@ class _FixtureRunner:
         self.calls += 1
         if self.fail_after is not None and self.calls > self.fail_after:
             raise RuntimeError("fixture interruption")
-        compliant = None if arm != "C_required" else False
+        compliant = None if arm != "C_strict" else False
         return _load_agentic().AgenticRun(
             arm=arm,
             task_id=task["id"],
@@ -353,7 +418,7 @@ class _FixtureRunner:
             codemap_successful_calls=0,
             codemap_used=False,
             compliance=compliant,
-            treatment_adherence=arm != "C_required",
+            treatment_adherence=arm != "C_strict",
             contaminated=False,
             incomplete=False,
             malformed_lines=0,
@@ -425,7 +490,7 @@ def test_paid_run_persists_full_scope_and_noncompliant_c_row(
     metadata = json.loads((run_dir / "run-metadata.json").read_text())
     assert len(rows) == 48
     assert metadata["status"] == "completed"
-    assert rows[-1]["arm"] == "C_required"
+    assert rows[-1]["arm"] == "C_strict"
     assert rows[-1]["treatment_adherence"] is False
     assert (run_dir / "telemetry-canonical.jsonl").is_file()
     assert (run_dir / "checksums.sha256").is_file()
@@ -584,9 +649,91 @@ def test_agentic_snapshot_records_its_own_runner_identity(agentic: Any, tmp_path
             "archived_path": "shared/run-codex-agentic.py",
             "sha256": hashlib.sha256(runner_path.read_bytes()).hexdigest(),
             "bytes": runner_path.stat().st_size,
+            "mode": 0o600,
         }
     ]
     assert not (tmp_path / "inputs" / "shared" / "run-codex-structural.py").exists()
+
+
+@POSIX_SECURITY
+def test_agentic_first_strict_admission_failure_keeps_identity_evidence_after_cleanup(
+    agentic: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A first C_strict admission failure persists identities before home cleanup."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "artifact_sha256": {
+                    "codemap_candidate_manifest": "codemap-locked",
+                    "codex_rig_plugin_manifest": "rig-locked",
+                },
+                "codemap_candidate": {"version": "0.27.0"},
+                "codex_rig_candidate": {"version": "0.4.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    marketplace_root = tmp_path / "marketplace"
+    marketplace_root.mkdir()
+    install_calls: list[str] = []
+    model_calls: list[str] = []
+    adapter = agentic._structural.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        manifest_path=manifest_path,
+        marketplace_root=marketplace_root,
+        transport=lambda *_args, **_kwargs: model_calls.append("model") or "",
+    )
+    runner = object.__new__(agentic.AgenticCodexRunner)
+    runner.adapter = adapter
+    runner.index_path = tmp_path / "index.json"
+
+    def fail_after_staging(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+        """Stage observable plugin identities, then fail their admission."""
+        install_calls.append(home.arm)
+        for name, version in (("codemap-py", "0.27.0"), ("codex-rig", "0.4.0")):
+            plugin = home.path / "plugins" / name
+            (plugin / ".codex-plugin").mkdir(parents=True)
+            (plugin / ".codex-plugin" / "plugin.json").write_text(
+                json.dumps({"name": name, "version": version}), encoding="utf-8"
+            )
+            setattr(home, "codemap_plugin_path" if name == "codemap-py" else "codex_rig_path", plugin)
+        raise RuntimeError("fixture plugin identity mismatch")
+
+    monkeypatch.setattr(agentic, "AGENTIC_ARMS", ("C_strict",))
+    monkeypatch.setattr(agentic._structural, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(agentic._structural, "_install_codemap_plugin", fail_after_staging)
+
+    with pytest.raises(RuntimeError, match="fixture plugin identity mismatch"):
+        runner.create_input_snapshot(
+            run_dir,
+            manifest_path=manifest_path,
+            invocation_launcher_path=BENCHMARKS_DIR / "run-all.sh",
+        )
+
+    evidence_path = run_dir / "runtime-isolation.jsonl"
+    assert evidence_path.stat().st_mode & 0o777 == 0o600
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["arm"] == "C_skill_required"
+    assert evidence["error"] == "fixture plugin identity mismatch"
+    assert evidence["expected_plugin_identities"]["codemap-py"]["version"] == "0.27.0"
+    assert evidence["observed_plugin_identities"]["codex-rig"]["version"] == "0.4.0"
+    assert install_calls == ["C_skill_required"]
+    assert model_calls == []
+    assert not any(tmp_path.rglob("plugin.json"))
+
+    with pytest.raises(FileExistsError):
+        runner.create_input_snapshot(
+            run_dir,
+            manifest_path=manifest_path,
+            invocation_launcher_path=BENCHMARKS_DIR / "run-all.sh",
+        )
+    assert install_calls == ["C_skill_required"]
 
 
 def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
@@ -625,13 +772,20 @@ def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
 
         _auth_state = AuthState()
 
+        def _bind_runtime_snapshot(self, *_args: Any, **_kwargs: Any) -> None:
+            """Accept binding after the synthetic archive write."""
+
         def _prepare_verified_home(self, native_arm: str) -> Home:
             return Home(native_arm)
 
     runner = object.__new__(agentic.AgenticCodexRunner)
     runner.adapter = Adapter()
     runner.index_path = tmp_path / "index.json"
-    monkeypatch.setattr(agentic, "_write_agentic_input_snapshot", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        agentic,
+        "_write_agentic_input_snapshot",
+        lambda *_args, **_kwargs: {"ok": True, "path": "fixture"},
+    )
     monkeypatch.setattr(
         agentic._structural,
         "_cleanup_coordination_root",
@@ -687,6 +841,11 @@ def test_agentic_snapshot_cleans_a_shared_treatment_coordination_root_once(
 
         auth_source = None
         _auth_state = None
+        bound_sources: tuple[Path, dict[str, dict[str, Path]]] | None = None
+
+        def _bind_runtime_snapshot(self, root: Path, sources: dict[str, dict[str, Path]]) -> None:
+            """Capture the runtime paths that agentic cells must reuse."""
+            self.bound_sources = (root, sources)
 
         def _prepare_verified_home(self, native_arm: str) -> Home:
             return Home(native_arm)
@@ -700,20 +859,34 @@ def test_agentic_snapshot_cleans_a_shared_treatment_coordination_root_once(
     runner = object.__new__(agentic.AgenticCodexRunner)
     runner.adapter = Adapter()
     runner.index_path = tmp_path / "index.json"
-    monkeypatch.setattr(agentic, "_write_agentic_input_snapshot", lambda *_args, **_kwargs: {"ok": True})
+    monkeypatch.setattr(
+        agentic,
+        "_write_agentic_input_snapshot",
+        lambda *_args, **_kwargs: {"ok": True, "path": "fixture"},
+    )
     monkeypatch.setattr(agentic._structural, "_cleanup_coordination_root", cleanup)
 
     assert runner.create_input_snapshot(
         tmp_path / "run",
         manifest_path=agentic._MANIFEST_PATH,
         invocation_launcher_path=BENCHMARKS_DIR / "run-all.sh",
-    ) == {"ok": True}
+    ) == {"ok": True, "path": "fixture"}
     assert events == [
         "home:A_plain",
         "coordination:.index-rw",
         "home:B_direct_required",
         "home:C_skill_required",
     ]
+    assert runner.adapter.bound_sources == (
+        tmp_path / "run" / "inputs",
+        {
+            "B_direct_required": {"direct-cli": tmp_path / "run" / "inputs" / "B_auto" / "direct-cli"},
+            "C_skill_required": {
+                "codemap-py": tmp_path / "run" / "inputs" / "C_strict" / "codemap-py",
+                "codex-rig": tmp_path / "run" / "inputs" / "C_strict" / "codex-rig",
+            },
+        },
+    )
 
 
 def test_native_runner_refreshes_auth_and_fails_postflight_contamination(
@@ -812,10 +985,10 @@ def test_malformed_incomplete_and_error_streams_fail_closed(
         pytest.param("BEGIN_ANSWER_JSON\n{not-json}\nEND_ANSWER_JSON", id="invalid-json"),
     ],
 )
-def test_completed_invalid_answer_is_scored_zero_without_becoming_transport_failure(
+def test_completed_invalid_answer_is_unscored_without_becoming_transport_failure(
     task_and_truth: tuple[Any, Any], agentic: Any, answer_text: str, tmp_path: Path
 ) -> None:
-    """A completed native turn with an invalid answer remains complete and receives zero quality."""
+    """Malformed answer syntax remains a wire failure, not a fabricated zero semantic score."""
     task, truth = task_and_truth
     result = agentic.parse_agentic_stream(
         _stream(_message(answer_text), _completed()), arm="A_plain", task=task, ground_truth=truth
@@ -826,28 +999,59 @@ def test_completed_invalid_answer_is_scored_zero_without_becoming_transport_fail
     assert result.error_type == "answer_contract_failed"
     assert result.error
     assert result.answer_error == result.error
-    assert result.quality.scored is True
-    assert result.quality.quality_score == 0.0
-    assert result.quality.correct is False
-    assert set(result.quality.components) == set(truth.fields)
-    assert all(component == 0.0 for component in result.quality.components.values())
-    assert result.quality.erec == 0.0
-    assert result.quality.rrec == 0.0
-    assert result.quality.deff == 0.0
-    assert "SCORE=0.000" in agentic._progress_line(1, 1, result)
+    assert result.answer_contract_valid is False
+    assert result.diagnostic_only is False
+    assert result.answer_pooling_eligible is False
+    assert result.quality is None
+    assert result.evidence.erec == 0.0
+    assert result.evidence.rrec == 0.0
+    assert result.evidence.deff == 0.0
+    assert "SCORE=n/a" in agentic._progress_line(1, 1, result)
+    assert "answer:✗" in agentic._progress_line(1, 1, result)
+    assert "correct:" not in agentic._progress_line(1, 1, result)
 
     telemetry_path = tmp_path / "telemetry.jsonl"
     agentic._append_telemetry(telemetry_path, result, execution_index=1)
     telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
     assert telemetry["success"] is True
     assert telemetry["answer_error"] == result.answer_error
-    assert telemetry["quality"]["quality_score"] == 0.0
+    assert telemetry["quality"] is None
+    assert telemetry["evidence"] == {"deff": 0.0, "erec": 0.0, "rrec": 0.0}
+
+
+def test_unique_bare_json_is_diagnostic_only_but_keeps_semantic_and_evidence_scores(
+    task_and_truth: tuple[Any, Any], agentic: Any, tmp_path: Path
+) -> None:
+    """Recoverable bare JSON diagnoses content without weakening the pooled wire contract."""
+    task, truth = task_and_truth
+    bare_answer = json.dumps(dict(truth.expected), sort_keys=True)
+    result = agentic.parse_agentic_stream(
+        _stream(_message(bare_answer), _completed()), arm="A_plain", task=task, ground_truth=truth
+    )
+
+    assert result.success is True
+    assert result.error_type == "answer_contract_failed"
+    assert result.answer_contract_valid is False
+    assert result.diagnostic_only is True
+    assert result.answer_pooling_eligible is False
+    assert result.quality.quality_score == 1.0
+    assert result.evidence.erec == 1.0
+    assert result.evidence.rrec == 1.0
+    assert "answer:△" in agentic._progress_line(1, 1, result)
+
+    telemetry_path = tmp_path / "telemetry.jsonl"
+    agentic._append_telemetry(telemetry_path, result, execution_index=1)
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
+    assert telemetry["diagnostic_only"] is True
+    assert telemetry["answer_pooling_eligible"] is False
+    assert telemetry["quality"]["quality_score"] == 1.0
+    assert telemetry["evidence"]["erec"] == 1.0
 
 
 def test_required_no_call_preserves_scored_row_but_fails_admission(
     task_and_truth: tuple[Any, Any], agentic: Any, tmp_path: Path
 ) -> None:
-    """C_required no-call evidence is retained for diagnosis rather than dropped from telemetry."""
+    """C_strict no-call evidence is retained for diagnosis rather than dropped from telemetry."""
     task, truth = task_and_truth
     skill_path = tmp_path / "SKILL.md"
     skill_path.write_text("# locked Codemap skill\n", encoding="utf-8")
@@ -856,7 +1060,7 @@ def test_required_no_call_preserves_scored_row_but_fails_admission(
             _message(_labelled("lightning.pytorch.trainer.trainer and lightning.pytorch.loops.fit_loop.", truth)),
             _completed(),
         ),
-        arm="C_required",
+        arm="C_strict",
         task=task,
         ground_truth=truth,
         skill_path=skill_path,

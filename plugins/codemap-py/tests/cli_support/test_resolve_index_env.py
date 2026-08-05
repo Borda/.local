@@ -343,6 +343,7 @@ class TestSentinelSymlinkSafety:
 
         assert victim.read_text(encoding="utf-8") == "IMPORTANT ORIGINAL CONTENT\n"
 
+    @pytest.mark.skipif(os.name == "nt", reason="requires POSIX private-mode semantics")
     def test_written_file_is_mode_0600(self, tmp_path: Path) -> None:
         """A freshly written sentinel is owner-only readable/writable regardless of umask."""
         target = tmp_path / "codemap-resolve-index-shared"

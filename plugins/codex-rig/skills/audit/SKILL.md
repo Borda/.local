@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Minimal codex-native audit loop. Use to scan codex configuration/workflow drift and emit ranked gaps with measurable gates.
+description: "Audit Codex configuration/workflow drift; emit ranked gaps and measurable gates."
 ---
 
 # Audit

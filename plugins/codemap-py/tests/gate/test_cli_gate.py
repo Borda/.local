@@ -9,6 +9,7 @@ reports the exact path from the single §4.4 resolver, including the
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -42,8 +43,9 @@ pytestmark = pytest.mark.skipif(
 
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
-    """Invoke the launcher, inheriting the (monkeypatched) environment."""
-    return subprocess.run([str(_LAUNCHER), *args], capture_output=True, text=True, timeout=30, check=False)
+    """Invoke the launcher with pytest's supported interpreter and inherited test environment."""
+    env = {**os.environ, "CODEMAP_PYTHON": sys.executable}
+    return subprocess.run([str(_LAUNCHER), *args], capture_output=True, text=True, timeout=30, check=False, env=env)
 
 
 @pytest.mark.parametrize("with_override", [pytest.param(False, id="default"), pytest.param(True, id="override")])

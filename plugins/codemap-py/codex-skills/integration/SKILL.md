@@ -1,12 +1,9 @@
 ---
 name: integration
-description: |
-  Adapter over `codemap-py integrate` — audit, plan, source-wire, locally sync, and demonstrate the codemap-py
-  integration with its supported consumers. Trigger with `$codemap-py:integration check|plan|apply|sync|demo
-  [--runtime {claude,codex,both}] ...`. Default (no args) is `check`.
-  Skip for: running a structural query (use `$codemap-py:query-code`); explicit standalone index rebuild (use
-  `$codemap-py:scan-codebase`).
+description: "Codemap integration: check|plan|apply|sync|demo; skip query/index rebuilds."
 ---
+
+NOT for: structural queries (`$codemap-py:query-code`) or index rebuilds (`$codemap-py:scan-codebase`).
 
 # Integration
 

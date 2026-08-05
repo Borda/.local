@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -138,8 +139,11 @@ class TestSmokeTestIndex:
 class TestMain:
     """main(): exit codes and stdout JSON for CLI invocations."""
 
-    def test_ok_fresh_index_exits_zero(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_ok_fresh_index_exits_zero(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Fresh valid index → exit code 0 and ok=true in stdout."""
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
         p = tmp_path / "idx.json"
         p.write_text(json.dumps({"modules": []}))
         rc = main(["--index-path", str(p), "--max-age-hours", "9999"])

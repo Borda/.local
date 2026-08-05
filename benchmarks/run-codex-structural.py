@@ -121,7 +121,8 @@ Use ``--arm A_plain``, ``--arm B_direct_required``, or
 ``--arm C_skill_required`` for a single arm. ``--arm all`` uses the manifest's
 deterministic arm ordering.
 ``--repetitions N`` executes repetitions 1 through N and records the repetition
-on every JSONL row. Repeat ``--task-id`` to select the immutable pilot subset.
+on every JSONL row. Pass ``--task-id`` a comma-separated list, for example
+``--task-id SE-01,FN-02``, to select the immutable pilot subset.
 
 ## Requirements
 
@@ -181,7 +182,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, NoReturn, TextIO
 from uuid import uuid4
 
 import sys
@@ -223,6 +224,7 @@ _PLAIN_PERMISSION_PROFILE = "provider-parity-plain"
 _CODEMAP_PERMISSION_PROFILE = "provider-parity-codemap"
 _MIN_PERMISSION_PROFILE_VERSION = (0, 138, 0)
 _COORDINATION_NAME = ".index-rw"
+_FROZEN_MARKETPLACE_NAME = "borda-ai-rig-frozen"
 _REGISTRY_NAME = "registry.lock"
 _READERS_NAME = "readers"
 _AUTH_MAX_BYTES = 1024 * 1024
@@ -235,17 +237,24 @@ _DISPLAY_ARM_LABELS = {
     "C_skill_required": "C_skill",
 }
 _DISPLAY_ARM_TO_CANONICAL = {label: arm for arm, label in _DISPLAY_ARM_LABELS.items()}
-_DISPLAY_ARM_TO_CANONICAL.update({"B_auto": "B_direct_required", "C_required": "C_skill_required"})
+_DISPLAY_ARM_TO_CANONICAL.update({"B_auto": "B_direct_required", "C_strict": "C_skill_required"})
 _DISPLAY_ARM_COLUMN_WIDTH = max(len(label) for label in _DISPLAY_ARM_LABELS.values())
 _ARM_ROW_STYLES = {
     "A_plain": "yellow",
     "B_direct_required": "cyan",
     "C_skill_required": "magenta",
     "B_auto": "cyan",
-    "C_required": "magenta",
+    "C_strict": "magenta",
+}
+_ARM_ROW_ANSI_CODES = {
+    "A_plain": "33",
+    "B_direct_required": "36",
+    "C_skill_required": "35",
+    "B_auto": "36",
+    "C_strict": "35",
 }
 _RESULT_ARM = re.compile(
-    r"^\(\d+/\d+\)\s+.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill|B_auto|C_required)\b"
+    r"^\(\d+/\d+\)\s+.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill|B_auto|C_strict)\b"
 )
 _OUTPUT_LEGEND = (
     "LEGEND\n"
@@ -264,12 +273,12 @@ _OUTPUT_LEGEND = (
     "      GR: graph reasoning\n"
     "      MB: module blast radius\n"
     "  status: ✓ completed, ✗ failed\n"
-    "  quality: continuous [0,1], ? unscoreable\n"
+    "  quality: continuous [0,1], ? unscoreable (higher is better)\n"
     "  progress: N completed cells / M planned cells\n"
     "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
     "  codemap-used: ✓ Codemap call observed; ✗ no Codemap call "
     "(expected for A_plain) or required use missed (B/C)\n"
-    "  input tokens: gross total; cached and fresh details remain in telemetry only\n"
+    "  input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)\n"
     "END LEGEND"
 )
 _console = _Console(highlight=False)
@@ -304,7 +313,7 @@ def _format_result_row(
     return (
         f"{status}  {task_id:<5}  rep={repetition}  {display_arm:<{_DISPLAY_ARM_COLUMN_WIDTH}}"
         f"  in={fmt_tok(input_tokens):>6}"
-        f"  out={fmt_tok(output_tokens):>6}  time={fmt_time(elapsed_s):>5}"
+        f"  out={fmt_tok(output_tokens):>5}  time={fmt_time(elapsed_s):>5}"
         f"  quality={quality:>5}  treatment:{adherence_mark}  codemap-used:{codemap_used_mark}"
     )
 
@@ -352,6 +361,8 @@ def render_result_rows(
         highlight=False,
         markup=False,
         no_color=not use_color,
+        # Rich routes legacy Windows standard streams through the Win32 console API.
+        legacy_windows=False if force_color else None,
     )
     legend_lines: list[str] | None = None
 
@@ -379,6 +390,18 @@ def render_result_rows(
         arm = _result_arm(row) if use_color else None
         if arm is None:
             output.write(row)
+            continue
+        if force_color:
+            # This test-only mode promises literal ANSI bytes even when Rich's Windows
+            # standard-stream renderer deliberately uses the Win32 console API.
+            colored_row = f"\x1b[{_ARM_ROW_ANSI_CODES[arm]}m{stripped}\x1b[0m\n"
+            if output is sys.stdout:
+                # Bypass Windows ANSI adapters on the standard stream; subprocess
+                # capture receives the promised raw escape bytes from the descriptor.
+                output.flush()
+                os.write(output.fileno(), colored_row.encode("utf-8"))
+            else:
+                output.write(colored_row)
             continue
         console.print(row.rstrip("\n"), style=_ARM_ROW_STYLES[arm], end="\n")
     flush_legend()
@@ -1508,6 +1531,14 @@ def _fsync_directory(path: Path) -> None:
             os.close(descriptor)
 
 
+def _apply_private_mode(path: Path, descriptor: int, mode: int) -> None:
+    """Apply a private file mode where the host filesystem exposes POSIX modes."""
+    if hasattr(os, "fchmod"):
+        os.fchmod(descriptor, mode)
+    elif os.name != "nt":
+        os.chmod(path, mode)
+
+
 def _atomic_write_auth_payload(destination: Path, payload: bytes, *, description: str) -> None:
     """Atomically replace one validated credential while retaining prior state on failure."""
     destination = Path(destination)
@@ -1540,7 +1571,7 @@ def _atomic_write_auth_payload(destination: Path, payload: bytes, *, description
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
             0o600,
         )
-        os.fchmod(descriptor, 0o600)
+        _apply_private_mode(temporary, descriptor, 0o600)
         view = memoryview(payload)
         while view:
             written = os.write(descriptor, view)
@@ -1562,7 +1593,13 @@ def _atomic_write_auth_payload(destination: Path, payload: bytes, *, description
 
 
 def _remove_private_directory(path: Path, *, description: str, require_private: bool = True) -> None:
-    """Remove a private directory and fail if credential-bearing state remains."""
+    """Remove a disposable private directory after validating its safe identity.
+
+    POSIX callers retain exact owner and ``0700`` checks. Windows does not expose
+    equivalent ACL privacy through ``stat`` mode bits, so cleanup keeps the
+    symlink, directory-type, containment, and post-removal checks without
+    treating its emulated mode as a POSIX security guarantee.
+    """
     path = Path(path)
     if not path.exists() and not path.is_symlink():
         return
@@ -1576,7 +1613,7 @@ def _remove_private_directory(path: Path, *, description: str, require_private: 
         raise RuntimeError(f"{description} could not be inspected for cleanup") from exc
     if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
         raise RuntimeError(f"{description} is not a private directory")
-    if require_private:
+    if require_private and os.name != "nt":
         if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
             raise RuntimeError(f"{description} is not owned by the current user")
         if stat.S_IMODE(metadata.st_mode) != 0o700:
@@ -2617,7 +2654,9 @@ def _archive_snapshot_file(
             or (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino)
         ):
             raise ValueError(f"snapshot source changed while being opened: {source}")
-        destination_fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        destination_mode = 0o700 if stat.S_IMODE(opened.st_mode) & 0o111 else 0o600
+        destination_fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, destination_mode)
+        _apply_private_mode(destination, destination_fd, destination_mode)
         with os.fdopen(source_fd, "rb") as source_handle:
             source_fd = None
             with os.fdopen(destination_fd, "wb") as destination_handle:
@@ -2641,6 +2680,9 @@ def _archive_snapshot_file(
             "archived_path": destination.relative_to(archive_root).as_posix(),
             "sha256": hashlib.sha256(payload).hexdigest(),
             "bytes": len(payload),
+            # Windows does not expose the POSIX mode bits used by the ledger; retain
+            # the logical mode selected from the verified source instead.
+            "mode": destination_mode,
         }
     )
 
@@ -2668,6 +2710,32 @@ def _archive_snapshot_tree(
             source_root=root,
             entries=entries,
         )
+
+
+def _write_frozen_marketplace(snapshot_root: Path, arm: str, entries: list[dict[str, Any]]) -> Path:
+    """Write and ledger the fixed local marketplace for one archived C plugin pair."""
+    marketplace_manifest = snapshot_root / arm / ".agents" / "plugins" / "marketplace.json"
+    marketplace_manifest.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "name": _FROZEN_MARKETPLACE_NAME,
+        "plugins": [
+            {"name": "codemap-py", "source": {"source": "local", "path": "./codemap-py"}},
+            {"name": "codex-rig", "source": {"source": "local", "path": "./codex-rig"}},
+        ],
+    }
+    serialized = (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    marketplace_manifest.write_bytes(serialized)
+    marketplace_manifest.chmod(0o600)
+    entries.append(
+        {
+            "role": f"{arm}:marketplace",
+            "archived_path": marketplace_manifest.relative_to(snapshot_root).as_posix(),
+            "sha256": hashlib.sha256(serialized).hexdigest(),
+            "bytes": len(serialized),
+            "mode": 0o600,
+        }
+    )
+    return marketplace_manifest
 
 
 def _write_input_snapshot(
@@ -2724,6 +2792,8 @@ def _write_input_snapshot(
             _archive_snapshot_tree(
                 root, snapshot_root / arm / package_role, role=f"{arm}:{package_role}", entries=entries
             )
+        if arm == "C_skill_required":
+            _write_frozen_marketplace(snapshot_root, arm, entries)
 
     auth_metadata: dict[str, Any] | None = {"supplied": True, "archived": False} if auth_source is not None else None
 
@@ -2787,25 +2857,53 @@ def _install_codemap_plugin(
     home: ArmHome,
     marketplace_root: Path | None,
     *,
+    plugin_sources: Mapping[str, Path] | None = None,
     codex_bin: str = _CODEX_BIN,
     command_runner: Callable[..., Any] | None = None,
 ) -> bool:
-    """Install and lock Codex Rig plus Codemap via Codex's no-model plugin CLI."""
-    if marketplace_root is None:
-        return False
-    marketplace_root = marketplace_root.resolve()
-    marketplace_manifest = marketplace_root / ".agents" / "plugins" / "marketplace.json"
-    if not marketplace_manifest.is_file():
-        raise RuntimeError(
-            "Codemap plugin source must be a marketplace root containing .agents/plugins/marketplace.json"
-        )
-    add_marketplace = [codex_bin, "plugin", "marketplace", "add", str(marketplace_root)]
-    add_codex_rig = [codex_bin, "plugin", "add", "codex-rig@borda-ai-rig", "--json"]
-    add_plugin = [codex_bin, "plugin", "add", "codemap-py@borda-ai-rig", "--json"]
+    """Install Codemap and Codex Rig through an admitted local marketplace."""
+    if plugin_sources is None:
+        if marketplace_root is None:
+            return False
+        marketplace_root = marketplace_root.resolve()
+        marketplace_manifest = marketplace_root / ".agents" / "plugins" / "marketplace.json"
+        if not marketplace_manifest.is_file():
+            raise RuntimeError(
+                "Codemap plugin source must be a marketplace root containing .agents/plugins/marketplace.json"
+            )
+        setup_commands = [[codex_bin, "plugin", "marketplace", "add", str(marketplace_root)]]
+        add_plugin = [codex_bin, "plugin", "add", "codemap-py@borda-ai-rig", "--json"]
+        add_codex_rig = [codex_bin, "plugin", "add", "codex-rig@borda-ai-rig", "--json"]
+    else:
+        expected_sources = {"codemap-py", "codex-rig"}
+        if set(plugin_sources) != expected_sources:
+            raise ValueError(f"runtime plugin source set must be {sorted(expected_sources)}")
+        if marketplace_root is None:
+            raise ValueError("runtime plugin sources require a frozen local marketplace")
+        marketplace_root = marketplace_root.resolve(strict=True)
+        marketplace_manifest = marketplace_root / ".agents" / "plugins" / "marketplace.json"
+        try:
+            manifest = json.loads(marketplace_manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("frozen runtime marketplace is unavailable or malformed") from exc
+        expected_plugins = [
+            {"name": "codemap-py", "source": {"source": "local", "path": "./codemap-py"}},
+            {"name": "codex-rig", "source": {"source": "local", "path": "./codex-rig"}},
+        ]
+        if not isinstance(manifest, Mapping) or manifest.get("name") != _FROZEN_MARKETPLACE_NAME:
+            raise ValueError("frozen runtime marketplace name drifted")
+        if manifest.get("plugins") != expected_plugins:
+            raise ValueError("frozen runtime marketplace schema drifted")
+        for name, source in plugin_sources.items():
+            if Path(source).resolve(strict=True) != (marketplace_root / name).resolve(strict=True):
+                raise ValueError(f"frozen runtime marketplace source drifted for {name}")
+        setup_commands = [[codex_bin, "plugin", "marketplace", "add", str(marketplace_root)]]
+        add_plugin = [codex_bin, "plugin", "add", f"codemap-py@{_FROZEN_MARKETPLACE_NAME}", "--json"]
+        add_codex_rig = [codex_bin, "plugin", "add", f"codex-rig@{_FROZEN_MARKETPLACE_NAME}", "--json"]
     list_plugins = [codex_bin, "plugin", "list", "--json"]
     codex_rig_install_json = ""
     install_json = ""
-    for command in (add_marketplace, add_plugin, add_codex_rig):
+    for command in (*setup_commands, add_plugin, add_codex_rig):
         code, stdout, stderr = _invoke_plugin_command(command, home.env, command_runner)
         if code != 0:
             raise RuntimeError(f"Codemap plugin setup failed ({' '.join(command[1:4])}): {stderr[:300]}")
@@ -3316,6 +3414,227 @@ class CodexRunner:
         self.evaluator = evaluator or _default_evaluator
         self._auth_state: _RunAuthState | None = None
         self._auth_state_dir: Path | None = None
+        self._runtime_snapshot_sources: dict[str, dict[str, Path]] = {}
+        self._runtime_snapshot_marketplaces: dict[str, Path] = {}
+        self._runtime_snapshot_hashes: dict[Path, str] = {}
+        self._runtime_snapshot_modes: dict[Path, int] = {}
+        self._runtime_evidence_path: Path | None = None
+
+    def _bind_runtime_snapshot(
+        self,
+        snapshot_root: Path,
+        arm_archives: Mapping[str, Mapping[str, Path]],
+    ) -> None:
+        """Bind later B/C cells to the exact package bytes archived for this run."""
+        snapshot_root = Path(snapshot_root).resolve(strict=True)
+        snapshot_path = snapshot_root / "input-snapshot.json"
+        try:
+            payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            entries = payload["files"]
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("runtime input snapshot is unavailable or malformed") from exc
+        if not isinstance(entries, list):
+            raise ValueError("runtime input snapshot does not contain file identities")
+        expected_hashes: dict[Path, str] = {}
+        expected_modes: dict[Path, int] = {}
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                raise ValueError("runtime input snapshot contains malformed file identities")
+            archived_path = entry.get("archived_path")
+            sha256 = entry.get("sha256")
+            mode = entry.get("mode")
+            if (
+                not isinstance(archived_path, str)
+                or not isinstance(sha256, str)
+                or not isinstance(mode, int)
+                or mode not in {0o600, 0o700}
+            ):
+                raise ValueError("runtime input snapshot contains malformed file identities")
+            relative_path = Path(archived_path)
+            if relative_path.is_absolute():
+                raise ValueError("runtime input snapshot contains an unsafe archived path")
+            path = snapshot_root / relative_path
+            if not path.resolve(strict=False).is_relative_to(snapshot_root):
+                raise ValueError("runtime input snapshot contains an unsafe archived path")
+            expected_hashes[path] = sha256
+            expected_modes[path] = mode
+        bound_sources: dict[str, dict[str, Path]] = {}
+        bound_marketplaces: dict[str, Path] = {}
+        for arm, archives in arm_archives.items():
+            if arm not in {"B_direct_required", "C_skill_required"}:
+                raise ValueError(f"runtime snapshot cannot bind unsupported arm {arm!r}")
+            bound_sources[arm] = {}
+            for role, source in archives.items():
+                if role == "marketplace":
+                    continue
+                source_path = Path(source).resolve(strict=True)
+                if not source_path.is_relative_to(snapshot_root):
+                    raise ValueError("runtime snapshot source escaped the run-owned inputs directory")
+                if not any(path.is_relative_to(source_path) for path in expected_hashes):
+                    raise ValueError(f"runtime snapshot lacks identities for {arm}:{role}")
+                bound_sources[arm][role] = source_path
+            marketplace = archives.get("marketplace")
+            if marketplace is None and arm == "C_skill_required":
+                plugin_root = bound_sources[arm].get("codemap-py")
+                if (
+                    plugin_root is not None
+                    and (plugin_root.parent / ".agents" / "plugins" / "marketplace.json").is_file()
+                ):
+                    marketplace = plugin_root.parent
+            if marketplace is not None:
+                if arm != "C_skill_required":
+                    raise ValueError("only the C runtime snapshot can bind a frozen marketplace")
+                marketplace_path = Path(marketplace).resolve(strict=True)
+                if not marketplace_path.is_relative_to(snapshot_root):
+                    raise ValueError("runtime marketplace escaped the run-owned inputs directory")
+                self._validate_runtime_snapshot_tree(marketplace_path, expected_hashes, expected_modes)
+                manifest_path = marketplace_path / ".agents" / "plugins" / "marketplace.json"
+                expected_manifest = expected_hashes.get(manifest_path)
+                if expected_manifest is None or expected_modes.get(manifest_path) != 0o600:
+                    raise ValueError("runtime marketplace lacks a locked private manifest")
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise ValueError("runtime marketplace manifest is unavailable or malformed") from exc
+                expected_plugins = [
+                    {"name": "codemap-py", "source": {"source": "local", "path": "./codemap-py"}},
+                    {"name": "codex-rig", "source": {"source": "local", "path": "./codex-rig"}},
+                ]
+                if not isinstance(manifest, Mapping) or manifest.get("name") != _FROZEN_MARKETPLACE_NAME:
+                    raise ValueError("runtime marketplace name drifted")
+                if manifest.get("plugins") != expected_plugins:
+                    raise ValueError("runtime marketplace schema drifted")
+                bound_marketplaces[arm] = marketplace_path
+        self._runtime_snapshot_sources = bound_sources
+        self._runtime_snapshot_marketplaces = bound_marketplaces
+        self._runtime_snapshot_hashes = expected_hashes
+        self._runtime_snapshot_modes = expected_modes
+        self._runtime_evidence_path = snapshot_root.parent / "runtime-isolation.jsonl"
+
+    def _validate_runtime_snapshot_tree(
+        self,
+        source: Path,
+        expected_hashes: Mapping[Path, str] | None = None,
+        expected_modes: Mapping[Path, int] | None = None,
+    ) -> None:
+        """Fail closed when a run-owned runtime tree no longer matches its input ledger."""
+        source = Path(source).resolve(strict=True)
+        expected_hashes = self._runtime_snapshot_hashes if expected_hashes is None else expected_hashes
+        expected_modes = self._runtime_snapshot_modes if expected_modes is None else expected_modes
+        expected = {path: sha256 for path, sha256 in expected_hashes.items() if path.is_relative_to(source)}
+        if not expected:
+            raise ValueError(f"runtime snapshot has no locked identities for {source}")
+        observed: dict[Path, str] = {}
+        for path in source.rglob("*"):
+            if path.is_symlink():
+                raise ValueError(f"runtime snapshot source contains symlink: {source}")
+            if path.is_file():
+                observed[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if observed != expected:
+            expected_identity = _aggregate_file_hashes(
+                {path.relative_to(source).as_posix(): sha256 for path, sha256 in expected.items()}
+            )
+            observed_identity = _aggregate_file_hashes(
+                {path.relative_to(source).as_posix(): sha256 for path, sha256 in observed.items()}
+            )
+            raise ValueError(
+                f"runtime snapshot byte drift for {source.name}: expected={expected_identity} observed={observed_identity}"
+            )
+        expected_modes = {path: mode for path, mode in expected_modes.items() if path.is_relative_to(source)}
+        if os.name != "nt":
+            observed_modes = {path: stat.S_IMODE(path.lstat().st_mode) for path in observed}
+            if observed_modes != expected_modes:
+                raise ValueError(f"runtime snapshot mode drift for {source.name}")
+
+    def _runtime_plugin_sources(self, arm: str) -> dict[str, Path] | None:
+        """Return validated C plugin sources when this run already owns a snapshot."""
+        sources = self._runtime_snapshot_sources.get(arm)
+        if sources is None:
+            return None
+        if set(sources) != {"codemap-py", "codex-rig"}:
+            raise ValueError("C runtime snapshot lacks the locked plugin pair")
+        marketplace = self._runtime_snapshot_marketplaces.get(arm)
+        if marketplace is not None:
+            self._validate_runtime_snapshot_tree(marketplace)
+        for source in sources.values():
+            self._validate_runtime_snapshot_tree(source)
+        return dict(sources)
+
+    def _runtime_direct_launcher(self, arm: str) -> Path | None:
+        """Return the validated B launcher from this run's snapshot when available."""
+        sources = self._runtime_snapshot_sources.get(arm)
+        if sources is None:
+            return self.codemap_bin
+        direct_root = sources.get("direct-cli")
+        if direct_root is None or set(sources) != {"direct-cli"}:
+            raise ValueError("B runtime snapshot lacks the locked direct CLI")
+        self._validate_runtime_snapshot_tree(direct_root)
+        return direct_root / "bin" / "codemap-py"
+
+    def _record_runtime_failure(
+        self,
+        arm: str,
+        error: BaseException,
+        *,
+        home: ArmHome | None = None,
+        source_paths: Iterable[Path] = (),
+    ) -> None:
+        """Persist non-secret expected and observed runtime identities before home cleanup."""
+        if self._runtime_evidence_path is None:
+            return
+        observed: dict[str, dict[str, str]] = {}
+        for source in source_paths:
+            manifest_path = Path(source) / ".codex-plugin" / "plugin.json"
+            try:
+                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, Mapping) and isinstance(payload.get("name"), str):
+                observed[payload["name"]] = {
+                    "version": str(payload.get("version", "")),
+                    "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                }
+        if home is not None:
+            for name, path in (("codemap-py", home.codemap_plugin_path), ("codex-rig", home.codex_rig_path)):
+                if path is not None:
+                    manifest_path = path / ".codex-plugin" / "plugin.json"
+                    try:
+                        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    except (OSError, TypeError, json.JSONDecodeError):
+                        continue
+                    observed[name] = {
+                        "version": str(payload.get("version", "")) if isinstance(payload, Mapping) else "",
+                        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                    }
+        expected: Mapping[str, Any] = {}
+        expected_plugins: dict[str, dict[str, str]] = {}
+        try:
+            manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+            candidate = manifest.get("artifact_sha256", {})
+            if isinstance(candidate, Mapping):
+                expected = {str(name): str(value) for name, value in candidate.items()}
+            for name, candidate_key, manifest_key in (
+                ("codemap-py", "codemap_candidate", "codemap_candidate_manifest"),
+                ("codex-rig", "codex_rig_candidate", "codex_rig_plugin_manifest"),
+            ):
+                version = manifest.get(candidate_key, {})
+                expected_plugins[name] = {
+                    "version": str(version.get("version", "")) if isinstance(version, Mapping) else "",
+                    "manifest_sha256": expected.get(manifest_key, ""),
+                }
+        except (OSError, TypeError, json.JSONDecodeError):
+            pass
+        payload = {
+            "arm": arm,
+            "error": str(error),
+            "expected_artifact_sha256": expected,
+            "expected_plugin_identities": expected_plugins,
+            "observed_plugin_identities": observed,
+        }
+        self._runtime_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._runtime_evidence_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        self._runtime_evidence_path.chmod(0o600)
 
     def _ensure_auth_state(self) -> _RunAuthState | None:
         """Lazily seed the private credential chain for this runner."""
@@ -3357,13 +3676,21 @@ class CodexRunner:
         auth_state = self._ensure_auth_state()
         if auth_state is not None:
             auth_state.assert_source_unchanged()
-        home = prepare_arm_home(
-            arm,
-            auth_source=None,
-            codemap_bin=self.codemap_bin,
-            plugin_installer=self.plugin_installer,
-        )
+        runtime_plugin_sources: dict[str, Path] | None = None
+        runtime_marketplace: Path | None = None
+        bound_sources = self._runtime_snapshot_sources.get(arm, {})
+        home: ArmHome | None = None
         try:
+            if arm == "C_skill_required":
+                runtime_plugin_sources = self._runtime_plugin_sources(arm)
+                runtime_marketplace = self._runtime_snapshot_marketplaces.get(arm)
+            runtime_codemap_bin = self._runtime_direct_launcher(arm) if arm == "B_direct_required" else self.codemap_bin
+            home = prepare_arm_home(
+                arm,
+                auth_source=None,
+                codemap_bin=runtime_codemap_bin,
+                plugin_installer=None if runtime_plugin_sources is not None else self.plugin_installer,
+            )
             if auth_state is not None:
                 auth_state.seed_home(home.path)
                 home.auth_provisioned = True
@@ -3388,7 +3715,14 @@ class CodexRunner:
                 ):
                     home.env.pop(variable, None)
             if arm == "C_skill_required":
-                if self.plugin_probe is not None:
+                if runtime_plugin_sources is not None:
+                    home.codemap_verified = _install_codemap_plugin(
+                        home,
+                        runtime_marketplace,
+                        plugin_sources=runtime_plugin_sources,
+                        command_runner=self.command_runner,
+                    )
+                elif self.plugin_probe is not None:
                     home.codemap_verified = bool(self.plugin_probe(home.path))
                 elif not home.codemap_verified:
                     home.codemap_verified = _install_codemap_plugin(
@@ -3448,12 +3782,20 @@ class CodexRunner:
                     auth_state.refresh_from_home(home.path)
             if arm == "A_plain":
                 _verify_plain_plugin_absent(home, command_runner=self.command_runner)
-        except BaseException:
-            if home.coordination_path is not None:
+        except BaseException as exc:
+            self._record_runtime_failure(
+                arm,
+                exc,
+                home=home,
+                source_paths=(runtime_plugin_sources or bound_sources).values(),
+            )
+            if home is not None and home.coordination_path is not None:
                 with contextlib.suppress(ValueError):
                     _cleanup_coordination_root(home.coordination_path)
-            home.cleanup()
+            if home is not None:
+                home.cleanup()
             raise
+        assert home is not None
         return home
 
     def _preflight_expected_queries(
@@ -3536,6 +3878,14 @@ class CodexRunner:
         snapshot_root = Path(run_dir) / "inputs"
         if snapshot_root.exists():
             raise FileExistsError(snapshot_root)
+        # The first admission home is created before the immutable input snapshot
+        # exists.  Reserve this non-secret evidence file now so an install failure
+        # can persist expected/observed identities before the disposable home is
+        # cleaned up.
+        self._runtime_evidence_path = Path(run_dir) / "runtime-isolation.jsonl"
+        self._runtime_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        self._runtime_evidence_path.touch(exist_ok=False)
+        self._runtime_evidence_path.chmod(0o600)
         task_list = list(tasks)
         homes: list[ArmHome] = []
         arm_archives: dict[str, dict[str, Path]] = {}
@@ -3557,7 +3907,7 @@ class CodexRunner:
                     if home.codemap_context_path is not None:
                         arm_files[arm]["codemap-context.json"] = home.codemap_context_path
                 self._preflight_expected_queries(home, task_list)
-            return _write_input_snapshot(
+            snapshot = _write_input_snapshot(
                 snapshot_root,
                 manifest_path=manifest_path,
                 tasks_path=tasks_path,
@@ -3568,6 +3918,16 @@ class CodexRunner:
                 arm_archives=arm_archives,
                 arm_files=arm_files,
             )
+            if isinstance(snapshot.get("path"), str):
+                runtime_archives = {
+                    arm: {
+                        **{role: snapshot_root / arm / role for role in archives},
+                        **({"marketplace": snapshot_root / arm} if arm == "C_skill_required" else {}),
+                    }
+                    for arm, archives in arm_archives.items()
+                }
+                self._bind_runtime_snapshot(snapshot_root, runtime_archives)
+            return snapshot
         finally:
             cleaned_coordination_paths: set[Path] = set()
             for home in homes:
@@ -4260,8 +4620,7 @@ def rescore_results(run_dir: Path) -> Path:
         if artifact_path.read_bytes() != serialized:
             raise ValueError("offline rescore artifact already exists with different derived content")
         return artifact_path
-    with artifact_path.open("x", encoding="utf-8") as handle:
-        handle.write(serialized.decode("utf-8"))
+    artifact_path.write_bytes(serialized)
     return artifact_path
 
 
@@ -4762,71 +5121,296 @@ def main(
     )
 
 
-if __name__ == "__main__":
-    import argparse
+def _cli_error(message: str) -> NoReturn:
+    """Fail a CLI invocation with the usage status the previous parser reported.
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--render-results", action="store_true", help="render progress rows from standard input")
-    parser.add_argument(
-        "--rescore-results",
-        type=Path,
-        metavar="RUN_DIR",
-        help="replay frozen telemetry and tasks into an immutable offline rescore artifact",
+    Args:
+        message: Operator-facing reason, written to standard error verbatim.
+
+    Raises:
+        SystemExit: Always, with status ``2`` for usage errors.
+
+    Examples:
+        >>> import contextlib, io
+        >>> stderr = io.StringIO()
+        >>> with contextlib.redirect_stderr(stderr):
+        ...     try:
+        ...         _cli_error("boom")
+        ...     except SystemExit as exc:
+        ...         print(exc.code)
+        2
+        >>> stderr.getvalue().strip()
+        'ERROR: boom'
+    """
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def _optional_path(value: str | Path | None) -> Path | None:
+    """Coerce an optional CLI string into a path, because fire never coerces.
+
+    Args:
+        value: Raw flag value, or ``None`` when the flag was not supplied.
+
+    Returns:
+        The coerced path, or ``None`` when nothing was supplied.
+
+    Examples:
+        >>> _optional_path(None) is None
+        True
+        >>> _optional_path("benchmarks/suites/tasks-bench.json").name
+        'tasks-bench.json'
+    """
+    return None if value is None else Path(value)
+
+
+def _normalize_cli_task_ids(value: str | Sequence[str] | None) -> list[str] | None:
+    """Normalize the comma-separated ``--task-id`` value into locked task IDs.
+
+    ``fire`` splits ``--task-id SE-01,FN-02`` into a tuple and keeps a single
+    ``--task-id SE-01`` a plain string; it never accumulates repeated flags.
+
+    Args:
+        value: Raw flag value: one ID, a tuple of IDs, or ``None``.
+
+    Returns:
+        The ordered task IDs, or ``None`` when the flag was not supplied.
+
+    Raises:
+        SystemExit: When any comma-separated token is empty.
+
+    Examples:
+        >>> _normalize_cli_task_ids(None) is None
+        True
+        >>> _normalize_cli_task_ids("SE-01")
+        ['SE-01']
+        >>> _normalize_cli_task_ids("SE-01,FN-02")
+        ['SE-01', 'FN-02']
+        >>> _normalize_cli_task_ids(("SE-01", "FN-02"))
+        ['SE-01', 'FN-02']
+    """
+    if value is None:
+        return None
+    raw_values = [value] if isinstance(value, str) else [str(item) for item in value]
+    task_ids = [token.strip() for raw_value in raw_values for token in raw_value.split(",")]
+    if not task_ids or any(not task_id for task_id in task_ids):
+        _cli_error("--task-id values cannot be empty")
+    return task_ids
+
+
+def _print_rescore(run_dir: Path) -> None:
+    """Print the offline rescore artifact path; fire must never see a return value.
+
+    Args:
+        run_dir: Completed run directory holding frozen telemetry and tasks.
+
+    Examples:
+        >>> _print_rescore.__name__
+        '_print_rescore'
+    """
+    print(rescore_results(run_dir))
+
+
+def _print_task_selection(manifest_path: Path, selectors: str | Sequence[str]) -> None:
+    """Print the resolved targeted scope as canonical JSON on standard output.
+
+    Args:
+        manifest_path: Active benchmark manifest defining the locked task suite.
+        selectors: Comma-separated exact task IDs or task families.
+
+    Examples:
+        >>> _print_task_selection.__name__
+        '_print_task_selection'
+    """
+    print(json.dumps(resolve_task_selection(manifest_path, selectors), sort_keys=True))
+
+
+def _validate_cli_modes(
+    *,
+    render_results: bool,
+    rescore_results_dir: str | None,
+    resolve_tasks: str | Sequence[str] | None,
+    force_color: bool,
+    hide_plan: bool,
+) -> None:
+    """Reject the mutually exclusive CLI mode combinations fire cannot express.
+
+    Args:
+        render_results: Whether the stream-rendering mode was requested.
+        rescore_results_dir: Run directory for the offline rescore mode, if any.
+        resolve_tasks: Selectors for the task-resolution mode, if any.
+        force_color: Whether renderer coloring was forced.
+        hide_plan: Whether renderer PLAN filtering was requested.
+
+    Raises:
+        SystemExit: When two exclusive modes or a renderer-only flag are combined.
+
+    Examples:
+        >>> _validate_cli_modes(
+        ...     render_results=True,
+        ...     rescore_results_dir=None,
+        ...     resolve_tasks=None,
+        ...     force_color=True,
+        ...     hide_plan=True,
+        ... ) is None
+        True
+    """
+    if force_color and not render_results:
+        _cli_error("--force-color requires --render-results")
+    if hide_plan and not render_results:
+        _cli_error("--hide-plan requires --render-results")
+    if rescore_results_dir is not None and (render_results or resolve_tasks is not None):
+        _cli_error("--rescore-results cannot be combined with rendering or task resolution")
+    if resolve_tasks is not None and render_results:
+        _cli_error("--resolve-tasks cannot be combined with --render-results")
+
+
+def _require_execution_options(**options: object) -> None:
+    """Require every execution-only option, reporting the missing flag by name.
+
+    Args:
+        **options: Parameter name to supplied value, in the order to report.
+
+    Raises:
+        SystemExit: When any supplied value is ``None``.
+
+    Examples:
+        >>> _require_execution_options(repo_path="repo", model="gpt", tasks_path="tasks.json") is None
+        True
+    """
+    for option, value in options.items():
+        if value is None:
+            _cli_error(f"--{option.replace('_', '-')} is required unless --render-results is used")
+
+
+def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag with a default (0 required)
+    render_results: bool = False,
+    rescore_results: str | None = None,
+    resolve_tasks: str | Sequence[str] | None = None,
+    force_color: bool = False,
+    hide_plan: bool = False,
+    repo_path: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str = PARITY_CODEX_REASONING_EFFORT,
+    tasks_path: str | None = None,
+    manifest_path: str | Path = PARITY_MANIFEST_PATH,
+    index_path: str | None = None,
+    marketplace_root: str | None = None,
+    codemap_bin: str | None = None,
+    auth_source: str | None = None,
+    invocation_launcher_path: str | None = None,
+    output_path: str | None = None,
+    metadata_path: str | None = None,
+    task_id: str | Sequence[str] | None = None,
+    tasks: str | Sequence[str] | None = None,
+    scope_sha256: str | None = None,
+    repetitions: int | None = None,
+    arm: str = "all",
+    dry_run: bool = False,
+    no_legend: bool = False,
+    max_wall_clock_seconds: float | None = None,
+) -> None:
+    """Dispatch the Codex structural runner's four CLI modes.
+
+    Exactly one mode runs per invocation: stream rendering, offline rescoring,
+    task-selector resolution, or benchmark execution. Every branch prints its own
+    output and returns ``None``, because ``fire`` echoes any returned value and
+    would corrupt the machine-parsed stdout stream.
+
+    Args:
+        render_results: Render progress rows read from standard input.
+        rescore_results: Completed run directory to replay into an immutable
+            offline rescore artifact; prints the artifact path.
+        resolve_tasks: Comma-separated exact task IDs or task families to resolve
+            into a targeted scope; prints the scope as canonical JSON.
+        force_color: Force terminal coloring in the renderer; requires
+            ``--render-results``. Test-only.
+        hide_plan: Drop human ``PLAN`` rows in the renderer; requires
+            ``--render-results``. Test-only.
+        repo_path: Target repository clone; required for execution.
+        model: Codex model identifier; required for execution.
+        reasoning_effort: Locked Codex reasoning stratum; only
+            ``PARITY_CODEX_REASONING_EFFORT`` is accepted.
+        tasks_path: Locked structural task suite JSON; required for execution.
+        manifest_path: Active benchmark manifest defining the locked contract.
+        index_path: Locked Codemap index consumed by the B and C arms.
+        marketplace_root: Local plugin marketplace root for the C arm.
+        codemap_bin: Direct Codemap launcher for the B arm.
+        auth_source: User-owned ``auth.json`` copied into the disposable home.
+        invocation_launcher_path: Recorded launcher whose digest is revalidated.
+        output_path: Raw telemetry JSONL destination; required for paid runs.
+        metadata_path: Run metadata destination; defaults beside ``output_path``.
+        task_id: Comma-separated locked task IDs, e.g. ``--task-id SE-01,FN-02``.
+            Repeating the flag does not accumulate; use the comma form.
+        tasks: Comma-separated exact task IDs or task families selecting a
+            targeted, nonpoolable scope.
+        scope_sha256: Resolved targeted-scope SHA-256 required for paid subsets.
+        repetitions: Number of repetitions to execute, starting at 1.
+        arm: Single arm name, or ``all`` for the manifest's arm ordering.
+        dry_run: Validate locked inputs and print the cell plan without a model call.
+        no_legend: Suppress the output legend block.
+        max_wall_clock_seconds: Complete-run wall-clock limit; required for paid runs.
+
+    Raises:
+        SystemExit: With status ``2`` when flags are combined illegally, a
+            required execution option is missing, or the reasoning stratum
+            differs from the locked value.
+
+    Examples:
+        >>> cli.__name__
+        'cli'
+    """
+    if render_results:
+        # Fire has already identified renderer mode, but Windows subprocess tests
+        # can lose the second bare Boolean. Preserve the explicit test-only flag.
+        force_color = force_color or "--force-color" in sys.argv[1:]
+        for stream in (sys.stdin, sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8")
+    _validate_cli_modes(
+        render_results=render_results,
+        rescore_results_dir=rescore_results,
+        resolve_tasks=resolve_tasks,
+        force_color=force_color,
+        hide_plan=hide_plan,
     )
-    parser.add_argument(
-        "--resolve-tasks",
-        metavar="SELECTORS",
-        help="resolve comma-separated exact task IDs or task families into a targeted scope",
+    if rescore_results is not None:
+        _print_rescore(Path(rescore_results))
+        return
+    if resolve_tasks is not None:
+        _print_task_selection(Path(manifest_path), resolve_tasks)
+        return
+    if render_results:
+        render_result_rows(sys.stdin, sys.stdout, force_color=force_color, hide_plan=hide_plan)
+        return
+    _require_execution_options(repo_path=repo_path, model=model, tasks_path=tasks_path)
+    if reasoning_effort != PARITY_CODEX_REASONING_EFFORT:
+        _cli_error(f"--reasoning-effort must be {PARITY_CODEX_REASONING_EFFORT!r}")
+    main(
+        repo_path=Path(str(repo_path)),
+        model=str(model),
+        reasoning_effort=reasoning_effort,
+        tasks_path=Path(str(tasks_path)),
+        manifest_path=Path(manifest_path),
+        index_path=_optional_path(index_path),
+        marketplace_root=_optional_path(marketplace_root),
+        codemap_bin=_optional_path(codemap_bin),
+        auth_source=_optional_path(auth_source),
+        invocation_launcher_path=_optional_path(invocation_launcher_path),
+        output_path=_optional_path(output_path),
+        metadata_path=_optional_path(metadata_path),
+        task_ids=_normalize_cli_task_ids(task_id),
+        task_selectors=tasks,
+        scope_sha256=scope_sha256,
+        repetitions=None if repetitions is None else int(repetitions),
+        arm=arm,
+        dry_run=dry_run,
+        max_wall_clock_seconds=None if max_wall_clock_seconds is None else float(max_wall_clock_seconds),
+        show_legend=not no_legend,
     )
-    parser.add_argument("--force-color", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--hide-plan", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--repo-path", type=Path)
-    parser.add_argument("--model")
-    parser.add_argument(
-        "--reasoning-effort",
-        default=PARITY_CODEX_REASONING_EFFORT,
-        choices=(PARITY_CODEX_REASONING_EFFORT,),
-    )
-    parser.add_argument("--tasks-path", type=Path)
-    parser.add_argument("--manifest-path", type=Path, default=PARITY_MANIFEST_PATH)
-    parser.add_argument("--index-path", type=Path)
-    parser.add_argument("--marketplace-root", type=Path, required=False)
-    parser.add_argument("--codemap-bin", type=Path)
-    parser.add_argument("--auth-source", type=Path)
-    parser.add_argument("--invocation-launcher-path", type=Path)
-    parser.add_argument("--output-path", type=Path)
-    parser.add_argument("--metadata-path", type=Path)
-    parser.add_argument("--task-id", dest="task_ids", action="append")
-    parser.add_argument("--tasks", dest="task_selectors", help="comma-separated exact task IDs or task families")
-    parser.add_argument("--scope-sha256", help="resolved targeted-scope SHA-256 required for paid subsets")
-    parser.add_argument("--repetitions", type=int)
-    parser.add_argument("--arm", default="all")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--no-legend", dest="show_legend", action="store_false", help=argparse.SUPPRESS)
-    parser.add_argument("--max-wall-clock-seconds", type=float)
-    args = parser.parse_args()
-    if args.force_color and not args.render_results:
-        parser.error("--force-color requires --render-results")
-    if args.hide_plan and not args.render_results:
-        parser.error("--hide-plan requires --render-results")
-    if args.rescore_results is not None:
-        if args.render_results or args.resolve_tasks is not None:
-            parser.error("--rescore-results cannot be combined with rendering or task resolution")
-        print(rescore_results(args.rescore_results))
-    elif args.resolve_tasks is not None:
-        if args.render_results:
-            parser.error("--resolve-tasks cannot be combined with --render-results")
-        print(json.dumps(resolve_task_selection(args.manifest_path, args.resolve_tasks), sort_keys=True))
-    elif args.render_results:
-        render_result_rows(sys.stdin, sys.stdout, force_color=args.force_color, hide_plan=args.hide_plan)
-    else:
-        for option in ("repo_path", "model", "tasks_path"):
-            if getattr(args, option) is None:
-                parser.error(f"--{option.replace('_', '-')} is required unless --render-results is used")
-        arguments = vars(args)
-        arguments.pop("render_results")
-        arguments.pop("rescore_results")
-        arguments.pop("resolve_tasks")
-        arguments.pop("force_color")
-        arguments.pop("hide_plan")
-        main(**arguments)
+
+
+if __name__ == "__main__":
+    from fire import Fire
+
+    Fire(cli)

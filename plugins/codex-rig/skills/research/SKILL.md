@@ -1,6 +1,6 @@
 ---
 name: research
-description: Minimal codex-native research loop. Use for docs/papers/state-of-the-art scan with source-backed recommendations.
+description: "Research docs, papers, or state of the art; provide source-backed recommendations and caveats."
 ---
 
 # Research

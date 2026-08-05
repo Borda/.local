@@ -6,13 +6,21 @@ import hashlib
 import errno
 import json
 import os
-import pty
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+
+# Every test here drives ``run-all.sh`` through ``/bin/bash`` with executable
+# shell stubs, so the whole module is POSIX-only — same boundary the shared
+# benchmark fixtures draw in conftest.py.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="benchmark harness exercises the POSIX launcher only",
+)
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
@@ -47,6 +55,57 @@ SELECTED_SCOPE_SHA = "selection-scope-di-gr"
 SELECTED_TASK_IDS = ("DI-01", "GR-01")
 SELECTED_REPETITIONS = 2
 SELECTED_WALL_CLOCK = 7200
+
+
+def _assert_safe_paid_preflight(calls: list[str], *, agentic: bool) -> None:
+    """Assert manifest-only admission checks occur before paid execution.
+
+    Paid-input rejection still validates generated locks, and agentic admission
+    additionally resolves its immutable scope. Neither route may prepare the
+    repository, access auth, or start a model runner.
+    """
+    expected_checkers = [
+        "build-provider-parity-methodology-manifest.py",
+        "build-codex-integration-manifest.py",
+    ]
+    if agentic:
+        expected_checkers.append("build-codex-agentic-manifest.py")
+
+    assert len(calls) == len(expected_checkers) + int(agentic)
+    for call, checker in zip(calls[: len(expected_checkers)], expected_checkers, strict=True):
+        assert checker in call
+        assert call.endswith(" --check")
+    if agentic:
+        assert "run-codex-agentic.py" in calls[-1]
+        assert "--resolve-scope" in calls[-1]
+    assert all("--auth-source" not in call for call in calls)
+    assert all("prepare-codex-index.py" not in call for call in calls)
+    assert all("run-codex-structural.py" not in call for call in calls)
+    assert all("run-codex-agentic.py" not in call or "--resolve-scope" in call for call in calls)
+
+
+def _task_id_values(call: str) -> list[str]:
+    """Return the task IDs carried by a recorded call's single ``--task-id`` argument.
+
+    The runners are Fire CLIs, so ``--task-id`` is passed once with a comma-separated
+    value rather than repeated per ID (Fire keeps only the last of a repeated flag).
+
+    Args:
+        call: One recorded command line from the stub call log.
+
+    Returns:
+        The task IDs in argument order; empty when the call carries no ``--task-id``.
+
+    Examples:
+        >>> _task_id_values("run.py --task-id SE-01,FN-02 --arm all")
+        ['SE-01', 'FN-02']
+        >>> _task_id_values("run.py --arm all")
+        []
+    """
+    tokens = call.split()
+    if "--task-id" not in tokens:
+        return []
+    return tokens[tokens.index("--task-id") + 1].split(",")
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -119,6 +178,12 @@ if [[ "$*" == *"build-codex-integration-manifest.py"* && "$*" == *"--check"* ]];
     exit 47
   fi
 fi
+if [[ "$*" == *"build-provider-parity-methodology-manifest.py"* && "$*" == *"--check"* ]]; then
+  if [ -n "${{FAIL_METHODOLOGY_CHECK:-}}" ]; then
+    printf "stale generated methodology manifest; run the exact builder\n" >&2
+    exit 46
+  fi
+fi
 if [[ "$*" == *"build-codex-agentic-manifest.py"* && "$*" == *"--check"* ]]; then
   if [ -n "${{FAIL_AGENTIC_MANIFEST_CHECK:-}}" ]; then
     printf "stale generated Codex agentic manifest\\n" >&2
@@ -149,7 +214,7 @@ if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--auth-source"* ]]; then
     printf "agentic console artifact existed before paid Python admission\\n" >&2
     exit 49
   fi
-  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_required=Codemap Skill read plus compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / {AGENTIC_TOTAL_CELLS} planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
+  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=Codemap Skill read plus compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / {AGENTIC_TOTAL_CELLS} planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
   printf "agentic raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
   printf "agentic canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
   printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
@@ -216,6 +281,8 @@ def _run_batch(mode: str, env: dict[str, str], *args: str) -> subprocess.Complet
 
 def _run_batch_tty(mode: str, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
     """Run one batch with stdout and stderr attached to a pseudo-terminal."""
+    import pty  # POSIX-only (pty -> tty -> termios); absent on Windows, so import at call time
+
     master_fd, slave_fd = pty.openpty()
     command = ["/bin/bash", str(SCRIPT), mode, *args]
     process = subprocess.Popen(
@@ -303,13 +370,53 @@ def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Pat
     assert len(codex_calls) == 2
     assert all("--dry-run" in line for line in codex_calls)
     full_plan = next(line for line in codex_calls if "--repetitions 1" in line)
-    assert full_plan.count("--task-id") == len(CONFIRMATORY_TASK_IDS)
+    assert full_plan.count("--task-id") == 1
+    assert _task_id_values(full_plan) == CONFIRMATORY_TASK_IDS
     assert "--max-wall-clock-seconds 86400" in full_plan
     assert all("--auth-source" not in line for line in codex_calls)
     assert all("--output-path" not in line for line in codex_calls)
     assert all("--render-results" not in line for line in codex_calls)
     assert "PLAN " in completed.stdout
     assert "165 cells" in completed.stdout
+
+
+@pytest.mark.parametrize("provider", ["claude", "codex"])
+def test_struct_flag_dispatches_only_the_provider_structural_runner(
+    batch_env: tuple[dict[str, str], Path],
+    provider: str,
+) -> None:
+    """The explicit structural selector excludes the provider's agentic runner."""
+    env, call_log = batch_env
+
+    completed = _run_batch(provider, env, "--struct", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8")
+    assert f"run-{provider}-structural.py" in calls
+    assert f"run-{provider}-agentic.py" not in calls
+    other_provider = "codex" if provider == "claude" else "claude"
+    assert f"run-{other_provider}-" not in calls
+
+
+@pytest.mark.parametrize("provider", ["claude", "codex"])
+@pytest.mark.parametrize(
+    "selectors",
+    [("--struct", "--agentic"), ("--struct", "--struct")],
+    ids=["conflicting-selectors", "duplicate-struct"],
+)
+def test_struct_selector_rejects_conflicts_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+    provider: str,
+    selectors: tuple[str, str],
+) -> None:
+    """Mode selection must be singular and validated before repository setup."""
+    env, call_log = batch_env
+
+    completed = _run_batch(provider, env, *selectors)
+
+    assert completed.returncode == 2
+    assert "usage: bash benchmarks/run-all.sh" in completed.stderr
+    assert not call_log.exists()
 
 
 def test_codex_agentic_dry_run_dispatches_the_default_shared_scope_once(
@@ -493,9 +600,7 @@ def test_codex_agentic_rejects_missing_paid_inputs_before_setup(
     assert "CODEX_RUN_DIR=" in completed.stderr
     assert f"CODEX_MAX_WALL_CLOCK_SECONDS={AGENTIC_WALL_CLOCK}" in completed.stderr
     assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
-    calls = call_log.read_text(encoding="utf-8").splitlines()
-    assert len(calls) == 1
-    assert "--resolve-scope" in calls[0]
+    _assert_safe_paid_preflight(call_log.read_text(encoding="utf-8").splitlines(), agentic=True)
 
 
 def test_codex_agentic_rejects_reused_run_directory_before_setup(
@@ -522,9 +627,7 @@ def test_codex_agentic_rejects_reused_run_directory_before_setup(
     assert "bash benchmarks/run-all.sh codex --agentic" in completed.stderr
     assert "CODEX_RUN_DIR must not already exist." in completed.stderr
     assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
-    calls = call_log.read_text(encoding="utf-8").splitlines()
-    assert len(calls) == 1
-    assert "--resolve-scope" in calls[0]
+    _assert_safe_paid_preflight(call_log.read_text(encoding="utf-8").splitlines(), agentic=True)
 
 
 def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
@@ -857,6 +960,62 @@ def test_stale_generated_manifest_blocks_provider_preflights(
     assert "run-codex-structural.py" not in calls
 
 
+@pytest.mark.parametrize(
+    ("mode", "arguments"),
+    [
+        pytest.param("claude", ("--struct", "--dry-run"), id="claude-structural"),
+        pytest.param("codex", ("--struct", "--dry-run"), id="codex-structural"),
+        pytest.param("codex", ("--agentic", "--dry-run"), id="codex-agentic"),
+    ],
+)
+def test_stale_methodology_stops_every_public_study_before_setup(
+    batch_env: tuple[dict[str, str], Path],
+    mode: str,
+    arguments: tuple[str, ...],
+) -> None:
+    """A failed first checker must not be hidden by later successful commands or shell contexts."""
+    env, call_log = batch_env
+    env["FAIL_METHODOLOGY_CHECK"] = "1"
+
+    completed = _run_batch(mode, env, *arguments)
+
+    assert completed.returncode == 46
+    assert "run the exact builder" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8")
+    assert "build-provider-parity-methodology-manifest.py" in calls
+    assert "build-codex-integration-manifest.py" not in calls
+    assert "prepare-codex-index.py" not in calls
+    assert "run-claude-" not in calls
+    assert "run-codex-" not in calls
+
+
+@pytest.mark.parametrize(
+    ("arguments", "approval_variable"),
+    [
+        pytest.param(("--struct",), "CODEX_PAID_APPROVAL", id="structural"),
+        pytest.param(("--agentic",), "CODEX_AGENTIC_PAID_APPROVAL", id="agentic"),
+    ],
+)
+def test_stale_methodology_never_prints_unrunnable_paid_guidance(
+    batch_env: tuple[dict[str, str], Path],
+    arguments: tuple[str, ...],
+    approval_variable: str,
+) -> None:
+    """Approval guidance is valid only after every manifest it depends on passes validation."""
+    env, call_log = batch_env
+    env["FAIL_METHODOLOGY_CHECK"] = "1"
+    env.pop(approval_variable, None)
+
+    completed = _run_batch("codex", env, *arguments)
+
+    assert completed.returncode == 46
+    assert "stale generated methodology manifest" in completed.stderr
+    assert f"{approval_variable}=" not in completed.stderr
+    calls = call_log.read_text(encoding="utf-8")
+    assert "build-provider-parity-methodology-manifest.py" in calls
+    assert "run-codex-" not in calls
+
+
 def test_smoke_accepts_git_worktree_metadata_file(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
@@ -906,7 +1065,7 @@ def test_codex_mode_requires_explicit_paid_inputs_before_setup(
 
     assert completed.returncode == 2
     assert expected_error in completed.stderr
-    assert not call_log.exists()
+    _assert_safe_paid_preflight(call_log.read_text(encoding="utf-8").splitlines(), agentic=False)
 
 
 def test_codex_paid_rejection_prints_actionable_launch_guidance(
@@ -935,6 +1094,20 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
     assert "reauthenticate after the run if needed" in completed.stderr
 
 
+def test_explicit_codex_struct_rejection_preserves_selector_in_guidance(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A rejected explicit structural launch prints matching copyable commands."""
+    env, _ = batch_env
+    env.pop("CODEX_PAID_APPROVAL")
+
+    completed = _run_batch("codex", env, "--struct")
+
+    assert completed.returncode == 2
+    assert "bash benchmarks/run-all.sh codex --struct --dry-run" in completed.stderr
+    assert "bash benchmarks/run-all.sh codex --struct\n" in completed.stderr
+
+
 def test_provider_modes_dispatch_only_the_selected_provider(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
@@ -954,8 +1127,8 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     codex_calls = call_log.read_text(encoding="utf-8")
     assert "run-codex-structural.py" in codex_calls
     paid_call = next(line for line in codex_calls.splitlines() if "--auth-source" in line)
-    assert paid_call.count("--task-id") == len(CONFIRMATORY_TASK_IDS)
-    assert all(f"--task-id {task_id}" in paid_call for task_id in CONFIRMATORY_TASK_IDS)
+    assert paid_call.count("--task-id") == 1
+    assert _task_id_values(paid_call) == CONFIRMATORY_TASK_IDS
     assert "--repetitions 1" in paid_call
     assert "--reasoning-effort high" in paid_call
     assert "--arm all" in codex_calls
@@ -973,7 +1146,8 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     full_dry_run = next(line for line in codex_lines if "--dry-run" in line and "--task-id FN-02 --arm all" not in line)
     assert "--repetitions 1" not in smoke_call
     assert "--no-legend" in smoke_call
-    assert full_dry_run.count("--task-id") == len(CONFIRMATORY_TASK_IDS)
+    assert full_dry_run.count("--task-id") == 1
+    assert _task_id_values(full_dry_run) == CONFIRMATORY_TASK_IDS
     assert "--repetitions 1" in full_dry_run
     assert "--no-legend" not in full_dry_run
     paid_call = next(line for line in codex_lines if "--auth-source" in line)

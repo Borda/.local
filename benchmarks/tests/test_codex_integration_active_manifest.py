@@ -114,13 +114,48 @@ def test_generator_is_current_and_never_rewrites_methodology_source() -> None:
     assert _sha256(SOURCE_MANIFEST) == before
 
 
+def test_generated_manifest_uses_environment_neutral_cli_and_posix_paths() -> None:
+    """Generated records cannot contain host paths or Windows separators."""
+    manifest = _load(MANIFEST)
+    assert manifest["codex_cli"] == {
+        "available": True,
+        "path": "<codex-cli>",
+        "version": "codex-cli 0.146.0",
+    }
+    assert manifest["source_manifest"]["path"] == "benchmarks/manifests/provider-parity-methodology.json"
+    assert "\\" not in manifest["source_manifest"]["path"]
+
+
+def test_cli_identity_is_a_host_neutral_reviewed_lock() -> None:
+    """Manifest checks must use the reviewed CLI identity on every runner."""
+    builder = runpy.run_path(str(GENERATOR))
+    assert builder["LOCKED_CODEX_CLI_VERSION"] == "codex-cli 0.146.0"
+    assert builder["_codex_cli_identity"]() == {
+        "available": True,
+        "path": "<codex-cli>",
+        "version": "codex-cli 0.146.0",
+    }
+
+
+def test_generator_stale_error_names_exact_rebuild_command(tmp_path: Path) -> None:
+    """Internal check mode must identify the command that repairs generated drift."""
+    generator = runpy.run_path(str(GENERATOR))
+
+    try:
+        generator["_write_or_check"](tmp_path / "stale.json", b"expected\n", True)
+    except ValueError as exc:
+        assert str(exc).endswith("run: python3 benchmarks/build-codex-integration-manifest.py")
+    else:
+        raise AssertionError("stale integration output was accepted")
+
+
 def test_integration_manifest_reuses_every_canonical_suite_identity() -> None:
     """Task, suite, prompt, oracle, evaluator, target, and index identities cannot drift."""
     source = _load(SOURCE_MANIFEST)
     manifest = _load(MANIFEST)
 
     assert manifest["source_manifest"] == {
-        "path": str(SOURCE_MANIFEST.relative_to(ROOT)),
+        "path": SOURCE_MANIFEST.relative_to(ROOT).as_posix(),
         "sha256": _sha256(SOURCE_MANIFEST),
     }
     for key in (
@@ -353,7 +388,7 @@ def test_integration_manifest_locks_generic_nonpoolable_task_selection() -> None
     assert "duplicate tokens and overlapping expansions are evaluated once" in human
     assert "derived at runtime" in human
     assert "## Paid selected-task command" in human
-    assert "bash benchmarks/run-all.sh codex --tasks=DI,GR" in human
+    assert "bash benchmarks/run-all.sh codex --struct --tasks=DI,GR" in human
     selected_section = human.split("## Paid selected-task command", 1)[1].split("## Confirmatory execution", 1)[0]
     assert "CODEX_PAID_APPROVAL=<resolved-scope-sha256>" in selected_section
     assert f"CODEX_PAID_APPROVAL={_sha256(MANIFEST)}" not in selected_section
@@ -382,7 +417,7 @@ def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authoriz
     assert "## Confirmatory execution" in human
     assert "no separate chat authorization is required" in human
     assert "CODEX_PAID_APPROVAL" in human
-    assert "bash benchmarks/run-all.sh codex --dry-run" in human
+    assert "bash benchmarks/run-all.sh codex --struct --dry-run" in human
     assert "immutable, user-owned `0600` auth source" in human
     assert "Do not run a concurrent Codex session with it" in human
     assert "independently authenticated benchmark credential" in human

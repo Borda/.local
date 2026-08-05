@@ -168,7 +168,8 @@ def test_empty_codemap_bin_falls_back_to_path(monkeypatch: pytest.MonkeyPatch, t
     context = adapter.gather_structural_context("review")
 
     assert context.status == adapter.STATUS_AVAILABLE
-    assert context.probe.launcher == str(tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
+    expected_launcher = str(tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
+    assert os.path.normcase(context.probe.launcher) == os.path.normcase(expected_launcher)
 
 
 def test_gather_context_resolves_once_and_reuses_launcher_for_compact_queries(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -358,9 +359,8 @@ def test_cli_context_persists_json_to_out_path(monkeypatch: pytest.MonkeyPatch, 
     assert stdout_payload == file_payload
     assert stdout_payload["status"] == "available"
     assert stdout_payload["protocol_version"] == "codemap-py.integration.v1"
-    assert stdout_payload["probe"]["launcher"] == str(
-        tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py")
-    )
+    expected_launcher = str(tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
+    assert os.path.normcase(stdout_payload["probe"]["launcher"]) == os.path.normcase(expected_launcher)
 
 
 def test_cli_probe_absent_exits_zero_and_reports_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

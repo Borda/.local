@@ -1,10 +1,6 @@
 ---
 name: test-impact
-description: |
-  Identify which tests need rerunning after a code change — traces static call graph (function-level) or import
-  graph (module-level) to find affected test files, then emits a ready-to-run pytest command. Trigger with
-  `$codemap-py:test-impact <module::symbol | module> [--no-mocks]` for: "which tests are affected", "what tests
-  cover this", "test impact of", "what tests to rerun".
+description: "`$codemap-py:test-impact <qname> [--no-mocks]`: affected tests; skip caller/dependency query/exec."
 ---
 
 # Test Impact

@@ -17,7 +17,7 @@ import pytest
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 AGENTIC_SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-agentic.json"
-PARITY_MANIFEST_PATH = BENCHMARKS_DIR / "results" / "manifests" / "provider-parity-v1.json"
+PARITY_MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
 
 _REQUIRED_SHARED_RESULT_FIELDS = {
     "experiment_revision",
@@ -77,16 +77,16 @@ def test_agentic_loader_rejects_a_known_id_with_tampered_task_bytes(tmp_path: Pa
         script_run_agentic.load_tasks_with_provenance(suite_path, PARITY_MANIFEST_PATH)
 
 
-def test_structural_c_required_has_executable_required_use_support(script_run_bench: Any) -> None:
+def test_structural_c_strict_has_executable_required_use_support(script_run_bench: Any) -> None:
     """C must install Codemap, expose its command, and require use in its envelope.
 
     Prevents a C label that only falls through to the B prompt or relies on
     default CLI tool availability instead of a reproducible structural setup.
     """
-    prompt = script_run_bench._build_system_prompt("C_required", "repo", "/repo", "/index.json")
+    prompt = script_run_bench._build_system_prompt("C_strict", "repo", "/repo", "/index.json")
 
     assert "must use Codemap at least once" in prompt
-    assert script_run_bench._ARM_ALLOWED["C_required"] == ["--allowedTools", "Bash(scan-query:*)"]
+    assert script_run_bench._ARM_ALLOWED["C_strict"] == ["--allowedTools", "Bash(scan-query:*)"]
 
 
 def test_structural_legacy_arm_is_not_relabelled_as_a_parity_condition(script_run_bench: Any, tmp_path: Path) -> None:

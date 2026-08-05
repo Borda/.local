@@ -1,6 +1,6 @@
 ---
 name: agent-shims
-description: Diagnose, inspect, install, update, or remove the complete Codex Rig user-agent shim roster. Use when the user invokes agent-shims with exactly one action—doctor, status, install, or remove—or asks to manage Codex Rig role agents safely.
+description: "Safely manage Codex Rig role-agent shims: doctor, status, install, or remove; one action only."
 ---
 
 # Agent Shims

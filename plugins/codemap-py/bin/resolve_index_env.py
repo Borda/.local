@@ -310,8 +310,10 @@ def _write_sentinel_file(path: Path, content: str) -> None:
         path: Destination file path.
         content: Text to write (caller supplies any trailing newline).
     """
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    if path.is_symlink():
+        raise OSError(f"refusing to write through symlink: {path}")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
         if hasattr(os, "fchmod"):
             os.fchmod(fh.fileno(), 0o600)
         fh.write(content)

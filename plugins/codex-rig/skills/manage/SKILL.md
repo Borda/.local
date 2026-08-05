@@ -1,6 +1,6 @@
 ---
 name: manage
-description: Minimal codex-native management loop. Use to create, update, or remove Codex agents/skills/config entries with guardrails.
+description: "Manage Codex agents, skills, or config entries: create, update, or remove with guardrails."
 ---
 
 # Manage

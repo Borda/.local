@@ -2,7 +2,7 @@
 """Codex agentic provider-parity runner for the locked shared agentic suite.
 
 This module runs every manifest-locked agentic task in the A_plain, B_auto, and
-C_required treatments. It reuses the provider-neutral answer-contract scorer
+C_strict treatments. It reuses the provider-neutral answer-contract scorer
 and the Codex structural runner's native JSONL parser instead of copying either
 implementation.
 
@@ -15,7 +15,6 @@ runtime adapter, never the agentic study definition.
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import importlib.util
 import json
@@ -26,7 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, NoReturn, Sequence
 
 _BENCHMARKS_DIR = Path(__file__).resolve().parent
 if str(_BENCHMARKS_DIR) not in sys.path:
@@ -36,10 +35,12 @@ from _utilities import fmt_time, fmt_tok  # noqa: E402
 from agentic_contracts import (  # noqa: E402
     AGENTIC_ARMS,
     DEFAULT_REPETITIONS,
+    assess_answer_response,
     build_oracle,
     materialize_agentic_prompt,
-    parse_labeled_answer,
+    parse_labeled_answer as parse_labeled_answer,
     score_answer,
+    score_evidence_metrics,
     validate_answer_contract,
 )
 from provider_parity_contracts import (  # noqa: E402
@@ -56,20 +57,23 @@ AGENTIC_DEFAULT_REPETITIONS = DEFAULT_REPETITIONS
 _NATIVE_HOME_ARM = {
     "A_plain": "A_plain",
     "B_auto": "B_direct_required",
-    "C_required": "C_skill_required",
+    "C_strict": "C_skill_required",
 }
 _OUTPUT_LEGEND = (
     "LEGEND\n"
     "  treatments: A_plain=no Codemap, B_auto=CLI available and optional, "
-    "C_required=Codemap Skill read plus compact query required\n"
+    "C_strict=Codemap Skill read plus compact query required\n"
     "  metrics:\n"
-    "      SCORE: mean answer-contract component score\n"
-    "      correct: ✓ every declared answer field is correct; ✗ otherwise\n"
+    "      SCORE: mean semantic answer-component score; n/a when no answer can be recovered (higher is better)\n"
+    "      EREC: expected-importer recall in all agent text (higher is better)\n"
+    "      RREC: expected-importer recall in the final report (higher is better)\n"
+    "      DEFF: unbounded expected-importer exposure hits per command (higher is better within the same task)\n"
+    "  answer: ✓ strict envelope, △ diagnostic bare-JSON recovery (not poolable), ✗ absent or invalid\n"
     "  status: ✓ completed, ✗ failed\n"
     "  progress: N completed cells / manifest-scoped planned cells\n"
     "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
     "  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\n"
-    "  input tokens: gross total; cached and fresh details remain in telemetry only\n"
+    "  input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)\n"
     "END LEGEND"
 )
 
@@ -126,7 +130,11 @@ class AgenticRun:
     output_text: str
     report_text: str
     quality: Any | None
+    evidence: Any | None = None
     answer_error: str = ""
+    answer_contract_valid: bool | None = None
+    diagnostic_only: bool = False
+    answer_pooling_eligible: bool = False
     elapsed_s: float = 0.0
     retry_count: int = 0
     raw_events: list[dict[str, Any]] | None = None
@@ -144,7 +152,7 @@ def probe_arm(arm: str) -> ArmProbe:
         raise ValueError(f"unsupported Codex agentic arm {arm!r}")
     if arm == "A_plain":
         return ArmProbe(arm, codemap_available=False, skill_required=False)
-    return ArmProbe(arm, codemap_available=True, skill_required=arm == "C_required")
+    return ArmProbe(arm, codemap_available=True, skill_required=arm == "C_strict")
 
 
 def prepare_isolated_home(arm: str, **kwargs: Any) -> Any:
@@ -231,7 +239,7 @@ def parse_agentic_stream(
 ) -> AgenticRun:
     """Normalize one native stream and score it with the shared Claude oracle.
 
-    B_auto has optional Codemap use.  C_required preserves a completed no-call
+    B_auto has optional Codemap use.  C_strict preserves a completed no-call
     row but records compliance/adherence false; aggregation must exclude that
     coordinate rather than erasing its raw evidence.
     """
@@ -245,10 +253,10 @@ def parse_agentic_stream(
         raise ValueError("agentic stream scoring requires a shared task oracle")
     if repetition < 1:
         raise ValueError("repetition must be at least 1")
-    if arm == "C_required" and skill_path is None:
-        raise ValueError("C_required requires the exact installed Codemap Skill path")
-    if arm != "C_required" and skill_path is not None:
-        raise ValueError("only C_required accepts a Codemap Skill path")
+    if arm == "C_strict" and skill_path is None:
+        raise ValueError("C_strict requires the exact installed Codemap Skill path")
+    if arm != "C_strict" and skill_path is not None:
+        raise ValueError("only C_strict accepts a Codemap Skill path")
 
     skill_bytes = skill_path.read_bytes() if skill_path is not None else b""
     parsed = _structural.parse_codex_jsonl(
@@ -259,7 +267,7 @@ def parse_agentic_stream(
     codemap_used = parsed.codemap_calls > 0
     contaminated = arm == "A_plain" and codemap_used
     compliance = None
-    if arm == "C_required":
+    if arm == "C_strict":
         compliance = bool(parsed.skill_delivery_observed and parsed.codemap_skill_compact_successful_calls > 0)
     adherence_arm = arm
     adherence = treatment_adherence(
@@ -269,20 +277,31 @@ def parse_agentic_stream(
     )
     report_text = parsed.output_text[parsed.last_tool_text_offset :].lstrip("\n")
     quality: Any | None = None
+    evidence: Any | None = None
     answer_error = ""
+    answer_contract_valid: bool | None = None
+    diagnostic_only = False
+    answer_pooling_eligible = False
     if parsed.success:
-        try:
-            answer = parse_labeled_answer(task, report_text)
+        assessment = assess_answer_response(task, report_text)
+        evidence = score_evidence_metrics(
+            oracle,
+            exposure_text=parsed.output_text,
+            report_text=report_text,
+            tool_calls=parsed.command_calls,
+        )
+        answer_error = assessment.error or ""
+        answer_contract_valid = assessment.strict_envelope_valid
+        diagnostic_only = assessment.diagnostic_only
+        answer_pooling_eligible = assessment.pooling_eligible
+        if assessment.answer is not None:
             quality = score_answer(
                 oracle,
-                answer,
+                assessment.answer,
                 exposure_text=parsed.output_text,
                 report_text=report_text,
                 tool_calls=parsed.command_calls,
             )
-        except ValueError as exc:
-            answer_error = str(exc)
-            quality = score_answer(oracle, {}, exposure_text="", report_text="", tool_calls=0)
     return AgenticRun(
         arm=arm,
         task_id=str(task["id"]),
@@ -305,7 +324,11 @@ def parse_agentic_stream(
         output_text=parsed.output_text,
         report_text=report_text,
         quality=quality,
+        evidence=evidence,
         answer_error=answer_error,
+        answer_contract_valid=answer_contract_valid,
+        diagnostic_only=diagnostic_only,
+        answer_pooling_eligible=answer_pooling_eligible,
         raw_events=parsed.raw_events,
     )
 
@@ -427,7 +450,7 @@ def _agentic_envelope(arm: str, task: Mapping[str, Any]) -> str:
             "Codemap's direct CLI is available as $CODEMAP_BIN. Use it when useful, but ordinary reads and shell "
             "tools remain allowed and no Codemap call is required."
         )
-    elif arm == "C_required":
+    elif arm == "C_strict":
         treatment = (
             'Use the installed Codemap Skill before answering: first execute exactly cat "$CODEMAP_SKILL_FILE", '
             "then complete at least one successful $CODEMAP_BIN query --compact structural query. Other reads and "
@@ -456,11 +479,13 @@ class AgenticCodexRunner:
         auth_source: Path | None,
         adapter_manifest_path: Path,
         agentic_manifest: Mapping[str, Any],
+        agentic_manifest_path: Path | None = None,
         transport: Callable[..., str | bytes | Iterable[str | bytes]] | None = None,
     ) -> None:
         self.repo_path = Path(repo_path).resolve()
         self.index_path = Path(index_path).resolve()
         self.agentic_manifest = agentic_manifest
+        self.agentic_manifest_path = Path(agentic_manifest_path or _MANIFEST_PATH)
         self.transport = transport
         self.adapter = _structural.CodexRunner(
             "gpt-5.6-luna",
@@ -478,6 +503,24 @@ class AgenticCodexRunner:
         """Release the adapter's private credential chain."""
         self.adapter.close()
 
+    def preflight_snapshot_bound_admission(self) -> None:
+        """Exercise initial and later snapshot-bound B/C admission without transport."""
+        with tempfile.TemporaryDirectory(prefix="codex-agentic-dry-run-") as temporary_root:
+            run_dir = Path(temporary_root)
+            self.create_input_snapshot(
+                run_dir,
+                manifest_path=self.agentic_manifest_path,
+                invocation_launcher_path=_BENCHMARKS_DIR / "run-all.sh",
+            )
+            for arm in ("B_direct_required", "C_skill_required"):
+                home = self.adapter._prepare_verified_home(arm)
+                try:
+                    _structural.probe_arm_home(home)
+                finally:
+                    if home.coordination_path is not None:
+                        _structural._cleanup_coordination_root(home.coordination_path)
+                    home.cleanup()
+
     def _postflight(self, home: Any | None) -> str:
         """Return a concrete error when a native attempt changed locked runtime state."""
         try:
@@ -492,6 +535,15 @@ class AgenticCodexRunner:
         self, run_dir: Path, *, manifest_path: Path, invocation_launcher_path: Path
     ) -> dict[str, Any]:
         """Archive only immutable, non-secret agentic inputs and verified runtime bytes."""
+        snapshot_root = Path(run_dir) / "inputs"
+        if snapshot_root.exists():
+            raise FileExistsError(snapshot_root)
+        # Reserve evidence before the first disposable home so an admission
+        # failure survives the home cleanup that records it.
+        self.adapter._runtime_evidence_path = Path(run_dir) / "runtime-isolation.jsonl"
+        self.adapter._runtime_evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        self.adapter._runtime_evidence_path.touch(exist_ok=False)
+        self.adapter._runtime_evidence_path.chmod(0o600)
         homes: list[Any] = []
         arm_archives: dict[str, dict[str, Path]] = {}
         arm_files: dict[str, dict[str, Path]] = {}
@@ -503,14 +555,14 @@ class AgenticCodexRunner:
                 arm_files[arm] = {"config.toml": home.path / "config.toml"}
                 if arm == "B_auto":
                     arm_archives[arm] = {"direct-cli": home.path / "direct-cli"}
-                elif arm == "C_required":
+                elif arm == "C_strict":
                     if home.codemap_plugin_path is None or home.codex_rig_path is None:
-                        raise RuntimeError("C_required snapshot lacks verified Codemap or Codex Rig package")
+                        raise RuntimeError("C_strict snapshot lacks verified Codemap or Codex Rig package")
                     arm_archives[arm] = {"codemap-py": home.codemap_plugin_path, "codex-rig": home.codex_rig_path}
                     if home.codemap_context_path is not None:
                         arm_files[arm]["codemap-context.json"] = home.codemap_context_path
-            return _write_agentic_input_snapshot(
-                Path(run_dir) / "inputs",
+            snapshot = _write_agentic_input_snapshot(
+                snapshot_root,
                 manifest_path=Path(manifest_path),
                 tasks_path=_TASKS_PATH,
                 runner_path=Path(__file__),
@@ -520,6 +572,18 @@ class AgenticCodexRunner:
                 arm_archives=arm_archives,
                 arm_files=arm_files,
             )
+            if isinstance(snapshot.get("path"), str):
+                self.adapter._bind_runtime_snapshot(
+                    snapshot_root,
+                    {
+                        "B_direct_required": {"direct-cli": snapshot_root / "B_auto" / "direct-cli"},
+                        "C_skill_required": {
+                            "codemap-py": snapshot_root / "C_strict" / "codemap-py",
+                            "codex-rig": snapshot_root / "C_strict" / "codex-rig",
+                        },
+                    },
+                )
+            return snapshot
         except BaseException as exc:
             operation_error = exc
             raise
@@ -582,7 +646,7 @@ class AgenticCodexRunner:
                         task=task,
                         oracle=oracle,
                         repetition=repetition,
-                        skill_path=home.codemap_skill_path if arm == "C_required" and home is not None else None,
+                        skill_path=home.codemap_skill_path if arm == "C_strict" and home is not None else None,
                     )
                     break
                 if self.transport is None:
@@ -596,7 +660,7 @@ class AgenticCodexRunner:
                     task=task,
                     oracle=oracle,
                     repetition=repetition,
-                    skill_path=home.codemap_skill_path if arm == "C_required" and home is not None else None,
+                    skill_path=home.codemap_skill_path if arm == "C_strict" and home is not None else None,
                 )
                 attempts.append(result.raw_events or [])
                 postflight_error = self._postflight(home)
@@ -709,6 +773,8 @@ def _write_agentic_input_snapshot(
             _structural._archive_snapshot_tree(
                 root, snapshot_root / arm / package_role, role=f"{arm}:{package_role}", entries=entries
             )
+        if arm == "C_strict":
+            _structural._write_frozen_marketplace(snapshot_root, arm, entries)
     entries.sort(key=lambda item: (str(item["role"]), str(item["archived_path"])))
     payload = {
         "schema_version": "codex-agentic-input-snapshot-v1",
@@ -766,11 +832,18 @@ def dry_run(
     return lines
 
 
+# ``main``'s ``--dry-run`` flag binds the name ``dry_run`` inside its body, so the planner is
+# reached there through this module-level alias; ``dry_run`` itself stays the public entry point.
+_dry_run_plan = dry_run
+
+
 def _append_telemetry(path: Path, run: AgenticRun, execution_index: int) -> None:
     """Append one immutable raw agentic row before updating derived evidence."""
     row = vars(run).copy()
     if run.quality is not None:
         row["quality"] = {**vars(run.quality), "components": dict(run.quality.components)}
+    if run.evidence is not None:
+        row["evidence"] = vars(run.evidence)
     row["execution_index"] = execution_index
     row["fresh_input_tokens"] = _structural.fresh_input_tokens(run.input_tokens, run.cached_input_tokens)
     row["token_accounting_inconsistent"] = _structural.token_accounting_inconsistent(
@@ -811,13 +884,15 @@ def _progress_line(execution_index: int, total_cells: int, run: AgenticRun) -> s
     treatment = "✓" if run.treatment_adherence else "✗"
     used = "✓" if run.codemap_used else "✗"
     score = "n/a" if run.quality is None else f"{run.quality.quality_score:.3f}"
-    correct = "✗" if run.quality is None else ("✓" if run.quality.correct else "✗")
+    answer = "✓" if run.answer_contract_valid else ("△" if run.diagnostic_only else "✗")
+    erec = run.evidence.erec if run.evidence is not None else 0.0
+    rrec = run.evidence.rrec if run.evidence is not None else 0.0
+    deff = run.evidence.deff if run.evidence is not None else 0.0
     return (
         f"({execution_index}/{total_cells}) {status}  {run.task_id:<5}  rep={run.repetition}  {run.arm:<10}"
         f"  in={fmt_tok(run.input_tokens):>6}  out={fmt_tok(run.output_tokens):>6}"
-        f"  time={fmt_time(run.elapsed_s):>5}  SCORE={score}  EREC={run.quality.erec if run.quality else 0.0:.3f}"
-        f"  RREC={run.quality.rrec if run.quality else 0.0:.3f}  DEFF={run.quality.deff if run.quality else 0.0:.3f}  correct:{correct}"
-        f"  treatment:{treatment}  codemap-used:{used}"
+        f"  time={fmt_time(run.elapsed_s):>5}  SCORE={score}  EREC={erec:.3f}"
+        f"  RREC={rrec:.3f}  DEFF={deff:.3f}  answer:{answer}  treatment:{treatment}  codemap-used:{used}"
     )
 
 
@@ -972,6 +1047,7 @@ def run_paid(
             auth_source=Path(auth_source),
             adapter_manifest_path=adapter_manifest_path,
             agentic_manifest=manifest,
+            agentic_manifest_path=Path(manifest_path),
         )
         snapshot_builder = getattr(runner, "create_input_snapshot", None)
         if callable(snapshot_builder):
@@ -1031,77 +1107,226 @@ def run_paid(
             _structural._close_runner(runner)
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run a no-model scope preflight or a separately admitted paid study."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true", help="print the resolved no-model plan")
-    parser.add_argument("--resolve-scope", action="store_true", help="print the resolved scope JSON and exit")
-    parser.add_argument("--tasks-path", type=Path, default=_TASKS_PATH)
-    parser.add_argument("--manifest-path", type=Path, default=_MANIFEST_PATH)
-    parser.add_argument("--task-id", action="append", help="select one manifest-bound task; may be repeated")
-    parser.add_argument("--repetitions", type=int, default=AGENTIC_DEFAULT_REPETITIONS)
-    parser.add_argument("--repo-path", type=Path)
-    parser.add_argument("--index-path", type=Path)
-    parser.add_argument("--marketplace-root", type=Path)
-    parser.add_argument("--codemap-bin", type=Path)
-    parser.add_argument("--auth-source", type=Path)
-    parser.add_argument("--invocation-launcher-path", type=Path)
-    parser.add_argument("--run-dir", type=Path)
-    parser.add_argument("--paid-approval", help="exact SHA-256 of the reviewed admitted agentic manifest")
-    parser.add_argument("--scope-sha256", help="exact SHA-256 of a nondefault resolved scope")
-    parser.add_argument("--max-wall-clock-seconds", type=float)
-    args = parser.parse_args(argv)
+def _cli_error(message: str) -> NoReturn:
+    """Reject one invocation exactly as the previous argparse parser did.
+
+    Args:
+        message: Human-readable reason the invocation cannot proceed.
+
+    Raises:
+        SystemExit: Always, carrying argparse's usage-error status 2.
+
+    Examples:
+        >>> try:
+        ...     _cli_error("bad invocation")
+        ... except SystemExit as exit_status:
+        ...     exit_status.code
+        2
+    """
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def _normalize_task_ids(task_id: str | Sequence[str] | None) -> list[str] | None:
+    """Normalize one Fire ``--task-id`` value into an ordered task-ID list.
+
+    The comma-separated ``--task-id BA-01,BA-02`` form is split here rather than
+    relying on Fire: Fire only splits a comma-joined value when it parses as a
+    Python literal, which ``BA-01,BA-02`` does not, so it arrives as one string.
+    A value Fire did split (a sequence) is accepted unchanged. An empty token is
+    rejected here rather than silently dropped, so a stray comma cannot quietly
+    narrow the resolved scope.
+
+    Args:
+        task_id: Raw Fire value: ``None``, one comma-separated string, or a sequence.
+
+    Returns:
+        The selected task IDs, or ``None`` when no task was selected.
+
+    Raises:
+        SystemExit: When any comma-separated token is empty.
+
+    Examples:
+        >>> _normalize_task_ids(None) is None
+        True
+        >>> _normalize_task_ids("BA-01")
+        ['BA-01']
+        >>> _normalize_task_ids("BA-01,BA-02")
+        ['BA-01', 'BA-02']
+        >>> _normalize_task_ids(("BA-01", "BA-02"))
+        ['BA-01', 'BA-02']
+    """
+    if task_id is None:
+        return None
+    values = task_id if isinstance(task_id, (list, tuple)) else [task_id]
+    task_ids = [token.strip() for value in values for token in str(value).split(",")]
+    if not task_ids or any(not selected for selected in task_ids):
+        _cli_error("--task-id values cannot be empty")
+    return task_ids
+
+
+def _require_paid_arguments(**arguments: Any) -> None:
+    """Reject a paid invocation that omits any required command-line argument.
+
+    Args:
+        **arguments: Parameter name to supplied value, in flag order; a ``None``
+            value marks that flag as missing.
+
+    Raises:
+        SystemExit: When at least one required flag was not supplied.
+
+    Examples:
+        >>> _require_paid_arguments(repo_path=Path("."), run_dir=Path("."))
+        >>> try:
+        ...     _require_paid_arguments(repo_path=None, run_dir=Path("."))
+        ... except SystemExit as exit_status:
+        ...     exit_status.code
+        2
+    """
+    missing = [f"--{name.replace('_', '-')}" for name, value in arguments.items() if value is None]
+    if missing:
+        _cli_error(f"paid Codex agentic execution requires {' '.join(missing)}")
+
+
+def _require_dry_run_admission_arguments(**arguments: Any) -> None:
+    """Reject a runtime dry run that cannot exercise isolated B/C admission."""
+    missing = [f"--{name.replace('_', '-')}" for name, value in arguments.items() if value is None]
+    if missing:
+        _cli_error(f"Codex agentic dry-run admission requires {' '.join(missing)}")
+
+
+def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag with a default (0 required)
+    dry_run: bool = False,
+    resolve_scope: bool = False,
+    tasks_path: Path = _TASKS_PATH,
+    manifest_path: Path = _MANIFEST_PATH,
+    task_id: str | Sequence[str] | None = None,
+    repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
+    repo_path: Path | None = None,
+    index_path: Path | None = None,
+    marketplace_root: Path | None = None,
+    codemap_bin: Path | None = None,
+    auth_source: Path | None = None,
+    invocation_launcher_path: Path | None = None,
+    run_dir: Path | None = None,
+    paid_approval: str | None = None,
+    scope_sha256: str | None = None,
+    max_wall_clock_seconds: float | None = None,
+) -> None:
+    """Run a no-model scope preflight or a separately admitted paid study.
+
+    Args:
+        dry_run: Print the resolved no-model cell plan and exit.
+        resolve_scope: Print the resolved scope JSON and exit.
+        tasks_path: Locked shared agentic task suite.
+        manifest_path: Locked Codex agentic manifest.
+        task_id: One manifest-bound task ID, or several as a single comma-separated
+            value (``--task-id BA-01,BA-02``); absent selects the whole locked scope.
+        repetitions: Positive repeat count per task and arm.
+        repo_path: Locked agentic target repository root (paid execution only).
+        index_path: Locked frozen Codemap index (paid execution only).
+        marketplace_root: Optional verified plugin marketplace root.
+        codemap_bin: Optional verified Codemap CLI path.
+        auth_source: Codex credential source for the isolated homes (paid execution only).
+        invocation_launcher_path: run-all launcher snapshot inside the run directory (paid execution only).
+        run_dir: Empty run directory holding only that launcher snapshot (paid execution only).
+        paid_approval: Exact SHA-256 of the reviewed admitted agentic manifest.
+        scope_sha256: Exact SHA-256 of a nondefault resolved scope.
+        max_wall_clock_seconds: Complete-run ceiling; must equal the resolved scope ceiling.
+
+    Raises:
+        SystemExit: When the invocation is rejected before any paid coordinate runs.
+
+    Examples:
+        >>> main.__name__
+        'main'
+    """
+    # fire passes CLI strings through regardless of annotation — coerce every typed argument.
+    task_ids = _normalize_task_ids(task_id)
+    manifest_path = Path(manifest_path)
+    repetitions = int(repetitions)
+    paid_approval = None if paid_approval is None else str(paid_approval)
+    scope_sha256 = None if scope_sha256 is None else str(scope_sha256)
     try:
-        scope = resolve_agentic_scope(
-            args.manifest_path,
-            task_ids=args.task_id,
-            repetitions=args.repetitions,
-        )
+        scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
     except ValueError as exc:
-        parser.error(str(exc))
-    if args.scope_sha256 is not None and args.scope_sha256 != scope["scope_sha256"]:
-        parser.error("--scope-sha256 does not match the resolved agentic scope")
-    if args.resolve_scope:
+        _cli_error(str(exc))
+    if scope_sha256 is not None and scope_sha256 != scope["scope_sha256"]:
+        _cli_error("--scope-sha256 does not match the resolved agentic scope")
+    if resolve_scope:
         print(json.dumps(scope, sort_keys=True))
-        return 0
-    if args.dry_run:
+        return
+    if dry_run:
+        _require_dry_run_admission_arguments(
+            repo_path=repo_path,
+            index_path=index_path,
+            marketplace_root=marketplace_root,
+            codemap_bin=codemap_bin,
+        )
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            _cli_error(f"agentic manifest is unavailable or malformed: {exc}")
+        if not isinstance(manifest, Mapping):
+            _cli_error("agentic manifest must be a JSON object")
+        runtime = manifest.get("runtime_isolation")
+        if not isinstance(runtime, Mapping) or not isinstance(runtime.get("manifest"), str):
+            _cli_error("Codex agentic manifest lacks a structural runtime adapter manifest")
+        adapter_manifest_path = (_BENCHMARKS_DIR.parent / runtime["manifest"]).resolve()
+        if not adapter_manifest_path.is_file():
+            _cli_error("Codex agentic structural runtime adapter manifest is unavailable")
+        try:
+            runner = AgenticCodexRunner(
+                repo_path=Path(repo_path),
+                index_path=Path(index_path),
+                marketplace_root=Path(marketplace_root),
+                codemap_bin=Path(codemap_bin),
+                auth_source=None,
+                adapter_manifest_path=adapter_manifest_path,
+                agentic_manifest=manifest,
+                agentic_manifest_path=manifest_path,
+            )
+            try:
+                runner.preflight_snapshot_bound_admission()
+            finally:
+                runner.close()
+        except ValueError as exc:
+            _cli_error(str(exc))
         _emit_output_legend()
-        for line in dry_run(
-            tasks_path=args.tasks_path,
-            manifest_path=args.manifest_path,
-            task_ids=args.task_id,
-            repetitions=args.repetitions,
+        for line in _dry_run_plan(
+            tasks_path=Path(tasks_path),
+            manifest_path=manifest_path,
+            task_ids=task_ids,
+            repetitions=repetitions,
         ):
             print(line)
-        return 0
-    required = {
-        "--repo-path": args.repo_path,
-        "--index-path": args.index_path,
-        "--auth-source": args.auth_source,
-        "--invocation-launcher-path": args.invocation_launcher_path,
-        "--run-dir": args.run_dir,
-        "--paid-approval": args.paid_approval,
-    }
-    missing = [flag for flag, value in required.items() if value is None]
-    if missing:
-        parser.error(f"paid Codex agentic execution requires {' '.join(missing)}")
-    run_paid(
-        repo_path=args.repo_path,
-        index_path=args.index_path,
-        auth_source=args.auth_source,
-        approval_sha256=args.paid_approval,
-        run_dir=args.run_dir,
-        manifest_path=args.manifest_path,
-        marketplace_root=args.marketplace_root,
-        codemap_bin=args.codemap_bin,
-        invocation_launcher_path=args.invocation_launcher_path,
-        task_ids=args.task_id,
-        repetitions=args.repetitions,
-        scope_sha256=args.scope_sha256,
-        max_wall_clock_seconds=args.max_wall_clock_seconds,
+        return
+    _require_paid_arguments(
+        repo_path=repo_path,
+        index_path=index_path,
+        auth_source=auth_source,
+        invocation_launcher_path=invocation_launcher_path,
+        run_dir=run_dir,
+        paid_approval=paid_approval,
     )
-    return 0
+    run_paid(
+        repo_path=Path(repo_path),
+        index_path=Path(index_path),
+        auth_source=Path(auth_source),
+        approval_sha256=paid_approval,
+        run_dir=Path(run_dir),
+        manifest_path=manifest_path,
+        marketplace_root=None if marketplace_root is None else Path(marketplace_root),
+        codemap_bin=None if codemap_bin is None else Path(codemap_bin),
+        invocation_launcher_path=Path(invocation_launcher_path),
+        task_ids=task_ids,
+        repetitions=repetitions,
+        scope_sha256=scope_sha256,
+        max_wall_clock_seconds=None if max_wall_clock_seconds is None else float(max_wall_clock_seconds),
+    )
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from fire import Fire
+
+    Fire(main)

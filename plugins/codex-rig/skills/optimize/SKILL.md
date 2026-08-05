@@ -1,6 +1,6 @@
 ---
 name: optimize
-description: Minimal codex-native optimization loop. Use for metric-driven improvements with guardrails and measurable gates.
+description: "Optimize a measurable metric with bounded iterations, guardrails, and regression gates."
 ---
 
 # Optimize

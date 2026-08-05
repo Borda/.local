@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+
+- Keep compact `investigate` and `sync` routing descriptions aligned with the offline calibration contract.
+
 ## 0.4.2
 
 - Name the review, test, and toolchain owners in the `oss-shepherd` role card and state that its handover drafts stay advisory text rather than applied changes.

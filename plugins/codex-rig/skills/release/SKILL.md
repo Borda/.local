@@ -1,6 +1,6 @@
 ---
 name: release
-description: Minimal codex-native release loop. Use for SemVer-aware release readiness with measurable gates and artifact output.
+description: "Assess SemVer release readiness with gates/artifacts; never tag, publish, upload, or force-push."
 ---
 
 # Release

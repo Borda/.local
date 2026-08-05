@@ -1,6 +1,6 @@
 ---
 name: analyse
-description: Minimal codex-native analysis loop. Use for issue/PR/problem analysis before implementation with measurable gates.
+description: "Analyze issue/PR/problem before implementation; produce source-backed findings and measurable gates."
 ---
 
 # Analyse

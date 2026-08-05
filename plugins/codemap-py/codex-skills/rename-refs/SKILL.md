@@ -1,13 +1,6 @@
 ---
 name: rename-refs
-description: |
-  Atomic rename of Python symbols or modules via the structural index — static callers, import sites, `__all__`
-  re-exports, Sphinx cross-refs; optional deprecated alias (`--deprecate`) or hard-delete
-  (`--remove-if-no-callers`). Trigger with `$codemap-py:rename-refs symbol <old> <new> [flags]` or
-  `$codemap-py:rename-refs module <old_path> <new_path> [--dry-run]` for: "rename X to Y" (function/class/method/
-  module), "move module X to Y", "update all references to X".
-  Skip for: non-Python; index not built (run `$codemap-py:scan-codebase` first); local-variable rename; grep-only
-  rename wanted; 1:N symbol splits; package directory rename (use `git mv` directly).
+description: "`$codemap-py:rename-refs`: rename Python names; skip non-Python/unbuilt/local/grep/split/pkg-dir."
 ---
 
 # Rename Refs

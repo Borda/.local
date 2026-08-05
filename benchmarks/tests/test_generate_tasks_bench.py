@@ -11,6 +11,7 @@ import ast
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -83,6 +84,7 @@ class TestTasksFile:
         assert len(tasks) == 55
         assert script_gen_bench._expected_query_contract_errors(tasks) == []
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX scan-query launcher is not executable on native Windows")
     def test_expected_query_commands_are_supported_by_scan_query(self, script_gen_bench: Any) -> None:
         """The benchmark's declared command allowlist stays within the live CLI surface."""
         launcher = script_gen_bench.git_toplevel() / "plugins" / "codemap-py" / "bin" / "scan-query"

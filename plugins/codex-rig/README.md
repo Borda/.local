@@ -109,6 +109,8 @@ codex '$codex-rig:code-remediate #123 +review'
 
 ## Skills
 
+> Skill frontmatter uses compact routing descriptions to conserve the Codex skills catalog; each `SKILL.md` body remains the complete workflow contract.
+
 Codex Rig installs 14 skills: 13 work workflows plus the legacy shim manager.
 
 | Skill            | Purpose                                                                                                             |
@@ -119,13 +121,13 @@ Codex Rig installs 14 skills: 13 work workflows plus the legacy shim manager.
 | `code-remediate` | Triage review findings, select valid work, assign owners/verifiers, apply fixes, and prove closure.                 |
 | `code-review`    | Review a local diff or GitHub PR across mandatory and risk-triggered specialist axes.                               |
 | `develop`        | Run the linear plan-build-verify implementation loop with measurable acceptance gates.                              |
-| `investigate`    | Narrow unknown failures to an evidence-backed root cause before implementation.                                     |
+| `investigate`    | Debug code and narrow unknown failures to an evidence-backed root cause before implementation.                      |
 | `kaggle`         | Create or extend grounded Jupytext Kaggle notebooks across common ML modalities and stages.                         |
 | `manage`         | Safely create, update, or remove Codex skills, agent configuration, and related references.                         |
 | `optimize`       | Measure first, change one bounded variable, remeasure, and reject regressions.                                      |
 | `release`        | Assess SemVer, changelog, migration, packaging, and release readiness.                                              |
 | `research`       | Collect current primary evidence and map findings to concrete implementation choices.                               |
-| `sync`           | Inspect or refresh the public-GitHub Codex Rig installation without editing cached plugin files.                    |
+| `sync`           | Inspect active plugin-cache drift or refresh the public-GitHub Codex Rig installation without cache edits.          |
 | `agent-shims`    | Diagnose and remove authenticated thin shims from pre-release development; new installation stays blocked.          |
 
 Every workflow defines an input contract, fail-fast rules, required gates, artifact shape, and confidence output. The workflow instructions live in `skills/<name>/SKILL.md`; shared executable contracts live in `shared/`.

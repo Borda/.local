@@ -210,6 +210,7 @@ reducing tool call count, elapsed time, and context consumption.
 """
 
 import ast
+import contextlib
 import hashlib
 import inspect
 import json
@@ -224,12 +225,13 @@ from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import fire
 import pandas as pd
 
 from rich.console import Console as _Console
+from rich.text import Text as _Text
 
 # benchmarks/ is not a package; make the sibling _utilities module importable
 # regardless of how this script is launched (direct path, symlink, or any cwd).
@@ -257,10 +259,11 @@ from agentic_contracts import (  # noqa: E402
     DEFAULT_REPETITIONS,
     AgenticOracle,  # noqa: F401
     AnswerScore,  # noqa: F401
+    assess_answer_response,
     build_oracle,
     materialize_agentic_prompt,
-    parse_labeled_answer,
     score_answer,
+    score_evidence_metrics,
 )
 from provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
@@ -529,6 +532,9 @@ class BenchmarkRun:
     answer_correct: bool | None = None
     answer_components: dict[str, float] = field(default_factory=dict)
     answer_error: str = ""
+    answer_contract_valid: bool | None = None
+    answer_diagnostic_only: bool = False
+    answer_pooling_eligible: bool = False
     tools: ToolCounts = field(default_factory=ToolCounts)
     # Token metrics
     input_tokens: int = 0
@@ -1150,7 +1156,14 @@ class GroundTruth:
             out[task.id] = {
                 m["name"]
                 for m in modules
-                if pm in m.get("direct_imports", []) and m.get("status") == "ok" and not m["name"].startswith("tests.")
+                if pm in m.get("direct_imports", [])
+                and m.get("status") == "ok"
+                # is_test is the scanner's own classification and catches non-"tests." roots
+                # like tests_pytorch.*; the name-prefix check stays for indexes predating the
+                # flag. The AST oracle prunes tests dirs entirely, so without this the same
+                # test importers surface as spurious missing_in_ast gt-divergences (BA-16).
+                and not m.get("is_test")
+                and not m["name"].startswith("tests.")
             }
         return out
 
@@ -1188,16 +1201,23 @@ class GroundTruth:
         return expected, divergences
 
     def _emit_divergences(self) -> None:
-        """Print one visible line per task where the AST oracle and index disagree.
+        """Print one summary line when the AST oracle and index disagree on any task.
 
-        A non-empty ``missing_in_index`` means the AST scan found real importers the index lacks —
+        Per-task detail stays in ``self.divergences`` for callers/tests; a non-empty
+        ``missing_in_index`` means the AST scan found real importers the index lacks —
         a potential plugin blind spot and the harness's added diagnostic value (review C-5).
         """
-        for task_id, d in sorted(self.divergences.items()):
-            print(
-                f"[gt-divergence] {task_id}: ast={d['ast']} index={d['index']} "
-                f"missing_in_index={d['missing_in_index']} missing_in_ast={d['missing_in_ast']}"
-            )
+        if not self.divergences:
+            return
+        missing_in_index = sum(len(d["missing_in_index"]) for d in self.divergences.values())
+        missing_in_ast = sum(len(d["missing_in_ast"]) for d in self.divergences.values())
+        if missing_in_index and missing_in_ast:
+            detail = "index has blind spots and extra entries vs AST oracle"
+        elif missing_in_index:
+            detail = "index misses real importers the AST oracle found"
+        else:
+            detail = "index has extra entries the AST oracle excludes (e.g. test modules)"
+        print(f"[gt-divergence] {len(self.divergences)}/{len(self.expected)} tasks diverged vs AST oracle ({detail})")
 
     @staticmethod
     def _generate_match_set(module: str) -> list[re.Pattern]:
@@ -1293,15 +1313,35 @@ class GroundTruth:
         skill_returned: Optional[int] = None
         if skill_result_text:
             returned: Optional[set] = None
-            try:
-                data = json.loads(skill_result_text)
-                if "imported_by" in data:
-                    returned = set(data["imported_by"])
-            except (json.JSONDecodeError, AttributeError, TypeError):
-                # Rendered markdown path — extract lines that look like dotted module paths.
-                modules = re.findall(r"^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+)\s*$", skill_result_text, re.MULTILINE)
-                if modules:
-                    returned = set(modules)
+            # The corpus is usually SEVERAL one-line scan-query JSON objects joined by
+            # newlines (one per rdeps call) — whole-text json.loads fails with "Extra data"
+            # on the second object, which silently killed sc for every multi-call run.
+            # Parse per line and union imported_by across all parseable objects first.
+            union: set[str] = set()
+            parsed_any = False
+            for line in skill_result_text.splitlines():
+                line = line.strip()
+                if not (line.startswith("{") and line.endswith("}")):
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(data, dict) and isinstance(data.get("imported_by"), list):
+                    union |= set(data["imported_by"])
+                    parsed_any = True
+            if parsed_any:
+                returned = union
+            else:
+                try:
+                    data = json.loads(skill_result_text)
+                    if "imported_by" in data:
+                        returned = set(data["imported_by"])
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    # Rendered markdown path — extract lines that look like dotted module paths.
+                    modules = re.findall(r"^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+)\s*$", skill_result_text, re.MULTILINE)
+                    if modules:
+                        returned = set(modules)
             if returned is not None:
                 skill_returned = len(returned)
                 skill_coverage = len(returned & exp) / n_exp
@@ -1418,7 +1458,7 @@ class ModelRunner:
     _ARM_DISALLOWED: dict[str, list[str]] = {
         "codemap": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
         "B_auto": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
-        "C_required": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
+        "C_strict": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
         "semble": ["--disallowed-tools", "Skill"],
         "plain": ["--disallowed-tools", "Skill,mcp__semble__search,mcp__semble__find_related"],
         "A_plain": [
@@ -1440,7 +1480,7 @@ class ModelRunner:
     _ARM_ALLOWED: dict[str, list[str]] = {
         "codemap": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
         "B_auto": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
-        "C_required": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
+        "C_strict": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
         "semble": ["--allowedTools", "mcp__semble__search,mcp__semble__find_related"],
         "combined": [
             "--allowedTools",
@@ -1529,7 +1569,7 @@ Grep, Glob, Bash, and Read remain available.
 
 If /codemap:query-code returns <tool_use_error>, run one Grep/Bash fallback for the same query."""
 
-    _C_REQUIRED_SUPPLEMENT = "\n\nYou must use Codemap at least once for structural investigation."
+    _C_STRICT_SUPPLEMENT = "\n\nYou must use Codemap at least once for structural investigation."
 
     _SEMBLE_SUPPLEMENT = """
 
@@ -1657,7 +1697,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             supplement = {
                 "codemap": self._FIXSINGLE_CODEMAP,
                 "B_auto": self._FIXSINGLE_CODEMAP,
-                "C_required": self._FIXSINGLE_CODEMAP + self._C_REQUIRED_SUPPLEMENT,
+                "C_strict": self._FIXSINGLE_CODEMAP + self._C_STRICT_SUPPLEMENT,
                 "semble": self._FIXSINGLE_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._FIXSINGLE_PLAIN)
             return self._FIXSINGLE_BASE + supplement + self._EFFICIENCY
@@ -1665,7 +1705,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             supplement = {
                 "codemap": self._FIXMULTI_CODEMAP,
                 "B_auto": self._FIXMULTI_CODEMAP,
-                "C_required": self._FIXMULTI_CODEMAP + self._C_REQUIRED_SUPPLEMENT,
+                "C_strict": self._FIXMULTI_CODEMAP + self._C_STRICT_SUPPLEMENT,
                 "semble": self._FIXMULTI_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._FIXMULTI_PLAIN)
             return self._FIXMULTI_BASE + supplement + self._EFFICIENCY
@@ -1673,15 +1713,15 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             supplement = {
                 "codemap": self._READCROP_CODEMAP,
                 "B_auto": self._READCROP_CODEMAP,
-                "C_required": self._READCROP_CODEMAP + self._C_REQUIRED_SUPPLEMENT,
+                "C_strict": self._READCROP_CODEMAP + self._C_STRICT_SUPPLEMENT,
                 "semble": self._READCROP_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._READCROP_PLAIN)
             return self._READCROP_BASE + supplement + self._EFFICIENCY
         base = self._PLAIN_SKILLS.get(task_type, self._PLAIN_SKILLS["fix"])
         if arm in ("codemap", "B_auto"):
             supplement = self._CODEMAP_SUPPLEMENT
-        elif arm == "C_required":
-            supplement = self._CODEMAP_SUPPLEMENT + self._C_REQUIRED_SUPPLEMENT
+        elif arm == "C_strict":
+            supplement = self._CODEMAP_SUPPLEMENT + self._C_STRICT_SUPPLEMENT
         elif arm == "semble":
             supplement = self._SEMBLE_SUPPLEMENT.format(repo_path=self.repo_path)
         elif arm == "combined":
@@ -1705,6 +1745,71 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         self.model_id = model_id
         self.repo_path = repo_path
         self.timeout = timeout
+
+    @contextlib.contextmanager
+    def _effective_cwd(
+        self,
+        task: Task,
+        arm: str,
+        diff_capture: list[str],
+        test_capture: list[Optional[bool]],
+    ) -> Iterator[Path]:
+        """Yield an isolated sandbox copy of the repo for one run, capturing its aftermath.
+
+        Args:
+            task: The task about to run; ``requires_reset`` selects the fix-lane behaviour
+                (post-run diff capture and optional targeted test).
+            arm: Benchmark arm; the index-consuming arms get the prebuilt cache seeded.
+            diff_capture: Accumulator the post-run ``diff -ru`` output is appended to
+                (fix-lane tasks only).
+            test_capture: Accumulator the targeted-test verdict is appended to when the task
+                declares a ``test_target``.
+
+        Yields:
+            Path of the sandbox repo copy, removed when the block exits.
+        """
+        # EVERY arm runs in an isolated copy of the repo so agent edits can never mutate
+        # self.repo_path. Blocking Edit/Write is not enough: the codemap and combined arms keep
+        # Bash, so an agent could still write through the shell — only a throwaway copy bounds
+        # the blast radius. Query (non-reset) arms previously ran in-place, letting a stray edit
+        # contaminate later runs (review M-5); they now copy like every other arm.
+        import shutil
+        import tempfile
+
+        prefix = "bench-fix-" if task.requires_reset else "bench-copy-"
+        with tempfile.TemporaryDirectory(prefix=prefix) as tmpdir:
+            tmp = Path(tmpdir)
+            cwd = tmp / self.repo_path.name
+            shutil.copytree(
+                self.repo_path,
+                cwd,
+                ignore=shutil.ignore_patterns(".cache", ".git"),
+                symlinks=True,
+            )
+            # codemap / combined arms need the prebuilt index present in the sandbox;
+            # otherwise the /codemap:query-code Step 0 would build it inside the measured
+            # window (review H-3). The sandbox dir keeps the original repo name, so the
+            # repo-name-derived index file (<repo>.json) resolves unchanged (git is absent →
+            # resolve_proj_index falls back to the CWD basename). Plain and semble arms are
+            # left index-free — plain for isolation, semble because it never queries the index.
+            if arm in ("codemap", "combined", "B_auto", "C_strict"):
+                self._seed_index_cache(cwd)
+            yield cwd
+            if task.requires_reset:
+                import subprocess as _sp
+
+                proc = _sp.run(
+                    ["diff", "-ru", "--no-dereference", str(self.repo_path), str(cwd)],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                diff_capture.append(proc.stdout)
+                # Opt-in correctness signal: run the task's declared pytest node on the sandbox
+                # (post-edit, pre-cleanup) so a semantically wrong edit that merely emits the
+                # right keywords does not score full recall unchecked (review M-4).
+                if task.test_target:
+                    test_capture.append(self._run_targeted_test(cwd, task.test_target))
 
     def run(
         self,
@@ -1731,7 +1836,6 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             Populated ``BenchmarkRun`` with tool counts, token metrics, timing, and
             raw output text ready for quality scoring.
         """
-        import contextlib
         import tempfile
 
         system_prompt = self._system_prompt(task.skill or task.type, arm)
@@ -1757,52 +1861,8 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         _diff_capture: list[str] = []
         _test_capture: list[Optional[bool]] = []
 
-        @contextlib.contextmanager
-        def _effective_cwd():
-            # EVERY arm runs in an isolated copy of the repo so agent edits can never mutate
-            # self.repo_path. Blocking Edit/Write is not enough: the codemap and combined arms keep
-            # Bash, so an agent could still write through the shell — only a throwaway copy bounds
-            # the blast radius. Query (non-reset) arms previously ran in-place, letting a stray edit
-            # contaminate later runs (review M-5); they now copy like every other arm.
-            import shutil
-
-            prefix = "bench-fix-" if task.requires_reset else "bench-copy-"
-            with tempfile.TemporaryDirectory(prefix=prefix) as tmpdir:
-                tmp = Path(tmpdir)
-                cwd = tmp / self.repo_path.name
-                shutil.copytree(
-                    self.repo_path,
-                    cwd,
-                    ignore=shutil.ignore_patterns(".cache", ".git"),
-                    symlinks=True,
-                )
-                # codemap / combined arms need the prebuilt index present in the sandbox;
-                # otherwise the /codemap:query-code Step 0 would build it inside the measured
-                # window (review H-3). The sandbox dir keeps the original repo name, so the
-                # repo-name-derived index file (<repo>.json) resolves unchanged (git is absent →
-                # resolve_proj_index falls back to the CWD basename). Plain and semble arms are
-                # left index-free — plain for isolation, semble because it never queries the index.
-                if arm in ("codemap", "combined", "B_auto", "C_required"):
-                    self._seed_index_cache(cwd)
-                yield cwd
-                if task.requires_reset:
-                    import subprocess as _sp
-
-                    proc = _sp.run(
-                        ["diff", "-ru", "--no-dereference", str(self.repo_path), str(cwd)],
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                    _diff_capture.append(proc.stdout)
-                    # Opt-in correctness signal: run the task's declared pytest node on the sandbox
-                    # (post-edit, pre-cleanup) so a semantically wrong edit that merely emits the
-                    # right keywords does not score full recall unchecked (review M-4).
-                    if task.test_target:
-                        _test_capture.append(self._run_targeted_test(cwd, task.test_target))
-
         _MAX_API_RETRIES = 2
-        with _effective_cwd() as cwd:
+        with self._effective_cwd(task, arm, _diff_capture, _test_capture) as cwd:
             # Each benchmark task is an independent agent session. Clear the
             # inject-preamble session-once flag so each task receives the
             # codemap status line regardless of inter-task timing.
@@ -1876,17 +1936,23 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
 
     @staticmethod
     def _codemap_plugin_dir() -> Optional[str]:
-        """Return the newest installed codemap-py plugin root, or None when not found.
+        """Return the repository Codemap fixture, or None when it is incomplete.
 
-        Under --setting-sources project,local the plugin is not auto-loaded, so the codemap/combined
-        arms load it explicitly via --plugin-dir to keep the /codemap:query-code Skill available.
+        The benchmark must not inherit a mutable user plugin cache. The checked-out plugin is the
+        deterministic fixture used by CI and local runs; a missing fixture is reported to the
+        canonical arm instead of being treated as a valid no-plugin setup.
 
         Returns:
             Absolute path to the plugin root (the dir holding .claude-plugin/), or None.
         """
-        cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap-py"
-        manifests = sorted(cache.glob("*/.claude-plugin"), reverse=True)  # latest version first
-        return str(manifests[0].parent) if manifests else None
+        plugin_root = Path(__file__).resolve().parents[1] / "plugins" / "codemap-py"
+        required_files = (
+            plugin_root / ".claude-plugin" / "plugin.json",
+            plugin_root / "claude-skills" / "query-code" / "SKILL.md",
+        )
+        if all(path.is_file() for path in required_files):
+            return str(plugin_root)
+        return None
 
     @classmethod
     def _semble_mcp_config_path(cls) -> str:
@@ -1917,7 +1983,9 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         """
         flags: list[str] = []
         plugin_dir = cls._codemap_plugin_dir()
-        if arm in ("codemap", "combined", "B_auto", "C_required") and plugin_dir:
+        if arm in ("codemap", "combined", "B_auto", "C_strict") and not plugin_dir:
+            raise RuntimeError(f"Codemap plugin fixture is required for {arm} but is unavailable")
+        if arm in ("codemap", "combined", "B_auto", "C_strict"):
             flags += ["--plugin-dir", plugin_dir]
         if arm in ("semble", "combined"):
             flags += ["--mcp-config", cls._semble_mcp_config_path(), "--strict-mcp-config"]
@@ -1941,7 +2009,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             A copy of the process environment with PATH (and, for structural arms, the opt-out).
         """
         env = codemap_bin_on_path(os.environ.copy())
-        if arm in ("codemap", "combined", "B_auto", "C_required"):
+        if arm in ("codemap", "combined", "B_auto", "C_strict"):
             env["SCAN_NO_AUTOBUILD"] = "1"
         return env
 
@@ -2151,29 +2219,71 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 text to ``result.semble_results`` for the exposure-recall corpus.
         """
 
-        def _capture(text: str) -> None:
-            result.tool_result_tokens += count_tokens(text)
-            # Skip error responses and skill executor status placeholders from corpus
-            if "<tool_use_error>" in text or text.startswith("Launching skill:"):
-                if "<tool_use_error>" in text:
-                    result.tool_errors.append(text[:2000])
-                return
-            if is_rdeps:
-                result.codemap_results.append(text)
-                result.skill_result_text += ("\n" if result.skill_result_text else "") + text
-            if is_semble:
-                result.semble_results.append(text)
+        for text in _iter_tool_result_texts(content):
+            _capture_tool_result_text(text, result, is_rdeps=is_rdeps, is_semble=is_semble)
 
-        if isinstance(content, str):
-            _capture(content)
-        elif isinstance(content, list):
-            for c in content:
-                if isinstance(c, dict):
-                    text = c.get("text") or c.get("content") or ""
-                    if isinstance(text, str):
-                        _capture(text)
-                elif isinstance(c, str):
-                    _capture(c)
+
+def _iter_tool_result_texts(content: str | list) -> Iterator[str]:
+    """Yield each text payload carried by a ``tool_result`` event's ``content`` field.
+
+    Accepts both event shapes: a plain string, or a list of blocks where each block is either
+    a string or a dict carrying ``text`` / ``content``. Any other shape yields nothing.
+
+    Args:
+        content: Raw ``content`` field from the ``tool_result`` event.
+
+    Yields:
+        Each text payload, in event order.
+
+    Examples:
+        >>> list(_iter_tool_result_texts("plain"))
+        ['plain']
+        >>> list(_iter_tool_result_texts([{"text": "a"}, "b", {"content": "c"}, {"other": 1}]))
+        ['a', 'b', 'c', '']
+        >>> list(_iter_tool_result_texts([]))
+        []
+    """
+    if isinstance(content, str):
+        yield content
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict):
+                text = block.get("text") or block.get("content") or ""
+                if isinstance(text, str):
+                    yield text
+            elif isinstance(block, str):
+                yield block
+
+
+def _capture_tool_result_text(text: str, result: BenchmarkRun, *, is_rdeps: bool, is_semble: bool) -> None:
+    """Bill one tool-result payload to *result* and file it into the matching corpus.
+
+    Args:
+        text: One tool-result text payload.
+        result: The accumulating ``BenchmarkRun`` updated in place.
+        is_rdeps: True when this result came from a ``codemap:query rdeps`` call.
+        is_semble: True when this result came from a semble MCP tool call.
+
+    Examples:
+        >>> run = BenchmarkRun(arm="codemap", task_id="T1", task_type="t", model="haiku", success=True)
+        >>> _capture_tool_result_text("modules", run, is_rdeps=True, is_semble=False)
+        >>> run.codemap_results
+        ['modules']
+        >>> _capture_tool_result_text("<tool_use_error>boom", run, is_rdeps=True, is_semble=False)
+        >>> run.codemap_results, run.tool_errors
+        (['modules'], ['<tool_use_error>boom'])
+    """
+    result.tool_result_tokens += count_tokens(text)
+    # Skip error responses and skill executor status placeholders from corpus
+    if "<tool_use_error>" in text or text.startswith("Launching skill:"):
+        if "<tool_use_error>" in text:
+            result.tool_errors.append(text[:2000])
+        return
+    if is_rdeps:
+        result.codemap_results.append(text)
+        result.skill_result_text += ("\n" if result.skill_result_text else "") + text
+    if is_semble:
+        result.semble_results.append(text)
 
 
 # ---------------------------------------------------------------------------
@@ -2619,20 +2729,18 @@ class Report:
 # ---------------------------------------------------------------------------
 
 
-# ANSI colors for run-line output — arm colors make plain/codemap/semble/combined quads easy to scan
-_COLOR_PLAIN = "\033[33m"  # yellow
-_COLOR_CODEMAP = "\033[36m"  # cyan
-_COLOR_SEMBLE = "\033[34m"  # blue
-_COLOR_COMBINED = "\033[32m"  # green
-_COLOR_FAIL = "\033[31m"  # red — overrides arm color on failure
-_COLOR_RESET = "\033[0m"
-
-_ARM_COLOR = {
-    "plain": _COLOR_PLAIN,
-    "codemap": _COLOR_CODEMAP,
-    "semble": _COLOR_SEMBLE,
-    "combined": _COLOR_COMBINED,
+# rich styles for run-line output — arm colors make quads easy to scan; matches README's documented
+# canonical scheme (A_plain=yellow, B_auto=cyan, C_strict=magenta) and legacy quad colors.
+_ARM_STYLE = {
+    "plain": "yellow",
+    "A_plain": "yellow",
+    "codemap": "cyan",
+    "B_auto": "cyan",
+    "semble": "blue",
+    "combined": "green",
+    "C_strict": "magenta",
 }
+_FAIL_STYLE = "red"  # overrides arm color on failure
 
 
 def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: str, result: BenchmarkRun) -> str:
@@ -2656,13 +2764,16 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
     degenerate_note = ""
     if arm == "codemap" and result.tools.total < 6 and result.tools.skill > 0 and q.scored and q.erec == 0.0:
         degenerate_note = " ⚑degenerate?"
+    # Keep response-wire failures visible without rewriting independent evidence recall.
+    if result.answer_contract_valid is False:
+        degenerate_note += " ⚑ans-parse"
     task_num = task.id.lstrip("T")
     difficulty = task.difficulty
     _cost = run_cost_usd(result)
     cost_part = f"${_cost:6.3f}" if _cost else "   $—  "  # omit $ when total_cost_usd absent
     return (
-        f"[{run_n:0{len(str(total_runs))}}/{total_runs}] {task_num} ({difficulty}) | {model_short:<6} | {arm:<8}"
-        f" | time={fmt_time(result.elapsed_s):>6} | {cost_part} | tok: in={fmt_tok(result.input_tokens):>6} out={fmt_tok(result.output_tokens):>6} | calls={result.tools.total:3}"
+        f"({run_n:0{len(str(total_runs))}}/{total_runs}) {task_num} ({difficulty}) | {model_short:<6} | {arm:<8}"
+        f" | time={fmt_time(result.elapsed_s):>6} | {cost_part} | tok: in={fmt_tok(result.input_tokens):>6} out={fmt_tok(result.output_tokens):>6} |\tcalls={result.tools.total:2}"
         f" (Gp={tc.grep:2}; Gb={tc.glob:2}; Bh={tc.bash:2}; Sk={tc.skill:2}; Sm={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2}; idx={tc.index_reads:2})"
         f"{quality_suffix}"
         f"{error_suffix}{degenerate_note}"
@@ -2685,6 +2796,41 @@ def _iter_combos(
 # ---------------------------------------------------------------------------
 # Benchmark orchestrator
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _AgenticSubProgressUpdate:
+    """Live sub-progress callback for one benchmark run.
+
+    Passed as ``ModelRunner.run(update_fn=...)``: each call rewrites this run's sub-bar with
+    elapsed time and the running tool tallies.
+
+    Attributes:
+        progress: Active rich ``Progress`` instance.
+        sub_id: Progress task id of this run's sub-bar.
+
+    Examples:
+        >>> update = _AgenticSubProgressUpdate(None, 7)
+        >>> update.sub_id
+        7
+    """
+
+    progress: Any
+    sub_id: int
+
+    def __call__(self, elapsed: float, run: BenchmarkRun) -> None:
+        """Refresh the sub-bar description from the in-flight run.
+
+        Args:
+            elapsed: Seconds since the run's subprocess started.
+            run: The ``BenchmarkRun`` being populated in place.
+        """
+        calls = run.tools.total
+        tool_live = f"B={run.tools.bash} G={run.tools.grep} Sk={run.tools.skill} Sm={run.tools.semble}"
+        self.progress.update(
+            self.sub_id,
+            description=f"  {fmt_time(elapsed)} calls={calls} {tool_live}",
+        )
 
 
 class Benchmark:
@@ -2733,7 +2879,7 @@ class Benchmark:
         arm: str,
         run_n: int,
         total_runs: int,
-        print_fn: Callable[[str], None],
+        print_fn: Callable[[_Text], None],
         metadata: dict,
         update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
     ) -> BenchmarkRun:
@@ -2742,7 +2888,7 @@ class Benchmark:
         result = runner.run(task, arm, update_fn=update_fn)
         result.parity_arm = parity_arm_identity(arm)
         result.experiment_revision = task.experiment_revision if result.parity_arm else LEGACY_EXPERIMENT_REVISION
-        if result.parity_arm == "C_required":
+        if result.parity_arm == "C_strict":
             result.codemap_compliant = _codemap_use_attempted(result.tools)
         result.task_hash = task.task_hash
         result.prompt_hash = task.prompt_hash
@@ -2790,34 +2936,33 @@ class Benchmark:
         )
         answer_oracle = self.answer_oracles.get(task.id)
         if result.parity_arm and answer_oracle is not None:
-            result.answer_scored = True
-            try:
-                parsed_answer = parse_labeled_answer(task.answer_task, result.output_text)
-            except ValueError as exc:
-                # A process-complete run without the exact shared envelope is a scored incorrect
-                # answer, not a transport failure. Preserve the parser reason for diagnosis.
-                result.answer_quality_score = 0.0
-                result.answer_correct = False
-                result.answer_error = str(exc)
-                result.quality.scored = True
-                result.quality.erec = 0.0
-                result.quality.rrec = 0.0
-                result.quality.deff = 0.0
-            else:
+            assessment = assess_answer_response(task.answer_task, result.output_text)
+            evidence = score_evidence_metrics(
+                answer_oracle,
+                exposure_text=result.output_text,
+                report_text=report_corpus,
+                tool_calls=result.tools.total,
+            )
+            result.answer_contract_valid = assessment.strict_envelope_valid
+            result.answer_diagnostic_only = assessment.diagnostic_only
+            result.answer_pooling_eligible = assessment.pooling_eligible
+            result.answer_error = assessment.error or ""
+            result.quality.scored = True
+            result.quality.erec = evidence.erec
+            result.quality.rrec = evidence.rrec
+            result.quality.deff = evidence.deff
+            if assessment.answer is not None:
                 answer_score = score_answer(
                     answer_oracle,
-                    parsed_answer,
+                    assessment.answer,
                     exposure_text=result.output_text,
                     report_text=report_corpus,
                     tool_calls=result.tools.total,
                 )
+                result.answer_scored = True
                 result.answer_quality_score = answer_score.quality_score
                 result.answer_correct = answer_score.correct
                 result.answer_components = dict(answer_score.components)
-                result.quality.scored = answer_score.scored
-                result.quality.erec = answer_score.erec
-                result.quality.rrec = answer_score.rrec
-                result.quality.deff = answer_score.deff
         # read_crop tasks have no rdeps ground truth — score by keyword recall instead,
         # and exempt them from the codemap-skill-required guard (they use scan-query symbol
         # via Bash, not the Skill tool).
@@ -2896,8 +3041,8 @@ class Benchmark:
             )
             result.success = False
         self._write_tool_log(result)
-        color = _COLOR_FAIL if not result.success else _ARM_COLOR.get(arm, "")
-        print_fn(f"{color}{_run_line(run_n, total_runs, task, model_short, arm, result)}{_COLOR_RESET}")
+        style = _FAIL_STYLE if not result.success else _ARM_STYLE.get(arm, "")
+        print_fn(_Text(_run_line(run_n, total_runs, task, model_short, arm, result), style=style))
         self._save_snapshot(metadata)
         return result
 
@@ -2910,19 +3055,6 @@ class Benchmark:
                 sub = progress.add_task(f"  {task.id} | {model_short} | {arm}", total=None)
                 progress.update(outer, description=f"{task.id} | {model_short} | {arm}")
 
-                def _make_update(
-                    sub_id: int = sub,
-                ) -> Callable[[float, "BenchmarkRun"], None]:
-                    def _update(elapsed: float, run: BenchmarkRun) -> None:
-                        calls = run.tools.total
-                        tool_live = f"B={run.tools.bash} G={run.tools.grep} Sk={run.tools.skill} Sm={run.tools.semble}"
-                        progress.update(
-                            sub_id,
-                            description=f"  {fmt_time(elapsed)} calls={calls} {tool_live}",
-                        )
-
-                    return _update
-
                 result = self._run_single(
                     task,
                     model_short,
@@ -2932,7 +3064,7 @@ class Benchmark:
                     total_runs,
                     print_fn=lambda text: progress.console.print(text, markup=False, highlight=False),
                     metadata=metadata,
-                    update_fn=_make_update(),
+                    update_fn=_AgenticSubProgressUpdate(progress, sub),
                 )
                 progress.remove_task(sub)
                 progress.advance(outer)
@@ -3089,7 +3221,7 @@ def main(
     index_path = find_index(repo_path, index)
 
     if not arm:
-        print("[→ note:        defaulting to canonical A_plain/B_auto/C_required parity arms]")
+        print("[→ note:        defaulting to canonical A_plain/B_auto/C_strict parity arms]")
     if canonical_requested:
         try:
             _validate_parity_runtime(repo_path, index_path, manifest_path)

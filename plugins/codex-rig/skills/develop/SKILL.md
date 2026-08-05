@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Minimal codex-native develop loop. Use for implementation tasks with linear plan-build-verify flow and measurable quality gates.
+description: "Implement changes with a linear plan-build-verify workflow and measurable quality gates."
 ---
 
 # Develop

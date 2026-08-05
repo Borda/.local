@@ -1,6 +1,6 @@
 # `codex-agentic`
 
-**Manifest SHA-256**: `939d64d1328d0e9167a2ca1bc0586c173186836f2e549787a88b29ee34ee6070`
+**Manifest SHA-256**: `a4eba9a9ab9f3d98eec90c3371a063ebf7f89fff8e14ed58c913aca636e5f091`
 
 ## Status
 
@@ -11,11 +11,11 @@
 
 ## Locked experiment
 
-- Revision: `codex-agentic-shared-suite-2026-08-04`
+- Revision: `codex-agentic-protocol-evidence-separation-2026-08-05`
 - Model: `gpt-5.6-luna`, effort `high`.
 - Target: `2.6.5` at `be98784a1a03581b7051a355ae1084fd352d7cea`.
 - Frozen index SHA-256: `2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb`.
-- Suite: `benchmarks/suites/tasks-agentic.json`; raw SHA-256 `adb94fde72b085119ae7ce082078bc86c76f89ed04bd1f27b7146dc3a01b5cfe`.
+- Suite: `benchmarks/suites/tasks-agentic.json`; raw SHA-256 `f973a313c9bf7cf1f09e2b51a47b4a4cd77d9e83be385fc5ea075ffa4e54e177`.
 
 ## Task identities
 
@@ -24,11 +24,11 @@
 
 ## Scope and arms
 
-- Tasks: `['BA-01', 'BA-02', 'BA-03', 'BA-04', 'BA-05', 'BA-06', 'BA-07', 'BA-08', 'BA-09', 'BA-10', 'BA-11', 'BA-12', 'BA-13', 'BA-14', 'BA-15', 'BA-16']`; repetitions: `1`; arms: `['A_plain', 'B_auto', 'C_required']`.
+- Tasks: `['BA-01', 'BA-02', 'BA-03', 'BA-04', 'BA-05', 'BA-06', 'BA-07', 'BA-08', 'BA-09', 'BA-10', 'BA-11', 'BA-12', 'BA-13', 'BA-14', 'BA-15', 'BA-16']`; repetitions: `1`; arms: `['A_plain', 'B_auto', 'C_strict']`.
 - Cells: `48`; coordinate budget: `600s`; complete-run ceiling: `28800s`.
 - `A_plain`: Codemap absent; no-call is valid.
 - `B_auto`: Codemap CLI available; use is optional, and adoption is measured.
-- `C_required`: exact Skill read must precede a successful compact query; noncompliant rows remain scored but are excluded from pooling.
+- `C_strict`: exact Skill read must precede a successful compact query; noncompliant rows remain scored but are excluded from pooling.
 
 ## Artifact and stop contract
 
@@ -37,8 +37,9 @@
 
 ## Shared scoring
 
-- `SCORE` is the mean component score for every declared answer-contract field.
-- `CORRECT` requires every declared answer-contract field to score 1.0.
+- `SCORE` is the mean semantic component score for every declared answer-contract field.
+- `EREC` and `RREC` are raw-text recall diagnostics independent of answer-envelope validity; `DEFF` is unbounded expected-importer exposure hits per command.
+- A strict labelled envelope is eligible under the response protocol. One complete bare JSON object is diagnostic-only and never poolable; malformed or ambiguous answers remain semantically unscored.
 
 ## Runner
 

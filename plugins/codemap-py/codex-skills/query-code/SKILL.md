@@ -1,10 +1,10 @@
 ---
 name: query-code
-description: Query Codemap structural index.
+description: "Query Codemap index; skip index rebuilds, renames, and test-impact analysis."
 ---
 NOT for: index rebuilds (`$codemap-py:scan-codebase`), renames (`$codemap-py:rename-refs`), or which tests cover or are affected by a change (`$codemap-py:test-impact`).
 
-Use verified `CODEMAP_BIN`; make one query first; keep compact, task-shaped.
+Use `CODEMAP_BIN`; make one query.
 
 | Need | Query |
 | --- | --- |

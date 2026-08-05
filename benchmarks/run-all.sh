@@ -4,8 +4,12 @@
 # Usage:
 #   bash benchmarks/run-all.sh smoke   # fail-fast Claude + Codex smoke only
 #   bash benchmarks/run-all.sh claude  # fail-fast Claude smoke, then full Claude batches
+#   bash benchmarks/run-all.sh claude --struct --dry-run  # Claude structural plans only, no model
+#   bash benchmarks/run-all.sh claude --struct  # Claude structural batches only
 #   bash benchmarks/run-all.sh claude --agentic --dry-run  # shared 144-cell Claude agentic plan, no model
 #   bash benchmarks/run-all.sh claude --agentic --repetitions=2 --dry-run  # scope-bound Claude repeat override
+#   bash benchmarks/run-all.sh codex --struct --dry-run  # exact 165-cell Codex structural plan, no model
+#   bash benchmarks/run-all.sh codex --struct  # paid 55-task Codex structural study
 #   bash benchmarks/run-all.sh codex --dry-run  # smoke + exact 165-cell Codex plan, no model
 #   bash benchmarks/run-all.sh codex   # fail-fast Codex smoke, then full 55-task A/B/C study
 #   bash benchmarks/run-all.sh codex --tasks=DI,GR [--dry-run]  # selected, nonpoolable task study
@@ -30,6 +34,7 @@ INDEX_PATH="$REPO/.cache/codemap/$(basename "$REPO").json"
 MODE="${1:-}"
 DRY_RUN=false
 AGENTIC=false
+STRUCTURAL=false
 AGENTIC_REPETITIONS=1
 AGENTIC_REPETITIONS_SET=false
 AGENTIC_SCOPE_SHA=""
@@ -53,7 +58,7 @@ LOCKED_INDEX_SHA=""
 LOCKED_INDEX_SCAN_VERSION=""
 
 usage() {
-  echo "usage: bash benchmarks/run-all.sh {smoke | claude [--dry-run] [--agentic] [--repetitions=N] | codex [--dry-run] [--tasks=TASK[,TASK...]] | codex --agentic [--dry-run] [--repetitions=N]}" >&2
+  echo "usage: bash benchmarks/run-all.sh {smoke | claude [--struct|--agentic] [--dry-run] [--repetitions=N] | codex [--struct|--agentic] [--dry-run] [--tasks=TASK[,TASK...]] [--repetitions=N]}" >&2
 }
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
@@ -83,6 +88,13 @@ case "$MODE" in
             exit 2
           fi
           AGENTIC=true
+          ;;
+        --struct)
+          if [ "$STRUCTURAL" = true ]; then
+            usage
+            exit 2
+          fi
+          STRUCTURAL=true
           ;;
         --tasks=*)
           if [ "$MODE" != "codex" ] || [ -n "$CODEX_TASKS" ]; then
@@ -114,6 +126,11 @@ case "$MODE" in
           ;;
       esac
     done
+    if [ "$AGENTIC" = true ] && [ "$STRUCTURAL" = true ]; then
+      echo "ERROR: --struct and --agentic are mutually exclusive." >&2
+      usage
+      exit 2
+    fi
     if [ "$AGENTIC" = true ] && [ -n "$CODEX_TASKS" ]; then
       echo "ERROR: --agentic uses the complete shared task suite and cannot be combined with --tasks." >&2
       usage
@@ -146,13 +163,13 @@ sha256_file() {
 
 validate_generated_manifest() {
   echo "== CHECK generated Codex integration manifest (no model) =="
-  python3 "$METHODOLOGY_CHECKER" --check
-  python3 "$MANIFEST_CHECKER" --check
+  python3 "$METHODOLOGY_CHECKER" --check || return "$?"
+  python3 "$MANIFEST_CHECKER" --check || return "$?"
 }
 
 validate_generated_agentic_manifest() {
   echo "== CHECK generated Codex agentic manifest (no model) =="
-  python3 "$AGENTIC_MANIFEST_CHECKER" --check
+  python3 "$AGENTIC_MANIFEST_CHECKER" --check || return "$?"
 }
 
 resolve_agentic_scope() {
@@ -234,9 +251,9 @@ ensure_repo() {
 }
 
 prepare_locked_inputs() {
-  validate_generated_manifest
-  load_index_contract
-  ensure_repo
+  validate_generated_manifest || return "$?"
+  load_index_contract || return "$?"
+  ensure_repo || return "$?"
   echo "== PREPARE frozen parity index =="
   if [ ! -f "$INDEX_PATH" ] || ! verify_current_index; then
     if [ -f "$INDEX_PATH" ]; then
@@ -282,20 +299,29 @@ validate_codex_cli() {
   echo "→ Codex CLI: $actual_codex_version"
 }
 
-claude_preflight() {
-  echo "== CLAUDE PREFLIGHT (no model) =="
+claude_structural_preflight() {
+  echo "== CLAUDE STRUCTURAL PREFLIGHT (no model) =="
   python3 benchmarks/run-claude-structural.py \
     --repo-path "$REPO" \
     --tasks "['FN-02']" \
     --arm all \
     --model haiku \
     --dry-run
+}
+
+claude_agentic_preflight() {
+  echo "== CLAUDE AGENTIC PREFLIGHT (no model) =="
   python3 benchmarks/run-claude-agentic.py \
     --repo-path "$REPO" \
     --tasks "['BA-01']" \
     --arm A_plain \
     --model haiku \
     --dry-run
+}
+
+claude_preflight() {
+  claude_structural_preflight
+  claude_agentic_preflight
 }
 
 codex_smoke_preflight() {
@@ -329,9 +355,9 @@ _step_full() {
   "$@" || echo "⚠ step exited $?; continuing the Claude batch: $*" >&2
 }
 
-claude() {
+run_claude_structural_study() {
   query_check
-  claude_preflight
+  claude_structural_preflight
   echo "== CLAUDE STRUCTURAL (paid model runs) =="
   for model in haiku sonnet opus; do
     _step_full python3 benchmarks/run-claude-structural.py \
@@ -339,6 +365,11 @@ claude() {
       --run-all \
       --model "$model"
   done
+}
+
+claude() {
+  run_claude_structural_study
+  claude_agentic_preflight
 
   echo "== CLAUDE AGENTIC (paid model runs) =="
   resolve_agentic_scope
@@ -382,9 +413,9 @@ run_claude_agentic_study() {
     --report
 }
 
-run_claude_plan() {
+run_claude_structural_plan() {
   query_check
-  claude_preflight
+  claude_structural_preflight
   echo "== CLAUDE STRUCTURAL (no-model full plans) =="
   for model in haiku sonnet opus; do
     python3 benchmarks/run-claude-structural.py \
@@ -393,6 +424,11 @@ run_claude_plan() {
       --model "$model" \
       --dry-run
   done
+}
+
+run_claude_plan() {
+  run_claude_structural_plan
+  claude_agentic_preflight
   run_claude_agentic_plan
 }
 
@@ -401,6 +437,7 @@ require_codex_paid_inputs() {
     echo "ERROR: active provider-parity manifest is missing: $MANIFEST_PATH" >&2
     exit 2
   fi
+  validate_generated_manifest || exit "$?"
   active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
   if [ -n "$CODEX_TASKS" ]; then
     ensure_codex_scope_resolved
@@ -466,15 +503,19 @@ exec_codex_launcher_snapshot() {
 }
 
 print_codex_paid_guidance() {
+  local structural_arg=""
+  if [ "$STRUCTURAL" = true ]; then
+    structural_arg=" --struct"
+  fi
   if [ -n "$CODEX_TASKS" ]; then
     ensure_codex_scope_resolved
     run_dir_hint="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)"
-    mode_args=" --tasks=$CODEX_TASKS"
+    mode_args="$structural_arg --tasks=$CODEX_TASKS"
     approval_hint="$CODEX_SELECTION_SCOPE_SHA"
     scope_guidance="Selected task study: $CODEX_TASKS; $CODEX_SELECTION_REPETITIONS repetitions × A/B/C = $(( ${#CODEX_SELECTION_TASK_IDS[@]} * CODEX_SELECTION_REPETITIONS * 3 )) cells; 600 seconds per coordinate; $CODEX_SELECTION_WALL_CLOCK seconds complete run. It is nonpoolable."
   else
     run_dir_hint="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)"
-    mode_args=""
+    mode_args="$structural_arg"
     approval_hint="$active_manifest_sha"
     scope_guidance=""
   fi
@@ -531,6 +572,8 @@ require_codex_agentic_paid_inputs() {
     echo "ERROR: active Codex agentic manifest is missing: $AGENTIC_MANIFEST_PATH" >&2
     exit 2
   fi
+  validate_generated_manifest || exit "$?"
+  validate_generated_agentic_manifest || exit "$?"
   local agentic_manifest_sha
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
   resolve_agentic_scope
@@ -617,11 +660,14 @@ configure_codex_plan() {
   active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
   confirmatory_wall_clock="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_controls"]["confirmatory_max_wall_clock_seconds"])' "$MANIFEST_PATH")"
   confirmatory_repetitions="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["preregistered_cells"]["confirmatory_repetitions"])' "$MANIFEST_PATH")"
-  confirmatory_task_args=()
+  confirmatory_task_ids=()
   while IFS= read -r task_id; do
-    confirmatory_task_args+=(--task-id "$task_id")
+    [ -n "$task_id" ] && confirmatory_task_ids+=("$task_id")
   done < <(python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))["preregistered_cells"]["structural_execution_task_ids"], sep="\n")' "$MANIFEST_PATH")
-  task_count=$((${#confirmatory_task_args[@]} / 2))
+  task_count="${#confirmatory_task_ids[@]}"
+  # The runner is a Fire CLI: it takes ONE comma-separated --task-id value. A repeated
+  # flag would silently keep only the last ID, so join the list into a single argument.
+  confirmatory_task_args=(--task-id "$(IFS=,; echo "${confirmatory_task_ids[*]}")")
   planned_cells=$((task_count * confirmatory_repetitions * 3))
   echo "== CODEX STRUCTURAL STUDY =="
   echo "→ design: $planned_cells cells ($task_count tasks × $confirmatory_repetitions run × 3 arms)"
@@ -718,6 +764,10 @@ run_codex_agentic_plan() {
   echo "→ design: $AGENTIC_TOTAL_CELLS cells (16 tasks × $AGENTIC_REPETITIONS repetitions × 3 arms; nonpoolable)"
   echo "→ scope: $AGENTIC_SCOPE_SHA"
   python3 benchmarks/run-codex-agentic.py \
+    --repo-path "$REPO" \
+    --index-path "$INDEX_PATH" \
+    --marketplace-root "$ROOT" \
+    --codemap-bin "$CODEMAP_BIN" \
     --manifest-path "$AGENTIC_MANIFEST_PATH" \
     --repetitions "$AGENTIC_REPETITIONS" \
     --scope-sha256 "$AGENTIC_SCOPE_SHA" \
@@ -836,6 +886,12 @@ case "$MODE" in
         run_claude_agentic_plan
       else
         run_claude_agentic_study
+      fi
+    elif [ "$STRUCTURAL" = true ]; then
+      if [ "$DRY_RUN" = true ]; then
+        run_claude_structural_plan
+      else
+        run_claude_structural_study
       fi
     elif [ "$DRY_RUN" = true ]; then
       run_claude_plan

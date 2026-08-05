@@ -1118,20 +1118,28 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
         modules = [_parse_file_star(a) for a in parse_args]
     else:
         # fork keeps parallelism and avoids the __main__ re-import entirely.
-        _mp_ctx = multiprocessing.get_context("fork")
         try:
-            pool = ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=_mp_ctx)
-        except PermissionError as exc:
-            if exc.errno != errno.EPERM:
-                raise
+            _mp_ctx = multiprocessing.get_context("fork")
+        except ValueError:
             print(
-                "[codemap] process pool unavailable (EPERM); parsing serially",
+                "[codemap] fork process context unavailable; parsing serially",
                 file=sys.stderr,
             )
             modules = [_parse_file_star(a) for a in parse_args]
         else:
-            with pool:
-                modules = list(pool.map(_parse_file_star, parse_args))
+            try:
+                pool = ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=_mp_ctx)
+            except PermissionError as exc:
+                if exc.errno != errno.EPERM:
+                    raise
+                print(
+                    "[codemap] process pool unavailable (EPERM); parsing serially",
+                    file=sys.stderr,
+                )
+                modules = [_parse_file_star(a) for a in parse_args]
+            else:
+                with pool:
+                    modules = list(pool.map(_parse_file_star, parse_args))
 
     src_root_rels = src_ctx.dedup_rels(root)
     # .pyi precedence (plan §2.1) resolves before name dedup: shadowed stubs are removed

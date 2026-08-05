@@ -13,9 +13,17 @@ classifiers = [
 
 # Dev-only tooling (PEP 735). Not project dependencies. uv used in CI; locally use plain python/pytest.
 [dependency-groups]
-dev = [ "ruff", { include-group = "docs" }, { include-group = "test" } ]
+dev = [
+  { include-group = "docs" },
+  { include-group = "test" },
+]
 # Test tooling + benchmark runtime deps (benchmark tests import the run-codemap scripts).
-test = [ "pytest", "pytest-cov", "scipy", { include-group = "bench" } ]
+test = [
+  "pytest",
+  "pytest-cov",
+  "scipy",
+  { include-group = "bench" },
+]
 # MkDocs site build (source of truth; used by the docs workflow).
 docs = [
   "mkdocs-callouts>=1.13",
@@ -24,7 +32,15 @@ docs = [
   "pymdown-extensions>=10.21.2",
 ]
 # Benchmark runtime deps (source of truth; run: uv sync --only-group bench).
-bench = [ "anthropic>=0.40", "fire>=0.6", "pandas>=2", "rich>=13", "semble>=0.1", "tabulate>=0.9", "tiktoken>=0.7" ]
+bench = [
+  "anthropic>=0.40",
+  "fire>=0.6",
+  "pandas>=2",
+  "rich>=13",
+  "semble>=0.1",
+  "tabulate>=0.9",
+  "tiktoken>=0.7",
+]
 
 # No runtime dependencies — this repo ships Claude Code plugins, not a package.
 [tool.uv]
@@ -66,6 +82,7 @@ ini_options.addopts = [
   "--cov=plugins/cc_research/bin",
   "--cov-report=term-missing",
   "--cov-report=html:.reports/coverage",
+  "--ignore=benchmarks/results",
 ]
 ini_options.markers = [
   "integration: marks tests that require external binaries, network access, or large repo checkouts",

@@ -12,6 +12,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from benchmarks import provider_parity_contracts as core
 
 
@@ -20,10 +22,17 @@ BENCHMARKS = ROOT / "benchmarks"
 METHODOLOGY_MANIFEST = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 CODEX_MANIFEST = BENCHMARKS / "manifests" / "codex-integration.json"
 METHODOLOGY_BUILDER = BENCHMARKS / "build-provider-parity-methodology-manifest.py"
-ARCHIVED_MANIFEST = BENCHMARKS / "results" / "manifests" / ("provider-parity-v1-b0-" + "r" + "6.json")
-ARCHIVED_MANIFEST_SHA256 = "971c6ad220c1e821ed72109396f4dce1d745f0a1b74b2790874f6b07e833627b"
-README = BENCHMARKS / "README.md"
+FIXTURE_DIR = BENCHMARKS / "tests" / "fixtures"
 REPAIRED_SUITE_PATH = "benchmarks/suites/tasks-bench.json"
+EXPECTED_SUITE_TASK_COUNTS = {
+    "benchmarks/suites/tasks-agentic.json": 16,
+    "benchmarks/suites/tasks-bench.json": 60,
+    "benchmarks/suites/tasks-code.json": 15,
+    "benchmarks/suites/tasks-fix-multi.json": 3,
+    "benchmarks/suites/tasks-fix-single.json": 4,
+    "benchmarks/suites/tasks-patch.json": 5,
+    "benchmarks/suites/tasks-readcrop.json": 6,
+}
 SHORTHAND_REVISION = re.compile(
     r"(?<![A-Za-z0-9_-])r[0-9]+(?![A-Za-z0-9_-])|"
     r"(?<![A-Za-z0-9_-])r[0-9]+_(?=manifest|revision|lock|policy|profile|runtime|execution)"
@@ -62,6 +71,7 @@ def test_authored_benchmark_files_use_complete_experiment_revision_names() -> No
         and "__pycache__" not in path.parts
         and path.suffix in {".json", ".md", ".py", ".sh"}
         and BENCHMARKS / "results" not in path.parents
+        and FIXTURE_DIR not in path.parents
     ]
     authored_paths.append(METHODOLOGY_MANIFEST)
 
@@ -117,6 +127,16 @@ def test_methodology_builder_is_deterministic_and_check_mode_rejects_stale_outpu
     assert expected == builder["_manifest_bytes"](builder["_build_manifest"]())
 
 
+def test_methodology_builder_has_no_history_sized_fixture_dependency() -> None:
+    """Current methodology derives from current inputs instead of prior-run history."""
+    source = METHODOLOGY_BUILDER.read_text(encoding="utf-8")
+
+    assert "ARCHIVED_MANIFEST" not in source
+    assert "TASK_CHANGE_LEDGER" not in source
+    assert not (FIXTURE_DIR / "provider-parity-v1.json").is_file()
+    assert not (FIXTURE_DIR / "provider-parity-v1-b0-r6.json").is_file()
+
+
 def test_agentic_execution_contract_records_provider_specific_default_cells() -> None:
     """The shared lock must not erase Claude's three-model multiplicity."""
     contract = _load(METHODOLOGY_MANIFEST)["agentic_execution_contract"]
@@ -139,19 +159,69 @@ def test_methodology_builder_rejects_tampered_passthrough_policy_seed(tmp_path: 
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
     builder["_load_policy_seed"].__globals__["POLICY_SEED"] = seed_path
 
-    assert builder["main"](["--check"]) == 1
+    with pytest.raises(SystemExit) as excinfo:
+        builder["main"](check=True)
+
+    assert excinfo.value.code == 1
 
 
-def test_methodology_builder_declares_exact_task_identity_change_ledger() -> None:
-    """Every identity change from the immutable archive must be reviewed by task and field."""
+@pytest.mark.parametrize(
+    ("suite_path", "task", "expected"),
+    [
+        pytest.param(
+            "benchmarks/suites/tasks-agentic.json",
+            {"id": "EDGE-AGENTIC", "prompt": "agentic", "type": "blast_radius_analysis"},
+            ("independent", True, False),
+            id="agentic-independent",
+        ),
+        pytest.param(
+            "benchmarks/suites/tasks-bench.json",
+            {"id": "FN-01", "prompt": "structural", "type": "fn_call_graph"},
+            ("independent", True, True),
+            id="structural-independent-headline",
+        ),
+        pytest.param(
+            "benchmarks/suites/tasks-bench.json",
+            {"id": "SE-01", "prompt": "reference", "type": "symbol_extraction"},
+            ("static_reference", True, False),
+            id="structural-static-reference",
+        ),
+        pytest.param(
+            "benchmarks/suites/tasks-bench.json",
+            {"id": "CQ-03", "prompt": "repeat", "type": "code_quality", "self_consistency": True},
+            ("self_consistency", True, False),
+            id="structural-self-consistency",
+        ),
+        pytest.param(
+            "benchmarks/suites/tasks-bench.json",
+            {"id": "RI-05", "prompt": "unscoreable", "type": "real_issue", "scoreable": False},
+            ("unscoreable", False, False),
+            id="structural-unscoreable",
+        ),
+        pytest.param(
+            "benchmarks/suites/tasks-code.json",
+            {"id": "EDGE-CODE", "prompt": "cli", "skill": "fix"},
+            ("unscoreable", False, False),
+            id="cli-unscoreable",
+        ),
+        pytest.param(
+            "benchmarks/suites/tasks-fix-multi.json",
+            {"id": "EDGE-FIX", "prompt": "fix", "type": "fix_multicaller"},
+            ("static_reference", True, False),
+            id="optional-static-reference",
+        ),
+    ],
+)
+def test_methodology_builder_derives_policy_for_each_task_case(
+    suite_path: str, task: dict[str, Any], expected: tuple[str, bool, bool]
+) -> None:
+    """Current policy classification is covered by small independent edge cases."""
     builder = runpy.run_path(str(METHODOLOGY_BUILDER))
-    archive = _load(ARCHIVED_MANIFEST)
-    expected = builder["_build_manifest"]()
+    headline_ids = set(builder["_load_policy_seed"]()["headline_structural_v1"]["task_ids"])
 
-    assert expected["methodology_change_ledger"] == builder["TASK_CHANGE_LEDGER"]
-    assert builder["_changed_task_identity_fields"](archive, expected) == {
-        task_id: entry["identity_fields"] for task_id, entry in builder["TASK_CHANGE_LEDGER"].items()
-    }
+    row = builder["_task_row"](task, suite_path, headline_ids, set(), "diagnostic")
+
+    assert (row["oracle_class"], row["effective_scoreable"], row["headline_eligible_v1"]) == expected
 
 
 def test_methodology_builder_output_is_current() -> None:
@@ -159,6 +229,28 @@ def test_methodology_builder_output_is_current() -> None:
     result = _run_methodology_builder("--check")
 
     assert result.returncode == 0, result.stderr
+
+
+def test_methodology_manifest_locks_the_complete_current_suite_universe() -> None:
+    """The current lock cannot silently omit a committed suite or task group."""
+    methodology = _load(METHODOLOGY_MANIFEST)
+    observed = {suite["path"]: len(suite["tasks"]) for suite in methodology["suites"]}
+
+    assert observed == EXPECTED_SUITE_TASK_COUNTS
+    assert methodology["suite_integrity"]["suite_count"] == len(EXPECTED_SUITE_TASK_COUNTS)
+    assert methodology["suite_integrity"]["task_count"] == sum(EXPECTED_SUITE_TASK_COUNTS.values())
+
+
+def test_methodology_builder_stale_error_names_exact_rebuild_command(tmp_path: Path) -> None:
+    """Internal check mode must never tell launcher users to remove a flag they did not pass."""
+    builder = runpy.run_path(str(METHODOLOGY_BUILDER))
+
+    try:
+        builder["_write_or_check"](tmp_path / "stale.json", b"expected\n", check=True)
+    except ValueError as exc:
+        assert str(exc).endswith("run: python3 benchmarks/build-provider-parity-methodology-manifest.py")
+    else:
+        raise AssertionError("stale methodology output was accepted")
 
 
 def _suites_by_path(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -183,24 +275,16 @@ def _assert_manifest_matches_materialized_suite_inputs(manifest: dict[str, Any])
     assert manifest["suite_integrity"]["semantic_suite_sha256"] == semantic_hashes
 
 
-def test_methodology_manifest_allows_only_documented_input_repairs() -> None:
-    """The shared committed source allows only the reviewed task repairs."""
-    archived = _load(ARCHIVED_MANIFEST)
+def test_methodology_manifest_uses_policy_seed_and_current_suite_inputs() -> None:
+    """The shared committed source binds current suites without prior-run history."""
+    policy = _load(BENCHMARKS / "manifests" / "provider-parity-methodology-policy.json")
     methodology = _load(METHODOLOGY_MANIFEST)
-    builder = runpy.run_path(str(METHODOLOGY_BUILDER))
 
-    assert _sha256(ARCHIVED_MANIFEST) == ARCHIVED_MANIFEST_SHA256
-    assert methodology["methodology_change_ledger"] == builder["TASK_CHANGE_LEDGER"]
-    assert builder["_changed_task_identity_fields"](archived, methodology) == {
-        task_id: entry["identity_fields"] for task_id, entry in builder["TASK_CHANGE_LEDGER"].items()
-    }
+    assert "methodology_change_ledger" not in methodology
     _assert_manifest_matches_materialized_suite_inputs(methodology)
     for field in ("target_source", "headline_structural_v1", "validation"):
-        assert methodology[field] == archived[field]
-    archived_index = archived["index"]
+        assert methodology[field] == policy[field]
     active_index = methodology["index"]
-    for field in ("git_sha", "module_count", "path", "project", "scan_root"):
-        assert active_index[field] == archived_index[field]
     assert active_index == builder_index_lock()
     for field in (
         "confirmatory_repetitions",
@@ -210,18 +294,7 @@ def test_methodology_manifest_allows_only_documented_input_repairs() -> None:
         "structural_confirmatory_task_ids",
         "structural_pilot_task_ids",
     ):
-        assert methodology["preregistered_cells"][field] == archived["preregistered_cells"][field]
-
-
-def test_archived_result_manifest_stays_immutable_and_unpoolable() -> None:
-    """Historical evidence remains byte-locked and excluded from current pooling."""
-    archived = _load(ARCHIVED_MANIFEST)
-
-    assert _sha256(ARCHIVED_MANIFEST) == ARCHIVED_MANIFEST_SHA256
-    readme = README.read_text(encoding="utf-8").lower()
-    assert "historical evidence" in readme
-    assert "never pooled" in readme
-    assert archived["experiment_revision"]
+        assert methodology["preregistered_cells"][field] == policy["preregistered_cells"][field]
 
 
 def test_methodology_manifest_binds_every_review_subquestion_in_provider_prompt() -> None:

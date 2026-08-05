@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
+from io import StringIO
 import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import traceback
@@ -23,6 +26,7 @@ BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = BENCHMARKS_DIR / "run-codex-structural.py"
 SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-bench.json"
 MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
+POSIX_SECURITY = pytest.mark.skipif(os.name == "nt", reason="requires POSIX private-mode and ownership semantics")
 
 
 @pytest.fixture(scope="module")
@@ -148,6 +152,7 @@ def test_exact_suite_counterbalances_arm_ordinals_at_one_repetition(script_run_c
     assert all(count in {18, 19} for counts in ordinals_by_arm.values() for count in counts), ordinals_by_arm
 
 
+@POSIX_SECURITY
 def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_write(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
@@ -271,7 +276,7 @@ def test_explicit_arm_home_root_rejects_symlink_components(script_run_codex: Any
     temp_alias = tmp_path / "temp-alias"
     temp_alias.symlink_to(canonical_root, target_is_directory=True)
 
-    with pytest.raises(ValueError, match=f"permission path contains a symlink: {temp_alias}"):
+    with pytest.raises(ValueError, match=re.escape(f"permission path contains a symlink: {temp_alias}")):
         script_run_codex.prepare_arm_home("A_plain", root=temp_alias)
 
 
@@ -1544,6 +1549,338 @@ def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: 
         ]
 
 
+def _write_snapshot_plugin_tree(root: Path, name: str, version: str) -> Path:
+    """Create one minimal byte-locked local plugin source for runtime tests."""
+    plugin = root / name
+    manifest = plugin / ".codex-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"name": name, "version": version}), encoding="utf-8")
+    if name == "codemap-py":
+        launcher = plugin / "bin" / "codemap-py"
+        launcher.parent.mkdir()
+        launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        launcher.chmod(0o755)
+        skill = plugin / "codex-skills" / "query-code" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("# query-code\n", encoding="utf-8")
+    else:
+        adapter = plugin / "shared" / "codemap_adapter.py"
+        adapter.parent.mkdir()
+        adapter.write_text("print('fixture adapter')\n", encoding="utf-8")
+    return plugin
+
+
+def _write_frozen_snapshot_marketplace(root: Path) -> Path:
+    """Write the fixed local marketplace beside the archived C plugin pair."""
+    marketplace_manifest = root / ".agents" / "plugins" / "marketplace.json"
+    marketplace_manifest.parent.mkdir(parents=True)
+    marketplace_manifest.write_text(
+        json.dumps(
+            {
+                "name": "borda-ai-rig-frozen",
+                "plugins": [
+                    {"name": "codemap-py", "source": {"source": "local", "path": "./codemap-py"}},
+                    {"name": "codex-rig", "source": {"source": "local", "path": "./codex-rig"}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    marketplace_manifest.chmod(0o600)
+    return marketplace_manifest
+
+
+def _write_runtime_snapshot_metadata(
+    snapshot_root: Path,
+    sources: dict[str, Path],
+    *,
+    locked_files: dict[str, Path] | None = None,
+) -> None:
+    """Write the minimal input identity ledger required by snapshot binding tests."""
+    files = []
+    for role, source in sources.items():
+        for path in sorted(source.rglob("*")):
+            if path.is_file():
+                archived_mode = 0o700 if stat.S_IMODE(path.stat().st_mode) & 0o111 else 0o600
+                path.chmod(archived_mode)
+                files.append(
+                    {
+                        "role": role,
+                        "archived_path": path.relative_to(snapshot_root).as_posix(),
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "bytes": path.stat().st_size,
+                        "mode": archived_mode,
+                    }
+                )
+    for role, path in (locked_files or {}).items():
+        archived_mode = 0o700 if stat.S_IMODE(path.stat().st_mode) & 0o111 else 0o600
+        path.chmod(archived_mode)
+        files.append(
+            {
+                "role": role,
+                "archived_path": path.relative_to(snapshot_root).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "bytes": path.stat().st_size,
+                "mode": archived_mode,
+            }
+        )
+    (snapshot_root / "input-snapshot.json").write_text(json.dumps({"files": files}), encoding="utf-8")
+
+
+@POSIX_SECURITY
+def test_paid_skill_home_installs_only_from_bound_run_snapshot(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """C must install snapshot bytes through a run-owned marketplace selector.
+
+    This reproduces the stopped BA-05/C lifecycle: snapshot admission succeeds,
+    then a later cell must be insulated from marketplace drift. Codex CLI 0.146
+    rejects direct plugin paths, so the later home must add only a marketplace
+    rooted inside the run snapshot and select both archived plugins from it.
+    """
+    snapshot_root = tmp_path / "run" / "inputs"
+    snapshot_root.mkdir(parents=True)
+    codemap_source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codemap-py", "0.27.0")
+    rig_source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codex-rig", "0.4.0")
+    marketplace_manifest = _write_frozen_snapshot_marketplace(snapshot_root / "C_skill_required")
+    _write_runtime_snapshot_metadata(
+        snapshot_root,
+        {
+            "C_skill_required:codemap-py": codemap_source,
+            "C_skill_required:codex-rig": rig_source,
+        },
+        locked_files={"C_skill_required:marketplace": marketplace_manifest},
+    )
+    frozen_name = "borda-ai-rig-frozen"
+    snapshot_manifest = json.loads(marketplace_manifest.read_text(encoding="utf-8"))
+    snapshot_ledger = json.loads((snapshot_root / "input-snapshot.json").read_text(encoding="utf-8"))
+    assert snapshot_manifest == {
+        "name": frozen_name,
+        "plugins": [
+            {"name": "codemap-py", "source": {"source": "local", "path": "./codemap-py"}},
+            {"name": "codex-rig", "source": {"source": "local", "path": "./codex-rig"}},
+        ],
+    }
+    assert marketplace_manifest.stat().st_mode & 0o777 == 0o600
+    assert {
+        "role": "C_skill_required:marketplace",
+        "archived_path": "C_skill_required/.agents/plugins/marketplace.json",
+        "sha256": hashlib.sha256(marketplace_manifest.read_bytes()).hexdigest(),
+        "bytes": marketplace_manifest.stat().st_size,
+        "mode": 0o600,
+    } in snapshot_ledger["files"]
+    marketplace_root = tmp_path / "mutable-marketplace"
+    marketplace_root.mkdir()
+    index_path = tmp_path / "locked-index.json"
+    index_path.write_text("{}", encoding="utf-8")
+    created_homes: list[Any] = []
+    prepare_arm_home = script_run_codex.prepare_arm_home
+
+    def prepare(arm: str, **_kwargs: Any) -> Any:
+        home = prepare_arm_home(arm, root=tmp_path)
+        created_homes.append(home)
+        return home
+
+    commands: list[list[str]] = []
+    frozen_marketplace: Path | None = None
+    sources_by_selector: dict[str, Path] = {}
+    installed_paths: dict[str, Path] = {}
+
+    def command_runner(command: list[str], **kwargs: Any) -> SimpleNamespace:
+        nonlocal frozen_marketplace
+        commands.append(command)
+        if command[1:4] == ["plugin", "marketplace", "add"]:
+            frozen_marketplace = Path(command[4]).resolve()
+            assert frozen_marketplace != marketplace_root.resolve()
+            assert frozen_marketplace.is_relative_to(snapshot_root.resolve())
+            manifest = json.loads(
+                (frozen_marketplace / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
+            )
+            assert manifest["name"] == frozen_name
+            sources_by_selector.update(
+                {
+                    f"{entry['name']}@{frozen_name}": (frozen_marketplace / entry["source"]["path"]).resolve()
+                    for entry in manifest["plugins"]
+                }
+            )
+            assert sources_by_selector == {
+                f"codemap-py@{frozen_name}": codemap_source.resolve(),
+                f"codex-rig@{frozen_name}": rig_source.resolve(),
+            }
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if command[1:3] == ["plugin", "add"]:
+            assert frozen_marketplace is not None
+            assert command[3] in sources_by_selector
+            source = sources_by_selector[command[3]]
+            home = Path(kwargs["env"]["CODEX_HOME"])
+            installed = (
+                home
+                / "plugins"
+                / "cache"
+                / "fixture"
+                / source.name
+                / ("0.27.0" if source.name == "codemap-py" else "0.4.0")
+            )
+            shutil.copytree(source, installed)
+            installed_paths[source.name] = installed
+            return SimpleNamespace(returncode=0, stdout=json.dumps({"installedPath": str(installed)}), stderr="")
+        if command[1:3] == ["plugin", "list"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout='{"installed":[{"name":"codemap-py"},{"name":"codex-rig"}]}',
+                stderr="",
+            )
+        raise AssertionError(command)
+
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        index_path=index_path,
+        marketplace_root=marketplace_root,
+        command_runner=command_runner,
+    )
+    runner._bind_runtime_snapshot(
+        snapshot_root,
+        {"C_skill_required": {"codemap-py": codemap_source, "codex-rig": rig_source}},
+    )
+    monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare)
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_locked_codemap_python", lambda **_kwargs: "/usr/bin/python3")
+    monkeypatch.setattr(script_run_codex, "_verify_treatment_artifact_locks", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_admit_installed_skill_pair", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_write_permission_config", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_installed_plugin_pair", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", lambda *_args, **_kwargs: None)
+
+    home = runner._prepare_verified_home("C_skill_required")
+    try:
+        assert frozen_marketplace is not None
+        assert home.codemap_plugin_path == installed_paths["codemap-py"]
+        assert home.codex_rig_path == installed_paths["codex-rig"]
+        assert (home.codemap_plugin_path / ".codex-plugin" / "plugin.json").read_bytes() == (
+            codemap_source / ".codex-plugin" / "plugin.json"
+        ).read_bytes()
+        assert (home.codex_rig_path / ".codex-plugin" / "plugin.json").read_bytes() == (
+            rig_source / ".codex-plugin" / "plugin.json"
+        ).read_bytes()
+    finally:
+        assert home.coordination_path is not None
+        script_run_codex._cleanup_coordination_root(home.coordination_path)
+        home.cleanup()
+        runner.close()
+    assert len(created_homes) == 1
+    assert commands[:3] == [
+        ["codex", "plugin", "marketplace", "add", str(frozen_marketplace)],
+        ["codex", "plugin", "add", f"codemap-py@{frozen_name}", "--json"],
+        ["codex", "plugin", "add", f"codex-rig@{frozen_name}", "--json"],
+    ]
+    assert all(str(marketplace_root.resolve()) not in command for command in commands)
+
+
+def test_bound_runtime_snapshot_rejects_byte_drift_and_records_observed_identity(
+    script_run_codex: Any,
+    tmp_path: Path,
+) -> None:
+    """A changed snapshot source must fail with expected/observed identity evidence.
+
+    Prevents a mutable local archive from silently becoming the next cell's
+    plugin source and preserves the identity that caused an admission failure.
+    """
+    snapshot_root = tmp_path / "run" / "inputs"
+    snapshot_root.mkdir(parents=True)
+    source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codemap-py", "0.27.0")
+    rig_source = _write_snapshot_plugin_tree(snapshot_root / "C_skill_required", "codex-rig", "0.4.0")
+    _write_runtime_snapshot_metadata(
+        snapshot_root,
+        {"C_skill_required:codemap-py": source, "C_skill_required:codex-rig": rig_source},
+    )
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    runner._bind_runtime_snapshot(
+        snapshot_root,
+        {"C_skill_required": {"codemap-py": source, "codex-rig": rig_source}},
+    )
+    manifest = source / ".codex-plugin" / "plugin.json"
+    manifest.write_text('{"name":"codemap-py","version":"drifted"}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"codemap-py.*expected=.*observed="):
+        runner._runtime_plugin_sources("C_skill_required")
+
+    evidence_path = snapshot_root.parent / "runtime-isolation.jsonl"
+    runner._record_runtime_failure("C_skill_required", ValueError("snapshot byte drift"), source_paths=[source])
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["arm"] == "C_skill_required"
+    assert evidence["error"] == "snapshot byte drift"
+    assert evidence["observed_plugin_identities"]["codemap-py"]["version"] == "drifted"
+
+
+@POSIX_SECURITY
+def test_initial_skill_admission_failure_keeps_identity_evidence_after_cleanup(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A first C admission failure persists identities before its home is removed."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "artifact_sha256": {
+                    "codemap_candidate_manifest": "codemap-locked",
+                    "codex_rig_plugin_manifest": "rig-locked",
+                },
+                "codemap_candidate": {"version": "0.27.0"},
+                "codex_rig_candidate": {"version": "0.4.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    tasks_path = tmp_path / "tasks.json"
+    tasks_path.write_text("{}", encoding="utf-8")
+    marketplace_root = tmp_path / "marketplace"
+    marketplace_root.mkdir()
+    runner = script_run_codex.CodexRunner(
+        "fixture-model",
+        tmp_path,
+        manifest_path=manifest_path,
+        marketplace_root=marketplace_root,
+    )
+
+    def fail_after_staging(home: Any, *_args: Any, **_kwargs: Any) -> bool:
+        for name, version in (("codemap-py", "0.27.0"), ("codex-rig", "0.4.0")):
+            plugin = home.path / "plugins" / name
+            (plugin / ".codex-plugin").mkdir(parents=True)
+            (plugin / ".codex-plugin" / "plugin.json").write_text(
+                json.dumps({"name": name, "version": version}), encoding="utf-8"
+            )
+            setattr(home, "codemap_plugin_path" if name == "codemap-py" else "codex_rig_path", plugin)
+        raise RuntimeError("fixture plugin identity mismatch")
+
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_install_codemap_plugin", fail_after_staging)
+
+    with pytest.raises(RuntimeError, match="fixture plugin identity mismatch"):
+        runner.create_input_snapshot(
+            run_dir,
+            tasks_path=tasks_path,
+            manifest_path=manifest_path,
+            tasks=[],
+            arms=["C_skill_required"],
+        )
+
+    evidence_path = run_dir / "runtime-isolation.jsonl"
+    assert evidence_path.stat().st_mode & 0o777 == 0o600
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["arm"] == "C_skill_required"
+    assert evidence["error"] == "fixture plugin identity mismatch"
+    assert evidence["expected_plugin_identities"]["codemap-py"]["version"] == "0.27.0"
+    assert evidence["observed_plugin_identities"]["codex-rig"]["version"] == "0.4.0"
+    assert not any(tmp_path.rglob("plugin.json"))
+
+
 @pytest.mark.parametrize(
     "installed",
     [
@@ -1586,6 +1923,7 @@ def test_final_skill_plugin_roster_rejects_missing_disabled_or_extra_entries(
         script_run_codex._verify_installed_plugin_pair(home, command_runner=command_runner)
 
 
+@POSIX_SECURITY
 def test_auth_source_is_copied_with_private_modes_and_removed_with_home(script_run_codex: Any, tmp_path: Path) -> None:
     """One explicit auth source must remain private and disappear with its arm home."""
     auth_source = tmp_path / "source-auth.json"
@@ -1627,6 +1965,7 @@ def test_arm_home_drops_batch_controls_from_codex_process_environment(
         assert all(name not in home.env for name in control_names)
 
 
+@POSIX_SECURITY
 def test_auth_source_rejects_insecure_permissions_and_symlinks(script_run_codex: Any, tmp_path: Path) -> None:
     """Credential propagation must fail closed on readable or indirect sources."""
     auth_source = tmp_path / "source-auth.json"
@@ -1651,6 +1990,7 @@ def test_auth_source_rejects_insecure_permissions_and_symlinks(script_run_codex:
         )
 
 
+@POSIX_SECURITY
 @pytest.mark.parametrize("violation", ["permissions", "owner"])
 def test_arm_home_cleanup_rejects_non_private_credential_directory(
     script_run_codex: Any,
@@ -1679,6 +2019,7 @@ def test_arm_home_cleanup_rejects_non_private_credential_directory(
     assert home_path.is_dir()
 
 
+@POSIX_SECURITY
 def test_prepare_verified_home_cleans_credential_home_after_keyboard_interrupt(
     script_run_codex: Any,
     tmp_path: Path,
@@ -1720,6 +2061,7 @@ def test_prepare_verified_home_cleans_credential_home_after_keyboard_interrupt(
     assert not created_homes[0].path.exists()
 
 
+@POSIX_SECURITY
 def test_auth_source_path_validation_error_is_generic_and_does_not_expose_source_path(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
@@ -1748,6 +2090,7 @@ def test_auth_source_path_validation_error_is_generic_and_does_not_expose_source
         assert str(private_path) not in rendered
 
 
+@POSIX_SECURITY
 def test_probe_verifies_authentication_without_disclosing_auth_source(
     script_run_codex: Any,
     tmp_path: Path,
@@ -1783,6 +2126,7 @@ def test_probe_verifies_authentication_without_disclosing_auth_source(
     assert str(auth_source) not in json.dumps(evidence)
 
 
+@POSIX_SECURITY
 def test_runner_cleans_auth_home_when_transport_raises(
     script_run_codex: Any,
     tmp_path: Path,
@@ -1826,6 +2170,7 @@ def test_runner_cleans_auth_home_when_transport_raises(
     assert all(not home.exists() for home in homes)
 
 
+@POSIX_SECURITY
 def test_runner_reuses_rotated_auth_state_without_mutating_immutable_source(
     script_run_codex: Any,
     tmp_path: Path,
@@ -1892,6 +2237,7 @@ def test_runner_reuses_rotated_auth_state_without_mutating_immutable_source(
     runner.close()
 
 
+@POSIX_SECURITY
 def test_runner_rejects_auth_source_drift_before_the_next_model_call(
     script_run_codex: Any,
     tmp_path: Path,
@@ -3026,12 +3372,15 @@ def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run
     assert "B_direct_required" not in legend
     assert "C_skill_required" not in legend
     assert "status: ✓ completed, ✗ failed" in legend
-    assert "quality: continuous [0,1], ? unscoreable" in legend
+    assert "quality: continuous [0,1], ? unscoreable (higher is better)" in legend
     assert "progress: N completed cells / M planned cells" in legend
     assert "treatment: ✓ assigned arm followed, ✗ assigned arm not followed" in legend
     assert "codemap-used: ✓ Codemap call observed; ✗ no Codemap call (expected for A_plain)" in legend
     assert "or required use missed (B/C)" in legend
-    assert "input tokens: gross total; cached and fresh details remain in telemetry" in legend
+    assert (
+        "input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)"
+        in legend
+    )
     assert " | " not in legend
     assert "tokens: k=1,000, M=1,000,000" not in legend
 
@@ -3101,6 +3450,7 @@ def _render_result_stream(input_text: str, *args: str) -> subprocess.CompletedPr
         cwd=BENCHMARKS_DIR.parent,
         input=input_text,
         capture_output=True,
+        encoding="utf-8",
         text=True,
         check=False,
     )
@@ -3113,7 +3463,7 @@ def _render_result_stream(input_text: str, *args: str) -> subprocess.CompletedPr
         pytest.param("B_direct_required", "36", id="direct-cyan"),
         pytest.param("C_skill_required", "35", id="skill-magenta"),
         pytest.param("B_auto", "36", id="agentic-auto-cyan"),
-        pytest.param("C_required", "35", id="agentic-required-magenta"),
+        pytest.param("C_strict", "35", id="agentic-required-magenta"),
     ],
 )
 def test_render_results_force_color_maps_each_arm_to_its_review_color(arm: str, color_code: str) -> None:
@@ -3126,6 +3476,84 @@ def test_render_results_force_color_maps_each_arm_to_its_review_color(arm: str, 
     assert f"\x1b[{color_code}m" in completed.stdout
     assert row.rstrip("\n") in completed.stdout
     assert completed.stdout.endswith("\x1b[0m\n")
+
+
+def test_render_results_force_color_writes_result_rows_without_rich_backend(
+    script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forced ANSI output must not depend on Rich's Windows stream renderer."""
+
+    class UnexpectedConsole:
+        """Fail if the ANSI regression path delegates a result row to Rich."""
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def print(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("forced result row must write ANSI directly")
+
+    monkeypatch.setattr(script_run_codex, "_Console", UnexpectedConsole)
+    output = StringIO()
+
+    script_run_codex.render_result_rows(["(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\n"], output, force_color=True)
+
+    assert output.getvalue() == "\x1b[33m(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\x1b[0m\n"
+
+
+def test_render_results_force_color_writes_standard_output_descriptor(
+    script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forced ANSI bypasses a Windows-style standard-stream adapter."""
+
+    class FixtureConsole:
+        """Allow construction while proving the result row does not use Rich."""
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def print(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("forced result row must bypass the adapter")
+
+    class AdapterStream:
+        """Stand in for a stdout wrapper that would strip ANSI text writes."""
+
+        def flush(self) -> None:
+            pass
+
+        def fileno(self) -> int:
+            return 41
+
+        def isatty(self) -> bool:
+            return False
+
+    writes: list[tuple[int, bytes]] = []
+    output = AdapterStream()
+    monkeypatch.setattr(script_run_codex, "_Console", FixtureConsole)
+    monkeypatch.setattr(script_run_codex.sys, "stdout", output)
+    monkeypatch.setattr(script_run_codex.os, "write", lambda fd, data: writes.append((fd, data)))
+
+    script_run_codex.render_result_rows(["(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\n"], output, force_color=True)
+
+    assert writes == [(41, b"\x1b[33m(1/3) \xe2\x9c\x93  FN-02  rep=1  A_plain  quality=1.000\x1b[0m\n")]
+
+
+def test_render_results_recovers_bare_force_color_flag_at_cli_boundary(
+    script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The test-only bare flag survives a Windows Fire subprocess boundary."""
+    received: list[bool] = []
+
+    def render(_rows: object, _output: object, *, force_color: bool, hide_plan: bool) -> None:
+        """Record renderer flags without consuming pytest's standard streams."""
+        assert hide_plan is False
+        received.append(force_color)
+
+    monkeypatch.setattr(script_run_codex, "render_result_rows", render)
+    monkeypatch.setattr(script_run_codex.sys, "argv", ["runner", "--render-results", "--force-color"])
+
+    script_run_codex.cli(render_results=True)
+
+    assert received == [True]
 
 
 def test_render_results_force_color_renders_legend_as_bounded_rich_panel() -> None:
@@ -3250,7 +3678,7 @@ def test_hide_plan_requires_render_results_mode() -> None:
             "1.000",
             True,
             False,
-            "✓  SE-01  rep=1  A_plain   in= 44.4k  out=   658  time=  17s  quality=1.000  treatment:✓  codemap-used:✗",
+            "✓  SE-01  rep=1  A_plain   in= 44.4k  out=  658  time=  17s  quality=1.000  treatment:✓  codemap-used:✗",
             id="plain-small-output",
         ),
         pytest.param(
@@ -3262,7 +3690,7 @@ def test_hide_plan_requires_render_results_mode() -> None:
             "1.000",
             True,
             True,
-            "✓  SE-01  rep=1  C_skill   in= 74.5k  out=   995  time=  24s  quality=1.000  treatment:✓  codemap-used:✓",
+            "✓  SE-01  rep=1  C_skill   in= 74.5k  out=  995  time=  24s  quality=1.000  treatment:✓  codemap-used:✓",
             id="skill-required",
         ),
         pytest.param(
@@ -3274,7 +3702,7 @@ def test_hide_plan_requires_render_results_mode() -> None:
             "?",
             False,
             True,
-            "✗  SE-01  rep=1  B_direct  in=  1.2M  out=  1.5k  time=1m38s  quality=    ?  treatment:✗  codemap-used:✓",
+            "✗  SE-01  rep=1  B_direct  in=  1.2M  out= 1.5k  time=1m38s  quality=    ?  treatment:✗  codemap-used:✓",
             id="direct-million-and-failure",
         ),
     ],
@@ -4120,6 +4548,69 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
     assert snapshot["sha256"] == hashlib.sha256((tmp_path / "inputs" / "input-snapshot.json").read_bytes()).hexdigest()
 
 
+@POSIX_SECURITY
+def test_input_snapshot_keeps_private_executable_launcher_for_later_b_home(
+    script_run_codex: Any,
+    tmp_path: Path,
+) -> None:
+    """B must remain runnable from its immutable snapshot after the admission home is removed."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    manifest = shared / "manifest.json"
+    tasks = shared / "tasks.json"
+    runner_path = shared / "runner.py"
+    for path in (manifest, tasks, runner_path):
+        path.write_text(path.name, encoding="utf-8")
+
+    runtime = tmp_path / "admission-home" / "direct-cli"
+    launcher = runtime / "bin" / "codemap-py"
+    exclusions = runtime / "bin" / "_exclusions.py"
+    entrypoint = runtime / "scripts" / "codemap_py_entry.py"
+    package = runtime / "src" / "codemap_py" / "__init__.py"
+    for path in (launcher, exclusions, entrypoint, package):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"fixture:{path.name}\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    launcher_bytes = launcher.read_bytes()
+
+    snapshot_root = tmp_path / "inputs"
+    script_run_codex._write_input_snapshot(
+        snapshot_root,
+        manifest_path=manifest,
+        tasks_path=tasks,
+        runner_path=runner_path,
+        index_path=None,
+        auth_source=None,
+        arm_archives={"B_direct_required": {"direct-cli": runtime}},
+    )
+    archived_root = snapshot_root / "B_direct_required" / "direct-cli"
+    archived_launcher = archived_root / "bin" / "codemap-py"
+    archived_metadata = archived_launcher.lstat()
+    assert stat.S_ISREG(archived_metadata.st_mode)
+    assert archived_metadata.st_nlink == 1
+    assert stat.S_IMODE(archived_metadata.st_mode) == 0o700
+    assert archived_launcher.read_bytes() == launcher_bytes
+
+    shutil.rmtree(runtime.parent)
+    adapter = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    adapter._bind_runtime_snapshot(
+        snapshot_root,
+        {"B_direct_required": {"direct-cli": archived_root}},
+    )
+    frozen_launcher = adapter._runtime_direct_launcher("B_direct_required")
+    home = script_run_codex.prepare_arm_home(
+        "B_direct_required",
+        root=tmp_path,
+        codemap_bin=frozen_launcher,
+    )
+    try:
+        assert home.codemap_verified is True
+        assert home.codemap_launcher_path is not None
+        assert home.codemap_launcher_path.read_bytes() == launcher_bytes
+    finally:
+        home.cleanup()
+
+
 def test_invocation_launcher_validation_rejects_drift(script_run_codex: Any, tmp_path: Path) -> None:
     """A paid run cannot continue after its executing shell snapshot changes."""
     launcher = tmp_path / "run-all.sh"
@@ -4675,6 +5166,7 @@ def test_git_status_failure_rejects_admission(
         script_run_codex._git_porcelain_status(tmp_path)
 
 
+@POSIX_SECURITY
 def test_diff_impact_preflight_exercises_stage_admission_and_strict_revert(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

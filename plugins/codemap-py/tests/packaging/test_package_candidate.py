@@ -25,6 +25,15 @@ if str(_BUILDER.parent) not in sys.path:
 
 import build_package as builder  # noqa: E402  (needs the scripts path insert above)
 
+_TEXT_LAUNCHERS = (
+    "bin/check-index-currency",
+    "bin/codemap-py",
+    "bin/codemap-py.cmd",
+    "bin/scan-index",
+    "bin/scan-query",
+)
+_TEXT_PACKAGE_METADATA = ("LICENSE", "NOTICE")
+
 
 def _plugin_identity() -> tuple[str, str]:
     """Return ``(name, version)`` from the tracked Claude manifest."""
@@ -192,6 +201,23 @@ def test_manifest_exec_flag_is_platform_neutral(package: Path, member: str, expe
     manifest = json.loads((package / "package-manifest.json").read_text())
     record = next(entry for entry in manifest["files"] if entry["path"] == member)
     assert record["exec"] is expected_exec
+
+
+def test_hashed_text_inputs_have_platform_neutral_line_endings(package: Path) -> None:
+    """Git attributes and packaged bytes must keep exact package hashes cross-platform."""
+    text_inputs = (*_TEXT_LAUNCHERS, *_TEXT_PACKAGE_METADATA)
+    result = subprocess.run(
+        ["git", "check-attr", "text", "eol", "--", *text_inputs],
+        cwd=str(_PLUGIN_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    expected_attributes = [line for member in text_inputs for line in (f"{member}: text: set", f"{member}: eol: lf")]
+    assert result.stdout.splitlines() == expected_attributes
+    for member in text_inputs:
+        assert b"\r" not in (package / member).read_bytes(), member
 
 
 def test_no_symlinks_in_payload(package: Path) -> None:

@@ -203,7 +203,7 @@ _ARM_DISALLOWED: dict[str, list[str]] = {
         "--disallowed-tools",
         "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(python3:*),Bash(python:*)",
     ],
-    "C_required": [
+    "C_strict": [
         "--disallowed-tools",
         "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(python3:*),Bash(python:*)",
     ],
@@ -211,7 +211,7 @@ _ARM_DISALLOWED: dict[str, list[str]] = {
 _ARM_ALLOWED: dict[str, list[str]] = {
     "codemap": ["--allowedTools", "Bash(scan-query:*)"],
     "B_auto": ["--allowedTools", "Bash(scan-query:*)"],
-    "C_required": ["--allowedTools", "Bash(scan-query:*)"],
+    "C_strict": ["--allowedTools", "Bash(scan-query:*)"],
 }
 
 # ---------------------------------------------------------------------------
@@ -369,7 +369,7 @@ class BenchRun:
     arm_contract_hash: str = ""
     experiment_revision: str = LEGACY_EXPERIMENT_REVISION
     parity_arm: str = ""
-    compliance: bool | None = None  # C_required usage evidence, separate from task quality
+    compliance: bool | None = None  # C_strict usage evidence, separate from task quality
     contaminated: bool = False
     treatment_adherence: bool | None = None
     oracle_class: str = "unknown"
@@ -433,12 +433,12 @@ Subcommands:
   diff-impact [--base REF]               — structural blast radius of the current git change set
   batch [FILE|-]                         — run many queries in one process (reads a JSON array of {{cmd, args}})"""
 
-_C_REQUIRED_USE = "\n\nYou must use Codemap at least once for structural investigation; other tools remain allowed."
+_C_STRICT_USE = "\n\nYou must use Codemap at least once for structural investigation; other tools remain allowed."
 
 
 def _transport_arm(arm: str) -> str:
     """Return the legacy transport setup that implements one arm label."""
-    return {"A_plain": "plain", "B_auto": "codemap", "C_required": "codemap"}.get(arm, arm)
+    return {"A_plain": "plain", "B_auto": "codemap", "C_strict": "codemap"}.get(arm, arm)
 
 
 def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: str) -> str:
@@ -468,8 +468,8 @@ def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: s
     """
     transport_arm = _transport_arm(arm)
     tools_section = _PLAIN_TOOLS if transport_arm == "plain" else _CODEMAP_TOOLS.format(index_path=index_path)
-    if arm == "C_required":
-        tools_section += _C_REQUIRED_USE
+    if arm == "C_strict":
+        tools_section += _C_STRICT_USE
     return _SHARED_SYSTEM_TEMPLATE.format(repo_name=repo_name, repo_path=repo_path, tools_section=tools_section)
 
 
@@ -2135,6 +2135,32 @@ def _module_compatible(gt_module: str, found_module: str) -> bool:
     return gt_module.endswith("." + found_module) or found_module.endswith("." + gt_module)
 
 
+def _norm_cls(qualname: str) -> str:
+    """Normalize a qualified caller to its underscore-insensitive ``Class.method`` tail.
+
+    Drops the module prefix and strips leading underscores from the class component, so the
+    fuzzy caller tier credits format variants like ``EvaluationLoop.run`` against a ground-truth
+    ``_EvaluationLoop.run``. Bare function tails (no ``.``) are returned unchanged.
+
+    Args:
+        qualname: Caller in ``module::Class.method`` form (or any tail subset of it).
+
+    Returns:
+        The normalized tail used for fuzzy comparison.
+
+    Examples:
+        >>> _norm_cls("lightning.loops.evaluation_loop::_EvaluationLoop.run")
+        'EvaluationLoop.run'
+        >>> _norm_cls("pkg.mod::plain_function")
+        'plain_function'
+    """
+    tail = qualname.split("::")[-1]
+    if "." not in tail:
+        return tail
+    cls, _, meth = tail.partition(".")
+    return f"{cls.lstrip('_')}.{meth}"
+
+
 def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
     """Evaluate develop_blast_radius task: measure caller recall.
 
@@ -2421,13 +2447,6 @@ def _normalize_caller_forms(found_raw: list[str], output_text: str, expected_cal
     # Class.method tail alone credited a wrong-module same-tail caller (a `Loop.run` in a different
     # module scored the GT caller). Requiring module compatibility keeps the underscore tolerance
     # while rejecting cross-module tail collisions.
-    def _norm_cls(qn: str) -> str:
-        tail = qn.split("::")[-1]
-        if "." not in tail:
-            return tail
-        cls, _, meth = tail.partition(".")
-        return f"{cls.lstrip('_')}.{meth}"
-
     already_exact = expected_set & found_qualnames
     for canonical in expected_callers:
         if canonical not in already_exact and "." in canonical.split("::")[-1]:
@@ -3002,21 +3021,33 @@ _EVALUATORS = {
 }
 
 
-def _wrap_bench_evaluator(
-    evaluator: Callable[[Mapping[str, Any], str], BenchQuality],
-) -> Callable[[Mapping[str, Any], str], EvaluationResult]:
-    """Adapt one detailed Claude evaluator to the provider-neutral result contract.
+@dataclass(frozen=True)
+class _BenchEvaluatorAdapter:
+    """Callable adapter from one detailed Claude evaluator to the provider-neutral contract.
 
-    Args:
+    Attributes:
         evaluator: Existing evaluator that returns the detailed Claude score object.
 
-    Returns:
-        A shared evaluator result that preserves that exact detailed score.
+    Examples:
+        >>> detailed = BenchQuality(scored=True, correct=True, recall=0.5)
+        >>> adapter = _BenchEvaluatorAdapter(lambda _task, _output: detailed)
+        >>> adapter({}, "answer").quality_score
+        0.5
     """
 
-    def evaluate(task: Mapping[str, Any], output_text: str) -> EvaluationResult:
-        """Evaluate one response once and package its normalized and detailed scores."""
-        quality = evaluator(task, output_text)
+    evaluator: Callable[[Mapping[str, Any], str], BenchQuality]
+
+    def __call__(self, task: Mapping[str, Any], output_text: str) -> EvaluationResult:
+        """Evaluate one response once and package its normalized and detailed scores.
+
+        Args:
+            task: Task mapping handed to the wrapped evaluator.
+            output_text: Agent response text to score.
+
+        Returns:
+            A shared evaluator result that preserves that exact detailed score.
+        """
+        quality = self.evaluator(task, output_text)
         quality_score = quality.recall if quality.scored and quality.recall is not None else float(quality.correct)
         if not quality.scored:
             quality_score = None
@@ -3044,7 +3075,26 @@ def _wrap_bench_evaluator(
             bench_quality=quality,
         )
 
-    return evaluate
+
+def _wrap_bench_evaluator(
+    evaluator: Callable[[Mapping[str, Any], str], BenchQuality],
+) -> Callable[[Mapping[str, Any], str], EvaluationResult]:
+    """Adapt one detailed Claude evaluator to the provider-neutral result contract.
+
+    Args:
+        evaluator: Existing evaluator that returns the detailed Claude score object.
+
+    Returns:
+        A callable that scores one response into a shared evaluator result, preserving
+        that exact detailed score.
+
+    Examples:
+        >>> detailed = BenchQuality(scored=False, correct=False)
+        >>> wrapped = _wrap_bench_evaluator(lambda _task, _output: detailed)
+        >>> wrapped({}, "answer").scored
+        False
+    """
+    return _BenchEvaluatorAdapter(evaluator)
 
 
 _SHARED_EVALUATORS = EvaluatorRegistry(
@@ -3607,7 +3657,7 @@ class BenchRunner:
                 result.error = "answer_file_read"
                 result.quality = BenchQuality(scored=False)
 
-        if arm == "C_required":
+        if arm == "C_strict":
             result.compliance = result.scan_query_calls > 0
         result.contaminated = result.error in {"contaminated", "answer_file_read"}
         if arm in ARM_CONTRACTS:
@@ -4324,6 +4374,171 @@ def _save_results(runs: list[BenchRun], model: str) -> Path:
     return out
 
 
+@dataclass(frozen=True)
+class _RichSubProgressUpdate:
+    """Live sub-progress callback for one (task, arm) combo.
+
+    Instances are passed as ``BenchRunner.run(update_fn=...)``: each call refreshes the outer
+    bar's description and the per-run sub-bar with the current turn count and tool tallies.
+
+    Attributes:
+        progress: Active rich ``Progress`` instance.
+        outer_id: Progress task id of the outer (whole-run) bar.
+        sub_id: Progress task id of this combo's sub-bar.
+        task_id: Benchmark task id shown in the outer description.
+        arm_name: Arm label shown in the outer description.
+
+    Examples:
+        >>> update = _RichSubProgressUpdate(None, 0, 1, "SE-01", "codemap")
+        >>> update.task_id, update.arm_name
+        ('SE-01', 'codemap')
+    """
+
+    progress: Any
+    outer_id: Any
+    sub_id: Any
+    task_id: str
+    arm_name: str
+
+    def __call__(self, elapsed: float, run: BenchRun) -> None:
+        """Refresh both progress rows from the in-flight run.
+
+        Args:
+            elapsed: Seconds since the run's subprocess started.
+            run: The ``BenchRun`` being populated in place.
+        """
+        calls = run.grep_calls + run.bash_calls + run.skill_calls
+        sk = run.skill_calls
+        tool_live = f"B={run.bash_calls} G={run.grep_calls} R={run.read_calls} SQ={run.scan_query_calls} Sk={sk}"
+        self.progress.update(self.outer_id, description=f"{self.task_id} {self.arm_name}")
+        self.progress.update(
+            self.sub_id,
+            completed=run.turn_count,
+            description=f"  {fmt_time(elapsed)} calls={calls} {tool_live}",
+        )
+
+
+@dataclass
+class _StructuralRunLoop:
+    """Per-run execution state shared by the combo and task-arm drivers.
+
+    Bundles what a single ``main()`` invocation needs to execute one (task, arm) combo, so the
+    drivers are module-level methods instead of closures over ``main``'s locals.
+
+    Attributes:
+        runner: Configured ``BenchRunner`` executing each combo.
+        repo_path: Root of the target repository clone (sandbox + staging root).
+        arms_to_run: Arm labels executed for every task, in order.
+        patch_ids: Task ids that carry a patch reference and may be sandbox-scored.
+        runs: Accumulator every completed run is appended to, in completion order.
+
+    Examples:
+        >>> loop = _StructuralRunLoop(None, Path("."), ["codemap"], {"PT-01"}, [])
+        >>> loop.arms_to_run, sorted(loop.patch_ids)
+        (['codemap'], ['PT-01'])
+    """
+
+    runner: Any
+    repo_path: Path
+    arms_to_run: list[str]
+    patch_ids: set[str]
+    runs: list[BenchRun] = field(default_factory=list)
+
+    def run_combo(self, task: dict, arm: str, log_fn: Any, update_fn: Optional[Any] = None) -> BenchRun:
+        """Execute one (task, arm) combo, record it, and log its one-line result.
+
+        Args:
+            task: Task dict to run.
+            arm: Arm label to run it under.
+            log_fn: Single-argument printer for the result line (rich console or ``print``).
+            update_fn: Optional live-progress callback forwarded to the runner.
+
+        Returns:
+            The completed ``BenchRun``, already appended to ``self.runs``.
+        """
+        run = self.runner.run(task, arm, update_fn=update_fn)
+        # Tier E: for scoreable patch tasks, extract the agent diff and execute it in a
+        # sandbox to record whether the failing test passes. Non-scoreable stubs (placeholder
+        # SHA / no reference) skip the sandbox and report structural GT only.
+        if task["id"] in self.patch_ids and task.get("scoreable") is not False and run.success:
+            diff_text = _extract_diff(run.output_text)
+            if diff_text is not None:
+                try:
+                    run.patch_pass = PatchSandbox(self.repo_path, task).run(diff_text)
+                except SandboxError as exc:
+                    run.error = run.error or f"sandbox_error: {exc}"
+                    run.patch_pass = None
+            else:
+                # No diff block in output — agent produced prose only; scores as a fail.
+                run.patch_pass = False
+        self.runs.append(run)
+        status = "✓" if run.success else "✗"
+        correct = _run_correct_symbol(run)
+        # in/out token split (k/M via shared fmt_tok) plus Anthropic's own per-run cost. The $ is
+        # omitted (in/out only) when the run carried no total_cost_usd — no price table to go stale.
+        cost_str = f" ${run.cost_usd:.3f}" if run.cost_usd else ""
+        _eff = _effective_recall(run)
+        # Three distinct states, never conflated:
+        #   number  — scored & parsed: recall in [0, 1] (0.000 = wrong answer, real miss)
+        #   !parse  — scored but answer unparsable: parser-coverage issue, NOT degradation
+        #   ?       — not scored (task type not evaluable)
+        if _eff is not None:
+            q_str = f"{_eff:.3f}"
+        elif run.quality.scored and run.quality.extraction_failed:
+            q_str = "!parse"
+        else:
+            q_str = "?"
+        # Sk (Skill-tool calls) omitted from the terminal line: the codemap arm queries
+        # scan-query via Bash (counted in SQ), never the Skill tool, so it is always 0 here.
+        # The raw skill_counts field is still recorded in the results JSONL if it ever fires.
+        tool_summary = f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d}"
+        log_fn(
+            f"  {status}{correct} {task['id']}\t{arm}\ttok: in={fmt_tok(run.input_tokens):>6} out={fmt_tok(run.output_tokens):>5}{cost_str} time={fmt_time(run.elapsed_s)}\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
+        )
+        return run
+
+    def _run_arms(self, task: dict, progress: Any, outer: Any) -> None:
+        """Run every selected arm for one task against the current (possibly staged) tree.
+
+        Args:
+            task: Task dict.
+            progress: Active rich Progress instance.
+            outer: Outer progress task id.
+        """
+        for arm_name in self.arms_to_run:
+            task_max_turns = _max_turns_for_task(task)
+            sub = progress.add_task("  0s calls=0", total=task_max_turns)
+            progress.update(outer, description=f"{task['id']} {arm_name}")
+            self.run_combo(
+                task,
+                arm_name,
+                progress.console.print,
+                update_fn=_RichSubProgressUpdate(progress, outer, sub, task["id"], arm_name),
+            )
+            progress.remove_task(sub)
+            progress.advance(outer)
+
+    def run_task_arms(self, task: dict, progress: Any, outer: Any) -> None:
+        """Run every selected arm for one task, staging a diff-impact change around both arms.
+
+        A ``diff_impact`` task with a ``stage`` spec applies the synthetic change once (via
+        :class:`DiffImpactStager`), runs BOTH arms against the staged tree, then reverts on block exit —
+        so both arms see the identical change and the tree is restored regardless of per-arm outcome.
+        Every other task runs its arms directly. Progress bookkeeping is unchanged.
+
+        Args:
+            task: Task dict.
+            progress: Active rich Progress instance.
+            outer: Outer progress task id.
+        """
+        stage_spec = task.get("stage") if task.get("type") == _DIFF_IMPACT_TYPE else None
+        if stage_spec:
+            with DiffImpactStager(self.repo_path, stage_spec):
+                self._run_arms(task, progress, outer)
+        else:
+            self._run_arms(task, progress, outer)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -4588,112 +4803,21 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
 
     runs: list[BenchRun] = []
     combos = [(task, arm) for task in task_list for arm in arms_to_run]
-
-    def _run_combo(task: dict, arm: str, log_fn: Any, update_fn: Optional[Any] = None) -> BenchRun:
-        run = runner.run(task, arm, update_fn=update_fn)
-        # Tier E: for scoreable patch tasks, extract the agent diff and execute it in a
-        # sandbox to record whether the failing test passes. Non-scoreable stubs (placeholder
-        # SHA / no reference) skip the sandbox and report structural GT only.
-        if task["id"] in patch_id_set and task.get("scoreable") is not False and run.success:
-            diff_text = _extract_diff(run.output_text)
-            if diff_text is not None:
-                try:
-                    run.patch_pass = PatchSandbox(repo_path, task).run(diff_text)
-                except SandboxError as exc:
-                    run.error = run.error or f"sandbox_error: {exc}"
-                    run.patch_pass = None
-            else:
-                # No diff block in output — agent produced prose only; scores as a fail.
-                run.patch_pass = False
-        runs.append(run)
-        status = "✓" if run.success else "✗"
-        correct = _run_correct_symbol(run)
-        # in/out token split (k/M via shared fmt_tok) plus Anthropic's own per-run cost. The $ is
-        # omitted (in/out only) when the run carried no total_cost_usd — no price table to go stale.
-        cost_str = f" ${run.cost_usd:.3f}" if run.cost_usd else ""
-        _eff = _effective_recall(run)
-        # Three distinct states, never conflated:
-        #   number  — scored & parsed: recall in [0, 1] (0.000 = wrong answer, real miss)
-        #   !parse  — scored but answer unparsable: parser-coverage issue, NOT degradation
-        #   ?       — not scored (task type not evaluable)
-        if _eff is not None:
-            q_str = f"{_eff:.3f}"
-        elif run.quality.scored and run.quality.extraction_failed:
-            q_str = "!parse"
-        else:
-            q_str = "?"
-        # Sk (Skill-tool calls) omitted from the terminal line: the codemap arm queries
-        # scan-query via Bash (counted in SQ), never the Skill tool, so it is always 0 here.
-        # The raw skill_counts field is still recorded in the results JSONL if it ever fires.
-        tool_summary = f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d}"
-        log_fn(
-            f"  {status}{correct} {task['id']}\t{arm}\ttok: in={fmt_tok(run.input_tokens):>6} out={fmt_tok(run.output_tokens):>6}{cost_str} time={fmt_time(run.elapsed_s)}\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
-        )
-        return run
-
-    def _make_rich_update(
-        progress: Any, outer_id: Any, sub_id: Any, task_id: str, arm_name: str, done: int, total: int
-    ) -> Any:
-        """Return a sub-progress update callback — updates outer description and sub-task bar."""
-
-        def _update(elapsed: float, run: BenchRun) -> None:
-            calls = run.grep_calls + run.bash_calls + run.skill_calls
-            sk = run.skill_calls
-            tool_live = f"B={run.bash_calls} G={run.grep_calls} R={run.read_calls} SQ={run.scan_query_calls} Sk={sk}"
-            progress.update(outer_id, description=f"{task_id} {arm_name}")
-            progress.update(
-                sub_id,
-                completed=run.turn_count,
-                description=f"  {fmt_time(elapsed)} calls={calls} {tool_live}",
-            )
-
-        return _update
-
-    def _run_task_arms(task: dict, progress: Any, outer: Any, done_start: int, total: int) -> None:
-        """Run every selected arm for one task, staging a diff-impact change around both arms.
-
-        A ``diff_impact`` task with a ``stage`` spec applies the synthetic change once (via
-        :class:`DiffImpactStager`), runs BOTH arms against the staged tree, then reverts on block exit —
-        so both arms see the identical change and the tree is restored regardless of per-arm outcome.
-        Every other task runs its arms directly. Progress bookkeeping is unchanged.
-
-        Args:
-            task: Task dict.
-            progress: Active rich Progress instance.
-            outer: Outer progress task id.
-            done_start: 1-based index of this task's first arm in the overall sequence.
-            total: Total combo count.
-        """
-        stage_spec = task.get("stage") if task.get("type") == _DIFF_IMPACT_TYPE else None
-
-        def _run_arms() -> None:
-            for offset, arm_name in enumerate(arms_to_run):
-                task_max_turns = _max_turns_for_task(task)
-                sub = progress.add_task("  0s calls=0", total=task_max_turns)
-                progress.update(outer, description=f"{task['id']} {arm_name}")
-                _run_combo(
-                    task,
-                    arm_name,
-                    progress.console.print,
-                    update_fn=_make_rich_update(progress, outer, sub, task["id"], arm_name, done_start + offset, total),
-                )
-                progress.remove_task(sub)
-                progress.advance(outer)
-
-        if stage_spec:
-            with DiffImpactStager(repo_path, stage_spec):
-                _run_arms()
-        else:
-            _run_arms()
+    run_loop = _StructuralRunLoop(
+        runner=runner,
+        repo_path=repo_path,
+        arms_to_run=arms_to_run,
+        patch_ids=patch_id_set,
+        runs=runs,
+    )
 
     with make_progress(_console) as progress:
         total = len(combos)
         outer = progress.add_task("running", total=total)
-        done = 1
         _dirty_skips: list[tuple[str, str]] = []  # DI tasks skipped (un-stageable), reported after the run
         for task in task_list:
             try:
-                _run_task_arms(task, progress, outer, done, total)
+                run_loop.run_task_arms(task, progress, outer)
             except DirtyTreeError as exc:
                 # This diff-impact task could not stage its synthetic change — either the tree is
                 # dirty, or a find-anchor is stale vs the current target repo. The stager already
@@ -4702,7 +4826,6 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
                 # results already gathered for every other task.
                 progress.console.print(f"[yellow]⚠ skipped DI task {task['id']} (cannot stage): {exc}[/yellow]")
                 _dirty_skips.append((task["id"], str(exc)))
-            done += len(arms_to_run)
 
     _print_summary(runs, model_short)
 

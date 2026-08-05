@@ -12,6 +12,7 @@ import json
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field as dataclass_field
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -38,7 +39,7 @@ ARM_CONTRACTS: Mapping[str, Mapping[str, str]] = MappingProxyType(
                 "contract_sha256": "223aea5cbcc96ea05c9bf1e8662e74d34d2b2f8863d80ca197010bd51588d64e",
             }
         ),
-        "C_required": MappingProxyType(
+        "C_strict": MappingProxyType(
             {
                 "contract": "Codemap is installed and available. Use Codemap at least once for structural investigation; other tools remain allowed.",
                 "contract_sha256": "06c5d7703aaa0c524889d174f962bcefd273e7b4c13e4ab53f98d7780c400ecd",
@@ -375,6 +376,26 @@ def semantic_suite_hash(tasks: Sequence[Task]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _arm_order_digest(coordinates: tuple[str, ...], arm: str) -> bytes:
+    """Return the sort digest that places one arm within a paired experiment block.
+
+    Args:
+        coordinates: Revision-bound block coordinates shared by every arm in the block.
+        arm: Arm label being ranked.
+
+    Returns:
+        The SHA-256 digest of the pipe-joined coordinates plus the arm label.
+
+    Examples:
+        >>> _arm_order_digest(("rev1", "claude"), "A_plain").hex()[:8]
+        'b5e864b5'
+        >>> _arm_order_digest(("rev1", "claude"), "A_plain") == _arm_order_digest(("rev1", "claude"), "B_auto")
+        False
+    """
+    payload = "|".join((*coordinates, arm)).encode("utf-8")
+    return hashlib.sha256(payload).digest()
+
+
 def deterministic_arm_order(
     experiment_revision: str,
     provider: str,
@@ -396,11 +417,7 @@ def deterministic_arm_order(
         else base_coordinates
     )
 
-    def arm_digest(arm: str) -> bytes:
-        payload = "|".join((*coordinates, arm)).encode("utf-8")
-        return hashlib.sha256(payload).digest()
-
-    return tuple(sorted(ARM_CONTRACTS, key=arm_digest))
+    return tuple(sorted(ARM_CONTRACTS, key=partial(_arm_order_digest, coordinates)))
 
 
 _CAPABILITY_BY_TASK_TYPE = {
@@ -521,6 +538,7 @@ class ResultRecord:
     incomplete: bool = False
     extraction_failed: bool = False
     contaminated: bool = False
+    diagnostic_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -563,6 +581,7 @@ def result_eligibility(record: ResultRecord, policies: Mapping[str, TaskPolicy])
         and not record.incomplete
         and not record.extraction_failed
         and not record.contaminated
+        and not record.diagnostic_only
         and record.treatment_adherence is True
         and not record.token_accounting_inconsistent
         and not token_accounting_inconsistent(record.input_tokens, record.cached_input_tokens)

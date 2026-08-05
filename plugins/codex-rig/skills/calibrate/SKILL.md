@@ -1,6 +1,6 @@
 ---
 name: calibrate
-description: Codex-native calibration loop. Use to detect leaks or major gaps across packaged skills and role cards with fixed checks plus behavioral recall, precision, and confidence-accuracy scoring.
+description: "Calibrate skills/role cards for leaks/gaps with recall, precision, and confidence-accuracy checks."
 ---
 
 # Calibrate
