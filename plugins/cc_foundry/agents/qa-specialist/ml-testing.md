@@ -14,6 +14,7 @@ import torch.testing as tt
 
 def test_model_output_shape():
     model = MyModel(num_classes=10)
+    torch.manual_seed(0)
     batch = torch.randn(4, 3, 224, 224)
     output = model(batch)
     assert output.shape == (4, 10), f"Expected (4, 10), got {output.shape}"
@@ -30,6 +31,7 @@ import numpy as np
 
 
 def test_transform_preserves_range():
+    np.random.seed(0)
     data = np.random.rand(100, 3)
     result = normalize(data)
     np.testing.assert_allclose(result.mean(axis=0), 0.0, atol=1e-6)

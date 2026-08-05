@@ -290,7 +290,14 @@ def _diagnose_windows(
 
     home = codex_home.resolve(strict=True)
     root = plugin_root.resolve(strict=True)
-    if Path(os.path.abspath(codex_home)) != home or Path(os.path.abspath(plugin_root)) != root:
+    if (
+        codex_home.is_symlink()
+        or plugin_root.is_symlink()
+        or (
+            os.name == "nt"
+            and (Path(os.path.abspath(codex_home)) != home or Path(os.path.abspath(plugin_root)) != root)
+        )
+    ):
         raise ValueError("Codex home and plugin root must be canonical non-symlink paths")
     python_version = ".".join(str(item) for item in sys.version_info[:3])
     checks = {

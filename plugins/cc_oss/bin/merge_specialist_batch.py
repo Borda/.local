@@ -37,17 +37,26 @@ Exit codes:
         on stdout, repo left in the conflicted cherry-pick state for the
         caller to resolve (mirrors Step 5 merge-conflict handling), then
         re-invoke with the remaining (unapplied) entries once resolved
-    2 — bad/missing required argument (argparse default)
+    2 — bad/missing required argument (argparse default), or a plan entry's
+        ``sha`` fails ``_SHA_RE`` (argument-injection guard: JSON error on
+        stdout, nothing cherry-picked)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from shutil import which
+
+# git argv guard: a sha reaches `git cherry-pick <sha>` unquoted, so a value
+# starting with '-' would be parsed as an option (e.g. --strategy=evil can
+# execute an arbitrary git-<name> from PATH). {7,64} covers both sha1 (7-40)
+# and sha256 (up to 64) short/full forms.
+_SHA_RE = re.compile(r"^[0-9a-f]{7,64}$")
 
 
 @dataclass(frozen=True)
@@ -97,26 +106,37 @@ def parse_plan(raw: str) -> list[PlanEntry]:
     """Parse a plan JSON string into ordered ``PlanEntry`` objects.
 
     Args:
-        raw: JSON array text, e.g. ``'[{"item_id":"6","sha":"abc123"}]'``.
+        raw: JSON array text, e.g. ``'[{"item_id":"6","sha":"abc1234"}]'``.
 
     Returns:
         Ordered list of ``PlanEntry``, preserving input order.
 
+    Raises:
+        ValueError: When an entry's ``sha`` fails ``_SHA_RE`` — the value later
+            reaches ``git cherry-pick`` argv, so a malformed sha is hard-failed
+            here rather than silently skipped (skipping would silently drop a
+            specialist's committed work).
+
     Examples:
-        >>> parse_plan('[{"item_id": "3", "sha": "abc"}]')
-        [PlanEntry(item_id='3', sha='abc', group='', module='')]
-        >>> parse_plan('[{"item_id": "3", "sha": "abc", "group": "sw", "module": "pkg.a"}]')
-        [PlanEntry(item_id='3', sha='abc', group='sw', module='pkg.a')]
+        >>> parse_plan('[{"item_id": "3", "sha": "abc1234"}]')
+        [PlanEntry(item_id='3', sha='abc1234', group='', module='')]
+        >>> parse_plan('[{"item_id": "3", "sha": "abc1234", "group": "sw", "module": "pkg.a"}]')
+        [PlanEntry(item_id='3', sha='abc1234', group='sw', module='pkg.a')]
     """
-    return [
-        PlanEntry(
-            item_id=str(e["item_id"]),
-            sha=str(e["sha"]),
-            group=str(e.get("group", "")),
-            module=str(e.get("module", "")),
+    entries = []
+    for e in json.loads(raw):
+        sha = str(e["sha"]).strip()
+        if not _SHA_RE.match(sha):
+            raise ValueError(f"invalid sha for item {e.get('item_id')!r}: {sha!r}")
+        entries.append(
+            PlanEntry(
+                item_id=str(e["item_id"]),
+                sha=sha,
+                group=str(e.get("group", "")),
+                module=str(e.get("module", "")),
+            )
         )
-        for e in json.loads(raw)
-    ]
+    return entries
 
 
 def order_plan(entries: list[PlanEntry], centrality: dict[str, float]) -> list[PlanEntry]:
@@ -207,7 +227,9 @@ def run_plan(entries: list[PlanEntry], commit_mode: str) -> dict[str, object]:
     git = _resolve("git")
     applied: list[str] = []
     for i, entry in enumerate(entries):
-        pick = subprocess.run([git, "cherry-pick", entry.sha], check=False, timeout=30)  # noqa: S603
+        pick = subprocess.run(  # noqa: S603
+            [git, "cherry-pick", "--end-of-options", entry.sha], check=False, timeout=30
+        )
         if pick.returncode != 0:
             return {
                 "applied": applied,
@@ -231,7 +253,8 @@ def main(argv: list[str] | None = None) -> int:
         argv: Optional argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        Exit code: 0 — all entries applied; 1 — conflict, partial JSON on stdout.
+        Exit code: 0 — all entries applied; 1 — conflict, partial JSON on stdout;
+        2 — a plan entry's sha fails validation, JSON error on stdout.
 
     Examples:
         No doctest — requires live git; covered by pytest with monkeypatch.
@@ -251,7 +274,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     with open(args.plan, encoding="utf-8") as f:
-        entries = parse_plan(f.read())
+        raw_plan = f.read()
+    try:
+        entries = parse_plan(raw_plan)
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}))
+        return 2
 
     if args.centrality_file:
         with open(args.centrality_file, encoding="utf-8") as f:

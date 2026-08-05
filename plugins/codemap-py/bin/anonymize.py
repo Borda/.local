@@ -18,7 +18,7 @@ Usage:
 
 Exit codes:
     0 — success
-    1 — input file not found
+    1 — input file not found, or larger than MAX_LOG_SIZE
     2 — refused: output directory contains a salt file
 """
 
@@ -42,6 +42,12 @@ DEFAULT_OUT_DIR = ".cache/codemap/export"
 #: Writing anonymized output beside this file would let a recipient of both the
 #: output and the salt reverse every pseudonym — so it is refused.
 SALT_FILENAME = ".salt"
+
+#: Maximum accepted input log size — the 50 MB value ``scan-stats.py`` and
+#: ``smoke_test_index.py`` already use for ``MAX_INDEX_SIZE`` (CWE-400: DoS guard).
+#: Caps the whole file only: a single pathologically long line inside an
+#: under-cap file is still read in full.
+MAX_LOG_SIZE = 50_000_000
 
 #: Exit code returned when the resolved output directory holds a salt file.
 _EXIT_UNSAFE_OUT_DIR = 2
@@ -389,13 +395,18 @@ def main(argv: list[str] | None = None) -> int:
         argv: Override ``sys.argv[1:]`` (mainly for testing).
 
     Returns:
-        0 on success; 1 if input not found; 2 if the output directory holds a salt file.
+        0 on success; 1 if input is missing or oversized; 2 if the output directory holds a salt file.
     """
     args = _build_parser().parse_args(argv)
 
     input_path = Path(args.input)
     if not input_path.exists():
         print(f"anonymize: input not found: {input_path}", file=sys.stderr)
+        return 1
+
+    size = input_path.stat().st_size
+    if size > MAX_LOG_SIZE:
+        print(f"anonymize: input too large ({size} bytes; max {MAX_LOG_SIZE}): {input_path}", file=sys.stderr)
         return 1
 
     output_path = _resolve_output(input_path, args.out_dir, args.output)

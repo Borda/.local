@@ -4,8 +4,8 @@
 With ``--sentinel <name>``, also touches ``<sentinel-dir>/<name>-<ts>``.
 Sentinel name is sanitized to ``[a-zA-Z0-9_-]+`` to prevent path traversal.
 
-Sentinel dir mirrors JS getSentinelDir(): ``/tmp`` on POSIX,
-``tempfile.gettempdir()`` on Windows — matches commit-guard.js and task-log.js.
+Sentinel dir honors ``$TMPDIR`` when set, else ``tempfile.gettempdir()`` — the Python
+equivalent of the shell ``${TMPDIR:-/tmp}`` idiom callers use to poll the sentinel.
 
 Usage:
     python dev_run_dir.py [--sentinel <name>]
@@ -21,6 +21,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import tempfile
@@ -31,12 +32,14 @@ _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
 
 
 def _sentinel_dir() -> Path:
-    """Return ``/tmp`` on POSIX or ``tempfile.gettempdir()`` on Windows.
+    """Return ``$TMPDIR`` when set, else ``tempfile.gettempdir()``.
 
-    Mirrors JS ``getSentinelDir()`` so sentinel paths match hook expectations
-    on all platforms while preserving the existing ``/tmp`` path on POSIX.
+    Matches the shell ``${TMPDIR:-/tmp}`` idiom used by callers that poll this sentinel,
+    so both sides resolve to the same directory on every platform. ``os.environ`` is read
+    first because ``tempfile.gettempdir()`` caches its result on first call and would not
+    observe a later ``TMPDIR`` change.
     """
-    return Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
+    return Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,7 +70,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.sentinel:
         sentinel_name = _SAFE_NAME_RE.sub("", args.sentinel)
         if sentinel_name:
-            (_sentinel_dir() / f"{sentinel_name}-{ts}").touch()
+            sentinel_path = _sentinel_dir() / f"{sentinel_name}-{ts}"
+            try:
+                fd, temporary_path = tempfile.mkstemp(prefix=".sentinel-", dir=sentinel_path.parent)
+            except OSError:
+                pass  # sentinel skipped — never abort the caller's always-exit-0 contract
+            else:
+                try:
+                    os.close(fd)
+                    # `link` atomically creates a new final entry, so an attacker link cannot be followed.
+                    os.link(temporary_path, sentinel_path)
+                except OSError:
+                    pass  # sentinel skipped — never abort the caller's always-exit-0 contract
+                finally:
+                    try:
+                        os.unlink(temporary_path)
+                    except OSError:
+                        pass  # best-effort cleanup preserves the caller's always-exit-0 contract
 
     sys.stdout.write(run_dir.as_posix() + "\n")
     return 0

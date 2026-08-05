@@ -275,7 +275,7 @@ SQ=$(python bin/locate_scan_query.py)
 
 ### `join_avoidance.py`
 
-**Purpose.** Joins `tools_*.jsonl` (Grep/Read/Glob tool calls, from `log-tool-use.js`) against `cli_*.jsonl` (codemap CLI answers) to count *avoidance events* — a tool call that re-derived by hand what codemap had already answered completely (`query_complete: true`) within a preceding time window. A high avoidance rate is a dead-chain signal: either the redundant-scan guard is not firing, the injected context is not being read, or the model is ignoring both. The module-match rule is ported from `guard-redundant-scan.js` so this offline join counts exactly the greps the online guard was meant to deny.
+**Purpose.** Joins `tools_*.jsonl` (Grep/Read/Glob tool calls, from `log-tool-use.py`) against `cli_*.jsonl` (codemap CLI answers) to count *avoidance events* — a tool call that re-derived by hand what codemap had already answered completely (`query_complete: true`) within a preceding time window. A high avoidance rate is a dead-chain signal: either the redundant-scan guard is not firing, the injected context is not being read, or the model is ignoring both. The module-match rule is ported from `guard-redundant-scan.py` so this offline join counts exactly the greps the online guard was meant to deny.
 
 **Usage.**
 
@@ -341,7 +341,7 @@ python bin/parse_scan_args.py "--root . --incremental" --print-root
 
 ### `parse_deprecate_args.py`
 
-**Purpose.** Extracts `--deprecate` / `--no-deprecate` and an optional decorator value from a raw `$ARGUMENTS` string, then writes `DEPRECATE` (`"true"`/`"false"`) and `DEPRECATE_DECORATOR` to two pid-qualified temp files rather than printing shell assignments for `eval`. The pid suffix (`-<pid>`) defeats predictable-name symlink attacks; since the pid is not knowable to the calling shell in advance, the script prints the two resolved paths so the caller can `cat` exactly those files.
+**Purpose.** Extracts `--deprecate` / `--no-deprecate` and an optional decorator value from a raw `$ARGUMENTS` string, then writes `DEPRECATE` (`"true"`/`"false"`) and `DEPRECATE_DECORATOR` to two exclusively-created (`O_CREAT|O_EXCL`, via `tempfile.mkstemp`) temp files rather than printing shell assignments for `eval`. A pre-planted file or symlink at a guessed name causes the write to fail rather than being followed; since the random suffix is not knowable to the calling shell in advance, the script prints the two resolved paths so the caller can `cat` exactly those files.
 
 **Usage.**
 

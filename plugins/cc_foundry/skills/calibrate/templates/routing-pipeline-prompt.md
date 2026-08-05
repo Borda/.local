@@ -1,6 +1,6 @@
 You routing calibration pipeline runner. Complete all phases in sequence.
 
-<!-- Substitutions: TIMESTAMP=run timestamp (YYYYMMDDTHHMMSSZ), MODE=fast|full, N=problem count (fast=5, full=10) -->
+<!-- Substitutions: TIMESTAMP=run timestamp (YYYY-MM-DDTHH-MM-SSZ), MODE=fast|full, N=problem count (fast=5, full=10) -->
 
 ```text
 Mode: `<MODE>`
@@ -11,15 +11,38 @@ Run dir: `.reports/calibrate/<TIMESTAMP>/routing/`
 
 ### Phase 1 — Collect agent descriptions
 
-Read all agent files matching `.claude/agents/*.md`. Per file, extract `name:` and `description:` from YAML frontmatter (between `---` delimiters).
+Enumerate the roster file set. Source tree (`plugins/*/agents/*.md`) is authoritative; the installed cache is the fallback when the source tree carries no agents; project-local `.claude/agents/*.md` is an override tier that is empty in most setups — `/foundry:setup` never creates that directory and purges stale entries from it, so it must never be the sole source:
+
+```bash
+RUN_DIR=".reports/calibrate/<TIMESTAMP>/routing"
+mkdir -p "$RUN_DIR"
+find plugins -mindepth 3 -maxdepth 3 -path "*/agents/*.md" 2>/dev/null | sort > "$RUN_DIR/roster-files.txt"
+if [ ! -s "$RUN_DIR/roster-files.txt" ]; then
+    # one version dir per plugin — the cache retains every prior version, so an unfiltered scan duplicates each agent
+    for P in ~/.claude/plugins/cache/borda-ai-rig/*/; do
+        V=$(find "$P" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -v '\.orphaned_at' | sort -Vr | head -1)
+        [ -n "$V" ] && find "$V/agents" -maxdepth 1 -name "*.md" 2>/dev/null
+    done | sort > "$RUN_DIR/roster-files.txt"
+fi
+find .claude/agents -maxdepth 1 -name "*.md" 2>/dev/null >> "$RUN_DIR/roster-files.txt"
+grep -c . "$RUN_DIR/roster-files.txt"
+```
+
+**Empty-roster hard stop** — zero lines: do NOT generate problems, do NOT score, do NOT reconstruct a roster from memory. A fabricated roster yields a measured-looking `routing_accuracy` for a run that measured nothing, and that number lands in `calibrations.jsonl` history. Write this line to `.reports/calibrate/<TIMESTAMP>/routing/result.jsonl`, return it as the compact JSON, and skip Phases 2–4:
+
+`{"ts":"<TIMESTAMP>","target":"routing","mode":"<MODE>","routing_accuracy":null,"confusion_rate":null,"hard_accuracy":null,"auto_invoke_accuracy":null,"problems":0,"verdict":"incomplete","confused_pairs":[],"gaps":["no agent files found under plugins/*/agents/, the installed plugin cache, or .claude/agents/ — routing accuracy not measured"]}`
+
+Read each file listed in `roster-files.txt`. Per file, extract `name:` and `description:` from YAML frontmatter (between `---` delimiters).
+
+Roster entries must carry the **dispatch name**, not the bare frontmatter `name:` — that is what `expected_agent` and every selector answer are matched against: for `plugins/<dir>/agents/<n>.md` and cache `<plugin>/<ver>/agents/<n>.md`, use `<plugin>:<n>` (strip any leading `cc_` from `<dir>`); for `.claude/agents/<n>.md`, use bare `<n>`. Same dispatch name from more than one tier — keep the `.claude/` entry, else the source-tree entry.
 
 Build roster string, one line per agent:
 
 ```text
-<name>: <description>
+<dispatch-name>: <description>
 ```
 
-Bash `mkdir -p` run dir. Write roster to `.reports/calibrate/<TIMESTAMP>/routing/roster.txt`.
+Write roster to `.reports/calibrate/<TIMESTAMP>/routing/roster.txt`.
 
 ### Phase 2 — Generate routing problems
 
@@ -71,7 +94,7 @@ Each selector gets this prompt (substitute `<ROSTER>`, `<TASK_PROMPT>`, `<PROBLE
 
 **Context discipline**: subagents write to disk, return single-line ack. Pipeline agent must NOT accumulate full analyses — scorers read from disk in Phase 3. `Wrote: <PROBLEM_ID>` per agent correct.
 
-**Phase timeout**: checkpoint before spawn (`touch /tmp/calibrate-routing-<TIMESTAMP>`). After all spawns, every 5 min: `find .reports/calibrate/<TIMESTAMP>/routing/ -newer /tmp/calibrate-routing-<TIMESTAMP> -name "selection-*.md" | wc -l`. New files = alive. One +5-min extension if progress. Hard cutoff: 15 min no new files → mark remaining as `{"selected":null,"timed_out":true}` with ⏱ in report.
+**Completion handling** — spawns are blocking `Agent()` calls, so no poll loop is possible (`_FOUNDRY_SHARED/agent-spawn-protocol.md` §Synchronous spawns). When each subagent returns, check for `selection-<PROBLEM_ID>.md`; missing → mark that problem `{"selected":null,"timed_out":true}` with ⏱ in report.
 
 ### Phase 4 — Score
 
@@ -132,10 +155,10 @@ minimal effective fix.
 
 Write result JSONL to `.reports/calibrate/<TIMESTAMP>/routing/result.jsonl`:
 
-`{"ts":"<TIMESTAMP>","target":"routing","mode":"<MODE>","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"auto_invoke_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement","confused_pairs":["expected→selected",...]}`
+`{"ts":"<TIMESTAMP>","target":"routing","mode":"<MODE>","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"auto_invoke_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement|incomplete","confused_pairs":["expected→selected",...]}`
 
 ### Return value
 
 Return **only** compact JSON (no prose):
 
-`{"target":"routing","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"auto_invoke_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement","confused_pairs":["expected→selected",...]}`
+`{"target":"routing","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"auto_invoke_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement|incomplete","confused_pairs":["expected→selected",...]}`

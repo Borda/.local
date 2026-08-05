@@ -5,7 +5,7 @@ Change Type:  [fix | feat | refactor | perf | docs | ci | chore | test | mixed �
 Scope:        [key changed files, comma-separated]
 Focus:        [SCOPE-LABEL — one-line description of what the change does]
 Agents:       [comma-separated agent names that ran]
-CI:           [local tests: pass (N/N) / fail / N/A]
+CI:           N/A (develop:review is read-only — runs no tests)
 Outcome:      [APPROVE | NEEDS_WORK | REQUEST_CHANGES]
 Summary:      [1–2 sentence overview of key findings]
 Confidence:   [aggregate score] — [key gaps]

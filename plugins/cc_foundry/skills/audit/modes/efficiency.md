@@ -13,12 +13,20 @@ Sweeps agents and skills for cost inefficiency signals. Does NOT run standard pe
 **Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Fragment files (`*/modes/*`, `*/templates/*`, `*/_shared/*`): skip checks 1–4 and 6 (no model frontmatter); run checks 5 (token bloat) and 7 (bin/ extraction) only.
 
 ```bash
-RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/make_run_dir.py" .reports/audit)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || RUN_DIR=""
+if [ -z "$RUN_DIR" ] || [ ! -d "$RUN_DIR" ]; then
+  RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/make_run_dir.py" .reports/audit)  # timeout: 5000
+  [ -z "$RUN_DIR" ] && { printf "! BREAKING: make_run_dir.py returned empty path\n"; exit 1; }
+  mkdir -p "${TMPDIR:-/tmp}/audit-state-${CSID}"
+  echo "$RUN_DIR" > "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir"
+fi
+echo "Run dir: $RUN_DIR"
 ```
 
-This RUN_DIR replaces Step 3 setup (skipped in efficiency mode).
+This RUN_DIR replaces Step 3 setup (skipped in efficiency mode) — unless a prior mode in the same combined invocation (e.g. `--adversarial --efficiency`) already minted one; then it is reused, never clobbered.
 
-**Phase A — Per-file efficiency audit** (parallel foundry:curator spawns, same BATCH_SIZE):
+**Phase A — Per-file efficiency audit** (parallel foundry:curator spawns, same batching rule as Step 3 (`EFFECTIVE_BATCH`) — efficiency skips Step 3, so recompute the value here):
 
 Spawn **foundry:curator** per file with efficiency-specific prompt:
 
@@ -44,7 +52,8 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 **Phase B — System-wide spawn pattern + duplication scan** (parallel with Phase A):
 
 ```bash
-# LOCAL_MODE from audit/SKILL.md pre-flight
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 [ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
 [ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
 [ "$LOCAL_MODE" = "true" ] && _SCAN_DIR="plugins/" || _SCAN_DIR=".claude/"
@@ -54,7 +63,7 @@ while IFS= read -r f; do
   [ -f "$f" ] || continue
   if grep -q 'Agent(' "$f" 2>/dev/null; then
     grep -B5 'Agent(' "$f" 2>/dev/null | grep -qE '^\s*(for|while)\b' || continue
-    grep -q 'BATCH_SIZE\|head -n [0-9]\|head -[0-9]' "$f" 2>/dev/null && continue
+    grep -q 'BATCH_SIZE\|EFFECTIVE_BATCH\|head -n [0-9]\|head -[0-9]' "$f" 2>/dev/null && continue
     echo "UNBOUNDED_SPAWN: $f — Agent() inside for/while without BATCH_SIZE guard"
   fi
 done < <(find "$_SCAN_DIR" -name "*.md" 2>/dev/null)

@@ -1,12 +1,12 @@
 Rules calibration pipeline runner for rule file `<RULE_BASENAME>`. Complete all phases in sequence.
 
-<!-- Substitutions before spawning: RULE_BASENAME=filename (e.g. commit-and-git.md), RULE_CONTENT=full rule file text verbatim, TIMESTAMP=YYYYMMDDTHHMMSSZ, MODE=fast|full, N=_tasks per directive (fast=3, full=5), IS_PATH_SCOPED=true|false (true if rule has a non-empty paths: frontmatter field) -->
+<!-- Substitutions before spawning: RULE_BASENAME=filename (e.g. commit-and-git.md), RULE_CONTENT=full rule file text verbatim, TIMESTAMP=YYYY-MM-DDTHH-MM-SSZ, MODE=fast|full, N=_tasks per directive (fast=3, full=5), IS_PATH_SCOPED=true|false (true if rule has a non-empty paths: frontmatter field) -->
 <!-- Derive RULE_DIR before spawning: RULE_DIR="${RULE_BASENAME%.md}" (strips .md extension — used as the run directory name to avoid permission-matcher conflicts with .md-suffixed paths) -->
 
 Mode: `<MODE>` Run dir: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/`
 
 ```bash
-mkdir -p .reports/calibrate/ <TIMESTAMP >/rules/ <RULE_DIR >/
+mkdir -p .reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/
 ```
 
 **Rule under test** (loaded as context for all Phase 2 agents):
@@ -65,12 +65,6 @@ Write all problems to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/problems.
 
 ### Phase 2 — Run tasks (parallel)
 
-Create checkpoint:
-
-```bash
-touch /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME>
-```
-
 Spawn one `general-purpose` subagent per problem. **Issue ALL spawns in single response — no waiting between spawns.**
 
 Each subagent receives this prompt (substitute `<PROBLEM_ID>`, `<TASK_PROMPT>`, `<CONTEXT>`, `<RUN_DIR>` before spawning):
@@ -93,7 +87,7 @@ Write complete response to `<RUN_DIR>/response-<PROBLEM_ID>.md` using Write tool
 
 **Context discipline**: subagents write to disk, return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. Receiving only `Wrote: <PROBLEM_ID>` per agent is correct and expected.
 
-**Phase timeout**: every 5 min run `find .reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/ -newer /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME> -name "response-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min of no new files → mark remaining as `{"timed_out": true}` in scores.json; grant one +5 min extension if last response file shows active content.
+**Completion handling** — spawns are blocking `Agent()` calls, so no poll loop is possible (`_FOUNDRY_SHARED/agent-spawn-protocol.md` §Synchronous spawns). When each subagent returns, check for `response-<PROBLEM_ID>.md`; missing → mark that problem `{"timed_out": true}` in scores.json and proceed.
 
 ### Phase 3 — Score (parallel scorer subagents)
 

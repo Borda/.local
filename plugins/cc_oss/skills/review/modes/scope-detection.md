@@ -2,11 +2,18 @@
 
 ## File scope detection logic
 
-Executed inline inside Step 1 bash block after `CHANGED_FILES` is bound.
+Executed as its own bash block after Step 1's `gh` fetch — fresh shell, so `CHANGED_FILES` is rehydrated from the sentinel that block writes.
 
 ### Mode flag assignment
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# multi-line payload — `read` would take the first path only
+CHANGED_FILES=$(cat "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}" 2>/dev/null)
+if [ -z "$CHANGED_FILES" ]; then
+    echo "! BLOCKED — changed-files sentinel empty or missing; Step 1 gh fetch did not complete. Not the same as 'no relevant files changed' — refusing to skip the review silently."
+    exit 1
+fi
 PY_FILES=$(echo "$CHANGED_FILES" | grep '\.py$' || true)
 DOC_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(md|rst)$' || true)
 CICD_FILES=$(echo "$CHANGED_FILES" | grep -E '\.github/(workflows|actions)/|azure-pipelines\.yml|\.circleci/config\.yml|Jenkinsfile|\.travis\.yml|\.gitlab-ci\.yml' || true)
@@ -29,6 +36,7 @@ Bash state lost between SKILL.md code blocks — Step 2 EXPECTED_FILE constructi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}"
 _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}"
 {

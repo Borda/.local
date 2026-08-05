@@ -25,7 +25,7 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 
 **bin/ scripts this skill depends on** (deployed inside `${CLAUDE_PLUGIN_ROOT}/bin/`): `resolve_shared.py`, `make_run_dir.py`. Each call below followed by explicit empty-result guard — silent failure surfaces as fail-fast error, never empty-string path.
 
-**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`.
+**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`, `research:scientist`.
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:plan from project root."; exit 1; }
@@ -58,8 +58,11 @@ Extract first positional token (strip all `--<flag>` tokens from `$ARGUMENTS`, t
 **Quoting note**: `$ARGUMENTS` raw string (not shell-tokenized). User-supplied quotes (e.g. `plan "reduce training loss"`) appear as literal characters. Before token counting, strip surrounding matched quotes from `$ARGUMENTS` so quoted multi-word goals correctly recognised as multi-token:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _STRIPPED=$(echo "$ARGUMENTS" | sed -E 's/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/')  # timeout: 5000
 NONFLAG_TOKEN_COUNT=$(echo "$_STRIPPED" | tr ' ' '\n' | grep -v '^--' | grep -v '^$' | wc -l | tr -d ' ')  # timeout: 5000
+FILE_ARG=$(echo "$_STRIPPED" | tr ' ' '\n' | grep -v '^--' | grep -v '^$' | head -1)  # timeout: 5000
+echo "$FILE_ARG" > "${TMPDIR:-/tmp}/research-plan-file-arg-${CSID}"
 ```
 
 1. `NONFLAG_TOKEN_COUNT == 1` AND `test -f "$FILE_ARG"` succeeds → **file path**. `FILE_ARG` is script to profile. Enter profiling flow.
@@ -72,12 +75,16 @@ Run baseline profiling using `FILE_ARG` only — never raw `$ARGUMENTS` in cProf
 **Module-file guard**: `python -m cProfile` requires executable script (has `if __name__ == "__main__":` guard or runs directly). Library/module files without entry point produce empty cProfile output. Pre-check:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r FILE_ARG < "${TMPDIR:-/tmp}/research-plan-file-arg-${CSID}" 2>/dev/null || FILE_ARG=""   # re-derive — bash state lost between Bash() calls
 grep -q '__main__' "$FILE_ARG" 2>/dev/null || { echo "⚠ File has no __main__ guard — cProfile will produce empty output. Falling back to goal-string path."; PROFILE_AVAILABLE=false; }
 ```
 
 If `PROFILE_AVAILABLE=false` from above guard, skip the cProfile block below. Otherwise:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r FILE_ARG < "${TMPDIR:-/tmp}/research-plan-file-arg-${CSID}" 2>/dev/null || FILE_ARG=""   # re-derive — bash state lost between Bash() calls
 CPROFILE_OUT=$(mktemp -t research-plan-XXXX)  # timeout: 3000
 python -m cProfile -s cumtime "$FILE_ARG" > "$CPROFILE_OUT" 2>&1  # timeout: 600000
 PROFILE_EXIT=$?

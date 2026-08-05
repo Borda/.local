@@ -47,9 +47,9 @@ agents:
 | 7 Governance | {WEIGHT_7}% | N.N | 🟢/🟡/🔴 | 0.00 | N/7 files, active maintainers X/Y |
 | 8 Security posture | {WEIGHT_8}% | N.N | 🟢/🟡/🔴 | 0.00 | dep-config: yes/no, alerts: N or "403" |
 | 9 Trajectory | {WEIGHT_9}% | N.N | 🟢/🟡/🔴 | 0.00 | pool drift: ±N%, TTM 30d: Xd vs 90d: Yd, P90 queue: Zd, dep-bump: X% |
-| **Total Score** | 100% | **XX%** | 🟢/🟡/🔴 | — | — |
+| **Total Score** | 71%* | **XX%** | 🟢/🟡/🔴 | — | — |
 
-_(Conf: per-axis confidence 0.00–1.00; ⚠ = below 0.9. ⚪ axes excluded from score; weight renormalized.)_
+_(Conf: per-axis confidence 0.00–1.00; ⚠ = below 0.9. *Axes 1–9 weight 71% of the full 13-axis rubric; axes 10–13 (29%) not yet implemented. ⚪ axes excluded from score; weight renormalized over available axes.)_
 
 ---
 
@@ -182,17 +182,17 @@ Axes and weights reflect signal quality, data reliability, predictive value for 
 
 | Axis | Weight | Rationale |
 |------|--------|-----------|
-| 1 Responsiveness | 17% | CHAOSS top metric — time-to-first-response is the most visible signal to contributors and directly predicts contributor retention |
-| 2 Maintenance activity | 18% | Highest weight — commit velocity is objective evidence the project is alive; cannot be gamed by documentation alone |
-| 3 Contributor health | 14% | Bus factor and retention rate predict abandonment risk 1–2 quarters before commit counts drop |
-| 4 Issue & PR health | 11% | Throughput + code-review coverage; merged from two prior axes to avoid double-counting maintainer behaviour |
-| 5 CI/CD & code quality | 9% | Projects with CI accumulate fewer silent regressions; absence correlates with abandonment (repohealth: CI/CD = 35/100) |
-| 6 Documentation | 7% | Lagging usability signal — content depth weighted over presence; lower than governance because docs are easier to retrofit |
-| 7 Governance | 9% | Legal usability (LICENSE), security contact (SECURITY.md), succession planning (CODEOWNERS) — harder to retrofit than docs |
-| 8 Security posture | 7% | Lowest — primary signal (Dependabot alerts) requires push access; most runs score via secondary signals at confidence 0.4 |
-| 9 Trajectory | 8% | Momentum direction — reviewer pool drift, time-to-merge trend, queue staleness P90, and commit substance ratio together detect deceleration 1–2 quarters before Axis 2 (activity) flatlines |
+| 1 Responsiveness | 10% | CHAOSS top metric — time-to-first-response is the most visible signal to contributors and directly predicts contributor retention |
+| 2 Maintenance activity | 8% | Commit velocity is objective evidence the project is alive; cannot be gamed by documentation alone |
+| 3 Contributor health | 10% | Bus factor and retention rate predict abandonment risk 1–2 quarters before commit counts drop |
+| 4 Issue & PR health | 7% | Throughput + code-review coverage; merged from two prior axes to avoid double-counting maintainer behaviour |
+| 5 CI/CD & code quality | 7% | Projects with CI accumulate fewer silent regressions; absence correlates with abandonment (repohealth: CI/CD = 35/100) |
+| 6 Documentation | 5% | Lagging usability signal — content depth weighted over presence; lower than governance because docs are easier to retrofit |
+| 7 Governance | 6% | Legal usability (LICENSE), security contact (SECURITY.md), succession planning (CODEOWNERS) — harder to retrofit than docs |
+| 8 Security posture | 11% | Highest of axes 1–9 — security incidents carry outsized project risk even though the primary signal (Dependabot alerts) requires push access; most runs score via secondary signals at confidence 0.4 |
+| 9 Trajectory | 7% | Momentum direction — reviewer pool drift, time-to-merge trend, queue staleness P90, and commit substance ratio together detect deceleration 1–2 quarters before Axis 2 (activity) flatlines |
 
-Weights sum to 1.00. Axes where data is unavailable (⚪) are excluded; remaining weights renormalized.
+Axes 1–9 weights sum to 0.71 (71% of the full 13-axis rubric); axes 10–13 (29%) are not yet implemented. Axes where data is unavailable (⚪) are excluded; remaining weights renormalized over the available axes.
 
 ---
 

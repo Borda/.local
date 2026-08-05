@@ -107,7 +107,7 @@ if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--print-contract"* ]]; the
   exit 0
 fi
 if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--verify"* ]]; then
-  if grep -q '"scan_version": {LOCKED_INDEX_SCAN_VERSION}' "$3" && grep -q '"modules": \[\]' "$3"; then
+  if grep -q '"scan_version": {LOCKED_INDEX_SCAN_VERSION}' "$3" && grep -q '"modules": \\[\\]' "$3"; then
     printf "verified: %s\\n" "$3"
     exit 0
   fi

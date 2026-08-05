@@ -605,13 +605,19 @@ def run_computed_path_duality(
                 local_exists = Path(ref.resolved_local).exists()
                 # For cross-plugin refs, the target plugin is embedded in the resolved path
                 # (e.g. plugins/cc_foundry/skills/_shared/foo.md → "foundry"), not the source plugin.
-                # Use relative_to(plugins_dir) so absolute --plugins-dir paths are handled correctly.
-                # The path segment is the cc_-prefixed folder; strip it for the installed/cache
-                # side (active_install_paths keys, cache dirs, find_in_installed) while
-                # local_exists above already used the cc_ folder form.
+                # `ref.resolved_local` is always relative to the project root (PathRef contract)
+                # while `plugins_dir` here is `Path(args.plugins_dir).resolve()` (always absolute)
+                # — relative_to() between a relative and an absolute path always raises ValueError,
+                # so that comparison silently fell back to `ref.plugin` (the SOURCE plugin) for
+                # every cross-plugin reference, masking real cache-drift findings under the wrong
+                # plugin's cache. Locate the "plugins" segment directly instead — works regardless
+                # of which path form either side is in. The path segment is the cc_-prefixed folder;
+                # strip it for the installed/cache side (active_install_paths keys, cache dirs,
+                # find_in_installed) while local_exists above already used the cc_ folder form.
+                resolved_parts = Path(ref.resolved_local).parts
                 try:
-                    target_folder = Path(ref.resolved_local).relative_to(plugins_dir).parts[0]
-                except ValueError:
+                    target_folder = resolved_parts[resolved_parts.index("plugins") + 1]
+                except (ValueError, IndexError):
                     target_folder = ref.plugin
                 target_plugin = _folder_to_name(target_folder)
                 # Determine if plugin is installed at all.

@@ -62,7 +62,10 @@ def test_global_agents_template_is_packaged_not_repository_policy() -> None:
     """Prevent generic global guidance from becoming repository-root policy."""
     assert TEMPLATE.is_file()
     assert TEMPLATE.read_text(encoding="utf-8").startswith("# Global Agent Instructions\n")
-    assert not (PLUGIN_ROOT.parents[1] / "AGENTS.md").exists()
+    # The repository ships its own root AGENTS.md (repository-scoped policy). What must never happen is the
+    # generic packaged template being copied into that slot, so compare content rather than assert absence.
+    repository_agents = PLUGIN_ROOT.parents[1] / "AGENTS.md"
+    assert not repository_agents.exists() or repository_agents.read_bytes() != TEMPLATE.read_bytes()
 
     manifest = json.loads((PLUGIN_ROOT / "package-manifest.json").read_text(encoding="utf-8"))
     record = next(item for item in manifest["files"] if item["path"] == "assets/AGENTS.md")

@@ -40,18 +40,33 @@ if [ "$LOCAL_MODE" = "true" ]; then
   PLUGIN=$(echo "$BARE" | cut -d: -f1)
   NAME=$(echo "$BARE" | cut -d: -f2)
   if [[ "<TARGET>" == /* ]]; then
-    CANDIDATE="plugins/$PLUGIN/skills/$NAME/SKILL.md"
+    REL="skills/$NAME/SKILL.md"
   else
-    CANDIDATE="plugins/$PLUGIN/agents/$NAME.md"
+    REL="agents/$NAME.md"
   fi
-  if [ -f "$CANDIDATE" ]; then
+  CANDIDATE="plugins/cc_$PLUGIN/$REL"
+  [ -f "$CANDIDATE" ] || CANDIDATE="plugins/$PLUGIN/$REL"
+  if [ ! -f "$CANDIDATE" ]; then
+    MATCHES=$(find plugins -mindepth 3 -maxdepth 4 -path "*/$REL" 2>/dev/null)
+    MATCH_COUNT=$(echo "$MATCHES" | grep -c .)
+    if [ "$MATCH_COUNT" -eq 1 ]; then
+      CANDIDATE="$MATCHES"
+    elif [ "$MATCH_COUNT" -gt 1 ]; then
+      CANDIDATE=$(echo "$MATCHES" | grep "/$PLUGIN[^/]*/" | head -1)
+    else
+      CANDIDATE=""
+    fi
+  fi
+  if [ -n "$CANDIDATE" ] && [ -f "$CANDIDATE" ]; then
     TARGET_FILE="$CANDIDATE"
     echo "local mode: using $TARGET_FILE"
   else
-    echo "! local mode: source file not found at $CANDIDATE — falling back to installed plugin"
+    echo "! local mode: no source file resolved for '<TARGET>' (tried plugins/cc_$PLUGIN/$REL, plugins/$PLUGIN/$REL, plugins/*/$REL) — aborting, not silently falling back to installed cache"
   fi
 fi
 ```
+
+If local-mode resolution failed (`$TARGET_FILE` still empty above): write the graceful-exit `result.jsonl` line (see Graceful-exit protocol above) with `gaps` including `"local mode: no source file resolved for <TARGET>"`, then skip all remaining phases and return the compact JSON immediately (see Return value section) with `verdict:"incomplete"` — never a silent `exit 1`, never fall back to the installed cache.
 
 When `LOCAL_MODE=false` or source file not found: Phase 2 dispatches normally (agent by subagent_type, skill by cache/installed SKILL.md).
 
@@ -149,13 +164,7 @@ Write merged array to `.reports/calibrate/<TIMESTAMP>/<TARGET>/problems.json`.
 
 ### Phase 2 — Run target on each problem (parallel)
 
-Spawn one `<TARGET>` named subagent per problem using **Agent tool** — never via Bash or CLI.
-
-```bash
-touch /tmp/calibrate-<TARGET>-phase2-<TIMESTAMP>
-```
-
-Issue ALL spawns in **single response** — no waiting between spawns.
+Spawn one `<TARGET>` named subagent per problem using **Agent tool** — never via Bash or CLI. Issue ALL spawns in **single response** — no waiting between spawns.
 
 Prompt for each subagent:
 
@@ -173,7 +182,7 @@ Prompt for each subagent:
 
 **Context discipline**: subagents write to disk, return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. `Wrote: <problem_id>` per agent = correct.
 
-**Phase timeout**: after 5 min no acknowledgment, run `find .reports/calibrate/<TIMESTAMP>/<TARGET>/ -newer /tmp/calibrate-<TARGET>-phase2-<TIMESTAMP> -name "response-*.md" | wc -l` — non-zero = alive, grant one +5-min extension. Hard cutoff at 15 min no new file activity: mark problem as `{"timed_out": true}` in scores.json and proceed. Never block indefinitely on single response.
+**Completion handling** — spawns are blocking `Agent()` calls, so no poll loop is possible (`_FOUNDRY_SHARED/agent-spawn-protocol.md` §Synchronous spawns). When each subagent returns, check for `response-<problem_id>.md`; empty or missing → mark that problem `{"timed_out": true}` in scores.json and proceed. Never block indefinitely on single response.
 
 For **agent targets** when `LOCAL_MODE=true` and `TARGET_FILE` set: spawn `general-purpose` subagent with TARGET_FILE content prepended ("You are an agent described by the following instructions: <content of TARGET_FILE>") — tests source tree definition rather than installed plugin. When LOCAL_MODE=false or TARGET_FILE empty: spawn `Agent(subagent_type="<TARGET>")` normally.
 
@@ -181,15 +190,9 @@ For **skill targets** (target starts with `/`): spawn `general-purpose` subagent
 
 ### Phase 2b — Run general-purpose baseline (skip if AB_MODE is false)
 
-Spawn one `general-purpose` subagent per problem using **identical prompt** as Phase 2 (same task_prompt + input + Confidence instruction), plus same write-and-acknowledge suffix pointing to `response-<problem_id>-general.md`.
+Spawn one `general-purpose` subagent per problem using **identical prompt** as Phase 2 (same task_prompt + input + Confidence instruction), plus same write-and-acknowledge suffix pointing to `response-<problem_id>-general.md`. Issue ALL spawns in **single response** — no waiting between spawns.
 
-```bash
-touch /tmp/calibrate-<TARGET>-phase2b-<TIMESTAMP>
-```
-
-Issue ALL spawns in **single response** — no waiting between spawns.
-
-**Phase timeout**: after 5 min, run `find .reports/calibrate/<TIMESTAMP>/<TARGET>/ -newer /tmp/calibrate-<TARGET>-phase2b-<TIMESTAMP> -name "response-*-general.md" | wc -l` — non-zero = alive, grant one +5-min extension; 15-min hard cutoff; proceed with partial baseline data if any response hangs.
+**Completion handling** — same as Phase 2 (`_FOUNDRY_SHARED/agent-spawn-protocol.md` §Synchronous spawns): when each subagent returns, check for `response-<problem_id>-general.md`; missing → proceed with partial baseline data.
 
 ### Phase 3a — Score responses via Claude scorers (parallel)
 

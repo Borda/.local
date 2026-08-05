@@ -2,7 +2,7 @@
 
 <!-- file: executables.md — consumers: distill/SKILL.md -->
 
-Triggered when `$ARGUMENTS == "executables"`. Reads latest `/audit --efficiency` Check 33 reports if present; runs bin/ extraction scan inline otherwise. Then gates, extracts with user confirmation, re-audits changed files.
+Triggered when the first normalized argument token is `executables`. Reads latest `/audit --efficiency` Check 33 reports if present; runs bin/ extraction scan inline otherwise. Then gates, extracts with user confirmation, re-audits changed files.
 
 ## Step E1: Locate or run scan
 
@@ -50,14 +50,7 @@ Spawn **foundry:curator** per plugin directory found under `$_SCAN_DIR` (one spa
 
 After all spawns complete: update `CHECK33_FILES` to point to the new files in `$RUN_DIR`.
 
-**Health monitoring for scan spawns** (CLAUDE.md §6):
-
-```bash
-SCAN_CHECKPOINT="/tmp/distill-exec-scan-$(date +%s)"  # timeout: 3000
-touch "$SCAN_CHECKPOINT"                               # timeout: 3000
-```
-
-Every 5 min: `find "$RUN_DIR" -newer "$SCAN_CHECKPOINT" -type f | wc -l` — new files = alive; zero for 15 min = stalled. One 5-min extension if last file tail explains delay. On timeout: surface ⏱; use partial results.
+**Health monitoring for scan spawns** (`_shared/agent-spawn-protocol.md` — synchronous spawns, no `run_in_background=true` here): each curator `Agent()` call is blocking and returns only when that plugin's scan finishes — no polling possible or needed. After each spawn returns, read that plugin's `$RUN_DIR/efficiency-check33-<plugin>.md`. Empty or missing → mark that plugin `timed_out`, surface with ⏱, continue with completed plugins' results.
 
 ## Step E2: Parse candidates
 
@@ -121,14 +114,7 @@ Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/extract-<cluster-id>.md\",
 ")
 ```
 
-**Health monitoring for extraction spawns** (CLAUDE.md §6):
-
-```bash
-EXTRACT_CHECKPOINT="/tmp/distill-exec-extract-$(date +%s)"  # timeout: 3000
-touch "$EXTRACT_CHECKPOINT"                                  # timeout: 3000
-```
-
-Every 5 min: `find "$RUN_DIR" -newer "$EXTRACT_CHECKPOINT" -name "extract-*.md" | wc -l` — zero for 15 min = stalled. One 5-min extension if tail explains delay. On timeout: surface ⏱; continue with completed clusters.
+**Health monitoring for extraction spawns** (`_shared/agent-spawn-protocol.md` — synchronous spawns, no `run_in_background=true` here): each sw-engineer `Agent()` call is blocking and returns only when that cluster's extraction finishes — no polling possible or needed. After each spawn returns, read that cluster's `$RUN_DIR/extract-<cluster-id>.md`. Empty or missing → mark that cluster `timed_out`, surface with ⏱, continue with completed clusters.
 
 ## Step E5: Re-audit changed files
 

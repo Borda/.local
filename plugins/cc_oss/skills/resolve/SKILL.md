@@ -1,7 +1,7 @@
 ---
 name: resolve
 description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for reply drafting to /oss:analyse findings (use /oss:analyse --reply (requires `oss` plugin)). NOT for code diff review of PR changes (use /oss:review). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin). TRIGGER when: PR is ready to close and has open comments, conflicts, or review findings to address; user says 'close this PR', 'resolve comments on PR #N', or 'implement review findings'."
-argument-hint: "<PR number or URL> [report] | report | <review comment text> [--worktree] [--keep \"<items>\"]"
+argument-hint: "<PR number or URL> [report] | report | <review comment text> [--no-challenge] [--agent <name>] [--codemap] [--no-codemap] [--worktree] [--keep \"<items>\"]"
 disable-model-invocation: true
 model: sonnet
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion, EnterWorktree, ExitWorktree
@@ -84,9 +84,9 @@ echo "$_OSS_RESOLVE" > "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}"  # persist 
 cat "$_OSS_SHARED/agent-resolution.md"  # timeout: 5000
 ```
 
-Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, `foundry:challenger`.
+Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, `foundry:perf-optimizer`, `foundry:solution-architect`, `foundry:challenger`.
 
-<!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:linting-expert → general-purpose, foundry:challenger → general-purpose. -->
+<!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:linting-expert → general-purpose, foundry:doc-scribe → general-purpose, foundry:perf-optimizer → general-purpose, foundry:solution-architect → general-purpose, foundry:challenger → general-purpose. -->
 
 **Task hygiene**: Before creating tasks, call `TaskList`. Per task:
 
@@ -210,12 +210,12 @@ echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}"  # timeou
 ```
 
 <!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
-**Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent, --codemap, --no-codemap, --worktree}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`, `--codemap`, `--no-codemap`, `--worktree`.
+**Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent, --codemap, --no-codemap, --worktree}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`, `--codemap`, `--no-codemap`, `--worktree`, `--keep "<items>"`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode; newest match is codex-lineage (`.reports/codex/review/*/review-notes.md`) → this parser can't read its schema — warn `⚠ newest review is codex-lineage, unsupported by this parser — GitHub comments only, no report findings merged` and continue in pr mode (same non-fatal treatment as "no report found")
 - `MODE="report"` → find latest review report via `ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .reports/review/ or .reports/codex/review/ — run /review \<PR#> first, or provide a PR number"; newest match is codex-lineage → stop with the Step 0 lineage-guard message (same wording as the auto-detect block above); extract PR# from header if present; no PR# in header → add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
 - `MODE="pr"` → continue Step 2
-- `MODE="comment-dispatch"` → branch safety check before Step 12: `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }` → jump to Step 12
+- `MODE="comment-dispatch"` → branch safety check before Step 12: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; IFS= read -r WT_ENABLED < "${TMPDIR:-/tmp}/oss-resolve-worktree-${CSID}" 2>/dev/null; [ "$WT_ENABLED" = "true" ] || WT_ENABLED=false; CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }; [ "$WT_ENABLED" = "true" ] && echo "⚠ --worktree has no effect in comment-dispatch mode"` → jump to Step 12
 
 ## Step 1b: Create all workflow tasks upfront
 
@@ -356,7 +356,7 @@ AskUserQuestion: "Commit mode for selected items:"
   (a) Each item separately — one commit per action item (default)
   (b) By topic group — ask for topic labels; group related items into themed commits
   (c) All at once — single commit after all items
-  (d) Stage only — no commits; stay staged on PR branch (⚠ cannot cleanly restore to $SAVED_BRANCH after Step 11)
+  (d) Stage only — no commits; stay staged on PR branch (⚠ cannot cleanly restore to $SAVED_BRANCH after Step 11; governs Step 8 action-item commits only — the Steps 5–7 merge commit is unconditional and always created)
 ```
 
 **ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** Never merge this menu with Q4; these are commit MODES (how to commit), not item SCOPE (which items). Do not pull Q4 bulk-action options into this menu. Option (b) By topic group is a commit mode and must appear — do not drop it. LLMs tend to drop option (d) — do not omit it either.
@@ -433,6 +433,16 @@ if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     echo "⛔ PR HEAD ref ($PR_HEAD_REF) equals default branch — refusing to check out and commit on default branch"
     exit 1
 fi
+# Step 3b records HEAD_REF/BASE_REF/IS_FORK at model level only — no shell binding exists on the pr-mode
+# path. Bind them here and persist: the post-checkout assertion below, Step 10's push gate, and
+# conflict-resolution.md all read them from later fresh shells.
+HEAD_REF="$PR_HEAD_REF"
+BASE_REF=$(gh pr view "<PR#>" --json baseRefName --jq .baseRefName 2>/dev/null)  # timeout: 6000
+[ -n "$BASE_REF" ] || BASE_REF="$DEFAULT_BRANCH"
+IS_CROSS_REPO=$(gh pr view "<PR#>" --json isCrossRepository --jq .isCrossRepository 2>/dev/null || echo false)  # timeout: 6000
+echo "$HEAD_REF" > "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}"
+echo "$BASE_REF" > "${TMPDIR:-/tmp}/resolve-base-ref-${CSID}"
+echo "$IS_CROSS_REPO" > "${TMPDIR:-/tmp}/resolve-is-cross-repo-${CSID}"
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
 echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}"
 # SHA-first checkout guard: skip if already at PR head. Avoids worktree conflict — gh pr checkout
@@ -466,6 +476,12 @@ fi
 `gh pr checkout` auto-handles forks — adds contributor's remote, configures tracking. Verify checkout landed on expected branch — if not, abort before Step 8 can commit:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# Check 41: fresh shell — both gates below are dead code without these
+IFS= read -r HEAD_REF < "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}" 2>/dev/null || HEAD_REF=""
+IFS= read -r IS_CROSS_REPO < "${TMPDIR:-/tmp}/resolve-is-cross-repo-${CSID}" 2>/dev/null || IS_CROSS_REPO=""
+[ -n "$HEAD_REF" ] && [ -n "$IS_CROSS_REPO" ] || { echo "⛔ Step 4 verify: HEAD_REF/IS_CROSS_REPO sentinels missing — checkout state unverifiable, aborting before Step 8 can commit"; exit 1; }
+PR_HEAD_REF="$HEAD_REF"
 git remote -v | grep '(fetch)' | head -10 # timeout: 3000
 git status  # timeout: 3000
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)  # timeout: 3000
@@ -482,7 +498,8 @@ fi
 Determine `FORK_REMOTE` for push in Step 10:
 
 ```bash
-IS_CROSS_REPO=$(gh pr view "<PR#>" --json isCrossRepository --jq .isCrossRepository 2>/dev/null || echo false) # timeout: 6000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r IS_CROSS_REPO < "${TMPDIR:-/tmp}/resolve-is-cross-repo-${CSID}" 2>/dev/null || IS_CROSS_REPO="false"
 if [ "$IS_CROSS_REPO" = "true" ]; then
     FORK_REMOTE=$(gh pr view "<PR#>" --json headRepositoryOwner --jq .headRepositoryOwner.login) # timeout: 6000
     PR_REF="$PR_URL"
@@ -491,6 +508,7 @@ else
     PR_REF="#$PR_NUMBER"
 fi
 echo "$PR_REF" > "${TMPDIR:-/tmp}/resolve-pr-ref-${CSID}"  # timeout: 3000
+echo "$FORK_REMOTE" > "${TMPDIR:-/tmp}/resolve-fork-remote-${CSID}"  # Step 10's push gate reads it back
 # soft-verify — gh pr checkout layouts vary across versions
 git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
     || echo "⚠ Remote $FORK_REMOTE not registered — Step 10 will add it before push" # timeout: 3000
@@ -541,7 +559,7 @@ TaskUpdate(task_id=TASK_IMPL, status="in_progress")
 ```bash
 # computed here (resolved fully in action-item-dispatch.md) to branch on cap threshold
 _RESOLVE_IMPL_AGENT="codex:codex-rescue"
-[[ "$ARGUMENTS" == *"--agent "* ]] && _RESOLVE_IMPL_AGENT=$(echo "$ARGUMENTS" | grep -oP '(?<=--agent )\S+')
+[[ "$ARGUMENTS" == *"--agent "* ]] && _RESOLVE_IMPL_AGENT=$(echo "$ARGUMENTS" | sed -n 's/.*--agent \([^ ]*\).*/\1/p')
 if [ "$_RESOLVE_IMPL_AGENT" = "codex:codex-rescue" ] && [ "$(echo "$SELECTED_ITEMS" | wc -w)" -gt 8 ]; then
     :
 fi
@@ -656,6 +674,13 @@ TaskUpdate(task_id=TASK_CLOSE, status="in_progress")
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# Check 41: fresh shell. Unbound here, every value the authorization gate below is required to
+# surface resolves empty — the user would be asked to approve a push whose scope was never shown.
+IFS= read -r FORK_REMOTE < "${TMPDIR:-/tmp}/resolve-fork-remote-${CSID}" 2>/dev/null || FORK_REMOTE=""
+IFS= read -r HEAD_REF < "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}" 2>/dev/null || HEAD_REF=""
+IFS= read -r BASE_REF < "${TMPDIR:-/tmp}/resolve-base-ref-${CSID}" 2>/dev/null || BASE_REF=""
+[ -n "$FORK_REMOTE" ] && [ -n "$HEAD_REF" ] || { echo "⛔ Step 10: FORK_REMOTE/HEAD_REF unresolved — refusing to present an empty push-authorization prompt"; exit 1; }
 if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
     REPO_NAME=$(git remote get-url origin | sed 's|.*/||' | sed 's|\.git$||')
     ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")
@@ -672,6 +697,7 @@ git branch --set-upstream-to="$FORK_REMOTE/$HEAD_REF" 2>/dev/null || true # time
 PUSH_COUNT=$(git rev-list "$FORK_REMOTE/$HEAD_REF..HEAD" --count 2>/dev/null || git rev-list "origin/$BASE_REF..HEAD" --count) # timeout: 3000
 PUSH_STAT=$(git diff "$FORK_REMOTE/$HEAD_REF..HEAD" --stat 2>/dev/null | tail -1 || git diff "origin/$BASE_REF..HEAD" --stat | tail -1) # timeout: 3000
 LAST_SUBJECT=$(git log -1 --format=%s 2>/dev/null) # timeout: 3000
+[ -n "$PUSH_COUNT" ] || { echo "⛔ Step 10: push scope could not be computed — refusing to present an authorization prompt with no diff stat or commit count"; exit 1; }
 echo "→ $PUSH_COUNT commits ready to push to $FORK_REMOTE/$HEAD_REF ($PUSH_STAT); last commit: \"$LAST_SUBJECT\""
 ```
 
@@ -696,6 +722,11 @@ git push # timeout: 30000
 Push rejected → fallback:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r FORK_REMOTE < "${TMPDIR:-/tmp}/resolve-fork-remote-${CSID}" 2>/dev/null || FORK_REMOTE=""
+IFS= read -r HEAD_REF < "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}" 2>/dev/null || HEAD_REF=""
+# an empty refspec here would push to an unintended ref
+[ -n "$FORK_REMOTE" ] && [ -n "$HEAD_REF" ] || { echo "⛔ Step 10 fallback: FORK_REMOTE/HEAD_REF unresolved — refusing explicit-refspec push"; exit 1; }
 git push "$FORK_REMOTE" HEAD:"$HEAD_REF" # timeout: 30000
 ```
 
@@ -766,7 +797,7 @@ fi
 TaskUpdate(task_id=TASK_CLOSE, status="completed")
 ```
 
-Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Merge now (`gh pr merge <PR_NUMBER> --merge`) · (c) Skip.
+Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Skip.
 
 ```bash
 rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
@@ -805,7 +836,6 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **`[question]` items** — answer inline in resolve report only; reclassify before implementing; never silently implement unanswered question.
 - **Push verification** — confirm via `gh pr view --json commits`; exit 0 from `git push` necessary but not sufficient (branch protection can silently reject).
 - **Merge-push sequencing + escape hatch** — not atomic; concurrent push → non-fast-forward rejection; retry push only (don't re-run full merge). `git merge --abort` = undo conflict state; `git push --force-with-lease` on explicit user request only.
-- **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses; never `--rebase` (rewrites SHAs); default `--merge`.
 - **Impl agent health + effort**: IMPL_AGENT defaults to `codex:codex-rescue` (CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout). Effort: never `low`; minimum `medium`; typo/doc → `medium`; multi-file/new-feature → `xhigh`; default `high`. `--agent foundry:*`: foreground only, no health monitoring.
 - **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
 - **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), (c), or unanswered — skipped only when Q4=(d) skip-all — distinct from Q4 (sets item scope, not commit strategy). Item scope never implies commit mode. Don't merge these two questions.

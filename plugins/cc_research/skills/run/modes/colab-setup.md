@@ -6,6 +6,8 @@ Execute this section only when `--colab` flag is set. Skip entirely for local or
 
 **Hardware selection** (`--colab=HW`): specify GPU type (optional). Known: `H100`, `L4`, `T4`, `A100`. Omitted → Colab picks default. Advisory — actual hardware configured in notebook UI. Claude Code validates GPU identity at Phase 5 via `torch.cuda.get_device_name()` assertion; halts if mismatch.
 
+<!-- policy-sibling: run/SKILL.md, plan/SKILL.md, sweep/SKILL.md:4, judge/SKILL.md — known-hardware set restated in each; keep in sync (plugins/CLAUDE.md §Policy Duplication Marker). -->
+
 **Setup** (before running `--colab`):
 
 1. Add `"colab-mcp"` to `enabledMcpjsonServers` in `settings.local.json`:

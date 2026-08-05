@@ -66,8 +66,6 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
 - AB_ADVANTAGE_THRESHOLD: 0.10 (delta recall or F1 above this → meaningful advantage; below → marginal or none)
 - PHASE_TIMEOUT_MIN: 5 (per-phase budget — if spawned subagents haven't all returned, collect partial results and continue)
 - PIPELINE_TIMEOUT_MIN: 10 (hard cutoff — pipeline not notified within 10 min of launch is timed out; extendable if agent explains delay) # tighter than global 15-min cutoff from CLAUDE.md §6 — intentional for calibrate
-- HEALTH_CHECK_INTERVAL_MIN: 5 (orchestrator polls each running pipeline every 5 min for liveness) # = global default (CLAUDE.md §6)
-- EXTENSION_MIN: 5 # = global default (CLAUDE.md §6)
 - PIPELINE_BATCH_SIZE: 5 (max agent/skill pipeline subagents spawned concurrently within one mode — prevents agent count explosion on `all`; batch: spawn ≤5, wait for all results, then spawn next batch)
 - ROUTING_ACCURACY_THRESHOLD: 0.90 (below → agent descriptions need improvement) # keep in sync with modes/routing.md
 - ROUTING_HARD_THRESHOLD: 0.80 (below → high-overlap pair descriptions need disambiguation)
@@ -210,6 +208,8 @@ Create tasks before proceeding:
 > **Pre-flight**: mode files at `<plugin-cache>/foundry/<v>/skills/calibrate/modes/` — resolve via plugin cache scan below.
 > `/foundry:setup` does NOT symlink these (only `rules/*.md` and `TEAM_PROTOCOL.md`); if not found, re-install foundry plugin.
 > ```bash
+> export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+> IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 > CALIB_MODES_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local))  # timeout: 5000
 > ```
 > **Gate**: if the bash block above failed (non-zero exit or `$CALIB_MODES_DIR` empty) — stop immediately; do not proceed to pipeline spawns. Print: `! calibrate/modes/ directory not found — re-install foundry plugin then retry.`
@@ -279,18 +279,7 @@ mkdir -p .temp/state  # timeout: 5000
 
 ## Step 3: Collect results and print combined report
 
-**Health monitoring** — follow CLAUDE.md §6 protocol. Run dir for liveness checks: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`. Skill-specific constants (tighter than global defaults — see `<constants>` block): `PIPELINE_TIMEOUT_MIN`, `PIPELINE_TIMEOUT_MIN_DUAL` (when Codex active in CODEX_MODES), `HEALTH_CHECK_INTERVAL_MIN`, `EXTENSION_MIN`.
-
-Per-target checkpoint init — **create checkpoint BEFORE spawning each pipeline** (sequential execution: only one runs at a time, do NOT pre-initialize checkpoints for unstarted targets). In Step 2, immediately before issuing each `Agent(...)` spawn call, run:
-```bash
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-touch ${TMPDIR:-/tmp}/calibrate-check-$batch_target-${CSID}; LAUNCH_AT=$(date +%s)
-```
-Then spawn the pipeline. This ordering prevents false-alive readings on fast-exit agents (a checkpoint created after spawn may never see any writes if the agent exits before the first poll).
-
-> **Checkpoint granularity** — one checkpoint per **mode category** (e.g. `agents`, `skills`, `routing`, `communication`, `rules`), not one per individual agent within a mode. A mode stays "alive" as long as ANY of its pipelines (across all batches) writes a file under `.reports/calibrate/<TIMESTAMP>/<MODE>/` newer than the checkpoint. A fully stalled mode is one where zero pipelines have written in the check interval. The `$batch_target` substituted into the touch and poll commands is the **mode name** (e.g. `agents`), NOT a per-agent path.
-
-Poll every `$HEALTH_CHECK_INTERVAL_MIN` minutes: `find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer ${TMPDIR:-/tmp}/calibrate-check-$batch_target-${CSID} -type f | wc -l` — new files = alive; use Read tool (limit=20) on `pipeline.jsonl` to check for PROGRESS:/HEARTBEAT: if stalled; apply `$PIPELINE_TIMEOUT_MIN_DUAL` instead of `$PIPELINE_TIMEOUT_MIN` for dual-source (Codex-active) targets.
+**Completion handling** — pipeline spawns are synchronous, so no poll loop is possible (`_FOUNDRY_SHARED/agent-spawn-protocol.md` §Synchronous spawns). When a batch returns, read each target's compact JSON; when absent, read `.reports/calibrate/<TIMESTAMP>/<TARGET>/result.jsonl` (written on every exit path per the pipeline's graceful-exit protocol). Neither present → record `{"verdict":"timed_out"}` and mark the target `⏱` in the report; never omit a stalled target.
 
 **On timeout**: read `tail -100 <output_file>` for partial JSON; if none use: `{"target":"<TARGET>","verdict":"timed_out","mean_recall":null,"gaps":["pipeline timed out — re-run individually with /calibrate <target> fast"]}`. Timed-out targets appear in report with ⏱ prefix and null metrics.
 
@@ -323,6 +312,8 @@ Print combined benchmark report:
 
 **If target is `routing`**:
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 CALIB_MODES_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local))  # timeout: 5000
 cat "$CALIB_MODES_DIR/routing.md"
 ```
@@ -332,14 +323,17 @@ Flag targets where recall < 0.70 or |bias| > 0.15 with ⚠.
 
 After table, print full content of each `proposal.md` for targets where `proposed_changes > 0`.
 
-If `--apply` **not** set: after printing proposals, fire **Follow-up gate** (unless `--skip-gate` passed):
+If `--apply` **not** set: after printing proposals, print the two genuine re-run commands as plain copy-pasteable text, then fire **Follow-up gate** (unless `--skip-gate` passed):
+
+```text
+Re-run full depth   /calibrate <targets> --full
+Re-run full + A/B   /calibrate <targets> --full --ab-test
+```
 
 Call `AskUserQuestion` — do NOT write options as plain text. Map options directly:
 - question: "Proposals ready. What next?" (include summary, e.g. "3 targets with proposals, 1 calibrated.")
-- (a) label: `Apply proposals` — description: run `/calibrate <targets> --apply`
-- (b) label: `Re-run full depth` — description: run `/calibrate <targets> --full` for 10 problems per target
-- (c) label: `Re-run full + A/B` — description: run `/calibrate <targets> --full --ab-test` with general-purpose baseline
-- (d) label: `skip` — description: review proposal files manually at `.reports/calibrate/<TIMESTAMP>/<TARGET>/proposal.md`
+- (a) label: `Apply proposals now` — description: apply in this session — proceed directly to Step 6 using the persisted TIMESTAMP, no re-invocation, no benchmark re-run
+- (b) label: `skip` — description: review proposal files manually at `.reports/calibrate/<TIMESTAMP>/<TARGET>/proposal.md`
 
 If `--apply` **was** set (benchmark + auto-apply mode), print `→ Auto-applying proposals now…` and proceed to Step 6.
 
@@ -400,31 +394,69 @@ Continue to next target. Only if ALL targets are missing: stop with `! No propos
 
 **Spawn one `foundry:curator` subagent per found target (`.md` files — agents and skills). Issue ALL spawns in single response — no waiting between spawns.**
 
-**Deduplicate by resolved physical path before spawning** — when two targets resolve to the same `<AGENT_FILE>` (e.g. project-local override vs plugin cache for the same logical agent, or `LOCAL_MODE=true` resolution colliding with a non-local resolution from a sibling target), concurrent curator spawns race on identical Edit calls and the second write may clobber the first. Build a `RESOLVED_PATHS` map after the per-target path-resolution loop above; for any group of targets that share the same `<AGENT_FILE>` after resolution:
+**Deduplicate by resolved physical path before spawning** — when two targets resolve to the same `<AGENT_FILE>` (e.g. bare name and plugin-prefixed name for the same logical agent), concurrent curator spawns race on identical Edit calls and the second write may clobber the first. Build a `RESOLVED_PATHS` map after the per-target path-resolution loop above; for any group of targets that share the same `<AGENT_FILE>` after resolution:
 
 - Spawn one curator at a time for that group (sequential, not parallel)
 - Log: `! Sequential apply for <target-a> and <target-b> — both resolve to <AGENT_FILE>`
 - Other independent path groups remain parallel
 
-**`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. When `LOCAL_MODE=true`, source tree takes priority; otherwise project-local override first, then plugin cache, then source-tree fallback:
+**`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target from the project source tree (`plugins/`) — same three-tier ladder whether or not `--local` was passed. `<AGENT_FILE>` is a write target (curator Edits it): it must never resolve to `.claude/agents/` (never created by `/foundry:setup`) or the installed plugin cache under `$HOME/.claude/` — those are read-only surfaces, not write targets:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r TIMESTAMP < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/timestamp" 2>/dev/null || TIMESTAMP=""
 [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
-# e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default)
-PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')
-AGENT_BARE=$(echo "<name>" | sed 's/^[^:]*://')
+# e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default); leading "/" (skill target) stripped before split
+NAME_BARE=$(echo "<name>" | sed 's|^/||')
+PLUGIN_PREFIX=$(echo "$NAME_BARE" | grep -o '^[^:]*:' | tr -d ':')
+AGENT_BARE=$(echo "$NAME_BARE" | sed 's/^[^:]*://')
 [ -z "$PLUGIN_PREFIX" ] && PLUGIN_PREFIX="foundry"
-if [ "$LOCAL_MODE" = "true" ] && [ -f "plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md" ]; then
-    AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
+if [[ "<name>" == /* ]]; then
+    REL="skills/$AGENT_BARE/SKILL.md"
 else
-    AGENT_FILE=".claude/agents/$AGENT_BARE.md"
-    [ -f "$AGENT_FILE" ] || AGENT_FILE="$(find "${HOME}/.claude/plugins/cache" -maxdepth 5 -name "$AGENT_BARE.md" -path "*/$PLUGIN_PREFIX/*/agents/*" 2>/dev/null | sort -Vr | head -1)"
-    [ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
+    REL="agents/$AGENT_BARE.md"
+fi
+if [ "$LOCAL_MODE" = "true" ]; then
+    AGENT_FILE="plugins/cc_$PLUGIN_PREFIX/$REL"
+    [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/$REL"
+    if [ ! -f "$AGENT_FILE" ]; then
+        MATCHES=$(find plugins -mindepth 3 -maxdepth 4 -path "*/$REL" 2>/dev/null)
+        MATCH_COUNT=$(echo "$MATCHES" | grep -c .)
+        if [ "$MATCH_COUNT" -eq 1 ]; then
+            AGENT_FILE="$MATCHES"
+        elif [ "$MATCH_COUNT" -gt 1 ]; then
+            AGENT_FILE=$(echo "$MATCHES" | grep "/$PLUGIN_PREFIX[^/]*/" | head -1)
+        else
+            AGENT_FILE=""
+        fi
+    fi
+    if [ -z "$AGENT_FILE" ] || [ ! -f "$AGENT_FILE" ]; then
+        echo "⚠ --local: no source file resolved for <name> (tried plugins/cc_$PLUGIN_PREFIX/$REL, plugins/$PLUGIN_PREFIX/$REL, plugins/*/$REL) — skipping, never falling back to installed cache"
+        AGENT_FILE=""
+    fi
+else
+    AGENT_FILE="plugins/cc_$PLUGIN_PREFIX/$REL"
+    [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/$REL"
+    if [ ! -f "$AGENT_FILE" ]; then
+        MATCHES=$(find plugins -mindepth 3 -maxdepth 4 -path "*/$REL" 2>/dev/null)
+        MATCH_COUNT=$(echo "$MATCHES" | grep -c .)
+        if [ "$MATCH_COUNT" -eq 1 ]; then
+            AGENT_FILE="$MATCHES"
+        elif [ "$MATCH_COUNT" -gt 1 ]; then
+            AGENT_FILE=$(echo "$MATCHES" | grep "/$PLUGIN_PREFIX[^/]*/" | head -1)
+        else
+            AGENT_FILE=""
+        fi
+    fi
+    if [ -z "$AGENT_FILE" ] || [ ! -f "$AGENT_FILE" ]; then
+        echo "⚠ no source file resolved for <name> (tried plugins/cc_$PLUGIN_PREFIX/$REL, plugins/$PLUGIN_PREFIX/$REL, plugins/*/$REL) — skipping, never falling back to installed cache"
+        AGENT_FILE=""
+    fi
 fi
 PROPOSAL_PATH=".reports/calibrate/$TIMESTAMP/<name>/proposal.md"
 ```
+
+If `$AGENT_FILE` is empty after resolution failure (either branch): skip that target — do not spawn curator for it — the warning above already covers it. Never fall through to a cache path for a write target.
 
 Each subagent receives this self-contained prompt (substitute `<TARGET>`, `<PROPOSAL_PATH>`, `<AGENT_FILE>` — resolved paths from above):
 

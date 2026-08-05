@@ -18,12 +18,6 @@ Runtime adapter over the `codemap-py integrate` engine (`src/codemap_py/integrat
 can target Claude Code, Codex, or both; this skill never invokes the other runtime's model, only its
 native plugin-manager CLI.
 
-<!-- Phase 5 retired only `bin/install_post_commit_hook.py`: no shipped workflow used it and the README
-already states codemap-py ships no post-commit hook. `bin/resolve_proj_index.py` and
-`bin/smoke_test_index.py` remain load-bearing subprocess dependencies of live query-code and
-rename-refs flows; the integration engine does not supersede those helpers. -->
-
-
 Five modes, matching the pinned CLI surface exactly (never the retired `check|init|demo` model):
 
 | Mode | Args | Mutation | Exit |
@@ -93,7 +87,7 @@ NOT for: running a structural query (use `/codemap-py:query-code`); explicit sta
 Parse `$ARGUMENTS` (case-insensitive): starts with `check` or empty → check mode; `plan` → plan mode;
 `apply` → apply mode; `sync` → sync mode; `demo` → demo mode. Anything else → `AskUserQuestion`:
 "Unrecognized command `$ARGUMENTS`. Which of the five modes did you mean?" Options: (a) `check`, (b)
-`plan`, (c) `apply`, (d) `sync`/`demo` — wait for the reply before proceeding.
+`plan`, (c) `apply`, (d) `sync`, (e) `demo` — wait for the reply before proceeding.
 
 ## Step 2: Run the mode
 

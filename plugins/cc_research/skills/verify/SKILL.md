@@ -1,7 +1,7 @@
 ---
 name: verify
 description: "Paper-vs-code consistency audit. After research:scientist implements a method from a paper, verify the implementation matches paper claims across five dimensions — formula matching [F], hyperparameter parity [H], eval protocol [E], notation consistency [N], and citation chain [C]. Reads paper (PDF path / arXiv URL / pasted text), maps claims to codebase, emits verification table with match status and severity."
-argument-hint: "<paper> [--scope <glob>] [--program <program.md>] [--strict] [--dim <F,H,E,N,C>]"
+argument-hint: "<paper> [--scope <glob>] [--program <program.md>] [--strict] [--dim <F,H,E,N,C>] [--codemap] [--no-codemap]"
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 effort: medium
 disable-model-invocation: true
@@ -93,8 +93,8 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 3000
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
 mkdir -p .reports/research
 BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done
-# Persist for V3/V4/V5 (each Bash call = fresh shell). PID+epoch suffix distinguishes concurrent runs on same branch/day.
-_VTAG="${BRANCH}-${DATE}-$$-$(date +%s)"
+# Persist for V3/V4/V5 (each Bash call = fresh shell) — pointer file (verify-latest-tag) lets each shell rehydrate this tag; epoch suffix distinguishes concurrent runs on same branch/day.
+_VTAG="${BRANCH}-${DATE}-$(date +%s)"
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}"
 echo "$OUT"     > "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}"
 echo "$_VTAG"   > "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}"  # pointer for rehydration blocks
@@ -107,7 +107,9 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
 IFS= read -r OUT < "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null || OUT=""
-[ -z "$RUN_DIR" ] || [ -z "$OUT" ] && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
+# T-C1: separate guards — `|| ... &&` has subtle precedence.
+[ -z "$RUN_DIR" ] && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
+[ -z "$OUT" ]      && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
 ```
 
 ### Step V2: Resolve codebase scope
@@ -128,6 +130,7 @@ Apply `--dim` filter: if `--dim F,H` specified, only audit those dimensions. Def
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+DIM=$(printf '%s\n' "$ARGUMENTS" | grep -oE -- '--dim [^ ]+' | head -1 | cut -d' ' -f2)
 DIM="${DIM:-F,H,E,N,C}"
 V2_STATUS="ok"
 for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
@@ -241,7 +244,17 @@ Invoke `AskUserQuestion` — do NOT write options as plain text:
 - (a) label: `Stop here` — description: write partial report (passing claims only) to `$OUT`; fix mismatches and re-run `/research:verify`
 - (b) label: `Continue to full report` — description: proceed to V5/V6 and include failed claims in the full verification report
 
-**On (a)**: rehydrate `$OUT` (`IFS= read -r OUT < "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null || OUT=""`), write the held partial-report markdown to `$OUT` (verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top), surface the file path, and exit. Full audit remains at `$RUN_DIR/audit-raw.md`. Do NOT also dump the mismatch table to terminal — it is already inside the partial report.
+**On (a)**: the (a) branch runs after an `AskUserQuestion` turn boundary, i.e. in a fresh Bash call — so rehydrate `$OUT` self-containedly rather than assuming V1's state-rehydration block ran in this shell. `_VTAG` must come from the pointer file, never be recomputed (V1 stamps it with `$(date +%s)`; a recompute yields a different, non-existent filename):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
+IFS= read -r OUT   < "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null || OUT=""
+[ -z "$OUT" ] && { echo "verify V4: report path unresolved — V1 state missing; partial report has no destination" >&2; exit 1; }
+echo "$OUT"
+```
+
+The trailing `echo "$OUT"` is load-bearing: the Write tool takes a literal path and performs no shell expansion, so the resolved value must reach the transcript. Then write the held partial-report markdown to that path (verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top), surface the file path, and exit. Full audit remains at `$RUN_DIR/audit-raw.md`. Do NOT also dump the mismatch table to terminal — it is already inside the partial report.
 
 **On (b)**: discard the held partial-report markdown and proceed directly to V5/V6 — V5 writes the full report to `$OUT` (failed claims included).
 
@@ -251,7 +264,7 @@ Invoke `AskUserQuestion` — do NOT write options as plain text:
 
 ```markdown
 ---
-Verify — [paper title]
+Title:       Verify — [paper title]
 Date:        [YYYY-MM-DD]
 Scope:       [paper title] ([year]) / [code glob pattern]
 Focus:       paper-to-code fidelity verification
@@ -328,22 +341,18 @@ Next: fix mismatches, then /research:verify <paper> --scope <glob>
 
 Omit "Next" line if no mismatches found.
 
-Call `AskUserQuestion` tool after V6 output — do NOT write options as plain text. Before invoking, check whether `/develop:fix` is available so we don't offer a dead option when the develop plugin is absent:
+Call `AskUserQuestion` tool after V6 output — do NOT write options as plain text. Before invoking, check whether `/develop:fix` is available so we can mention it as a plain-text suggestion (verify has no `Skill` tool and `/develop:fix` has `disable-model-invocation: true`, so it can never be offered as a dispatchable option):
 
 ```bash
 ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/fix/SKILL.md >/dev/null 2>&1 && DEVELOP_FIX_AVAILABLE=true || DEVELOP_FIX_AVAILABLE=false  # timeout: 5000
+echo "DEVELOP_FIX_AVAILABLE=$DEVELOP_FIX_AVAILABLE"  # the `|| ...=false` fallback makes the block exit 0 either way, so stdout is the only surviving channel
 ```
 
-**When `$DEVELOP_FIX_AVAILABLE = true`**:
-- question: "What next?"
-- (a) label: `fix mismatches then re-run verify` — description: fix listed mismatches and re-run `/research:verify <paper>`
-- (b) label: `/develop:fix` — description: implement fixes via development agent
-- (c) label: `skip` — description: no further action
+**Only when the block above printed `DEVELOP_FIX_AVAILABLE=true`**, print as plain text before the question: "Tip: `/develop:fix` (requires `develop` plugin) can also implement these fixes — run it manually." Printed `false` → omit the tip entirely; never emit it on the assumption the plugin is present.
 
-**When `$DEVELOP_FIX_AVAILABLE = false`** (omit option (b) — offering an unavailable command misleads the user):
 - question: "What next?"
 - (a) label: `fix mismatches then re-run verify` — description: fix listed mismatches and re-run `/research:verify <paper>`
-- (c) label: `skip` — description: no further action
+- (b) label: `skip` — description: no further action
 
 </workflow>
 

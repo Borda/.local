@@ -142,12 +142,21 @@ Spec: <file path>
 
 #### Step B3: Post-plan prompt
 
-Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+**Model-invocability check**: inspect task 1's invocation from the action plan table (Step B2). If it resolves to `/foundry:manage create ...` / `/foundry:manage update ...` (or any other skill with `disable-model-invocation: true`), task 1 is **not** model-invocable — print task 1's invocation as a copy-pasteable plain-text command above the question, and omit the "Start task 1 now" option below. Otherwise task 1 is model-invocable — offer it normally.
+
+**When task 1 is model-invocable**, call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "Plan ready. What next?"
 - (a) label: `Start task 1 now` — description: proceed immediately with task 1 invocation (★ recommended)
 - (b) label: `Copy plan` — description: output plan table as clean markdown block, then stop
 - (c) label: `Revise spec first` — description: stop; revise spec and re-run `/brainstorm breakdown <spec>`
 
 On **(a)** (requires `develop` plugin): before dispatching, verify no active `/develop:feature` task for this spec exists in TaskList — call `TaskList` and scan for tasks naming the spec slug or referencing `/develop:feature` against same spec file; if found, surface existing task to user and skip dispatch (prevents double-dispatch on re-entry). Otherwise proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
+
+**When task 1 is NOT model-invocable**, print task 1's invocation as a copy-pasteable command, then call `AskUserQuestion`:
+- question: "Plan ready. Task 1 requires manual invocation (shown above). What next?"
+- (a) label: `Copy plan` — description: output plan table as clean markdown block, then stop (★ recommended)
+- (b) label: `Revise spec first` — description: stop; revise spec and re-run `/brainstorm breakdown <spec>`
+
+On **(a)**: output plan table as clean markdown block, then stop. On **(b)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
 
 End with `## Confidence` block per CLAUDE.md output standards.

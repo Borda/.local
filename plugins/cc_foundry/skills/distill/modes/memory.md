@@ -155,6 +155,7 @@ Set up run directory before conflict checks:
 
 ```bash
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/make_run_dir.py" .reports/distill 2>/dev/null)  # timeout: 5000
+echo "RUN_DIR=$RUN_DIR"  # bash vars don't persist; read from stdout
 ```
 
 **Conflict pre-check** — before presenting question, run in parallel for every `→ rule` and `→ agent/skill update` proposal:
@@ -210,10 +211,10 @@ Print diff. If anything unexpected appears, revert individual files before proce
 
 ## Step L5: curator review
 
-After applying changes, dispatch curator to audit created and modified config files:
+After applying changes, dispatch curator to audit created and modified config files. Substitute `$RUN_DIR` with the value printed by the Step L4 `RUN_DIR=` bash block above before issuing the Agent call — spawned agents receive text, not shell context (same pattern as `external.md`'s `$EXT_RUN_DIR` substitution note):
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:memory: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to $RUN_DIR/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"$RUN_DIR/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:memory: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to <RUN_DIR>/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"<RUN_DIR>/curator-review.md\",\"issues\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 ```
 
 Surface curator findings as advisory block in terminal output. Do not block on curator findings — quality recommendations, not release gates.

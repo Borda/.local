@@ -117,10 +117,10 @@ For architectural talks and CFP abstracts: `/foundry:create` must include `found
    If found: parse Audience, Format, Voice, Arc, Constraints.
    If `--context <path>` flag present, read that file/directory for technical accuracy — use Grep/Glob for relevant snippets; outline arc overrides context on framing and emphasis.
 2. Select format tier (Tier-1 or Tier-2) and load applicable format rules from `\<format_rules>`.
-   Output filename: `.plans/content/<slug>-<format-short>.md` (e.g., `blog.md`, `deck.md`, `thread.md`, `abstract.md`, `lightning.md`). Anti-overwrite: if file already exists, append counter suffix (`-2.md`, `-3.md`, etc.) per quality-gates.md rule.
+   Output filename: use the `Output file path:` supplied in the spawn prompt. If absent (direct invocation), default to `.plans/content/<slug>.md`. Anti-overwrite: if the file already exists, append a counter suffix (`-2.md`, `-3.md`, …) per quality-gates.md rule.
 3. Generate complete artifact in one pass: apply four-beat arc in correct structural form for target format; maintain voice and audience register consistently; fill technical detail from context file only where outline leaves explicit gaps; never add arc beats or sections not in outline.
 4. Tier-1 quality check (blog post and Marp deck only): verify (a) all four arc beats present in correct order, (b) audience register consistent throughout — no sudden formality or jargon shift, (c) format structure valid (H2s for blog; `marp: true` frontmatter, `---` separators, `<!-- class: lead -->` on section dividers for Marp). Fix structural violations before writing output.
-5. Write artifact to `.plans/content/<slug>-<format-short>.md` using Write tool. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md` (available post `/foundry:setup`).
+5. Write artifact to the resolved output path using the Write tool. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md` (available post `/foundry:setup`).
 
 </workflow>
 

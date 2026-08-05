@@ -1,6 +1,6 @@
 ---
 name: kaggle
-description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following the user's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells, small single-purpose cells each carrying a why. Tuned to win (leakage-safe CV, metric-aligned modeling) as much as to teach. Writes output to .experiments/kaggle/<name>.py."
+description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following the user's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells, small single-purpose cells each carrying a why. Tuned to win (leakage-safe CV, metric-aligned modeling) as much as to teach. Writes output to .experiments/kaggle/<name>.py. Requires foundry plugin (foundry:sw-engineer, no fallback)."
 argument-hint: "<competition-name> [<url-or-description>] [--type classification|regression|segmentation|detection|tabular] [--eda-only] [--inference-only] [--offline-setup] [--resume <existing.py>] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, WebSearch, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 disable-model-invocation: true
@@ -51,9 +51,10 @@ Output: `.experiments/kaggle/<competition-name>.py`
 <constants>
 
 ```yaml
-OUTPUT_DIR:    .experiments/kaggle/
-CELL_MARK:     "# %%"
-MD_CELL_MARK:  "# %% [markdown]"
+OUTPUT_DIR:       .experiments/kaggle/
+CELL_MARK:        "# %%"
+MD_CELL_MARK:     "# %% [markdown]"
+COMPETITORS_DIR:  resources/competitors/  # optional user-project path, not shipped in plugin — Step 1 reads if present
 # NOTE: documentation-only — not referenced as shell vars across separate Bash() calls (state doesn't persist); keep values in sync with literal use sites (Steps 1, 3, 4).
 ```
 
@@ -178,7 +179,7 @@ From gathered context, determine:
 **Foundry availability check** — verify before spawning:
 
 ```bash
-FOUNDRY_AVAILABLE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents/sw-engineer.md 2>/dev/null | head -1)  # timeout: 5000
+FOUNDRY_AVAILABLE=$({ find ~/.claude/plugins/cache -maxdepth 5 -path "*/foundry/*/agents/sw-engineer.md" 2>/dev/null; ls plugins/cc_foundry/agents/sw-engineer.md 2>/dev/null; } | head -1)  # timeout: 5000
 [ -z "$FOUNDRY_AVAILABLE" ] && { printf "⚠ foundry plugin not available — kaggle notebook generation requires foundry:sw-engineer\nInstall: claude plugin install foundry@borda-ai-rig\n"; exit 1; }
 ```
 
@@ -325,12 +326,12 @@ Print to terminal:
 - Bare `#` heading-spacer count found/auto-fixed (`0` when clean)
 
 Invoke `AskUserQuestion` as follow-up gate:
-- (a) Open in editor — `! code $OUTFILE`
+- (a) Open in editor — `code $OUTFILE`
 - (b) Extend with additional sections
 - (c) Regenerate with different model/approach
 - (d) Done
 
-On (a): run `! code "$OUTFILE"` via Bash.
+On (a): run `code "$OUTFILE"` via Bash.
 On (b): re-enter Step 3 with extension directive.
 On (c): re-enter Step 2 with user-specified changes.
 

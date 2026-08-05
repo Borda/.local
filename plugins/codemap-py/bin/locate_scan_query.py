@@ -98,10 +98,22 @@ def locate_scan_query() -> Path:
                 pass  # unresolvable candidate (broken symlink, permission error) — skip to Tier 3
 
     # Tier 3 — cache glob, newest semver
+    # SEC-L (advisory): same containment guard as Tier 2 — a symlink planted under a cache
+    # version dir that escapes cache_base is rejected rather than trusted on glob match alone.
     cache_base = Path.home() / ".claude" / "plugins" / "cache"
-    candidates = [p for p in cache_base.glob("*/codemap/*/bin/scan-query") if _find_executable(p)]
+    glob_hits = list(cache_base.glob("*/codemap/*/bin/scan-query"))
     if sys.platform == "win32":
-        candidates += [p for p in cache_base.glob("*/codemap/*/bin/scan-query.exe") if _find_executable(p)]
+        glob_hits += list(cache_base.glob("*/codemap/*/bin/scan-query.exe"))
+    candidates = []
+    for hit in glob_hits:
+        found = _find_executable(hit)
+        if found is None:
+            continue
+        try:
+            if found.resolve().is_relative_to(cache_base):
+                candidates.append(found)
+        except OSError:
+            pass  # unresolvable candidate (broken symlink, permission error) — skip
     if candidates:
         return max(candidates, key=_version_key)
 

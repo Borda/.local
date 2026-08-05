@@ -1,7 +1,7 @@
 ---
 name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop. TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: \"add X\", \"implement Y\", \"build Z feature\", \"create a new module for\". SKIP when: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`)."
-argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--no-codemap] [--codemap] [--semble] [--team] [--worktree] [--accept-no-plan] [--keep \"<items>\"]"
+argument-hint: "<goal> [--issue <N>] [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--no-codemap] [--codemap] [--semble] [--team] [--worktree] [--accept-no-plan] [--keep \"<items>\"]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch, EnterWorktree, ExitWorktree
 disable-model-invocation: true
@@ -94,11 +94,12 @@ cat "$_DEV_SHARED/preflight-helpers.md"
 ```
 Execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
+**Checkpoint init**: run block below to create `.developments/<TS>/` and capture path in `$DEV_DIR`. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
 
 ```bash
-# persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
+# timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_run_dir.py" 2>/dev/null)
 echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}"
 ```
 
@@ -173,12 +174,12 @@ cat "$_DEV_SHARED/worktree-isolation.md"
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
+IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-feature-codemap-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW") || {
     echo "! BLOCKED — codemap-resolve failed (likely --codemap strict but codemap unavailable); run /codemap-py:scan-codebase or install codemap plugin"
     exit 1
 }
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-feature-codemap-enabled-${CSID}
 # codemap: integrated-via-shared
 ```
 
@@ -259,6 +260,8 @@ Summary below:
 - **Teammate 2 — foundry:qa-specialist (model=sonnet)**: add edge-case/regression/security tests; edit `tests/` only, not source; write to `.temp/develop/$_SPAWN_TS/feature-qa-specialist-$_SPAWN_TS.md`; return compact JSON.
 - **Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepare docstrings and README only (no CHANGELOG); write to `.temp/develop/$_SPAWN_TS/feature-doc-scribe-$_SPAWN_TS.md`; return compact JSON.
 
+**Note on `model=` assignments**: `model=opus`/`model=sonnet` labels above are advisory hints — effective only when actual foundry agents installed. When falling back to `general-purpose` (foundry absent), prompt-prepend `model=` does not reliably override agent-resolution fallback tier; effective model set by `agent-resolution.md`'s fallback table, not spawn prompt. Intentional — sonnet sufficient for qa-specialist and doc-scribe tasks, opus for sw-engineer implementation; on fallback, expect tier degradation noted in Final Report.
+
 **Path verification**: after team spawns, verify agents received correct paths — check expected output files exist. Re-read `$TS` from temp file (bash state lost between Bash() calls — spawn block persisted it):
 
 ```bash
@@ -307,20 +310,21 @@ Gather full context before writing any code:
 
 > **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text, treat as feature description.
 >
-> **Issue ID parsing rule**: any argument whose leading characters are a run of digits (optionally prefixed with `#`, e.g. `123` or `#123`) is treated as a GitHub issue number — leading digits are extracted and passed to `issue_fetch.py`. No numeric threshold and no `--issue` flag gate. To avoid a numeric feature goal being misread as an issue number, phrase goal as descriptive text that does not start with digits.
+> **Issue ID parsing rule**: `$ARGUMENTS` with all supported flags stripped is treated as a GitHub issue number only when the *entire* remaining string is digits (optionally prefixed with `#`, e.g. `123` or `#123`) — matched via `^#?[0-9]+$` against the full flag-stripped argument, not a leading digit run. A goal like `500 error handling` correctly stays descriptive text, not issue `#500`, because the full stripped string isn't digits-only.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_RAW="${ARGUMENTS#\#}"
-ISSUE_NUM=$(echo "$_RAW" | grep -oE '^[0-9]+' | head -1)
-ISSUE_NUM="${ISSUE_NUM:-$_RAW}"
-if [[ "$ISSUE_NUM" =~ ^[0-9]+$ ]]; then
+# strip flags first — mirrors debug/SKILL.md:154-156; feature's CLEAN_ARGS omits --issue/--plan/--keep, can't reuse it here
+ARGUMENTS_FOR_ISSUE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--challenge|--team|--worktree|--no-codemap|--codemap|--semble|--accept-no-plan|--issue[= ]?[^ ]+|--repo[= ]?[^ ]+|--plan[= ]?[^ ]+|--keep[[:space:]]+"[^"]*"//g' | xargs)
+if [[ "$ARGUMENTS_FOR_ISSUE_DETECT" =~ ^#?[0-9]+$ ]]; then
   IFS= read -r REPO_NAME < "${TMPDIR:-/tmp}/dev-upstream-${CSID}" 2>/dev/null || REPO_NAME=""
   if [ -n "$REPO_NAME" ]; then
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null  # timeout: 6000
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME"  # timeout: 6000
   else
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS"  # timeout: 6000
   fi
+  ISSUE_FETCH_EXIT=$?
+  [ "$ISSUE_FETCH_EXIT" -ne 0 ] && echo "⚠ issue_fetch.py failed (exit $ISSUE_FETCH_EXIT) — proceeding without issue context"
 fi
 ```
 
@@ -354,7 +358,7 @@ echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn-${CSID}
 ```bash
 # timeout: 6000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
+IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-feature-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
 IFS= read -r TARGET_MODULE < "${TMPDIR:-/tmp}/dev-feature-target-module-${CSID}" 2>/dev/null || TARGET_MODULE=""   # re-derive — bash state lost between Bash() calls
 if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v codemap-py >/dev/null 2>&1; then
     codemap-py query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests 2>/dev/null || true

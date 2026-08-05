@@ -31,13 +31,7 @@ ls .cache/codemap/logs/*.jsonl 2>/dev/null  # timeout: 5000
 
 No files → stop: "No codemap telemetry found. Run any `/codemap-py:*` skill or `scan-query` command to start collecting logs."
 
-Telemetry **sharded per session** (`_telemetry.py` + `log-skill-start.js` + `log-tool-use.js`): CLI records in `cli_<session>.jsonl`, skill records in `skills_<session>.jsonl`, Grep/Read/Glob records in `tools_<session>.jsonl`; runs with no seeded session id fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Collect **all** matching files, not just legacy names:
-
-```bash
-CLI_LOGS=$(ls .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl 2>/dev/null)  # timeout: 5000
-SKILLS_LOGS=$(ls .cache/codemap/logs/skills_*.jsonl .cache/codemap/logs/skills.jsonl 2>/dev/null)  # timeout: 5000
-TOOLS_LOGS=$(ls .cache/codemap/logs/tools_*.jsonl .cache/codemap/logs/tools.jsonl 2>/dev/null)  # timeout: 5000
-```
+Telemetry **sharded per session** (`_telemetry.py` + `log-skill-start.py` + `log-tool-use.py`): CLI records in `cli_<session>.jsonl`, skill records in `skills_<session>.jsonl`, Grep/Read/Glob records in `tools_<session>.jsonl`; runs with no seeded session id fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Collect **all** matching files, not just legacy names — Step 2 resolves the file lists itself via the `Glob` tool (shell vars set here would not survive into Step 2's separate tool calls, and the Read tool never expands them anyway).
 
 ## Step 1: Optionally anonymize
 
@@ -50,7 +44,7 @@ for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
          .cache/codemap/logs/skills_*.jsonl .cache/codemap/logs/skills.jsonl \
          .cache/codemap/logs/tools_*.jsonl .cache/codemap/logs/tools.jsonl; do
     [ -f "$f" ] || continue
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/anonymize.py" \
+    python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/anonymize.py" \
         --input "$f"  # default --out-dir .cache/codemap/export/ — separated from .salt; timeout: 15000
 done
 ```
@@ -61,7 +55,13 @@ Use `-anon` variants under `.cache/codemap/export/` as source in Step 2. anonymi
 
 ## Step 2: Read log files
 
-Read **every** CLI shard (`cli_*.jsonl` plus legacy `cli.jsonl`), **every** skill shard (`skills_*.jsonl` plus legacy `skills.jsonl`), **every** tool shard (`tools_*.jsonl` plus legacy `tools.jsonl`) with Read tool — use `$CLI_LOGS` / `$SKILLS_LOGS` / `$TOOLS_LOGS` lists from Step 0 (or `-anon` siblings when anonymized). Concatenate records before analysing; single-file read misses per-session shards, reports near-empty dataset.
+Resolve each shard set with the `Glob` tool, then Read every returned path — do not rely on any variable computed in an earlier Bash block (fresh shell per tool call; Read never expands shell variables regardless). When `--anonymize` ran, glob the `-anon` siblings under `.cache/codemap/export/` instead of the originals:
+
+- CLI shards: `Glob(".cache/codemap/logs/cli_*.jsonl")` + `Glob(".cache/codemap/logs/cli.jsonl")` (or `.cache/codemap/export/cli*-anon.jsonl` when anonymized)
+- Skill shards: `Glob(".cache/codemap/logs/skills_*.jsonl")` + `Glob(".cache/codemap/logs/skills.jsonl")` (or `.cache/codemap/export/skills*-anon.jsonl`)
+- Tool shards: `Glob(".cache/codemap/logs/tools_*.jsonl")` + `Glob(".cache/codemap/logs/tools.jsonl")` (tool-use logs are never anonymized — anonymize.py only processes CLI/skill layers)
+
+Read **every** path each Glob call returns. Concatenate records before analysing; single-file read misses per-session shards, reports near-empty dataset.
 
 Each line is one JSON record. Filter by `--since` (compare `ts` field) and `--session` if given.
 
@@ -71,7 +71,7 @@ CLI record fields: `ts`, `layer`, `session`, `cmd`, `argv`, `result` (nested: `c
 
 Skill record fields: `ts`, `layer`, `session`, `skill`, `event`, `intent`, `hook_session`.
 
-Tool record fields (`layer: "tool"`, from `log-tool-use.js`): `ts`, `layer`, `session`, `v` (plugin version, 0.23+), `tool` (`Grep`|`Read`|`Glob`|`Bash`), `target` (Grep/Glob pattern or search path, Read file_path, Bash search command truncated to 200 chars — 0.23+ logs search-shaped Bash since harness configs without native Grep/Glob route all searching through Bash). Count raw grep/read volume per session — the signal codemap-py's context-injection aims to reduce.
+Tool record fields (`layer: "tool"`, from `log-tool-use.py`): `ts`, `layer`, `session`, `v` (plugin version, 0.23+), `tool` (`Grep`|`Read`|`Glob`|`Bash`), `target` (Grep/Glob pattern or search path, Read file_path, Bash search command truncated to 200 chars — 0.23+ logs search-shaped Bash since harness configs without native Grep/Glob route all searching through Bash). Count raw grep/read volume per session — the signal codemap-py's context-injection aims to reduce.
 
 ## Step 3: Analyse
 
@@ -101,10 +101,10 @@ Compute from filtered records:
 
 **Avoidance join (guard-chain leak rate):**
 
-Join tool layer against CLI layer: a Grep/Read/Glob whose target names a module codemap already answered completely (`query_complete: true`) within window is an **avoidance event** — agent re-derived by hand what index had already returned exhaustively, guard chain leaked. `join_avoidance.py` runs the join (module-match word-boundary safe, ported from `guard-redundant-scan.js`), reports rate per session and per skill:
+Join tool layer against CLI layer: a Grep/Read/Glob whose target names a module codemap already answered completely (`query_complete: true`) within window is an **avoidance event** — agent re-derived by hand what index had already returned exhaustively, guard chain leaked. `join_avoidance.py` runs the join (module-match word-boundary safe, ported from `guard-redundant-scan.py`), reports rate per session and per skill:
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/join_avoidance.py" --logs .cache/codemap/logs --window-min 10 --json  # timeout: 15000
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/join_avoidance.py" --logs .cache/codemap/logs --window-min 10 --json  # timeout: 15000
 ```
 
 Interpret `rate` field: **high avoidance rate is dead-chain signal** — guard not firing, injected context not read, or model ignoring both. Feed count into product telemetry (is index earning its keep?) and self-diagnosis (did I re-grep what I already knew?). Add count and rate to report's Overview; when non-zero, list flagged modules from `events` array.

@@ -7,8 +7,8 @@ Three capability tiers:
 | Tier | Model | Example agents |
 | --- | --- | --- |
 | Plan-gated | `opusplan` | solution-architect, oss:shepherd, curator |
-| Implementation | `opus` | sw-engineer, qa-specialist, research:scientist, perf-optimizer |
-| Diagnostics / writing | `sonnet` | web-explorer, doc-scribe, research:data-steward, oss:cicd-steward |
+| Implementation | `opus` | sw-engineer, research:scientist, perf-optimizer |
+| Diagnostics / writing | `sonnet` | web-explorer, doc-scribe, research:data-steward, oss:cicd-steward, qa-specialist |
 | High-freq diagnostics | `haiku` | linting-expert |
 
 Extract declared models:

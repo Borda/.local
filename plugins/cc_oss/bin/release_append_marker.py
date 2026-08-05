@@ -56,10 +56,17 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
 from shutil import which
+
+# git argv guard: sha reaches `git merge-base --is-ancestor <sha> ...` argv,
+# so a value starting with '-' would be parsed as an option. Not applied to
+# last_tag — real tags (e.g. "release-2024-05") aren't hex, and --end-of-options
+# below already neutralizes the injection risk for that position.
+_SHA_RE = re.compile(r"^[0-9a-f]{7,64}$")
 
 
 def _marker_path(branch: str, marker_dir: str | None) -> Path:
@@ -92,17 +99,20 @@ def _is_valid_commit(sha: str) -> bool:
         sha: Candidate commit SHA read from the marker file.
 
     Returns:
-        False for an empty/blank sha, when git is unavailable, or when ``sha``
+        False for an empty/blank sha, when ``sha`` isn't a bare-hex commit id
+        (argument-injection guard), when git is unavailable, or when ``sha``
         is not (or no longer) an ancestor of HEAD (e.g. after a force-push or
         rebase rewrote history and orphaned it).
     """
     if not sha:
         return False
+    if not _SHA_RE.match(sha):
+        return False
     git = which("git")
     if git is None:
         return False
     result = subprocess.run(  # noqa: S603
-        [git, "merge-base", "--is-ancestor", sha, "HEAD"],
+        [git, "merge-base", "--is-ancestor", "--end-of-options", sha, "HEAD"],
         capture_output=True,
         check=False,
         timeout=5,
@@ -126,17 +136,20 @@ def _tag_advanced_past(marker_sha: str, last_tag: str) -> bool:
     Returns:
         True when ``marker_sha`` is an ancestor of (or equal to) ``last_tag``
         — a release was cut at/after the marker. False when ``last_tag`` is
-        empty, git is unavailable, ``last_tag`` doesn't resolve (e.g. no
+        empty, ``marker_sha`` isn't a bare-hex commit id (argument-injection
+        guard), git is unavailable, ``last_tag`` doesn't resolve (e.g. no
         stable tags yet), or ``last_tag`` predates the marker (the normal,
         safe case — nothing to do).
     """
     if not marker_sha or not last_tag:
         return False
+    if not _SHA_RE.match(marker_sha):
+        return False
     git = which("git")
     if git is None:
         return False
     result = subprocess.run(  # noqa: S603
-        [git, "merge-base", "--is-ancestor", marker_sha, last_tag],
+        [git, "merge-base", "--is-ancestor", "--end-of-options", marker_sha, last_tag],
         capture_output=True,
         check=False,
         timeout=5,

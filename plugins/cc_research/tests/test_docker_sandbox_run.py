@@ -3,11 +3,13 @@
 Covers:
     - ``build_explore_command`` / ``build_verify_command`` argv shape (pure functions).
     - ``main()``: mode dispatch, ``SANDBOX_NETWORK`` override, bad-arg exit 2, return-code forwarding,
-      missing-docker handling.
+      missing-docker handling, ``SANDBOX_TIMEOUT_SEC`` cap and the post-timeout container kill.
 """
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -90,6 +92,12 @@ class _FakeCompleted:
         self.returncode = returncode
 
 
+def _split_cidfile(argv: list[str]) -> tuple[list[str], str]:
+    """Split a docker argv into (argv without its ``--cidfile <path>`` pair, the cidfile path)."""
+    i = argv.index("--cidfile")
+    return argv[:i] + argv[i + 2 :], argv[i + 1]
+
+
 @pytest.fixture
 def captured_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     """Capture ``subprocess.run`` invocations; return a list filled on each call."""
@@ -115,63 +123,65 @@ def test_help_exits_0_without_docker(monkeypatch: pytest.MonkeyPatch, flag: str)
 
 
 def test_golden_explore_invocation_constructs_expected_docker_argv(captured_run: list[list[str]]) -> None:
-    """Exact compute-docker.md explore call-site argv → docker argv identical to pre-argparse baseline."""
+    """Exact compute-docker.md explore call-site argv → pre-argparse baseline plus the timeout kill handle."""
     rc = ds.main(
         ["--mode", "explore", ".experiments/state/RID/scripts/probe.py"],
         env={},
         cwd="/proj",
     )
     assert rc == 0
-    assert captured_run == [
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--read-only",
-            "-v",
-            "/proj:/workspace:ro",
-            "--tmpfs",
-            ds.TMPFS_MOUNT,
-            "-w",
-            "/workspace",
-            ds.IMAGE,
-            "python",
-            "/workspace/.experiments/state/RID/scripts/probe.py",
-        ]
+    assert len(captured_run) == 1
+    argv, cidfile = _split_cidfile(captured_run[0])
+    assert cidfile.endswith(".cid")
+    assert argv == [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--read-only",
+        "-v",
+        "/proj:/workspace:ro",
+        "--tmpfs",
+        ds.TMPFS_MOUNT,
+        "-w",
+        "/workspace",
+        ds.IMAGE,
+        "python",
+        "/workspace/.experiments/state/RID/scripts/probe.py",
     ]
 
 
 def test_golden_verify_invocation_constructs_expected_docker_argv(captured_run: list[list[str]]) -> None:
-    """Exact phase5-metric.md verify call-site argv → docker argv identical to pre-argparse baseline."""
+    """Exact phase5-metric.md verify call-site argv → pre-argparse baseline plus the timeout kill handle."""
     rc = ds.main(["--mode", "verify", "pytest -q metric.py"], env={}, cwd="/proj")
     assert rc == 0
-    assert captured_run == [
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--read-only",
-            "-v",
-            "/proj:/workspace:ro",
-            "-v",
-            "/proj/.experiments:/workspace/.experiments:rw",
-            "--tmpfs",
-            ds.TMPFS_MOUNT,
-            "-w",
-            "/workspace",
-            ds.IMAGE,
-            "sh",
-            "-c",
-            "pytest -q metric.py",
-        ]
+    assert len(captured_run) == 1
+    argv, cidfile = _split_cidfile(captured_run[0])
+    assert cidfile.endswith(".cid")
+    assert argv == [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--read-only",
+        "-v",
+        "/proj:/workspace:ro",
+        "-v",
+        "/proj/.experiments:/workspace/.experiments:rw",
+        "--tmpfs",
+        ds.TMPFS_MOUNT,
+        "-w",
+        "/workspace",
+        ds.IMAGE,
+        "sh",
+        "-c",
+        "pytest -q metric.py",
     ]
 
 
@@ -284,3 +294,69 @@ def test_main_docker_not_in_path(monkeypatch: pytest.MonkeyPatch, capsys: pytest
     rc = ds.main(["--mode", "explore", "x.py"], env={}, cwd="/proj")
     assert rc == 127
     assert "'docker' binary not found" in capsys.readouterr().err
+
+
+# ---------- Timeout backstop ----------
+
+
+@pytest.mark.parametrize(
+    "env,expected",
+    [
+        pytest.param({}, 600.0, id="default-backstop"),
+        pytest.param({"SANDBOX_TIMEOUT_SEC": "45"}, 45.0, id="env-override"),
+        pytest.param({"SANDBOX_TIMEOUT_SEC": "bogus"}, 600.0, id="malformed-falls-back"),
+    ],
+)
+def test_main_caps_docker_run_with_resolved_timeout(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: float
+) -> None:
+    """Every docker run carries a wall-clock cap; ``SANDBOX_TIMEOUT_SEC`` overrides the 600s default."""
+    seen: dict[str, Any] = {}
+
+    def fake_run(_cmd: list[str], **kw: Any) -> _FakeCompleted:
+        seen.update(kw)
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(ds.subprocess, "run", fake_run)
+    rc = ds.main(["--mode", "explore", "x.py"], env=env, cwd="/proj")
+    assert rc == 0
+    assert seen["timeout"] == expected
+
+
+def test_main_timeout_kills_container_and_returns_124(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A hung container is killed via its cidfile, the cidfile removed, and exit 124 returned."""
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kw: Any) -> _FakeCompleted:
+        calls.append(cmd)
+        if cmd[1] == "run":
+            # Mirror docker: the id lands in the cidfile before the client is killed off.
+            Path(cmd[cmd.index("--cidfile") + 1]).write_text("c0ffee\n", encoding="utf-8")
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(ds.subprocess, "run", fake_run)
+    rc = ds.main(["--mode", "verify", "pytest -q"], env={"SANDBOX_TIMEOUT_SEC": "1"}, cwd="/proj")
+    assert rc == 124
+    assert calls[1] == ["docker", "kill", "c0ffee"]
+    assert not Path(calls[0][calls[0].index("--cidfile") + 1]).exists()
+    assert "exceeded 1s timeout" in capsys.readouterr().err
+
+
+def test_main_timeout_without_cidfile_content_still_returns_124(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Timing out before docker wrote any container id must not crash the kill path."""
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kw: Any) -> _FakeCompleted:
+        calls.append(cmd)
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    monkeypatch.setattr(ds.subprocess, "run", fake_run)
+    rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_TIMEOUT_SEC": "2"}, cwd="/proj")
+    assert rc == 124
+    assert len(calls) == 1
+    assert "killing container" in capsys.readouterr().err

@@ -261,7 +261,7 @@ ______________________________________________________________________
 
 ### `/foundry:manage`
 
-Create, update, delete agents, skills, rules, hooks with full cross-reference propagation. Keeps MEMORY.md, README, `settings.json` in sync automatically.
+Create, update, or delete agents, skills, and rules; update or delete hooks. Full cross-reference propagation. Keeps MEMORY.md, README, `settings.json` in sync automatically.
 
 ```text
 /foundry:manage create agent security-auditor "Vulnerability scanning specialist for OWASP Top 10 and supply chain threats"
@@ -482,7 +482,7 @@ ______________________________________________________________________
 
 **Use for**: architectural trade-offs, public API contracts, deprecation strategies, assessing architectural feasibility of AI-generated hypotheses against codebase constraints.
 
-**Model**: `opus`
+**Model**: `opusplan`
 
 **Not for**: implementation code (`foundry:sw-engineer`), release management (`oss:shepherd`), perf profiling or DataLoader throughput tuning (`foundry:perf-optimizer`).
 
@@ -494,13 +494,13 @@ ______________________________________________________________________
 
 ### foundry:qa-specialist
 
-**Role**: QA specialist — writing, reviewing, fixing tests. Rigorous black-box end-user tester: public API surface only, expectations from docs/type hints — not implementation, tests represent realistic user workflows.
+**Role**: QA specialist — writing, reviewing, fixing tests. Rigorous black-box end-user tester: public API surface by default, expectations from docs/type hints — not implementation, tests represent realistic user workflows.
 
 **Use for**: new pytest tests, public-API coverage gaps, edge-case matrices, fixing failing tests, integration test design. Auto-embeds OWASP Top 10 security review when task scope includes auth, payment flows, or PII — all modes.
 
 **Model**: `sonnet`
 
-**Not for**: linting, type checking, annotation fixes (`foundry:linting-expert`), production implementation (`foundry:sw-engineer`), slow test suite profiling (`foundry:perf-optimizer`), testing private/internal methods or mocking internals.
+**Not for**: linting, type checking, annotation fixes (`foundry:linting-expert`), production implementation (`foundry:sw-engineer`), slow test suite profiling (`foundry:perf-optimizer`), testing private/internal methods or mocking internals **by default** — opt-in only when the caller explicitly asks, or when a bug is unreachable through any public path.
 
 **Auto-invokes when:** user asks to write tests, assess coverage, define test strategy; "write tests for", "add unit tests", "test coverage for".
 
@@ -634,7 +634,7 @@ Agents = directed pipeline, not flat pool:
 - `foundry:web-explorer` **feeds** `research:scientist` — fetches current docs + papers; scientist interprets
 - `foundry:creator` always **downstream** of `/foundry:create` — reads approved outline file; never generates without prior outline
 
-**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, `foundry:solution-architect`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`.
+**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:solution-architect`, `foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`.
 
 ______________________________________________________________________
 
@@ -711,7 +711,7 @@ Each pipeline subagent has 10-minute hard cutoff (15 minutes when Codex active).
 
 **`/foundry:manage create` picks wrong model tier**
 
-Model tier chosen by role complexity at creation: `opusplan` for plan-gated quality review (e.g. `foundry:curator`), `opus` for complex reasoning (e.g. `foundry:sw-engineer`, `foundry:solution-architect`), `sonnet` for focused execution, `haiku` for high-frequency diagnostics. Fix after creation: `/foundry:manage update <name> "change model to sonnet"`.
+Model tier chosen by role complexity at creation: `opusplan` for plan-gated quality review (e.g. `foundry:curator`, `foundry:solution-architect`), `opus` for complex reasoning (e.g. `foundry:sw-engineer`), `sonnet` for focused execution, `haiku` for high-frequency diagnostics. Fix after creation: `/foundry:manage update <name> "change model to sonnet"`.
 
 **`foundry:curator` returns low confidence during `/foundry:audit`**
 

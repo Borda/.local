@@ -253,7 +253,7 @@ Write full report to `.reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md` via 
 
 ```markdown
 ---
-Retro — [goal]
+Title:         Retro — [goal]
 Date:          [YYYY-MM-DD]
 Scope:         [run-id] / [total] iterations
 Focus:         retrospective analysis of ML optimization run
@@ -357,12 +357,6 @@ Next: /research:run <program.md> --hypothesis <RUN_DIR>/hypotheses.jsonl    [onl
 ```
 
 If `scientist_status == "timed_out"` or `<RUN_DIR>/hypotheses.jsonl` does not exist on disk, omit the `--hypothesis` Next line entirely and replace with: `Next: /research:fortify <run-id>    ← scientist analysis unavailable; no hypotheses queue generated`.
-
-Call `AskUserQuestion` tool after summary — do NOT write options as plain text:
-- question: "What next?"
-- (a) label: `/research:run … --hypothesis` — description: run next hypotheses from generated queue
-- (b) label: `/research:fortify` — description: stress-test top components via ablation study
-- (c) label: `skip` — description: no further action
 
 </workflow>
 

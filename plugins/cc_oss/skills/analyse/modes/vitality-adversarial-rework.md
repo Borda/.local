@@ -5,12 +5,14 @@
 After Step 5 aggregation complete — report includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess **complete combined report** iteratively; rework applied between iterations
 
 ```bash
-# CODEX_AVAILABLE set in Step 4 — reuse as-is
-# REVIEW_DIR set in Step 5 — do not redefine
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# REVIEW_DIR/REWORK_ITER/REWORK_MAX/CODEX_AVAILABLE persisted by vitality.md Otherwise block — rehydrate, do not redefine
+IFS= read -r REVIEW_DIR < "${TMPDIR:-/tmp}/vitality-review-dir-${CSID}" 2>/dev/null || REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
+IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/vitality-codex-available-${CSID}" 2>/dev/null || CODEX_AVAILABLE="0"
+IFS= read -r REWORK_ITER < "${TMPDIR:-/tmp}/vitality-rework-iter-${CSID}" 2>/dev/null || REWORK_ITER="0"
+IFS= read -r REWORK_MAX < "${TMPDIR:-/tmp}/vitality-rework-max-${CSID}" 2>/dev/null || REWORK_MAX="2"
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/cc_oss/skills/_shared"
-REWORK_ITER=0
-REWORK_MAX=2
 REWORK_SECTIONS=""
 ```
 
@@ -39,6 +41,10 @@ Spawn reviewers simultaneously in single response — each writes to own iter-in
 After spawning, verify sentinels:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r REVIEW_DIR < "${TMPDIR:-/tmp}/vitality-review-dir-${CSID}" 2>/dev/null || REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
+IFS= read -r REWORK_ITER < "${TMPDIR:-/tmp}/vitality-rework-iter-${CSID}" 2>/dev/null || REWORK_ITER="0"
+IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/vitality-codex-available-${CSID}" 2>/dev/null || CODEX_AVAILABLE="0"
 [ -f "$REVIEW_DIR/challenger-iter${REWORK_ITER}.done" ] || { echo "⚠ challenger iter${REWORK_ITER} did not complete"; CHALLENGER_ITER_OUT=""; }
 [ "$CODEX_AVAILABLE" = "1" ] && { [ -f "$REVIEW_DIR/codex-iter${REWORK_ITER}.done" ] || CODEX_ITER_OUT=""; }
 ```
@@ -46,6 +52,9 @@ After spawning, verify sentinels:
 Parse REWORK_JSON from challenger output:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r REVIEW_DIR < "${TMPDIR:-/tmp}/vitality-review-dir-${CSID}" 2>/dev/null || REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
+IFS= read -r REWORK_ITER < "${TMPDIR:-/tmp}/vitality-rework-iter-${CSID}" 2>/dev/null || REWORK_ITER="0"
 REWORK_JSON=$(grep "^REWORK_JSON:" "$REVIEW_DIR/challenger-iter${REWORK_ITER}.md" 2>/dev/null | sed 's/^REWORK_JSON: //')
 REWORK_VERDICT=$(echo "$REWORK_JSON" | jq -r '.verdict // "pass"' 2>/dev/null || echo "pass")  # timeout: 5000
 ```
@@ -89,7 +98,11 @@ After all rework agents complete: patch `$REPORT_FILE` in-place — replace each
 Increment `REWORK_ITER`:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r REWORK_ITER < "${TMPDIR:-/tmp}/vitality-rework-iter-${CSID}" 2>/dev/null || REWORK_ITER="0"
+IFS= read -r REWORK_MAX < "${TMPDIR:-/tmp}/vitality-rework-max-${CSID}" 2>/dev/null || REWORK_MAX="2"
 REWORK_ITER=$((REWORK_ITER + 1))
+echo "$REWORK_ITER" > "${TMPDIR:-/tmp}/vitality-rework-iter-${CSID}"
 ```
 
 If `$REWORK_ITER >= $REWORK_MAX` OR `$REWORK_VERDICT = "pass"`: exit loop.

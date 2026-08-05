@@ -5,27 +5,28 @@ Calls ``bin/resolve_proj_index.py``, reads PROJ (line 1) and INDEX (line 2),
 and writes each to ``<tmpdir>/${prefix}-resolve-{proj,index}`` for the
 caller to read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
 
-``CLAUDE_PLUGIN_ROOT`` is validated before use (must be an absolute path inside the
-plugin cache subtree or ending in ``plugins/codemap``) to prevent arbitrary subprocess
-execution. ``TMPDIR`` is only honoured when absolute and owned by the current user.
+``CLAUDE_PLUGIN_ROOT`` is validated before use — it must resolve to the exact directory
+this script itself runs from — to prevent arbitrary subprocess execution. ``TMPDIR`` is
+only honoured when absolute and owned by the current user.
 
 Usage:
     export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
     _CM_PROJ=$(git rev-parse --show-toplevel | xargs basename)
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \\
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/resolve_index_env.py" \\
         --output-prefix "codemap-${_CM_PROJ}"
     IFS= read -r PROJ < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || PROJ=""
     IFS= read -r INDEX < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || INDEX=""
 
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/resolve_index_env.py" --check-exists
     # exit 1 when INDEX file missing; temp files still written for diagnostics
     # (uses default prefix "codemap"; prefer --output-prefix for concurrent safety)
 
 Flags:
     --check-exists       verify INDEX file exists; exit 1 with stderr message if missing.
     --output-prefix STR  prefix for temp file names (default: "codemap"); must match
-                         [a-zA-Z0-9_-]+ (no path separators). Use "codemap-${_CM_PROJ}"
-                         to scope per-project and avoid concurrent collisions.
+                         [a-zA-Z0-9_.-]+, not "."/".." (no path separators). Use
+                         "codemap-${_CM_PROJ}" to scope per-project and avoid concurrent
+                         collisions.
 
 Exit codes:
     0 — success (PROJ + INDEX written to temp files)
@@ -49,22 +50,36 @@ from pathlib import Path
 
 _SCRIPT_NAME = "resolve_index_env"
 
-# CLAUDE_PLUGIN_ROOT must be an absolute path either inside the plugin cache subtree
-# (~/.claude/plugins/cache/.../codemap...) or ending in plugins/codemap — anything else is
-# attacker-controllable and would let _run_resolver() exec arbitrary Python (SEC-H1).
-_VALID_PLUGIN_ROOT_RE = re.compile(r".*/(?:\.claude/plugins/cache/.+/codemap(?:/[^/]+)*|plugins/codemap)/?$")
-# --output-prefix must be a single bare token — no path separators or dots — blocking
-# traversal out of TMPDIR (SEC-M8 / CWE-22).
-_VALID_OUTPUT_PREFIX_RE = re.compile(r"[a-zA-Z0-9_-]+")
+# --output-prefix must be a single bare token — no path separators — blocking traversal
+# out of TMPDIR (SEC-M8 / CWE-22). A leading/trailing dot-run is still rejected via the
+# fullmatch below (no bare "." or ".." token), but an embedded "." is legitimate (project
+# basenames like "Borda.local", "site.com" are common).
+_VALID_OUTPUT_PREFIX_RE = re.compile(r"(?!\.\.?$)[a-zA-Z0-9_.-]+")
+
+
+def _own_plugin_root() -> Path:
+    """Return the resolved plugin root this script is itself running from (``bin/..``).
+
+    Used as the sole trust anchor for :func:`_validate_plugin_root` — a caller-supplied
+    ``CLAUDE_PLUGIN_ROOT`` is safe only if it names the very directory tree this script
+    already lives in, whether that is the installed cache path or the source tree.
+
+    Returns:
+        Resolved absolute path two levels above this file (``<plugin_root>/bin/<this file>``).
+    """
+    return Path(__file__).resolve().parent.parent
 
 
 def _validate_plugin_root(plugin_root: str) -> str:
     """Validate ``CLAUDE_PLUGIN_ROOT`` before it is used to build a subprocess path.
 
     An attacker-controlled ``CLAUDE_PLUGIN_ROOT`` would otherwise let
-    :func:`_run_resolver` execute an arbitrary ``resolve_proj_index.py`` (SEC-H1). The
-    value must be a non-empty absolute path within the plugin cache subtree or ending in
-    ``plugins/codemap``.
+    :func:`_run_resolver` execute an arbitrary ``resolve_proj_index.py`` (SEC-H1). A regex
+    on the raw, unnormalized string cannot express containment (``..`` segments are never
+    collapsed) and previously both rejected the real installed path (after the
+    ``codemap`` -> ``codemap-py`` rename) and accepted attacker-chosen directories whose
+    path merely *looked* right. Containment is instead checked directly: the value must
+    resolve to the exact directory this script itself runs from (see :func:`_own_plugin_root`).
 
     Args:
         plugin_root: Raw value read from ``$CLAUDE_PLUGIN_ROOT``.
@@ -73,27 +88,26 @@ def _validate_plugin_root(plugin_root: str) -> str:
         The validated ``plugin_root`` unchanged.
 
     Raises:
-        ValueError: if ``plugin_root`` is empty, relative, or does not match the safe pattern.
+        ValueError: if ``plugin_root`` is empty, relative, unresolvable, or does not
+            resolve to this script's own plugin root.
 
     Examples:
-        >>> import sys
-        >>> _drive = "C:" if sys.platform == "win32" else ""  # 3.13+ ntpath.isabs needs a drive
-        >>> cache_root = _drive + "/Users/x/.claude/plugins/cache/borda/codemap/0.1.0"
-        >>> _validate_plugin_root(cache_root) == cache_root
+        >>> str(_validate_plugin_root(str(_own_plugin_root()))) == str(_own_plugin_root())
         True
-        >>> repo_root = _drive + "/opt/repo/plugins/codemap"
-        >>> _validate_plugin_root(repo_root) == repo_root
-        True
-        >>> _validate_plugin_root("plugins/codemap")
+        >>> _validate_plugin_root("/tmp/evil")
         Traceback (most recent call last):
-        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: 'plugins/codemap'
-        >>> try:
-        ...     _validate_plugin_root(_drive + "/tmp/evil")
-        ... except ValueError:
-        ...     print("rejected")
-        rejected
+        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: '/tmp/evil'
+        >>> _validate_plugin_root("relative/path")
+        Traceback (most recent call last):
+        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: 'relative/path'
     """
-    if not plugin_root or not os.path.isabs(plugin_root) or not _VALID_PLUGIN_ROOT_RE.fullmatch(plugin_root):
+    if not plugin_root or not os.path.isabs(plugin_root):
+        raise ValueError(f"CLAUDE_PLUGIN_ROOT is not a safe path: {plugin_root!r}")
+    try:
+        resolved = Path(plugin_root).resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"CLAUDE_PLUGIN_ROOT is not a safe path: {plugin_root!r}") from exc
+    if resolved != _own_plugin_root():
         raise ValueError(f"CLAUDE_PLUGIN_ROOT is not a safe path: {plugin_root!r}")
     return plugin_root
 
@@ -101,8 +115,8 @@ def _validate_plugin_root(plugin_root: str) -> str:
 def _resolve_plugin_root() -> str:
     """Read and validate ``CLAUDE_PLUGIN_ROOT``, falling back to the in-tree default.
 
-    The unset/empty default ``plugins/codemap`` is only valid when running from the source
-    tree where the path is relative-trusted; any explicitly set value must pass
+    The unset/empty default ``plugins/codemap-py`` is only valid when running from the
+    source tree where the path is relative-trusted; any explicitly set value must pass
     :func:`_validate_plugin_root`.
 
     Returns:
@@ -115,11 +129,11 @@ def _resolve_plugin_root() -> str:
         >>> import os
         >>> _ = os.environ.pop("CLAUDE_PLUGIN_ROOT", None)
         >>> _resolve_plugin_root()
-        'plugins/codemap'
+        'plugins/codemap-py'
     """
     raw = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if raw is None or raw == "":
-        return "plugins/codemap"
+        return "plugins/codemap-py"
     return _validate_plugin_root(raw)
 
 
@@ -172,8 +186,11 @@ def _resolve_tmpdir() -> str:
 def _validate_output_prefix(prefix: str) -> str:
     """Validate the ``--output-prefix`` value against path traversal.
 
-    A prefix containing ``/`` or ``..`` would escape ``TMPDIR`` (SEC-M8 / CWE-22); only a
-    bare ``[a-zA-Z0-9_-]+`` token is accepted.
+    A prefix containing ``/`` would escape ``TMPDIR``, and a bare ``.``/``..`` token would
+    resolve to a directory rather than a filename prefix (SEC-M8 / CWE-22) — both rejected.
+    An embedded ``.`` is otherwise accepted: the documented recipe builds the prefix from a
+    project's git-root basename (``codemap-$(basename ...)``), and basenames containing a
+    dot are common (this very repository's is ``Borda.local``).
 
     Args:
         prefix: Raw ``--output-prefix`` argument.
@@ -182,17 +199,23 @@ def _validate_output_prefix(prefix: str) -> str:
         The validated prefix unchanged.
 
     Raises:
-        ValueError: if ``prefix`` is empty or contains anything outside ``[a-zA-Z0-9_-]``.
+        ValueError: if ``prefix`` is empty, ``.``, ``..``, or contains anything outside
+            ``[a-zA-Z0-9_.-]``.
 
     Examples:
         >>> _validate_output_prefix("codemap-myproj")
         'codemap-myproj'
+        >>> _validate_output_prefix("codemap-Borda.local")
+        'codemap-Borda.local'
         >>> _validate_output_prefix("../escape")
         Traceback (most recent call last):
-        ValueError: --output-prefix must match [a-zA-Z0-9_-]+ (no path separators): '../escape'
+        ValueError: --output-prefix must match [a-zA-Z0-9_.-]+ (not '.'/'..', no path separators): '../escape'
+        >>> _validate_output_prefix("..")
+        Traceback (most recent call last):
+        ValueError: --output-prefix must match [a-zA-Z0-9_.-]+ (not '.'/'..', no path separators): '..'
     """
     if not _VALID_OUTPUT_PREFIX_RE.fullmatch(prefix):
-        raise ValueError(f"--output-prefix must match [a-zA-Z0-9_-]+ (no path separators): {prefix!r}")
+        raise ValueError(f"--output-prefix must match [a-zA-Z0-9_.-]+ (not '.'/'..', no path separators): {prefix!r}")
     return prefix
 
 
@@ -264,11 +287,34 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output-prefix",
         default="codemap",
         help=(
-            "Prefix for temp file names (default: 'codemap'); must match [a-zA-Z0-9_-]+ (no path "
-            "separators). Use 'codemap-<proj>' to scope per-project and avoid concurrent collisions."
+            "Prefix for temp file names (default: 'codemap'); must match [a-zA-Z0-9_.-]+, "
+            "not '.'/'..' (no path separators). Use 'codemap-<proj>' to scope per-project "
+            "and avoid concurrent collisions."
         ),
     )
     return parser
+
+
+def _write_sentinel_file(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` without following an existing symlink.
+
+    A predictable sentinel filename in a shared ``TMPDIR`` is a symlink-plant target —
+    ``Path.write_text`` follows an existing symlink and truncates whatever it points at.
+    ``O_NOFOLLOW`` makes the open fail (``ELOOP``) instead of following, and the file is
+    created ``0o600`` regardless of umask (mirrors the pattern already used by
+    ``anonymize.py``'s ``_load_salt``). ``O_EXCL`` is deliberately not used here — unlike a
+    write-once salt file, this sentinel is legitimately overwritten on every resolver
+    invocation within the same session.
+
+    Args:
+        path: Destination file path.
+        content: Text to write (caller supplies any trailing newline).
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fh.fileno(), 0o600)
+        fh.write(content)
 
 
 def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
@@ -276,21 +322,22 @@ def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
 
     Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern. The
     ``-{_CSID}`` terminal suffix scopes the filename to the calling session, so concurrent
-    sessions in the same project never collide (see module-level ``_CSID``).
-    Temp files are always written (even on resolver failure) so downstream ``cat``
-    calls can supply their own ``|| echo ""`` fallback without extra conditionals.
-    The temp directory is resolved via :func:`_resolve_tmpdir` (owner-checked ``TMPDIR``).
+    sessions in the same project never collide (see module-level ``_CSID``). Temp files are
+    always written (even on resolver failure) so downstream ``cat`` calls can supply their
+    own ``|| echo ""`` fallback without extra conditionals. The temp directory is resolved
+    via :func:`_resolve_tmpdir` (owner-checked ``TMPDIR``); each file is written via
+    :func:`_write_sentinel_file` (symlink-safe, ``0o600``).
 
     Args:
-        proj: Project name string (may be empty on resolver failure).
-        index: Index file path string (may be empty on resolver failure).
+        proj: Project name string (may be empty on resolver failure or to clear stale state).
+        index: Index file path string (may be empty on resolver failure or to clear stale state).
         prefix: Validated temp file name prefix (default: ``"codemap"``). Pass
             ``"codemap-<proj>"`` to scope per-project and avoid concurrent collisions.
     """
     tmpdir = _resolve_tmpdir()
     csid = _resolve_csid()
     for key, val in (("proj", proj), ("index", index)):
-        Path(tmpdir, f"{prefix}-resolve-{key}-{csid}").write_text(val, encoding="utf-8")
+        _write_sentinel_file(Path(tmpdir, f"{prefix}-resolve-{key}-{csid}"), f"{val}\n")
 
 
 def _run_resolver(plugin_root: str) -> str:
@@ -343,10 +390,21 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return int(exc.code) if exc.code is not None else 0
 
-    # Validate untrusted inputs at the boundary before any path is built or executed.
+    # --output-prefix determines the sentinel filenames, so it must validate first.
+    try:
+        prefix = _validate_output_prefix(args.output_prefix)
+    except ValueError as exc:
+        sys.stderr.write(f"{_SCRIPT_NAME}: {exc}\n")
+        return 3
+
+    # Clear any prior run's PROJ/INDEX for this prefix before validating the rest of the
+    # untrusted input. Without this, a plugin-root validation failure below used to leave a
+    # stale, unrelated-project's sentinel readable — the exit code is discarded by the
+    # documented shell consumer, whose only liveness check is `[ -n "$PROJ" ]`.
+    _write_temp_vars("", "", prefix=prefix)
+
     try:
         plugin_root = _resolve_plugin_root()
-        prefix = _validate_output_prefix(args.output_prefix)
     except ValueError as exc:
         sys.stderr.write(f"{_SCRIPT_NAME}: {exc}\n")
         return 3

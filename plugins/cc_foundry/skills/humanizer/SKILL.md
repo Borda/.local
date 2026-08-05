@@ -22,8 +22,6 @@ Detect and remove statistical AI-writing fingerprints from human-facing prose be
 
 <workflow>
 
-**Task hygiene**: call `TaskList` first; triage orphaned tasks. **Task tracking**: skip for single-pass humanize calls under 3 steps; use for multi-file batch runs.
-
 ## 1. Load the target text
 
 - Inline text → work on it directly, no file I/O.

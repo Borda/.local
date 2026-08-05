@@ -1,8 +1,8 @@
 ---
 name: solution-architect
 description: 'Architectural spec specialist — ADRs, API design, migration plans, component diagrams. Reads code, produces specs only. NOT for implementation (foundry:sw-engineer), release mgmt (oss:shepherd), adversarial challenge (foundry:challenger), perf tuning (foundry:perf-optimizer). TRIGGER: "how should I structure this", "write an ADR for". SKIP: simple design.'
-tools: Read, Write, Edit, Glob, Grep, Bash, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
-model: opus
+tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, WebFetch
+model: opusplan
 effort: high
 maxTurns: 40
 color: blue
@@ -60,7 +60,7 @@ Load design_artifacts from `${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/_sh
 
 Measure fan-in (importers) and fan-out (imports):
 
-- **Fan-in** (importers): prefer `codemap-py query rdeps <module>` when codemap index exists (requires `codemap` plugin) — catches aliased imports and star re-exports Grep misses; fallback: Grep tool (pattern `from mypackage.target import|import mypackage.target`, glob `**/*.py`, path `src/`, output mode `files_with_matches`)
+- **Fan-in** (importers): prefer `codemap-py query rdeps <module>` when codemap index exists (requires `codemap-py` plugin) — catches aliased imports and star re-exports Grep misses; fallback: Grep tool (pattern `from mypackage.target import|import mypackage.target`, glob `**/*.py`, path `src/`, output mode `files_with_matches`)
 - **Fan-out** (imports): prefer `codemap-py query deps <module>` when index exists; fallback: Grep tool (pattern `^from |^import `, file `src/mypackage/target.py`, output mode `content`)
 - **Cross-module symbol refs**: `codemap-py query xrefs <module::symbol>` when codemap available — symbol-level cross-refs, not just import-level; fallback: Grep on symbol name
 - High fan-in = stability required; changes break many things.
@@ -70,7 +70,7 @@ Measure fan-in (importers) and fan-out (imports):
 
 <codemap_context>
 
-Codemap pre-flight — run if `codemap-py query` available + index exists; provides structural coupling data before analysis (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight — run if `codemap-py query` available + index exists; provides structural coupling data before analysis (requires `codemap-py` plugin). Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")

@@ -1,7 +1,7 @@
 ---
 name: cicd-steward
 description: "CI/CD health specialist, Python/GitHub Actions only — failing CI runs, build times, test matrices, caching, SHA pinning. NOT for ruff/mypy config (foundry:linting-expert), PyPI release/CHANGELOG (oss:shepherd), non-GitHub-Actions platforms. TRIGGER: failing CI runs, slow builds, caching/SHA-pinning questions. SKIP: no GitHub Actions content."
-tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch
 model: sonnet
 effort: medium
 color: green
@@ -92,9 +92,9 @@ gh run list --status failure --limit 10
 gh pr checks <pr-number>
 gh run view --log-failed $(gh run list --branch <branch> --json databaseId -q '.[0].databaseId')
 # verify inner cmd returns a value before running; split into two steps if scripting
-
-gh run rerun <run-id> --job <job-id> --failed-only
 ```
+
+> Re-running a failed job mutates remote CI state (burns CI minutes, may re-trigger deploys) — never agent-run. Print for the user to run instead: `gh run rerun <run-id> --job <job-id> --failed-only`.
 
 ## Flaky Test Detection
 
@@ -239,10 +239,10 @@ Key `.github/workflows/publish.yml` structure:
 03. Classify failure type (linting / test / infra / import)
 04. Flaky tests: run local 5x with `pytest --count=5` to confirm
 05. Fix root cause — never add `continue-on-error: true` as workaround
-06. After fix: verify same job passes in CI before closing issue
+06. After fix: report the verifying CI job to the user; issue close + re-run are user-run (see Step-by-Step Failure Diagnosis note)
 07. Build time > target: `--durations=20` finds slow tests; check cache
 08. Update `.github/workflows/*.yml` with structural improvements
-09. Review open Dependabot PRs: `gh pr list --author "app/dependabot"` — merge patch PRs, triage majors
+09. Review open Dependabot PRs: `gh pr list --author "app/dependabot"` — triage patch vs major, report merge recommendations; merging is user-run
 10. Apply Internal Quality Loop; end with `## Confidence` block — see quality-gates rules.
 
 </workflow>
@@ -270,7 +270,7 @@ Key `.github/workflows/publish.yml` structure:
 
 **Scope boundary**: see description NOT-for clauses. Trusted Publishing tiebreaker: cicd-steward writes publish workflow YAML; shepherd configures pypi.org Trusted Publisher entry + GitHub environment. CI failure involves lint or type errors → diagnose here, hand config decisions to `foundry:linting-expert` (requires `foundry` plugin).
 
-**TaskCreate/TaskUpdate usage**: in tools to track multi-step CI remediation phases (e.g., diagnose → fix → verify → close). Use when CI investigation spans 3+ distinct fix cycles or tracking open Dependabot triage items across session.
+**Phase tracking**: never call `TaskCreate`/`TaskUpdate` — per task-lifecycle.md, tasks created inside a subagent are session-local and invisible in the dispatching skill's `TaskList`, so they report progress against a list no orchestrator can see. Multi-cycle CI remediation (diagnose → fix → verify → close, Dependabot triage backlog) reports its phases in the return envelope; the dispatching skill owns the task state.
 
 **Confidence calibration**: follow quality-gates.md — score from named gaps found, not checklist coverage %. Report gaps honest; never inflate to hit target band.
 

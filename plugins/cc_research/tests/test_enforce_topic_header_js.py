@@ -75,6 +75,25 @@ def _denial_reason(result: dict) -> str | None:
     return hook_output.get("permissionDecisionReason", "")
 
 
+def _call_export(name: str, *args: object) -> object:
+    """Call one test-only hook export in a separate Node process."""
+    proc = subprocess.run(
+        [
+            "node",
+            "-e",
+            "const hook = require(process.argv[1]); process.stdout.write(JSON.stringify(hook[process.argv[2]](...JSON.parse(process.argv[3]))));",
+            str(HOOK),
+            name,
+            json.dumps(args),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+
 @pytest.fixture
 def topic_run(tmp_path: Path) -> tuple[Path, Path]:
     """Stage a topic run that resolved its report path: output dir on disk plus its sentinel."""
@@ -143,6 +162,12 @@ def test_sentinel_resolved_from_payload_session_id(tmp_path: Path, topic_run: tu
     result = _run(tmp_path, _ask_payload(session_id=CSID), session_id_env=None)
 
     assert _denial_reason(result) is not None
+
+
+def test_windows_topic_report_validation_accepts_contained_paths_and_rejects_traversal() -> None:
+    """Recognise Windows separators and casing without trusting escaped sentinel paths."""
+    assert _call_export("isTopicReportFile", r"C:\Repo\.REPORTS\RESEARCH\TOPIC-main.md") is True
+    assert _call_export("isTopicReportFile", r"C:\Repo\.reports\research\topic-dir\..\private.md") is False
 
 
 # ── Everything outside an in-flight topic run passes through ─────────────────

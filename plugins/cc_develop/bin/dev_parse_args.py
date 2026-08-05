@@ -459,11 +459,11 @@ def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -
 
     for spec, legacy in entries:
         value = values[spec.var]
-        (target_dir / _per_skill_filename(skill, spec)).write_text(value)
+        (target_dir / _per_skill_filename(skill, spec)).write_text(f"{value}\n")
         if legacy is not None:
-            (target_dir / f"{legacy}-{_csid()}").write_text(value)
+            (target_dir / f"{legacy}-{_csid()}").write_text(f"{value}\n")
     # Write CLEAN_ARGS (flags stripped) to a per-skill file so callers avoid eval
-    (target_dir / f"dev-{skill}-clean-args-{_csid()}").write_text(_clean)
+    (target_dir / f"dev-{skill}-clean-args-{_csid()}").write_text(f"{_clean}\n")
     return values
 
 

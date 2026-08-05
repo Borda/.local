@@ -39,7 +39,7 @@ Clear at Step 1 start (stale prior run) and at follow-up gate (terminal action).
 
 ## Agent Resolution
 
-**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`.
+**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:web-explorer`, `foundry:solution-architect`.
 
 ```bash
 # loads: compaction-contract.md
@@ -86,12 +86,13 @@ echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/topic-keep-items-${CSID}"  # persist f
 ```
 
 ```bash
-UNKNOWN_FLAGS=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)  # timeout: 5000
+UNKNOWN_FLAGS=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -E -- '--(team|keep)' || true)  # timeout: 5000
 ```
 
 **Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3. Priority: `--team` wins over `plan` (`plan --team` → Team Mode, topic string = "plan"):
 ```bash
-FIRST_WORD=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | awk '{print $1}')  # timeout: 5000
+ARGUMENTS_LOWER=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]')  # timeout: 5000
+FIRST_WORD=$(echo "$ARGUMENTS_LOWER" | awk '{print $1}')  # timeout: 5000
 ```
 
 - `$ARGUMENTS_LOWER` contains `--team` flag → skip Steps 2-3; jump directly to **Team Mode** section below.
@@ -167,7 +168,7 @@ mkdir -p .temp/state  # timeout: 5000
 
 ```markdown
 ---
-Research — [topic]
+Title:       Research — [topic]
 Date:        [YYYY-MM-DD]
 Scope:       [topic / research question]
 Focus:       SOTA literature research

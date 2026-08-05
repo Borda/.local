@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 """parse_deprecate_args.py — extract ``--deprecate`` flag and optional decorator value from $ARGUMENTS.
 
-Writes DEPRECATE and DEPRECATE_DECORATOR to pid-qualified temp files and prints
-the two resolved paths to stdout (flag path first, decorator path second) so the
-caller reads with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern. Filenames
-carry a ``-<pid>`` suffix (SEC-M7/CWE-377) to defeat predictable-name symlink
-attacks, so the caller must read the printed paths rather than a fixed name.
+Writes DEPRECATE and DEPRECATE_DECORATOR to exclusively-created temp files and
+prints the two resolved paths to stdout (flag path first, decorator path
+second) so the caller reads with ``cat`` — avoids the ``eval "$(...)"``
+anti-pattern. Filenames carry a random suffix from :func:`tempfile.mkstemp`
+and are created ``O_CREAT|O_EXCL`` (SEC-M7/CWE-377): a pre-planted file or
+symlink at a guessed name causes a hard failure rather than a followed write.
+The caller must read the printed paths rather than a fixed name.
 
 Usage:
     OUT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/parse_deprecate_args.py" --arguments="$ARGUMENTS")
@@ -19,8 +21,8 @@ beginning with ``--`` (e.g. the literal payload ``--deprecate``) survive
 argparse's flag-detection.
 
 Output files (raw values, no shell quoting — safe to read with ``cat``):
-    <tmpdir>/codemap-deprecate-flag-<pid>        "true" or "false"
-    <tmpdir>/codemap-deprecate-decorator-<pid>   raw decorator string (empty when absent)
+    <tmpdir>/codemap-deprecate-flag-<random>        "true" or "false"
+    <tmpdir>/codemap-deprecate-decorator-<random>   raw decorator string (empty when absent)
 
 Recognises:
     --deprecate                            bare flag → DEPRECATE=true, DEPRECATE_DECORATOR=''
@@ -143,6 +145,30 @@ def format_shell_assignments(deprecate: bool, decorator: str) -> str:
     return f"DEPRECATE={deprecate_str}\nDEPRECATE_DECORATOR={shlex.quote(decorator)}"
 
 
+def _trusted_default_tmpdir() -> str:
+    """Return the platform temp directory without re-reading ``TMPDIR``/``TEMP``/``TMP``.
+
+    ``tempfile.gettempdir()`` is not a trustworthy fallback on its own: CPython's
+    ``tempfile._candidate_tempdir_list()`` tries the environment first — the very
+    ``TMPDIR``/``TEMP``/``TMP`` values :func:`_safe_tmpdir` just rejected — so calling
+    it directly silently undoes the ownership check. Clearing those three variables
+    for the duration of the call forces CPython's own hardcoded platform-default
+    candidates instead, then restores the caller's environment unchanged.
+
+    Returns:
+        Absolute path to the platform default temp directory, ignoring env overrides.
+    """
+    saved = {key: os.environ.pop(key, None) for key in ("TMPDIR", "TEMP", "TMP")}
+    try:
+        tempfile.tempdir = None  # drop any value cached while the untrusted env was active
+        return tempfile.gettempdir()
+    finally:
+        for key, value in saved.items():
+            if value is not None:
+                os.environ[key] = value
+        tempfile.tempdir = None  # do not leak the forced-recompute cache either
+
+
 def _safe_tmpdir() -> str:
     """Return a trustworthy temp directory, validating any ``TMPDIR`` override.
 
@@ -150,7 +176,8 @@ def _safe_tmpdir() -> str:
     would redirect writes outside the temp area, and a directory not owned by the
     current user enables symlink-swap races. The override is accepted only when it
     is an absolute path to an existing directory owned by the current user;
-    otherwise we fall back to :func:`tempfile.gettempdir`.
+    otherwise we fall back to :func:`_trusted_default_tmpdir`, which does not
+    re-read the value just rejected.
 
     Returns:
         Absolute path to a validated temp directory.
@@ -167,7 +194,29 @@ def _safe_tmpdir() -> str:
                 return str(candidate)
         except OSError:
             pass  # stat failure (permission, race) — fall through to the trusted default
-    return tempfile.gettempdir()
+    return _trusted_default_tmpdir()
+
+
+def _write_new_sentinel(tmpdir: str, prefix: str, content: str) -> Path:
+    """Create a new, exclusively-owned sentinel file in ``tmpdir`` and write ``content``.
+
+    Uses :func:`tempfile.mkstemp` — ``O_CREAT|O_EXCL`` — so a pre-planted file or
+    symlink at a guessed name causes ``FileExistsError`` instead of a followed,
+    truncating write (the CWE-59/CWE-377 pair the removed ``-<pid>`` suffix claimed,
+    without evidence, to already defeat). Created ``0o600`` by :func:`tempfile.mkstemp`.
+
+    Args:
+        tmpdir: Validated temp directory (see :func:`_safe_tmpdir`).
+        prefix: Filename prefix passed to :func:`tempfile.mkstemp`.
+        content: Text to write (caller supplies any trailing newline).
+
+    Returns:
+        Path of the newly created, written file.
+    """
+    fd, path_str = tempfile.mkstemp(prefix=prefix, dir=tmpdir)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    return Path(path_str)
 
 
 def _write_temp_vars(deprecate: bool, decorator: str) -> tuple[Path, Path]:
@@ -176,11 +225,12 @@ def _write_temp_vars(deprecate: bool, decorator: str) -> tuple[Path, Path]:
     Writes raw (unquoted) values — no shell quoting needed since callers assign
     via ``VAR=$(cat ...)`` rather than ``eval``.
 
-    Filenames are qualified with the process id (SEC-M7) so a fixed, predictable
-    name cannot be pre-created as a symlink by another user. Because the pid is not
-    knowable to the calling shell, :func:`main` prints the two resolved paths to
-    stdout so the caller can ``cat`` exactly these files. The temp directory is
-    validated by :func:`_safe_tmpdir`.
+    Filenames carry a random suffix from :func:`tempfile.mkstemp`, created
+    exclusively (see :func:`_write_new_sentinel`) so neither name is knowable in
+    advance to a co-located attacker. Because the suffix is not knowable to the
+    calling shell either, :func:`main` prints the two resolved paths to stdout so
+    the caller can ``cat`` exactly these files. The temp directory is validated by
+    :func:`_safe_tmpdir`.
 
     Args:
         deprecate: Whether ``--deprecate`` flag was present.
@@ -190,11 +240,8 @@ def _write_temp_vars(deprecate: bool, decorator: str) -> tuple[Path, Path]:
         Tuple ``(flag_path, decorator_path)`` — the two files just written.
     """
     tmpdir = _safe_tmpdir()
-    pid = os.getpid()
-    flag_path = Path(tmpdir, f"codemap-deprecate-flag-{pid}")
-    decorator_path = Path(tmpdir, f"codemap-deprecate-decorator-{pid}")
-    flag_path.write_text("true" if deprecate else "false", encoding="utf-8")
-    decorator_path.write_text(decorator, encoding="utf-8")
+    flag_path = _write_new_sentinel(tmpdir, "codemap-deprecate-flag-", "true\n" if deprecate else "false\n")
+    decorator_path = _write_new_sentinel(tmpdir, "codemap-deprecate-decorator-", f"{decorator}\n")
     return flag_path, decorator_path
 
 

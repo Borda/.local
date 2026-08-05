@@ -38,6 +38,8 @@ When target is `routing`, replace standard combined report table with:
 
 Flag routing accuracy < 0.90 or hard accuracy < 0.80 with ⚠. Print confused pair details from routing report's Confused Pairs section. Mark "Calibrate routing" completed.
 
+Verdict `incomplete` (empty agent roster — pipeline Phase 1 hard stop): omit the table entirely and print `⚠ routing — no agent roster resolved; accuracy not measured`. Never substitute a number for an unmeasured run.
+
 ### Follow-up chain
 
 Routing accuracy < 0.90 or hard accuracy < 0.80 → update descriptions for confused pairs → `/calibrate routing` to verify. Max 3 re-run cycles; still below threshold after third → surface persistent confusion pairs to user for manual review.

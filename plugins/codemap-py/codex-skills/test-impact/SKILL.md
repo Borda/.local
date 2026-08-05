@@ -18,7 +18,7 @@ Two input modes:
 
 `not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers — same blind spot as `fn-blast`. Surface as a caveat, do not silently drop it.
 
-NOT for: finding all callers of a function (use `$codemap-py:query-code fn-blast <module::symbol>`); querying module deps or blast radius (use `$codemap-py:query-code`); running/executing tests (identified here, not executed).
+NOT for: finding all callers of a function (use `$codemap-py:query-code fn-rdeps <module::symbol> --exclude-tests`); querying module deps or blast radius (use `$codemap-py:query-code`); running/executing tests (identified here, not executed).
 
 ## Runtime note
 

@@ -28,9 +28,9 @@ Trusted Publishing uses GitHub OpenID Connect (OIDC) — no `API_TOKEN` or `TWIN
 
 3. **Verify `pyproject.toml` metadata complete** PyPI requires minimum: `[project]` with `name`, `version`, `description`, `requires-python`, `[project.urls]` with `Homepage`.
 
-4. **Create GitHub release** Tag commit (`git tag vX.Y.Z && git push --tags`), create GitHub release from tag. `publish.yml` triggers on `release: published`, handles rest.
+4. **Create GitHub release** (user-run — agents never execute this step; print the commands as a copyable suggestion and stop) Tag the commit with `git tag vX.Y.Z`, then push it with `git push --tags`, then create the GitHub release from that tag with `gh release create`. `publish.yml` triggers on `release: published`, handles rest.
 
-> Confirm with user before pushing tags (CLAUDE.md push safety rule)
+> Step 4 is human-only: tag push and release creation are user-run, never agent-run (public-github.md §Forbidden + CLAUDE.md push safety rule). No AskUserQuestion gate — a confirmation prompt does not make a forbidden write permitted, and this file is also loaded inside the /oss:release pipeline where AskUserQuestion blocks indefinitely.
 
 ## Post-release
 

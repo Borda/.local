@@ -101,6 +101,25 @@ def _denial_reason(result: dict) -> str | None:
     return hook_output.get("permissionDecisionReason", "")
 
 
+def _call_export(name: str, *args: object) -> object:
+    """Call one test-only hook export in a separate Node process."""
+    proc = subprocess.run(
+        [
+            "node",
+            "-e",
+            "const hook = require(process.argv[1]); process.stdout.write(JSON.stringify(hook[process.argv[2]](...JSON.parse(process.argv[3]))));",
+            str(HOOK),
+            name,
+            json.dumps(args),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+
 @pytest.fixture
 def audit_run(tmp_path: Path) -> tuple[Path, Path, str]:
     """Stage an audit that reached Step 3: run dir on disk plus its state sentinel.
@@ -154,6 +173,15 @@ def test_absolute_sentinel_path_resolves(tmp_path: Path, audit_run: tuple[Path, 
     sentinel.write_text(f"{run_dir}\n", encoding="utf-8")
 
     assert _denial_reason(_run(tmp_path, _gate_payload(cwd="/nonexistent"))) is not None
+
+
+def test_windows_run_dir_resolution_is_canonical_and_contained() -> None:
+    """Resolve Windows report paths case-insensitively and reject traversal outside audit."""
+    resolved = _call_export("resolveRunDir", r".REPORTS\AUDIT\run-1", r"C:\Repo")
+
+    assert isinstance(resolved, str)
+    assert resolved.casefold() == r"c:\repo\.reports\audit\run-1".casefold()
+    assert _call_export("resolveRunDir", r".reports\audit\..\private", r"C:\Repo") is None
 
 
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, audit_run: tuple[Path, Path, str]) -> None:

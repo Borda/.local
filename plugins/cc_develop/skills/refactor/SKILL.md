@@ -59,17 +59,6 @@ _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_r
 cat "$_DEV_SHARED/task-hygiene.md"
 ```
 
-<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
-## Anti-Rationalizations
-
-| Temptation | Reality |
-| --- | --- |
-| "The code is simple enough — I can skip characterization tests" | No safety net = no proof behavior unchanged. Characterization tests only proof. |
-| "I'll fix this adjacent bug while I'm in here" | Scope creep conflates history. Adjacent bugs go in Follow-up, not this session. |
-| "The tests are too brittle — I'll refactor them as well" | Refactoring tests + prod code simultaneously makes regressions unattributable. Fix tests first, separate pass. |
-| "I know the codebase — no need for coverage audit" | Untested edge cases = most common refactoring breakage. Audit finds what you don't know you don't know. |
-| "This is a small change — Step 4's max-5 cycles are overkill" | Simple changes = simple test loops. Guard costs nothing when unneeded; prevents runaway sessions when it is. |
-
 ## Project Detection
 
 ```bash
@@ -86,11 +75,12 @@ cat "$_DEV_SHARED/preflight-helpers.md"
 ```
 Execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
+**Checkpoint init**: create `.developments/<TS>/` run directory, capture path in `$DEV_DIR` (assigned in the block below). Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
 ```bash
-# persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
+# persist DEV_DIR for compaction recovery — bash state lost between Bash() calls
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000
 echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}"
 ```
 
@@ -127,7 +117,7 @@ CODEMAP_RAW=auto
 echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID}
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--worktree\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--worktree\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Worktree isolation
 
@@ -321,7 +311,7 @@ RUN_DIR=$(echo "$_run" | tail -1)
 RUN_DIR_LITERAL="$RUN_DIR"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}
 echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}
-trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT  # tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp (mirrors JS getSentinelDir), not TMPDIR-based
+trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT  # tmpdir-exempt: sentinel written by setup_worktree.py's _sentinel_dir(), which resolves ${TMPDIR:-/tmp} semantics — $TS run-timestamp already provides uniqueness in place of a CSID suffix
 ```
 
 **IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
@@ -347,7 +337,7 @@ IFS= read -r TS < "${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}" 2>/dev/null || 
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}" 2>/dev/null || RUN_DIR=".temp/develop/$TS"
 ```
 
-Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn (tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp, not TMPDIR-based); every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
+Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn (tmpdir-exempt: sentinel written by setup_worktree.py's _sentinel_dir(), which resolves ${TMPDIR:-/tmp} semantics — $TS run-timestamp already provides uniqueness in place of a CSID suffix); every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
 
 After both complete: read their output files from `$RUN_DIR/`, synthesize outputs, run quality stack, produce Final Report. Exit — do not continue to Steps 3–5.
 
@@ -571,3 +561,19 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 ```
 
 </workflow>
+
+<notes>
+
+<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
+
+## Anti-Rationalizations
+
+| Temptation | Reality |
+| --- | --- |
+| "The code is simple enough — I can skip characterization tests" | No safety net = no proof behavior unchanged. Characterization tests only proof. |
+| "I'll fix this adjacent bug while I'm in here" | Scope creep conflates history. Adjacent bugs go in Follow-up, not this session. |
+| "The tests are too brittle — I'll refactor them as well" | Refactoring tests + prod code simultaneously makes regressions unattributable. Fix tests first, separate pass. |
+| "I know the codebase — no need for coverage audit" | Untested edge cases = most common refactoring breakage. Audit finds what you don't know you don't know. |
+| "This is a small change — Step 4's max-5 cycles are overkill" | Simple changes = simple test loops. Guard costs nothing when unneeded; prevents runaway sessions when it is. |
+
+</notes>

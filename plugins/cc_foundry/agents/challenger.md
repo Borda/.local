@@ -47,7 +47,7 @@ Attack target across 6 dimensions:
 
 <codemap_context>
 
-Codemap pre-flight — run if `codemap-py query` available + index exists; provides blast-radius context before challenging (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight — run if `codemap-py query` available + index exists; provides blast-radius context before challenging (requires `codemap-py` plugin). Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")

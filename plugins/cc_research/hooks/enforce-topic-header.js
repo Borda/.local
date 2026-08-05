@@ -67,7 +67,7 @@ const path = require("path");
 const SENTINEL_PREFIX = "research-topic-report-file-";
 // Every mode writes "<root>/.reports/research/topic-<...>.md"; requiring the marker
 // keeps the hook from acting on a sentinel holding anything else.
-const REPORT_PATH_MARKER = "/.reports/research/topic-";
+const REPORT_DIR_PARTS = [".reports", "research"];
 // Enforcement window measured from the sentinel's mtime (see KNOWN LIMITATION).
 const STALE_MS = 2 * 60 * 60 * 1000;
 
@@ -111,10 +111,27 @@ function findSentinel(dir, csids) {
   return null;
 }
 
-/** True when `value` has the shape the modes write: absolute .reports/research/topic-*.md path. */
+/** Select the path implementation that matches one absolute report path. */
+function reportPathApi(value) {
+  return typeof value === "string" && (/^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\"))
+    ? path.win32
+    : path.posix;
+}
+
+/** True when normalized components retain the `.reports/research/topic-*.md` containment rule. */
 function isTopicReportFile(value) {
-  return (
-    typeof value === "string" && path.isAbsolute(value) && value.endsWith(".md") && value.includes(REPORT_PATH_MARKER)
+  if (typeof value !== "string") return false;
+  const api = reportPathApi(value);
+  if (!api.isAbsolute(value)) return false;
+  const parts = api.normalize(value).split(api.sep).filter(Boolean);
+  const normalize = api === path.win32 ? (part) => part.toLowerCase() : (part) => part;
+  const marker = REPORT_DIR_PARTS.map(normalize);
+  return parts.some(
+    (_, index) =>
+      index + marker.length < parts.length &&
+      marker.every((part, offset) => normalize(parts[index + offset]) === part) &&
+      normalize(parts[index + marker.length]).startsWith("topic-") &&
+      normalize(parts[parts.length - 1]).endsWith(".md"),
   );
 }
 

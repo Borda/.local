@@ -36,7 +36,8 @@ Optional but recommended:
 - Any `critical` finding => `status=fail`
 - Any failed check in `checks_failed` => `status=fail`
 - Missing command/tool for a required gate => `status=fail`
-- Explicitly unsupported target with reason and `status=not-applicable` => non-failing
+- Explicitly unsupported gate with reason => that gate's per-check `gates.json` entry `status=not-applicable`; non-failing, excluded from `checks_failed` (top-level run `status` stays `pass`/`fail`/`timeout` only — see "Required gate output")
+- All five `gates.json` entries `not-applicable` => top-level run `status=pass` (zero failures to report)
 - Missing artifact => `status=fail`
 - Gate timeout => `status=timeout`
 - For every skill/agent: `confidence <= 0.8` cannot pass; `0.8 < confidence < 0.85` cannot be complete; `0.85 <= confidence < 0.9` needs recorded recovery/limits; `confidence >= 0.9` still needs evidence.

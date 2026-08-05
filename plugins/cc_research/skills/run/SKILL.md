@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Sustained metric-improvement loop with atomic commits, auto-rollback, and experiment logging. Iterates with specialist agents, commits atomically, auto-rolls back on regression. Accepts a program.md file path. Supports --resume, --team, --colab, --codex, --researcher, --architect, --journal, --hypothesis."
-argument-hint: "<program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--keep \"<items>\"]"
+argument-hint: "<program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--scientist] [--codemap] [--no-codemap] [--keep \"<items>\"]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -38,6 +38,8 @@ SENTINEL_SLUG_FORMULA: |
 <!-- Note: STATE_DIR (.experiments/state/) holds per-iteration artifacts (diary, experiments.jsonl).
      Hypothesis pipeline outputs (hypotheses.jsonl, checkpoint.json, journal.md) go to .experiments/<run-id>/ (RUN_DIR).
      These are two separate directories by design — see protocol.md for layout. -->
+
+<!-- policy-sibling: run/modes/colab-setup.md, plan/SKILL.md, sweep/SKILL.md:4, judge/SKILL.md — COLAB_KNOWN_HW set restated in each; keep in sync (plugins/CLAUDE.md §Policy Duplication Marker). -->
 
 **Agent strategy mapping** (`agent_strategy` in config → ideation agent to spawn):
 
@@ -167,7 +169,7 @@ After clarification extraction, remaining non-flag tokens (not starting `--`) ar
 ```markdown
 ⚠ Unrecognized argument "<token>" — ignored.
   Known positional args: <program.md path> [clarification]
-  Known flags: --team, --colab[=HW], --codex, --compute=local|colab|docker, --researcher, --architect, --journal, --hypothesis <path>, --codemap, --no-codemap
+  Known flags: --resume <program.md>, --team, --compute=local|colab|docker, --colab[=HW], --codex, --researcher, --architect, --journal, --hypothesis <path>, --scientist, --codemap, --no-codemap, --keep "<items>"
   If you meant to override the algo, edit the ## Config block in your program.md (algo: sort) and update ## Metric to match.
   If you meant to set a clarification hint, pass it as a quoted string: "/research:run program.md \"sort improvements\" --codex"
 ```
@@ -287,7 +289,7 @@ Run all checks before touching code. Fail fast with clear message:
 3. **Metric command numeric**: run `metric_cmd` once; parse stdout for float. If no float: show output and stop.
 4. **Guard passes**: run `guard_cmd` once; must exit 0. If fails: show output and stop.
 5. **`--colab` check**: verify `mcp__colab-mcp__runtime_execute_code` available. If not, print setup instructions (see Colab MCP section) and stop. If `--colab=HW` (`colab_hw` non-null): print: `  Hardware requested: --colab=<colab_hw>. Ensure your Colab notebook running with <colab_hw> GPU.`
-6. **`--codex` check**: verify `claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'`. If unavailable: print `⚠ codex plugin not found. Install it with: /plugin marketplace add openai/codex-plugin-cc` and **stop**.
+6. **`--codex` check**: distinguish CLI-missing from plugin-missing before failing. `claude` not on `PATH` → print `⚠ 'claude' CLI not in PATH — Codex availability cannot be verified. Ensure the claude binary is on PATH and Codex plugin installed.` and **stop**. `claude` on `PATH` but `claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'` fails → print `⚠ codex plugin not found. Install it with: /plugin marketplace add openai/codex-plugin-cc` and **stop**.
 7. **`compute: docker` check**: run `docker ps` via Bash (`timeout: 5000`). If non-zero: print `⚠ Docker daemon not running. Start Docker Desktop and retry.` and **stop**.
 8. **Flag conflict**: if `--colab` and `--compute=docker` both active: print `⚠ --colab and --compute=docker are mutually exclusive. Use one or the other.` and **stop**.
 9. **`--colab` + `--codex` compatibility note** (non-blocking): if both flags active, print `ℹ --colab + --codex active: Codex Phase 2c will receive colab_hw context so generated code can target the right GPU (H100/T4 bf16 vs fp16). Phase 5 metric verification runs through Colab MCP as usual.` and continue. Pass `colab_hw` to Codex spawn prompt (Phase 2c — see `modes/codex-copilot.md`).
@@ -718,11 +720,12 @@ cat "$HOME/.claude/skills/_shared/codex-delegation.md"  # timeout: 5000
 
 Apply criteria loaded above.
 
-Call `AskUserQuestion` tool after R7 output — do NOT write options as plain text. Map options into tool call:
-- question: "What next?"
-- (a) label: `/research:retro` — description: run post-run retrospective analysis
-- (b) label: `/research:verify <paper>` — description: verify implementation matches paper claims
-- (c) label: `skip` — description: no further action
+Print next-step suggestions as plain text — do NOT call `AskUserQuestion`: both `/research:retro` and `/research:verify` ship `disable-model-invocation: true` and `run`'s `allowed-tools` has no `Skill` entry, so neither is dispatchable this turn.
+
+```text
+Next: /research:retro <run-id>       — post-run retrospective analysis
+Next: /research:verify <paper>       — verify implementation matches paper claims
+```
 
 ```bash
 rm -f .temp/state/skill-contract.md  # clear contract — campaign complete (compaction-contract.md §Lifecycle)  # timeout: 5000
@@ -764,6 +767,7 @@ cat "$CLAUDE_SKILL_DIR/modes/colab-setup.md"  # timeout: 5000
 - **JSONL over TSV** — richer structured fields, `jq`-parseable, no delimiter ambiguity; query with `jq -c 'select(.status == "kept")' experiments.jsonl`.
 - **State persistence enables resume** — if loop crashes/times out, `resume` picks up exactly where it stopped.
 - **Safety break**: hard cap = 50 iterations (values above 50 in program.md clamped to 50 with a warning); default 20 when max_iterations unset in program.md; skill never exceeds MAX_ITERATIONS.
+- **Unbounded cross-skill chain**: `run` → `/research:retro` → `/research:run --hypothesis` / `/research:fortify` → re-run `/research:run` has no campaign-level iteration cap (unlike `sweep`'s `MAX_REFINE = 3` or `run`'s own `MAX_ITERATIONS`). Human-gated at each hop, so it cannot spin autonomously. No counter implemented by design — a counter would need `retro` to write to `.experiments/state/`, breaking retro's read-only invariant.
 - **Explicit flags = hard requirements**: all flags (`--colab`, `--compute=docker`, `--codex`, `--researcher`, `--architect`) must be available at R2. If unavailable, stop — never silently degrade.
 - R7 Codex delegation requires `/foundry:setup` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `$HOME/.claude/skills/_shared/`; R7 is silently skipped if absent.
 

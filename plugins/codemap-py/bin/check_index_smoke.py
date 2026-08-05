@@ -230,8 +230,9 @@ def run_smoke(
             capture_output=True,
             text=True,
             check=False,
+            timeout=15,
         )
-    except OSError as exc:
+    except (OSError, subprocess.TimeoutExpired) as exc:
         return {
             "ok": False,
             "stale": False,

@@ -364,6 +364,41 @@ class TestRunR1:
         infos = [f for f in findings if f.severity == "INFO"]
         assert len(infos) >= 1
 
+    def test_cross_plugin_literal_ref_resolves_target_not_source_plugin(self, tmp_path: Path) -> None:
+        """Regression: a literal `plugins/<other>/...md` ref must resolve against the
+        REFERENCED plugin's cache, not the SOURCE file's own plugin — even when
+        plugins_dir is absolute (as main() always passes it via .resolve()).
+
+        Prior bug: target_folder was derived via
+        `Path(ref.resolved_local).relative_to(plugins_dir).parts[0]`, which always
+        raised ValueError when plugins_dir was absolute (resolved_local is stored
+        relative to project root per the PathRef contract), silently falling back
+        to `ref.plugin` — the file's OWN plugin, not the one actually referenced.
+        Same-plugin refs never expose this (source == target by coincidence); a
+        genuine cross-plugin literal reference does.
+        """
+        plugins_dir, research_dir = _make_plugin_tree(tmp_path, plugin="research")
+        _, foundry_dir = _make_plugin_tree(tmp_path, plugin="foundry")
+        cache_dir = _make_cache(tmp_path, plugin="foundry", version="0.17.0")
+        # foundry is "installed"; research is not — isolates the assertion to
+        # whether the foundry-side lookup used the right plugin identity.
+        active_install_paths = {"foundry": cache_dir / "foundry" / "0.17.0"}
+
+        # Referenced file exists locally (foundry) and in its own installed cache.
+        target_local = foundry_dir / "agents" / "web-explorer.md"
+        target_local.write_text("content")
+        target_installed = cache_dir / "foundry" / "0.17.0" / "agents" / "web-explorer.md"
+        target_installed.parent.mkdir(parents=True, exist_ok=True)
+        target_installed.write_text("content")
+
+        # research's own file has a literal cross-plugin reference into foundry.
+        source_md = research_dir / "agents" / "data-steward.md"
+        source_md.write_text("See `plugins/cc_foundry/agents/web-explorer.md` for details.\n")
+
+        findings = run_computed_path_duality(plugins_dir.resolve(), cache_dir, active_install_paths)
+        fails = [f for f in findings if f.severity == "FAIL" and "web-explorer.md" in f.raw_expr]
+        assert fails == [], f"web-explorer.md exists in both local and its own installed cache: {fails}"
+
 
 # ---------------------------------------------------------------------------
 # R2 integration

@@ -360,39 +360,54 @@ class TestWriteSkillFiles:
     def test_feature_flag_values_persisted(self, tmp_path: Path):
         """Feature skill: representative flags persist their parsed values."""
         write_skill_files("feature", "--semble --no-challenge --codemap fix auth.py", tmp_dir=tmp_path)
-        assert (tmp_path / "dev-feature-semble-shared").read_text() == "true"
-        assert (tmp_path / "dev-feature-no-challenge-shared").read_text() == "false"
-        assert (tmp_path / "dev-feature-codemap-shared").read_text() == "strict"
+        assert (tmp_path / "dev-feature-semble-shared").read_text() == "true\n"
+        assert (tmp_path / "dev-feature-no-challenge-shared").read_text() == "false\n"
+        assert (tmp_path / "dev-feature-codemap-shared").read_text() == "strict\n"
         # Legacy paths mirror the same values
-        assert (tmp_path / "dev-semble-enabled-shared").read_text() == "true"
-        assert (tmp_path / "dev-challenge-enabled-shared").read_text() == "false"
-        assert (tmp_path / "dev-codemap-raw-shared").read_text() == "strict"
+        assert (tmp_path / "dev-semble-enabled-shared").read_text() == "true\n"
+        assert (tmp_path / "dev-challenge-enabled-shared").read_text() == "false\n"
+        assert (tmp_path / "dev-codemap-raw-shared").read_text() == "strict\n"
 
     def test_debug_codemap_raw_persisted(self, tmp_path: Path):
         """Debug skill: --no-codemap writes 'off' to both per-skill and legacy CODEMAP_RAW files."""
         write_skill_files("debug", "--no-codemap symptom", tmp_dir=tmp_path)
-        assert (tmp_path / "dev-debug-codemap-shared").read_text() == "off"
-        assert (tmp_path / "dev-codemap-raw-shared").read_text() == "off"
+        assert (tmp_path / "dev-debug-codemap-shared").read_text() == "off\n"
+        assert (tmp_path / "dev-codemap-raw-shared").read_text() == "off\n"
 
     def test_defaults_applied_for_absent_flags(self, tmp_path: Path):
         """Absent flags fall back to declared defaults in both file flavours."""
         write_skill_files("refactor", "tidy module", tmp_dir=tmp_path)
-        assert (tmp_path / "dev-refactor-team-shared").read_text() == "false"
-        assert (tmp_path / "dev-team-mode-shared").read_text() == "false"
-        assert (tmp_path / "dev-refactor-repo-shared").read_text() == ""
-        assert (tmp_path / "dev-upstream-shared").read_text() == ""
+        assert (tmp_path / "dev-refactor-team-shared").read_text() == "false\n"
+        assert (tmp_path / "dev-team-mode-shared").read_text() == "false\n"
+        assert (tmp_path / "dev-refactor-repo-shared").read_text() == "\n"
+        assert (tmp_path / "dev-upstream-shared").read_text() == "\n"
+
+    @pytest.mark.parametrize("skill", sorted(SKILL_SPECS))
+    def test_every_written_file_is_newline_terminated(self, skill: str, tmp_path: Path):
+        """Every persisted value ends with a newline.
+
+        Consumers read these back with ``IFS= read -r VAR < file || VAR=<default>``. ``read``
+        exits non-zero on a final line with no terminator, so the ``||`` fallback fires and
+        overwrites the value that was just read — a value without the trailing newline is
+        silently replaced by the default in every downstream Bash() block.
+        """
+        write_skill_files(skill, "--codemap do the thing", tmp_dir=tmp_path)
+        written = sorted(p for p in tmp_path.iterdir() if p.is_file())
+        assert written, f"no files written for skill {skill}"
+        for path in written:
+            assert path.read_text().endswith("\n"), f"{path.name} is not newline-terminated"
 
     @pytest.mark.parametrize("skill", ["feature", "fix", "refactor", "debug", "review"])
     def test_worktree_flag_enabled_persisted(self, skill: str, tmp_path: Path):
         """Worktree-capable skills: --worktree persists 'true' to its per-skill sentinel (legacy=None → no legacy file)."""
         write_skill_files(skill, "--worktree do the thing", tmp_dir=tmp_path)
-        assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "true"
+        assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "true\n"
 
     @pytest.mark.parametrize("skill", ["feature", "fix", "refactor", "debug", "review"])
     def test_worktree_flag_absent_defaults_false(self, skill: str, tmp_path: Path):
         """Worktree-capable skills: absent --worktree defaults the sentinel to 'false'."""
         write_skill_files(skill, "do the thing", tmp_dir=tmp_path)
-        assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "false"
+        assert (tmp_path / f"dev-{skill}-worktree-shared").read_text() == "false\n"
 
     def test_worktree_not_registered_for_plan(self):
         """plan is analysis-only (never edits) — it must not register --worktree."""
@@ -447,8 +462,8 @@ class TestMainEntryPoint:
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
         rc = main(["--skill", "feature", "--write-files", "--semble --no-challenge fix auth.py"])
         assert rc == 0
-        assert (tmp_path / "dev-feature-semble-shared").read_text() == "true"
-        assert (tmp_path / "dev-feature-no-challenge-shared").read_text() == "false"
+        assert (tmp_path / "dev-feature-semble-shared").read_text() == "true\n"
+        assert (tmp_path / "dev-feature-no-challenge-shared").read_text() == "false\n"
 
     def test_skill_mode_missing_write_files_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
         """``--skill`` without ``--write-files`` → exit 1 (only supported skill mode)."""

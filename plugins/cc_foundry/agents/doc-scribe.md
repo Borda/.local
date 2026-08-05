@@ -1,7 +1,7 @@
 ---
 name: doc-scribe
 description: 'Docs specialist — docstrings, API refs, README, standalone FAQ/comparison tables. NOT for CHANGELOG (oss:shepherd), linting (foundry:linting-expert), implementation (foundry:sw-engineer), narrative content (foundry:creator). TRIGGER: "write docs for", "add docstrings to", "update the README". SKIP: one-sentence doc; read-only; implementation task.'
-tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch
 model: sonnet
 effort: medium
 color: cyan
@@ -180,7 +180,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 <codemap_context>
 
-Codemap pre-flight — run if `codemap-py query` available + index exists; replaces manual Grep/Read scan for undocumented symbols (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+Codemap pre-flight — run if `codemap-py query` available + index exists; replaces manual Grep/Read scan for undocumented symbols (requires `codemap-py` plugin). Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")

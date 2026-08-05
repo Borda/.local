@@ -46,14 +46,22 @@ SCAN_STATE_FILE=$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/setup_scan
 if [ $? -ne 0 ] || [ -z "$SCAN_STATE_FILE" ]; then
   printf "! setup_scan_env.sh failed"; [ -s "$SETUP_STDERR" ] && printf ": %s" "$(cat "$SETUP_STDERR")"; printf "\n"; exit 1
 fi
-printf '%s' "$SCAN_STATE_FILE" > "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}"  # subsequent blocks read without knowing PID
+# project-scoped: a bare ${CSID} name collides when two projects run under one session
+# (e.g. concurrent foreground/background agents in different repos)
+_CM_PROJ_SLUG=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+printf '%s\n' "$SCAN_STATE_FILE" > "${TMPDIR:-/tmp}/codemap-state-ref-${_CM_PROJ_SLUG}-${CSID}"  # subsequent blocks read without knowing PID
 ```
 
 ```bash
-# timeout: 360000
+# timeout: 400000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r SCAN_STATE_FILE < "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null || SCAN_STATE_FILE=""
+_CM_PROJ_SLUG=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+IFS= read -r SCAN_STATE_FILE < "${TMPDIR:-/tmp}/codemap-state-ref-${_CM_PROJ_SLUG}-${CSID}" 2>/dev/null || SCAN_STATE_FILE=""
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run from the beginning\n"; exit 1; }
+# -O: owned by this process's effective uid; ! -L: not a symlink. Defence-in-depth on top
+# of setup_scan_env.sh's mktemp — this is the last check before the file is sourced
+# (executed), so a collision with an unrelated file in a shared TMPDIR still fails closed.
+[ -O "$SCAN_STATE_FILE" ] && [ ! -L "$SCAN_STATE_FILE" ] || { printf "! codemap state file failed ownership/symlink check — aborting\n" >&2; exit 1; }
 # shellcheck source=/dev/null
 . "$SCAN_STATE_FILE"
 # NUL-delimited args file avoids eval; produced by parse_scan_args.py
@@ -89,7 +97,8 @@ After scan, read index and report compact summary:
 # timeout: 15000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # only report if index exists; Step 1 may have failed
-IFS= read -r SCAN_STATE_FILE < "${TMPDIR:-/tmp}/codemap-state-ref-${CSID}" 2>/dev/null || SCAN_STATE_FILE=""
+_CM_PROJ_SLUG=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+IFS= read -r SCAN_STATE_FILE < "${TMPDIR:-/tmp}/codemap-state-ref-${_CM_PROJ_SLUG}-${CSID}" 2>/dev/null || SCAN_STATE_FILE=""
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run /codemap-py:scan-codebase\n"; exit 1; }
 # shellcheck source=/dev/null
 . "$SCAN_STATE_FILE"

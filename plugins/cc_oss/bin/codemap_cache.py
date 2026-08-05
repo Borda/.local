@@ -54,6 +54,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -69,6 +70,35 @@ PER_MODULE_QUERIES: tuple[str, ...] = (
     "xrefs",
     "undocumented",
 )
+
+# Mirrors resolve_shared_path.py::_validate_subdir's shape. Leading '.' and
+# '-' are legitimate in real module names (e.g. ".github.scripts.x",
+# "plugins.codemap-py.bin.foo") so the class stays permissive; '..' and '\\'
+# are rejected explicitly since a module builds a path under --cache-dir.
+_MODULE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _valid_module(module: str) -> bool:
+    """True when ``module`` is safe to use as ``<cache-dir>/<module>.json``.
+
+    Args:
+        module: Dotted module name to validate.
+
+    Returns:
+        False when ``module`` contains anything outside ``_MODULE_RE``, or
+        contains ``..`` or ``\\`` (path-escape guard for ``--cache-dir``).
+
+    Examples:
+        >>> _valid_module("pkg.mod")
+        True
+        >>> _valid_module(".github.scripts.x")
+        True
+        >>> _valid_module("../etc/passwd")
+        False
+        >>> _valid_module("a\\\\b")
+        False
+    """
+    return bool(_MODULE_RE.match(module)) and ".." not in module and "\\" not in module
 
 
 def _content_hash(answers: dict[str, object]) -> str:
@@ -117,7 +147,8 @@ def _result_module(result: dict) -> str:
     """
     module = result.get("query") or result.get("module") or result.get("target")
     if module:
-        return str(module)
+        # mock-rdeps echoes a qualified "pkg.mod::Symbol" under module/target.
+        return str(module).split("::", 1)[0]
     qname = result.get("qname")
     if qname and "::" in str(qname):
         return str(qname).split("::", 1)[0]
@@ -165,7 +196,13 @@ def cmd_write(args: argparse.Namespace) -> int:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     by_module = _module_answers_from_batch(batch)
+    written = 0
     for module, answers in by_module.items():
+        if not _valid_module(module):
+            # e.g. derive_modules_from_diff's flat-layout fallback can emit
+            # "plugins/cc_oss/bin" — skip it, don't abort the whole batch.
+            print(f"codemap_cache: skipping invalid module {module!r}", file=sys.stderr)
+            continue
         artifact = {
             "module": module,
             "prefix": {
@@ -177,8 +214,9 @@ def cmd_write(args: argparse.Namespace) -> int:
             "delta": {"touched_files": [], "exhausted_queries": [], "notes": []},
         }
         (cache_dir / f"{module}.json").write_text(json.dumps(artifact), encoding="utf-8")
+        written += 1
 
-    print(json.dumps({"status": "done", "modules_written": len(by_module)}))
+    print(json.dumps({"status": "done", "modules_written": written}))
     return 0
 
 
@@ -220,6 +258,9 @@ def cmd_read(args: argparse.Namespace) -> int:
     Returns:
         Exit code (0 including cold miss).
     """
+    if not _valid_module(args.module):
+        print(json.dumps({"reuse": False, "reason": "invalid_module", "answers": {}}))
+        return 0
     artifact_path = Path(args.cache_dir) / f"{args.module}.json"
     if not artifact_path.exists():
         print(json.dumps({"reuse": False, "reason": "cold_miss", "answers": {}}))

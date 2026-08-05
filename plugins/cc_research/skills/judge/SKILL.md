@@ -95,7 +95,7 @@ Extract `<program_title>` from `# Program: <title>` line for reports (fallback `
 
 ## Step J2: Completeness audit
 
-Check 12 items. Produce findings list with severity. Each finding has: `id`, `check`, `status` (pass/fail/warn), `severity`, `detail`.
+Check C1–C12 plus C2b and C6b (14 items total). Produce findings list with severity. Each finding has: `id`, `check`, `status` (pass/fail/warn), `severity`, `detail`.
 
 | ID | Check | Severity if failing | Description |
 | --- | --- | --- | --- |
@@ -109,7 +109,7 @@ Check 12 items. Produce findings list with severity. Each finding has: `id`, `ch
 | C8 | `max_iterations` in bounds (1–50) | medium | Missing defaults to 20 (acceptable); >50 violates SKILL.md constants. Additionally: if value is within bounds but >20 AND combined with risk factors (C4 fails / guard empty, OR C6 fails / scope non-existent), add a separate `low` finding: "max_iterations=N is elevated; with no functioning guard/scope, runaway iterations amplify risk — consider reducing to ≤15 until guard/scope is fixed" |
 | C9 | `agent_strategy` is valid (`auto`/`perf`/`code`/`ml`/`arch`) | medium | Invalid value silently falls back to `auto` |
 | C10 | `compute` is valid (`local`/`colab`/`docker`) | low | Invalid defaults to `local` |
-| C11 | `colab_hw` valid (if present) | low | `colab_hw` absent OR is one of `H100, L4, T4, A100, V100, A10G, TPUv2, TPUv3, TPUv4` — fail detail: `"colab_hw '<value>' is not in known set {H100, L4, T4, A100, V100, A10G, TPUv2, TPUv3, TPUv4} — may cause GPU identity check failure in run mode"`. Note: this check is a minimum-capability floor — new Colab hardware tiers may exist beyond this list; unknown values are flagged for user verification, not blocked. |
+| C11 | `colab_hw` valid (if present) | low | `colab_hw` absent OR is one of `H100, L4, T4, A100` — fail detail: `"colab_hw '<value>' is not in known set {H100, L4, T4, A100} — run mode will warn and null this value to the default GPU"`. Note: this check is a minimum-capability floor — new Colab hardware tiers may exist beyond this list; unknown values are flagged for user verification, not blocked. <!-- policy-sibling: plugins/cc_research/skills/run/SKILL.md, plugins/cc_research/skills/run/modes/colab-setup.md, plugins/cc_research/skills/plan/SKILL.md, plugins/cc_research/skills/sweep/SKILL.md — canonical colab_hw known-set {H100, L4, T4, A100}; keep judge's C11 set in sync with these four. --> |
 | C12 | `## Notes` section present | low | Notes optional but improve ideation quality |
 
 **Scope adequacy sub-rule (C6b)** — after C6 passes, assess whether `scope_files` is *sufficient* for stated goal. If goal type implies known bottleneck locations outside declared scope, add `medium` finding:
@@ -119,7 +119,7 @@ Check 12 items. Produce findings list with severity. Each finding has: `id`, `ch
 
 Distinct from C6 (path existence) — C6b fires even when path exists but is likely insufficient.
 
-**Severity summary**: count findings per severity. Any critical finding = verdict cannot be APPROVED. **Enumeration rule**: check ALL 12 items before stopping — don't short-circuit after first critical issue. program.md can have multiple independent flaws across severity levels; Required Changes section must list all, not just verdict-determining one.
+**Severity summary**: count findings per severity. Any critical finding = verdict cannot be APPROVED. **Enumeration rule**: check ALL items (C1–C12 plus C2b and C6b) before stopping — don't short-circuit after first critical issue. program.md can have multiple independent flaws across severity levels; Required Changes section must list all, not just verdict-determining one.
 
 **Placeholder token check (C2, C4 sub-rule)** — after confirming `command` present in `## Metric` (C2) and `## Guard` (C4), scan each command for `{...}` tokens. Verify each token's field name exists in `## Config`. Token with no matching field = unresolvable — add `high` finding. Don't flag `{field_name}` tokens as malformed; valid when resolvable.
 
@@ -365,11 +365,11 @@ while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done
 
 ```markdown
 ---
-Judge — [program_title]
+Title:         Judge — [program_title]
 Date:          [YYYY-MM-DD]
 Scope:         [path to program.md]
 Focus:         experimental protocol validation
-Agents:        foundry:solution-architect (J3), research:scientist (J3)
+Agents:        foundry:solution-architect (J3), research:scientist (J3)  ← include "foundry:solution-architect (J3), " only when SPAWN_ARCHITECT=true (J3 §Complexity gate); when false, use "research:scientist (J3); architect: skipped (narrow scope)" instead
 Outcome:       APPROVED | NEEDS-REVISION | BLOCKED
 Methodology:   sound | needs-refinement | fundamentally-flawed
 Findings:      [N] critical · [N] high · [N] medium · [N] low

@@ -14,7 +14,7 @@ Fires when `CODEMAP_ENABLED=false` and the consumer's skip flag is **not** set t
 - (b) Build index now — run `scan-index` in the foreground (wait until it finishes), then set `CODEMAP_ENABLED=true` and continue
 - (c) Abort — stop; build index manually then re-invoke this skill
 
-On (b): run `scan-index` in the foreground (wait until it finishes); set `CODEMAP_ENABLED=true`; continue. (Never model-invoke the `codemap-py:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; the model builds via the `scan-index` binary, exactly as codemap-py's own `inject-preamble.js` hook does.)
+On (b): run `scan-index` in the foreground (wait until it finishes); set `CODEMAP_ENABLED=true`; continue. (Never model-invoke the `codemap-py:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; the model builds via the `scan-index` binary, exactly as codemap-py's own `inject-preamble.py` hook does.)
 On (c): stop.
 
 ## Gate B — stale index

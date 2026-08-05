@@ -57,6 +57,36 @@ def test_malformed_assignment_returns_2() -> None:
     assert st.set_values("ns5", ["NOEQUALS"]) == 2
 
 
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        pytest.param("X; malicious=1", id="shell-metachar"),
+        pytest.param("1LEADING_DIGIT=x", id="leading-digit"),
+        pytest.param("has-dash=x", id="dash"),
+        pytest.param("$(id)=x", id="command-substitution"),
+    ],
+)
+def test_set_rejects_unsafe_key(assignment: str) -> None:
+    """A KEY outside the shell-identifier allowlist is a usage error (exit 2)."""
+    assert st.set_values("ns9", [assignment]) == 2
+
+
+def test_documented_caller_keys_accepted() -> None:
+    """Every KEY used by this module's docs, bin-authoring-guide.md, and these tests stays accepted."""
+    assignments = ["RUN_DIR=a", "SCOPE=b", "K=c", "N=1", "A=1", "B=2", "C=3", "URL=u", "EMPTY=", "MSG=m"]
+    assert st.set_values("ns11", assignments) == 0
+    assert len(st._read(st.state_path("ns11"))) == 10
+
+
+def test_load_skips_unsafe_key_from_state_file(capsys: pytest.CaptureFixture[str]) -> None:
+    """A key that never passed set() (legacy or concurrently written file) is skipped, not emitted for eval."""
+    st.state_path("ns10").write_text("X; malicious=1\nGOOD=2\n", encoding="utf-8")
+    assert st.load_values("ns10") == 0
+    captured = capsys.readouterr()
+    assert captured.out == "GOOD='2'\n"
+    assert "malicious" in captured.err
+
+
 def test_clear_removes_file() -> None:
     """clear() deletes the state file; load() then produces nothing."""
     st.set_values("ns6", ["A=1"])

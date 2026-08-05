@@ -8,11 +8,13 @@ local source tree or from the installed plugin cache.
 
 Cascade order:
 
-1. ``CLAUDE_PLUGIN_ROOT/skills/<skill>/<subdir>`` when ``CLAUDE_PLUGIN_ROOT``
+1. ``plugins/cc_foundry/skills/<skill>/<subdir>`` when ``--local`` is passed and
+   the local source tree contains it (plugin-dev workflows) — checked first
+   so ``--local`` genuinely overrides ``CLAUDE_PLUGIN_ROOT`` rather than being
+   a no-op whenever that env var happens to be set.
+2. ``CLAUDE_PLUGIN_ROOT/skills/<skill>/<subdir>`` when ``CLAUDE_PLUGIN_ROOT``
    is set in the environment and the path exists (handles installed-plugin
    runtime — the canonical fast path).
-2. ``plugins/cc_foundry/skills/<skill>/<subdir>`` when ``--local`` is passed and
-   the local source tree contains it (plugin-dev workflows).
 3. ``.claude/skills/<skill>/<subdir>`` when present (project-local override).
 4. Fallback scan: ``find ~/.claude/plugins/cache -path '*/<skill>/<subdir>'``
    then pick a deterministic best match (highest version, lex-sorted).
@@ -258,7 +260,7 @@ def resolve(skill: str, subdir: str, *, local: bool, home: Path | None = None) -
     Args:
         skill: Skill directory name.
         subdir: Subdirectory under the skill.
-        local: When True, the local source tree is preferred after the
+        local: When True, the local source tree is preferred ahead of the
             ``CLAUDE_PLUGIN_ROOT`` tier (plugin-dev workflow).
         home: Override ``$HOME`` for the cache-scan tier. Defaults to
             ``os.path.expanduser("~")``.
@@ -277,16 +279,19 @@ def resolve(skill: str, subdir: str, *, local: bool, home: Path | None = None) -
     if home is None:
         home = Path(os.path.expanduser("~"))
 
-    # Tier 1: CLAUDE_PLUGIN_ROOT (canonical fast path inside the installed plugin)
-    hit = _from_plugin_root(skill, subdir)
-    if hit is not None:
-        return hit
-
-    # Tier 2: local source tree, when --local opted in
+    # Tier 1: local source tree, when --local opted in. Must precede the
+    # CLAUDE_PLUGIN_ROOT tier below — otherwise --local is a no-op whenever
+    # CLAUDE_PLUGIN_ROOT is set (the common case, since it's always set inside
+    # an installed plugin run), because that tier would win first.
     if local:
         hit = _from_local_source(skill, subdir)
         if hit is not None:
             return hit
+
+    # Tier 2: CLAUDE_PLUGIN_ROOT (canonical fast path inside the installed plugin)
+    hit = _from_plugin_root(skill, subdir)
+    if hit is not None:
+        return hit
 
     # Tier 3: project-local override
     hit = _from_project_local(skill, subdir)

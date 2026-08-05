@@ -45,7 +45,7 @@ No proposals pass filter: print "✓ No upgrade proposals — current setup is c
 
 Mark "Apply config proposals" in_progress. Each **config** proposal, in sequence:
 
-1. Apply change (Edit/Write tool)
+1. Apply change (Edit/Write tool) (inline — exempt from fix.md §No inline fixes, which scopes to Steps 8–10)
 2. Correctness check:
    ```bash
    jq empty .claude/settings.json && echo "✓ valid JSON" || echo "✗ invalid JSON" # timeout: 5000

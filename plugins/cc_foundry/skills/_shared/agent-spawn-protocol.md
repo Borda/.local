@@ -39,9 +39,21 @@ Later (a separate Bash call — e.g. after a completion notification), probe pro
 
 - If unsure whether a follow-up is "the same task continuing" or "a new independent task" — default to fresh. A fresh spawn that re-derives something the old agent already knew is far cheaper than an old agent quietly reasoning off page-3 assumptions that page-40 already invalidated.
 
+## Delegation cost discipline — batch trivial work, don't spawn per finding
+
+Every `Agent()` call pays fixed overhead (context load, model inference) regardless of how small the task is — a one-line typo fix costs nearly the same spawn overhead as a real logic fix. Two failure modes to avoid:
+
+1. **One spawn per trivial finding.** A batch of independent, low-risk findings (typo, hardcoded path, missing frontmatter field, stale version ref, duplicate lines — the mechanical categories a skill's own `PARALLEL_SAFE_CATEGORIES` list already names) does not need one agent call per finding, or even one per file, when several land in the same or related files. Batch them into a single spawn prompt covering the whole set; let the agent apply all of them in one pass.
+2. **Full adversarial review overhead on work with no real ambiguity.** A dual-agent challenge-and-validate gate (e.g. `foundry:challenger` + `foundry:curator` both reviewing before a fix lands) exists to catch fixes that might silently remove load-bearing content or misjudge intent — real risk on CRITICAL/HIGH or cross-file-dependent findings. Applying that same two-agent gate to a mechanical, unambiguous, single-file substitution is cost without signal. Skills defining a fix-apply gate should carve out a fast path: findings in the mechanical/parallel-safe category class skip the full gate and go straight to one fix agent (still never inline-edited by the orchestrator — §Fix Action Hierarchy in `audit/modes/fix.md` still applies); reserve the full adversarial gate for findings with real correctness or scope risk.
+
+**Model/agent tier**: match the agent to the task, not the task to the agent. A narrow, well-specified, single-file mechanical fix is a good fit for a cheaper path (`codex:codex-rescue --write` when the codex plugin is available, or a lower-tier model) rather than defaulting every fix to the same top-tier agent used for judgment-heavy work. Reserve the expensive agent for findings that actually need judgment (ambiguous intent, cross-file reconciliation, behavioral-risk calls).
+
+Where this doesn't apply: genuinely cross-file-dependent fixes (must read another file to get the fix right), or findings flagged CRITICAL/HIGH where a wrong fix has real cost — these keep the full gate and appropriate agent tier regardless of how "small" the diff looks.
+
 ## Rules
 
 - Never omit the timed-out signal (⏱) — surface partial results always
 - Rely on the harness completion notification, not a busy-wait loop
 - New independent follow-up task → fresh `Agent()` spawn, not `SendMessage`-resume (see above)
+- Batch independent trivial/mechanical findings into one spawn; don't pay per-finding agent overhead for unambiguous, low-risk fixes (see §Delegation cost discipline)
 - Canonical reference: CLAUDE.md §6

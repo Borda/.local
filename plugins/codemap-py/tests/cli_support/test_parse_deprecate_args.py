@@ -156,23 +156,29 @@ class TestFormatShellAssignments:
 def _read_outputs(capsys: pytest.CaptureFixture[str]) -> tuple[str, str]:
     """Read the two pid-qualified temp files whose paths main() printed to stdout.
 
+    Both files are newline-terminated so the shell's ``IFS= read -r`` succeeds
+    instead of falling through to its ``||`` default; ``read`` consumes that
+    delimiter, so the trailing newline is dropped here to compare against the
+    value the calling shell would actually see.
+
     Args:
         capsys: pytest stdout/stderr capture fixture.
 
     Returns:
         Tuple ``(flag_text, decorator_text)`` — the contents of the flag and
-        decorator files respectively.
+        decorator files respectively, each without its trailing newline.
     """
     flag_line, dec_line = capsys.readouterr().out.splitlines()
-    return Path(flag_line).read_text(), Path(dec_line).read_text()
+    return Path(flag_line).read_text().removesuffix("\n"), Path(dec_line).read_text().removesuffix("\n")
 
 
 class TestMain:
-    """``main()`` writes raw values to pid-qualified temp files and prints their paths.
+    """``main()`` writes raw values to exclusively-created temp files and prints their paths.
 
     The ``--arguments=`` form (equals sign, no space) is required so that values
-    starting with ``--`` survive argparse's flag-detection. Filenames carry a
-    ``-<pid>`` suffix (SEC-M7), so tests read the printed paths rather than fixed names.
+    starting with ``--`` survive argparse's flag-detection. Filenames carry a random
+    ``tempfile.mkstemp`` suffix (SEC-M7), so tests read the printed paths rather than
+    fixed names.
     """
 
     def test_main_with_bare_deprecate(
@@ -277,3 +283,65 @@ def test_doctests_pass() -> None:
 
     results = doctest.testmod(parse_deprecate_args, verbose=False)
     assert results.failed == 0, f"{results.failed} doctest(s) failed"
+
+
+# ---------------------------------------------------------------------------
+# Residual-critical regressions — symlink-safe writes, TMPDIR fallback no-op
+# ---------------------------------------------------------------------------
+
+
+class TestSentinelSymlinkSafety:
+    """``_write_new_sentinel()`` refuses to follow a pre-planted file or symlink.
+
+    Regression coverage for the residual-critical finding that the prior
+    ``Path.write_text()`` calls had no ``O_EXCL``/``O_NOFOLLOW`` — a predictable
+    ``-<pid>``-suffixed name in a shared temp dir let a co-located attacker
+    pre-plant a symlink and have its write follow through to an arbitrary target.
+    """
+
+    def test_preplanted_symlink_is_not_followed(self, tmp_path: Path) -> None:
+        """A symlink at the exact guessed old-style pid name is never written through."""
+        import os
+
+        victim = tmp_path / "victim.txt"
+        victim.write_text("IMPORTANT ORIGINAL CONTENT\n", encoding="utf-8")
+        preplanted = tmp_path / f"codemap-deprecate-flag-{os.getpid()}"
+        preplanted.symlink_to(victim)
+
+        flag_path, _ = parse_deprecate_args._write_temp_vars(True, "@deprecated")
+
+        assert flag_path != preplanted
+        assert victim.read_text(encoding="utf-8") == "IMPORTANT ORIGINAL CONTENT\n"
+
+    def test_written_files_are_mode_0600(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both sentinel files are created owner-only readable/writable."""
+        import os
+
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        flag_path, decorator_path = parse_deprecate_args._write_temp_vars(True, "@deprecated")
+        assert (os.stat(flag_path).st_mode & 0o777) == 0o600
+        assert (os.stat(decorator_path).st_mode & 0o777) == 0o600
+
+
+class TestSafeTmpdirFallback:
+    """``_safe_tmpdir()`` must not re-return a ``TMPDIR`` value it just rejected.
+
+    Regression coverage for the residual-critical finding that the prior fallback
+    called ``tempfile.gettempdir()`` directly, which re-reads ``TMPDIR``/``TEMP``/``TMP``
+    from the environment — silently undoing the ownership/absoluteness check above it.
+    """
+
+    def test_nonexistent_tmpdir_override_is_not_returned(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A rejected (nonexistent) ``TMPDIR`` value is never the function's return value."""
+        rejected = "/nonexistent-hostile-dir-for-test-xyz"
+        monkeypatch.setenv("TMPDIR", rejected)
+        result = parse_deprecate_args._safe_tmpdir()
+        assert result != rejected
+
+    def test_environment_is_restored_after_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The caller's TMPDIR/TEMP/TMP environment is unchanged after the fallback runs."""
+        import os
+
+        monkeypatch.setenv("TMPDIR", "/nonexistent-hostile-dir-for-test-xyz")
+        parse_deprecate_args._safe_tmpdir()
+        assert os.environ.get("TMPDIR") == "/nonexistent-hostile-dir-for-test-xyz"

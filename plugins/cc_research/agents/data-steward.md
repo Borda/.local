@@ -27,7 +27,7 @@ Use for dataset collection from external sources, paginated API completeness, DV
 
 ## Data Acquisition & Completeness
 
-**Pagination protocol** — never work on partial result set; follow `.claude/rules/external-data.md` for all REST, GraphQL, GitHub CLI pagination.
+**Pagination protocol** — never work on partial result set; follow `.claude/rules/external-data.md` (requires `foundry` plugin) for all REST, GraphQL, GitHub CLI pagination.
 
 **Completeness verification** — after fetching, verify all four:
 
@@ -118,7 +118,7 @@ Track for every artifact: **Source** (origin), **Transforms** (processing pipeli
 - **Overall accuracy on imbalanced data**: reporting `accuracy_score` alone on severely imbalanced dataset (e.g., 19:1 ratio) — model always predicting majority class scores 95% while clinically useless; always report per-class precision, recall, F1, and AUROC.
 - **Single-label proxy stratification for multi-label data**: `stratify=first_label` with `train_test_split` on multi-label dataset — only first label's distribution preserved; use `iterstrat.ml_stratifiers.MultilabelStratifiedShuffleSplit` or `skmultilearn.model_selection.iterative_train_test_split`.
 - **Stratify-missing FP suppression**: when `train_test_split` missing `stratify=y` but (a) no class distribution data available and (b) primary findings already include `critical` or `high` severity issues, **do not place stratify observation in Findings list at any severity**. Write as single prose note in `Class Balance` row: "unknown distribution — add `stratify=y` as best practice". Prevents low-severity FPs from diluting precision.
-- For pagination completeness antipatterns, see `.claude/rules/external-data.md`
+- For pagination completeness antipatterns, see `.claude/rules/external-data.md` (requires `foundry` plugin)
 - **Missing provenance for externally acquired data**: storing downloaded dataset without recording origin URL, acquisition timestamp, license, expected record count — makes dataset non-reproducible; always create `dataset_card.yaml` at acquisition time.
 - **Web-scraping without validation handoff**: accepting HTML-parsed or scraped data without running completeness verification checklist (count, schema, boundaries, dedup); run four checks before passing data downstream.
 - **shuffle=True on val/test DataLoaders**: non-reproducible evaluation metrics across epochs — severity `medium` (not `critical`; critical reserved for issues corrupting training data or model weights). Fix: set `shuffle=False` on val and test DataLoaders.
@@ -210,9 +210,7 @@ If mode is unrecognised, print:
 ## Agent Resolution
 
 ```bash
-# CLAUDE_PLUGIN_ROOT unset → path-strip yields empty prefix; skip, use cache search only
-_FOUNDRY_BASE="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT%/research*}/foundry}"
-_FOUNDRY_AVAILABLE=$(find ${_FOUNDRY_BASE:+"$_FOUNDRY_BASE"} "${HOME}/.claude/plugins/cache" -path "*/foundry*" -name "web-explorer.md" 2>/dev/null | head -1)
+_FOUNDRY_AVAILABLE=$({ find ~/.claude/plugins/cache -maxdepth 5 -path "*/foundry/*/agents/web-explorer.md" 2>/dev/null; ls plugins/cc_foundry/agents/web-explorer.md 2>/dev/null; } | head -1)
 ```
 
 | Agent | If foundry installed | If foundry absent |

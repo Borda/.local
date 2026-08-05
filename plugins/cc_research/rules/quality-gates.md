@@ -6,6 +6,8 @@ paths:
 
 ## Confidence Block (required on all analysis tasks)
 
+<!-- policy-sibling: plugins/cc_oss/rules/quality-gates.md, plugins/cc_foundry/rules/quality-gates.md, plugins/cc_develop/rules/quality-gates.md -->
+
 Every analysis agent **must** end with:
 
 ```markdown
@@ -55,7 +57,7 @@ Confidence < 0.9 → push back on analysis before handover: demand proof per unc
 
 1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content**
 2. Print to terminal in this order:
-   1. **Header** — plain ASCII verdict line; no Unicode box-drawing chars (`─`, `═`, `│`, `┌` etc.); use `·` as separator: `verdict: ⚠ NEEDS_WORK · findings: 8 · critical: 0 · high: 2 · medium: 4 · low: 2 · confidence: 0.88` (verdict word prefixed with its symbol — see §Reporting Findings)
+   1. **YAML header table** — render `---` metadata block from top of report file as simple two-column Markdown table (`Field | Value`, one row per key, each value single physical line ≤100 chars — never wrap a value inside a cell: wrapped continuation line loses leading `|`, breaks GFM table parsing from that row down) — never print raw YAML verbatim (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line with `·` separator: `verdict: ⚠ NEEDS_WORK · findings: 8 · critical: 0 · high: 2 · medium: 4 · low: 2 · confidence: 0.88` (verdict word prefixed with its symbol — see §Reporting Findings)
    2. **Report path** — `→ <filepath>`
    3. **Executive summary** — prose: 2–3 sentence overview + each critical/high finding listed individually; omit medium/low detail unless ≤2 total findings
    4. **Follow-up gate** — invoke `AskUserQuestion` as final step; skip when running as background agent or inside another skill's pipeline
@@ -65,6 +67,32 @@ Confidence < 0.9 → push back on analysis before handover: demand proof per unc
 - **Follow-up gate options**: skill-defined; minimum: (a) primary action · (b) skip. Canonical examples by skill:
   - `research:topic` → (a) `/research:plan` · (b) `/develop:feature` · (c) skip
 - **Follow-up gate follow-through**: `AskUserQuestion` returns with skill-invocation option selected → call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
+
+## Report File Format
+
+<!-- policy-sibling: plugins/cc_foundry/rules/quality-gates.md, plugins/cc_develop/rules/quality-gates.md, plugins/cc_research/rules/quality-gates.md -->
+
+Every report file from output routing must begin with YAML metadata block between `---` delimiter lines. Block = canonical meta summary — file keeps raw YAML (machine-parseable by downstream skills); when printed to terminal, convert to two-column table (`Field | Value`, one row per key) before executive summary — never raw YAML in terminal.
+
+**Value cap — single line only**: each value ≤100 chars, one physical line, no wrap. Wrapped cell loses leading `|` on continuation line → parser drops table from that row down. Long detail (Focus, Summary) → short label in cell, full text in prose exec summary below.
+
+**Required minimum fields** (all reports):
+
+```yaml
+---
+Title:      [Skill] — [subject]
+Date:       [YYYY-MM-DD]
+Scope:      [what was analyzed — path, topic, run-id, etc.]
+Focus:      [aspect examined — e.g. "experimental protocol validation"]
+Agents:     [agent names that contributed — comma-separated]
+Outcome:    [verdict — APPROVED | NEEDS-REVISION | BLOCKED | etc.]
+Confidence: [score] — [key gaps]
+Next steps: [recommended follow-up skill invocation]
+Path:       → .reports/research/<name>-<branch>-<date>.md
+---
+```
+
+After required fields, add **skill-specific fields** for report type (e.g. Methodology, Protocol gaps for `research:judge`; Verdict, Papers for `research:verify`). All five research skills with dedicated output routing — `research:judge`, `research:retro`, `research:verify`, `research:topic`, `research:fortify` — must include equivalent `---` block at top of report files.
 
 ## Reporting Findings
 

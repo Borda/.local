@@ -95,7 +95,7 @@ const RUN_DIR_SENTINEL = "run-dir";
 const AGGREGATE_FILENAME = "summary.jsonl";
 // Step 3 always builds "<base>/.reports/audit/<TIMESTAMP>"; requiring the marker
 // keeps the hook from acting on a sentinel holding anything else.
-const RUN_DIR_MARKER = "/.reports/audit/";
+const RUN_DIR_PARTS = [".reports", "audit"];
 // Enforcement window measured from the sentinel's mtime (see KNOWN LIMITATION).
 // 4h, matching the skill's own preflight-cache TTL (SKILL.md `preflight_ok`,
 // 14400s) — a full sweep plus a 5-pass fix-convergence loop legitimately runs
@@ -146,6 +146,24 @@ function findSentinel(dir, csids) {
   return null;
 }
 
+/** Select the path implementation matching a Windows or POSIX sentinel path. */
+function reportPathApi(value, cwd) {
+  const isWindowsPath = (candidate) =>
+    typeof candidate === "string" && (/^[A-Za-z]:[\\/]/.test(candidate) || candidate.startsWith("\\\\"));
+  return isWindowsPath(value) || isWindowsPath(cwd) ? path.win32 : path.posix;
+}
+
+/** True when normalized path components contain a descendant of the expected report directory. */
+function isReportPath(value, api, reportParts) {
+  const parts = api.normalize(value).split(api.sep).filter(Boolean);
+  const normalize = api === path.win32 ? (part) => part.toLowerCase() : (part) => part;
+  const marker = reportParts.map(normalize);
+  return parts.some(
+    (_, index) =>
+      index + marker.length < parts.length && marker.every((part, offset) => normalize(parts[index + offset]) === part),
+  );
+}
+
 /**
  * Absolute form of the sentinel's stored run dir, or null when it cannot be one.
  *
@@ -155,9 +173,10 @@ function findSentinel(dir, csids) {
  */
 function resolveRunDir(value, cwd) {
   if (typeof value !== "string" || value === "") return null;
-  const base = typeof cwd === "string" && path.isAbsolute(cwd) ? cwd : process.cwd();
-  const resolved = path.resolve(base, value);
-  return resolved.includes(RUN_DIR_MARKER) ? resolved : null;
+  const api = reportPathApi(value, cwd);
+  const base = typeof cwd === "string" && api.isAbsolute(cwd) ? cwd : process.cwd();
+  const resolved = api.resolve(base, value);
+  return isReportPath(resolved, api, RUN_DIR_PARTS) ? resolved : null;
 }
 
 /**

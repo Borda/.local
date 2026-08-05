@@ -42,7 +42,7 @@ def partials(tmp_path: Path) -> tuple[Path, Path, Path]:
 def scoring_file(tmp_path: Path) -> Path:
     lines = "\n".join(
         f"| {n} axis-{n} | {w} |"
-        for n, w in [(1, 0.17), (2, 0.18), (3, 0.14), (4, 0.11), (5, 0.09), (6, 0.07), (7, 0.09), (8, 0.07), (9, 0.08)]
+        for n, w in [(1, 0.10), (2, 0.08), (3, 0.10), (4, 0.07), (5, 0.07), (6, 0.05), (7, 0.06), (8, 0.11), (9, 0.07)]
     )
     p = tmp_path / "vitality-scoring.md"
     p.write_text(lines)
@@ -53,13 +53,23 @@ class TestLoadWeights:
     def test_parses_all_nine(self, scoring_file: Path) -> None:
         w = load_weights(scoring_file)
         assert len(w) == 9
-        assert w[1] == pytest.approx(0.17)
-        assert w[9] == pytest.approx(0.08)
+        assert w[1] == pytest.approx(0.10)
+        assert w[9] == pytest.approx(0.07)
 
     def test_missing_file_returns_defaults(self, tmp_path: Path) -> None:
         w = load_weights(tmp_path / "missing.md")
         assert len(w) == 9
-        assert abs(sum(w.values()) - 1.0) < 0.01
+        # axes 1-9 subtotal only — axes 10-13 carry the remaining 0.29 of the 13-axis rubric
+        assert abs(sum(w.values()) - 0.71) < 0.01
+
+    def test_loads_real_rubric_matches_canonical_table(self) -> None:
+        """Real vitality-scoring.md on disk parses to the canonical 13-axis weight table."""
+        real_file = Path(__file__).resolve().parents[1] / "skills" / "_shared" / "vitality-scoring.md"
+        w = load_weights(real_file)
+        assert set(range(1, 10)) <= set(w)
+        assert w[8] == pytest.approx(0.11)
+        assert w[8] == max(w[n] for n in range(1, 10))
+        assert w[2] == pytest.approx(0.08)
 
     def test_incomplete_file_returns_defaults(self, tmp_path: Path) -> None:
         p = tmp_path / "partial.md"

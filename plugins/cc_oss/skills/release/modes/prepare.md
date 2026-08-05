@@ -1,5 +1,5 @@
 <!-- oss:release Mode: prepare — executed via: cat "$SKILL_DIR/modes/prepare.md"; execute -->
-<!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $GATHER_FILE -->
+<!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $GATHER_FILE, $CHANGELOG_FILE -->
 
 **Trigger**: `/release prepare <version>` (e.g., `prepare v1.3.0` or `prepare 1.3.0`)
 
@@ -14,6 +14,8 @@ VERSION="${REST%% *}"
 [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 echo "$VERSION" > "${TMPDIR:-/tmp}/release-prepare-version-${CSID}"  # persist for later blocks (Check 41)
+echo "$RANGE" > "${TMPDIR:-/tmp}/release-range-${CSID}"  # reuses the shared sentinel written by release/SKILL.md:256, read at :125,:442 and classify-truth-check.md:84
+echo "range: $RANGE"
 # BRANCH, DATE, REPO_ROOT, SKILL_DIR from Shared setup above
 ```
 
@@ -38,8 +40,14 @@ Set up release directory, back up existing artifacts:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r VERSION < "${TMPDIR:-/tmp}/release-prepare-version-${CSID}" 2>/dev/null || VERSION=""  # reload (Check 41)
+IFS= read -r CHANGELOG_FILE < "${TMPDIR:-/tmp}/release-changelog-file-${CSID}" 2>/dev/null || CHANGELOG_FILE=""  # written by Phase 2b's changelog-audit envelope
+IFS= read -r REPO_ROOT < "${TMPDIR:-/tmp}/release-setup-${CSID}/REPO_ROOT" 2>/dev/null || REPO_ROOT="."
+[ -n "$CHANGELOG_FILE" ] || CHANGELOG_FILE=$(find "$REPO_ROOT" -maxdepth 2 -name "CHANGELOG.md" 2>/dev/null | head -1)  # audit.md search order
 RELEASE_DIR="releases/$VERSION"
-python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/setup_release_dir.py" "$RELEASE_DIR" "$CHANGELOG_FILE"  # timeout: 5000
+# Hard-fail: this script's .bak backup loop is the only thing standing between a re-run and silent
+# loss of hand-edited HIGHLIGHTS/MIGRATION/SUMMARY/DRAFT, which Phases 3a-5 overwrite unconditionally.
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/setup_release_dir.py" "$RELEASE_DIR" "$CHANGELOG_FILE" \
+    || { echo "! BLOCKED — setup_release_dir failed (RELEASE_DIR='$RELEASE_DIR' CHANGELOG_FILE='$CHANGELOG_FILE'); artifact backups did not run — refusing to continue into the overwriting Write phases"; exit 1; }  # timeout: 5000
 ```
 
 **a. Identify highlights** — apply **Identify highlights** logic using classified changes from `$GATHER_FILE`: rank top 3–5 most significant changes (breaking > new public API > major UX > notable fixes), pull one concrete code example per highlight from diff. Write to `releases/$VERSION/HIGHLIGHTS.md`. Source of truth for demo, executive summary, release draft spotlights
@@ -63,9 +71,10 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r DEMO_OUT < "${TMPDIR:-/tmp}/release-prepare-demo-out-${CSID}" 2>/dev/null || DEMO_OUT=""  # reload (Check 41)
 python "$DEMO_OUT"  # timeout: 600000
 ```
-Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gate passes.
+<!-- policy-sibling: plugins/cc_oss/skills/release/SKILL.md §Generate release demo (demo retry bound) -->
+Fix and re-run until exits 0 with expected output — **max 3 attempts total**. Don't proceed to 4b until gate passes. Still failing after the 3rd attempt: stop retrying, invoke `AskUserQuestion` ("Demo still failing after 3 attempts. Exclude from release and continue, or abort?") — (a) **Exclude and continue**: mark demo excluded, drop the `demo.py` bullet from the Written list and the `jupytext` item from Next steps, note the exclusion + last failure reason in the output, and run 4b from `HIGHLIGHTS.md` alone · (b) **Abort**: stop, report the 3 failed attempts, write no further artifacts.
 
-**b. Executive summary** — apply **Draft executive summary** logic using `releases/$VERSION/HIGHLIGHTS.md` and demo output. Write to `releases/$VERSION/SUMMARY.md`.
+**b. Executive summary** — apply **Draft executive summary** logic using `releases/$VERSION/HIGHLIGHTS.md` and demo output (demo excluded → HIGHLIGHTS.md alone). Write to `releases/$VERSION/SUMMARY.md`.
 
 ### Phase 5: Write release draft
 
@@ -85,7 +94,7 @@ Render as the markdown bullet list below — NOT a box-drawing (`┌─┬─┐
 - `$CHANGELOG_FILE` — $VERSION entry stamped (Phase 2b); `releases/$VERSION/CHANGELOG.md` symlinks here
 - `releases/$VERSION/HIGHLIGHTS.md` — top 3–5 spotlights with code examples (Phase 3a)
 - `releases/$VERSION/MIGRATION.md` — migration guide (N breaking changes, or "No breaking changes") (Phase 3b)
-- `releases/$VERSION/demo.py` — story-telling jupytext notebook (Phase 4a)
+- `releases/$VERSION/demo.py` — story-telling jupytext notebook (Phase 4a; omit if demo excluded)
 - `releases/$VERSION/SUMMARY.md` — internal executive summary (Phase 4b)
 - `releases/$VERSION/DRAFT.md` — user-facing release notes, final assembly (Phase 5)
 
@@ -95,7 +104,7 @@ Render as the markdown bullet list below — NOT a box-drawing (`┌─┬─┐
 3. Commit, push, open PR
 4. On merge: publish the release — `gh release create $VERSION --notes-file releases/$VERSION/DRAFT.md` (user-run; DRAFT.md is source for release notes, not the release itself)
 5. Upload package to PyPI (or relevant registry) — separate step after GitHub release
-6. Convert demo: `jupytext --to notebook releases/$VERSION/demo.py`
+6. Convert demo: `jupytext --to notebook releases/$VERSION/demo.py` (skip if demo excluded)
 ```
 
 End terminal response (not written artifacts) with `## Confidence` block per CLAUDE.md output standards: `**Score**: 0.0–1.0 — [label]`; omit Refinements if 0 passes.

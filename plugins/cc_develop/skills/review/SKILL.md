@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope."
+description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope. TRIGGER when: user asks to review local Python files, a directory, or the current git diff/working-tree changes, with no GitHub PR number involved; phrases: \"review this\", \"review my changes\", \"code review this diff\", \"review src/foo.py\". SKIP when: input is a bare GitHub PR/issue number (use `/oss:review <PR#>`, requires oss plugin); user wants the Codex-native tiered `$code-review` workflow (codex-rig plugin, JSON artifact + specialist fan-out) — different toolchain; implementation work (use `/develop:fix` or `/develop:feature`); non-Python-only projects."
 argument-hint: "[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble] [--worktree] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 disable-model-invocation: true
@@ -136,7 +136,7 @@ IFS= read -r SEMBLE_ENABLED < "${TMPDIR:-/tmp}/dev-review-semble-enabled-${CSID}
 IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Worktree isolation
 
@@ -215,9 +215,16 @@ fi
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r REVIEW_ARGS < "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || REVIEW_ARGS="$ARGUMENTS"   # re-derive — bash state lost between Bash() calls
 NON_PY_WARNINGS=""
 git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
 git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
+if [ -z "$REVIEW_ARGS" ]; then
+    # diff-mode only — explicit tests/ path in REVIEW_ARGS is a deliberate user request, never warned
+    _PY_DIFF=$(git diff --name-only HEAD 2>/dev/null | grep '\.py$')
+    [ -n "$_PY_DIFF" ] && ! echo "$_PY_DIFF" | grep -qv '^tests/' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ diff contains only test files (tests/) — no src/ changes; review may be uninformative\n"
+fi
 ```
 
 If `$NON_PY_WARNINGS` non-empty: include in report header regardless of whether Python files exist.
@@ -254,9 +261,9 @@ Before spawning agents, classify diff:
 
 Skip optional agents by classification:
 
-- FIX → skip Agent 3 (perf-optimizer) and Agent 6 (solution-architect)
-- REFACTOR → skip Agent 6 (solution-architect)
-- CHORE (config/deps, no logic) → skip Agent 2 (qa-specialist), Agent 3 (perf-optimizer), and Agent 6 (solution-architect); keep Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 5 (linting-expert). No logic means no test-gap, perf, or architecture surface — mirrors DOCS/TESTS pre-classification saving.
+- FIX → skip Agent 3 (perf-optimizer) and Agent 6 (solution-architect), unless the diff changes an already-exported public function's signature (added/removed/renamed params, new flags) — then Agent 6 still runs per its own trigger (Agent 1's "API-consistency audit" subsection already checks the surface; Agent 6 adds design-quality/backward-compat judgment)
+- REFACTOR → skip Agent 6 (solution-architect), same exception — an already-exported public function's signature change still fires Agent 6
+- CHORE (config/deps, no logic) → skip Agent 2 (qa-specialist), Agent 3 (perf-optimizer), and Agent 6 (solution-architect); keep Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 5 (linting-expert). No logic means no test-gap, perf, or architecture surface — same saving pattern as `oss:review`'s DOCS_TYPING/TESTS_CI pre-classification (cc_oss/skills/review/SKILL.md:182,198).
 - FEATURE/MIXED → spawn all agents
 - **Small-diff challenger skip** (any classification) — unless `--challenge` was passed (`CHALLENGE_FORCED=true`): diff is single file, <50 lines changed, and introduces no new public API / exported symbol → also skip Agent 7 (challenger). Multi-file, ≥50 lines, or any new public API → challenger runs. `--no-challenge` (`CHALLENGE_ENABLED=false`) disables Agent 7 entirely regardless.
 
@@ -622,14 +629,14 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
 
 **Hook-enforced**: `hooks/enforce-review-header.js` (PreToolUse on `AskUserQuestion`) denies the follow-up gate's call while `$REPORT_DIR/review-report.md` is missing or empty. A denial reading `develop:review report gate` means Step 5 never produced the report — spawn the consolidator, print the header, then re-issue the question. The hook cannot see whether the print happened, only whether the report exists; the task above remains the check for the print itself.
 
-**Worktree exit** — if `WORKTREE_ENABLED=true`: the report already lives in the main tree (§Deliverable). Follow `worktree-isolation.md` §Exit — capture branch, call `ExitWorktree(action="keep")`, append the `Worktree` block to the report/output. Any Step 6 Codex edits stay on the worktree branch for you to merge. Exit **before** the follow-up gate so `/develop:fix`/`/develop:refactor` run in the main tree. Never auto-merge.
+**Worktree exit** — if `WORKTREE_ENABLED=true`: the report already lives in the main tree (§Deliverable). Follow `worktree-isolation.md` §Exit — capture branch, call `ExitWorktree(action="keep")`, append the `Worktree` block to the report/output. Any Step 6 Codex edits stay on the worktree branch for you to merge. Exit **before** the follow-up gate so the `/develop:fix`/`/develop:refactor` next-step suggestions below point at the main tree. Never auto-merge.
+
+**Suggested next steps** (plain text, not selectable — `/develop:fix` and `/develop:refactor` both carry `disable-model-invocation: true`, so `Skill()` dispatch is impossible for either): blocking issues found → `Run: /develop:fix` to reproduce with a test and apply a targeted fix; structural/quality issues found → `Run: /develop:refactor` for test-first improvements.
 
 **Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "What next?"
-- (a) label: `/develop:fix` — description: fix identified issues
-- (b) label: `/develop:refactor` — description: refactor to address structural findings
-- (c) label: `walk through findings` — description: go through each finding interactively
-- (d) label: `skip` — description: no action
+- (a) label: `walk through findings` — description: go through each finding interactively
+- (b) label: `skip` — description: no action
 
 **Confidence block** — emitted by consolidator agent in `$REPORT_DIR/review-report.md`, not at skill level (DMI skill: top-level model invocation disabled, so any skill-level instruction would be unreachable).
 

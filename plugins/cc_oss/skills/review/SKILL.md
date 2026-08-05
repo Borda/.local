@@ -113,6 +113,7 @@ Parse `$ARGUMENTS` flags first (applied directly — no subprocess) — this set
 `CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed (including `--keep "<items>"` and its quoted value), leading whitespace stripped, leading `#` stripped.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Extract --keep quoted value before unknown-flag scan in Step 1 (compaction-contract.md §keep: semantics)
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
@@ -120,11 +121,34 @@ if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
 fi
 # Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
 rm -f .temp/state/skill-contract.md  # timeout: 5000
+
+# Anchored token flags (resolve/SKILL.md:129 case-match idiom) — table above was never executed as bash before this fix
+case " $ARGUMENTS " in *" --reply "*) REPLY_MODE=true;; *) REPLY_MODE=false;; esac
+case " $ARGUMENTS " in *" --no-challenge "*) CHALLENGE_ENABLED=false;; *) CHALLENGE_ENABLED=true;; esac
+case " $ARGUMENTS " in *" --semble "*) SEMBLE_ENABLED=true;; *) SEMBLE_ENABLED=false;; esac
+case " $ARGUMENTS " in *" --worktree "*) WT_ENABLED=true;; *) WT_ENABLED=false;; esac
+
+CLEAN_ARGS=$(echo "$ARGUMENTS" | sed -E 's/--keep "[^"]*"//g; s/--(reply|no-challenge|no-codemap|codemap|semble|worktree)\b//g; s/[[:space:]]+/ /g')
+CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
+CLEAN_ARGS="${CLEAN_ARGS%"${CLEAN_ARGS##*[![:space:]]}"}"
+CLEAN_ARGS="${CLEAN_ARGS#\#}"
+
+# Consolidated flags sentinel (oss-review-mode-flags-* idiom) — CHALLENGE_ENABLED excluded: scope-detection.md:34-38 truncates this file, so it gets its own
+{
+    echo "REPLY_MODE=$REPLY_MODE"
+    echo "WT_ENABLED=$WT_ENABLED"
+    echo "SEMBLE_ENABLED=$SEMBLE_ENABLED"
+} > "${TMPDIR:-/tmp}/oss-review-flags-${CSID}"
+echo "$CHALLENGE_ENABLED" > "${TMPDIR:-/tmp}/oss-review-challenge-enabled-${CSID}"
+echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}"
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/oss-review-keep-items-${CSID}"  # timeout: 5000
 ```
 
 Then set direct-report fast-path mode (a review-report `.md` path passed instead of a PR number):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 DIRECT_PATH_MODE=false
 if [[ "$CLEAN_ARGS" == *.md ]]; then
     # reject plan files — shepherd must not draft replies from plan content
@@ -140,6 +164,10 @@ if [[ "$CLEAN_ARGS" == *.md ]]; then
         echo "⚠ $CLEAN_ARGS is a .md file but lacks review-report markers (## Summary | verdict: | APPROVED|NEEDS_WORK|REQUEST_CHANGES) — refusing direct-path fast-path; continuing with normal review path which expects a PR number."
     fi
 fi
+{
+    echo "DIRECT_PATH_MODE=$DIRECT_PATH_MODE"
+    [ "$DIRECT_PATH_MODE" = "true" ] && echo "REVIEW_FILE=$REVIEW_FILE"
+} >> "${TMPDIR:-/tmp}/oss-review-flags-${CSID}"
 ```
 
 **Content-type pre-classification (PR mode only)** — skip when `DIRECT_PATH_MODE=true`.
@@ -148,14 +176,19 @@ Classify PR from changed file patterns. Default `PR_TYPE=CODE`; override only wh
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+[ -f "${TMPDIR:-/tmp}/oss-review-flags-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-flags-${CSID}"
 PR_TYPE="CODE"
 DOCS_TYPING_MODE=false; TESTS_CI_MODE=false
 if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
     _CHANGED=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # timeout: 6000
-    _PY_LOGIC_COUNT=$(echo "$_CHANGED" | grep -E '\.py$' | grep -cvE '(test_|_test\.py|conftest\.py|\.pyi$)' 2>/dev/null || echo 0)
-    _ALL_COUNT=$(echo "$_CHANGED" | grep -c . 2>/dev/null || echo 0)
-    _DOC_COUNT=$(echo "$_CHANGED" | grep -cE '\.(md|rst|txt|ipynb)$' 2>/dev/null || echo 0)
-    _TEST_CI_COUNT=$(echo "$_CHANGED" | grep -cE '(test_|_test\.py|conftest\.py|\.ya?ml$|\.github/|tox\.ini|Makefile)' 2>/dev/null || echo 0)
+    # No `|| echo 0` on any of these: grep -c already prints 0, and exits 1 when it does — the
+    # fallback would append a second 0, so the capture becomes "0\n0" exactly when the count is 0,
+    # making every `-eq 0` test below error out precisely when it should be true.
+    _PY_LOGIC_COUNT=$(echo "$_CHANGED" | grep -E '\.py$' | grep -cvE '(test_|_test\.py|conftest\.py|\.pyi$)' 2>/dev/null)
+    _ALL_COUNT=$(echo "$_CHANGED" | grep -c . 2>/dev/null)
+    _DOC_COUNT=$(echo "$_CHANGED" | grep -cE '\.(md|rst|txt|ipynb)$' 2>/dev/null)
+    _TEST_CI_COUNT=$(echo "$_CHANGED" | grep -cE '(test_|_test\.py|conftest\.py|\.ya?ml$|\.github/|tox\.ini|Makefile)' 2>/dev/null)
 
     if [ "${_PY_LOGIC_COUNT:-0}" -eq 0 ] && [ "${_ALL_COUNT:-0}" -gt 0 ]; then
         if [ "$_DOC_COUNT" -ge "$_ALL_COUNT" ]; then
@@ -177,18 +210,14 @@ fi
 **Challenge skip** — challenger adds no value for non-logic PRs:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/oss-review-challenge-enabled-${CSID}" 2>/dev/null; [ "$CHALLENGE_ENABLED" = "false" ] || CHALLENGE_ENABLED=true
 # Reload PR_TYPE — fresh shell (Check 41)
 [ -f "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}"
 if [ "$PR_TYPE" = "DOCS_TYPING" ] || [ "$PR_TYPE" = "TESTS_CI" ]; then
     CHALLENGE_ENABLED=false
 fi
-```
-
-Persist PR tag for Step 2:
-```bash
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}"
-echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/oss-review-keep-items-${CSID}"  # timeout: 5000
+echo "$CHALLENGE_ENABLED" > "${TMPDIR:-/tmp}/oss-review-challenge-enabled-${CSID}"
 ```
 
 Agent lineup — `PR_TYPE != CODE` overrides scope-based rules in Step 1:
@@ -209,6 +238,10 @@ Flags, `CLEAN_ARGS`, and `DIRECT_PATH_MODE` were parsed in Step 0 — reuse thos
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
 _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_codemap.py"
+# parse codemap flags here — this block is their only use (resolve/SKILL.md:141-143 idiom)
+CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_FORCE_OFF=true
+[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_STRICT=true
 [ "$CODEMAP_FORCE_OFF" = "true" ] && _DETECT_FLAGS="--force-off" || _DETECT_FLAGS=""
 [ "$CODEMAP_STRICT" = "true" ] && _DETECT_FLAGS="$_DETECT_FLAGS --strict"
 python "$_DETECT_CODEMAP" --prefix review $_DETECT_FLAGS 2>&1  # timeout: 5000
@@ -230,7 +263,9 @@ If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at f
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)"  # timeout: 5000
-[ -f "$_OSS_SHARED/worktree-isolation.md" ] && cat "$_OSS_SHARED/worktree-isolation.md"  # timeout: 5000
+[ -f "${TMPDIR:-/tmp}/oss-review-flags-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-flags-${CSID}"
+[ "$WT_ENABLED" = "true" ] || WT_ENABLED=false
+[ "$WT_ENABLED" = "true" ] && [ -f "$_OSS_SHARED/worktree-isolation.md" ] && cat "$_OSS_SHARED/worktree-isolation.md"  # timeout: 5000
 ```
 
 `WT_ENABLED=true` → follow §Enter (base off HEAD, `EnterWorktree(path=…)`) before Step 1; the report is routed to the main tree (§review). Else skip — run in main tree.
@@ -246,6 +281,9 @@ echo "$FOUNDRY_SHARED" > "${TMPDIR:-/tmp}/review-foundry-shared-${CSID}"  # pers
 ```
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+[ -f "${TMPDIR:-/tmp}/oss-review-flags-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-flags-${CSID}"
 if [ "$DIRECT_PATH_MODE" = "false" ]; then
     if [ -z "$CLEAN_ARGS" ] || ! [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
         echo "Error: PR number required. Usage: /oss:review <PR number> [--reply] [--no-challenge]"
@@ -256,6 +294,13 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
     gh pr view $CLEAN_ARGS                                            # timeout: 6000
     gh pr checks $CLEAN_ARGS                                          # timeout: 15000
     gh pr view $CLEAN_ARGS --json reviews,labels,milestone            # timeout: 6000
+    # scope-detection.md + the SCOPE block are separate fresh shells — without these three sentinels
+    # they run on empty inputs (file-scope guard aborts the review; FIX→REFACTOR override never fires)
+    PR_LABELS=$(gh pr view $CLEAN_ARGS --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null)  # timeout: 6000
+    PR_TITLE=$(gh pr view $CLEAN_ARGS --json title --jq .title 2>/dev/null)                            # timeout: 6000
+    printf '%s\n' "$CHANGED_FILES" > "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}"
+    printf '%s\n' "$PR_LABELS" > "${TMPDIR:-/tmp}/oss-review-pr-labels-${CSID}"
+    printf '%s\n' "$PR_TITLE" > "${TMPDIR:-/tmp}/oss-review-pr-title-${CSID}"
 fi
 ```
 
@@ -282,7 +327,7 @@ Follow above and execute its bash blocks inside the `DIRECT_PATH_MODE = "false"`
 
 **Docs-only mode** (`DOCS_ONLY_MODE=true`): no `.py`. **foundry:doc-scribe (Agent 4) leads** — Agent 1 explicitly skipped (NOT for docs clause); linked-issue spawns also skip Agent 1. Spawn: Agent 4 + Agent 7 (if `CHALLENGE_ENABLED=true`) + Codex; skip Agents 1, 2, 3, 5, 6. Proceed directly to agent launch.
 
-**Docs + CI/CD mode** (`DOCS_CICD_MODE=true`): no Python. Spawn: `oss:cicd-steward` (Agent 8) + `foundry:doc-scribe` (Agent 4) + Agent 7 (if `CHALLENGE_ENABLED=true`); skip Agents 1, 2, 3, 5, 6. Proceed directly to agent launch.
+**Docs + CI/CD mode** (`DOCS_CICD_MODE=true`): no Python. Spawn: `oss:cicd-steward` (Agent 8) + `foundry:doc-scribe` (Agent 4) + Agent 7 (if `CHALLENGE_ENABLED=true`) + Codex; skip Agents 1, 2, 3, 5, 6. Proceed directly to agent launch.
 
 Before spawning agents (Python mode only — all three mode flags false), classify diff:
 
@@ -295,13 +340,19 @@ Assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) ca
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+# rehydrate Step-1 inputs (Check 41: fresh shell) — PY_FILES lived in scope-detection.md's shell
+CHANGED_FILES=$(cat "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}" 2>/dev/null)
+PY_FILES=$(echo "$CHANGED_FILES" | grep '\.py$' || true)
+IFS= read -r PR_LABELS < "${TMPDIR:-/tmp}/oss-review-pr-labels-${CSID}" 2>/dev/null || PR_LABELS=""
+IFS= read -r PR_TITLE < "${TMPDIR:-/tmp}/oss-review-pr-title-${CSID}" 2>/dev/null || PR_TITLE=""
 # for classification heuristic
-PY_FILE_COUNT=$(echo "$PY_FILES" | grep -c . 2>/dev/null || echo 0)
+PY_FILE_COUNT=$(echo "$PY_FILES" | grep -c . 2>/dev/null)
 # PY_LOC_DELTA = total churn, NOT net delta — pure renames produce >0 even with net 0; label/keyword override handles this
 PY_LOC_DELTA=$(gh pr diff $CLEAN_ARGS 2>/dev/null | grep -E '^[+-][^+-]' | grep -vE '^[+-]{3}' | wc -l | tr -d ' ')  # timeout: 6000
 
 # new public API surface: added lines in src/**/__init__.py
-NEW_API_LINES=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -c '^+[^+]' || echo 0)  # timeout: 6000
+NEW_API_LINES=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -c '^+[^+]')  # no `|| echo 0` — see PR_TYPE block # timeout: 6000
 
 # pure config/deps changes (no .py logic changes)
 NON_CONFIG_PY=$(echo "$PY_FILES" | grep -vE '(pyproject\.toml|setup\.cfg|setup\.py|requirements.*\.txt|conftest\.py)' || true)
@@ -391,7 +442,9 @@ Follow above. File absent → warn and continue without it.
 Check Codex availability:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=1 && echo "codex (openai-codex) available" || { CODEX_AVAILABLE=0; echo "⚠ codex (openai-codex) not found — skipping co-review"; } # timeout: 15000
+echo "$CODEX_AVAILABLE" > "${TMPDIR:-/tmp}/oss-review-codex-available-${CSID}"
 ```
 
 <!-- loads: agent-prompts.md -->
@@ -407,6 +460,8 @@ Template (loaded above). Substitute `<REVIEW_SKILL_DIR>` → `$REVIEW_SKILL_DIR`
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
+[ -n "$RUN_DIR" ] || { echo "! BLOCKED — run-dir sentinel empty; refusing to copy codemap context to a root-relative path"; exit 1; }
 IFS= read -r _PR_TAG < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || _PR_TAG="$CLEAN_ARGS"
 IFS= read -r codemap_available < "${TMPDIR:-/tmp}/oss-review-codemap-available-${_PR_TAG}-${CSID}" 2>/dev/null || codemap_available="false"
 IFS= read -r CODEMAP_CONTEXT_STAGE < "${TMPDIR:-/tmp}/oss-review-codemap-context-stage-${_PR_TAG}-${CSID}" 2>/dev/null || CODEMAP_CONTEXT_STAGE=""
@@ -425,7 +480,7 @@ touch "$REVIEW_CHECKPOINT"
 echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}"
 ```
 
-Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents. All `Agent()` calls issue in a SINGLE response turn — substitute `$RUN_DIR` (literal) and issue numbers before spawning. Agent lineup: `codex:codex-rescue` (if `CODEX_AVAILABLE=1`) · per-issue `foundry:sw-engineer` (skip if `DOCS_CICD_MODE=true`) · Agents 1–8 per scope/mode rules above.
+Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents. All `Agent()` calls issue in a SINGLE response turn — substitute `$RUN_DIR` (literal) and issue numbers before spawning. Agent lineup: `codex:codex-rescue` (if `CODEX_AVAILABLE=1` **and** DOCS_TYPING_MODE/TESTS_CI_MODE both false) · per-issue `foundry:sw-engineer` (skip if `DOCS_CICD_MODE=true`) · Agents 1–8 per scope/mode rules above.
 
 Poll for expected output files per `$MONITOR_INTERVAL` / `$HARD_CUTOFF` until all present or each hits hard cutoff.
 
@@ -434,11 +489,17 @@ Write expected paths to file (Bash arrays don't persist across tool invocations)
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # restore — each SKILL.md bash block runs in fresh shell
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
+# unbound RUN_DIR makes EXPECTED_FILE "/.expected-files" — unwritable, so the §6 health monitor
+# would poll an empty list and never detect a stall
+[ -n "$RUN_DIR" ] || { echo "! BLOCKED — run-dir sentinel empty; agent health monitoring cannot be armed"; exit 1; }
 IFS= read -r _PR_TAG < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || _PR_TAG="unknown"
 _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${_PR_TAG}-${CSID}"
 _REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${_PR_TAG}-${CSID}"
 [ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
 [ -f "$_REVIEW_SCOPE_FILE" ] && . "$_REVIEW_SCOPE_FILE"
+IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/oss-review-challenge-enabled-${CSID}" 2>/dev/null; [ "$CHALLENGE_ENABLED" = "false" ] || CHALLENGE_ENABLED=true
+IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/oss-review-codex-available-${CSID}" 2>/dev/null || CODEX_AVAILABLE=0
 
 POLL_START=$(date +%s)
 EXPECTED_FILE="$RUN_DIR/.expected-files"
@@ -466,11 +527,13 @@ fi
 
 Later poll blocks read paths back via `while read -r path; do [ -f "$path" ] || PENDING=1; done <"$EXPECTED_FILE"` — no in-memory array required.
 
-Every `$MONITOR_INTERVAL` seconds, in the poll bash block, rehydrate the checkpoint path first: `IFS= read -r REVIEW_CHECKPOINT < "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}" 2>/dev/null || REVIEW_CHECKPOINT=""` then `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
+Every `$MONITOR_INTERVAL` seconds, in the poll bash block, rehydrate both the run dir and the checkpoint path first (fresh shell — an unbound `$RUN_DIR` makes the `find` scan `/`): `IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""` and `IFS= read -r REVIEW_CHECKPOINT < "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}" 2>/dev/null || REVIEW_CHECKPOINT=""` then `find "$RUN_DIR" -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
 
 After all outputs collected (or timed out):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
 ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_DIR — check that $RUN_DIR was expanded correctly in spawn prompts"
 ```
 
@@ -515,11 +578,13 @@ PR_BASE=$(git merge-base HEAD "origin/${TRUNK:-main}" 2>/dev/null || echo "origi
 > **Scope disclosure**: check searches public GitHub code globally. Results may include unrelated projects using same symbol names — treat as signal, not proof. Rate-limited responses (HTTP 429, empty results) may indicate limitation, not absence of usage.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 # rate-limit guard: on HTTP 429, retry once after 10s; if still limited, log and continue
 CHANGED_EXPORTS=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep "^[-+]" | grep -v "^[-+][-+]" | grep -oP '\w+' | sort -u) # timeout: 6000
 for export in $CHANGED_EXPORTS; do
     echo "=== $export ==="
-    gh api "search/code" --field "q=$export language:python" --jq '.items[:5] | .[].repository.full_name' 2>/dev/null # timeout: 30000
+    gh api "search/code" --method GET --field "q=$export language:python" --jq '.items[:5] | .[].repository.full_name' 2>/dev/null # timeout: 30000
 done
 
 gh pr diff $CLEAN_ARGS 2>/dev/null | grep -A2 "deprecated" # timeout: 6000
@@ -529,6 +594,7 @@ gh pr diff $CLEAN_ARGS 2>/dev/null | grep -A2 "deprecated" # timeout: 6000
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 OSS_SIGNALS="${TMPDIR:-/tmp}/oss-review-signals-${CLEAN_ARGS}-${CSID}.json"
 LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")  # timeout: 6000
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_oss_pr_signals.py" --clean-args "$CLEAN_ARGS" --latest-tag "$LATEST_TAG" --output-file "$OSS_SIGNALS"  # timeout: 30000
@@ -564,6 +630,7 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 Select consolidator agent by `PR_TYPE` (lighter model for non-logic PRs):
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}"
 [ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
 case "${PR_TYPE:-CODE}" in

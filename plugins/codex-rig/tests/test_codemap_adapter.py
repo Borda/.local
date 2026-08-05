@@ -247,6 +247,21 @@ def test_probe_incompatible_when_doctor_exits_nonzero(monkeypatch: pytest.Monkey
     result = adapter.probe_codemap()
 
     assert result.status == adapter.STATUS_INCOMPATIBLE
+    assert result.launcher is None
+
+
+@pytest.mark.parametrize("extension", [".BAT", ".Cmd", ".EXE", ".com"])
+def test_windows_configured_launchers_are_accepted_case_insensitively(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extension: str
+) -> None:
+    """Accept Windows executable filename conventions without requiring a POSIX execute bit."""
+    adapter = load_adapter()
+    launcher = tmp_path / f"codemap-py{extension}"
+    launcher.write_text("launcher", encoding="utf-8")
+
+    with monkeypatch.context() as context:
+        context.setattr(adapter.os, "name", "nt")
+        assert adapter._configured_launcher_is_valid(launcher)
 
 
 def test_gather_context_absent_never_runs_queries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

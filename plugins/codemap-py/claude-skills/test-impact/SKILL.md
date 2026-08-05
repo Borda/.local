@@ -2,7 +2,7 @@
 name: test-impact
 description: "Identify which tests need rerunning after a code change — traces static call graph (function-level) or import graph (module-level) to find affected test files, then emits a ready-to-run pytest command. TRIGGER when: user asks which tests are affected by a change; phrases: \"which tests are affected\", \"what tests cover this\", \"test impact of\", \"what tests to rerun\"."
 argument-hint: "<module::symbol | module> [--no-mocks]"
-allowed-tools: Bash, Write, Skill, AskUserQuestion
+allowed-tools: Bash, Write, AskUserQuestion
 model: haiku
 effort: low
 ---
@@ -18,7 +18,7 @@ Two input modes:
 
 `not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers — same blind spot as `fn-blast`. Surface caveat, log gap.
 
-NOT for: finding all callers of a function (use `/codemap-py:query-code fn-blast <module::symbol>`); querying module deps or blast radius (use `/codemap-py:query-code`); running/executing tests (identified here, not executed).
+NOT for: finding all callers of a function (use `/codemap-py:query-code fn-rdeps <module::symbol> --exclude-tests`); querying module deps or blast radius (use `/codemap-py:query-code`); running/executing tests (identified here, not executed).
 
 </objective>
 
@@ -46,7 +46,7 @@ SQ=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/locate_scan_query.py
 [ -z "$SQ" ] && { echo "scan-query not found — install codemap-py plugin first"; exit 1; }
 echo "$SQ" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq-${CSID}"
 
-[ ! -f "$INDEX" ] && echo "No index found — will build via codemap-py:scan-codebase"
+[ ! -f "$INDEX" ] && echo "No index found — will build via the scan-index binary"
 ```
 
 Auto-build opt-out via `SCAN_NO_AUTOBUILD=1` (index used exactly as-is — no refresh, no full build); build wall-time echoed when it runs, keeps build cost separable from query cost.
@@ -72,7 +72,7 @@ else
 fi
 ```
 
-After Skill() or incremental refresh, re-verify index still present:
+After the scan-index build or incremental refresh, re-verify index still present:
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")

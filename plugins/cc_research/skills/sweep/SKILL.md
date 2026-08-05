@@ -48,8 +48,9 @@ Triggered by `sweep "goal" [--flags]`. Non-interactive end-to-end: auto-plan →
 
 **Shared path resolution** (always runs before S1):
 
-`_RESEARCH_SHARED` already resolved above (Agent Resolution block); reuse it here. Additionally resolve `_RESEARCH_SKILLS`:
+`_RESEARCH_SHARED` does NOT survive the Agent Resolution block — each Bash call is a fresh shell — so re-resolve it here alongside `_RESEARCH_SKILLS`, and again in every later block that loads a skill file:
 ```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 _RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
 [ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills"
 ```
@@ -86,6 +87,11 @@ Extract flags:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# Extract --out unquoted path token (mirrors --keep idiom at :107-111; --out value unquoted, not quoted)
+OUT=""
+if [[ "$ARGUMENTS" =~ --out[[:space:]]+([^[:space:]]+) ]]; then
+    OUT="${BASH_REMATCH[1]}"
+fi
 # POSIX path-traversal check (avoids bash-specific [[ ]])
 case "$OUT" in
   *..*)
@@ -151,7 +157,7 @@ cat "$_RESEARCH_SKILLS/plan/SKILL.md"
 - **scope_files**: derive from goal string — extract domain-relevant file patterns (e.g. goal mentioning "neural network" → `["*.py", "models/**", "train*.py"]`; goal mentioning "config" or "YAML" → `["*.yaml", "*.yml", "*.json"]`). Default `["**/*.py"]` only when goal gives no domain signals. **Multiple keyword matches**: merge (union) all matched patterns. Always include derived `scope_files` in `sweep: auto-config →` printout — users can't correct silently wrong scope without seeing it.
 - **agent_strategy**: set to value accepted by judge C9 (`auto` / `perf` / `code` / `ml` / `arch`). Map flags to strategy matching **primary ideation agent** run will dispatch (per run/SKILL.md constants table): `--researcher` (with or without `--architect`) → `"ml"` (`research:scientist` is primary ideation agent for paper-rooted hypotheses); `--architect` alone (no `--researcher`) → `"arch"` (`foundry:solution-architect`); `--team` alone → `"auto"` (team mode generates per-axis hypotheses); no flags → `"auto"`. Never write `"dual-agent: ..."`, `"team"`, `"researcher"`, or `"default"` — those values fail C9. Record flag combination and dual-agent dispatch intent separately in `## Notes` (e.g. `dispatch: dual-agent (researcher primary + architect feasibility filter)`) so orchestration intent preserved without overriding validated `agent_strategy` field.
 - **P-P3 (write program.md)**: Write to `<--out path>` if provided; else `program.md` at project root.
-  - Output path exists: enforce P-P3 AskUserQuestion overwrite gate — sweep does NOT bypass it. Gate's pipeline-mode exemption applies to non-interactive CI pipelines, not user-initiated sweeps. Invoke `AskUserQuestion`: (a) **Overwrite** — proceed; (b) **Abort** — stop. On Abort: print follow-up hint and stop.
+  - Output path exists: P-P3's own AskUserQuestion overwrite gate is bypassed for sweep — already resolved by the S1 guard (see Step S1) before S2 began. Write program.md directly; do not re-prompt.
 
 Print on completion:
 
@@ -177,13 +183,22 @@ mkdir -p .temp/state  # timeout: 5000
 
 ### Step S3: Judge + refinement loop
 
-> `$_RESEARCH_SKILLS` resolved in S2 — in scope throughout S3–S5.
+Load judge mode step definitions — `$_RESEARCH_SKILLS` from S2 is gone (fresh shell per Bash call), so re-resolve it here rather than dereferencing it bare:
+
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
+[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills"
+cat "$_RESEARCH_SKILLS/judge/SKILL.md"
+```
+
+Load prints nothing / "No such file or directory" → resolution failed; stop with `! sweep: cannot load judge/SKILL.md — research plugin path unresolved.` Never improvise J1–J6: the judge gate is the only check between an auto-generated program and the S5 campaign.
 
 Initialize `REFINE_ITER = 0`, `MAX_REFINE = 3`, `NO_FIXES_ITER = 0`.
 
 Repeat up to `MAX_REFINE` times:
 
-1. Increment `REFINE_ITER`. Run judge mode (J1–J6 from `$_RESEARCH_SKILLS/judge/SKILL.md`) against program file.
+1. Increment `REFINE_ITER`. Run judge mode (J1–J6 from the `judge/SKILL.md` loaded above) against program file.
 
    - Pass `--skip-validation` if user provided it; else include validation (J4).
    - Capture J6 verdict and judge report path (`JUDGE_REPORT`).
@@ -211,14 +226,16 @@ Repeat up to `MAX_REFINE` times:
            echo "- skill: research:sweep · phase: judge+refinement loop (S3, iteration <REFINE_ITER>/<MAX_REFINE> — fixes applied)"
            echo "- run-dir: n/a"
            echo "- preserve: program-path=${_OUT}, refine-iter=<REFINE_ITER>, no-fixes-iter=<NO_FIXES_ITER>, last-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>"
-           echo "- next: re-judge program.md (it carries the fixes applied through iteration <REFINE_ITER>) → continue loop; do NOT reset REFINE_ITER. Exit on APPROVED/BLOCKED or REFINE_ITER==MAX_REFINE."
+           echo "- next: re-judge ${_OUT} (it carries the fixes applied through iteration <REFINE_ITER>) → continue loop; do NOT reset REFINE_ITER. Exit on APPROVED/BLOCKED or REFINE_ITER==MAX_REFINE."
        } > .temp/state/skill-contract.md
        ```
 
      - Continue next iteration (loop item 1 will re-judge).
    - `REFINE_ITER == MAX_REFINE` — exit loop, outcome `unresolved`.
 
-> **Safety net**: loop edits modify `program.md` in place; P-P3 overwrite gate ensures user-authorized overwrite before S2 writes. Recover prior file from git if needed.
+> **Safety net**: loop edits modify `<program path>` in place; the S1 overwrite gate (P-P3's own gate is bypassed for sweep, see S2 P-P3 note) already secured user authorization before S2 wrote the file. Recover prior file from git if needed.
+
+Substitute literal `VERDICT` and `JUDGE_REPORT` values tracked by the loop (fill-in template, same convention as the mid-loop block above — counters and verdict are prose loop state, never shell vars; `${_OUT}`/`${_KEEP_APPEND}` stay shell-expanded):
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -231,10 +248,12 @@ mkdir -p .temp/state  # timeout: 5000
     echo "## Active Skill Contract"
     echo "- skill: research:sweep · phase: run-gate (after S3 judge+refinement)"
     echo "- run-dir: n/a"
-    echo "- preserve: program-path=${_OUT}, judge-verdict=${VERDICT:-unknown}, judge-report=${JUDGE_REPORT:-n/a}${_KEEP_APPEND}"
+    echo "- preserve: program-path=${_OUT}, judge-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>${_KEEP_APPEND}"
     echo "- next: S4 gate on verdict → S5 run program if approved"
 } > .temp/state/skill-contract.md  # timeout: 5000
 ```
+
+> A `<VERDICT>` or `<JUDGE_REPORT>` placeholder surviving verbatim into the written contract means substitution was skipped — treat the resumed verdict as unsettled and re-judge; never read it as `approved`.
 
 ### Step S4: Gate on loop outcome
 
@@ -256,7 +275,18 @@ Fix the issues above in <program path>, then:
 
 ### Step S5: Run
 
-Run Default Mode (R1–R7 from `$_RESEARCH_SKILLS/run/SKILL.md`) passing program file from S2 as the first positional argument, plus all flags.
+Load run mode step definitions — re-resolve rather than dereferencing the S2/S3 variable, which died with its shell:
+
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
+[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills"
+cat "$_RESEARCH_SKILLS/run/SKILL.md"
+```
+
+Load fails → stop with `! sweep: cannot load run/SKILL.md — research plugin path unresolved.` Never improvise R1–R7: S5 executes and commits against the user's repo.
+
+Run Default Mode (R1–R7 from the `run/SKILL.md` loaded above) passing program file from S2 as the first positional argument, plus all flags.
 
 > Forward same flags accepted at Step S1 (`--colab[=HW]`, `--compute`, `--team`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis <path>`).
 
@@ -278,7 +308,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — sweep pipeline complet
 
 <notes>
 
-- **Overwrite gate** (S2): output path exists → sweep enforces P-P3 AskUserQuestion gate — no silent `.bak` rename + overwrite. Pipeline exemption applies to non-interactive CI pipelines only, not user-initiated sweeps. Use git to recover prior file if needed.
+- **Overwrite gate** (S1): output path exists → resolved once via S1's AskUserQuestion — P-P3's own overwrite gate is bypassed for sweep to avoid double-prompting; no silent `.bak` rename + overwrite. Pipeline exemption applies to non-interactive CI pipelines only, not user-initiated sweeps. Use git to recover prior file if needed.
 - **`--journal` and `--hypothesis` forwarded when present**: both flags pass through to S5 verbatim; sweep never strips them. `--journal` requires `--researcher` or `--architect` (validated at run R2). `--hypothesis <path>` preloads hypothesis queue.
 - **`--team` and interactivity**: sweep non-interactive except when `--team` active. Team mode Phase B presents user confirmation gate before Phase C — sweep pauses and waits. Expected; sweep cannot bypass Phase B gate. In automated/CI contexts where interaction impossible, avoid `--team` flag or pre-confirm via gate prompt manually; no `--auto` flag to suppress Phase B — by design (Phase B reviews potentially risky parallel agent decisions).
 - **`--skip-validation`**: passes through to judge step (S3). Useful for cross-machine workflows where metric/guard commands run only on target machine.

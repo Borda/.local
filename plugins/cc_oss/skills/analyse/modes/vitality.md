@@ -182,8 +182,17 @@ IFS= read -r QUICK_MODE < "${TMPDIR:-/tmp}/analyse-quick-mode-${CSID}" 2>/dev/nu
 **Otherwise**:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
+REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
+REWORK_ITER=0
+REWORK_MAX=2
+find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
+echo "$REVIEW_DIR" > "${TMPDIR:-/tmp}/vitality-review-dir-${CSID}"
+echo "$REWORK_ITER" > "${TMPDIR:-/tmp}/vitality-rework-iter-${CSID}"
+echo "$REWORK_MAX" > "${TMPDIR:-/tmp}/vitality-rework-max-${CSID}"
+echo "$CODEX_AVAILABLE" > "${TMPDIR:-/tmp}/vitality-codex-available-${CSID}"
 cat "$_OSS_ANALYSE/modes/vitality-codex-review.md"  # timeout: 5000
 ```
 
@@ -257,7 +266,7 @@ For ⚪ axes: show `--` in Score/Status columns; append below closing `---`:
 ```text
 ⚠ Axis {N} ({name}, wt {X}%) unavailable — score normalized over {M}/9 axes
 ```
-If Axis 3 specifically ⚪: `⚠ Axis 3 (contributor health, wt 14%) unavailable — rerun in 5–10 min for full score`.
+If Axis 3 specifically ⚪: `⚠ Axis 3 (contributor health, wt 10%) unavailable — rerun in 5–10 min for full score`.
 
 **Post-table validation (mandatory)**: after printing the scorecard, verify: (a) exactly 9 data rows appear with axis numbers 1–9, (b) no axis number repeated. Any duplicate or omission = immediately reprint the corrected full table before any other output. Never omit an axis row — even when data missing, show `--` in Score/Status.
 

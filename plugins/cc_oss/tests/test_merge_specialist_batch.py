@@ -36,7 +36,7 @@ def _patch_git(
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
         recorded.append(list(cmd))
         if cmd[1] == "cherry-pick":
-            sha = cmd[2]
+            sha = cmd[3]  # [git, "cherry-pick", "--end-of-options", sha]
             return _FakeCompleted(returncode=rc_by_sha.get(sha, 0))
         if cmd[1] == "diff":
             return _FakeCompleted(stdout=conflicted_files_out)
@@ -52,9 +52,9 @@ class TestParsePlan:
 
     def test_preserves_order(self) -> None:
         """Multiple entries parse in the exact input order."""
-        raw = '[{"item_id": "3", "sha": "aaa"}, {"item_id": "6", "sha": "bbb"}]'
+        raw = '[{"item_id": "3", "sha": "aaa1111"}, {"item_id": "6", "sha": "bbb2222"}]'
         result = msb.parse_plan(raw)
-        assert result == [msb.PlanEntry(item_id="3", sha="aaa"), msb.PlanEntry(item_id="6", sha="bbb")]
+        assert result == [msb.PlanEntry(item_id="3", sha="aaa1111"), msb.PlanEntry(item_id="6", sha="bbb2222")]
 
     def test_empty_plan(self) -> None:
         """Empty JSON array parses to an empty list."""
@@ -62,12 +62,21 @@ class TestParsePlan:
 
     def test_optional_group_and_module_fields(self) -> None:
         """group/module are read when present and default to empty strings when absent."""
-        raw = '[{"item_id": "1", "sha": "aaa", "group": "sw", "module": "pkg.core"}, {"item_id": "2", "sha": "bbb"}]'
+        raw = (
+            '[{"item_id": "1", "sha": "aaa1111", "group": "sw", "module": "pkg.core"},'
+            ' {"item_id": "2", "sha": "bbb2222"}]'
+        )
         result = msb.parse_plan(raw)
         assert result == [
-            msb.PlanEntry(item_id="1", sha="aaa", group="sw", module="pkg.core"),
-            msb.PlanEntry(item_id="2", sha="bbb", group="", module=""),
+            msb.PlanEntry(item_id="1", sha="aaa1111", group="sw", module="pkg.core"),
+            msb.PlanEntry(item_id="2", sha="bbb2222", group="", module=""),
         ]
+
+    def test_invalid_sha_hard_fails(self) -> None:
+        """A sha failing _SHA_RE (e.g. leading '-') raises, never silently skips."""
+        raw = '[{"item_id": "1", "sha": "--strategy=evil"}]'
+        with pytest.raises(ValueError, match="invalid sha"):
+            msb.parse_plan(raw)
 
 
 class TestOrderPlan:
@@ -144,7 +153,7 @@ class TestRunPlanConflict:
         assert result["applied"] == ["1"]
         assert result["conflict"] == {"item_id": "2", "sha": "bbb", "files": ["src/foo.py"]}
         assert result["remaining"] == ["3"]
-        pick_shas = [c[2] for c in recorded if c[1] == "cherry-pick"]
+        pick_shas = [c[3] for c in recorded if c[1] == "cherry-pick"]
         assert pick_shas == ["aaa", "bbb"]
 
     def test_conflict_no_reset_issued_for_conflicted_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -165,7 +174,7 @@ class TestMainCli:
         """All entries apply cleanly → exit 0, JSON result printed to stdout."""
         _patch_git(monkeypatch)
         plan_file = tmp_path / "plan.json"
-        plan_file.write_text('[{"item_id": "1", "sha": "aaa"}]', encoding="utf-8")
+        plan_file.write_text('[{"item_id": "1", "sha": "aaa1111"}]', encoding="utf-8")
         rc = msb.main(["--plan", str(plan_file), "--commit-mode", "each"])
         assert rc == 0
         assert '"applied": ["1"]' in capsys.readouterr().out
@@ -174,12 +183,24 @@ class TestMainCli:
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """A conflicting entry → exit 1, conflict details printed to stdout."""
-        _patch_git(monkeypatch, cherry_pick_rc_by_sha={"aaa": 1})
+        _patch_git(monkeypatch, cherry_pick_rc_by_sha={"aaa1111": 1})
         plan_file = tmp_path / "plan.json"
-        plan_file.write_text('[{"item_id": "1", "sha": "aaa"}]', encoding="utf-8")
+        plan_file.write_text('[{"item_id": "1", "sha": "aaa1111"}]', encoding="utf-8")
         rc = msb.main(["--plan", str(plan_file), "--commit-mode", "each"])
         assert rc == 1
         assert '"conflict"' in capsys.readouterr().out
+
+    def test_invalid_plan_sha_exits_2(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """An invalid sha in the plan file → exit 2, JSON error printed, no cherry-pick attempted."""
+        recorded = _patch_git(monkeypatch)
+        plan_file = tmp_path / "plan.json"
+        plan_file.write_text('[{"item_id": "1", "sha": "-evil"}]', encoding="utf-8")
+        rc = msb.main(["--plan", str(plan_file), "--commit-mode", "each"])
+        assert rc == 2
+        assert '"error"' in capsys.readouterr().out
+        assert recorded == []
 
     def test_centrality_file_reorders_before_apply(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -188,16 +209,16 @@ class TestMainCli:
         recorded = _patch_git(monkeypatch)
         plan_file = tmp_path / "plan.json"
         plan_file.write_text(
-            '[{"item_id": "1", "sha": "aaa", "group": "docs", "module": "pkg.readme"},'
-            ' {"item_id": "2", "sha": "bbb", "group": "sw", "module": "pkg.core"}]',
+            '[{"item_id": "1", "sha": "aaa1111", "group": "docs", "module": "pkg.readme"},'
+            ' {"item_id": "2", "sha": "bbb2222", "group": "sw", "module": "pkg.core"}]',
             encoding="utf-8",
         )
         cent_file = tmp_path / "cent.json"
         cent_file.write_text('{"pkg.core": 9.0, "pkg.readme": 1.0}', encoding="utf-8")
         rc = msb.main(["--plan", str(plan_file), "--commit-mode", "each", "--centrality-file", str(cent_file)])
         assert rc == 0
-        pick_shas = [c[2] for c in recorded if c[1] == "cherry-pick"]
-        assert pick_shas == ["bbb", "aaa"]
+        pick_shas = [c[3] for c in recorded if c[1] == "cherry-pick"]
+        assert pick_shas == ["bbb2222", "aaa1111"]
 
     def test_missing_required_args_exits_2(self) -> None:
         """Neither --plan nor --commit-mode supplied → argparse exits 2."""

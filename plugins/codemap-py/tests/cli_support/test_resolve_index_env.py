@@ -10,11 +10,13 @@ Tests cover:
 * ``--check-exists`` with missing INDEX file → exit 1, temp files still written
 * Resolver failure (empty output) → exit 1, temp files written (empty)
 * Unknown flag → exit 2 with stderr message
+* Newline contract — written files end with the delimiter ``IFS= read -r`` needs
 """
 
 from __future__ import annotations
 
 import importlib.util
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -30,6 +32,10 @@ _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
 format_eval_line = _mod.format_eval_line
 parse_resolver_output = _mod.parse_resolver_output
 main = _mod.main
+_own_plugin_root = _mod._own_plugin_root
+_validate_plugin_root = _mod._validate_plugin_root
+_validate_output_prefix = _mod._validate_output_prefix
+_write_sentinel_file = _mod._write_sentinel_file
 
 
 @pytest.fixture(autouse=True)
@@ -44,8 +50,8 @@ def _no_session_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
 
 
-def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str:
-    """Read a resolve temp file by exact path.
+def _resolve_file_path(tmp_path: Path, key: str, prefix: str = "codemap") -> Path:
+    """Build the exact temp-file path ``main()`` writes for *key*.
 
     Args:
         tmp_path: Directory where temp files are written.
@@ -53,13 +59,32 @@ def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str
         prefix: File name prefix (default ``"codemap"``).
 
     Returns:
-        Contents of the temp file.
+        Path of the temp file for *key*.
     """
     # tests monkeypatch CSID/CLAUDE_CODE_SESSION_ID empty (see conftest below) so
     # _resolve_csid() always degrades to "shared" here.
-    path = tmp_path / f"{prefix}-resolve-{key}-shared"
+    return tmp_path / f"{prefix}-resolve-{key}-shared"
+
+
+def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str:
+    """Read a resolve temp file by exact path, dropping its trailing newline.
+
+    Sentinel files are newline-terminated so the shell's ``IFS= read -r`` succeeds
+    instead of falling through to its ``||`` default; ``read`` consumes that
+    delimiter, so these assertions compare against the value the shell would see.
+    ``TestSentinelNewlineContract`` locks the raw byte contract.
+
+    Args:
+        tmp_path: Directory where temp files are written.
+        key: File key — ``"proj"`` or ``"index"``.
+        prefix: File name prefix (default ``"codemap"``).
+
+    Returns:
+        Contents of the temp file without its trailing newline.
+    """
+    path = _resolve_file_path(tmp_path, key, prefix)
     assert path.exists(), f"Expected temp file not found: {path}"
-    return path.read_text()
+    return path.read_text().removesuffix("\n")
 
 
 def _make_resolver_mock(
@@ -168,6 +193,18 @@ class TestMainHappyPath:
         assert _read_resolve_file(tmp_path, "index") == tricky_index
 
 
+class TestSentinelNewlineContract:
+    """Sentinel files are newline-terminated — the shell ``IFS= read -r`` contract."""
+
+    def test_written_files_are_newline_terminated(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Raw bytes end with the delimiter, so readers never hit their ``|| VAR=`` fallback."""
+        monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock("demo-proj", "/tmp/demo.json"))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        assert main([]) == 0
+        assert _resolve_file_path(tmp_path, "proj").read_bytes() == b"demo-proj\n"
+        assert _resolve_file_path(tmp_path, "index").read_bytes() == b"/tmp/demo.json\n"
+
+
 class TestCheckExists:
     """``--check-exists`` — gate exit code on INDEX file presence."""
 
@@ -233,3 +270,105 @@ class TestUnknownFlag:
         assert rc == 2
         assert "unknown flag" in captured.err
         assert "--no-such-flag" in captured.err
+
+
+class TestValidatePluginRoot:
+    """``_validate_plugin_root()`` — containment via resolved-path identity, not a name regex.
+
+    Regression coverage for the residual-critical finding that the prior regex hardcoded
+    the pre-rename plugin name ``codemap`` (rejecting the real installed/source root after
+    the ``codemap-py`` rename) while also accepting attacker-chosen directories that merely
+    matched the pattern's shape (no traversal normalization).
+    """
+
+    def test_own_plugin_root_is_accepted(self) -> None:
+        """The directory this script itself runs from always validates."""
+        own = str(_own_plugin_root())
+        assert _validate_plugin_root(own) == own
+
+    def test_unrelated_absolute_path_is_rejected(self) -> None:
+        """A directory that merely matches the old shape (``.../plugins/codemap``) is rejected."""
+        with pytest.raises(ValueError, match="not a safe path"):
+            _validate_plugin_root("/tmp/attacker/plugins/codemap")
+
+    def test_traversal_out_of_own_root_is_rejected(self) -> None:
+        """Appending ``../`` segments to the real root no longer bypasses containment."""
+        own = _own_plugin_root()
+        with pytest.raises(ValueError, match="not a safe path"):
+            _validate_plugin_root(str(own) + "/../../../../tmp/evil")
+
+    def test_relative_path_is_rejected(self) -> None:
+        """A relative value is rejected before any resolution is attempted."""
+        with pytest.raises(ValueError, match="not a safe path"):
+            _validate_plugin_root("plugins/codemap-py")
+
+
+class TestValidateOutputPrefix:
+    """``_validate_output_prefix()`` — dotted basenames accepted, ``.``/``..`` rejected.
+
+    Regression coverage for the residual-critical finding that the prior
+    ``[a-zA-Z0-9_-]+`` pattern rejected any project directory name containing a dot
+    (including this repository's own ``Borda.local``), a hard break in the documented
+    ``codemap-$(basename ...)`` recipe.
+    """
+
+    def test_dotted_basename_prefix_is_accepted(self) -> None:
+        """A prefix built from a dotted project basename validates."""
+        assert _validate_output_prefix("codemap-Borda.local") == "codemap-Borda.local"
+
+    @pytest.mark.parametrize("bad", [".", "..", "../escape", ""], ids=["dot", "dotdot", "traversal", "empty"])
+    def test_dot_forms_and_traversal_are_rejected(self, bad: str) -> None:
+        """Bare ``.``/``..``, a traversal segment, and an empty value all raise."""
+        with pytest.raises(ValueError, match="output-prefix"):
+            _validate_output_prefix(bad)
+
+
+class TestSentinelSymlinkSafety:
+    """``_write_sentinel_file()`` — refuses to follow a pre-planted symlink.
+
+    Regression coverage for the residual-critical finding that ``Path.write_text`` (the
+    prior implementation) follows an existing symlink at the predictable sentinel path,
+    letting a co-located attacker overwrite an arbitrary file the invoking user can write.
+    """
+
+    def test_preplanted_symlink_is_not_followed(self, tmp_path: Path) -> None:
+        """Writing to a path that is a symlink raises instead of truncating the target."""
+        victim = tmp_path / "victim.txt"
+        victim.write_text("IMPORTANT ORIGINAL CONTENT\n", encoding="utf-8")
+        link = tmp_path / "codemap-resolve-proj-shared"
+        link.symlink_to(victim)
+
+        with pytest.raises(OSError):
+            _write_sentinel_file(link, "PWNED\n")
+
+        assert victim.read_text(encoding="utf-8") == "IMPORTANT ORIGINAL CONTENT\n"
+
+    def test_written_file_is_mode_0600(self, tmp_path: Path) -> None:
+        """A freshly written sentinel is owner-only readable/writable regardless of umask."""
+        target = tmp_path / "codemap-resolve-index-shared"
+        _write_sentinel_file(target, "value\n")
+        assert (target.stat().st_mode & 0o777) == 0o600
+
+
+class TestStaleSentinelClearedOnValidationFailure:
+    """A validation failure after a successful run must not leave the prior PROJ/INDEX readable.
+
+    Regression coverage for the residual-critical finding that an exit-3 (unsafe
+    ``CLAUDE_PLUGIN_ROOT``) run used to skip the temp-file write entirely, so the shell
+    consumer's ``[ -n "$PROJ" ]`` liveness check would pass on stale, unrelated-project data.
+    """
+
+    def test_failing_run_after_success_empties_sentinels(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A seed run writes real values; a subsequent validation failure clears them."""
+        monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock("old-proj", "/tmp/old.json"))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+        assert main(["--output-prefix", "codemap-stale"]) == 0
+        assert _read_resolve_file(tmp_path, "proj", prefix="codemap-stale") == "old-proj"
+
+        monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", os.path.join(str(tmp_path), "not-the-real-root"))
+        rc = main(["--output-prefix", "codemap-stale"])
+
+        assert rc == 3
+        assert _read_resolve_file(tmp_path, "proj", prefix="codemap-stale") == ""
+        assert _read_resolve_file(tmp_path, "index", prefix="codemap-stale") == ""

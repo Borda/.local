@@ -287,8 +287,8 @@ Each selected item is in exactly one group or `## Ungrouped Items`. Every group 
 - selected indexes
 - severity range
 - grouping rationale
-- primary owner: `parent|sw-engineer|qa-specialist|doc-scribe|cicd-steward|linting-expert|security-auditor|data-steward|scientist|squeezer|solution-architect|oss-shepherd`
-- verifier: `parent|qa-specialist|security-auditor|linting-expert|cicd-steward|challenger|none`
+- primary owner: `parent|sw-engineer|qa-specialist|doc-scribe|cicd-steward|linting-expert|security-auditor|data-steward|scientist|squeezer|oss-shepherd`
+- verifier: `parent|qa-specialist|security-auditor|linting-expert|cicd-steward|challenger|solution-architect|none`
 - context pack path
 - expected closure evidence
 - dependencies or `none`
@@ -296,10 +296,11 @@ Each selected item is in exactly one group or `## Ungrouped Items`. Every group 
 
 Owner assignment rules:
 
-- implementation/refactor/API: `sw-engineer` primary, `qa-specialist` verifier; public API/migration shape adds `solution-architect` to verifier/context.
+- implementation/refactor/API: `sw-engineer` primary, `qa-specialist` verifier; public API/migration shape adds `solution-architect` to verifier/context (verifier-only, never primary).
 - test gap/regression proof: `qa-specialist` primary, `parent` verifier.
 - docs/changelog/examples/docstrings: `doc-scribe` primary, `parent` or `qa-specialist` verifier for executable docs.
 - CI/workflow/release gate: `cicd-steward` primary, `parent` verifier; permission/secret work adds `security-auditor`.
+- SemVer/compatibility classification, deprecation-cycle correctness, or release-readiness/blocker impact: `oss-shepherd` primary, `parent` verifier; changelog/migration prose stays `doc-scribe`, release automation stays `cicd-steward`.
 - lint/type/pre-commit/suppression: `linting-expert` primary, `parent` or `qa-specialist` verifier when runtime could change.
 - security/dependency/permission/data exposure: `security-auditor` primary, `challenger` verifier for high/critical/non-obvious closure.
 - data/ML/research/performance: `data-steward`, `scientist`, or `squeezer` primary; `qa-specialist` verifies tensor/data boundaries.

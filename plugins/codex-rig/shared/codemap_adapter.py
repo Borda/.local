@@ -32,6 +32,7 @@ STATUS_INCOMPATIBLE = "incompatible"
 STATUS_DEGRADED = "degraded"
 _DEFAULT_TIMEOUT = 15.0
 _EXIT_NOT_INDEXED = 3
+_WINDOWS_EXECUTABLE_SUFFIXES = {".bat", ".cmd", ".com", ".exe"}
 
 
 @dataclass(frozen=True)
@@ -172,17 +173,21 @@ def _run_json(argv: list[str], timeout: float) -> tuple[int, dict[str, Any] | No
         return completed.returncode, None, detail
 
 
+def _configured_launcher_is_valid(candidate: Path) -> bool:
+    """Return whether one explicit launcher meets the current platform's executable contract."""
+    if not candidate.is_absolute() or candidate.is_symlink() or not candidate.is_file():
+        return False
+    if os.name == "nt":
+        return candidate.suffix.casefold() in _WINDOWS_EXECUTABLE_SUFFIXES
+    return os.access(candidate, os.X_OK)
+
+
 def _resolve_codemap_executable() -> LauncherResolution:
     """Resolve one validated launcher, failing closed for a nonempty invalid `CODEMAP_BIN`."""
     configured = os.environ.get("CODEMAP_BIN")
     if configured:
         candidate = Path(configured)
-        if (
-            candidate.is_absolute()
-            and not candidate.is_symlink()
-            and candidate.is_file()
-            and os.access(candidate, os.X_OK)
-        ):
+        if _configured_launcher_is_valid(candidate):
             return LauncherResolution(str(candidate), STATUS_AVAILABLE, "configured launcher")
         return LauncherResolution(
             None,
@@ -204,14 +209,14 @@ def _probe_codemap(resolution: LauncherResolution, timeout: float) -> ProbeResul
         return ProbeResult(
             status=STATUS_INCOMPATIBLE,
             detail=error or f"doctor exited {exit_code}",
-            launcher=resolution.launcher,
+            launcher=None,
             doctor=None,
         )
     if not isinstance(payload, dict):
         return ProbeResult(
             status=STATUS_INCOMPATIBLE,
             detail="doctor payload not a JSON object",
-            launcher=resolution.launcher,
+            launcher=None,
             doctor=None,
         )
     try:
@@ -227,12 +232,12 @@ def _probe_codemap(resolution: LauncherResolution, timeout: float) -> ProbeResul
         return ProbeResult(
             status=STATUS_INCOMPATIBLE,
             detail=f"doctor payload missing {missing}",
-            launcher=resolution.launcher,
+            launcher=None,
             doctor=None,
         )
     if not doctor.supported:
         detail = f"unsupported interpreter {doctor.implementation} {doctor.version}"
-        return ProbeResult(STATUS_INCOMPATIBLE, detail, resolution.launcher, doctor)
+        return ProbeResult(STATUS_INCOMPATIBLE, detail, None, doctor)
     return ProbeResult(STATUS_AVAILABLE, "doctor healthy", resolution.launcher, doctor)
 
 

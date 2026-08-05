@@ -2,17 +2,17 @@
 """join_avoidance.py — join tools.jsonl against cli.jsonl to count guard-chain leaks.
 
 An *avoidance event* is a Grep/Read/Glob tool call (from ``tools_<session>.jsonl``,
-written by ``log-tool-use.js``) whose target names a module that codemap had
+written by ``log-tool-use.py``) whose target names a module that codemap had
 *already* answered completely (``query_complete: true`` in the matching
 ``cli_<session>.jsonl`` record) within the preceding window. It means the agent
 re-derived by hand what the structural index had already returned exhaustively —
-the guard chain (``guard-redundant-scan.js`` + context injection) leaked, so the
+the guard chain (``guard-redundant-scan.py`` + context injection) leaked, so the
 grep it was meant to prevent still happened.
 
 A high avoidance rate is a dead-chain signal: either the guard is not firing, the
 injected context is not being read, or the model is ignoring both.
 
-The module-match rule is ported from ``guard-redundant-scan.js``: split the module
+The module-match rule is ported from ``guard-redundant-scan.py``: split the module
 on ``.`` / ``/`` into segments, escape regex metacharacters, rejoin with the ``[./]``
 separator class, and require the match not to be flanked by an identifier character.
 This mirrors the guard's word-boundary logic so this offline join counts exactly the
@@ -39,6 +39,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_WINDOW_MIN = 10
+# 50 MB per shard, matching MAX_INDEX_SIZE in scan-stats.py / smoke_test_index.py (CWE-400: DoS guard).
+# Per-file cap only — the aggregate across every globbed shard stays uncapped.
+MAX_LOG_SIZE = 50_000_000
 _IDENT = "A-Za-z0-9_"
 
 
@@ -59,7 +62,7 @@ class CliAnswer:
 
 @dataclass(frozen=True)
 class ToolEvent:
-    """One Grep/Read/Glob tool call recorded by log-tool-use.js.
+    """One Grep/Read/Glob tool call recorded by log-tool-use.py.
 
     Attributes:
         session: session id joining the cli and tool layers.
@@ -232,7 +235,7 @@ def _query_complete(record: dict) -> bool:
 def module_matches(module: str, text: str) -> bool:
     """Return True if *text* references *module* on identifier boundaries.
 
-    Ported from ``guard-redundant-scan.js``: split the module on ``.``/``/``,
+    Ported from ``guard-redundant-scan.py``: split the module on ``.``/``/``,
     escape regex metacharacters per segment, rejoin with the ``[./]`` class so
     both dotted and slashed forms match, and require the match not to be flanked
     by an identifier character. A plain substring test would falsely match
@@ -424,10 +427,15 @@ def _read_jsonl(path: Path) -> list[dict]:
         path: JSONL file to read.
 
     Returns:
-        Parsed records; an unreadable or absent file yields ``[]``.
+        Parsed records; an unreadable, absent, or oversized file yields ``[]``.
     """
     records: list[dict] = []
     try:
+        size = path.stat().st_size
+        if size > MAX_LOG_SIZE:
+            msg = f"join_avoidance: skipping oversized shard: {path} ({size} bytes; max {MAX_LOG_SIZE})"
+            print(msg, file=sys.stderr)
+            return records
         text = path.read_text()
     except OSError:
         return records

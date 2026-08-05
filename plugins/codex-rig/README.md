@@ -202,8 +202,8 @@ The exact files vary by workflow, but completion requires the requested output, 
 Confidence is evidence-backed:
 
 - `<= 0.80`: incomplete; continue recovery or report a blocker.
-- `0.80–0.85`: very questionable; stronger evidence is required.
-- `0.85–0.90`: cautious-low; objective recovery evidence and remaining limits must be explicit.
+- `0.80 < confidence < 0.85`: very questionable; stronger evidence is required.
+- `0.85 <= confidence < 0.90`: cautious-low; objective recovery evidence and remaining limits must be explicit.
 - `>= 0.90`: fair, not automatic; material residual limits still belong in the result.
 
 ## PR review-to-remediation

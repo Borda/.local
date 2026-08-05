@@ -34,7 +34,9 @@ Reference bash for single-target run. Consumers may inline it or call plugin-loc
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    scan-index --incremental 2>/dev/null || true   # refresh SHA-changed files only; never full-build mid-task
+    if [ "${SCAN_NO_AUTOBUILD:-0}" != "1" ]; then
+        scan-index --incremental 2>/dev/null || true   # refresh SHA-changed files only; never full-build mid-task
+    fi
     _CM_N=0 _CM_H=0 _CM_STALE=0 _CM_NONEXH=0
     _cq() {
         local out; _CM_N=$((_CM_N+1))

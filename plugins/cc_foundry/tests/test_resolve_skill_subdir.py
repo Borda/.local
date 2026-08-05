@@ -33,15 +33,15 @@ def cwd_with_local_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
 
 
 class TestResolveCascade:
-    """resolve: tier-1 → tier-2 → tier-3 → tier-4 ordering."""
+    """resolve: tier-1 (local) → tier-2 (plugin root) → tier-3 → tier-4 ordering."""
 
-    def test_tier1_claude_plugin_root_wins(
+    def test_tier2_claude_plugin_root_wins_when_local_false(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         fake_home: Path,
     ) -> None:
-        """When CLAUDE_PLUGIN_ROOT is set and the dir exists, that's the answer."""
+        """When CLAUDE_PLUGIN_ROOT is set, the dir exists, and --local absent, that's the answer."""
         plugin_root = tmp_path / "installed"
         target = plugin_root / "skills" / "calibrate" / "modes"
         target.mkdir(parents=True)
@@ -51,13 +51,13 @@ class TestResolveCascade:
 
         assert result == target
 
-    def test_tier2_local_skipped_when_local_false(
+    def test_tier1_local_skipped_when_local_false(
         self,
         cwd_with_local_tree: Path,
         monkeypatch: pytest.MonkeyPatch,
         fake_home: Path,
     ) -> None:
-        """Local source dir exists but --local was not passed → tier 2 bypassed."""
+        """Local source dir exists but --local was not passed → tier 1 bypassed."""
         monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
         local = cwd_with_local_tree / "plugins" / "cc_foundry" / "skills" / "audit" / "templates"
         local.mkdir(parents=True)
@@ -67,14 +67,38 @@ class TestResolveCascade:
 
         assert result is None
 
-    def test_tier2_local_hit_when_local_true(
+    def test_tier1_local_hit_when_local_true(
         self,
         cwd_with_local_tree: Path,
         monkeypatch: pytest.MonkeyPatch,
         fake_home: Path,
     ) -> None:
-        """--local flag pulls the source tree into the cascade after CLAUDE_PLUGIN_ROOT."""
+        """--local flag pulls the source tree into the cascade ahead of CLAUDE_PLUGIN_ROOT."""
         monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+        local = cwd_with_local_tree / "plugins" / "cc_foundry" / "skills" / "audit" / "templates"
+        local.mkdir(parents=True)
+
+        result = resolve("audit", "templates", local=True, home=fake_home)
+
+        assert result == Path("plugins") / "cc_foundry" / "skills" / "audit" / "templates"
+
+    def test_local_true_wins_over_claude_plugin_root_when_both_present(
+        self,
+        cwd_with_local_tree: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        fake_home: Path,
+    ) -> None:
+        """Regression: --local must override CLAUDE_PLUGIN_ROOT, not lose to it.
+
+        Prior tier order checked CLAUDE_PLUGIN_ROOT before the local-source tier,
+        so --local was a silent no-op whenever CLAUDE_PLUGIN_ROOT happened to be
+        set (the common case inside any installed-plugin run). Both candidates
+        exist here; the local source tree must win.
+        """
+        installed = tmp_path / "installed"
+        (installed / "skills" / "audit" / "templates").mkdir(parents=True)
+        monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(installed))
         local = cwd_with_local_tree / "plugins" / "cc_foundry" / "skills" / "audit" / "templates"
         local.mkdir(parents=True)
 

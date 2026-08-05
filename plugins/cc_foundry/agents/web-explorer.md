@@ -1,7 +1,7 @@
 ---
 name: web-explorer
-description: 'Fetches web pages, API docs, external package/release info — version lookups, GitHub release extraction, docs scraping. NOT for code analysis (foundry:sw-engineer), ML paper analysis (research:scientist), internal docs (foundry:doc-scribe), local codebase search. TRIGGER: "check the README for", "look up", "latest version of". SKIP: URL already in context.'
-tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, TaskCreate, TaskUpdate
+description: 'Fetches web pages, API docs, external package/release info — version lookups, GitHub release extraction, docs scraping. NOT for code analysis (foundry:sw-engineer), ML paper analysis (research:scientist), internal docs (foundry:doc-scribe), local codebase search. TRIGGER: "check the README of <external repo/URL> for", "look up", "latest version of". SKIP: URL already in context.'
+tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch
 model: sonnet
 effort: high
 maxTurns: 30

@@ -2,7 +2,7 @@
 name: profile
 description: 'Session clock-time analyzer. Reads the foundry plugin''s timings.jsonl and invocations.jsonl logs (written by task-log.js) and produces a per-session and per-skill wall-time breakdown — local-tool work vs subagent spawns vs Skill invocations vs AskUserQuestion idle vs main-loop reasoning residual. Useful for answering "why did /oss:resolve run 30 minutes?" or "what eats clock time in /develop:fix?". Pure log read — no instrumentation, no skill edits, no LLM calls. TRIGGER when: user asks where wall-clock time goes during a skill/session, why a skill is slow, what dominates total runtime, or wants a per-skill rollup over a recent window; phrases: "where does time go", "why so slow", "profile last session", "clock breakdown", "session timing". SKIP: token/cost questions (model field is null in current logs — out of scope); per-line Python perf (use foundry:perf-optimizer); known failure or hang (use /foundry:investigate).'
 argument-hint: "[--since 24h|7d|30d] [--session-id ID] [--top-n N]"
-allowed-tools: Read, Bash, AskUserQuestion
+allowed-tools: Read, Write, Bash, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
 effort: low
 ---

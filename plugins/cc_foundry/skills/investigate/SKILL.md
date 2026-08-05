@@ -2,7 +2,7 @@
 name: investigate
 description: 'Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug (requires `develop` plugin)) or config quality (/foundry:audit). TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: "not working but config looks right", "hook not triggering", "why isn''t X running". SKIP: Python traceback present (use develop:debug (requires `develop` plugin)); known code bug with repro (use develop:fix (requires `develop` plugin)); pure config quality check (use foundry:audit).'
 argument-hint: "<symptom, question, or failing command> [--fast] [--keep \"<items>\"]"
-allowed-tools: Read, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opus
 effort: high
 ---
@@ -229,13 +229,13 @@ echo "CODEX_AVAILABLE=$CODEX_AVAILABLE"  # bash vars don't persist; branch below
 If Codex available (requires `codex` plugin) — substitute concrete path strings for `<INVESTIGATE_RUN>` and `<CODEX_OUT>` before constructing the prompt:
 
 ```text
-Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality. Read these files for full context: <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to <CODEX_OUT> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
+Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality. Read these files for full context: <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to <CODEX_OUT> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 ```
 
 Else (Codex unavailable) — substitute `<INVESTIGATE_RUN>` with the printed run-dir path:
 
 ```text
-Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality. Read these files for full context: <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to <INVESTIGATE_RUN>/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality. Read these files for full context: <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to <INVESTIGATE_RUN>/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 ```
 
 Before issuing the call: scan constructed prompt string for remaining `<` or `>` characters — if present, substitution incomplete; resolve before spawning.

@@ -3,7 +3,7 @@ name: brainstorm
 description: "Iterative brainstorming skill for turning fuzzy ideas into approved tree documents. Diverges into branches, deepens and prunes them over many rounds, saves a tree doc. Run breakdown on the tree to distill it into a spec via guided questions."
 argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] [--keep \"<items>\"] | breakdown <tree-or-spec-file>"
 disable-model-invocation: true
-allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Skill
 effort: medium
 ---
 
@@ -346,12 +346,12 @@ Before spawning, pre-compute output path:
 
 ```bash
 # timeout: 3000
-BRANCH=$(timeout 3 git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
-mkdir -p .reports/brainstorm
-OUTPUT_PATH=".reports/brainstorm/review-$BRANCH-$(date +%Y-%m-%d).md"
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+mkdir -p ".temp/brainstorm/$TS"
+OUTPUT_PATH=".temp/brainstorm/$TS/curator-review.md"
 ```
 
-Spawn **foundry:curator** with tree-focused prompt. Substitute `$OUTPUT_PATH` value (pre-computed above) for `<output-path>` template slot and the actual tree file path for `<tree-file>` before passing prompt — do NOT pass literal `$OUTPUT_PATH` variable name or the bare `<output-path>` / `<tree-file>` placeholder strings in the prompt string. Example substitutions: `<output-path>` → `.reports/brainstorm/review-main-2026-05-20.md`; `<tree-file>` → `.plans/blueprint/2026-05-20-my-idea.md`:
+Spawn **foundry:curator** with tree-focused prompt. Substitute `$OUTPUT_PATH` value (pre-computed above) for `<output-path>` template slot and the actual tree file path for `<tree-file>` before passing prompt — do NOT pass literal `$OUTPUT_PATH` variable name or the bare `<output-path>` / `<tree-file>` placeholder strings in the prompt string. Example substitutions: `<output-path>` → `.temp/brainstorm/2026-05-20T10-30-00Z/curator-review.md`; `<tree-file>` → `.plans/blueprint/2026-05-20-my-idea.md`:
 
 ```markdown
 Read .plans/blueprint/<tree-file>. Audit for tree quality only (do NOT audit `.claude/` config files — scope is the brainstorm tree only):
@@ -368,13 +368,13 @@ Verdict:  READY | NEEDS_REFINEMENT | BLOCKED
 Findings: [N]
 Confidence: [score] — [key gaps]
 Next steps: /foundry:manage create | /develop:feature (requires `develop` plugin)
-Path:       → .reports/brainstorm/review-<branch>-<date>.md
+Path:       → <output-path>
 ---
 Then the full findings below.
-Return ONLY a compact JSON envelope: {"status":"done","findings":N,"file":"<path>","confidence":0.N,"summary":"<one-line>"}
+Return ONLY a compact JSON envelope: {"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"<path>","confidence":0.N,"summary":"<one-line>"}
 ```
 
-**Passive health monitoring**: Agent tool is synchronous — Claude awaits curator's response natively. If foundry:curator does not return within 15 min, surface any partial output already written to `$OUTPUT_PATH` (under `.reports/brainstorm/`) with ⏱ marker and continue to Step 6 with incomplete review noted. The path is the same `$OUTPUT_PATH` computed in the pre-spawn block above; do not poll `.temp/` — brainstorm review output lives in `.reports/brainstorm/`.
+**Passive health monitoring**: Agent tool is synchronous — Claude awaits curator's response natively. If foundry:curator does not return within 15 min, surface any partial output already written to `$OUTPUT_PATH` (under `.temp/brainstorm/`) with ⏱ marker and continue to Step 6 with incomplete review noted.
 
 > Note: synchronous Agent calls do not support mid-call extensions per CLAUDE.md §6 — simplified monitoring is intentional for synchronous spawns.
 

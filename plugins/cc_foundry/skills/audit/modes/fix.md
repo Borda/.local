@@ -61,6 +61,8 @@ Narrate phase boundaries: `"Phase 1: N parallel-safe fixes launched"` → `"Phas
 
 Gate applies at every severity level. Skip only for inline-exception cases (settings.json, CLAUDE.md, dead loops, model tier).
 
+**Trivial-finding fast path** (see `agent-spawn-protocol.md` §Delegation cost discipline): findings whose category is in `PARALLEL_SAFE_CATEGORIES` (criterion 2 above) skip the two-agent challenger+curator gate entirely — a typo or hardcoded-path substitution carries no ambiguity worth a second opinion. Batch all such findings across the whole fix run (not just one file) into as few fix-agent spawns as reasonably group by file-adjacency, and prefer the cheapest capable path (`codex:codex-rescue --write` when available, else the normal per-file-type agent) over the standard curator/sw-engineer default. Reserve the full adversarial gate and top-tier agent for CRITICAL/HIGH findings and anything cross-file-dependent, where a wrong fix has real cost.
+
 Fix agent by file type:
 
 - **`.claude/agents/*.md` and `.claude/skills/*/SKILL.md`** → spawn **foundry:curator** — domain expertise in config quality, has `Write`/`Edit` tools

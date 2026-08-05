@@ -35,4 +35,4 @@ When public API deprecated with pyDeprecate, write migration guide
 - `### Before (deprecated)` — minimal before-code example
 - `### After` — equivalent after-code example
 - `### Argument Mapping` — table: Old | New | Notes (renamed, removed, semantic change)
-- Add to both docs and CHANGELOG
+- Add to docs; hand off the CHANGELOG entry to `oss:shepherd` / `/oss:release` (requires `oss` plugin)

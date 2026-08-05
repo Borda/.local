@@ -5,7 +5,9 @@
 When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 9 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation, divergence detection.
 
 ```bash
-REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r REVIEW_DIR < "${TMPDIR:-/tmp}/vitality-review-dir-${CSID}" 2>/dev/null || REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
+IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/vitality-codex-available-${CSID}" 2>/dev/null || CODEX_AVAILABLE="0"
 CODEX_REVIEW_OUT="$REVIEW_DIR/codex-repo-review.md"
 mkdir -p "$REVIEW_DIR"  # timeout: 5000
 ```
@@ -14,7 +16,7 @@ mkdir -p "$REVIEW_DIR"  # timeout: 5000
 
 ```text
 You are performing an independent vitality assessment of {GH_OWNER}/{GH_REPO}.
-Do NOT read the main analysis report. Assess the same 9 axes from raw evidence only (axes 1–9; weights from $SCORING_FILE weight table: 17%, 18%, 14%, 11%, 9%, 7%, 9%, 7%, 8%):
+Do NOT read the main analysis report. Assess the same 9 axes from raw evidence only (axes 1–9; read the weight table from $SCORING_FILE — do not use any other source for weights):
 
 Use only this raw data: [pass all fetched API data: issue counts, PR counts, commit dates,
 contributor stats, CI workflow/run data, root file list, branch protection, Dependabot status].

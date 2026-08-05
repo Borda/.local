@@ -377,6 +377,7 @@ ______________________________________________________________________
 
 | Flag                   | Description                                                                                                                                                                                                                                     |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--issue <N>`          | Force issue mode — fetch GitHub issue `<N>` instead of inferring mode from a bare numeric argument. Value form only; `--issue=123` is not supported by design (mode-detect matches the bare token).                                             |
 | `--repo <owner/repo>`  | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                                                                       |
 | `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating distinct root-cause hypothesis independently. Use when root cause unclear after initial analysis, or failure spans 3+ modules                                                     |
 | `--worktree`           | Run the investigation in an isolated git worktree (base: HEAD) so reproduction attempts never touch main sources. Diagnosis file is written to the **main tree** so `/develop:fix` can read it.                                                 |
@@ -646,7 +647,7 @@ claude plugin install foundry@borda-ai-rig
 
 ### A question is blocked with "develop:review report gate"
 
-`enforce-review-header.js` denied an `AskUserQuestion` call because `.reports/review/<timestamp>/review-report.md` does not exist — the review reached agent launch but never consolidated its findings into a report. Finish the consolidation step and print the report `---` header; the question then goes through. The gate deactivates two hours after a run starts, so an aborted review never blocks later questions permanently.
+`enforce-review-header.js` denied an `AskUserQuestion` call because `.reports/review/<timestamp>/review-report.md` does not exist — the review reached agent launch but never consolidated its findings into a report. Finish the consolidation step and print the report `---` header; the question then goes through. The gate deactivates two hours after a run starts, so an aborted review never blocks later questions permanently. When no review is actually in flight and an aborted run simply left its sentinel behind, there is no need to wait out that window: the denial message names the sentinel file, so `rm -f`-ing that path and re-issuing the question clears the block immediately.
 
 ### Demo gate passes (exit 0) when it should fail
 

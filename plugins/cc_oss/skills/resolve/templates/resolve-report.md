@@ -37,10 +37,15 @@
 ✓ Pushed to <remote>/<HEAD_REF> — N new commits
 
 **Next**:
-- `gh pr merge <PR#> --merge` to merge now (preserves all commits)
+- Maintainer reviews and clicks Merge in the GitHub UI — a merge commit keeps the per-item commits; squash collapses them
 
 ## Confidence
 
 <!-- format per quality-gates.md: Score 0.N, Gaps bullets, Refinements N passes (omit if 0) -->
 
-**Score**: 0.N — **Gaps**: — **Refinements**: N passes.
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
+**Gaps**:
+- [specific limitation]
+
+**Refinements**: N passes.
+- Pass 1: [what gap was addressed]

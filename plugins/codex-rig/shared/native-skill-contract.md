@@ -10,10 +10,12 @@ Every native `SKILL.md` keeps these sections or clear equivalents:
 - YAML-style frontmatter: unindented `---`, `name:`, `description:` before first Markdown heading.
 - `Input Schema`: required inputs, optional inputs, mode flags, and done condition.
 - `Workflow`: linear steps with stable local commands where commands are useful.
-- `Quality Gates`: check mapping and pass/fail decision rules.
 - `Fail-Fast Rules`: conditions that stop or fail the run.
+- `Quality Gates`: check mapping and pass/fail decision rules.
 - `Calibration Hooks`: expected calibration updates when behavior changes.
 - `Output Contract`: shared JSON result fields from `quality-gates.md`.
+
+> `agent-shims` is absent from the calibration skill roster (`runtime/calibration/run.py` `SKILLS`); required-section, `result-template.json`, and canonical `.reports/codex/<skill>/<timestamp>/result.json` artifact checks do not run against it.
 
 Long workflows keep contract-level `## Workflow` with `### NN:` ordered subheaders. Do not make workflow steps `##` peers of contract sections.
 

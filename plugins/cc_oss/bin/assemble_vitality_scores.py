@@ -22,16 +22,27 @@ import re
 import sys
 from pathlib import Path
 
+# Axis identifiers — names mirror `_shared/vitality-scoring.md`'s Weights table.
+RESPONSIVENESS = 1
+MAINTENANCE_ACTIVITY = 2
+CONTRIBUTOR_HEALTH = 3
+ISSUE_PR_HEALTH = 4
+CI_CD_CODE_QUALITY = 5
+DOCUMENTATION = 6
+GOVERNANCE = 7
+SECURITY_POSTURE = 8
+TRAJECTORY = 9
+
 _DEFAULT_WEIGHTS: dict[int, float] = {
-    1: 0.17,
-    2: 0.18,
-    3: 0.14,
-    4: 0.11,
-    5: 0.09,
-    6: 0.07,
-    7: 0.09,
-    8: 0.07,
-    9: 0.08,
+    RESPONSIVENESS: 0.10,
+    MAINTENANCE_ACTIVITY: 0.08,
+    CONTRIBUTOR_HEALTH: 0.10,
+    ISSUE_PR_HEALTH: 0.07,
+    CI_CD_CODE_QUALITY: 0.07,
+    DOCUMENTATION: 0.05,
+    GOVERNANCE: 0.06,
+    SECURITY_POSTURE: 0.11,
+    TRAJECTORY: 0.07,
 }
 
 _MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB — F-10 guard against runaway reads
@@ -66,7 +77,8 @@ def load_weights(scoring_file: Path) -> dict[int, float]:
     """Load per-axis weights from the vitality-scoring.md rubric table.
 
     Parses lines of the form ``| N  axis-name | 0.XX |``.  Falls back to
-    ``_DEFAULT_WEIGHTS`` when the file is absent or yields fewer than 9 entries.
+    ``_DEFAULT_WEIGHTS`` when the file is absent, is malformed (e.g. duplicate
+    axis rows), or does not contain at least axes 1-9.
 
     Args:
         scoring_file: Path to the vitality-scoring.md rubric file.
@@ -86,18 +98,33 @@ def load_weights(scoring_file: Path) -> dict[int, float]:
     weights: dict[int, float] = {}
     seen: set[int] = set()
     malformed = False
+    read_error: OSError | ValueError | None = None
     try:
-        for line in _read_text_guarded(scoring_file).splitlines():
-            m = re.match(r"\|\s*(\d+)\s+[^|]+\|\s*(0\.\d+)\s*\|", line)
-            if m:
-                axis = int(m.group(1))
-                if axis in seen:
-                    malformed = True
-                seen.add(axis)
-                weights[axis] = float(m.group(2))
-    except (OSError, ValueError):
-        pass
-    return weights if not malformed and set(weights) == set(_DEFAULT_WEIGHTS) else _DEFAULT_WEIGHTS.copy()
+        text = _read_text_guarded(scoring_file)
+    except (OSError, ValueError) as exc:
+        read_error = exc
+        text = ""
+    for line in text.splitlines():
+        m = re.match(r"\|\s*(\d+)\s+[^|]+\|\s*(0\.\d+)\s*\|", line)
+        if m:
+            axis = int(m.group(1))
+            if axis in seen:
+                malformed = True
+            seen.add(axis)
+            weights[axis] = float(m.group(2))
+
+    # Superset (not exact-set) guard — keeps axes 10-13 once real 13-axis rubric parses (F1).
+    if read_error is None and not malformed and set(weights) >= set(_DEFAULT_WEIGHTS):
+        return weights
+
+    if read_error is not None:
+        reason = f"{scoring_file} unreadable ({read_error})"
+    elif malformed:
+        reason = f"{scoring_file} malformed (duplicate axis rows)"
+    else:
+        reason = f"{scoring_file} missing required axes 1-9 (found {sorted(weights)})"
+    print(f"[vitality] WARN: load_weights falling back to _DEFAULT_WEIGHTS — {reason}", file=sys.stderr)
+    return _DEFAULT_WEIGHTS.copy()
 
 
 def assemble_scores(

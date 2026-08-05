@@ -1,7 +1,7 @@
 ---
 name: linting-expert
 description: 'Python static analysis — ruff, mypy, pre-commit, lint/type fixes, type annotations. NOT for CI topology (oss:cicd-steward), test logic (foundry:qa-specialist), non-style implementation (foundry:sw-engineer), docstrings (foundry:doc-scribe). TRIGGER: "is this clean", "lint issues", "check types", "add type hints". SKIP: stdlib-only; linting not needed.'
-tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch
 model: haiku
 effort: medium
 memory: project

@@ -71,7 +71,21 @@ codemap-py query --compact rdeps mypackage.auth    # what breaks if auth changes
 
 Output prepended to agent spawn prompt as structural context. Agent starts refactor knowing full blast radius — no cold exploration, no mid-refactor surprise that `middleware.py` also imports `auth`. Across benchmark runs on pytorch-lightning, codemap-py cuts tool calls 50–80% while improving structural-recall metrics on import-graph tasks.
 
-**Agentic benchmark (import-graph tasks on pytorch-lightning):** clean v0.13.2 numbers pending full benchmark re-run after RC1 fix; published here once available.
+**Agentic benchmark (import-graph tasks on pytorch-lightning):** 2026-08-04 run killed by user at 62/144 cells (BA-01..BA-07 of 16 tasks; BA-08..BA-16 never ran) — preliminary, not a confirmatory result. Single repetition, target `pytorch-lightning` 2.6.5, three arms: `A_plain` (no tooling), `B_auto` (model chooses tools, may call the codemap-py skill), `C_required` (skill mandatory).
+
+| Model     | Arm        |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |
+| --------- | ---------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: |
+| Haiku 4.5 | A_plain    |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |
+| Haiku 4.5 | B_auto     |   7 | **281.3k** | **3.6k** | **0.091** |  **48.0** | **0.86** | **0.86** |
+| Haiku 4.5 | C_required |   7 |     362.1k |     4.2k |     0.097 |      57.2 |     0.85 |     0.85 |
+| Sonnet 5  | A_plain    |   7 |     722.4k |    17.8k |     0.636 |     179.3 |     0.97 |     0.97 |
+| Sonnet 5  | B_auto     |   7 | **251.6k** | **4.3k** | **0.310** |  **57.3** | **1.00** | **1.00** |
+| Sonnet 5  | C_required |   7 |     370.0k |     4.9k |     0.311 |      60.1 |     0.97 |     0.97 |
+| Opus 5    | A_plain    |   7 |     238.3k |     9.2k |     0.497 |     116.8 |     0.57 |     0.57 |
+| Opus 5    | B_auto     |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** |
+| Opus 5    | C_required |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |
+
+Bold = best value per model per column (lower is better for tok/cost/elapsed s, higher for erec/rrec). `erec`/`rrec` = exposure/report recall of expected reverse-dependencies. Codemap-py arms cost less than `A_plain` on every axis for Haiku and Sonnet. **Opus splits**: `C_required` wins cost/tokens/elapsed, `B_auto` wins recall — `B_auto` costs more than plain (299.6k tokens / $0.529 vs 238.3k / $0.497) because opus calls the codemap-py skill and then keeps exploring with bash/grep on top of it instead of substituting for manual search, while `C_required` (skill mandatory, no plain-exploration path available) drops opus to 173.6k tokens / $0.344, the cheapest cell in the table. Full breakdown and caveats: [`benchmarks/README.md#agentic-blast-radius-run-2026-08-04-unfinished`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#agentic-blast-radius-run-2026-08-04-unfinished).
 
 **Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap-py) × 3 model tiers on pytorch-lightning-master (646 modules, 8 task types). **Scope**: pre-implementation structural-query tasks (blast-radius enumeration, caller discovery) — end-to-end patch quality and test-pass rate not yet measured. Benchmark **repo-agnostic**: `tasks-bench.json` ships `repo` header so harness points at any Python codebase. Zero codemap-py timeouts; plain-arm agents hit 300-second hard limit on several tasks.
 
@@ -81,7 +95,7 @@ On the 45 preregistered headline task blocks, mean quality was A/B/C `0.8626/0.9
 
 The claim is bounded to one inexpensive model, one frozen repository, one run per task, a prebuilt index, and structural-answer quality; it does not measure index-build cost, cross-model/repository generalization, or end-to-end patch/test quality. The raw artifact remains local and ignored: raw telemetry SHA-256 `44f0f734bda0f422605041d245442fdbe70115eb575bac976d005d276b381405`, canonical telemetry `0d5d06f730e8a39322781d27a9f82bf58b2e239c25d6bbf2b174a77e0f7e56f5`, metadata `b075e2c05313cfa4f3d186c829e2e5187f64de4092d0343c0362aed53e989831`, and manifest `568caefa6cdd1e876e2f35a5e2476d5e661d9672894191c930017f14a29305e4`.
 
-The run also records 44 exact locked-query mismatches across 110 B/C cells. Every B/C cell still made a successful compact Codemap call and 38/44 mismatch cells were correct, so this is a query-conformance diagnostic rather than a treatment or pooling failure. It exposed concrete follow-up work: production module importers need `--exclude-tests`, feature scaffolding should query the requested extension method, and exact-query reporting should separate endpoint, target, and option/filter fitness. A provider-neutral evaluator defect also penalizes exact FT entry points followed by the terminal period shown in the prompt; a punctuation-tolerant sensitivity changes A/B/C quality to `0.8848/0.9784/0.9859`, but it is post-hoc and does not replace the locked primary result. Full methods, historical diagnostics, and current follow-up status live in [`benchmarks/README.md#codex-integration-study-a-b-c`](../../benchmarks/README.md#codex-integration-study-a-b-c).
+The run also records 44 exact locked-query mismatches across 110 B/C cells. Every B/C cell still made a successful compact Codemap call and 38/44 mismatch cells were correct, so this is a query-conformance diagnostic rather than a treatment or pooling failure. It exposed concrete follow-up work: production module importers need `--exclude-tests`, feature scaffolding should query the requested extension method, and exact-query reporting should separate endpoint, target, and option/filter fitness. A provider-neutral evaluator defect also penalizes exact FT entry points followed by the terminal period shown in the prompt; a punctuation-tolerant sensitivity changes A/B/C quality to `0.8848/0.9784/0.9859`, but it is post-hoc and does not replace the locked primary result. Full methods, historical diagnostics, and current follow-up status live in [`benchmarks/README.md#codex-integration-study-a-b-c`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#codex-integration-study-a-b-c).
 
 ### Three-model comparison
 

@@ -62,7 +62,7 @@ const SENTINEL_PREFIX = "oss-review-report-dir-";
 const REPORT_FILENAME = "review-report.md";
 // Step 2 always builds "$_REPORT_BASE/.reports/review/$TIMESTAMP"; requiring the
 // marker keeps the hook from acting on a sentinel holding anything else.
-const REPORT_DIR_MARKER = "/.reports/review/";
+const REPORT_DIR_PARTS = [".reports", "review"];
 // Enforcement window measured from the sentinel's mtime (see KNOWN LIMITATION).
 const STALE_MS = 2 * 60 * 60 * 1000;
 
@@ -106,9 +106,30 @@ function findSentinel(dir, csids) {
   return null;
 }
 
+/** Select the path implementation that matches one absolute report path. */
+function reportPathApi(value) {
+  return typeof value === "string" && (/^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\"))
+    ? path.win32
+    : path.posix;
+}
+
+/** True when an absolute path's normalized components contain a report directory. */
+function isReportPath(value, reportParts) {
+  if (typeof value !== "string") return false;
+  const api = reportPathApi(value);
+  if (!api.isAbsolute(value)) return false;
+  const parts = api.normalize(value).split(api.sep).filter(Boolean);
+  const normalize = api === path.win32 ? (part) => part.toLowerCase() : (part) => part;
+  const marker = reportParts.map(normalize);
+  return parts.some(
+    (_, index) =>
+      index + marker.length < parts.length && marker.every((part, offset) => normalize(parts[index + offset]) === part),
+  );
+}
+
 /** True when `value` has the shape Step 2 writes: absolute path under .reports/review/. */
 function isReviewReportDir(value) {
-  return typeof value === "string" && path.isAbsolute(value) && value.includes(REPORT_DIR_MARKER);
+  return isReportPath(value, REPORT_DIR_PARTS);
 }
 
 /**

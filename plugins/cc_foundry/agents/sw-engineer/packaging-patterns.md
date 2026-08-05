@@ -25,7 +25,7 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 ## API Stability
 
 - Mark experimental APIs with `# experimental: API may change without notice`
-- Use `__version__` in `__init__.py`: `__version__ = "1.2.3"`
+- Derive `__version__` in `__init__.py` from package metadata — `from importlib.metadata import version; __version__ = version("mypackage")`; pyproject.toml stays the single source of truth
 - SemVer: MAJOR.MINOR.PATCH — breaking changes only in MAJOR
 - Never remove public API without deprecation cycle spanning ≥1 minor release
 - **Rename with backward compat**: assign `OldName = NewName` as deprecated alias for one major cycle, then remove

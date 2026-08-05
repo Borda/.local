@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+- Name the review, test, and toolchain owners in the `oss-shepherd` role card and state that its handover drafts stay advisory text rather than applied changes.
+- Record in `shared/native-skill-contract.md` that `agent-shims` is absent from the calibration skill roster, so required-section, `result-template.json`, and canonical result-artifact checks do not run against it.
+- Assert manifest identity relationally in `test_installed_cache_scaffold.py` — both shipped manifests must agree and the release must appear in this file — instead of pinning a version literal that broke on every bump.
+
 ## 0.4.1
 
 - Require root-cause investigation when the same or plausibly shared obstacle occurs a second time, even when its surface symptom changes.

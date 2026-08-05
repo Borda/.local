@@ -58,15 +58,13 @@ Extract subcommand, old/new refs, and flags from the invocation text. Reject any
 PLUGIN_ROOT/bin/codemap-py query find-symbol "<old_ref>" --limit 0
 ```
 
-If the index is stale, ask in chat: (a) proceed anyway (callers may be incomplete), or (b) abort and re-run `$codemap-py:scan-codebase` first. If freshness cannot be determined, warn and proceed with caution — never silently treat unknown as fresh.
+Read `index.stale` from that output — `true` means the index no longer matches the working tree (`index.query_complete: false` with `index.completeness_reason: "stale"` corroborates). Keep the whole result in reasoning; Step 2 reuses it. If `index.stale` is `true`, ask in chat: (a) proceed anyway (callers may be incomplete), or (b) abort and re-run `$codemap-py:scan-codebase` first. If the `index` block is absent and freshness cannot be determined, warn and proceed with caution — never silently treat unknown as fresh.
 
 ### Step 2: Resolve targets
 
 **Symbol subcommand**:
 
-```bash
-PLUGIN_ROOT/bin/codemap-py query find-symbol "<old_ref>" --limit 0
-```
+Reuse the Step 1 `find-symbol` result — do not re-run that query.
 
 `find-symbol` returns a `matches` array — each entry: `{name, qualified_name, type, module, path, start_line, end_line, source}`. Use `path`/`start_line`/`end_line` for edits, `qualified_name` for exact-match filtering.
 

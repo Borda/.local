@@ -106,7 +106,7 @@ def test_is_valid_commit_uses_merge_base_is_ancestor_not_cat_file(monkeypatch: p
     monkeypatch.setattr(ram, "which", lambda _: "/fake/git")
     monkeypatch.setattr(ram.subprocess, "run", _fake_run)
     ram._is_valid_commit("deadbeef")
-    assert recorded == [["/fake/git", "merge-base", "--is-ancestor", "deadbeef", "HEAD"]]
+    assert recorded == [["/fake/git", "merge-base", "--is-ancestor", "--end-of-options", "deadbeef", "HEAD"]]
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ def test_tag_advanced_past_records_git_command(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(ram, "which", lambda _: "/fake/git")
     monkeypatch.setattr(ram.subprocess, "run", _fake_run)
     ram._tag_advanced_past("deadbeef", "v2.0.0")
-    assert recorded == [["/fake/git", "merge-base", "--is-ancestor", "deadbeef", "v2.0.0"]]
+    assert recorded == [["/fake/git", "merge-base", "--is-ancestor", "--end-of-options", "deadbeef", "v2.0.0"]]
 
 
 # ---------------------------------------------------------------------------
@@ -273,5 +273,5 @@ def test_resolve_records_git_commands(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setattr(ram, "which", lambda _: "/fake/git")
     monkeypatch.setattr(ram.subprocess, "run", _fake_run)
     ram.main(["resolve", "--branch", "main", "--last-tag", "v1.2.0", "--marker-dir", str(tmp_path)])
-    assert recorded[0] == ["/fake/git", "merge-base", "--is-ancestor", "deadbeef", "HEAD"]
-    assert recorded[1] == ["/fake/git", "merge-base", "--is-ancestor", "deadbeef", "v1.2.0"]
+    assert recorded[0] == ["/fake/git", "merge-base", "--is-ancestor", "--end-of-options", "deadbeef", "HEAD"]
+    assert recorded[1] == ["/fake/git", "merge-base", "--is-ancestor", "--end-of-options", "deadbeef", "v1.2.0"]

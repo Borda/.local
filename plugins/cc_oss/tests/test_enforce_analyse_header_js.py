@@ -84,6 +84,25 @@ def _denial_reason(result: dict) -> str | None:
     return hook_output.get("permissionDecisionReason", "")
 
 
+def _call_export(name: str, *args: object) -> object:
+    """Call one test-only hook export in a separate Node process."""
+    proc = subprocess.run(
+        [
+            "node",
+            "-e",
+            "const hook = require(process.argv[1]); process.stdout.write(JSON.stringify(hook[process.argv[2]](...JSON.parse(process.argv[3]))));",
+            str(HOOK),
+            name,
+            json.dumps(args),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """Working directory an analyse run reports against."""
@@ -142,6 +161,15 @@ def test_absolute_sentinel_path_ignores_cwd(tmp_path: Path, repo: Path) -> None:
     (tmp_path / SENTINEL_NAME).write_text(f"{absolute}\n", encoding="utf-8")
 
     assert _denial_reason(_run(tmp_path, _ask_payload(cwd="/nonexistent"))) is not None
+
+
+def test_windows_report_file_resolution_is_canonical_and_contained() -> None:
+    """Resolve Windows report paths case-insensitively and reject traversal outside analyse."""
+    resolved = _call_export("resolveReportFile", r".REPORTS\ANALYSE\THREAD\output-analyse-thread-1.md", r"C:\Repo")
+
+    assert isinstance(resolved, str)
+    assert resolved.casefold() == r"c:\repo\.reports\analyse\thread\output-analyse-thread-1.md".casefold()
+    assert _call_export("resolveReportFile", r".reports\analyse\thread\..\..\private.md", r"C:\Repo") is None
 
 
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, repo: Path, analyse_run: Path) -> None:

@@ -1,7 +1,7 @@
 ---
 name: perf-optimizer
 description: 'Perf engineer — CPU/GPU/memory/I/O bottlenecks, DataLoader throughput, PyTorch tuning. Profile-first, measures before changing. NOT for refactoring (foundry:sw-engineer), architecture (foundry:solution-architect), DataLoader correctness (research:data-steward). TRIGGER: "why is this slow", "profile this", "optimize speed". SKIP: no perf complaint.'
-tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch
 maxTurns: 30
 model: opus
 effort: high

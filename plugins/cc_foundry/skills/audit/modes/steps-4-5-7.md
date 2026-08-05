@@ -35,6 +35,8 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 
 **Scope filter**: when `$SCOPE` is set, run only checks listed for that scope; skip all others silently.
 
+> Checks 42, 43 (and 14a/14b/14c/14d/14e, 32d, cli-flag-drift, R3) run in Step 1b on every invocation regardless of scope — never list them here; SKILL.md:198 forbids prose re-derivation.
+
 - `agents` — Checks 14a, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40, 41 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
 - `skills` — Checks 14a, 14b, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 40, 41 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
 - `rules` — Checks 18, 12, 13, 29, 32c, 41 (32d skipped — no plugin bin/ in rules scope)
@@ -62,8 +64,10 @@ Full check index (Checks 1–41, I1–I3, R1–R5 with severity, scope, notes) a
 
 ### Claude Code docs freshness (within Step 4)
 
+> Replace `<RUN_DIR>` with the actual run-directory path (sentinel `${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir`) before dispatching — the spawned agent gets a fresh shell and cannot expand orchestrator variables.
+
 ```text
-Agent(subagent_type="foundry:web-explorer", prompt="Fetch current Claude Code docs (https://code.claude.com/docs/en/). If that URL returns 404 or redirects, navigate from https://code.claude.com homepage to find the documentation section. If docs are entirely unavailable, return {\"status\":\"unavailable\",\"findings\":0}. Check: hook event names + type field vs documented schema (deprecated decision:/reason: fields); agent frontmatter fields + model values; skill frontmatter fields; new features passing genuine-value filter → Upgrade Proposals table (max 5, classify config or capability). Write full findings to $RUN_DIR/docs-freshness.md using the Write tool. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/docs-freshness.md\",\"findings\":N,\"deprecated\":N,\"new_features\":N,\"confidence\":0.N,\"summary\":\"N findings, N deprecated, N new features\"}")
+Agent(subagent_type="foundry:web-explorer", prompt="Fetch current Claude Code docs (https://code.claude.com/docs/en/). If that URL returns 404 or redirects, navigate from https://code.claude.com homepage to find the documentation section. If docs are entirely unavailable, return {\"status\":\"unavailable\",\"findings\":0}. Check: hook event names + type field vs documented schema (deprecated decision:/reason: fields); agent frontmatter fields + model values; skill frontmatter fields; new features passing genuine-value filter → Upgrade Proposals table (max 5, classify config or capability). Write full findings to <RUN_DIR>/docs-freshness.md using the Write tool. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: {\"status\":\"done\",\"file\":\"<RUN_DIR>/docs-freshness.md\",\"findings\":N,\"deprecated\":N,\"new_features\":N,\"confidence\":0.N,\"summary\":\"N findings, N deprecated, N new features\"}")
 ```
 
 <!-- URLs fetched live by web-explorer at runtime; graceful degradation: if any 404, instruct navigation from code.claude.com homepage. -->
@@ -90,9 +94,19 @@ mkdir -p .temp/state  # timeout: 5000
 
 ## Step 5: Aggregate and classify findings
 
-**Delegate aggregation** to consolidator agent to avoid flooding main context. Spawn **foundry:curator** consolidator:
+**Delegate aggregation** to consolidator agent to avoid flooding main context. Resolve the two absolute paths the consolidator must read — it runs in a fresh shell and cannot expand orchestrator variables, so these are interpolated as literal strings into the prompt below:
 
-> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present) AND the deterministic Layer-1 results at `${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl` (Step 1b — one JSON object per check; each `\"status\":\"fail\"` object's `lines` array is a set of already-verified mechanical findings, severity per the check's known level: fence/mode-dispatch=high, tag/README-drift/bash-persistence/spawn-vars/shared-drift=medium, orphaned-bin/routing=medium). Run `cat "$AUDIT_TPL/../severity-table.md"` via the Bash tool and apply its severity classification. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"critical|high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || RUN_DIR=""
+printf "RUN_DIR=%s\nSTATIC_FINDINGS_PATH=%s\nSEVERITY_TABLE_PATH=%s\n" "$RUN_DIR" "${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl" "$(dirname "$AUDIT_TPL")/severity-table.md"
+```
+
+Replace `<RUN_DIR>`, `<STATIC_FINDINGS_PATH>`, and `<SEVERITY_TABLE_PATH>` in the prompt below with the literal values printed above. Spawn **foundry:curator** consolidator:
+
+> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present) AND the deterministic Layer-1 results at `<STATIC_FINDINGS_PATH>` (Step 1b — one JSON object per check; each `\"status\":\"fail\"` object's `lines` array is a set of already-verified mechanical findings, severity per the check's known level: fence/mode-dispatch=high, tag/README-drift/bash-persistence/spawn-vars/shared-drift=medium, orphaned-bin/routing=medium). Run `cat "<SEVERITY_TABLE_PATH>"` via the Bash tool and apply its severity classification. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (security, critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"security|critical|high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
 
 Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate.md` in full — 200–600 lines, overflows context on large audits. Use `$RUN_DIR/summary.jsonl` for all dispatch decisions in Steps 7 and 8.
 

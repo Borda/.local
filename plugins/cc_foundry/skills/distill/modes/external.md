@@ -105,7 +105,7 @@ Local capability map (from E8):
 <paste local capability map summary>
 
 Write full analysis to <EXT_RUN_DIR>/challenger-review.md using Write tool.
-Return ONLY compact JSON as final line: {\"status\":\"done\",\"verdicts\":{\"<item-label>\":\"VERDICT\",...},\"confidence\":0.N}
+Return ONLY compact JSON as final line: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"<EXT_RUN_DIR>/challenger-review.md\",\"verdicts\":{\"<item-label>\":\"VERDICT\",...},\"confidence\":0.N,\"summary\":\"N candidates reviewed, N flagged\"}
 ")
 ```
 
@@ -153,10 +153,10 @@ Substitute `$EXT_RUN_DIR` with its computed path from `EXT_RUN_DIR=` block above
 
 ```text
 # .md files only
-Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list .md files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to ${EXT_RUN_DIR}/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"${EXT_RUN_DIR}/curator-external-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list .md files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to ${EXT_RUN_DIR}/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"${EXT_RUN_DIR}/curator-external-review.md\",\"issues\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 
 # .js / code files only — curator NOT-for excludes hooks; use sw-engineer
-Agent(subagent_type="foundry:sw-engineer", prompt="Apply the <hook_authoring> specialization from your agent definition. Review code files modified by /distill external mode: <list .js/.py/.ts/.sh files changed in E14>. Check: (1) file-header block present (PURPOSE, HOW IT WORKS, EXIT CODES); (2) exit-code semantics correct; (3) stdin pattern uses event-based accumulation; (4) subprocess calls use execFileSync/spawnSync with args array — no shell-string injection; (5) no unhandled exceptions escape. Write your full findings to ${EXT_RUN_DIR}/sw-engineer-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"${EXT_RUN_DIR}/sw-engineer-external-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:sw-engineer", prompt="Apply the <hook_authoring> specialization from your agent definition. Review code files modified by /distill external mode: <list .js/.py/.ts/.sh files changed in E14>. Check: (1) file-header block present (PURPOSE, HOW IT WORKS, EXIT CODES); (2) exit-code semantics correct; (3) stdin pattern uses event-based accumulation; (4) subprocess calls use execFileSync/spawnSync with args array — no shell-string injection; (5) no unhandled exceptions escape. Write your full findings to ${EXT_RUN_DIR}/sw-engineer-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"${EXT_RUN_DIR}/sw-engineer-external-review.md\",\"issues\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 ```
 
 If critical findings returned by either reviewer: surface to user before marking complete. Non-critical findings: advisory only.

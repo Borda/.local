@@ -13,6 +13,7 @@ Both `review` (consolidator) and `resolve` (parser) load this file — edit here
 | `### Performance Concerns` | `Performance` | `foundry:perf-optimizer` | `[req]` (code-related) | `perf` |
 | `### Documentation Gaps` | `Documentation` | `foundry:doc-scribe` | `[suggest]` | `docs` |
 | `### Static Analysis` | `Static Analysis` | `foundry:linting-expert` | `[suggest]` | `style` |
+| `### Cosmetic / Style` | `Cosmetic` | `foundry:linting-expert` | `[suggest]` | `style` |
 | `### API Design (if applicable)` | `API Design` | `foundry:solution-architect` | `[req]` (code-related) | `architecture` |
 | `### Codex Co-Review` | `Codex Co-Review` | `codex` | `[suggest]` | `code` |
 | `### OSS Checks` | (skip) | — | — | — |
@@ -33,10 +34,11 @@ All severities:
 | MEDIUM | Architecture, Performance, API Design (code-related) | `[req]` |
 | MEDIUM | Test Coverage, Documentation, Static Analysis, Codex Co-Review | `[suggest]` |
 | LOW | any | `[suggest]` — group by topic, never drop (see below) |
+| COSMETIC (`[cosmetic]` label) | any | `[suggest]` — severity 1; group per LOW Grouping Rule |
 
 ## LOW Grouping Rule
 
-Never omit LOW items. When total pending items > 12 (AskUserQuestion single-call ceiling), cluster LOW items into composite `[suggest]` rows by **topic or logical theme**. Cluster by semantic similarity — not by section or file. Each composite row:
+Never omit LOW items **present in the report** — this rule binds the resolve parser (extraction + AskUserQuestion clustering), not what the review consolidator chooses to write. Report-side pruning is governed by review/checklist.md §Consolidation Rules. When total pending items > 12 (AskUserQuestion single-call ceiling), cluster LOW items into composite `[suggest]` rows by **topic or logical theme**. Cluster by semantic similarity — not by section or file. Each composite row:
 
 - `summary`: cluster theme (≤55 chars)
 - `change`: bullet list of every member finding with `file:line`
@@ -49,7 +51,7 @@ Compress until total ≤ 12. Surface every LOW as own row when count permits —
 ## Grep Pattern (resolve parser)
 
 ```bash
-grep -E '^### .*(Critical|\[blocking\]|Architecture|Test Coverage|Performance|Documentation|Static Analysis|API Design|Codex Co-Review)'
+grep -E '^### .*(Critical|\[blocking\]|Architecture|Test Coverage|Performance|Documentation|Static Analysis|Cosmetic|API Design|Codex Co-Review)'
 ```
 
 Headers may carry `⚠ LOW CONFIDENCE — ` prefix — use contains-match, not exact-match.

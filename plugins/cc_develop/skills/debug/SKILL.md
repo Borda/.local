@@ -1,7 +1,7 @@
 ---
 name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file. TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: \"debug this failure\", \"why is X broken\", \"find the root cause of <error>\", \"investigate this CI failure\". SKIP when: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project."
-argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--worktree] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap] [--keep \"<items>\"]"
+argument-hint: "<symptom or issue # (plain 123 or #123)> [--issue <N>] [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--worktree] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap] [--keep \"<items>\"]"
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 disable-model-invocation: true
@@ -144,7 +144,7 @@ cat "$_DEV_SHARED/ci-log-extract.md"
 ```
 Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--team\`, \`--worktree\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after ALL supported flags extracted (including `--issue` and `--keep` from blocks above), scan `$ARGUMENTS` for remaining `--<token>` tokens not in supported list. Do NOT include `--issue` or `--keep` in "unknown" set — both are consumed by the mode-detect and keep-parse blocks above. Supported: `--no-challenge`, `--challenge`, `--team`, `--worktree`, `--ci-run`, `--issue`, `--repo`, `--codemap`, `--no-codemap`, `--keep`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Mode selection** — debug runs in one of two mutually-exclusive modes; set explicitly before any Step:
 
@@ -152,7 +152,7 @@ Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log 
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # strip flags first — "123 --no-challenge" would fail integer detection otherwise
-ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+|--no-codemap|--codemap//g' | xargs)
+ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--challenge|--team|--worktree|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+|--no-codemap|--codemap|--keep +"[^"]+"//g' | xargs)
 if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS_FOR_MODE_DETECT" =~ ^#?[0-9]+$ ]]; then
     DEBUG_MODE="issue"
 else
@@ -201,12 +201,18 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
 fi
 ```
 
-After reading traceback or `$ARGUMENTS`, derive `TARGET_MODULE`: strip `src/`, `.py` suffix, replace `/` with `.` (e.g. `src/mypackage/auth.py` → `mypackage.auth`). Then run:
+After reading traceback or `$ARGUMENTS`, derive `TARGET_MODULE`: strip `src/`, `.py` suffix, replace `/` with `.` (e.g. `src/mypackage/auth.py` → `mypackage.auth`); capture the failing function name too, if known, as `FAILING_FN`. `TARGET_MODULE` is a **substitution token** — resolve into the shell variable before the block below. Do NOT execute with literal `<TARGET_MODULE>` — bash would interpret `<` as stdin redirect:
 
 ```bash
+# Resolve TARGET_MODULE (and FAILING_FN if known) before this block — e.g.:
+# TARGET_MODULE=mypackage.auth ; FAILING_FN=validate
 # timeout: 10000
-codemap-py query rdeps <TARGET_MODULE> 2>/dev/null
-codemap-py query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
+if [ -z "$TARGET_MODULE" ]; then
+    echo "⚠ TARGET_MODULE not resolved — skipping codemap rdeps/fn-blast query"
+else
+    codemap-py query rdeps "$TARGET_MODULE" 2>/dev/null
+    [ -n "$FAILING_FN" ] && codemap-py query fn-blast "$TARGET_MODULE::$FAILING_FN" 2>/dev/null  # v3 index only
+fi
 ```
 
 If codemap-py results returned: prepend `## Structural Context (codemap-py)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
@@ -226,39 +232,55 @@ echo "$ISSUE_BODY" | tee ${TMPDIR:-/tmp}/dev-issue-body-${CSID}   # persist — 
 ```
 
 ```bash
+# timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r ISSUE_BODY < "${TMPDIR:-/tmp}/dev-issue-body-${CSID}" 2>/dev/null || ISSUE_BODY=""
-TEST_PATH=$(echo "$ISSUE_BODY" | grep -oE '(tests?/[^[:space:]]+\.py|test_[^[:space:]]+\.py)' | head -1)
+# grep the file directly — `IFS= read -r ISSUE_BODY` would capture only the FIRST line of a multi-line issue body
+TEST_PATH=$(grep -oE '(tests?/[^[:space:]]+\.py|test_[^[:space:]]+\.py)' "${TMPDIR:-/tmp}/dev-issue-body-${CSID}" 2>/dev/null | head -1)
 if [ -z "$TEST_PATH" ]; then
   echo "→ No test file found in issue; running full test suite"
 elif [ ! -f "$TEST_PATH" ]; then
   echo "⚠ test path from issue not found on disk: $TEST_PATH — running full suite"
   TEST_PATH=""
 fi
+echo "$TEST_PATH" > "${TMPDIR:-/tmp}/dev-debug-test-path-${CSID}"  # persist — three later blocks consume it
 ```
 
-Run pytest with extracted path (empty `$TEST_PATH` → full suite):
+Run pytest with extracted path (empty `$TEST_PATH` → full suite). `$TEST_PATH` stays unquoted so an empty value collapses to no argument rather than an empty one:
 
 ```bash
 # timeout: 600000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-$PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
-GATE_EXIT=${PIPESTATUS[0]}
-echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit-${CSID}
-if [ "$GATE_EXIT" -ne 0 ]; then
-    echo "Bug reproduced — tests fail. Proceed to fix."
+IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""
+IFS= read -r TEST_PATH  < "${TMPDIR:-/tmp}/dev-debug-test-path-${CSID}" 2>/dev/null || TEST_PATH=""
+if [ -z "$PYTEST_CMD" ]; then
+    echo "! PYTEST_CMD unresolved — re-run §Project Detection (runner-detection.md); an empty command would exit 127 and be misread as a reproduced bug"
 else
-    echo "Tests pass — bug may not be reproducible via pytest; check symptom directly."
+    $PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
+    GATE_EXIT=${PIPESTATUS[0]}
+    echo "$GATE_EXIT" > "${TMPDIR:-/tmp}/dev-gate-exit-${CSID}"
+    if [ "$GATE_EXIT" -ne 0 ]; then
+        echo "Bug reproduced — tests fail. Proceed to fix."
+    else
+        echo "Tests pass — bug may not be reproducible via pytest; check symptom directly."
+    fi
 fi
 ```
 
 ```bash
 # timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r TEST_PATH < "${TMPDIR:-/tmp}/dev-debug-test-path-${CSID}" 2>/dev/null || TEST_PATH=""
 git log --oneline -20
 COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 LOOKBACK=$(( COMMIT_COUNT < 5 ? COMMIT_COUNT : 5 ))
-SUSPECT_FILE="${TEST_PATH:-}"  # empty → full-repo diff
-[ "$LOOKBACK" -gt 1 ] && git diff HEAD~${LOOKBACK}..HEAD -- "${SUSPECT_FILE:-}"
+if [ "$LOOKBACK" -gt 1 ]; then
+    # git rejects an empty pathspec (fatal, exit 128) — omit the `--` clause entirely for the full-repo diff
+    if [ -n "$TEST_PATH" ]; then
+        git diff "HEAD~${LOOKBACK}..HEAD" -- "$TEST_PATH"
+    else
+        git diff "HEAD~${LOOKBACK}..HEAD"
+    fi
+fi
 ```
 
 **Cross-repo adaptation** (when `REPO_NAME` set) — issue from different codebase. After fetching issue:
@@ -269,17 +291,22 @@ SUSPECT_FILE="${TEST_PATH:-}"  # empty → full-repo diff
 **Symptom-text mode** — if `$ARGUMENTS` is free-text, skip issue fetch + extraction; locate failing test path from symptom directly. `<test_path>` is a **substitution token** — resolve into shell variable `$TEST_PATH` first (via Grep against symptom keywords or heuristic file search), then use `$TEST_PATH` in pytest call. Do NOT execute with literal `<test_path>` string — bash would interpret `<` as stdin redirect from a file named `test_path`:
 
 ```bash
-# Resolve TEST_PATH before this block — e.g.:
-# TEST_PATH=$(grep -rE '<symptom keyword>' tests/ --include='*.py' -l | head -1)
 # timeout: 600000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-$PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
-GATE_EXIT=${PIPESTATUS[0]}
-echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit-${CSID}
-if [ "$GATE_EXIT" -ne 0 ]; then
-    echo "Bug reproduced — tests fail. Proceed to fix."
+IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""
+TEST_PATH=""   # REPLACE with the resolved failing test path, e.g. $(grep -rlE '<symptom keyword>' tests/ --include='*.py' | head -1); empty → full suite
+echo "$TEST_PATH" > "${TMPDIR:-/tmp}/dev-debug-test-path-${CSID}"  # persist — later blocks consume it
+if [ -z "$PYTEST_CMD" ]; then
+    echo "! PYTEST_CMD unresolved — re-run §Project Detection (runner-detection.md); an empty command would exit 127 and be misread as a reproduced bug"
 else
-    echo "Tests pass — bug may not be reproducible via pytest; check symptom directly."
+    $PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
+    GATE_EXIT=${PIPESTATUS[0]}
+    echo "$GATE_EXIT" > "${TMPDIR:-/tmp}/dev-gate-exit-${CSID}"
+    if [ "$GATE_EXIT" -ne 0 ]; then
+        echo "Bug reproduced — tests fail. Proceed to fix."
+    else
+        echo "Tests pass — bug may not be reproducible via pytest; check symptom directly."
+    fi
 fi
 ```
 
@@ -421,14 +448,17 @@ cat "$_DEV_SHARED/premise-grounding.md"
 
 If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses-${CSID}` and re-run boundary contract block above before re-hypothesizing — keeps loop guard current so ruled-out cause not revisited.
 
-**Test impact (codemap-py) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `codemap-py query` availability (same gate as Step 1). `<SUSPECT>` is confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
+**Test impact (codemap-py) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `codemap-py query` availability (same gate as Step 1). `SUSPECT` is a **substitution token** — assign it in the block below as the confirmed hypothesis in dotted qname form: `module.path::function` (fn known) or bare `module.path` (module-level), same derivation as `TARGET_MODULE` (Step 1: strip `src/`, drop `.py`, `/` → `.`):
 
 ```bash
 # timeout: 8000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-debug-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
-if [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1; then
-    # SUSPECT resolved from Step 3 hypothesis — e.g. mypackage.auth::validate or mypackage.auth
+SUSPECT=""  # set to confirmed Step 3 hypothesis as module.path::function (fn known) or bare module.path — same shape as TARGET_MODULE
+if [ -z "$SUSPECT" ]; then
+    echo "⚠ SUSPECT not resolved — skipping Test Impact query and section"
+    rm -f ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}
+elif [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1; then
     codemap-py query test-impact "$SUSPECT" 2>/dev/null | tee ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}
 else
     rm -f ${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}  # no query — fix falls back to its own live query
@@ -531,10 +561,7 @@ Evidence: <key signals>
 **Refinements**: N passes.
 ```
 
-**Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Substitute actual `$DIAG_FILE` path (from bash block above) into option (a) label before calling tool. Map options directly into tool call arguments:
-- question: "Proceed with fix?"
-- (a) label: `/develop:fix --diagnosis <DIAG_FILE>` (substitute resolved path, e.g. `/develop:fix --diagnosis .plans/active/debug_<slug>.md`) — description: proceed with fix using confirmed diagnosis
-- (b) label: `skip` — description: no action
+**Next step** — print as plain text, not a selectable prompt (this skill has `disable-model-invocation: true` and no `Skill` tool in `allowed-tools`, so `/develop:fix` cannot be invoked automatically here). Substitute the resolved `$DIAG_FILE` path: `-> /develop:fix --diagnosis $DIAG_FILE` (e.g. `/develop:fix --diagnosis .plans/active/debug_<slug>.md`) for the user to copy-paste.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"

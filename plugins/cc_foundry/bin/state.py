@@ -18,8 +18,10 @@ run-unique component (timestamp / run-id) is still useful to separate multiple
 runs *within* one session, but no longer required for cross-session safety.
 Values are stored under ``<tmp>/claude-state-<namespace>-<csid>.env`` (``<tmp>``
 = ``$TMPDIR`` or the platform temp dir — never a hardcoded ``/tmp``, which does
-not exist on native Windows Python) and emitted single-quote-quoted so ``eval``
-is injection-safe.
+not exist on native Windows Python). Both halves of an emitted line are
+constrained so ``eval`` is injection-safe: KEY must match
+``^[A-Za-z_][A-Za-z0-9_]*$`` (rejected by ``set``, skipped by ``load``) and
+VALUE is single-quote-quoted with embedded quotes escaped.
 
 Usage:
     state.py set <namespace> KEY=VALUE [KEY=VALUE ...]   # merge (create/update)
@@ -39,6 +41,11 @@ import tempfile
 from pathlib import Path
 
 _NS_SAFE = re.compile(r"[^A-Za-z0-9._-]")
+# ``load_values`` emits ``KEY='VALUE'`` for the caller's ``eval``.  KEY sits outside
+# the quoting that protects VALUE, so a metacharacter-bearing key would run as a
+# separate shell statement (CWE-78).  Restricted to shell identifiers on both the
+# write path (``set_values``) and the emit path (``load_values``).
+_KEY_SAFE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _csid() -> str:
@@ -102,9 +109,10 @@ def set_values(namespace: str, assignments: list[str]) -> int:
     Args:
         namespace: Target namespace.
         assignments: Strings of the form ``KEY=VALUE`` (VALUE may be empty or contain ``=``).
+            KEY must be a shell identifier — ``^[A-Za-z_][A-Za-z0-9_]*$``.
 
     Returns:
-        0 on success, 2 if any assignment is malformed.
+        0 on success, 2 if any assignment is malformed or carries an unsafe key.
     """
     path = state_path(namespace)
     values = _read(path)
@@ -117,6 +125,9 @@ def set_values(namespace: str, assignments: list[str]) -> int:
         if not key:
             sys.stderr.write(f"state.py: empty key in {item!r}\n")
             return 2
+        if not _KEY_SAFE.fullmatch(key):
+            sys.stderr.write(f"state.py: unsafe key {key!r} in {item!r} — must match [A-Za-z_][A-Za-z0-9_]*\n")
+            return 2
         values[key] = val
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8")
@@ -127,7 +138,10 @@ def load_values(namespace: str) -> int:
     """Print ``KEY='VALUE'`` lines for a namespace, safe to ``eval`` in bash.
 
     Single quotes inside values are escaped as ``'\\''`` so the emitted lines are
-    injection-safe.
+    injection-safe. The state file is not trusted to have been written by this
+    module — any key failing ``^[A-Za-z_][A-Za-z0-9_]*$`` (legacy file, concurrent
+    writer, hand edit) is skipped with a stderr warning rather than emitted, since
+    KEY precedes the quoting that protects VALUE.
 
     Args:
         namespace: Namespace to load.
@@ -136,6 +150,9 @@ def load_values(namespace: str) -> int:
         0 always (absent file → no output).
     """
     for key, val in _read(state_path(namespace)).items():
+        if not _KEY_SAFE.fullmatch(key):
+            sys.stderr.write(f"state.py: skipping unsafe key {key!r} from state file\n")
+            continue
         escaped = val.replace("'", "'\\''")
         print(f"{key}='{escaped}'")
     return 0

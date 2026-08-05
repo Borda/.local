@@ -1,7 +1,7 @@
 ---
 name: scientist
 description: "AI/ML researcher — paper analysis, hypothesis generation, experiment design. ONLY for named research paper/hypothesis/experiment. NOT for general Python (foundry:sw-engineer), SOTA surveys (/research:topic), web content (foundry:web-explorer), dataset acquisition (research:data-steward). TRIGGER: implementing from publication, testable hypotheses."
-tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, TaskCreate, TaskUpdate
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 maxTurns: 60
 model: opus
 effort: high

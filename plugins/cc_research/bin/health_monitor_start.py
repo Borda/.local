@@ -22,6 +22,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import tempfile
@@ -81,7 +82,14 @@ def main(argv: list[str] | None = None) -> int:
 
     launch_at = int(time.time())
     sentinel = _sentinel_dir() / f"research-{skill_id}-check-{launch_at}"
-    sentinel.touch()
+    # Exclusive create, not Path.touch(): touch() follows a symlink pre-planted at this predictable
+    # path in world-writable /tmp. O_NOFOLLOW absent on win32 (hence getattr); EEXIST is benign.
+    try:
+        fd = os.open(sentinel, os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError:
+        pass
+    else:
+        os.close(fd)
 
     sys.stdout.write(f"LAUNCH_AT={launch_at}\nSENTINEL={sentinel.as_posix()}\n")
     return 0

@@ -51,6 +51,8 @@ While producing output — not only after — ask "what would make this wrong?".
 
 ## Confidence Block (required on all analysis tasks)
 
+<!-- policy-sibling: plugins/cc_oss/rules/quality-gates.md, plugins/cc_develop/rules/quality-gates.md, plugins/cc_research/rules/quality-gates.md -->
+
 Every analysis agent **must** end with:
 
 ```markdown

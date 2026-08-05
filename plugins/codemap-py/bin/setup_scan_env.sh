@@ -44,12 +44,12 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-plugins/codemap}"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}"
 SCAN_BIN="${PLUGIN_ROOT}/bin/scan-index"
 PARSE_BIN="${PLUGIN_ROOT}/bin/parse_scan_args.py"
 
 if [ ! -x "$SCAN_BIN" ]; then
-    printf "! scan-index binary not found at %s — reinstall: claude plugin install codemap@borda-ai-rig\n" "$SCAN_BIN" >&2
+    printf "! scan-index binary not found at %s — reinstall: claude plugin install codemap-py@borda-ai-rig\n" "$SCAN_BIN" >&2
     exit 1
 fi
 
@@ -102,19 +102,31 @@ TMPDIR_DIR="${_RAW_TMPDIR:-/tmp}"  # tmpdir-exempt: base-dir-fallback (directory
 # before invoking this script; degrades to "shared" only if the caller forgot the export.
 CSID="${CSID:-shared}"
 
-# Per-PROJ_SLUG tmpfiles — survive across Bash tool calls; consumed by Step 1's
-# second block + Step 2 of scan-codebase/SKILL.md. PID-qualified to prevent
-# concurrent same-project scan runs from racing on shared state.
-printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug-$$-${CSID}"
-printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-$$-${CSID}"
-printf '%s' "$SCAN_ARGS_RAW"  > "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-$$-${CSID}"
-printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-$$-${CSID}"
+# Per-PROJ_SLUG tmpfiles — legacy fallback surface, kept for callers that predate
+# STATE_FILE (the sourced KEY=VAL handoff below, the actual consumed mechanism).
+# PID-qualified to prevent concurrent same-project scan runs from racing on shared state.
+#
+# CWE-377: plain `printf > file` follows a pre-planted symlink at the target path and
+# truncates whatever it points to. write-to-mktemp-then-rename is atomic (POSIX rename()
+# replaces the destination inode outright, symlink or not, rather than writing through it)
+# and preserves the exact byte content (no trailing newline) test_setup_scan_env_sh.py pins.
+_cm_write_atomic() {
+    local target="$1" content="$2"
+    local tmp
+    tmp="$(mktemp "${TMPDIR_DIR}/.codemap-setup-tmp.XXXXXX")"
+    printf '%s' "$content" > "$tmp"
+    mv -f "$tmp" "$target"
+}
+_cm_write_atomic "${TMPDIR_DIR}/codemap-proj-slug-$$-${CSID}" "$PROJ_SLUG"
+_cm_write_atomic "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-$$-${CSID}" "$SCAN_BIN"
+_cm_write_atomic "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-$$-${CSID}" "$SCAN_ARGS_RAW"
+_cm_write_atomic "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-$$-${CSID}" "$PROJ_NAME"
 
 # Keep non-PID versions as fallback for callers that predate this change
-printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug-${CSID}"
-printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-${CSID}"
-printf '%s' "$SCAN_ARGS_RAW"  > "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-${CSID}"
-printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-${CSID}"
+_cm_write_atomic "${TMPDIR_DIR}/codemap-proj-slug-${CSID}" "$PROJ_SLUG"
+_cm_write_atomic "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-${CSID}" "$SCAN_BIN"
+_cm_write_atomic "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-${CSID}" "$SCAN_ARGS_RAW"
+_cm_write_atomic "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-${CSID}" "$PROJ_NAME"
 
 # --incremental requested but no prior index ⇒ scan-index will fall back to full scan.
 # Drop a sentinel so Step 2 can report the fallback after stats.
@@ -132,12 +144,21 @@ fi
 # State file — sourceable KEY=VAL form for in-block use by the caller.
 # Single-quote values to survive `source` even when paths contain shell metachars.
 # Embedded single quotes are escaped via the standard '\'' shell idiom.
+#
+# The caller `source`s this file (SKILL.md Step 1 block 2, Step 2), which means any
+# integrity gap here is a code-execution hole, not just a data-corruption one. Two
+# defences: `mktemp` creates the file atomically (O_CREAT|O_EXCL, mode 0600) with an
+# unguessable suffix instead of the trivially-predictable `$$` (process id) this file
+# used before — a co-located attacker in a shared TMPDIR can no longer pre-plant a
+# symlink at the exact name this script is about to write. The caller additionally
+# asserts `-O`/`! -L` immediately before each `source`, in case TMPDIR is shared and
+# some other, unrelated file collides.
 escape_sq() {
     # Replace each ' with '\''
     printf "%s" "$1" | sed "s/'/'\\\\''/g"
 }
 
-STATE_FILE="${TMPDIR_DIR}/codemap-scan-state-$$"
+STATE_FILE="$(mktemp "${TMPDIR_DIR}/codemap-scan-state-XXXXXX")"
 {
     printf "PROJ_SLUG='%s'\n"     "$(escape_sq "$PROJ_SLUG")"
     printf "SCAN_BIN='%s'\n"      "$(escape_sq "$SCAN_BIN")"

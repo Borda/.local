@@ -59,7 +59,7 @@ cp "${TMPDIR:-/tmp}/dev-plan-max-depth-${CSID}"     "$PLAN_NS/max-depth"        
 
 Downstream blocks recover namespace then read back, e.g. `IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""; IFS= read -r CODEMAP_ENABLED < "$PLAN_NS/codemap-enabled" 2>/dev/null || CODEMAP_ENABLED=false`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — normalize `CODEMAP_RAW` to `true`/`false`; strict mode hard-fails when codemap unavailable:
 
@@ -89,13 +89,21 @@ cat "$_DEV_SHARED/codemap-gates.md"
 ```
 Follow Gate A and Gate B.
 
-**Preflight** — if `SEMBLE_ENABLED=true`:
+**Preflight** — runs only when `--semble` was passed; the block re-reads `SEMBLE_ENABLED` from the namespace because bash state is lost between Bash() calls:
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
-cat "$_DEV_SHARED/preflight-helpers.md"
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
+IFS= read -r SEMBLE_ENABLED < "$PLAN_NS/semble-enabled" 2>/dev/null || SEMBLE_ENABLED=false
+if [ "$SEMBLE_ENABLED" = "true" ]; then
+    _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+    cat "$_DEV_SHARED/preflight-helpers.md"
+else
+    echo "→ --semble not passed — skipping semble preflight"
+fi
 ```
-Execute semble preflight. Codemap validation handled by auto-detect block above.
+When the block printed `preflight-helpers.md`, execute the semble preflight it describes; when it printed the skip line, proceed. Codemap validation handled by auto-detect block above.
 
 ## Step 1: Classify and scope
 
@@ -123,13 +131,23 @@ echo "$TARGET_MODULE" > "$PLAN_NS/target-module"   # persist — bash state lost
 echo "$TARGET_FN"     > "$PLAN_NS/target-fn"
 ```
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**:
+**Structural context** — runs only when codemap or semble is enabled; both values re-read from the namespace (bash state lost between Bash() calls):
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
-cat "$_DEV_SHARED/codemap-context.md"
+# timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
+IFS= read -r CODEMAP_ENABLED < "$PLAN_NS/codemap-enabled" 2>/dev/null || CODEMAP_ENABLED=false
+IFS= read -r SEMBLE_ENABLED  < "$PLAN_NS/semble-enabled"  2>/dev/null || SEMBLE_ENABLED=false
+echo "CODEMAP_ENABLED=$CODEMAP_ENABLED SEMBLE_ENABLED=$SEMBLE_ENABLED"
+if [ "$CODEMAP_ENABLED" = "true" ] || [ "$SEMBLE_ENABLED" = "true" ]; then
+    _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+    cat "$_DEV_SHARED/codemap-context.md"
+else
+    echo "→ codemap and semble both off — skipping structural context"
+fi
 ```
-Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both flags false.
+Follow enabled sections per the values the block echoed (codemap block if `CODEMAP_ENABLED=true`, semble companion if `SEMBLE_ENABLED=true`). Nothing printed beyond the skip line → proceed.
 
 **Effort sizing (codemap-py)** — when `CODEMAP_ENABLED=true`, derive blast-radius tier table from reverse dependencies so complexity estimate structural, not guessed. Degrade silently when codemap-py absent — plan works unchanged, sizing falls back to agent's file-count heuristic. Run Extended scan (`--source=diff` when partial diff exists, e.g. re-planning after abandoned work; otherwise per-target `rdeps` when `TARGET_MODULE` known):
 
@@ -160,7 +178,7 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
 
 - Classify task as `feature`, `fix`, `refactor`, or `debug`
   - `debug`: root cause unknown — symptoms present but cause unclear, investigation needed before fix scoped; when classified `debug`, recommend running `/develop:debug` first, then re-run `/develop:plan` once root cause identified to produce fix plan
-  - **WARNING**: debug classification triggers `/develop:debug` which can re-invoke `/develop:plan` — caller tracks dispatch depth to prevent infinite loop via shared checkpoint file (not a CLI flag — `/develop:debug` does not accept `--max-depth`). Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). Before invoking `/develop:debug`, execute depth-checkpoint bash block below:
+  - **WARNING**: debug classification recommends `/develop:debug`; once root cause found, `/develop:debug`'s own output tells the user to re-run `/develop:plan` — a user-mediated plan→debug→plan cycle, not automatic re-invocation (`/develop:debug` never calls `/develop:plan` itself). Caller tracks cycle depth via shared checkpoint file to cap repeated cycles (not a CLI flag — `/develop:debug` does not accept `--max-depth`). Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). Before invoking `/develop:debug`, execute depth-checkpoint bash block below:
 
 ```bash
 # anti-loop guard  # timeout: 3000
@@ -201,6 +219,14 @@ Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-se
 # persist — bash state lost between Bash() calls  # timeout: 3000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
+mkdir -p ".plans/active"
+SLUG=$(printf '%s\n' "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | grep -oE '[a-z0-9]+' | grep -vE '^(a|an|the|in|on|of|to|for|and|or|is|with|at|by|from)$' | head -5 | paste -sd- -)
+PLAN_FILE=".plans/active/plan_${SLUG}.md"
+N=2
+while [ -e "$PLAN_FILE" ]; do
+    PLAN_FILE=".plans/active/plan_${SLUG}-${N}.md"
+    N=$((N+1))
+done
 echo "$PLAN_FILE" > "$PLAN_NS/plan-file"
 ```
 
@@ -271,12 +297,35 @@ Agents return inline (verdicts ~150 bytes — no file handoff). Collect all resu
 
 ### Internal resolution loop (max 3 iterations)
 
-`ITER=0` — initialize before entering loop.
+The loop body is model-driven (codebase search, agent re-query), so the counter lives in a file rather than a shell variable — bash state is lost between Bash() calls and an in-prose `ITER` would never be assigned.
+
+Initialize once, before entering the loop:
+
+```bash
+# timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
+echo 0 > "$PLAN_NS/resolution-iter"
+```
+
+Then run this block at the top of **every** iteration, before doing any resolution work for that pass:
+
+```bash
+# timeout: 3000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
+IFS= read -r ITER < "$PLAN_NS/resolution-iter" 2>/dev/null || ITER=0
+if [ "$ITER" -ge 3 ]; then
+    echo "! Max feasibility iterations (3) reached — stop the loop and escalate remaining items to user"
+else
+    echo $(( ITER + 1 )) > "$PLAN_NS/resolution-iter"
+    echo "→ resolution pass $(( ITER + 1 )) of 3"
+fi
+```
+
+Block printed the `!` line → exit the loop immediately and escalate whatever remains unresolved.
 
 For each blocker or open question:
-
-`[ $ITER -ge 3 ] && { echo "Max feasibility iterations reached — escalating to user"; break; }`
-`ITER=$((ITER+1))`
 
 1. **Attempt autonomous resolution** — search codebase, read relevant files, re-read goal. Fetch primary-source docs for relevant issues (official docs, RFCs, library changelogs, migration guides) via WebFetch — known URLs only; WebFetch fetches specific URL, does not search.
    - **Unknown-URL path**: if URL needed to resolve blocker unknown (e.g. "what does library X's new API look like?"), do NOT guess or invent URL. Mark blocker `requires-user-input` and skip WebFetch — escalate to user with note that documentation lookup required.
@@ -306,14 +355,20 @@ Do not escalate: items resolvable from codebase, items that are risks (not block
 **Two states** (plan has no diff yet, so no small-diff auto-skip and no `--challenge` flag — unlike fix/feature/refactor/debug): by **default** challenger always reviews plan design; `--no-challenge` (`CHALLENGE_ENABLED=false`) **skips gate entirely**.
 
 ```bash
-# re-hydrate PLAN_FILE — bash state lost between Bash() calls  # timeout: 3000
+# re-hydrate PLAN_FILE + CHALLENGE_ENABLED — bash state lost between Bash() calls  # timeout: 3000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
 IFS= read -r PLAN_FILE < "$PLAN_NS/plan-file" 2>/dev/null || PLAN_FILE=""
+IFS= read -r CHALLENGE_ENABLED < "$PLAN_NS/challenge-enabled" 2>/dev/null || CHALLENGE_ENABLED=true
 [ -f "$PLAN_FILE" ] || { echo "plan: PLAN_FILE not found: $PLAN_FILE" >&2; exit 1; }
+if [ "$CHALLENGE_ENABLED" = "false" ]; then
+    echo "→ --no-challenge passed — skipping Step 4 challenger gate; go to Step 5"
+else
+    echo "→ challenger gate active for $PLAN_FILE"
+fi
 ```
 
-Spawn `foundry:challenger` to adversarially review written plan before user commits:
+Block printed the skip line → skip the rest of Step 4 entirely and go to Step 5. Otherwise spawn `foundry:challenger` to adversarially review written plan before user commits:
 
 > "Read `<PLAN_FILE>`. Challenge plan across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step per your instructions."
 
@@ -362,7 +417,7 @@ Plan -> <PLAN_FILE>
 
 <brief content exactly as written to the file>
 
--> /develop <classification> <goal> when ready  [debug: -> /develop:debug <goal> first, then re-run /develop:plan]
+-> /develop:<classification> <goal> when ready  [debug: -> /develop:debug <goal> first, then re-run /develop:plan]
 ```
 
 If unresolved items escalated, print each after brief:
@@ -373,7 +428,7 @@ If unresolved items escalated, print each after brief:
   Recommendation: <option> — <reason>
 ```
 
-Invoke `AskUserQuestion` tool before printing `-> /develop ...`. Options: (a) Proceed — print handoff line and continue · (b) Revise plan — return to Step 2 with user edits. Do not print handoff line until user selects option (a).
+Invoke `AskUserQuestion` tool before printing `-> /develop:<classification> ...`. Options: (a) Proceed — print handoff line and continue · (b) Revise plan — return to Step 2 with user edits. Do not print handoff line until user selects option (a).
 
 **Handoff contract**: plan file at `<PLAN_FILE>` consumable by downstream skills. Pass via `--plan <PLAN_FILE>` when invoking `/develop:feature`, `/develop:fix`, or `/develop:refactor`. For `debug` classification: no downstream plan file — invoke `/develop:debug <goal>` directly; once root cause identified, re-run `/develop:plan` to produce scoped fix plan. When skill receives `--plan <path>`, reads plan file at Step 1 and:
 - Extracts `Classification`, `Affected files`, `Risks`, `Suggested approach` — skips cold codebase exploration

@@ -1,7 +1,7 @@
 ---
 name: qa-specialist
 description: 'QA specialist writing/fixing tests. Black-box tester: public API surface, expectations from docs not implementation. NOT for linting (foundry:linting-expert), implementation (foundry:sw-engineer), test perf (foundry:perf-optimizer), non-Python frameworks. TRIGGER: "write tests for", "add unit tests". SKIP: read-only; trivial test; linting fixes.'
-tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch, WebSearch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch
 maxTurns: 30
 model: sonnet
 effort: high
@@ -274,7 +274,7 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
 fi
 ```
 
-> `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure. After implementation change, prefer `codemap:test-impact` (requires `codemap` plugin) over full-suite rerun — call `Skill(skill="codemap:test-impact", args="<module::changed_function>")` to select only the statically affected test files.
+> `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure. After implementation change, prefer targeted test selection over a full-suite rerun: signal to the orchestrator "run /codemap-py:test-impact <module::changed_function> to select only the statically affected test files" (requires `codemap-py` plugin) — qa-specialist has no Skill tool and cannot invoke it directly.
 
 </codemap_context>
 

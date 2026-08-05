@@ -3,7 +3,7 @@ name: audit
 description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, boilerplate duplication, and bin/ extraction candidates (extraction performed separately via /distill executables). Fix level chosen via always-fire follow-up gate after report."
 argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate] [--keep \"<items>\"]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
 ---
 
@@ -51,7 +51,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 
 BATCH_SIZE_MIN=5       # minimum files per batch; ensures curator gets sufficient context per spawn
 MAX_BATCHES=10         # total batch cap; EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total / MAX_BATCHES))
-ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention; override with --batch-size N
+ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention
 
 </constants>
 
@@ -205,7 +205,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/audit_static.py" --scan-di
     --jsonl "${TMPDIR:-/tmp}/audit-state-${CSID}/static-findings.jsonl"  # timeout: 120000
 ```
 
-Covered deterministically by the driver (map to legacy check IDs — do NOT re-run these as prose): **14a** tag symmetry · **14b** fence symmetry · **14c** README drift · **14d** mode-dispatch integrity · **14e** cross-plugin shared-file drift · **41** bash-variable persistence · **42** spawn-prompt `$VAR` · **32d** orphaned bin/ scripts · **cli-flag-drift** SKILL.md flags vs argparse (`check_cli_flag_drift.py`, checks-index 42) · **R3** bin/computed-path reference integrity. The whole-repo checks (orphaned-bin, routing-links, shared-drift) always scope to `plugins/` regardless of `STATIC_SCOPE`; the driver is most complete in `--local` mode. Step 5 merges `static-findings.jsonl` into the aggregate.
+Covered deterministically by the driver (map to legacy check IDs — do NOT re-run these as prose): **14a** tag symmetry · **14b** fence symmetry · **14c** README drift · **14d** mode-dispatch integrity · **14e** cross-plugin shared-file drift · **43** bash-variable persistence · **42** spawn-prompt `$VAR` (checks-skills.md) · **32d** orphaned bin/ scripts · **cli-flag-drift** SKILL.md flags vs argparse (`check_cli_flag_drift.py`, checks-index 42) · **R3** bin/computed-path reference integrity. The whole-repo checks (orphaned-bin, routing-links, shared-drift) always scope to `plugins/` regardless of `STATIC_SCOPE`; the driver is most complete in `--local` mode. Step 5 merges `static-findings.jsonl` into the aggregate.
 
 > **Layer-1 recall is benchmarked** — `tests/test_audit_static.py` plants a known defect per scope-aware class and asserts the driver catches every one (100% mechanical recall), so this pass is trusted, not assumed.
 
@@ -269,7 +269,7 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 
 **Batching rule**: Always apply the grouping algorithm. Compute `EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total_files / MAX_BATCHES))` before grouping — caps total batches at `MAX_BATCHES` while guaranteeing `BATCH_SIZE_MIN` files per batch for adequate curator context. Group files into batches of up to `EFFECTIVE_BATCH`. Never spawn one agent per file. Total files ≤ `EFFECTIVE_BATCH` → one batch containing all files.
 
-**Grouping algorithm**: (1) sort by plugin origin (`plugins/<name>/` prefix); (2) assign each plugin's files to batches, fill to `BATCH_SIZE` before next — keeps same-plugin files together; (3) remaining files (`.claude/` and mixed) fill open slots. Grouping plugin-first, not strictly ordered — unconnected files assigned randomly to reach `BATCH_SIZE`.
+**Grouping algorithm**: (1) sort by plugin origin (`plugins/<name>/` prefix); (2) assign each plugin's files to batches, fill to `EFFECTIVE_BATCH` before next — keeps same-plugin files together; (3) remaining files (`.claude/` and mixed) fill open slots. Grouping plugin-first, not strictly ordered — unconnected files assigned randomly to reach `EFFECTIVE_BATCH`.
 
 **Layer-2 — judgment by domain, not by file (plugin scope)**: when the scope is `plugins`, `plugins <name>`, or a tier-2 plugin name, override the batch cap and group **all of a plugin's files into ONE holistic batch** (one `foundry:curator` per plugin), even if that exceeds `EFFECTIVE_BATCH`. Whole-plugin context is what lets the curator catch cross-file breaks that per-file batching structurally misses — tool-grant mismatches (agent frontmatter vs skill dispatch), inter-skill contract splits (a constant clamped differently in two files), dead dispatch paths, and version/description drift within the plugin. The curator prompt for a holistic batch must say: "You have this plugin's ENTIRE file set — review it as one system: check that every `Agent(subagent_type=...)` dispatch targets an agent whose frontmatter grants the needed tools, that shared constants/contracts agree across files, and that no skill references a removed mode/file." The mechanical checks are already done in Step 1b — spend this holistic pass on cross-file judgment only. (Very large plugins may still split, but keep agents+their dispatching skills in the same batch.)
 
@@ -289,7 +289,7 @@ echo "$RUN_DIR" > "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir"
 cat "$AUDIT_TPL/curator-prompt.md"
 ```
 
-Spawn **foundry:curator** agents in batches of up to `BATCH_SIZE` (grouping algorithm above) — or one batch if scope ≤ `BATCH_SIZE`. Each spawn prompt must:
+Spawn **foundry:curator** agents in batches of up to `EFFECTIVE_BATCH` (grouping algorithm above) — or one batch if scope ≤ `EFFECTIVE_BATCH`. Each spawn prompt must:
 
 1. Include the curator-prompt.md content loaded above
 2. Include the disk inventory from Step 2 (agent/skill list for cross-reference validation)

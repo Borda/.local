@@ -79,7 +79,7 @@ const SENTINEL_PREFIX = "analyse-report-file-";
 // Every mode writes under ".reports/analyse/<thread|vitality|ecosystem>/";
 // requiring the marker keeps the hook from acting on a sentinel holding
 // anything else — notably the arbitrary path DIRECT_PATH_MODE stores.
-const REPORT_MARKER = "/.reports/analyse/";
+const REPORT_DIR_PARTS = [".reports", "analyse"];
 // Enforcement window measured from the sentinel's mtime (see KNOWN LIMITATION).
 // 2h, matching enforce-review-header.js: the mode files write the sentinel late
 // in the run (vitality only reaches Step 4 after data fetch and axis scoring),
@@ -127,6 +127,24 @@ function findSentinel(dir, csids) {
   return null;
 }
 
+/** Select the path implementation matching a Windows or POSIX sentinel path. */
+function reportPathApi(value, cwd) {
+  const isWindowsPath = (candidate) =>
+    typeof candidate === "string" && (/^[A-Za-z]:[\\/]/.test(candidate) || candidate.startsWith("\\\\"));
+  return isWindowsPath(value) || isWindowsPath(cwd) ? path.win32 : path.posix;
+}
+
+/** True when normalized path components contain a descendant of the expected report directory. */
+function isReportPath(value, api, reportParts) {
+  const parts = api.normalize(value).split(api.sep).filter(Boolean);
+  const normalize = api === path.win32 ? (part) => part.toLowerCase() : (part) => part;
+  const marker = reportParts.map(normalize);
+  return parts.some(
+    (_, index) =>
+      index + marker.length < parts.length && marker.every((part, offset) => normalize(parts[index + offset]) === part),
+  );
+}
+
 /**
  * Absolute form of the sentinel's stored report path, or null when it cannot be
  * one. The modes build ".reports/analyse/…" relative to the repo root, so the
@@ -134,9 +152,10 @@ function findSentinel(dir, csids) {
  */
 function resolveReportFile(value, cwd) {
   if (typeof value !== "string" || value === "") return null;
-  const base = typeof cwd === "string" && path.isAbsolute(cwd) ? cwd : process.cwd();
-  const resolved = path.resolve(base, value);
-  return resolved.includes(REPORT_MARKER) ? resolved : null;
+  const api = reportPathApi(value, cwd);
+  const base = typeof cwd === "string" && api.isAbsolute(cwd) ? cwd : process.cwd();
+  const resolved = api.resolve(base, value);
+  return isReportPath(resolved, api, REPORT_DIR_PARTS) ? resolved : null;
 }
 
 /**

@@ -1,7 +1,7 @@
 ---
 name: curator
 description: 'Config quality reviewer. Scope: agents/skills/rules (*.md) — verbosity, duplication, cross-refs, roster overlap; applies fixes. NOT for hooks (foundry:sw-engineer), ADRs (foundry:solution-architect), adversarial challenge (foundry:challenger). TRIGGER: "audit this agent", "review .claude/agents/X". SKIP: general code review; no target given.'
-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, TaskCreate, TaskUpdate
+tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch
 model: opusplan
 effort: xhigh
 memory: project
@@ -151,8 +151,8 @@ Valid skill frontmatter fields:
 - All mode sections sit inside `<workflow>` (closing tag after last mode, before `<notes>`)
 - Step numbers sequential with no gaps
 - Referenced agents in skill files exist on disk
-- Skills spawning background sub-agents must implement health monitoring protocol from CLAUDE.md §6: launch checkpoint, 5-min file-activity poll, 15-min hard cutoff, ⏱ marker in report for timed-out agents
-- Skills spawning 2+ agents in parallel must implement file-based handoff protocol (`.claude/skills/_shared/file-handoff-protocol.md`): agents write full output to files, return only compact JSON envelope; consolidation delegated to consolidator agent, not done in main context. Check: does skill's agent spawn prompt include "Write your full output to `<path>` ... return ONLY" instruction? If not → P2 finding.
+- Skills spawning sub-agents must follow the event-driven health-monitoring protocol in `${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/_shared/agent-spawn-protocol.md`: background spawns act on the harness completion notification (never a `sleep` poll loop); synchronous spawns read the output file after the blocking call returns; empty or missing output → `timed_out` + ⏱, never silently omitted. A skill referencing `agent-spawn-protocol.md` satisfies this check. Flag any skill still mandating a fixed-interval poll or hard-minute cutoff — those loops never run under the current harness.
+- Skills spawning 2+ agents in parallel must implement file-based handoff protocol (`${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/_shared/file-handoff-protocol.md`): agents write full output to files, return only compact JSON envelope; consolidation delegated to consolidator agent, not done in main context. Check: does skill's agent spawn prompt include "Write your full output to `<path>` ... return ONLY" instruction? If not → P2 finding.
 
 ## Agent Section Completeness
 
@@ -204,7 +204,7 @@ Over budget: <N agents> | Broken refs: <N> | Duplicates found: <N>
 3. Backlog: [P4 freshness, P5 structural]
 
 ### Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
 **Gaps**: [what limited thoroughness — files not fully read, cross-agent context missing, runtime behaviour unobservable from static analysis alone]
 
 **Refinements**: N passes. [Pass 1: <what improved>. Pass 2: <what improved>.] — omit if 0 passes
@@ -251,7 +251,7 @@ When asked to fix issues (priority ordering enforced in workflow Step 8):
 
 ## Confidence → Improvement Loop
 
-Low confidence (<0.8): orchestrator re-runs curator with targeted prompt. Recurring blind spot:
+Low confidence (<0.85): orchestrator re-runs curator with targeted prompt. Recurring blind spot:
 
 - Missing capability → add tool to `tools` in agent frontmatter
 - Missed pattern → add to `\<antipatterns_to_flag>`
@@ -321,7 +321,7 @@ Never use `sonnet` for agents making complex multi-file design decisions; `found
 
 - When new model aliases introduced (e.g. new claude-\* releases), update tier-to-model mapping table before running calibration; stale table entries create false-positive model mismatch findings
 
-- **Context-flooding delegation**: skill spawns 2+ agents without file-based handoff — all agent outputs return to main context for inline consolidation. Ref: `.claude/skills/_shared/file-handoff-protocol.md`. Severity: P2 (duplication-level — remove inline output, add file handoff).
+- **Context-flooding delegation**: skill spawns 2+ agents without file-based handoff — all agent outputs return to main context for inline consolidation. Ref: `${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/_shared/file-handoff-protocol.md`. Severity: P2 (duplication-level — remove inline output, add file handoff).
 
 - **Scripts in `skills/_shared/` or `commands/`** — `.sh`/`.py` files there are misplaced; `_shared/` is for markdown reference docs; `commands/` is Claude Code's legacy name for flat skill `.md` files. Fix: move to plugin's `bin/` directory; update caller to `${CLAUDE_PLUGIN_ROOT}/bin/<script>`; inline `python -c` blocks > ~20 lines also belong in `bin/*.py`. Severity: P2.
 

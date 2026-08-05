@@ -77,11 +77,12 @@ cat "$_DEV_SHARED/preflight-helpers.md"
 ```
 Execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
+**Checkpoint init**: creates `.developments/<TS>/` and captures path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
 ```bash
-# persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
+# timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_run_dir.py" 2>/dev/null)
 echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}"
 ```
 
@@ -136,12 +137,12 @@ cat "$_DEV_SHARED/worktree-isolation.md"
 
 `WORKTREE_ENABLED=true` → follow §Enter (call `EnterWorktree`, warm-start codemap). Else skip — run in main tree. Remember the branch for §Exit at Final Report.
 
-**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
+**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-fix-codemap-${CSID}` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
 
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-codemap-raw-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
+IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-fix-codemap-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW" 2>&1)
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -149,7 +150,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     [ "$CODEMAP_RAW" = "strict" ] && exit 1
     CODEMAP_ENABLED=false
 fi
-echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}
+echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-fix-codemap-enabled-${CSID}
 # codemap: integrated-via-shared
 ```
 
@@ -161,7 +162,7 @@ cat "$_DEV_SHARED/codemap-gates.md"
 ```
 Follow Gate A and Gate B.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--worktree\`, \`--diagnosis\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--worktree\`, \`--diagnosis\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -179,6 +180,8 @@ Execute codemap + semble preflight if respective flags set.
 Root cause unclear after initial triage, OR bug spans 3+ modules and user accepted "Proceed anyway" at scope gate: use this path.
 
 **Coordination:**
+
+**Note on `model=` assignments**: `model=opus` in prompts below is an advisory hint — effective only when actual foundry agents installed. When falling back to `general-purpose` (foundry absent), prompt-prepend `model=` does not reliably override agent-resolution fallback tier; effective model set by `agent-resolution.md`'s fallback table, not spawn prompt.
 
 1. Lead broadcasts current evidence: `{bug: <description>, traceback: <key lines>}`
 2. Spawn **foundry:sw-engineer x 2 (model=opus)** — each investigates a distinct root-cause hypothesis (A, B) independently. `_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null); cat "$_DEV_SHARED/preflight-helpers.md"` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`. If user wants a third independent investigation, re-invoke with a narrower hypothesis spec rather than auto-scaling here.
@@ -198,7 +201,7 @@ FIX_TEAM_DIR="$RUN_DIR"
 RUN_DIR_LITERAL="$RUN_DIR"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}
 echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}
-trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT  # tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp (mirrors JS getSentinelDir), not TMPDIR-based
+trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT  # sentinel dir resolved by setup_worktree.py's _sentinel_dir() — TMPDIR when set, else system temp dir; matches this expression
 ```
 
 Spawn 2 teammates in parallel using Agent() tool:
@@ -229,7 +232,7 @@ IFS= read -r TS < "${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}" 2>/dev/null || TS=$(
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}" 2>/dev/null || RUN_DIR=".temp/develop/$TS"
 ```
 
-Every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` (tmpdir-exempt: health sentinel written by setup_worktree.py's hardcoded /tmp, not TMPDIR-based) — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `$RUN_DIR/fix-hypothesis-*.md`; surface with ⏱; never omit.
+Every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` (sentinel dir resolved by setup_worktree.py's `_sentinel_dir()` — TMPDIR when set, else system temp dir; matches this expression) — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `$RUN_DIR/fix-hypothesis-*.md`; surface with ⏱; never omit.
 
 After both teammates complete: read their output files from `$RUN_DIR/`, synthesize consensus root cause, facilitate cross-challenge between competing analyses. Lead then proceeds alone with Steps 2-4 (regression test, fix, review loop).
 
@@ -262,22 +265,34 @@ If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, 
 ```bash
 # timeout: 600000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-$PYTEST_CMD --tb=long "$TEST_PATH" -v >"${TMPDIR:-/tmp}/pytest-out.txt-${CSID}" 2>&1; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt-${CSID}"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
+IFS= read -r PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || PYTEST_CMD=""
+TEST_PATH=""   # REPLACE with the resolved failing test file/node before running this block — do not leave empty
+if [ -z "$PYTEST_CMD" ] || [ -z "$TEST_PATH" ]; then
+    echo "! Cannot run reproduction: PYTEST_CMD or TEST_PATH unresolved — resolve TEST_PATH from \$ARGUMENTS/issue before running"
+else
+    $PYTEST_CMD --tb=long "$TEST_PATH" -v >"${TMPDIR:-/tmp}/pytest-out.txt-${CSID}" 2>&1; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt-${CSID}"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
+fi
 ```
 
 **Codemap target derivation** — set `TARGET_MODULE`/`TARGET_FN` before loading `codemap-context.md` so its caller-impact queries (`fn-rdeps`, `fn-blast`) fire instead of only `central` baseline. User may pass explicit suspect as `module.path::function`:
 
 ```bash
 # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 if [[ "$ARGUMENTS" == *"::"* ]]; then
     _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
     TARGET_MODULE="${_QNAME%%::*}"
     TARGET_FN="${_QNAME##*::}"           # bare fn — codemap-context.md builds module::fn
+    TARGET_QUALIFIED="$_QNAME"
 else
     TARGET_MODULE=""
     TARGET_FN=""                         # suspect unknown until Step 1 — auto-derive below
+    TARGET_QUALIFIED=""
 fi
-export TARGET_MODULE TARGET_FN
+export TARGET_MODULE TARGET_FN TARGET_QUALIFIED
+echo "$TARGET_MODULE"    > "${TMPDIR:-/tmp}/dev-fix-target-module-${CSID}"
+echo "$TARGET_FN"        > "${TMPDIR:-/tmp}/dev-fix-target-fn-${CSID}"
+echo "$TARGET_QUALIFIED" > "${TMPDIR:-/tmp}/dev-fix-target-qualified-${CSID}"
 ```
 
 **If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**:
@@ -298,19 +313,24 @@ Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 - Related code possibly affected by fix — blast radius
 - Recent commits touching this path (from git log output, if provided)
 
-**Direct-caller impact** — when `CODEMAP_ENABLED=true` and `TARGET_FN` was NOT supplied via `$ARGUMENTS`, derive suspect qualified name from sw-engineer Step 1 finding (module/function it named as minimal code surface), then run `fn-rdeps` for direct callers — benchmarked far cheaper than a plain caller walk (94k vs 1M+ tokens, +40pp accuracy). Shared `codemap-context.md` already ran when `TARGET_FN` was pre-set from args; this block covers the auto-derive case:
+**Direct-caller impact** — when `CODEMAP_ENABLED=true` and `TARGET_FN` was NOT supplied via `$ARGUMENTS`, derive suspect qualified name from sw-engineer Step 1 finding (module/function it named as minimal code surface), then run `fn-rdeps` for direct callers — benchmarked far cheaper than a plain caller walk (94k vs 1M+ tokens, +40pp accuracy). This block only fires when `TARGET_FN` was NOT pre-set from args — the pre-set case is already covered by the `fn-rdeps`/`fn-blast` queries inside shared `codemap-context.md`, which ran earlier using the persisted `TARGET_MODULE`/`TARGET_FN`:
 
 ```bash
 # timeout: 6000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
+IFS= read -r CODEMAP_ENABLED  < "${TMPDIR:-/tmp}/dev-fix-codemap-enabled-${CSID}"  2>/dev/null || CODEMAP_ENABLED="false"
+IFS= read -r TARGET_FN        < "${TMPDIR:-/tmp}/dev-fix-target-fn-${CSID}"        2>/dev/null || TARGET_FN=""
+IFS= read -r TARGET_MODULE    < "${TMPDIR:-/tmp}/dev-fix-target-module-${CSID}"    2>/dev/null || TARGET_MODULE=""
+IFS= read -r TARGET_QUALIFIED < "${TMPDIR:-/tmp}/dev-fix-target-qualified-${CSID}" 2>/dev/null || TARGET_QUALIFIED=""
+IFS= read -r DEV_DIR          < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}"          2>/dev/null || DEV_DIR=""
 if [ "$CODEMAP_ENABLED" = "true" ] && [ -z "$TARGET_FN" ] && command -v codemap-py >/dev/null 2>&1; then
     DERIVED_FN=$(grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' "$DEV_DIR/checkpoint.md" 2>/dev/null | head -1)
     if [ -n "$DERIVED_FN" ]; then
-        TARGET_FN="$DERIVED_FN"
+        TARGET_QUALIFIED="$DERIVED_FN"
         TARGET_MODULE="${DERIVED_FN%%::*}"
-        export TARGET_FN TARGET_MODULE
-        codemap-py query --timeout 5 fn-rdeps "$TARGET_FN" --exclude-tests 2>/dev/null \
+        TARGET_FN="${DERIVED_FN##*::}"    # bare fn — keep consistent with the arg-supplied path
+        export TARGET_FN TARGET_MODULE TARGET_QUALIFIED
+        codemap-py query --timeout 5 fn-rdeps "$TARGET_QUALIFIED" --exclude-tests 2>/dev/null \
             | tee "$DEV_DIR/fn-rdeps-output.txt" || true
     fi
 fi

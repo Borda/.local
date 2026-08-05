@@ -4,8 +4,8 @@ description: >-
   Query Codemap's Python structural index for dependencies, callers, paths, symbols, blast radius, test impact,
   mocks, fixtures, subprocesses, and static gaps. Trigger for "what depends on", "who calls", "imports of",
   "dependency graph", or "blast radius". Skip for renames, text search, non-Python repositories, or index rebuilds.
-argument-hint: "<rdeps|deps|path|central|symbol|symbols|find-symbol|fn-rdeps|fn-deps|fn-blast|diff-impact> ..."
-allowed-tools: Bash, Read, Write, Skill, AskUserQuestion
+argument-hint: "<rdeps|deps|path|central|coupled|symbol|symbols|find-symbol|fn-rdeps|fn-deps|fn-blast|diff-impact|test-impact|mock-rdeps|fixture-rdeps|fixture-graph|subprocess-deps|subprocess-rdeps|coverage|coverage-gap|undocumented> ..."
+allowed-tools: Bash, Read, Write
 model: haiku
 effort: low
 ---
@@ -13,8 +13,7 @@ effort: low
 <objective>
 Answer structural Python questions with the unified `codemap-py query` CLI.
 
-NOT for: rebuilding the index (use `/codemap-py:scan-codebase`) or renaming
-symbols (use `/codemap-py:rename-refs`).
+NOT for: rebuilding the index (use `/codemap-py:scan-codebase`), renaming symbols (use `/codemap-py:rename-refs`), or which tests cover or are affected by a change (use `/codemap-py:test-impact`).
 </objective>
 
 <workflow>
@@ -94,5 +93,7 @@ Use the JSON primary array: `imported_by` / `direct_imports`, `called_by` /
 `calls`, `path`, `symbols`, `central` / `coupled`, `blast_radius`, or
 `changed_modules` plus `test_impact`. Preserve qualified names exactly. Include
 stale, degraded, root-mismatch, and `not_covered` caveats when present.
+
+Output routing (the only use of `Write`): if the rendered result set is 5+ items, write it to `.temp/output-query-code-<branch>-<YYYY-MM-DD>.md`.
 
 </workflow>
