@@ -295,11 +295,11 @@ Run all checks before touching code. Fail fast with clear message:
 9. **`--colab` + `--codex` compatibility note** (non-blocking): if both flags active, print `ℹ --colab + --codex active: Codex Phase 2c will receive colab_hw context so generated code can target the right GPU (H100/T4 bf16 vs fp16). Phase 5 metric verification runs through Colab MCP as usual.` and continue. Pass `colab_hw` to Codex spawn prompt (Phase 2c — see `modes/codex-copilot.md`).
 10. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
 
-**`--codex-delegation` warning** (non-blocking): check whether `$HOME/.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:setup` (requires `foundry` plugin) from foundry plugin to `$HOME/.claude/skills/_shared/`). If not found:
+**`--codex-delegation` warning** (non-blocking): `codex-delegation.md` ships inside this plugin's own `skills/_shared/`, so R7 needs no other plugin installed. Verify it resolves:
 
 ```bash
-# codex-delegation.md is deployed by /foundry:setup to .claude/skills/_shared/ (requires foundry plugin — if absent, R7 Codex delegation is skipped automatically)
-[ -f "$HOME/.claude/skills/_shared/codex-delegation.md" ] || echo "⚠ $HOME/.claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:setup (requires foundry plugin) to install it."
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+[ -f "$_RESEARCH_SHARED/codex-delegation.md" ] || echo "⚠ codex-delegation.md not found under $_RESEARCH_SHARED — R7 Codex delegation will be skipped; reinstall the research plugin."
 ```
 
 Set `CODEX_DELEGATION_AVAILABLE=true` if found, `false` otherwise. Continue regardless.
@@ -715,7 +715,8 @@ Skip R7 if `CODEX_DELEGATION_AVAILABLE=false` (warning already printed at R2 —
 Inspect applied changes (`git diff <baseline_commit>...<best_commit> --stat`), identify tasks Codex can complete (comments on non-obvious changes, docstrings for modified functions, test coverage).
 
 ```bash
-cat "$HOME/.claude/skills/_shared/codex-delegation.md"  # timeout: 5000
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # re-derive — bash state lost between Bash() calls
+cat "$_RESEARCH_SHARED/codex-delegation.md"  # timeout: 5000
 ```
 
 Apply criteria loaded above.
@@ -769,6 +770,6 @@ cat "$CLAUDE_SKILL_DIR/modes/colab-setup.md"  # timeout: 5000
 - **Safety break**: hard cap = 50 iterations (values above 50 in program.md clamped to 50 with a warning); default 20 when max_iterations unset in program.md; skill never exceeds MAX_ITERATIONS.
 - **Unbounded cross-skill chain**: `run` → `/research:retro` → `/research:run --hypothesis` / `/research:fortify` → re-run `/research:run` has no campaign-level iteration cap (unlike `sweep`'s `MAX_REFINE = 3` or `run`'s own `MAX_ITERATIONS`). Human-gated at each hop, so it cannot spin autonomously. No counter implemented by design — a counter would need `retro` to write to `.experiments/state/`, breaking retro's read-only invariant.
 - **Explicit flags = hard requirements**: all flags (`--colab`, `--compute=docker`, `--codex`, `--researcher`, `--architect`) must be available at R2. If unavailable, stop — never silently degrade.
-- R7 Codex delegation requires `/foundry:setup` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `$HOME/.claude/skills/_shared/`; R7 is silently skipped if absent.
+- R7 Codex delegation needs no other plugin — `codex-delegation.md` ships in this plugin's own `skills/_shared/` and resolves via `bin/resolve_shared.py`. R7 is silently skipped only if that file is missing (broken install).
 
 </notes>

@@ -43,6 +43,8 @@ Each file added under a skill's `modes/`, `templates/`, or `_shared/` must eithe
 
 Manifested shared files are byte-identical copies: edit the canonical file, run `plugins/cc_foundry/bin/propagate_shared.py --apply`, and verify with its default `--check` mode. Keep resilience code in the plugin whose users need the fallback, not in the plugin that may be absent.
 
+Every plugin resolves its **own** `skills/_shared` through its own resolver and reads only files it ships itself. Never use `$HOME/.claude/skills/_shared/...` or a bare `.claude/skills/_shared/...` path — `/foundry:setup` symlinks only `rules/*.md` and `TEAM_PROTOCOL.md`, and purges any leftover `~/.claude/skills/` link, because a directory carrying `SKILL.md` there registers as a user-level skill and shadows Claude Code's bundled skill of the same name. Never read another plugin's `_shared` or `bin/` either; duplicate the content into each plugin and add a `propagate_shared.py` MANIFEST entry instead of borrowing. Audit Check 27 enforces both halves.
+
 ## README Synchronization
 
 Any edit to `agents/`, `skills/`, `rules/`, or `hooks/` requires the owning plugin README to be updated before completion. Synchronize tables, descriptions, triggers, scope, NOT-for boundaries, hook behavior, user-facing arguments, invocation syntax, cross-plugin references, model-tier lines, relationship tiering, and relevant curator antipatterns; propagate changed interfaces to every cross-plugin README that mentions them.

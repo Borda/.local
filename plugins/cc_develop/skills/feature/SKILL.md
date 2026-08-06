@@ -36,9 +36,7 @@ Preserve at boundary 2: dev-dir, changed files list, test outcomes, PYTEST_CMD.
 ## Agent Resolution
 
 ```bash
-_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
-_DEV_SHARED=$(echo "$_PATHS" | head -1)
-_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 # loads: compaction-contract.md
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
@@ -721,10 +719,11 @@ GATE_EXIT=${PIPESTATUS[0]}
 ```
 
 ```bash
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
-[ -f "$_FOUNDRY_SHARED/quality-stack.md" ] && cat "$_FOUNDRY_SHARED/quality-stack.md" || echo "foundry quality-stack not found at installed path — stack skipped"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+_SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
+cat "$_DEV_SHARED/quality-stack.md"
 ```
-If file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
+Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `quality-stack.md` ships in this plugin's own `_shared`, so it is always present — absence means a broken install, not a missing optional dependency.
 
 **Branch Safety Guard — no test suite**: if no test suite found (pytest collects 0 tests or `$TEST_CMD` not set), log `⚠ No test suite detected — Branch Safety Guard weakened` and require explicit user confirmation before proceeding past guard.
 

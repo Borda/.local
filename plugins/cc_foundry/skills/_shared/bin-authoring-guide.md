@@ -136,7 +136,9 @@ When all hold: delete script (and its test file if present), replace call-site w
 4. Score < 2? Inline acceptable — stop here.
 5. Score 2–3? Prefer bin/ (MEDIUM verdict); use language policy to pick bash vs Python.
 6. Score ≥ 4? bin/ required (HIGH verdict); use language policy; write tests.
-7. Wire into consumer — before commit: edit consumer SKILL.md, replace inline twin with `"${CLAUDE_PLUGIN_ROOT}/bin/<script>" …`; run `python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_orphaned_bin.py"`; must exit 0. Cross-plugin consumer (script in plugin A, called from plugin B)? Add `<!-- file: <basename> — consumers: <plugin> skills/<name> -->` doc header in any `.md` in the owning plugin (e.g. this guide); the detector now searches all plugins, so the script won't be flagged. Known cross-plugin utilities: `resolve-shared-path.sh` (foundry bin/ → oss skills/review, resolve, release), `find-polluter.py` (foundry bin/ → develop skills/debug), `get_plugin_install_path.py` (foundry bin/ → consumed by `find-foundry-shared.sh` and `resolve-shared-path.sh` for registry-authoritative install-path lookup).
+7. Wire into consumer — before commit: edit consumer SKILL.md, replace inline twin with `"${CLAUDE_PLUGIN_ROOT}/bin/<script>" …`; run `python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_orphaned_bin.py"`; must exit 0.
+
+> **A consumer never reaches into another plugin's `bin/`.** `${CLAUDE_PLUGIN_ROOT}` must resolve to the **consuming** plugin, so the script has to exist in that plugin's own `bin/`. A script two plugins both need is **duplicated**: add a `propagate_shared.py` MANIFEST entry (canonical in the owning plugin) and the copies stay byte-identical. Precedent: `find-polluter.py`, canonical in foundry, copied to `cc_develop/bin/` — `develop:debug` previously derived a `$_FOUNDRY_BIN` path from the resolver output, so flaky-test isolation silently vanished on a develop-only install. Rule and rationale: `plugins/CLAUDE.md` §Self-Contained `_shared`; audit Check 27 fails new reach-ins.
 
 ---
 

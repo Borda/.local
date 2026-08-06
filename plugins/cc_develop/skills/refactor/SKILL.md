@@ -44,10 +44,8 @@ Preserve at boundary 2: dev-dir, changed files list, test outcomes.
 ## Agent Resolution
 
 ```bash
-_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
-_DEV_SHARED=$(echo "$_PATHS" | head -1)
-_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 # loads: compaction-contract.md
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
@@ -510,15 +508,16 @@ Full review of refactored code. **Loop** — review -> targeted refactoring (ret
 
 ```bash
 # timeout: 5000
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # re-derive — bash state lost between Bash() calls
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
-[ ! -d "$_FOUNDRY_SHARED" ] || [ ! -f "$_FOUNDRY_SHARED/quality-stack.md" ] && echo "⚠ foundry plugin not installed — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review Loop, Codex Mechanical Delegation)"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)   # re-derive — bash state lost between Bash() calls
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+[ -f "$_DEV_SHARED/quality-stack.md" ] || echo "⚠ quality-stack.md missing from this plugin's _shared — broken install; quality stack skipped"
 ```
 
 ```bash
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
-[ -f "$_FOUNDRY_SHARED/quality-stack.md" ] && cat "$_FOUNDRY_SHARED/quality-stack.md" || echo "foundry plugin absent — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review, Codex Mechanical Delegation)"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+_SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
+cat "$_DEV_SHARED/quality-stack.md"
 ```
 If not found → skip quality stack entirely, note the message above in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
 

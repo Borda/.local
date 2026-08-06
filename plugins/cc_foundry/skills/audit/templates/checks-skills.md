@@ -240,53 +240,51 @@ Build directed graph from (source-file, skill-reference) pairs collected in Step
 
 ## Check 27 — Cross-plugin shared-file reference integrity
 
-Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inline references to `.claude/skills/_shared/<file>` unless that exact file ships inside `plugins/cc_foundry/skills/_shared/`. Path only available at runtime via `foundry:setup` symlink — any file absent from foundry's `_shared/` = broken reference when foundry installed, unreachable when not installed.
+**Policy — every plugin's `_shared` is its own** (`plugins/CLAUDE.md` §Self-Contained \_shared). A plugin must resolve `skills/_shared` through its **own** resolver and read only files it **ships itself**. Two forbidden shapes:
 
-**Special antipattern — foundry-dependency catch-22**: when referenced file describes fallback behaviour for users without foundry (e.g. `agent-resolution.md` listing `general-purpose` substitutes), reference is **critical** — file explaining how to work without foundry only accessible via foundry.
+- **Global path** — `$HOME/.claude/skills/_shared/...` or bare `.claude/skills/_shared/...`. No such path exists any more: `/foundry:setup` symlinks only `rules/*.md` and `TEAM_PROTOCOL.md`, and purges any leftover `~/.claude/skills/` link. A dir with `SKILL.md` there would register as a user-level skill and shadow Claude Code's bundled skill of that name.
+- **Sibling reach-in** — resolving another plugin's tree (`resolve_shared_path.py foundry` from a non-foundry plugin, `dev_shared_resolve.py --foundry`, `$_FOUNDRY_SHARED`, `$_FOUNDRY_BIN`, or a literal `plugins/cc_<other>/` path). Content genuinely needed by two plugins is **duplicated**, not borrowed: add a `MANIFEST` entry in `bin/propagate_shared.py` so the copies stay byte-identical.
 
-**Step 1 — Collect cross-plugin shared-file references**:
+**Special antipattern — foundry-dependency catch-22**: a borrowed file that describes how to degrade *without* foundry (e.g. `agent-resolution.md` listing `general-purpose` substitutes) is **critical** — the instructions for surviving foundry's absence are reachable only when foundry is present.
 
-```bash
-grep -rn '\.claude/skills/_shared/' plugins/*/skills/ 2>/dev/null | grep -v 'foundry'  # timeout: 5000
-```
-
-For each match: record `(plugin, skill-file, referenced-filename)`.
-
-**Step 2 — Verify file exists in foundry's \_shared/**:
+**Step 1 — Global `_shared` paths** (any plugin, foundry included):
 
 ```bash
-ls plugins/cc_foundry/skills/_shared/ 2>/dev/null  # timeout: 5000
+grep -rn '\.claude/skills/_shared/' plugins/*/skills/ plugins/*/*.md 2>/dev/null  # timeout: 5000
 ```
 
-For each referenced filename from Step 1: check if it appears in foundry `_shared/` listing.
+- Any match → **[high] 27a**: `<plugin>/<file>: reads _shared via global .claude/skills/ path — resolve own plugin's skills/_shared instead`
 
-- Present → reference valid at runtime (when foundry installed) — **no finding**
-- Absent → **[high] 27a**: `<plugin>/<skill>: references .claude/skills/_shared/<file> which is absent from foundry/_shared/ — broken at all times`
+**Step 2 — Sibling reach-in**:
+
+```bash
+grep -rn 'resolve_shared_path\.py" foundry\|--foundry\|_FOUNDRY_SHARED\|_FOUNDRY_BIN\|plugins/cc_[a-z]*/skills/_shared' plugins/*/skills/ 2>/dev/null | grep -v '^plugins/cc_foundry/'  # timeout: 5000
+```
+
+Ignore a plugin's own bare-path fallback (e.g. `plugins/cc_oss/...` inside `cc_oss`) — that is the sanctioned last-resort tier. Everything else:
+
+- Match → **[high] 27b**: `<plugin>/<skill>: reads <file> from cc_foundry's _shared — ship a copy in this plugin's skills/_shared and add a propagate_shared.py MANIFEST entry`
 
 **Step 3 — Catch-22 upgrade**:
 
-For each file flagged in Step 2 (absent from foundry `_shared/`): inspect referenced filename and surrounding context for signals it provides fallback/degraded-mode behaviour (keywords: `fallback`, `without foundry`, `agent-resolution`, `general-purpose`, `not installed`).
+For each 27b match, inspect the borrowed filename and surrounding context for degraded-mode signals (keywords: `fallback`, `without foundry`, `agent-resolution`, `general-purpose`, `not installed`).
 
-- Match → upgrade to **[critical] 27b**: `<plugin>/<skill>: fallback file <name> is only reachable via foundry — catch-22`
-- No match → keep as **[high] 27a**
+- Match → upgrade to **[critical] 27c**: `<plugin>/<skill>: fallback file <name> is only reachable via foundry — catch-22`
+- No match → keep as **[high] 27b**
 
-**Step 4 — Plugin-local \_shared/ unmounted files**:
-
-```bash
-ls plugins/*/skills/_shared/ 2>/dev/null  # timeout: 5000
-```
-
-Plugin-local `_shared/` directories (e.g. `plugins/cc_develop/skills/_shared/`) have **no install-time mount point** — invisible to model at runtime. Any file there that SKILL.md references is unreachable.
+**Step 4 — Orphaned own-plugin \_shared files**:
 
 ```bash
 for f in plugins/*/skills/_shared/*; do
     plugin=$(echo "$f" | cut -d/ -f2)
     fname=$(basename "$f")
-    grep -rl "$fname" "plugins/$plugin/skills/" 2>/dev/null | grep 'SKILL\.md'
+    grep -rq "$fname" "plugins/$plugin/" 2>/dev/null || echo "unreferenced: $f"
 done
 ```
 
-- Referenced and in plugin-local `_shared/` → **[medium] 27c**: `<plugin>/<skill>: references <file> from plugin-local _shared/ which is not mounted at runtime — move to foundry/_shared/ or inline`
+Own-plugin `_shared/` IS reachable at runtime (each plugin's resolver finds it), so presence there is correct — but a file no consumer names is dead weight a grep-based sweep will eventually delete (see `plugins/CLAUDE.md` §Shared File Authoring Rule).
+
+- Unreferenced → **[low] 27d**: `<plugin>: _shared/<file> named by no consumer — add a `# loads:` reference or delete`
 - Exists in plugin-local `_shared/` but not referenced → **[low]**: unreachable dead file; suggest removal
 
 **Report only** — no auto-fix; resolution requires deciding whether to inline content or move file to `foundry/_shared/`.

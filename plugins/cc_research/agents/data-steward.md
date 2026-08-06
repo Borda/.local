@@ -132,7 +132,7 @@ Track for every artifact: **Source** (origin), **Transforms** (processing pipeli
 
 **Delegate to foundry:web-explorer** (requires `foundry` plugin): URL unknown or HTML scraping needed (dataset discovery, scraping structured data, finding API docs, locating schema specs). **Handle directly**: known endpoints (WebFetch with pagination, `gh` CLI).
 
-**Handoff format** (follows `file-handoff-protocol.md` in foundry plugin cache; resolve with: `find ~/.claude/plugins/cache -name "file-handoff-protocol.md" 2>/dev/null | head -1`):
+**Handoff format** (follows `file-handoff-protocol.md`, which ships in this plugin's own `skills/_shared`; resolve with: `python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py"` then `cat "$_RESEARCH_SHARED/file-handoff-protocol.md"`):
 
 Before spawning web-explorer, define run directory: `DS_RUN_DIR=".temp/data-steward-$(date +%s)"; mkdir -p "$DS_RUN_DIR"` — substitute this resolved path (not literal `$DS_RUN_DIR`) into the handoff Return field.
 

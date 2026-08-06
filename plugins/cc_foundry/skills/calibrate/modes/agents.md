@@ -31,7 +31,15 @@ Mark "Calibrate agents" in_progress. **Availability check** (vars set in SKILL.m
 
 Per agent in domain table (after exclusions), spawn one `general-purpose` pipeline subagent. **Spawn in batches of `$PIPELINE_BATCH_SIZE` (default 5)**: issue up to 5 agent pipeline spawns per response, wait for all in batch to return their compact JSON results, then spawn next batch. Agents within a batch run concurrently; batches sequential. Do NOT spawn all agents in a single response — with 14+ agents this spikes context and resource usage.
 
-Each subagent gets pipeline template from `.claude/skills/calibrate/templates/pipeline-prompt.md` with substitutions:
+Resolve the template dir first — no `~/.claude/skills/` copy exists (setup symlinks only `rules/*.md` and `TEAM_PROTOCOL.md`):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+CALIB_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" calibrate templates $([ "$LOCAL_MODE" = "true" ] && echo --local))  # timeout: 5000
+```
+
+Each subagent gets pipeline template from `$CALIB_TPL/pipeline-prompt.md` with substitutions:
 
 - `<TARGET>` = agent name (e.g., `foundry:sw-engineer`)
 - `<DOMAIN>` = domain string from table above

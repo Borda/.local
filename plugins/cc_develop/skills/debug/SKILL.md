@@ -349,19 +349,16 @@ Present agent's analysis summary before proceeding.
 ```bash
 # resolve FAILING_TEST_NODE first — bash interprets literal <...> as redirect:
 # FAILING_TEST_NODE=$(echo "$ARGUMENTS" | grep -oE 'tests?/[^[:space:]]+::test_[^[:space:]]+' | head -1)
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # --foundry emits foundry's skills/_shared on line 2 (no --foundry-bin flag exists)
-_FOUNDRY_BIN="${_FOUNDRY_SHARED%/skills/_shared}/bin"
-[ -d "$_FOUNDRY_BIN" ] || _FOUNDRY_BIN=$(ls -td ~/.claude/plugins/cache/*/foundry/*/bin 2>/dev/null | head -1 || echo "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin")  # timeout: 5000
+# find-polluter.py ships in THIS plugin's bin/ (propagate_shared.py keeps it identical to
+# foundry's canonical) — no cross-plugin bin/ reach-in, works on a develop-only install
 if [ -z "$FAILING_TEST_NODE" ]; then
     echo "⚠ FAILING_TEST_NODE not resolved — cannot run polluter isolation; surface failing test node ID first"
-elif [ -f "$_FOUNDRY_BIN/find-polluter.py" ]; then
-    python "$_FOUNDRY_BIN/find-polluter.py" "$FAILING_TEST_NODE"  # timeout: 60000
 else
-    echo "⚠ foundry plugin absent — skipping flaky-test isolation; proceed with standard rerun"
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/find-polluter.py" "$FAILING_TEST_NODE"  # timeout: 60000
 fi
 ```
 
-Output names polluting upstream test. Cross-plugin call — `find-polluter.py` ships in `foundry/bin/`. Run only when CI shows non-deterministic failure pattern. If foundry plugin absent: skip flaky-test isolation step; proceed with standard rerun.
+Output names polluting upstream test. `find-polluter.py` ships in this plugin's own `bin/` (kept identical to foundry's canonical by `propagate_shared.py`), so this works on a develop-only install. Run only when CI shows non-deterministic failure pattern.
 
 ## Step 2: Pattern analysis
 

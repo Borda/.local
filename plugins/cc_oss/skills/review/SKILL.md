@@ -270,15 +270,7 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/nu
 
 `WT_ENABLED=true` → follow §Enter (base off HEAD, `EnterWorktree(path=…)`) before Step 1; the report is routed to the main tree (§review). Else skip — run in main tree.
 
-```bash
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000
-if [ -z "$FOUNDRY_SHARED" ]; then
-    FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
-    echo "⚠ Could not resolve FOUNDRY_SHARED via cache lookup — using bare fallback path '$FOUNDRY_SHARED'; foundry plugin may be absent — Steps 5/7/consolidator will degrade (per-file guards still fire)"
-fi
-echo "$FOUNDRY_SHARED" > "${TMPDIR:-/tmp}/review-foundry-shared-${CSID}"  # persist for later blocks (Check 41)
-```
+> `file-handoff-protocol.md`, `cross-validation-protocol.md` and `codex-delegation.md` (Steps 5/7/consolidator) ship in **this** plugin's `_shared`, kept identical to foundry's canonical by `propagate_shared.py`. No separate resolution needed — `$_OSS_SHARED` from Step 0 covers them, and none of those steps degrade when foundry is absent.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -431,9 +423,9 @@ echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/oss-review-report-dir-${CSID}"  # persist 
 **File-based handoff**:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload FOUNDRY_SHARED (Check 41: fresh shell)
-IFS= read -r FOUNDRY_SHARED < "${TMPDIR:-/tmp}/review-foundry-shared-${CSID}" 2>/dev/null || FOUNDRY_SHARED=""
-[ -f "$FOUNDRY_SHARED/file-handoff-protocol.md" ] && cat "$FOUNDRY_SHARED/file-handoff-protocol.md"  # timeout: 5000
+# Reload _OSS_SHARED (Check 41: fresh shell)
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
+cat "$_OSS_SHARED/file-handoff-protocol.md"  # timeout: 5000
 ```
 Follow above. File absent → warn and continue without it.
 
@@ -605,9 +597,9 @@ cat "$OSS_SIGNALS" 2>/dev/null
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload FOUNDRY_SHARED (Check 41: fresh shell)
-IFS= read -r FOUNDRY_SHARED < "${TMPDIR:-/tmp}/review-foundry-shared-${CSID}" 2>/dev/null || FOUNDRY_SHARED=""
-[ -f "$FOUNDRY_SHARED/cross-validation-protocol.md" ] && cat "$FOUNDRY_SHARED/cross-validation-protocol.md"  # timeout: 5000
+# Reload _OSS_SHARED (Check 41: fresh shell)
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
+cat "$_OSS_SHARED/cross-validation-protocol.md"  # timeout: 5000
 ```
 Follow above. File absent → warn: "cross-validation protocol not found — verify foundry plugin installed (`claude plugin list`); skipping Step 4." Then skip Step 4.
 
@@ -662,10 +654,10 @@ TaskUpdate "Step 5b: Print report header" → `in_progress`.
 **MANDATORY, not optional narration** — the consolidator's returned one-liner is a routing signal only; it is never printed to the user and never satisfies this step. Perform, in this exact order, in this same turn, before any other Step 5/6/7 text:
 1. Read `$REPORT_DIR/review-report.md` (Read tool).
 2. Extract every field from the opening `---` up to and including the closing `---` — `Title:`, `Date:`, `PR Type:`, `Scope:`, `Focus:`, `Agents:`, `CI:`, `Outcome:`, `Summary:`, `Confidence:`, `Next steps:`, `Path:`.
-3. Print that block to the terminal, append `→ saved to $REPORT_DIR/review-report.md`.
-4. TaskUpdate "Step 5b: Print report header" → `completed` — only after the block has actually appeared in this response, never before.
+3. Render those 12 fields as a two-column Markdown table (`Field | Value`, one row per key, file order) per quality-gates.md §Report File Format's Universal terminal-print rule — never print the raw `---`-delimited block. Append `→ saved to $REPORT_DIR/review-report.md`.
+4. TaskUpdate "Step 5b: Print report header" → `completed` — only after the table has actually appeared in this response, never before.
 
-This `---` block IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule). **Review-specific rendering caveat**: wrap the printed block in a ` ```text ` fence so the literal `---` delimiters survive — bare, a renderer parses the leading `---` as YAML frontmatter and the closing `---` under `Path:` as a setext heading, mangling the header. Print all 12 fields verbatim; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading, and still mark the task `completed` (the fallback line satisfies the step).
+This table IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule); omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers — the box would shadow the table). Never emit both a box header and this table. **Historical note**: an earlier revision of this step printed the raw `---`-delimited block verbatim inside a ` ```text ` fence to dodge markdown misparsing the literal `---` (leading `---` read as YAML frontmatter, closing `---` under `Path:` read as a setext heading) — that predates quality-gates.md's table rule and is superseded by it: converting to a table drops the raw `---` delimiters entirely, so the misparse risk the fence was guarding against does not arise. Render all 12 fields verbatim as table rows; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading, and still mark the task `completed` (the fallback line satisfies the step).
 
 **Known failure mode this guards against**: a prior run spawned the consolidator, received its one-liner, and jumped straight to Step 7's `AskUserQuestion` + confidence block — skipping this print entirely, even though `AskUserQuestion` itself (a hard tool call) fired correctly. The task above exists so this step is exactly as trackable as the tool calls around it — do not treat "Step 5: Consolidate findings" completing as covering this step; they are separate tasks for this reason.
 
@@ -694,9 +686,9 @@ Identify tasks Codex can implement — meaningful code/doc work grounded in actu
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload FOUNDRY_SHARED (Check 41: fresh shell)
-IFS= read -r FOUNDRY_SHARED < "${TMPDIR:-/tmp}/review-foundry-shared-${CSID}" 2>/dev/null || FOUNDRY_SHARED=""
-[ -f "$FOUNDRY_SHARED/codex-delegation.md" ] && cat "$FOUNDRY_SHARED/codex-delegation.md"  # timeout: 5000
+# Reload _OSS_SHARED (Check 41: fresh shell)
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/review-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
+cat "$_OSS_SHARED/codex-delegation.md"  # timeout: 5000
 ```
 Follow above. File absent → warn: "codex-delegation criteria not found — verify foundry plugin installed (`claude plugin list`); skipping Step 6 delegation." Then skip Step 6.
 

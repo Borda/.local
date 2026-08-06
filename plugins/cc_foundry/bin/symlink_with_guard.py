@@ -10,19 +10,19 @@ Two modes, both consume the same input:
 * ``cleanup`` — remove foundry-managed symlinks whose targets no longer exist
   in the current plugin version. Side-effect: deletes stale symlinks. Prints
   ``removed obsolete: <name>`` lines to stdout for each removal. Also purges
-  any foundry-managed symlinks lingering under ``~/.claude/agents/`` — agents
-  are dispatched directly from the plugin namespace and never need a symlink
-  there, so every foundry-managed entry there is by definition obsolete.
+  every foundry-managed symlink lingering under ``~/.claude/skills/`` and
+  ``~/.claude/agents/`` — both are dispatched directly from the plugin
+  namespace and never need an entry there, so any such symlink is obsolete.
 * ``scan`` — identify symlink/file entries needing user confirmation. Prints
   one conflict descriptor per line to stdout (ready for bash array consumption
   via ``mapfile -t LINK_CONFLICTS < <(... scan ...)``).
 
-Three iteration patterns are evaluated by both modes (cleanup adds a fourth
-agent-purge scope):
+Two iteration patterns are evaluated by both modes; cleanup adds two
+unconditional purge scopes:
 
 1. ``<plugin>/rules/*.md`` ↔ ``$HOME/.claude/rules/*.md``
 2. ``<plugin>/TEAM_PROTOCOL.md`` ↔ ``$HOME/.claude/TEAM_PROTOCOL.md`` (single file)
-3. ``<plugin>/skills/*/`` ↔ ``$HOME/.claude/skills/*/`` (subdir entries)
+3. (cleanup only) ``$HOME/.claude/skills/`` — purge any foundry-managed symlink
 4. (cleanup only) ``$HOME/.claude/agents/`` — purge any foundry-managed symlink
 
 Foundry-management is detected by substring match on the readlink target:
@@ -219,21 +219,6 @@ def _list_rule_files(plugin_root: Path) -> list[Path]:
     return sorted(p for p in rules_dir.iterdir() if p.is_file() and p.suffix == ".md")
 
 
-def _list_skill_dirs(plugin_root: Path) -> list[Path]:
-    """List subdirectories in ``<plugin_root>/skills``.
-
-    Args:
-        plugin_root: Plugin install root.
-
-    Returns:
-        Sorted list of skill directory paths (empty when ``skills/`` is absent).
-    """
-    skills_dir = plugin_root / "skills"
-    if not skills_dir.is_dir():
-        return []
-    return sorted(p for p in skills_dir.iterdir() if p.is_dir())
-
-
 def _build_entries(plugin_root: Path, home: Path) -> list[_Entry]:
     """Build the union of (source, dest, kind) triples for current plugin contents.
 
@@ -243,13 +228,21 @@ def _build_entries(plugin_root: Path, home: Path) -> list[_Entry]:
     pre-design installs are purged separately by :func:`cleanup` and are
     therefore never re-created here.
 
+    Skills are absent for the same dispatch reason plus a hazard agents do not
+    have: a directory carrying a ``SKILL.md`` under ``~/.claude/skills/``
+    registers as a USER-LEVEL skill, and user-level skills silently shadow
+    Claude Code's bundled skill of the same name. Foundry skills are invoked as
+    ``/foundry:<name>`` only. ``skills/_shared`` is excluded too — no plugin may
+    depend on a global ``_shared`` path; each resolves its own via
+    ``bin/resolve_shared_path.py``. :func:`cleanup` purges any such symlink.
+
     Args:
         plugin_root: Plugin install root.
         home: Value of ``$HOME``.
 
     Returns:
-        Triples covering rules ``*.md``, ``TEAM_PROTOCOL.md`` (when present in
-        the plugin), and skills ``*/`` subdirectories.
+        Triples covering rules ``*.md`` and ``TEAM_PROTOCOL.md`` (when present
+        in the plugin).
     """
     entries: list[_Entry] = []
     rules_target = home / ".claude" / "rules"
@@ -262,9 +255,6 @@ def _build_entries(plugin_root: Path, home: Path) -> list[_Entry]:
             _Entry(source=team_src, dest=home / ".claude" / "TEAM_PROTOCOL.md", kind="file"),
         )
 
-    skills_target = home / ".claude" / "skills"
-    for skill_dir in _list_skill_dirs(plugin_root):
-        entries.append(_Entry(source=skill_dir, dest=skills_target / skill_dir.name, kind="dir"))
     return entries
 
 
@@ -276,8 +266,10 @@ def _conflict_label(entry: _Entry, target: str | None) -> str:
     * ``rules/foo.md → /other/path/foo.md``
     * ``rules/foo.md  (real file)``
     * ``TEAM_PROTOCOL.md → /other/...``
-    * ``skills/curator → /other/...``
-    * ``skills/curator  (real entry)``
+
+    Only rules and ``TEAM_PROTOCOL.md`` reach this function — skills left
+    :func:`_build_entries` (see its docstring for the shadowing hazard), so no
+    ``kind="dir"`` entry is ever produced and no ``skills/<name>`` label exists.
 
     Args:
         entry: Triple being labelled.
@@ -295,21 +287,14 @@ def _conflict_label(entry: _Entry, target: str | None) -> str:
         >>> ts = _Entry(Path("/p/TEAM_PROTOCOL.md"), Path("/d/TEAM_PROTOCOL.md"), "file")
         >>> _conflict_label(ts, "/elsewhere/team.md")
         'TEAM_PROTOCOL.md → /elsewhere/team.md'
-        >>> sk = _Entry(Path("/p/skills/curator"), Path("/d/skills/curator"), "dir")
-        >>> _conflict_label(sk, None)
-        'skills/curator  (real entry)'
     """
-    name = entry.source.name
     if entry.dest.name == "TEAM_PROTOCOL.md":
         prefix = "TEAM_PROTOCOL.md"
-    elif entry.kind == "dir":
-        prefix = f"skills/{name}"
     else:
-        prefix = f"rules/{name}"
+        prefix = f"rules/{entry.source.name}"
 
     if target is None:
-        real_kind = "real entry" if entry.kind == "dir" else "real file"
-        return f"{prefix}  ({real_kind})"
+        return f"{prefix}  (real file)"
     return f"{prefix} → {target}"
 
 
@@ -330,18 +315,20 @@ def _existing_dest_symlinks(target_dir: Path) -> list[Path]:
 def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
     """Remove foundry-managed symlinks whose source no longer exists.
 
-    Four scopes evaluated. Three are conditional (rules files, TEAM_PROTOCOL.md,
-    skill dirs) — the link is removed only when ALL three predicates hold:
+    Four scopes evaluated. Two are conditional (rules files, TEAM_PROTOCOL.md) —
+    the link is removed only when ALL three predicates hold:
 
     * the readlink target contains the foundry ``marker`` substring,
     * the readlink target does NOT resolve under ``plugin_root`` (stale, not current),
     * the matching source does not exist in the current plugin tree.
 
-    The fourth scope (``~/.claude/agents/``) is unconditional: every foundry-managed
-    symlink there is obsolete by design. Agents are dispatched directly from the
-    plugin namespace and never need an entry under ``~/.claude/agents/``; any
-    such symlink is left over from an earlier install flow and is purged on
-    every cleanup pass with no source-existence check.
+    The other two scopes (``~/.claude/skills/`` and ``~/.claude/agents/``) are
+    unconditional: every foundry-managed symlink in either is obsolete by
+    design, because both skills and agents are dispatched from the plugin
+    namespace and are never re-created there by :func:`_build_entries`. They are
+    purged with no source-existence check. The two differ in one respect — see
+    the inline comments for why the skills scope also removes links pointing at
+    the *current* plugin root while the agents scope deliberately keeps those.
 
     Args:
         plugin_root: Currently-installed plugin root.
@@ -349,9 +336,9 @@ def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
         marker: Substring identifying foundry-managed targets.
 
     Returns:
-        List of ``"removed obsolete: <name>"`` / ``"removed obsolete skill: <name>"``
-        / ``"removed obsolete agent: <name>"`` log lines (also implies stdout
-        side-effect when invoked via :func:`main`).
+        List of ``"removed obsolete: <name>"`` / ``"removed user-level skill
+        link: <name>"`` / ``"removed obsolete agent: <name>"`` log lines (also
+        implies stdout side-effect when invoked via :func:`main`).
     """
     log: list[str] = []
     rules_dest = home / ".claude" / "rules"
@@ -384,19 +371,22 @@ def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
                 except OSError:
                     pass
 
-    # --- skills/*/ ---
+    # --- skills/ (unconditional purge) ---
+    # No source-existence check and — unlike the agents scope below — no
+    # `_is_current` skip either. A link pointing at the CURRENT plugin root is
+    # precisely the bug this purge exists to fix: it registers the dir as a
+    # USER-LEVEL skill, which silently shadows Claude Code's bundled skill of
+    # the same name (this is what broke bare `/review`). Do not "restore parity"
+    # with the agents scope here — the asymmetry is deliberate.
     for link_path in _existing_dest_symlinks(skills_dest):
         target = _readlink(link_path)
         if target is None or not _is_foundry_managed(target, marker):
             continue
-        if _is_current(target, plugin_root):
+        try:
+            link_path.unlink()
+        except OSError:
             continue
-        if not (plugin_root / "skills" / link_path.name).is_dir():
-            try:
-                link_path.unlink()
-            except OSError:
-                continue
-            log.append(f"removed obsolete skill: {link_path.name}")
+        log.append(f"removed user-level skill link: {link_path.name}")
 
     # --- agents/ (unconditional purge) ---
     # No source-existence check — agents are dispatched from the plugin

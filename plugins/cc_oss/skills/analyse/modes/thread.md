@@ -8,7 +8,7 @@ All three = GitHub conversation threads — same analysis structure, different A
 
 ## Agent Resolution
 
-<!-- `_OSS_SHARED` and `FOUNDRY_SHARED` set by parent analyse/SKILL.md — reload from TMPDIR (fresh shell) -->
+<!-- `_OSS_SHARED` set by parent analyse/SKILL.md — reload from TMPDIR (fresh shell) -->
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -293,9 +293,9 @@ Write full report to `$REPORT_FILE` (echoed above) using Write tool — **do not
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload FOUNDRY_SHARED (Check 41: fresh shell)
-IFS= read -r FOUNDRY_SHARED < "${TMPDIR:-/tmp}/analyse-foundry-shared-${CSID}" 2>/dev/null || FOUNDRY_SHARED=""
-[ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
+# Reload _OSS_SHARED (Check 41: fresh shell)
+IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
+cat "$_OSS_SHARED/terminal-summaries.md"  # timeout: 5000
 ```
 Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `$REPORT_FILE`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed
 

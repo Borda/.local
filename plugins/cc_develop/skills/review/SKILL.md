@@ -80,11 +80,9 @@ Preserve at boundary 2: final report path.
 ## Agent Resolution
 
 ```bash
-_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
-_DEV_SHARED=$(echo "$_PATHS" | head -1)
-_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 # loads: compaction-contract.md
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
@@ -371,7 +369,7 @@ CODEX_OUT="$RUN_DIR/codex.md"
 echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out-${CSID}  # Step 6 re-reads — bash state lost
 ```
 
-If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as spawn prompt; inline prompt below is fallback when shared file absent.
+Read `$_DEV_SHARED/codex-prepass.md` for Codex pass instructions and use them as the spawn prompt — it ships in this plugin's own `_shared`. The inline prompt below is a fallback for a broken install only.
 
 Spawn `codex:codex-rescue` agent (requires `codex` plugin): "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
 
@@ -392,9 +390,9 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 **File-based handoff**:
 
 ```bash
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # re-derive — bash state lost between Bash() calls
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
-cat "$_FOUNDRY_SHARED/file-handoff-protocol.md"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)   # re-derive — bash state lost between Bash() calls
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+cat "$_DEV_SHARED/file-handoff-protocol.md"
 ```
 Run directory created in Step 2 (`$RUN_DIR`).
 
@@ -535,15 +533,15 @@ mkdir -p .temp/state  # timeout: 5000
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # re-derive — bash state lost between Bash() calls
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)   # re-derive — bash state lost between Bash() calls
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR="$RUN_DIR"
-if [ ! -f "$_FOUNDRY_SHARED/cross-validation-protocol.md" ]; then
-    echo "⚠ cross-validation-protocol.md not found at $_FOUNDRY_SHARED — Step 4 skipped; critical findings are unverified. Install foundry plugin or verify _FOUNDRY_SHARED path."
+if [ ! -f "$_DEV_SHARED/cross-validation-protocol.md" ]; then
+    echo "⚠ cross-validation-protocol.md not found at $_DEV_SHARED — Step 4 skipped; critical findings are unverified. It ships in this plugin — reinstall develop@borda-ai-rig."
     echo "## Cross-Validation: SKIPPED" >> "$RUN_DIR/cross-validation.md"
-    echo "**Reason**: _FOUNDRY_SHARED unavailable — cross-validation protocol not executed." >> "$RUN_DIR/cross-validation.md"
+    echo "**Reason**: _DEV_SHARED unavailable — cross-validation protocol not executed." >> "$RUN_DIR/cross-validation.md"
 else
-    cat "$_FOUNDRY_SHARED/cross-validation-protocol.md"
+    cat "$_DEV_SHARED/cross-validation-protocol.md"
 fi
 ```
 
@@ -617,9 +615,9 @@ After consolidating, identify tasks Codex can implement directly — not style v
 - Any task where accurate description requires guessing
 
 ```bash
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/cc_foundry/skills/_shared"
-[ -f "$_FOUNDRY_SHARED/codex-delegation.md" ] && cat "$_FOUNDRY_SHARED/codex-delegation.md" || echo "foundry codex-delegation.md not found — skip Step 6 entirely"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+cat "$_DEV_SHARED/codex-delegation.md"
 ```
 Apply delegation criteria defined there (when found).
 

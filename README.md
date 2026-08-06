@@ -504,7 +504,7 @@ codex plugin remove codex-rig@borda-ai-rig
 
 Start a fresh Codex session. Removing the plugin first can leave pre-release thin shims broken; reinstall Codex Rig to run authenticated cleanup.
 
-Settings added by `/foundry:setup` remain in `~/.claude/settings.json`; remove manually if desired. If `/foundry:setup` was run, symlinks in `~/.claude/agents/` and `~/.claude/skills/` also persist and will be broken after uninstall — remove with `rm ~/.claude/agents/<name>.md` and `rm -rf ~/.claude/skills/<name>` for each.
+Settings added by `/foundry:setup` remain in `~/.claude/settings.json`; remove manually if desired. If `/foundry:setup` was run, symlinks in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist and will be broken after uninstall — remove with `rm ~/.claude/rules/<name>.md` and `rm ~/.claude/TEAM_PROTOCOL.md`. Nothing is linked into `~/.claude/agents/` or `~/.claude/skills/`: agents and skills dispatch from the plugin namespace (`foundry:sw-engineer`, `/foundry:audit`), and a linked skill would shadow Claude Code's bundled skill of the same name.
 
 ______________________________________________________________________
 

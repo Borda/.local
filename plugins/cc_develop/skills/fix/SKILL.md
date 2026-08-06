@@ -36,9 +36,7 @@ Preserve at boundary 2: dev-dir, changed files list, test outcomes, regression t
 ## Agent Resolution
 
 ```bash
-_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
-_DEV_SHARED=$(echo "$_PATHS" | head -1)
-_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 # loads: compaction-contract.md
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
@@ -212,7 +210,7 @@ Spawn 2 teammates in parallel using Agent() tool:
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r TS < "${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}" 2>/dev/null || TS=""                                 # re-derive — bash state lost between Bash() calls
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | head -1)
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
 _SPAWN_DEV_SHARED="$_DEV_SHARED"
 _SPAWN_TS="$TS"
 _SPAWN_ARGS="$ARGUMENTS"
@@ -629,10 +627,11 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 **After 3 cycles**: if substantive issues remain, stop — surface to user before proceeding.
 
 ```bash
-_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
-[ -f "$_FOUNDRY_SHARED/quality-stack.md" ] && cat "$_FOUNDRY_SHARED/quality-stack.md" || echo "foundry quality-stack not found at installed path — stack skipped"
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+_SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
+cat "$_DEV_SHARED/quality-stack.md"
 ```
-If file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
+Execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps. `quality-stack.md` ships in this plugin's own `_shared`, so it is always present — absence means a broken install, not a missing optional dependency.
 
 ## Final Report
 

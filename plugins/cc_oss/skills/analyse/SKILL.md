@@ -70,10 +70,9 @@ if [ -z "$_OSS_SHARED" ]; then
         echo "⚠ _OSS_SHARED empty — oss plugin shared dir unresolved; continuing with degraded functionality (--reply will fail in this run)"
     fi
 fi
-FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/); consumed by modes/thread.md, modes/vitality.md, modes/ecosystem.md
-# Persist $_OSS_SHARED, $FOUNDRY_SHARED — fresh shell loses vars (Check 41)
+# Persist $_OSS_SHARED — fresh shell loses vars (Check 41)
+# loads: terminal-summaries.md (ships in this plugin's _shared); consumed by modes/thread.md, modes/vitality.md, modes/ecosystem.md
 echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}"
-echo "${FOUNDRY_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-foundry-shared-${CSID}"
 ```
 > loads: oss-shared-resolver.md
 

@@ -6,18 +6,20 @@ installed cache, with a source-tree fallback for local development.
 Pure-Python replacement for ``dev-shared-resolve.sh``; no shell
 interpolation, no ``find``/``sort`` pipelines.
 
-With ``--foundry``: also emits the foundry plugin's ``skills/_shared``
-path on a second stdout line so the develop skills can dispatch foundry
-agents in installed-plugin contexts.
+Resolves **only** this plugin's own shared dir. A ``--foundry`` flag used to
+emit foundry's ``skills/_shared`` on a second line; it was removed because
+reading a sibling plugin's ``_shared`` made every borrowed file vanish on a
+develop-only install (see ``plugins/CLAUDE.md`` §Self-Contained ``_shared``).
+Files needed from another plugin are duplicated into this one via
+``propagate_shared.py`` MANIFEST, never resolved out of its tree.
 
 Output contract
 ---------------
-* No flag: ``<develop-shared-path>\\n``
-* ``--foundry``: ``<develop-shared-path>\\n<foundry-shared-path>\\n``
-* Exits 0 always; the caller validates that the printed paths exist.
+* ``<develop-shared-path>\\n``
+* Exits 0 always; the caller validates that the printed path exists.
 
-Tier cascade (per plugin)
--------------------------
+Tier cascade
+------------
 * **Tier 1** — Cache semver scan under
   ``~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared``,
   skipping versions marked ``.orphaned_at``.
@@ -118,43 +120,29 @@ def _resolve_plugin_shared(plugin: str, home: Path) -> str | None:
     return str(candidates[-1][1])
 
 
-def resolve_paths(*, include_foundry: bool, home: Path | None = None) -> list[str]:
-    """Resolve develop (and optionally foundry) shared paths.
+def resolve_shared_path(home: Path | None = None) -> str:
+    """Resolve this plugin's own ``skills/_shared`` path.
 
     Tier 1: cache scan via :func:`_resolve_plugin_shared`.
-    Tier 2: source-tree fallback ``plugins/<plugin>/skills/_shared``.
+    Tier 2: source-tree fallback ``plugins/cc_develop/skills/_shared``.
 
     Args:
-        include_foundry: When ``True``, append foundry's path as second entry.
         home: Override for ``Path.home()`` (testing).
 
     Returns:
-        Ordered list of path strings — index 0 is develop, index 1 is foundry
-        (only when ``include_foundry`` is set).
+        Path string for develop's ``skills/_shared``.
 
     Examples:
         >>> import tempfile
         >>> with tempfile.TemporaryDirectory() as d:
-        ...     out = resolve_paths(include_foundry=False, home=Path(d))
-        ...     out  # source-tree fallback
-        ['plugins/cc_develop/skills/_shared']
+        ...     resolve_shared_path(home=Path(d))  # source-tree fallback
+        'plugins/cc_develop/skills/_shared'
     """
     home = home if home is not None else Path.home()
-    paths: list[str] = []
     dev_path = _resolve_plugin_shared("develop", home)
     if dev_path is None:
         dev_path = (Path("plugins") / "cc_develop" / _SHARED_SUBDIR).as_posix()
-    paths.append(dev_path)
-    if include_foundry:
-        foundry_path = _resolve_plugin_shared("foundry", home)
-        if foundry_path is None:
-            print(
-                "dev_shared_resolve: foundry plugin not in cache — using source-tree fallback",
-                file=sys.stderr,
-            )
-            foundry_path = (Path("plugins") / "cc_foundry" / _SHARED_SUBDIR).as_posix()
-        paths.append(foundry_path)
-    return paths
+    return dev_path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -162,16 +150,10 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser(
         prog="dev_shared_resolve",
-        description="Resolve develop plugin's skills/_shared path (and optionally foundry's).",
+        description="Resolve the develop plugin's own skills/_shared path.",
     )
-    parser.add_argument(
-        "--foundry",
-        action="store_true",
-        help="Also emit the foundry plugin's _shared path on a second line.",
-    )
-    args = parser.parse_args(argv)
-    for line in resolve_paths(include_foundry=args.foundry):
-        print(line)
+    parser.parse_args(argv)
+    print(resolve_shared_path())
     return 0
 
 

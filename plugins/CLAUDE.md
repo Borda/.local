@@ -149,6 +149,15 @@ Correct placement: every plugin dispatching agents from others ships own fallbac
 
 No plugin dependency system in Claude Code — never propose "install `foo` as prerequisite" or "register globally via `foo` init" as solution to missing-plugin resilience. Circular: requires thing that might be absent.
 
+## Self-Contained `_shared`
+
+**Every plugin points at its own `skills/_shared`. No global path, no sibling reach-in.** Enforced by audit Check 27.
+
+- Resolve via the plugin's **own** resolver — `cc_foundry`/`cc_oss` `bin/resolve_shared_path.py <own-plugin> skills/_shared`, `cc_develop` `bin/dev_shared_resolve.py`, `cc_research` `bin/resolve_shared.py`. Bare `plugins/<own-plugin>/skills/_shared` allowed only as the final fallback tier (§Installability).
+- **Never** `$HOME/.claude/skills/_shared/...` or bare `.claude/skills/_shared/...`. That path no longer exists: `/foundry:setup` symlinks only `rules/*.md` + `TEAM_PROTOCOL.md`, and purges any leftover `~/.claude/skills/` link. A dir carrying `SKILL.md` there registers as a **user-level skill** and silently shadows Claude Code's bundled skill of the same name — that is what broke bare `/review` (it reached CC's bundled reviewer instead of `oss:review`).
+- **Never** read another plugin's `_shared` or `bin/` (`resolve_shared_path.py foundry` from a non-foundry plugin, `--foundry`, `$_FOUNDRY_SHARED`, `$_FOUNDRY_BIN`, literal `plugins/cc_<other>/`). Content two plugins both need is **duplicated, not borrowed**: ship a copy in each and add a `MANIFEST` entry to `propagate_shared.py` so they stay byte-identical (precedent: `codex-delegation.md`, canonical in foundry, copied to `cc_research` after research's R7 lost the file on a research-only install).
+- Corollary: a standalone install of any single plugin must work with no other plugin present. Agent dispatch keeps its own fallback (`hooks/agent-router.js` + per-plugin `_shared/agent-resolution.md`) — that mechanism is unaffected by this rule and stays.
+
 ## README Sync
 
 **Edit agents/skills/rules/hooks → update plugin `README.md` before done.**

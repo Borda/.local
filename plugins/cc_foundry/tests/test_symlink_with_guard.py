@@ -25,8 +25,11 @@ def env(tmp_path: Path) -> tuple[Path, Path]:
 
     Layout::
 
-        tmp/plugin/{rules,skills/curator,TEAM_PROTOCOL.md}
+        tmp/plugin/{rules,skills/{curator,shepherd,_shared},TEAM_PROTOCOL.md}
         tmp/home/.claude/{rules,skills,agents}/
+
+    The ``skills/`` dirs exist to prove they are NOT linked into ``$HOME`` —
+    they never enter ``_build_entries``.
     """
     plugin = tmp_path / "plugin"
     (plugin / "rules").mkdir(parents=True)
@@ -35,6 +38,34 @@ def env(tmp_path: Path) -> tuple[Path, Path]:
     (plugin / "TEAM_PROTOCOL.md").write_text("team\n")
     (plugin / "skills" / "curator").mkdir(parents=True)
     (plugin / "skills" / "shepherd").mkdir(parents=True)
+    (plugin / "skills" / "_shared").mkdir(parents=True)
+
+    home = tmp_path / "home"
+    (home / ".claude" / "rules").mkdir(parents=True)
+    (home / ".claude" / "skills").mkdir(parents=True)
+    (home / ".claude" / "agents").mkdir(parents=True)
+    return plugin, home
+
+
+@pytest.fixture
+def marked_env(tmp_path: Path) -> tuple[Path, Path]:
+    """Same as :func:`env`, but the plugin root path itself contains the foundry marker.
+
+    Needed whenever a test asserts on a symlink pointing at the CURRENT plugin
+    root: ``_is_foundry_managed`` matches the ``borda-ai-rig/foundry/`` substring
+    against the readlink target, so a plugin root like ``tmp/plugin`` is never
+    recognised as foundry-managed and the assertion would pass vacuously. Real
+    installs live at ``~/.claude/plugins/cache/borda-ai-rig/foundry/<version>/``.
+
+    Layout::
+
+        tmp/cache/borda-ai-rig/foundry/0.38.4/skills/{curator,_shared}
+        tmp/home/.claude/{rules,skills,agents}/
+    """
+    plugin = tmp_path / "cache" / "borda-ai-rig" / "foundry" / "0.38.4"
+    (plugin / "rules").mkdir(parents=True)
+    (plugin / "skills" / "curator").mkdir(parents=True)
+    (plugin / "skills" / "_shared").mkdir(parents=True)
 
     home = tmp_path / "home"
     (home / ".claude" / "rules").mkdir(parents=True)
@@ -116,8 +147,8 @@ class TestCleanup:
 
         assert link.is_symlink()  # not obsolete — Phase 4 handles refresh
 
-    def test_removes_obsolete_skill_dir_link(self, env: tuple[Path, Path]) -> None:
-        """Stale foundry skill symlink whose source dir vanished is removed."""
+    def test_removes_stale_skill_link(self, env: tuple[Path, Path]) -> None:
+        """Foundry-managed skill symlink under a non-current root is removed."""
         plugin, home = env
         link = home / ".claude" / "skills" / "oldskill"
         _ln("/old/borda-ai-rig/foundry/0.10.0/skills/oldskill", link)
@@ -125,7 +156,56 @@ class TestCleanup:
         log = cleanup(plugin, home, _MARKER)
 
         assert not link.is_symlink()
-        assert "removed obsolete skill: oldskill" in log
+        assert "removed user-level skill link: oldskill" in log
+
+    def test_removes_current_version_skill_link(self, marked_env: tuple[Path, Path]) -> None:
+        """Skill symlink pointing into the CURRENT plugin root is removed too.
+
+        Deliberately opposite to ``test_keeps_current_version_agent_symlink``: a
+        current-root skill link is not a signal to investigate, it is the defect
+        itself — it registers the dir as a user-level skill that shadows Claude
+        Code's bundled skill of the same name. Do not align these two tests.
+        """
+        plugin, home = marked_env
+        link = home / ".claude" / "skills" / "curator"
+        _ln(str(plugin / "skills" / "curator"), link)
+
+        log = cleanup(plugin, home, _MARKER)
+
+        assert not link.is_symlink()
+        assert "removed user-level skill link: curator" in log
+
+    def test_removes_shared_support_dir_link(self, marked_env: tuple[Path, Path]) -> None:
+        """``_shared`` gets no exemption — no plugin may rely on a global _shared path."""
+        plugin, home = marked_env
+        link = home / ".claude" / "skills" / "_shared"
+        _ln(str(plugin / "skills" / "_shared"), link)
+
+        log = cleanup(plugin, home, _MARKER)
+
+        assert not link.is_symlink()
+        assert "removed user-level skill link: _shared" in log
+
+    def test_keeps_non_foundry_skill_link(self, env: tuple[Path, Path]) -> None:
+        """Skill symlink pointing outside foundry is left alone (user owns it)."""
+        plugin, home = env
+        link = home / ".claude" / "skills" / "mine"
+        _ln("/somewhere/else/mine", link)
+
+        cleanup(plugin, home, _MARKER)
+
+        assert link.is_symlink()
+
+    def test_keeps_real_skill_dir(self, env: tuple[Path, Path]) -> None:
+        """Real (non-symlink) dirs under ~/.claude/skills/ are never deleted."""
+        plugin, home = env
+        real = home / ".claude" / "skills" / "geo"
+        real.mkdir()
+
+        cleanup(plugin, home, _MARKER)
+
+        assert real.is_dir()
+        assert not real.is_symlink()
 
     def test_empty_when_no_obsolete_entries(self, env: tuple[Path, Path]) -> None:
         """Clean state → no removals, empty log."""
@@ -233,14 +313,14 @@ class TestScan:
 
         assert "TEAM_PROTOCOL.md → /somewhere/else/team.md" in conflicts
 
-    def test_reports_skill_real_entry_conflict(self, env: tuple[Path, Path]) -> None:
-        """A real directory at dest surfaces with (real entry) suffix for skills."""
+    def test_plugin_skill_real_dir_is_not_a_conflict(self, env: tuple[Path, Path]) -> None:
+        """A dir named after a plugin skill is no conflict — skills are never linked into $HOME."""
         plugin, home = env
         (home / ".claude" / "skills" / "curator").mkdir()
 
         conflicts = scan(plugin, home, _MARKER)
 
-        assert "skills/curator  (real entry)" in conflicts
+        assert conflicts == []
 
     def test_no_conflicts_on_empty_dest(self, env: tuple[Path, Path]) -> None:
         """Absent dest entries are not conflicts — Phase 4 will create them."""

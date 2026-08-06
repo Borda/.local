@@ -1,0 +1,18 @@
+For `CRITICAL`/`[blocking]` findings: spawn second independent agent to verify before report. High and lower go direct.
+
+Use same agent type that raised finding:
+
+```text
+Independently review <file or scope> for the following specific issue: "<finding description>".
+Do NOT read any prior output from another agent reviewing this file.
+Confirm: is this a real critical/blocking issue, a false positive, or something lower severity?
+Explain your reasoning. End your response with a `## Confidence` block per CLAUDE.md output standards.
+```
+
+Classify outcome:
+
+- **Both agree it is critical/blocking** → include as critical/blocking in report ✓
+- **Second pass disagrees or downgrades** → downgrade to `high` with note: "unconfirmed — one of two independent passes flagged this"
+- **Both agree it is NOT critical** → remove from critical list; re-classify at lower severity both agree on
+
+One extra spawn per critical finding. Worth it — stops false-positive blockers reaching user.

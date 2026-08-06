@@ -90,45 +90,49 @@ fi
 
 ## Check I3 — Link health (conditional)
 
-Runs only if `~/.claude/agents/` or `~/.claude/skills/` contain symlinks pointing to plugin cache path. Checks staleness — symlinks break silently after plugin version upgrade changes cache path.
+Two distinct expectations, both asserted here:
+
+- `~/.claude/agents/` and `~/.claude/skills/` must contain **zero** foundry symlinks. Both namespaces dispatch from the plugin (`foundry:sw-engineer`, `/foundry:audit`); a skills link additionally registers a user-level skill that shadows Claude Code's bundled skill of the same name. `/foundry:setup` Step 10 Phase 1 purges both.
+- `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` **are** symlinked, so those are checked for staleness — they break silently when a version upgrade moves the cache path.
 
 ```bash
 printf "=== Check I3: ~/.claude/ link health ===\n"
 
-INSTALL_PATH=$(cat /tmp/audit_install_plugin_root 2>/dev/null)
-LINKED=0
+FOUND=0
 STALE=0
+LINKED=0
 
-for f in "$HOME/.claude/agents/"*.md; do
-    [ -e "$f" ] || continue
-    if [ -L "$f" ]; then
-        LINKED=$((LINKED + 1))
-        [ ! -f "$f" ] && STALE=$((STALE + 1)) && \
-            printf "! HIGH: Check I3 — broken symlink: %s -> %s\n" "$f" "$(readlink "$f" 2>/dev/null)"
-    fi
+for f in "$HOME/.claude/agents/"*.md "$HOME/.claude/skills/"*; do
+    [ -L "$f" ] || continue
+    case "$(readlink "$f" 2>/dev/null)" in
+        *borda-ai-rig/foundry/*) ;;
+        *) continue ;;
+    esac
+    FOUND=$((FOUND + 1))
+    printf "! HIGH: Check I3 — foundry symlink must not exist: %s -> %s\n" "$f" "$(readlink "$f" 2>/dev/null)"
 done
 
-for d in "$HOME/.claude/skills/"/*/; do
-    [ -e "$d" ] || continue
-    d="${d%/}"
-    if [ -L "$d" ]; then
-        LINKED=$((LINKED + 1))
-        [ ! -d "$d" ] && STALE=$((STALE + 1)) && \
-            printf "! HIGH: Check I3 — broken symlink: %s -> %s\n" "$d" "$(readlink "$d" 2>/dev/null)"
-    fi
+for f in "$HOME/.claude/rules/"*.md "$HOME/.claude/TEAM_PROTOCOL.md"; do
+    [ -L "$f" ] || continue
+    LINKED=$((LINKED + 1))
+    [ ! -e "$f" ] && STALE=$((STALE + 1)) && \
+        printf "! HIGH: Check I3 — broken symlink: %s -> %s\n" "$f" "$(readlink "$f" 2>/dev/null)"
 done
 
+if [ "$FOUND" -gt 0 ]; then
+    printf "  Fix: re-run /foundry:setup — Step 10 Phase 1 purges agent and skill symlinks\n"
+fi
 if [ "$LINKED" -eq 0 ]; then
-    printf "✓: Check I3 — no foundry symlinks in ~/.claude/ (foundry:setup link not run; skipping)\n"
+    printf "✓: Check I3 — no rules symlinks in ~/.claude/ (foundry:setup not run; skipping staleness check)\n"
 elif [ "$STALE" -eq 0 ]; then
-    printf "✓: Check I3 — %d symlink(s) all resolve correctly\n" "$LINKED"
+    printf "✓: Check I3 — %d rules/TEAM_PROTOCOL symlink(s) all resolve correctly\n" "$LINKED"
 else
     printf "! HIGH: Check I3 — %d of %d symlink(s) broken (likely stale after plugin version upgrade)\n" "$STALE" "$LINKED"
-    printf "  Fix: re-run /foundry:setup link — it will replace stale symlinks with the current cache path\n"
+    printf "  Fix: re-run /foundry:setup — Phase 4 replaces stale symlinks with the current cache path\n"
 fi
 ```
 
-**Severity**: broken symlinks → **high** (agents/skills silently unavailable at root namespace). Fix: re-run `/foundry:setup link` — detects and replaces stale symlinks.
+**Severity**: both → **high**. A foundry symlink under `agents/` or `skills/` shadows namespaced dispatch; a broken `rules/` symlink silently drops a rule file. Fix for either: re-run `/foundry:setup` (no `link` subcommand exists — `argument-hint` is `[--approve]`).
 
 ## Check R1 — Computed path resolution (local + installed duality)
 

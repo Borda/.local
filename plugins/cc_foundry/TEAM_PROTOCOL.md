@@ -144,7 +144,7 @@ epsilon!fail auth attempt:3/3 ?lead          # giving up, reassign
 
 When teammate completes analysis task (review, audit, research):
 
-- Write full findings to canonical output path — see `.claude/skills/_shared/file-handoff-protocol.md` for path convention
+- Write full findings to canonical output path — for the path convention, resolve foundry's own shared dir (`python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared`) and `cat "$_FS/file-handoff-protocol.md"`
 - Send lead summary: `DONE <task-id> | findings=N sev=C/H/M | → <file-path>`
 - Lead reads file only when consolidating final report — not per task completion
 

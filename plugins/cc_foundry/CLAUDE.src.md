@@ -16,7 +16,7 @@
 - Independent subtasks run parallel, not serial; one tack per sub-agent
 - **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path)
 - Complex problem → more compute via sub-agents
-- **File-based handoff**: 2+ analysis agents each write full output to file, return only compact JSON envelope — see `.claude/skills/_shared/file-handoff-protocol.md`
+- **File-based handoff**: 2+ analysis agents each write full output to file, return only compact JSON envelope — protocol in foundry's own shared dir, resolved via `bin/resolve_shared_path.py foundry skills/_shared` then `cat "$_FS/file-handoff-protocol.md"`
 
 ### 3. Self-Improvement Loop
 

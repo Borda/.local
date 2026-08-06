@@ -47,7 +47,15 @@ For `/research:judge`, calibration pattern mirrors `/audit`: inject N specific k
 
 For `/research:plan`, calibration measures output completeness: generate synthetic goal, score whether produced `program.md` (a) contains all four required sections (Goal, Metric, Guard, Config), (b) has `direction` field, (c) has non-empty `scope_files`, (d) includes plausible `metric_cmd`. Ground truth = checklist; recall = fraction of checklist items present.
 
-Each subagent receives pipeline template from `.claude/skills/calibrate/templates/pipeline-prompt.md` with substitutions:
+Resolve the template dir first — no `~/.claude/skills/` copy exists (setup symlinks only `rules/*.md` and `TEAM_PROTOCOL.md`):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/calibrate-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+CALIB_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" calibrate templates $([ "$LOCAL_MODE" = "true" ] && echo --local))  # timeout: 5000
+```
+
+Each subagent receives pipeline template from `$CALIB_TPL/pipeline-prompt.md` with substitutions:
 
 - `<TARGET>` = skill name including `/` prefix (e.g., `/audit`)
 - `<DOMAIN>` = domain string from table above for that skill

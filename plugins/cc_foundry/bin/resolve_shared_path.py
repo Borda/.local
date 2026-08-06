@@ -173,11 +173,14 @@ def _cache_root(home: Path) -> Path:
 def _locate_helper(home: Path, env_root: str | None) -> Path | None:
     """Find ``get_plugin_install_path.py`` across known locations.
 
-    Search order matches ``resolve-shared-path.sh``:
+    Every tier stays inside the plugin this script itself ships in — derived from
+    ``__file__``, never a hardcoded sibling. A copy of this resolver living in
+    another plugin therefore looks up that plugin's helper, so no plugin depends
+    on a sibling being installed (``plugins/CLAUDE.md`` §Self-Contained ``_shared``).
 
     1. ``$CLAUDE_PLUGIN_ROOT/bin/get_plugin_install_path.py`` when env set.
-    2. Newest semver under ``<cache>/foundry/*/bin/get_plugin_install_path.py``.
-    3. Source-tree dev fallback ``plugins/cc_foundry/bin/get_plugin_install_path.py``.
+    2. Newest semver under ``<cache>/<own-plugin>/*/bin/get_plugin_install_path.py``.
+    3. Source-tree dev fallback ``plugins/<own-plugin-dir>/bin/…`` (repo-relative).
 
     Args:
         home: User home directory.
@@ -190,15 +193,18 @@ def _locate_helper(home: Path, env_root: str | None) -> Path | None:
         candidate = Path(env_root) / "bin" / "get_plugin_install_path.py"
         if candidate.is_file():
             return candidate
-    foundry_cache = _cache_root(home) / "foundry"
-    if foundry_cache.is_dir():
+    own_plugin_dir = Path(__file__).resolve().parent.parent
+    own_cache = _cache_root(home) / own_plugin_dir.name.removeprefix("cc_")
+    if own_cache.is_dir():
         versions = [
-            v for v in foundry_cache.iterdir() if v.is_dir() and (v / "bin" / "get_plugin_install_path.py").is_file()
+            v for v in own_cache.iterdir() if v.is_dir() and (v / "bin" / "get_plugin_install_path.py").is_file()
         ]
         if versions:
             versions.sort(key=lambda p: _version_key(p.name))
             return versions[-1] / "bin" / "get_plugin_install_path.py"
-    source_fallback = Path("plugins/cc_foundry/bin/get_plugin_install_path.py")
+    # repo-relative on purpose (matches tier-3 shared-path fallback): an absolute
+    # path here would always resolve, letting the helper tier win even with no install
+    source_fallback = Path("plugins") / own_plugin_dir.name / "bin" / "get_plugin_install_path.py"
     if source_fallback.is_file():
         return source_fallback
     return None

@@ -1,6 +1,6 @@
 ---
 name: setup
-description: "Post-install setup for foundry plugin. Run once after installing on a new machine, or after a plugin version upgrade to sync settings and symlinks. Merges statusLine, permissions.allow, enabledPlugins, and advisorModel into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
+description: "Post-install setup for foundry plugin. Run once after installing on a new machine, or after a plugin version upgrade to sync settings and symlinks. Merges statusLine, permissions.allow, enabledPlugins, and advisorModel into ~/.claude/settings.json; symlinks rules and TEAM_PROTOCOL.md into ~/.claude/; purges orphaned plugin cache versions."
 argument-hint: "[--approve]"
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
@@ -17,13 +17,13 @@ Set up foundry on new machine:
 | Merge `statusLine`, `permissions.allow`, `enabledPlugins`, `advisorModel` → `~/.claude/settings.json` | ✓ |
 | `rules/*.md` → `~/.claude/rules/` | symlink |
 | `TEAM_PROTOCOL.md` → `~/.claude/` | symlink |
-| `skills/*` → `~/.claude/skills/` | symlink |
+| Purge orphaned plugin cache versions (`.orphaned_at`, age-gated, confirm-gated) | ✓ |
 | `hooks/hooks.json` | auto — plugin system |
 | Conflict review before overwriting existing user files | ✓ |
 
-**Why symlink rules and skills (not copy)?** Rules, TEAM_PROTOCOL.md, and skills load at session startup. Symlinks = every session gets plugin's current version — no stale copies, no re-run after upgrades. Broken symlink after upgrade = obvious error; stale copy silently serves old content.
+**Why symlink rules and TEAM_PROTOCOL.md (not copy)?** Both load at session startup. Symlinks = every session gets plugin's current version — no stale copies, no re-run after upgrades. Broken symlink after upgrade = obvious error; stale copy silently serves old content.
 
-**Why symlink skills explicitly?** `claude plugin install` creates `~/.claude/skills/` symlinks on first install but does NOT update them on upgrade — old version directory stays in cache, symlinks go stale. Setup's stale-version detection (same pattern as rules) replaces them silently on every re-run.
+**Why NOT symlink skills?** A directory carrying a `SKILL.md` under `~/.claude/skills/` registers as a **user-level** skill, and user-level skills silently shadow Claude Code's bundled skill of the same name. That already cost bare `/review` (hit CC's bundled reviewer instead of `oss:review`). Foundry skills dispatch as `/foundry:<name>` — no `~/.claude/skills/` entry needed, ever. `skills/_shared` is excluded too: no plugin may depend on a global `_shared` path — each resolves its own via `bin/resolve_shared_path.py`. Phase 1 purges any such symlink unconditionally, including ones pointing at the current version.
 
 **Why not symlink agents?** Agents must use full plugin prefix (`foundry:sw-engineer`, not `sw-engineer`) for unambiguous dispatch. Plugin system exposes agents at `foundry:` namespace — no `~/.claude/agents/` symlinks needed. (Stale agent symlinks from prior installs removed by setup's Phase 1 cleanup.)
 
@@ -303,20 +303,22 @@ PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_plug
 python "$PLUGIN_ROOT/bin/symlink_with_guard.py" cleanup --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
 ```
 
-The script iterates rules (`*.md`), `TEAM_PROTOCOL.md`, and skill dirs; removes any foundry-managed symlink (target contains `borda-ai-rig/foundry/`) that is both stale (target does not resolve under `$PLUGIN_ROOT`) and whose source no longer exists in current plugin tree. Each removal prints `  removed obsolete: <name>` / `  removed obsolete skill: <name>`.
+The script iterates rules (`*.md`) and `TEAM_PROTOCOL.md`; removes any foundry-managed symlink (target contains `borda-ai-rig/foundry/`) that is both stale (target does not resolve under `$PLUGIN_ROOT`) and whose source no longer exists in current plugin tree. Each removal prints `  removed obsolete: <name>`.
 
-Cleanup also scans `~/.claude/agents/` for foundry-managed symlinks (targets containing `borda-ai-rig/foundry/`) and removes them unconditionally — foundry agents served directly from plugin namespace, not via `~/.claude/agents/` symlinks. Each removal prints `  removed obsolete agent: <name>`.
+Cleanup also purges two dest dirs unconditionally — both skills and agents are served from the plugin namespace, never via `~/.claude/` entries:
+
+- `~/.claude/skills/` — every foundry-managed symlink removed, **including ones pointing at the current version**, because a current-version link is the defect itself (a `SKILL.md` dir there registers as a user-level skill and shadows CC's bundled skill of that name). `_shared` gets no exemption. Prints `  removed user-level skill link: <name>`.
+- `~/.claude/agents/` — foundry-managed symlinks removed, except current-version ones, which are kept as a signal that something outside setup is staging them. Prints `  removed obsolete agent: <name>`.
 
 **Phase 2 — Conflict scan** — identify entries needing user confirmation. Stale foundry symlinks (old version → current) are auto-replaced in Phase 4 without prompt:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-mkdir -p "$HOME/.claude/skills"  # timeout: 5000
 mapfile -t LINK_CONFLICTS < <(python "$PLUGIN_ROOT/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
 printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-setup-conflicts-${CSID}.txt"  # timeout: 3000; persist for Phase 4; Bash calls don't share state
 ```
 
-The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
+The `scan` mode walks the same two patterns (rules `*.md`, `TEAM_PROTOCOL.md`) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>`.
 
 **Phase 3 — Handle remaining conflicts** (real files or symlinks to non-foundry paths):
 
@@ -365,7 +367,7 @@ _approved() {
 _in_conflicts() {
     local needle="$1"
     for c in "${LINK_CONFLICTS[@]:-}"; do
-        # LINK_CONFLICTS entries start with "rules/<base>", "TEAM_PROTOCOL.md", or "skills/<name>"
+        # LINK_CONFLICTS entries start with "rules/<base>" or "TEAM_PROTOCOL.md"
         case "$c" in "$needle"*) return 0 ;; esac
     done
     return 1
@@ -392,23 +394,42 @@ else
     unlink "$dest" 2>/dev/null || true; ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" "$dest"  # timeout: 5000
     echo "  linked: TEAM_PROTOCOL.md"
 fi
-# skills: 'setup' excluded — must invoke as /foundry:setup, not bare /setup
-for src_dir in "$PLUGIN_ROOT/skills/"*/; do
-    skill=$(basename "${src_dir%/}")
-    [ "$skill" = "setup" ] && continue  # plugin-namespaced only; bare /setup ambiguous
-    dest="$HOME/.claude/skills/$skill"
-    if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
-        echo "  skipped (user choice b): skill:$skill"; continue
-    fi
-    if [ "${PER_ITEM_REVIEW_MODE:-false}" = "true" ] && _in_conflicts "skills/$skill" && ! _approved "skill:$skill"; then
-        echo "  skipped (user choice c — not approved): skill:$skill"; continue
-    fi
-    unlink "$dest" 2>/dev/null || true; ln -sf "${src_dir%/}" "$dest"  # timeout: 5000
-    echo "  linked skill: $skill"
-done  # timeout: 10000
+# NO skills loop — deliberate. A SKILL.md dir under ~/.claude/skills/ becomes a
+# user-level skill and shadows CC's bundled skill of that name; _shared excluded too
+# (own-plugin resolver, no global path). Phase 1 purges any leftover link.
 ```
 
-## Step 11: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
+## Step 11: Purge orphaned plugin cache versions
+
+**Must run AFTER Step 10 Phase 4** — Phase 4 re-points every `~/.claude/` symlink at the current version. Purging first would delete a cache dir that surviving links still target, turning stale-but-readable links into broken ones. Do not reorder.
+
+Report first — deletes nothing:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PLUGIN_ROOT < "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null || PLUGIN_ROOT=""  # reload: fresh shell (Check 41)
+python "$PLUGIN_ROOT/bin/purge_plugin_cache.py" --protect "$PLUGIN_ROOT" --protect "${CLAUDE_PLUGIN_ROOT:-}"  # timeout: 30000
+```
+
+Output `nothing to purge …` → print it, skip to Step 12 (no prompt).
+
+Otherwise the report lists `<plugin>/<version>  <size>  orphaned <N>d ago  leases:N` plus a total. Deletion is irreversible, so gate it. If `APPROVE_ALL=true`: print `[--approve] auto-accepting: purge all listed cache versions` and take option (a) without prompting. Else invoke `AskUserQuestion`:
+
+- (a) **Purge all listed** — reclaim every listed version
+- (b) **Skip** — keep everything, proceed to Step 12
+- (c) **Raise the age floor** — re-run report with a larger `--min-orphan-age-hours` (e.g. 168 = keep the last week)
+
+On (a), re-invoke with the candidate count from the report as `--expect-count` — mismatch means the cache changed since the user saw the list, and nothing is deleted:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PLUGIN_ROOT < "${TMPDIR:-/tmp}/setup-plugin-root-${CSID}" 2>/dev/null || PLUGIN_ROOT=""
+python "$PLUGIN_ROOT/bin/purge_plugin_cache.py" --apply --expect-count <N> --protect "$PLUGIN_ROOT" --protect "${CLAUDE_PLUGIN_ROOT:-}"  # timeout: 60000
+```
+
+Substitute `<N>` with the count from the report line before running. Versions newer than the age floor are deferred by design and clear on a later run — that is not a failure.
+
+## Step 12: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -418,7 +439,7 @@ cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"
 ```
 
-## Step 12: Final report
+## Step 13: Final report
 
 Print summary:
 
@@ -428,11 +449,11 @@ Print summary:
 - enabledPlugins: set / skipped
 - advisorModel: set / skipped
 - Rules removed obsolete: N (files no longer in current plugin version)
-- Skills removed obsolete: N (skill dirs no longer in current plugin version)
+- User-level skill links removed: N (foundry skills invoke as `/foundry:<name>`)
 - Agent symlinks removed from ~/.claude/agents/: N (stale foundry-managed symlinks purged)
 - Rules linked: N → ~/.claude/rules/
 - TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
-- Skills linked: N → ~/.claude/skills/
+- Cache purged: N orphaned version(s), M MB (or `skipped` / `nothing to purge`)
 - CLAUDE.md written → ~/.claude/CLAUDE.md
 - Backup at: ~/.claude/settings.json.bak
 
@@ -440,8 +461,8 @@ Print summary:
 
 <notes>
 
-**Follow-up gate omitted** — setup is one-shot; no iterative follow-up action applies. Step 12 Final report is terminal output; no `AskUserQuestion` gate required.
+**Follow-up gate omitted** — setup is one-shot; no iterative follow-up action applies. Step 13 Final report is terminal output; no `AskUserQuestion` gate required. (Step 11 has its own confirm gate before deleting cache dirs — that is a safety prompt, not a follow-up gate.)
 
-**Testing setup changes**: Setup skill has no `.claude/skills/setup` entry — only reachable as `/foundry:setup` after plugin installed. To test: bump `version` in `plugins/cc_foundry/.claude-plugin/plugin.json`, run `claude plugin install foundry@borda-ai-rig` from repo root to refresh cache, invoke `/foundry:setup`. **Upgrade path**: After `claude plugin install foundry@borda-ai-rig` upgrades version, re-run `/foundry:setup` — Step 10 Phase 1 removes rules and skill symlinks no longer in new version; Phase 2–4 auto-replaces stale foundry symlinks (rules + skills) without prompting; real-file and non-foundry-path conflicts still surfaced for user review. Note: `bash sync.sh` calls `/foundry:setup` headlessly at end — skill symlinks updated automatically on every sync run.
+**Testing setup changes**: Setup skill has no `.claude/skills/setup` entry — only reachable as `/foundry:setup` after plugin installed. To test: bump `version` in `plugins/cc_foundry/.claude-plugin/plugin.json`, run `claude plugin install foundry@borda-ai-rig` from repo root to refresh cache, invoke `/foundry:setup`. **Upgrade path**: After `claude plugin install foundry@borda-ai-rig` upgrades version, re-run `/foundry:setup` — Step 10 Phase 1 removes rules symlinks no longer in new version and purges every `~/.claude/skills/` foundry link; Phase 2–4 auto-replaces stale foundry rules symlinks without prompting; real-file and non-foundry-path conflicts still surfaced for user review. Note: `bash sync.sh` calls `/foundry:setup` headlessly at end — rules symlinks updated automatically on every sync run.
 
 </notes>

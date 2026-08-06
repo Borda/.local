@@ -24,9 +24,7 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 ## Agent Resolution
 
 ```bash
-_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
-_DEV_SHARED=$(echo "$_PATHS" | head -1)
-_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
 

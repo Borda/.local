@@ -2,11 +2,13 @@
 
 Output contract:
 
-* No flag → one stdout line (develop shared path).
-* ``--foundry`` → two stdout lines (develop, then foundry).
+* One stdout line: this plugin's own ``skills/_shared`` path.
 * Cache hit returns newest semver; orphaned versions are skipped.
-* Absent cache → source-tree fallback ``plugins/<plugin>/skills/_shared``
-  with stderr warning (foundry side only emits the warning).
+* Absent cache → source-tree fallback ``plugins/cc_develop/skills/_shared``.
+
+The former ``--foundry`` flag (which emitted a sibling plugin's ``_shared`` on a
+second line) was removed — see ``plugins/CLAUDE.md`` §Self-Contained ``_shared``.
+``TestNoSiblingReachIn`` below guards against its reintroduction.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ def test_shebang_uses_env_python() -> None:
 
 
 class TestDevelopOnly:
-    """Default invocation (no ``--foundry``) emits one line."""
+    """Resolution always targets develop's own shared dir."""
 
     def test_cache_hit_returns_newest_version(self, tmp_path: Path) -> None:
         """Newest cached develop version's ``_shared`` is returned."""
@@ -45,8 +47,7 @@ class TestDevelopOnly:
         (base / "0.1.0" / "skills" / "_shared").mkdir(parents=True)
         newer = base / "0.6.2" / "skills" / "_shared"
         newer.mkdir(parents=True)
-        paths = dev_shared_resolve.resolve_paths(include_foundry=False, home=tmp_path)
-        assert paths == [str(newer)]
+        assert dev_shared_resolve.resolve_shared_path(home=tmp_path) == str(newer)
 
     @pytest.mark.parametrize(
         "older_version,newer_version",
@@ -61,8 +62,7 @@ class TestDevelopOnly:
         (base / older_version / "skills" / "_shared").mkdir(parents=True)
         newer = base / newer_version / "skills" / "_shared"
         newer.mkdir(parents=True)
-        paths = dev_shared_resolve.resolve_paths(include_foundry=False, home=tmp_path)
-        assert paths == [str(newer)]
+        assert dev_shared_resolve.resolve_shared_path(home=tmp_path) == str(newer)
 
     def test_orphaned_develop_version_skipped(self, tmp_path: Path) -> None:
         """``.orphaned_at`` on newest develop version → older one wins."""
@@ -72,13 +72,11 @@ class TestDevelopOnly:
         (orphaned / ".orphaned_at").write_text("2026-01-01T00:00:00Z\n", encoding="utf-8")
         older = base / "0.6.2" / "skills" / "_shared"
         older.mkdir(parents=True)
-        paths = dev_shared_resolve.resolve_paths(include_foundry=False, home=tmp_path)
-        assert paths == [str(older)]
+        assert dev_shared_resolve.resolve_shared_path(home=tmp_path) == str(older)
 
     def test_source_fallback(self, tmp_path: Path) -> None:
         """Empty cache → source-tree fallback path string."""
-        paths = dev_shared_resolve.resolve_paths(include_foundry=False, home=tmp_path)
-        assert paths == ["plugins/cc_develop/skills/_shared"]
+        assert dev_shared_resolve.resolve_shared_path(home=tmp_path) == "plugins/cc_develop/skills/_shared"
 
     def test_main_prints_single_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -92,42 +90,26 @@ class TestDevelopOnly:
         assert lines == ["plugins/cc_develop/skills/_shared"]
 
 
-class TestWithFoundry:
-    """``--foundry`` invocation emits two lines."""
+class TestNoSiblingReachIn:
+    """The resolver must never expose another plugin's tree."""
 
-    def test_two_lines_both_from_cache(self, tmp_path: Path) -> None:
-        """Both develop and foundry cached → two cache paths returned."""
-        cache = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig"
-        dev = cache / "develop" / "0.6.2" / "skills" / "_shared"
-        foundry = cache / "foundry" / "0.20.0" / "skills" / "_shared"
-        dev.mkdir(parents=True)
-        foundry.mkdir(parents=True)
-        paths = dev_shared_resolve.resolve_paths(include_foundry=True, home=tmp_path)
-        assert paths == [str(dev), str(foundry)]
+    def test_foundry_flag_is_rejected(self) -> None:
+        """``--foundry`` no longer exists — argparse must reject it, not silently ignore it."""
+        with pytest.raises(SystemExit):
+            dev_shared_resolve.main(["--foundry"])
 
-    def test_foundry_orphaned_newest_version_skipped(self, tmp_path: Path) -> None:
-        """Foundry cache selection skips orphaned newest versions just like develop."""
-        cache = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig"
-        dev = cache / "develop" / "0.6.2" / "skills" / "_shared"
-        dev.mkdir(parents=True)
-        orphaned = cache / "foundry" / "0.20.0"
-        (orphaned / "skills" / "_shared").mkdir(parents=True)
-        (orphaned / ".orphaned_at").write_text("2026-01-01T00:00:00Z\n", encoding="utf-8")
-        older = cache / "foundry" / "0.10.0" / "skills" / "_shared"
-        older.mkdir(parents=True)
-        paths = dev_shared_resolve.resolve_paths(include_foundry=True, home=tmp_path)
-        assert paths == [str(dev), str(older)]
+    def test_source_names_no_sibling_plugin(self) -> None:
+        """No cc_foundry path or foundry cache lookup may remain in the source."""
+        source = SCRIPT.read_text(encoding="utf-8")
+        assert "cc_foundry" not in source
+        assert '_resolve_plugin_shared("foundry"' not in source
 
-    def test_foundry_missing_warns_and_falls_back(
+    def test_main_prints_exactly_one_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """No foundry cache → source-tree fallback + stderr warning."""
-        dev = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "develop" / "0.6.2" / "skills" / "_shared"
-        dev.mkdir(parents=True)
+        """Output contract is a single path — a second line would be a sibling leak."""
         monkeypatch.setattr(dev_shared_resolve.Path, "home", classmethod(lambda _cls: tmp_path))
-        rc = dev_shared_resolve.main(["--foundry"])
-        captured = capsys.readouterr()
+        rc = dev_shared_resolve.main([])
+        lines = [line for line in capsys.readouterr().out.splitlines() if line]
         assert rc == 0
-        lines = [line for line in captured.out.splitlines() if line]
-        assert lines == [str(dev), "plugins/cc_foundry/skills/_shared"]
-        assert "foundry plugin not in cache" in captured.err
+        assert len(lines) == 1

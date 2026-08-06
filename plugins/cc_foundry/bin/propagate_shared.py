@@ -51,6 +51,81 @@ MANIFEST: list[dict[str, object]] = [
             # Bash calls session-wide whenever cc_foundry is installed.
         ],
     },
+    # --- Self-contained _shared (plugins/CLAUDE.md §Self-Contained _shared) ---
+    # These six docs were previously READ OUT OF FOUNDRY'S TREE by sibling plugins
+    # (via `resolve_shared_path.py foundry`, `dev_shared_resolve.py --foundry`, or
+    # a $HOME/.claude/skills/_shared symlink). Every such reach-in made the feature
+    # vanish on a standalone install — research lost R7 entirely that way. Each
+    # consuming plugin now ships its own copy and resolves it with its OWN resolver;
+    # these entries are what keep the copies byte-identical. Audit Check 27 fails
+    # any new reach-in, so extend the copies list here instead of borrowing.
+    {
+        "canonical": "plugins/cc_foundry/skills/_shared/codex-delegation.md",
+        "copies": [
+            "plugins/cc_research/skills/_shared/codex-delegation.md",
+            "plugins/cc_oss/skills/_shared/codex-delegation.md",
+            "plugins/cc_develop/skills/_shared/codex-delegation.md",
+        ],
+    },
+    {
+        "canonical": "plugins/cc_foundry/skills/_shared/file-handoff-protocol.md",
+        "copies": [
+            "plugins/cc_oss/skills/_shared/file-handoff-protocol.md",
+            "plugins/cc_develop/skills/_shared/file-handoff-protocol.md",
+            "plugins/cc_research/skills/_shared/file-handoff-protocol.md",
+        ],
+    },
+    {
+        "canonical": "plugins/cc_foundry/skills/_shared/cross-validation-protocol.md",
+        "copies": [
+            "plugins/cc_oss/skills/_shared/cross-validation-protocol.md",
+            "plugins/cc_develop/skills/_shared/cross-validation-protocol.md",
+        ],
+    },
+    {
+        "canonical": "plugins/cc_foundry/skills/_shared/terminal-summaries.md",
+        "copies": [
+            "plugins/cc_oss/skills/_shared/terminal-summaries.md",
+        ],
+    },
+    {
+        "canonical": "plugins/cc_foundry/skills/_shared/quality-stack.md",
+        "copies": [
+            "plugins/cc_develop/skills/_shared/quality-stack.md",
+        ],
+    },
+    {
+        "canonical": "plugins/cc_foundry/skills/_shared/codex-prepass.md",
+        "copies": [
+            "plugins/cc_develop/skills/_shared/codex-prepass.md",
+        ],
+    },
+    {
+        # oss shipped a byte-identical copy of this resolver that was never manifested,
+        # so it silently inherited foundry-specific internals (it scanned FOUNDRY's cache
+        # for get_plugin_install_path.py). Both copies now derive their own plugin from
+        # __file__; manifesting them keeps that true.
+        "canonical": "plugins/cc_foundry/bin/resolve_shared_path.py",
+        "copies": [
+            "plugins/cc_oss/bin/resolve_shared_path.py",
+        ],
+    },
+    {
+        "canonical": "plugins/cc_foundry/bin/get_plugin_install_path.py",
+        "copies": [
+            "plugins/cc_oss/bin/get_plugin_install_path.py",
+        ],
+    },
+    {
+        # Same rule applies to bin/ scripts: cc_develop/skills/debug used to invoke
+        # this out of foundry's bin/ via a $_FOUNDRY_BIN path derived by stripping
+        # `/skills/_shared` off the resolver output. Flaky-test isolation silently
+        # disappeared without foundry installed.
+        "canonical": "plugins/cc_foundry/bin/find-polluter.py",
+        "copies": [
+            "plugins/cc_develop/bin/find-polluter.py",
+        ],
+    },
 ]
 
 
