@@ -208,10 +208,10 @@ def parse_labeled_answer(task: Mapping[str, Any], text: str) -> dict[str, Any]:
     # Some providers fence JSON inside the envelope by habit; the BEGIN/END markers stay
     # the contract and anything beyond a plain fence still fails closed at json.loads.
     if payload.startswith("```"):
-        fence_lines = payload.splitlines()[1:]
-        if fence_lines and fence_lines[-1].strip() == "```":
-            fence_lines = fence_lines[:-1]
-        payload = "\n".join(fence_lines)
+        fence_lines = payload.splitlines()
+        if len(fence_lines) < 2 or fence_lines[-1].strip() != "```":
+            raise ValueError("answer markdown code fence is unclosed")
+        payload = "\n".join(fence_lines[1:-1])
     try:
         answer = json.loads(payload)
     except json.JSONDecodeError as exc:

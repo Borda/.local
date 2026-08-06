@@ -30,11 +30,11 @@
     "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
-    "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+    "codex_rig_package_manifest": "4758f896e12678219a2e7f706a5ed60f0f7e92129508f51eb4c2c58b5ce599ab",
     "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
     "prepare_codex_index": "8dca952f7eaf81b08f59263154f8d29fdc0b905aed9454c15e43b81641b66d22",
-    "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482",
-    "run_codex_structural": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2"
+    "run_all": "715880faa5b5bd066c34db0ba63fee45d0cf62cc1bf9f3fec79cb418d4cca1f9",
+    "run_codex_structural": "2d10fc653c45b13025ac2661d35e60962495ff7b99f003eaa0704259d9dcfc00"
   },
   "codemap_candidate": {
     "package_manifest_sha256": "baabde9b948cb70d2720af620c53164d2c73617fbbe4f58bb38cce977e5df37d",
@@ -316,11 +316,11 @@
       "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
-      "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+      "codex_rig_package_manifest": "4758f896e12678219a2e7f706a5ed60f0f7e92129508f51eb4c2c58b5ce599ab",
       "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
       "prepare_codex_index": "8dca952f7eaf81b08f59263154f8d29fdc0b905aed9454c15e43b81641b66d22",
-      "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482",
-      "run_codex_structural": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2"
+      "run_all": "715880faa5b5bd066c34db0ba63fee45d0cf62cc1bf9f3fec79cb418d4cca1f9",
+      "run_codex_structural": "2d10fc653c45b13025ac2661d35e60962495ff7b99f003eaa0704259d9dcfc00"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -547,7 +547,7 @@
   "schema_version": "codex-integration-manifest-v2",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "dd805ca3ba8ae732cf95fe0511a1316c8f9ca4294bee722e0633b1a9ed313367"
+    "sha256": "cabeec2e81812ea60e9e2e23a5a41a091abc7e8216350b9c7a9f125131f04d2f"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,

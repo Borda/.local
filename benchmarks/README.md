@@ -78,7 +78,7 @@ The current Codex agentic adapter uses all 16 committed BA tasks across `A_plain
 bash benchmarks/run-all.sh codex --agentic --dry-run
 ```
 
-The deterministic review lock is `benchmarks/manifests/codex-agentic.json`; regenerate or verify it with `python3 benchmarks/build-codex-agentic-manifest.py [--check]`. The dedicated human companion records the current manifest SHA, task order, treatment contract, exact approval variable, and retry-inclusive per-cell timeout in seconds. No-model dry runs require no credentials and no paid approval. A paid run requires the exact active machine-manifest SHA and private auth source; the launcher creates a fresh timestamped run directory automatically, with an optional `CODEX_RUN_DIR` override for a new path. Codex CLI version is recorded as observed provenance only and is not a pinned or admission requirement. Each cell has only the retry-inclusive per-cell timeout; no total-run ceiling or wall-clock environment/CLI control applies. A non-default repetition or selected scope must additionally present the resolver's scope SHA-256.
+The deterministic review lock is `benchmarks/manifests/codex-agentic.json`; regenerate or verify it with `python3 benchmarks/build-codex-agentic-manifest.py [--check]`. The dedicated human companion records the current manifest SHA, task order, treatment contract, exact approval variable, and retry-inclusive per-cell timeout in seconds. No-model dry runs require no credentials and no paid approval. A paid run requires the exact active machine-manifest SHA and private auth source; the launcher creates a fresh timestamped run directory automatically, with an optional `CODEX_RUN_DIR` override for a new path. Final run checksums attest the result artifacts, invocation launcher, and `source.sha256`; verify the archived source bytes separately with `(cd "$RUN_DIR/.launcher/source" && shasum -a 256 -c ../source.sha256)`. Codex CLI version is recorded as observed provenance only and is not a pinned or admission requirement. Each cell has only the retry-inclusive per-cell timeout; no total-run ceiling or wall-clock environment/CLI control applies. A non-default repetition or selected scope must additionally present the resolver's scope SHA-256.
 
 #### Completed 48-cell Codex run — 2026-08-05
 
@@ -126,8 +126,8 @@ CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-integration.json
 Modes:
 
 - `smoke` — validate the frozen active index, run the deterministic query check, and execute Claude and Codex dry-run/preflight paths. It invokes no model.
-- `claude` — validate the frozen index and preflight, then run the existing paid Claude structural tiers and agentic batch.
-- `claude --struct [--dry-run]` — run or plan only the Claude structural tiers; the agentic preflight and batch are excluded.
+- `claude` — validate the shared methodology lock and frozen index, then run the same locked 55 structural tasks as Codex across every canonical coordinate (`A_plain`, `B_auto`, `C_strict`) for each Claude model tier before the agentic batch. The shared revision-bound policy counterbalances arm order per task. Runner infrastructure failures stop the batch; individual cell outcomes remain recorded by their runner.
+- `claude --struct [--dry-run]` — run or plan only the shared 55-task canonical Claude structural matrix with the same deterministic per-task arm-order policy; the agentic preflight and batch are excluded. Direct `run-claude-structural.py` calls retain their legacy arm and 60-task defaults unless `--provider-parity` is explicit.
 - `claude --agentic --dry-run` — validate the shared 16-task methodology, resolve the exact one-repeat 144-cell scope across three Claude model tiers, and print the complete no-model plan. `--repetitions=N` derives and passes a distinct scope SHA-256; the same flag without `--agentic` is rejected.
 - `claude --agentic` — run only the shared 16-task canonical A/B/C Claude study. The default is one repetition; a higher explicit repetition is admitted only with the launcher's exact derived scope SHA-256.
 - `codex --struct --dry-run` — validate the frozen index, run the deterministic query check and FN-02 Codex smoke, then print the exact 165-coordinate structural plan. It needs no paid approval, authentication source, or result directory and invokes no model.
@@ -136,6 +136,8 @@ Modes:
 - `codex --struct --tasks=DI,GR` — execute only the selected, non-poolable structural scope after the same smoke and admission gates. The resolved selection scope SHA-256 is printed and must authorize that scope; the full-run machine-manifest SHA-256 remains the approval for an unselected complete study.
 - `codex --agentic --dry-run` — validate the shared 16-task agentic lock, target, index, and A/B/C capability probes, then print exactly 48 planned cells without credentials or a model.
 - `codex --agentic` — execute BA-01–BA-16 across A/B/C for one repetition with the exact active-manifest approval and private auth source documented in `manifests/codex-agentic.md`. Runtime/admission integrity failures stop and preserve partial artifacts; ordinary model/task/treatment outcomes remain measurable and do not fail fast. The launcher creates a fresh run directory, with an optional `CODEX_RUN_DIR` override for a new path. Each cell uses the retry-inclusive per-cell timeout in seconds; no total-run ceiling is configured. Add `--repetitions=N` only with the resolver's matching scope SHA-256.
+
+Claude preparation validates the shared methodology lock without requiring the Codex integration manifest; Codex and `smoke` retain the full methodology-plus-Codex-manifest cross-check.
 
 #### Codex task selection
 

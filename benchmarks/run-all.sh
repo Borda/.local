@@ -42,8 +42,11 @@ AGENTIC_REPETITIONS=1
 AGENTIC_REPETITIONS_SET=false
 AGENTIC_SCOPE_SHA=""
 AGENTIC_TOTAL_CELLS=""
+AGENTIC_RUNNER=""
+AGENTIC_DISPATCH_ARGS=()
 CODEX_TASKS=""
 AGENTIC_TASK_IDS=()
+SHARED_STRUCTURAL_TASK_IDS=()
 CODEX_SELECTION_SCOPE_SHA=""
 CODEX_SELECTION_REPETITIONS=""
 CODEX_SELECTION_TASK_IDS=()
@@ -196,6 +199,15 @@ archive_paid_source() {
   )
 }
 
+capture_codemap_mode_map() {
+  local output_path="$1"
+  python3 -c \
+    'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from _probe_runtime import write_real_mode_map; write_real_mode_map(Path(sys.argv[2]), Path(sys.argv[3]))' \
+    "$ROOT/plugins/codemap-py/scripts" \
+    "$ROOT" \
+    "$output_path"
+}
+
 build_source_checksum_manifest() {
   local source_root="$1"
   local output_path="$2"
@@ -224,6 +236,10 @@ validate_paid_source_snapshot() {
     echo "ERROR: paid Codex source snapshot is incomplete." >&2
     exit 2
   fi
+  if [ ! -f "$expected_source/benchmarks/manifests/codemap-package-mode-map.json" ]; then
+    echo "ERROR: paid Codex source snapshot lacks the Codemap package mode map." >&2
+    exit 2
+  fi
   if [ "$(sha256_file "$source_manifest")" != "${CODEX_SOURCE_MANIFEST_SHA256:-}" ]; then
     echo "ERROR: paid Codex source checksum manifest changed before execution." >&2
     exit 2
@@ -243,23 +259,39 @@ validate_paid_source_snapshot() {
 
 append_launcher_checksum_attestation() {
   local checksum_path="$1"
-  local launcher_artifact source_artifact
+  local launcher_artifact
   for launcher_artifact in "$CODEX_RUN_DIR/.launcher/run-all.sh" "$CODEX_RUN_DIR/.launcher/source.sha256"; do
     if [ -f "$launcher_artifact" ]; then
       shasum -a 256 "$launcher_artifact" >> "$checksum_path"
     fi
   done
-  if [ -d "$CODEX_RUN_DIR/.launcher/source" ]; then
-    while IFS= read -r source_artifact; do
-      shasum -a 256 "$source_artifact" >> "$checksum_path"
-    done < <(find "$CODEX_RUN_DIR/.launcher/source" -type f -print | LC_ALL=C sort)
+}
+
+write_codex_result_checksums() {
+  local checksum_path="$1"
+  local artifact input_artifact
+  : > "$checksum_path"
+  for artifact in run.log telemetry.jsonl telemetry-canonical.jsonl run-metadata.json runtime-isolation.jsonl; do
+    if [ -f "$CODEX_RUN_DIR/$artifact" ]; then
+      shasum -a 256 "$CODEX_RUN_DIR/$artifact" >> "$checksum_path"
+    fi
+  done
+  if [ -d "$CODEX_RUN_DIR/inputs" ]; then
+    while IFS= read -r input_artifact; do
+      shasum -a 256 "$input_artifact" >> "$checksum_path"
+    done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
   fi
+  append_launcher_checksum_attestation "$checksum_path"
 }
 
 validate_generated_manifest() {
+  validate_generated_methodology_manifest || return "$?"
   echo "== CHECK generated Codex integration manifest (no model) =="
-  python3 "$METHODOLOGY_CHECKER" --check || return "$?"
   python3 "$MANIFEST_CHECKER" --check || return "$?"
+}
+
+validate_generated_methodology_manifest() {
+  python3 "$METHODOLOGY_CHECKER" --check || return "$?"
 }
 
 validate_generated_agentic_manifest() {
@@ -309,11 +341,52 @@ resolve_agentic_scope() {
   fi
 }
 
+configure_agentic_dispatch() {
+  # Default suites are manifest-defined; only selected or repeated runs need a
+  # resolver-derived identity forwarded to prevent a scope mismatch.
+  if [ "$MODE" = "claude" ]; then
+    AGENTIC_RUNNER="$ROOT/benchmarks/run-claude-agentic.py"
+    AGENTIC_DISPATCH_ARGS=(
+      --repo-path "$REPO"
+      --manifest-path "$METHODOLOGY_PATH"
+    )
+    if [ -n "$CODEX_TASKS" ]; then
+      AGENTIC_DISPATCH_ARGS+=(--tasks "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1].split(",")))' "$CODEX_TASKS")")
+    else
+      AGENTIC_DISPATCH_ARGS+=(--run-all)
+    fi
+    AGENTIC_DISPATCH_ARGS+=(--repeat "$AGENTIC_REPETITIONS")
+  else
+    AGENTIC_RUNNER="$ROOT/benchmarks/run-codex-agentic.py"
+    AGENTIC_DISPATCH_ARGS=(
+      --repo-path "$REPO"
+      --index-path "$INDEX_PATH"
+      --marketplace-root "$ROOT"
+      --codemap-bin "$CODEMAP_BIN"
+      --manifest-path "$AGENTIC_MANIFEST_PATH"
+    )
+    if [ -n "$CODEX_TASKS" ]; then
+      AGENTIC_DISPATCH_ARGS+=(--task-id "$CODEX_TASKS")
+    fi
+    AGENTIC_DISPATCH_ARGS+=(--repetitions "$AGENTIC_REPETITIONS")
+  fi
+  if [ -n "$CODEX_TASKS" ] || [ "$AGENTIC_REPETITIONS" != "1" ]; then
+    AGENTIC_DISPATCH_ARGS+=(--scope-sha256 "$AGENTIC_SCOPE_SHA")
+  fi
+}
+
 load_index_contract() {
+  local manifest_path="$1"
+  local methodology_path="${2:-}"
   local contract_json
+  local -a methodology_args=()
+  if [ -n "$methodology_path" ]; then
+    methodology_args=(--methodology-path "$methodology_path")
+  fi
+  # The guarded expansion keeps an empty optional array safe under macOS Bash 3.2 with `set -u`.
   if ! contract_json="$(python3 "$INDEX_PREPARER" \
-    --manifest-path "$MANIFEST_PATH" \
-    --methodology-path "$METHODOLOGY_PATH" \
+    --manifest-path "$manifest_path" \
+    ${methodology_args[@]+"${methodology_args[@]}"} \
     --schema-path "$SCHEMA_PATH" \
     --print-contract 2>&1)"; then
     echo "ERROR: active index contract validation failed:" >&2
@@ -326,11 +399,17 @@ load_index_contract() {
 }
 
 verify_current_index() {
+  local manifest_path="$1"
+  local methodology_path="${2:-}"
   local verification
+  local -a methodology_args=()
+  if [ -n "$methodology_path" ]; then
+    methodology_args=(--methodology-path "$methodology_path")
+  fi
   if verification="$(python3 "$INDEX_PREPARER" \
     --index-path "$INDEX_PATH" \
-    --manifest-path "$MANIFEST_PATH" \
-    --methodology-path "$METHODOLOGY_PATH" \
+    --manifest-path "$manifest_path" \
+    ${methodology_args[@]+"${methodology_args[@]}"} \
     --schema-path "$SCHEMA_PATH" \
     --require-hash \
     --verify 2>&1)"; then
@@ -408,12 +487,17 @@ set_default_codex_run_dir() {
   export CODEX_RUN_DIR
 }
 
-prepare_locked_inputs() {
-  validate_generated_manifest || return "$?"
-  load_index_contract || return "$?"
+prepare_index_inputs() {
+  local manifest_path="$1"
+  local methodology_path="${2:-}"
+  local -a methodology_args=()
+  if [ -n "$methodology_path" ]; then
+    methodology_args=(--methodology-path "$methodology_path")
+  fi
+  load_index_contract "$manifest_path" "$methodology_path" || return "$?"
   ensure_repo || return "$?"
   echo "== PREPARE frozen parity index =="
-  if [ ! -f "$INDEX_PATH" ] || ! verify_current_index; then
+  if [ ! -f "$INDEX_PATH" ] || ! verify_current_index "$manifest_path" "$methodology_path"; then
     if [ -f "$INDEX_PATH" ]; then
       echo "→ existing index is stale or schema-incompatible; rebuild from the locked target"
     else
@@ -427,11 +511,11 @@ prepare_locked_inputs() {
     python3 "$INDEX_PREPARER" \
       --index-path "$INDEX_PATH" \
       --source-root "$REPO" \
-      --manifest-path "$MANIFEST_PATH" \
-      --methodology-path "$METHODOLOGY_PATH" \
+      --manifest-path "$manifest_path" \
+      ${methodology_args[@]+"${methodology_args[@]}"} \
       --schema-path "$SCHEMA_PATH"
   fi
-  if ! verify_current_index; then
+  if ! verify_current_index "$manifest_path" "$methodology_path"; then
     echo "ERROR: rebuilt index failed the active schema contract (scan_version=$LOCKED_INDEX_SCAN_VERSION)" >&2
     exit 1
   fi
@@ -441,6 +525,33 @@ prepare_locked_inputs() {
     exit 1
   fi
   echo "→ locked index: $INDEX_PATH ($index_sha)"
+}
+
+prepare_locked_inputs() {
+  validate_generated_manifest || return "$?"
+  load_shared_structural_tasks || return "$?"
+  prepare_index_inputs "$MANIFEST_PATH" "$METHODOLOGY_PATH"
+}
+
+prepare_claude_inputs() {
+  validate_generated_methodology_manifest || return "$?"
+  load_shared_structural_tasks || return "$?"
+  prepare_index_inputs "$METHODOLOGY_PATH"
+}
+
+load_shared_structural_tasks() {
+  SHARED_STRUCTURAL_TASK_IDS=()
+  while IFS= read -r task_id; do
+    [ -n "$task_id" ] && SHARED_STRUCTURAL_TASK_IDS+=("$task_id")
+  done < <(
+    python3 -c \
+      'import json,sys; print(*json.load(open(sys.argv[1]))["preregistered_cells"]["structural_execution_task_ids"], sep="\n")' \
+      "$METHODOLOGY_PATH"
+  )
+  if [ "${#SHARED_STRUCTURAL_TASK_IDS[@]}" -eq 0 ]; then
+    echo "ERROR: provider-neutral methodology defines no structural execution tasks." >&2
+    return 2
+  fi
 }
 
 query_check() {
@@ -513,20 +624,18 @@ smoke() {
   echo "→ smoke OK: query command completed; Claude/Codex no-model preflights passed"
 }
 
-_step_full() {
-  # Paid Claude cells are independent; preserve later evidence after one failure.
-  "$@" || echo "⚠ step exited $?; continuing the Claude batch: $*" >&2
-}
-
 run_claude_structural_study() {
+  local structural_tasks
+  structural_tasks="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${SHARED_STRUCTURAL_TASK_IDS[@]}")"
   query_check
   claude_structural_preflight
   echo "== CLAUDE STRUCTURAL (paid model runs) =="
   for model in haiku sonnet opus; do
-    _step_full python3 "$ROOT/benchmarks/run-claude-structural.py" \
+    python3 "$ROOT/benchmarks/run-claude-structural.py" \
       --repo-path "$REPO" \
-      --run-all \
-      --model "$model"
+      --tasks "$structural_tasks" \
+      --model "$model" \
+      --provider-parity
   done
 }
 
@@ -536,63 +645,42 @@ claude() {
 
   echo "== CLAUDE AGENTIC (paid model runs) =="
   resolve_agentic_scope
-  _step_full python3 "$ROOT/benchmarks/run-claude-agentic.py" \
-    --repo-path "$REPO" \
-    --manifest-path "$METHODOLOGY_PATH" \
-    --run-all \
-    --repeat "$AGENTIC_REPETITIONS" \
-    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
-    --report
+  configure_agentic_dispatch
+  python3 "$AGENTIC_RUNNER" "${AGENTIC_DISPATCH_ARGS[@]}" --report
 }
 
 run_claude_agentic_plan() {
-  local -a selection_args=(--run-all)
-  python3 "$METHODOLOGY_CHECKER" --check
   resolve_agentic_scope
-  if [ -n "$CODEX_TASKS" ]; then
-    selection_args=(--tasks "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1].split(",")))' "$CODEX_TASKS")")
-  fi
+  configure_agentic_dispatch
   echo "== CLAUDE SHARED AGENTIC A/B/C PREFLIGHT (no model) =="
   echo "→ design: $AGENTIC_TOTAL_CELLS cells (${#AGENTIC_TASK_IDS[@]} tasks × $AGENTIC_REPETITIONS repetitions × 3 arms × 3 models; nonpoolable)"
   echo "→ scope: $AGENTIC_SCOPE_SHA"
-  python3 "$ROOT/benchmarks/run-claude-agentic.py" \
-    --repo-path "$REPO" \
-    --manifest-path "$METHODOLOGY_PATH" \
-    "${selection_args[@]}" \
-    --repeat "$AGENTIC_REPETITIONS" \
-    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
-    --dry-run
+  python3 "$AGENTIC_RUNNER" "${AGENTIC_DISPATCH_ARGS[@]}" --dry-run
 }
 
 run_claude_agentic_study() {
-  local -a selection_args=(--run-all)
   resolve_agentic_scope
-  if [ -n "$CODEX_TASKS" ]; then
-    selection_args=(--tasks "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1].split(",")))' "$CODEX_TASKS")")
-  fi
+  configure_agentic_dispatch
   echo "== CLAUDE SHARED AGENTIC A/B/C STUDY (paid model runs) =="
   echo "→ design: $AGENTIC_TOTAL_CELLS cells (${#AGENTIC_TASK_IDS[@]} tasks × $AGENTIC_REPETITIONS repetitions × 3 arms × 3 models; nonpoolable)"
   echo "→ timeout: $AGENTIC_COORDINATE_TIMEOUT seconds per cell, including retries"
   echo "→ manifest: $METHODOLOGY_PATH ($(sha256_file "$METHODOLOGY_PATH"))"
   echo "→ scope: $AGENTIC_SCOPE_SHA"
-  python3 "$ROOT/benchmarks/run-claude-agentic.py" \
-    --repo-path "$REPO" \
-    --manifest-path "$METHODOLOGY_PATH" \
-    "${selection_args[@]}" \
-    --repeat "$AGENTIC_REPETITIONS" \
-    --scope-sha256 "$AGENTIC_SCOPE_SHA" \
-    --report
+  python3 "$AGENTIC_RUNNER" "${AGENTIC_DISPATCH_ARGS[@]}" --report
 }
 
 run_claude_structural_plan() {
+  local structural_tasks
+  structural_tasks="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${SHARED_STRUCTURAL_TASK_IDS[@]}")"
   query_check
   claude_structural_preflight
   echo "== CLAUDE STRUCTURAL (no-model full plans) =="
   for model in haiku sonnet opus; do
     python3 "$ROOT/benchmarks/run-claude-structural.py" \
       --repo-path "$REPO" \
-      --run-all \
+      --tasks "$structural_tasks" \
       --model "$model" \
+      --provider-parity \
       --dry-run
   done
 }
@@ -652,6 +740,7 @@ exec_codex_launcher_snapshot() {
   local source_manifest="$launcher_dir/source.sha256"
   mkdir -p "$launcher_dir"
   archive_paid_source "$source_root"
+  capture_codemap_mode_map "$source_root/benchmarks/manifests/codemap-package-mode-map.json"
   build_source_checksum_manifest "$source_root" "$source_manifest"
   cp "$source_root/benchmarks/run-all.sh" "$launcher_snapshot"
   chmod 500 "$launcher_snapshot"
@@ -814,10 +903,7 @@ configure_codex_plan() {
   coordinate_timeout="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_controls"]["parity_timeout_seconds"])' "$MANIFEST_PATH")"
   codex_model="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["name"])' "$MANIFEST_PATH")"
   codex_reasoning_effort="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["reasoning_effort"])' "$MANIFEST_PATH")"
-  confirmatory_task_ids=()
-  while IFS= read -r task_id; do
-    [ -n "$task_id" ] && confirmatory_task_ids+=("$task_id")
-  done < <(python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))["preregistered_cells"]["structural_execution_task_ids"], sep="\n")' "$MANIFEST_PATH")
+  confirmatory_task_ids=("${SHARED_STRUCTURAL_TASK_IDS[@]}")
   task_count="${#confirmatory_task_ids[@]}"
   # The runner is a Fire CLI: it takes ONE comma-separated --task-id value. A repeated
   # flag would silently keep only the last ID, so join the list into a single argument.
@@ -917,28 +1003,8 @@ run_codex_agentic_plan() {
   echo "== CODEX SHARED AGENTIC A/B/C PREFLIGHT (no model) =="
   echo "→ design: $AGENTIC_TOTAL_CELLS cells (${#AGENTIC_TASK_IDS[@]} tasks × $AGENTIC_REPETITIONS repetitions × 3 arms; nonpoolable)"
   echo "→ scope: $AGENTIC_SCOPE_SHA"
-  if [ -n "$CODEX_TASKS" ]; then
-    python3 "$ROOT/benchmarks/run-codex-agentic.py" \
-      --repo-path "$REPO" \
-      --index-path "$INDEX_PATH" \
-      --marketplace-root "$ROOT" \
-      --codemap-bin "$CODEMAP_BIN" \
-      --manifest-path "$AGENTIC_MANIFEST_PATH" \
-      --task-id "$CODEX_TASKS" \
-      --repetitions "$AGENTIC_REPETITIONS" \
-      --scope-sha256 "$AGENTIC_SCOPE_SHA" \
-      --dry-run
-  else
-    python3 "$ROOT/benchmarks/run-codex-agentic.py" \
-      --repo-path "$REPO" \
-      --index-path "$INDEX_PATH" \
-      --marketplace-root "$ROOT" \
-      --codemap-bin "$CODEMAP_BIN" \
-      --manifest-path "$AGENTIC_MANIFEST_PATH" \
-      --repetitions "$AGENTIC_REPETITIONS" \
-      --scope-sha256 "$AGENTIC_SCOPE_SHA" \
-      --dry-run
-  fi
+  configure_agentic_dispatch
+  python3 "$AGENTIC_RUNNER" "${AGENTIC_DISPATCH_ARGS[@]}" --dry-run
   if [ -n "$CODEX_TASKS" ]; then
     print_codex_agentic_paid_guidance
   fi
@@ -957,34 +1023,13 @@ run_codex_agentic_study() {
   echo "→ manifest: $AGENTIC_MANIFEST_PATH ($agentic_manifest_sha)"
   echo "→ scope: $AGENTIC_SCOPE_SHA"
   echo "ARTIFACTS  telemetry=$CODEX_RUN_DIR/telemetry.jsonl  metadata=$CODEX_RUN_DIR/run-metadata.json"
-  if [ -n "$CODEX_TASKS" ]; then
-    python3 "$ROOT/benchmarks/run-codex-agentic.py" \
-      --repo-path "$REPO" \
-      --index-path "$INDEX_PATH" \
-      --marketplace-root "$ROOT" \
-      --codemap-bin "$CODEMAP_BIN" \
-      --manifest-path "$AGENTIC_MANIFEST_PATH" \
-      --auth-source "$CODEX_AUTH_SOURCE" \
-      --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
-      --run-dir "$CODEX_RUN_DIR" \
-      --paid-approval "$CODEX_AGENTIC_PAID_APPROVAL" \
-      --task-id "$CODEX_TASKS" \
-      --repetitions "$AGENTIC_REPETITIONS" \
-      --scope-sha256 "$AGENTIC_SCOPE_SHA"
-  else
-    python3 "$ROOT/benchmarks/run-codex-agentic.py" \
-      --repo-path "$REPO" \
-      --index-path "$INDEX_PATH" \
-      --marketplace-root "$ROOT" \
-      --codemap-bin "$CODEMAP_BIN" \
-      --manifest-path "$AGENTIC_MANIFEST_PATH" \
-      --auth-source "$CODEX_AUTH_SOURCE" \
-      --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
-      --run-dir "$CODEX_RUN_DIR" \
-      --paid-approval "$CODEX_AGENTIC_PAID_APPROVAL" \
-      --repetitions "$AGENTIC_REPETITIONS" \
-      --scope-sha256 "$AGENTIC_SCOPE_SHA"
-  fi
+  configure_agentic_dispatch
+  python3 "$AGENTIC_RUNNER" \
+    "${AGENTIC_DISPATCH_ARGS[@]}" \
+    --auth-source "$CODEX_AUTH_SOURCE" \
+    --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
+    --run-dir "$CODEX_RUN_DIR" \
+    --paid-approval "$CODEX_AGENTIC_PAID_APPROVAL"
 }
 
 run_codex_with_artifacts() {
@@ -996,18 +1041,7 @@ run_codex_with_artifacts() {
     run_status=$?
   fi
   checksum_path="$CODEX_RUN_DIR/checksums.sha256"
-  : > "$checksum_path"
-  for artifact in run.log telemetry.jsonl telemetry-canonical.jsonl run-metadata.json runtime-isolation.jsonl; do
-    if [ -f "$CODEX_RUN_DIR/$artifact" ]; then
-      shasum -a 256 "$CODEX_RUN_DIR/$artifact" >> "$checksum_path"
-    fi
-  done
-  if [ -d "$CODEX_RUN_DIR/inputs" ]; then
-    while IFS= read -r input_artifact; do
-      shasum -a 256 "$input_artifact" >> "$checksum_path"
-    done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
-  fi
-  append_launcher_checksum_attestation "$checksum_path"
+  write_codex_result_checksums "$checksum_path"
   echo "→ artifact checksums: $checksum_path"
   return "$run_status"
 }
@@ -1037,18 +1071,7 @@ run_codex_agentic_with_artifacts() {
   cp "$stream_path" "$CODEX_RUN_DIR/run.log"
   rm -f "$stream_path"
   checksum_path="$CODEX_RUN_DIR/checksums.sha256"
-  : > "$checksum_path"
-  for artifact in run.log telemetry.jsonl telemetry-canonical.jsonl run-metadata.json runtime-isolation.jsonl; do
-    if [ -f "$CODEX_RUN_DIR/$artifact" ]; then
-      shasum -a 256 "$CODEX_RUN_DIR/$artifact" >> "$checksum_path"
-    fi
-  done
-  if [ -d "$CODEX_RUN_DIR/inputs" ]; then
-    while IFS= read -r input_artifact; do
-      shasum -a 256 "$input_artifact" >> "$checksum_path"
-    done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
-  fi
-  append_launcher_checksum_attestation "$checksum_path"
+  write_codex_result_checksums "$checksum_path"
   echo "→ artifact checksums: $checksum_path"
   if [ "$run_status" -ne 0 ]; then
     echo "ERROR: Codex agentic execution failed. Preserve the reported artifact for diagnosis; any retry requires a fresh CODEX_RUN_DIR." >&2
@@ -1063,7 +1086,7 @@ case "$MODE" in
     smoke
     ;;
   claude)
-    prepare_locked_inputs
+    prepare_claude_inputs
     if [ "$AGENTIC" = true ]; then
       if [ "$DRY_RUN" = true ]; then
         run_claude_agentic_plan

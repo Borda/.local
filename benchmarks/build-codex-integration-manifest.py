@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -117,12 +118,18 @@ def _codemap_package_manifest_sha256() -> str:
     """Build the deterministic Codemap candidate and return its package identity."""
     builder = ROOT / "plugins/codemap-py/scripts/build_package.py"
     validator = ROOT / "plugins/codemap-py/scripts/validate_package.py"
+    mode_map_args: list[str] = []
+    if os.environ.get("CODEX_LAUNCHER_SNAPSHOT_ACTIVE") == "1":
+        mode_map = ROOT / "benchmarks/manifests/codemap-package-mode-map.json"
+        if not mode_map.is_file():
+            raise ValueError("Codemap package freeze failed: paid source snapshot lacks its package mode map")
+        mode_map_args = ["--mode-map", str(mode_map)]
     with tempfile.TemporaryDirectory(prefix="codex-integration-codemap-package-") as temporary:
         candidate = Path(temporary) / "candidate"
         for command in (
-            [sys.executable, str(builder), "--out", str(candidate)],
+            [sys.executable, str(builder), "--out", str(candidate), *mode_map_args],
             [sys.executable, str(validator), "--package", str(candidate)],
-            [sys.executable, str(builder), "--out", str(candidate), "--check"],
+            [sys.executable, str(builder), "--out", str(candidate), "--check", *mode_map_args],
         ):
             completed = subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True)
             if completed.returncode != 0:
@@ -284,16 +291,11 @@ def _telemetry_admission() -> dict[str, Any]:
 def _preregistered_cells(source: dict[str, Any]) -> dict[str, Any]:
     """Reuse the frozen structural task selections with the new three-arm design."""
     cells = copy.deepcopy(source["preregistered_cells"])
-    primary_suite = next(suite for suite in source["suites"] if suite["path"] == "benchmarks/suites/tasks-bench.json")
-    execution_ids = [task["id"] for task in primary_suite["tasks"] if task["effective_type"] != "real_issue"]
-    headline_ids = list(source["headline_structural_v1"]["task_ids"])
     cells["arms"] = list(_arms())
     cells["providers"] = ["codex"]
     cells["smoke_task_ids"] = ["FN-02"]
     cells["confirmatory_repetitions"] = 1
     cells["arm_order"] = ARM_ORDER_POLICY
-    cells["structural_execution_task_ids"] = execution_ids
-    cells["structural_diagnostic_task_ids"] = [task_id for task_id in execution_ids if task_id not in headline_ids]
     return cells
 
 

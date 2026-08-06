@@ -470,6 +470,59 @@ def test_coordination_root_is_exact_safe_and_cleanup_keeps_the_locked_index(
     assert index_path.read_text(encoding="utf-8") == "locked"
 
 
+def test_coordination_root_reclaims_an_unlocked_stale_reader_token(script_run_codex: Any, tmp_path: Path) -> None:
+    """An interrupted reader must not permanently block later benchmark admission."""
+    index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("locked", encoding="utf-8")
+    coordination_root = script_run_codex._prepare_coordination_root(index_path)
+    stale_token = coordination_root / "readers" / f"{'0' * 32}.json"
+    stale_token.write_text('{"kind":"reader","pid":1}', encoding="utf-8")
+
+    assert script_run_codex._prepare_coordination_root(index_path) == coordination_root
+    assert not stale_token.exists()
+
+    script_run_codex._cleanup_coordination_root(coordination_root)
+
+
+def test_coordination_root_rejects_a_locked_live_reader_token(script_run_codex: Any, tmp_path: Path) -> None:
+    """A genuinely live reader lease must remain a fail-closed admission error."""
+    index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("{}", encoding="utf-8")
+    coordination_root = script_run_codex._prepare_coordination_root(index_path)
+    source_root = BENCHMARKS_DIR.parent / "plugins" / "codemap-py" / "src"
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys\n"
+                "from codemap_py.rwgate import read_index\n"
+                "with read_index(sys.argv[1]):\n"
+                "    print('ready', flush=True)\n"
+                "    sys.stdin.readline()\n"
+            ),
+            str(index_path),
+        ],
+        env={**os.environ, "PYTHONPATH": str(source_root)},
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert child.stdout is not None
+        assert child.stdout.readline().strip() == "ready"
+        with pytest.raises(ValueError, match="live reader tokens"):
+            script_run_codex._prepare_coordination_root(index_path)
+    finally:
+        child.communicate("\n", timeout=10)
+
+    assert child.returncode == 0
+    script_run_codex._cleanup_coordination_root(coordination_root)
+
+
 def test_coordination_root_cleanup_rejects_an_already_removed_root(script_run_codex: Any, tmp_path: Path) -> None:
     """A missing coordination root remains an explicit lifecycle error."""
     index_path = tmp_path / "target" / ".cache" / "codemap" / "locked-index.json"
@@ -516,7 +569,6 @@ def test_structural_snapshot_cleans_a_shared_treatment_coordination_root_once(
     runner.index_path = tmp_path / "index.json"
     runner.auth_source = None
     monkeypatch.setattr(runner, "_prepare_verified_home", lambda arm: Home(arm))
-    monkeypatch.setattr(runner, "_preflight_expected_queries", lambda *_args: None)
     monkeypatch.setattr(script_run_codex, "_write_input_snapshot", lambda *_args, **_kwargs: {"ok": True})
     monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", cleanup)
 
@@ -3161,6 +3213,48 @@ def test_main_emits_plans_only_for_dry_runs_and_paths_only_in_artifact_announcem
     )
 
 
+def test_main_dry_run_prints_plan_without_arm_color_helper(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dry-run plans stay plain while paid result rows retain arm coloring."""
+    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
+    printed: list[str] = []
+
+    class FixtureRunner:
+        """Provide deterministic no-model probe evidence."""
+
+        timeout = 600.0
+
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def probe_arm(self, _arm: str) -> dict[str, bool]:
+            return {"codemap_available": False}
+
+    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
+    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
+    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
+    monkeypatch.setattr(script_run_codex, "print", printed.append, raising=False)
+    monkeypatch.setattr(
+        script_run_codex,
+        "_print_arm_row",
+        lambda *_args, **_kwargs: pytest.fail("dry-run plan reached the arm-color helper"),
+    )
+
+    script_run_codex.main(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        tasks_path=tmp_path / "tasks.json",
+        arm="A_plain",
+        dry_run=True,
+        show_legend=False,
+    )
+
+    assert "PLAN    fixture  rep=1  A_plain" in printed
+
+
 @pytest.mark.parametrize(
     ("arm", "expected_prefixes"),
     [
@@ -4675,24 +4769,30 @@ def test_snapshot_source_indirection_fails_closed(
     assert entries == []
 
 
-def test_expected_query_preflight_is_complete_and_index_immutable(script_run_codex: Any, tmp_path: Path) -> None:
-    """Every structured query must return compact complete JSON without mutating the index."""
+def test_staged_direct_cli_admission_rejects_malformed_output_and_index_mutation(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """B admission rejects malformed probes and any locked-index mutation."""
     repo = tmp_path / "repo"
     repo.mkdir()
     index = repo / "index.json"
     index.write_text("locked", encoding="utf-8")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "direct_cli_admission": {
+                    "probe_subcommand": "fn-rdeps",
+                    "probe_target": "package.module::target",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     home_path = tmp_path / "home"
     home_path.mkdir()
     launcher = home_path / "codemap-py"
     launcher.write_text("launcher", encoding="utf-8")
-    runner = script_run_codex.CodexRunner.__new__(script_run_codex.CodexRunner)
-    runner.repo_path = repo
-    runner.index_path = index
-    runner.command_runner = lambda *_args, **_kwargs: (
-        0,
-        '{"index":{"query_complete":true,"compact":true}}',
-        "",
-    )
     home = script_run_codex.ArmHome(
         "B_direct_required",
         home_path,
@@ -4702,17 +4802,138 @@ def test_expected_query_preflight_is_complete_and_index_immutable(script_run_cod
         permission_profile="provider-parity-codemap",
         codemap_launcher_path=launcher,
     )
-    runner._preflight_expected_queries(home, [{"id": "GR-01", "expected_queries": [{"cmd": "central", "args": []}]}])
+
+    with pytest.raises(RuntimeError, match="admission query failed"):
+        script_run_codex._admit_staged_direct_cli(
+            home,
+            repo,
+            index,
+            manifest_path=manifest,
+            command_runner=lambda *_args, **_kwargs: (0, "not JSON", ""),
+        )
 
     def mutate_index(*_args: Any, **_kwargs: Any) -> tuple[int, str, str]:
         index.write_text("mutated", encoding="utf-8")
         return 0, '{"index":{"query_complete":true,"compact":true}}', ""
 
-    runner.command_runner = mutate_index
     with pytest.raises(RuntimeError, match="mutated the locked index"):
-        runner._preflight_expected_queries(
+        script_run_codex._admit_staged_direct_cli(
             home,
-            [{"id": "GR-01", "expected_queries": [{"cmd": "central", "args": []}]}],
+            repo,
+            index,
+            manifest_path=manifest,
+            command_runner=mutate_index,
+        )
+
+
+@pytest.mark.parametrize(
+    "selected_arms",
+    [("B_direct_required", "C_skill_required"), ("C_skill_required",)],
+    ids=["both-treatments", "skill-only"],
+)
+def test_expected_query_preflight_runs_unique_b_queries_once_and_never_replays_c(
+    script_run_codex: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected_arms: tuple[str, ...],
+) -> None:
+    """Any treatment study deduplicates queries through B and skips C replay."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    index = repo / "index.json"
+    index.write_text("locked", encoding="utf-8")
+    home_path = tmp_path / "home"
+    home_path.mkdir()
+    launcher = home_path / "codemap-py"
+    launcher.write_text("launcher", encoding="utf-8")
+    runner = object.__new__(script_run_codex.CodexRunner)
+    runner.repo_path = repo
+    runner.index_path = index
+    prepared_arms: list[str] = []
+    commands: list[list[str]] = []
+
+    class Home:
+        """Supply the B-only runtime fields required by query preflight."""
+
+        arm = "B_direct_required"
+        env = {"PATH": "/fixture"}
+        permission_profile = "provider-parity-codemap"
+        codemap_launcher_path = launcher
+        coordination_path = None
+
+        def cleanup(self) -> None:
+            return None
+
+    def prepare(arm: str) -> Home:
+        prepared_arms.append(arm)
+        return Home()
+
+    def command_runner(command: list[str], **_kwargs: Any) -> tuple[int, str, str]:
+        commands.append(command)
+        return 0, '{"index":{"query_complete":true,"compact":true}}', ""
+
+    runner.command_runner = command_runner
+    monkeypatch.setattr(runner, "_prepare_verified_home", prepare)
+    runner.preflight_expected_queries(
+        [
+            {"id": "first", "expected_queries": [{"cmd": "central", "args": ["package"]}]},
+            {
+                "id": "second",
+                "expected_queries": [
+                    {"cmd": "central", "args": ["package"]},
+                    {"cmd": "fn-rdeps", "args": ["package.module::target"]},
+                ],
+            },
+        ],
+        selected_arms,
+    )
+
+    assert prepared_arms == ["B_direct_required"]
+    assert [command[-2:] for command in commands] == [
+        ["central", "package"],
+        ["fn-rdeps", "package.module::target"],
+    ]
+
+
+def test_expected_query_preflight_rejects_malformed_or_failed_b_queries(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed contracts and failed B commands stop the study before snapshotting."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    index = repo / "index.json"
+    index.write_text("locked", encoding="utf-8")
+    home_path = tmp_path / "home"
+    home_path.mkdir()
+    launcher = home_path / "codemap-py"
+    launcher.write_text("launcher", encoding="utf-8")
+    runner = object.__new__(script_run_codex.CodexRunner)
+    runner.repo_path = repo
+    runner.index_path = index
+    runner.command_runner = lambda *_args, **_kwargs: (1, "", "fixture failure")
+
+    class Home:
+        """Supply the B-only runtime fields required by rejecting preflight."""
+
+        env = {"PATH": "/fixture"}
+        permission_profile = "provider-parity-codemap"
+        codemap_launcher_path = launcher
+        coordination_path = None
+
+        def cleanup(self) -> None:
+            return None
+
+    monkeypatch.setattr(runner, "_prepare_verified_home", lambda _arm: Home())
+
+    with pytest.raises(RuntimeError, match="malformed expected query args"):
+        runner.preflight_expected_queries(
+            [{"id": "malformed", "expected_queries": [{"cmd": "central", "args": "package"}]}],
+            ("B_direct_required",),
+        )
+    with pytest.raises(RuntimeError, match="expected query failed.*fixture failure"):
+        runner.preflight_expected_queries(
+            [{"id": "failed", "expected_queries": [{"cmd": "central", "args": ["package"]}]}],
+            ("B_direct_required",),
         )
 
 

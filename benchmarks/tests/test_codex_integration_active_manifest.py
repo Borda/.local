@@ -6,9 +6,12 @@ import hashlib
 import json
 import re
 import runpy
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -112,6 +115,28 @@ def test_generator_is_current_and_never_rewrites_methodology_source() -> None:
 
     assert result.returncode == 0, result.stderr
     assert _sha256(SOURCE_MANIFEST) == before
+
+
+def test_package_freeze_reuses_live_mode_map_inside_gitless_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Paid source snapshots preserve the live package payload and executable modes."""
+    generator = runpy.run_path(str(GENERATOR))
+    freeze_package = generator["_codemap_package_manifest_sha256"]
+    live_sha256 = freeze_package()
+    snapshot_root = tmp_path / "source"
+    snapshot_plugin = snapshot_root / "plugins" / "codemap-py"
+    shutil.copytree(ROOT / "plugins" / "codemap-py", snapshot_plugin)
+    mode_map_path = snapshot_root / "benchmarks" / "manifests" / "codemap-package-mode-map.json"
+    mode_map_path.parent.mkdir(parents=True)
+    package_builder = runpy.run_path(str(ROOT / "plugins" / "codemap-py" / "scripts" / "build_package.py"))
+    live_mode_map = package_builder["_git_exec_modes"](ROOT / "plugins" / "codemap-py")
+    mode_map_path.write_text(json.dumps(live_mode_map, sort_keys=True), encoding="utf-8")
+    freeze_package.__globals__["ROOT"] = snapshot_root
+    monkeypatch.setenv("CODEX_LAUNCHER_SNAPSHOT_ACTIVE", "1")
+
+    assert freeze_package() == live_sha256
 
 
 def test_generated_manifest_uses_environment_neutral_cli_and_posix_paths() -> None:

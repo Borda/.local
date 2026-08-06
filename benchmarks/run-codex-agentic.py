@@ -887,8 +887,13 @@ def _write_canonical_telemetry(raw_path: Path, task_ids: Sequence[str]) -> str:
 
 
 def _write_checksums(run_dir: Path) -> None:
-    """Refresh checksums for every persisted agentic artifact, including partials."""
-    files = [path for path in sorted(run_dir.rglob("*")) if path.is_file() and path.name != "checksums.sha256"]
+    """Refresh result checksums while excluding the separately validated source archive."""
+    source_root = run_dir / ".launcher" / "source"
+    files = [
+        path
+        for path in sorted(run_dir.rglob("*"))
+        if path.is_file() and path.name != "checksums.sha256" and not path.is_relative_to(source_root)
+    ]
     payload = "".join(
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(run_dir).as_posix()}\n" for path in files
     )

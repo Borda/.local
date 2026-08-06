@@ -188,6 +188,11 @@ import sys
 from rich.console import Console as _Console
 from rich.panel import Panel as _Panel
 
+if sys.platform == "win32":  # pragma: no cover - exercised on Windows CI only
+    import msvcrt
+else:
+    import fcntl
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _utilities import fmt_time, fmt_tok  # noqa: E402
@@ -1700,8 +1705,70 @@ def _canonical_index_path(index_path: Path) -> Path:
     return absolute.resolve(strict=True)
 
 
+def _try_lock_coordination_file(fd: int) -> bool:
+    """Try to lock one rwgate coordination handle without blocking."""
+    try:
+        if sys.platform == "win32":  # pragma: no cover - exercised on Windows CI only
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock_coordination_file(fd: int) -> None:
+    """Release one rwgate coordination handle held by this process."""
+    try:
+        if sys.platform == "win32":  # pragma: no cover - exercised on Windows CI only
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.lockf(fd, fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
+def _reap_stale_reader_tokens(readers: Path, registry: Path) -> None:
+    """Remove unlocked reader tokens while preserving live rwgate leases."""
+    registry_fd = os.open(registry, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    registry_locked = False
+    try:
+        registry_locked = _try_lock_coordination_file(registry_fd)
+        if not registry_locked:
+            raise ValueError("Codemap coordination registry is busy")
+        live_tokens: list[str] = []
+        for token in sorted(readers.iterdir()):
+            try:
+                metadata = token.lstat()
+            except FileNotFoundError:
+                continue
+            if token.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise ValueError(f"Codemap readers path has an unsafe entry: {token.name}")
+            try:
+                token_fd = os.open(token, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+            except FileNotFoundError:
+                continue
+            try:
+                if not _try_lock_coordination_file(token_fd):
+                    live_tokens.append(token.name)
+                    continue
+                _unlock_coordination_file(token_fd)
+            finally:
+                os.close(token_fd)
+            with contextlib.suppress(FileNotFoundError):
+                token.unlink()
+        if live_tokens:
+            raise ValueError(f"Codemap coordination root has live reader tokens: {live_tokens}")
+    finally:
+        if registry_locked:
+            _unlock_coordination_file(registry_fd)
+        os.close(registry_fd)
+
+
 def _validate_coordination_root(coordination_root: Path) -> None:
-    """Fail unless the coordination root is the clean canonical rwgate skeleton."""
+    """Fail unless the coordination root is a safe, idle rwgate skeleton."""
     _assert_safe_path_components(coordination_root)
     try:
         root_metadata = coordination_root.lstat()
@@ -1721,12 +1788,11 @@ def _validate_coordination_root(coordination_root: Path) -> None:
     registry_metadata = registry.lstat()
     if not stat.S_ISDIR(readers_metadata.st_mode) or readers.is_symlink():
         raise ValueError("Codemap readers path must be a real directory")
-    if any(readers.iterdir()):
-        raise ValueError("Codemap coordination root has live reader tokens")
     if not stat.S_ISREG(registry_metadata.st_mode) or registry.is_symlink():
         raise ValueError("Codemap registry must be a regular file")
     if registry_metadata.st_nlink != 1 or registry.read_bytes() != b"L":
         raise ValueError("Codemap registry identity is invalid")
+    _reap_stale_reader_tokens(readers, registry)
 
 
 def _prepare_coordination_root(index_path: Path) -> Path:
@@ -3831,70 +3897,67 @@ class CodexRunner:
         assert home is not None
         return home
 
-    def _preflight_expected_queries(
-        self,
-        home: ArmHome,
-        tasks: Iterable[Mapping[str, Any]],
-    ) -> None:
-        """Run every locked B/C expected query and fail closed on drift."""
-        if home.arm == "A_plain":
-            return
-        if home.codemap_launcher_path is None or self.index_path is None:
-            raise RuntimeError(f"{home.arm} query preflight lacks a locked launcher/index")
-        before = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
-        profile = home.permission_profile or _CODEMAP_PERMISSION_PROFILE
-        for task in tasks:
-            task_id = str(task.get("id", "unknown"))
-            expected = task.get("expected_queries")
-            if not isinstance(expected, list) or not expected:
-                raise RuntimeError(f"{home.arm} task {task_id} has no structured expected_queries")
-            for query in expected:
-                if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
-                    raise RuntimeError(f"{home.arm} task {task_id} has malformed expected query")
-                args = query.get("args", [])
-                if not isinstance(args, list) or not all(isinstance(value, str) for value in args):
-                    raise RuntimeError(f"{home.arm} task {task_id} has malformed expected query args")
-                command = [
-                    _CODEX_BIN,
-                    "sandbox",
-                    "-P",
-                    profile,
-                    "--include-managed-config",
-                    "-C",
-                    str(self.repo_path),
-                    "--",
-                    str(home.codemap_launcher_path),
-                    "query",
-                    "--compact",
-                    str(query["cmd"]),
-                    *args,
-                ]
-                code, stdout, stderr = _invoke_plugin_command(
-                    command,
-                    home.env,
-                    self.command_runner,
-                    cwd=self.repo_path,
-                )
-                if code != 0 or not _canonical_query_output({"aggregated_output": stdout}):
-                    detail = stderr.strip() or stdout.strip()
-                    raise RuntimeError(f"{home.arm} expected query failed for {task_id}: {detail[:300]}")
-                after = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
-                if after != before:
-                    raise RuntimeError(f"{home.arm} expected query mutated the locked index for {task_id}")
-
     def preflight_expected_queries(self, tasks: Iterable[Mapping[str, Any]], arms: Iterable[str]) -> None:
-        """Perform complete no-model structured-query admission for B/C."""
-        task_list = list(tasks)
-        for arm in arms:
-            if arm == "A_plain":
-                continue
-            home = self._prepare_verified_home(arm)
+        """Validate each unique locked query through B once before study setup."""
+        if not {"B_direct_required", "C_skill_required"}.intersection(arms):
+            return
+        if self.index_path is None:
+            raise RuntimeError("B_direct_required query preflight lacks a locked index")
+        home = self._prepare_verified_home("B_direct_required")
+        try:
+            if home.codemap_launcher_path is None:
+                raise RuntimeError("B_direct_required query preflight lacks a locked launcher")
+            index_sha256 = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
+            profile = home.permission_profile or _CODEMAP_PERMISSION_PROFILE
+            seen_queries: set[tuple[str, ...]] = set()
+            for task in tasks:
+                task_id = str(task.get("id", "unknown"))
+                expected = task.get("expected_queries")
+                if not isinstance(expected, list) or not expected:
+                    raise RuntimeError(f"B_direct_required task {task_id} has no structured expected_queries")
+                for query in expected:
+                    if not isinstance(query, Mapping) or not isinstance(query.get("cmd"), str):
+                        raise RuntimeError(f"B_direct_required task {task_id} has malformed expected query")
+                    arguments = query.get("args", [])
+                    if not isinstance(arguments, list) or not all(isinstance(value, str) for value in arguments):
+                        raise RuntimeError(f"B_direct_required task {task_id} has malformed expected query args")
+                    normalized = _normalize_locked_query(str(query["cmd"]), arguments)
+                    if normalized is None:
+                        raise RuntimeError(f"B_direct_required task {task_id} has malformed expected query")
+                    if normalized in seen_queries:
+                        continue
+                    seen_queries.add(normalized)
+                    command = [
+                        _CODEX_BIN,
+                        "sandbox",
+                        "-P",
+                        profile,
+                        "--include-managed-config",
+                        "-C",
+                        str(self.repo_path),
+                        "--",
+                        str(home.codemap_launcher_path),
+                        "query",
+                        "--compact",
+                        *normalized,
+                    ]
+                    code, stdout, stderr = _invoke_plugin_command(
+                        command,
+                        home.env,
+                        self.command_runner,
+                        cwd=self.repo_path,
+                    )
+                    if code != 0 or not _canonical_query_output({"aggregated_output": stdout}):
+                        detail = stderr.strip() or stdout.strip()
+                        raise RuntimeError(f"B_direct_required expected query failed for {task_id}: {detail[:300]}")
+                    if hashlib.sha256(self.index_path.read_bytes()).hexdigest() != index_sha256:
+                        raise RuntimeError(f"B_direct_required expected query mutated the locked index for {task_id}")
+        finally:
             try:
-                self._preflight_expected_queries(home, task_list)
-            finally:
                 if home.coordination_path is not None:
                     with contextlib.suppress(ValueError):
                         _cleanup_coordination_root(home.coordination_path)
+            finally:
                 home.cleanup()
 
     def create_input_snapshot(
@@ -3919,7 +3982,6 @@ class CodexRunner:
         self._runtime_evidence_path.parent.mkdir(parents=True, exist_ok=True)
         self._runtime_evidence_path.touch(exist_ok=False)
         self._runtime_evidence_path.chmod(0o600)
-        task_list = list(tasks)
         homes: list[ArmHome] = []
         arm_archives: dict[str, dict[str, Path]] = {}
         arm_files: dict[str, dict[str, Path]] = {}
@@ -3939,7 +4001,6 @@ class CodexRunner:
                     }
                     if home.codemap_context_path is not None:
                         arm_files[arm]["codemap-context.json"] = home.codemap_context_path
-                self._preflight_expected_queries(home, task_list)
             snapshot = _write_input_snapshot(
                 snapshot_root,
                 manifest_path=manifest_path,
@@ -4920,12 +4981,15 @@ def main(
         for task in tasks:
             for repetition in range(1, repetitions + 1):
                 for selected in task_arms[(task["id"], repetition)]:
-                    _print_arm_row(_format_plan_row(task["id"], repetition, selected), selected)
+                    print(_format_plan_row(task["id"], repetition, selected))
         return
     assert output_path is not None
     assert metadata_path is not None
     snapshot_builder = getattr(runner, "create_input_snapshot", None)
+    preflight = getattr(runner, "preflight_expected_queries", None)
     try:
+        if callable(preflight):
+            preflight(tasks, tuple(dict.fromkeys(selected for arms in task_arms.values() for selected in arms)))
         input_snapshot = (
             snapshot_builder(
                 output_path.parent,

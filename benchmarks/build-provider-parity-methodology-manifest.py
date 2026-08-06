@@ -279,11 +279,42 @@ def _evaluation_contract(policy: Mapping[str, Any]) -> dict[str, Any]:
     return contract
 
 
+def _structural_execution_cells(policy: Mapping[str, Any], suites: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    """Derive the frozen execution and diagnostic selections from current structural rows.
+
+    The five real-issue rows remain outside the provider-neutral structural
+    execution suite. Every other committed structural row is included in suite
+    order, with the headline policy partitioning the ten diagnostics.
+    """
+    headline_ids = list(policy["headline_structural_v1"]["task_ids"])
+    headline_id_set = set(headline_ids)
+    structural_suite = next(suite for suite in suites if suite["path"] == TASKS_BENCH)
+    structural_tasks = structural_suite["tasks"]
+    execution_ids = [task["id"] for task in structural_tasks if task["effective_type"] != "real_issue"]
+    diagnostic_ids = [task_id for task_id in execution_ids if task_id not in headline_id_set]
+    excluded_ids = [task["id"] for task in structural_tasks if task["effective_type"] == "real_issue"]
+
+    if len(headline_ids) != 45 or len(headline_id_set) != len(headline_ids):
+        raise ValueError("headline structural policy must contain 45 unique task IDs")
+    if excluded_ids != ["RI-01", "RI-02", "RI-03", "RI-04", "RI-05"]:
+        raise ValueError("structural execution must exclude only RI-01 through RI-05")
+    if len(execution_ids) != 55 or len(diagnostic_ids) != 10:
+        raise ValueError("structural execution must contain 55 IDs with 10 diagnostics")
+    if not headline_id_set <= set(execution_ids):
+        raise ValueError("structural execution must include every headline task")
+    if set(execution_ids) != headline_id_set | set(diagnostic_ids):
+        raise ValueError("structural execution must partition headline and diagnostic IDs")
+    return execution_ids, diagnostic_ids
+
+
 def _build_manifest() -> dict[str, Any]:
     """Build the only accepted current provider-neutral methodology record."""
     policy = _load_policy_seed()
     suites = _build_suites(policy)
     manifest = copy.deepcopy(policy)
+    execution_ids, diagnostic_ids = _structural_execution_cells(policy, suites)
+    manifest["preregistered_cells"]["structural_execution_task_ids"] = execution_ids
+    manifest["preregistered_cells"]["structural_diagnostic_task_ids"] = diagnostic_ids
     manifest["experiment_revision"] = EXPERIMENT_REVISION
     manifest["evaluation_contract"] = _evaluation_contract(policy)
     manifest["execution_controls"]["codex_transport"] = (

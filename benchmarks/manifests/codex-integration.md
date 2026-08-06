@@ -1,6 +1,6 @@
 # `codex-integration-v1`
 
-**Manifest SHA-256**: `0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1`
+**Manifest SHA-256**: `14c0792ad2cd43f9d126119f691de863d1820d27ad5b6ddd66660fa6b04995a8`
 
 ## Purpose
 
@@ -39,7 +39,7 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
   Package manifest SHA-256: `baabde9b948cb70d2720af620c53164d2c73617fbbe4f58bb38cce977e5df37d`.
 - `codex-rig` `0.4.4`.
 - Codex CLI: `{'available': True, 'path': '<codex-cli>', 'reviewed_version': 'codex-cli 0.146.1'}`.
-- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `dd805ca3ba8ae732cf95fe0511a1316c8f9ca4294bee722e0633b1a9ed313367`.
+- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `cabeec2e81812ea60e9e2e23a5a41a091abc7e8216350b9c7a9f125131f04d2f`.
 
 ## Study scope
 
@@ -94,7 +94,7 @@ bash benchmarks/run-all.sh codex --struct --dry-run
 After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:
 
 ```bash
-CODEX_PAID_APPROVAL=0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1 \
+CODEX_PAID_APPROVAL=14c0792ad2cd43f9d126119f691de863d1820d27ad5b6ddd66660fa6b04995a8 \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
     bash benchmarks/run-all.sh codex --struct
 ```

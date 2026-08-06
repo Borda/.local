@@ -33,6 +33,75 @@ EXPECTED_SUITE_TASK_COUNTS = {
     "benchmarks/suites/tasks-patch.json": 5,
     "benchmarks/suites/tasks-readcrop.json": 6,
 }
+EXPECTED_STRUCTURAL_EXECUTION_TASK_IDS = [
+    "SE-01",
+    "SE-02",
+    "SE-03",
+    "SE-04",
+    "SE-05",
+    "FN-01",
+    "FN-02",
+    "FN-03",
+    "FN-04",
+    "FN-05",
+    "RV-01",
+    "RV-02",
+    "RV-03",
+    "RV-04",
+    "RV-05",
+    "CQ-01",
+    "CQ-02",
+    "CQ-03",
+    "CQ-04",
+    "CQ-05",
+    "BR-01",
+    "BR-02",
+    "BR-03",
+    "BR-04",
+    "BR-05",
+    "BR-06",
+    "BR-07",
+    "BR-08",
+    "BR-09",
+    "DG-01",
+    "DG-02",
+    "DG-03",
+    "DG-04",
+    "DG-05",
+    "DG-06",
+    "FT-01",
+    "FT-02",
+    "FT-03",
+    "FT-04",
+    "FT-05",
+    "DI-01",
+    "DI-02",
+    "DI-03",
+    "DI-04",
+    "DI-05",
+    "DI-06",
+    "GR-01",
+    "GR-02",
+    "GR-03",
+    "GR-04",
+    "MB-01",
+    "MB-02",
+    "MB-03",
+    "MB-04",
+    "MB-05",
+]
+EXPECTED_STRUCTURAL_DIAGNOSTIC_TASK_IDS = [
+    "SE-01",
+    "SE-02",
+    "SE-03",
+    "SE-04",
+    "SE-05",
+    "RV-05",
+    "CQ-02",
+    "CQ-03",
+    "CQ-04",
+    "CQ-05",
+]
 SHORTHAND_REVISION = re.compile(
     r"(?<![A-Za-z0-9_-])r[0-9]+(?![A-Za-z0-9_-])|"
     r"(?<![A-Za-z0-9_-])r[0-9]+_(?=manifest|revision|lock|policy|profile|runtime|execution)"
@@ -229,6 +298,31 @@ def test_methodology_builder_output_is_current() -> None:
     result = _run_methodology_builder("--check")
 
     assert result.returncode == 0, result.stderr
+
+
+def test_methodology_builder_locks_exact_provider_neutral_structural_selection() -> None:
+    """Lock the ordered non-RI structural suite and its headline complement."""
+    manifest = _load(METHODOLOGY_MANIFEST)
+    cells = manifest["preregistered_cells"]
+    codex_cells = _load(CODEX_MANIFEST)["preregistered_cells"]
+
+    assert cells["structural_execution_task_ids"] == EXPECTED_STRUCTURAL_EXECUTION_TASK_IDS
+    assert cells["structural_diagnostic_task_ids"] == EXPECTED_STRUCTURAL_DIAGNOSTIC_TASK_IDS
+    assert cells["structural_execution_task_ids"] == codex_cells["structural_execution_task_ids"]
+    assert cells["structural_diagnostic_task_ids"] == codex_cells["structural_diagnostic_task_ids"]
+    assert len(cells["structural_execution_task_ids"]) == 55
+    assert len(cells["structural_diagnostic_task_ids"]) == 10
+    assert not any(task_id.startswith("RI-") for task_id in cells["structural_execution_task_ids"])
+    assert cells["structural_execution_task_ids"] == [
+        task["id"]
+        for task in _suites_by_path(manifest)[REPAIRED_SUITE_PATH]["tasks"]
+        if task["effective_type"] != "real_issue"
+    ]
+    assert cells["structural_diagnostic_task_ids"] == [
+        task_id
+        for task_id in cells["structural_execution_task_ids"]
+        if task_id not in set(cells["structural_confirmatory_task_ids"])
+    ]
 
 
 def test_methodology_manifest_locks_the_complete_current_suite_universe() -> None:

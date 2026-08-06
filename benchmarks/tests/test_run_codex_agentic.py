@@ -502,6 +502,25 @@ def _lock_run_launcher(manifest_path: Path, run_dir: Path) -> tuple[str, Path]:
     return hashlib.sha256(manifest_path.read_bytes()).hexdigest(), launcher_path
 
 
+def test_checksum_refresh_excludes_archived_source_tree(agentic: Any, tmp_path: Path) -> None:
+    """Keep archived source validation separate from recurring result checksums."""
+    run_dir = tmp_path / "result"
+    source_path = run_dir / ".launcher" / "source" / "benchmarks" / "runner.py"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("snapshot\n", encoding="utf-8")
+    (run_dir / ".launcher" / "run-all.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    (run_dir / ".launcher" / "source.sha256").write_text("fixture  runner.py\n", encoding="utf-8")
+    (run_dir / "telemetry.jsonl").write_text("{}\n", encoding="utf-8")
+
+    agentic._write_checksums(run_dir)
+
+    entries = (run_dir / "checksums.sha256").read_text(encoding="utf-8")
+    assert ".launcher/run-all.sh" in entries
+    assert ".launcher/source.sha256" in entries
+    assert "telemetry.jsonl" in entries
+    assert ".launcher/source/benchmarks/runner.py" not in entries
+
+
 def test_paid_run_persists_full_scope_and_noncompliant_c_row(
     agentic: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

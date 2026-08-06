@@ -1,6 +1,6 @@
 # `codex-agentic`
 
-**Manifest SHA-256**: `77f0857513ab116165822cc878ad4ea5dddd869778c8ac10d101620bc0d41a1c`
+**Manifest SHA-256**: `6d2930a9320d6b20d013d6d590392002a3866d03abb88c7d4f36960ad5f4a878`
 
 ## Status
 

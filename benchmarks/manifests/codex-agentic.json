@@ -45,18 +45,18 @@
     "stop_behavior": "Stop on the first runtime or admission-integrity failure; do not stop on an ordinary model, task, or treatment-nonadherence row; preserve every partial artifact and never pool partial or nonpoolable evidence."
   },
   "artifact_sha256": {
-    "agentic_contracts": "0f7598ab6afc10969309247656525f1f932c37d081b83e360e7a69b2830c74d1",
+    "agentic_contracts": "e31c115ef401419f759c01d1a1aa021d8a048ba3c0b91776e1a7f1cb62aa456c",
     "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_plugin_manifest": "cd2d304383ca762a485290fb86588629201ed860042393e1bd00a153e1d6f44b",
     "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
-    "codex_agentic_runner": "3d91b6553f082b70559cf9acd43844388ae346167cf4fb2a0523237b61296bbc",
+    "codex_agentic_runner": "21495b48920a23e1a7f7ce98ccf3ade85bb4b0283c01c107c3f7bdc2415052fd",
     "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
-    "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+    "codex_rig_package_manifest": "4758f896e12678219a2e7f706a5ed60f0f7e92129508f51eb4c2c58b5ce599ab",
     "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
-    "codex_structural_manifest": "0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1",
-    "codex_structural_runner": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2",
-    "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482"
+    "codex_structural_manifest": "14c0792ad2cd43f9d126119f691de863d1820d27ad5b6ddd66660fa6b04995a8",
+    "codex_structural_runner": "2d10fc653c45b13025ac2661d35e60962495ff7b99f003eaa0704259d9dcfc00",
+    "run_all": "715880faa5b5bd066c34db0ba63fee45d0cf62cc1bf9f3fec79cb418d4cca1f9"
   },
   "experiment_id": "codex-agentic",
   "experiment_revision": "codex-agentic-protocol-evidence-separation-2026-08-05",
@@ -76,18 +76,18 @@
     "codemap_version": "0.28.6",
     "codex_rig_version": "0.4.4",
     "source_hashes": {
-      "agentic_contracts": "0f7598ab6afc10969309247656525f1f932c37d081b83e360e7a69b2830c74d1",
+      "agentic_contracts": "e31c115ef401419f759c01d1a1aa021d8a048ba3c0b91776e1a7f1cb62aa456c",
       "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_plugin_manifest": "cd2d304383ca762a485290fb86588629201ed860042393e1bd00a153e1d6f44b",
       "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
-      "codex_agentic_runner": "3d91b6553f082b70559cf9acd43844388ae346167cf4fb2a0523237b61296bbc",
+      "codex_agentic_runner": "21495b48920a23e1a7f7ce98ccf3ade85bb4b0283c01c107c3f7bdc2415052fd",
       "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
-      "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+      "codex_rig_package_manifest": "4758f896e12678219a2e7f706a5ed60f0f7e92129508f51eb4c2c58b5ce599ab",
       "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
-      "codex_structural_manifest": "0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1",
-      "codex_structural_runner": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2",
-      "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482"
+      "codex_structural_manifest": "14c0792ad2cd43f9d126119f691de863d1820d27ad5b6ddd66660fa6b04995a8",
+      "codex_structural_runner": "2d10fc653c45b13025ac2661d35e60962495ff7b99f003eaa0704259d9dcfc00",
+      "run_all": "715880faa5b5bd066c34db0ba63fee45d0cf62cc1bf9f3fec79cb418d4cca1f9"
     }
   },
   "preregistered_scope": {
@@ -142,7 +142,7 @@
       "path": "benchmarks/agentic_contracts.py",
       "response_symbol": "assess_answer_response",
       "semantic_symbol": "score_answer",
-      "sha256": "0f7598ab6afc10969309247656525f1f932c37d081b83e360e7a69b2830c74d1"
+      "sha256": "e31c115ef401419f759c01d1a1aa021d8a048ba3c0b91776e1a7f1cb62aa456c"
     },
     "metrics": {
       "DEFF": "unbounded expected-importer exposure hits per command",
@@ -155,7 +155,7 @@
   },
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "dd805ca3ba8ae732cf95fe0511a1316c8f9ca4294bee722e0633b1a9ed313367"
+    "sha256": "cabeec2e81812ea60e9e2e23a5a41a091abc7e8216350b9c7a9f125131f04d2f"
   },
   "status": "review_ready_paid_execution_pending_human_launch",
   "suite": {

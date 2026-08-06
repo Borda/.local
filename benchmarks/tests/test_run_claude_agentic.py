@@ -453,6 +453,63 @@ class TestProviderParityTaskIntegration:
             "tool_calls": 0,
         }
 
+    def test_non_final_text_cannot_change_response_protocol_outcome(
+        self, tmp_index: Path, tmp_path: Path, script_run_agentic: Any
+    ) -> None:
+        """Response protocol validation considers only the final report corpus."""
+        raw_task = {
+            "id": "BA-CONTRACT",
+            "type": "blast_radius_analysis",
+            "prompt": "List the production importers.",
+            "primary_module": "package.target",
+            "answer_contract": {"fields": ["production_importers"]},
+        }
+        task = script_run_agentic.Task(
+            id=raw_task["id"],
+            type=raw_task["type"],
+            prompt=script_run_agentic.materialize_agentic_prompt(raw_task),
+            primary_module=raw_task["primary_module"],
+            answer_task=raw_task,
+        )
+        benchmark = script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["A_plain"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=tmp_path / "results.json",
+            log_path=tmp_path / "tool-calls.jsonl",
+        )
+        earlier_text = 'BEGIN_ANSWER_JSON\n{"production_importers":["package.nonfinal"]}\nEND_ANSWER_JSON\n'
+        final_report = 'BEGIN_ANSWER_JSON\n{"production_importers": []}\nEND_ANSWER_JSON'
+        native_result = script_run_agentic.BenchmarkRun(
+            arm="A_plain",
+            task_id=task.id,
+            task_type=task.type,
+            model="haiku",
+            success=True,
+            output_text=earlier_text + final_report,
+            last_tool_text_offset=len(earlier_text),
+        )
+
+        with patch.object(script_run_agentic.ModelRunner, "run", return_value=native_result):
+            result = benchmark._run_single(
+                task,
+                "haiku",
+                script_run_agentic.MODELS["haiku"],
+                "A_plain",
+                1,
+                1,
+                print_fn=lambda _text: None,
+                metadata={},
+            )
+
+        assert result.answer_contract_valid is True
+        assert result.answer_diagnostic_only is False
+        assert result.answer_pooling_eligible is True
+        assert result.answer_scored is True
+        assert result.answer_quality_score == 1.0
+
     @pytest.mark.parametrize(
         ("output_text", "diagnostic_only", "semantic_scored"),
         [

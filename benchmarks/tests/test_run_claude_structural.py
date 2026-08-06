@@ -70,6 +70,92 @@ def _se_task(start_line: int = 100, qname: str = "Trainer.fit") -> dict:
 class TestProviderParityIntegration:
     """The Claude structural adapter consumes the locked shared contract."""
 
+    def test_provider_parity_arm_orders_use_the_shared_coordinate_policy(
+        self, script_run_bench: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Each task delegates its canonical arm order to the shared Claude coordinate policy."""
+        tasks = [{"id": "FN-02"}, {"id": "GR-01"}]
+        calls: list[tuple[str, str, str, str, int, str]] = []
+        expected = {
+            "FN-02": ("C_strict", "A_plain", "B_auto"),
+            "GR-01": ("B_auto", "C_strict", "A_plain"),
+        }
+
+        def order(
+            revision: str,
+            provider: str,
+            model: str,
+            task_id: str,
+            repetition: int,
+            *,
+            reasoning_effort: str = "",
+        ) -> tuple[str, ...]:
+            calls.append((revision, provider, model, task_id, repetition, reasoning_effort))
+            return expected[task_id]
+
+        monkeypatch.setattr(script_run_bench, "deterministic_arm_order", order)
+
+        observed = script_run_bench._arm_orders_by_task(
+            tasks,
+            script_run_bench.PARITY_ARMS,
+            model="sonnet",
+            provider_parity=True,
+        )
+
+        assert observed == expected
+        assert calls == [
+            (script_run_bench.PARITY_EXPERIMENT_REVISION, "claude", "sonnet", "FN-02", 1, ""),
+            (script_run_bench.PARITY_EXPERIMENT_REVISION, "claude", "sonnet", "GR-01", 1, ""),
+        ]
+
+    def test_run_loop_executes_each_task_in_its_provider_parity_arm_order(
+        self, script_run_bench: Any, tmp_path: Path
+    ) -> None:
+        """Paid execution consumes the same per-task arm order exposed by the plan."""
+        calls: list[tuple[str, str]] = []
+
+        class Runner:
+            """Record each scheduled cell without starting Claude."""
+
+            def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                calls.append((task["id"], arm))
+                return _make_run(script_run_bench, task_id=task["id"], arm=arm)
+
+        class Console:
+            """Accept result rows emitted by the run loop."""
+
+            def print(self, _message: str) -> None:
+                return None
+
+        class Progress:
+            """Provide the small Rich progress surface used by the run loop."""
+
+            console = Console()
+
+            def add_task(self, *_args: Any, **_kwargs: Any) -> int:
+                return 1
+
+            def update(self, *_args: Any, **_kwargs: Any) -> None:
+                return None
+
+            def remove_task(self, *_args: Any, **_kwargs: Any) -> None:
+                return None
+
+            def advance(self, *_args: Any, **_kwargs: Any) -> None:
+                return None
+
+        task = {"id": "FN-02", "type": "fixture", "scoreable": False}
+        loop = script_run_bench._StructuralRunLoop(
+            runner=Runner(),
+            repo_path=tmp_path,
+            arm_orders={"FN-02": ("C_strict", "A_plain", "B_auto")},
+            patch_ids=set(),
+        )
+
+        loop.run_task_arms(task, Progress(), 0)
+
+        assert calls == [("FN-02", "C_strict"), ("FN-02", "A_plain"), ("FN-02", "B_auto")]
+
     def test_primary_contract_preserves_raw_task_identity_and_manifest_policy(self, script_run_bench: Any) -> None:
         """The primary suite uses shared raw loading, hashes, and revision-bound policy without a model call."""
         tasks, policies = script_run_bench._load_primary_parity_contract()
@@ -86,6 +172,12 @@ class TestProviderParityIntegration:
         assert script_run_bench.ARMS == ("plain", "codemap")
         assert script_run_bench.PARITY_ARMS == ("A_plain", "B_auto", "C_strict")
         assert script_run_bench.PARITY_ARM_BY_LEGACY_ARM == {}
+        assert script_run_bench._arm_orders_by_task(
+            [{"id": "FN-02"}],
+            script_run_bench.ARMS,
+            model="haiku",
+            provider_parity=False,
+        ) == {"FN-02": script_run_bench.ARMS}
 
     def test_runner_stamps_legacy_identity_without_relabelling_legacy_arm(
         self, script_run_bench: Any, tmp_path: Path
@@ -303,6 +395,8 @@ class TestProviderParityIntegration:
             "_validate_primary_runtime",
             lambda repo_path, index: runtime_inputs.append((repo_path, index)),
         )
+        expected_order = ("C_strict", "A_plain", "B_auto")
+        monkeypatch.setattr(script_run_bench, "deterministic_arm_order", lambda *_args, **_kwargs: expected_order)
 
         script_run_bench.main(
             repo_path=tmp_path,
@@ -310,12 +404,13 @@ class TestProviderParityIntegration:
             tasks=["FN-02"],
             arm="all",
             dry_run=True,
+            provider_parity=True,
         )
 
-        output = capsys.readouterr().out
-        assert "FN-02\tA_plain" in output
-        assert "FN-02\tB_auto" in output
-        assert "FN-02\tC_strict" in output
+        planned = [
+            line.removeprefix("PLAN\t") for line in capsys.readouterr().out.splitlines() if line.startswith("PLAN\t")
+        ]
+        assert planned == [f"FN-02\t{arm_name}" for arm_name in expected_order]
         assert runtime_inputs == [(tmp_path, index_path)]
 
     @pytest.mark.parametrize(

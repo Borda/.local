@@ -91,6 +91,7 @@ from provider_parity_contracts import (  # noqa: E402
     TaskPolicy,
     capability_strata,
     canonical_task_hash,
+    deterministic_arm_order,
     load_task_policies,
     load_task_suite,
     materialize_task_prompt,
@@ -173,6 +174,51 @@ _PRIMARY_TASK_IDENTITIES = {
 _PRIMARY_TASK_IDS = tuple(_PRIMARY_TASK_IDENTITIES)
 _PARITY_TASK_POLICIES = load_task_policies(PARITY_MANIFEST_FILE)
 PARITY_EXPERIMENT_REVISION = next(iter(_PARITY_TASK_POLICIES.values())).experiment_revision
+
+
+def _arm_orders_by_task(
+    tasks: list[dict[str, Any]],
+    arms: list[str] | tuple[str, ...],
+    *,
+    model: str,
+    provider_parity: bool,
+) -> dict[str, tuple[str, ...]]:
+    """Return the execution arm order for each selected task.
+
+    Provider-parity runs use the shared revision-bound coordinate policy with
+    Claude's empty reasoning-effort coordinate. Legacy and explicitly
+    single-arm runs preserve the caller's declared arm order.
+
+    Args:
+        tasks: Selected task dictionaries in execution order.
+        arms: Arm labels available to each task.
+        model: Claude model stratum used by the shared ordering policy.
+        provider_parity: Whether to counterbalance the canonical A/B/C arms.
+
+    Returns:
+        Mapping from task ID to its ordered arm tuple.
+
+    Raises:
+        ValueError: If provider-parity scheduling does not receive exactly the
+            canonical A/B/C arms.
+    """
+    if not provider_parity:
+        declared_order = tuple(arms)
+        return {task["id"]: declared_order for task in tasks}
+    if set(arms) != set(PARITY_ARMS) or len(arms) != len(PARITY_ARMS):
+        raise ValueError("provider-parity scheduling requires the canonical A/B/C arms")
+    return {
+        task["id"]: deterministic_arm_order(
+            PARITY_EXPERIMENT_REVISION,
+            "claude",
+            model,
+            task["id"],
+            1,
+            reasoning_effort="",
+        )
+        for task in tasks
+    }
+
 
 # --setting-sources project,local excludes USER-level config from the benchmark subprocess:
 # the caveman plugin, the foundry Re:Anchor rules (box header + ▓ footer), user CLAUDE.md, and
@@ -4428,19 +4474,19 @@ class _StructuralRunLoop:
     Attributes:
         runner: Configured ``BenchRunner`` executing each combo.
         repo_path: Root of the target repository clone (sandbox + staging root).
-        arms_to_run: Arm labels executed for every task, in order.
+        arm_orders: Per-task arm labels in their actual execution order.
         patch_ids: Task ids that carry a patch reference and may be sandbox-scored.
         runs: Accumulator every completed run is appended to, in completion order.
 
     Examples:
-        >>> loop = _StructuralRunLoop(None, Path("."), ["codemap"], {"PT-01"}, [])
-        >>> loop.arms_to_run, sorted(loop.patch_ids)
-        (['codemap'], ['PT-01'])
+        >>> loop = _StructuralRunLoop(None, Path("."), {"SE-01": ("codemap",)}, {"PT-01"}, [])
+        >>> loop.arm_orders["SE-01"], sorted(loop.patch_ids)
+        (('codemap',), ['PT-01'])
     """
 
     runner: Any
     repo_path: Path
-    arms_to_run: list[str]
+    arm_orders: Mapping[str, tuple[str, ...]]
     patch_ids: set[str]
     runs: list[BenchRun] = field(default_factory=list)
 
@@ -4505,7 +4551,7 @@ class _StructuralRunLoop:
             progress: Active rich Progress instance.
             outer: Outer progress task id.
         """
-        for arm_name in self.arms_to_run:
+        for arm_name in self.arm_orders[task["id"]]:
             task_max_turns = _max_turns_for_task(task)
             sub = progress.add_task("  0s calls=0", total=task_max_turns)
             progress.update(outer, description=f"{task['id']} {arm_name}")
@@ -4560,6 +4606,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     profile: str = None,
     tiered: bool = False,
     dry_run: bool = False,
+    provider_parity: bool = False,
 ) -> None:
     """Entry point: load tasks, run selected arms, print summary.
 
@@ -4582,6 +4629,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         tiered: Tiered protocol (release companion): run haiku full, sonnet on the dev subset, and
             opus only on haiku/sonnet disagreements. Select the tier via ``--model`` per invocation.
         dry_run: Validate the locked inputs and print canonical A/B/C planned cells without Claude execution.
+        provider_parity: Run the canonical A/B/C arms together in the shared deterministic order.
     """
     global _REPO_NAME, _REPO_NAMESPACE, _REPO_LOCAL_PATH
 
@@ -4735,16 +4783,21 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         print("No runnable tasks after excluding pending ground truth.")
         sys.exit(1)
 
-    # Determine arms. Dry runs intentionally plan the current canonical A/B/C matrix;
-    # normal runs retain the historical legacy defaults until a caller selects A/B/C.
+    # Determine arms. Provider-parity and dry runs plan the current canonical A/B/C
+    # matrix; normal runs retain the historical legacy defaults until a caller
+    # selects A/B/C.
+    if provider_parity and arm != "all":
+        print("ERROR: --provider-parity cannot be combined with a specific --arm")
+        sys.exit(1)
     allowed_arms = {*ARMS, *PARITY_ARMS}
-    arms_to_run = list(PARITY_ARMS) if dry_run and arm == "all" else (list(ARMS) if arm == "all" else [arm])
+    canonical_matrix = provider_parity or (dry_run and arm == "all")
+    arms_to_run = list(PARITY_ARMS) if canonical_matrix else (list(ARMS) if arm == "all" else [arm])
     invalid_arms = sorted(set(arms_to_run) - allowed_arms)
     if invalid_arms:
         print(f"ERROR: unsupported arm labels: {invalid_arms}")
         sys.exit(1)
 
-    canonical_requested = dry_run or any(arm_name in ARM_CONTRACTS for arm_name in arms_to_run)
+    canonical_requested = dry_run or provider_parity or any(arm_name in ARM_CONTRACTS for arm_name in arms_to_run)
     if canonical_requested:
         try:
             _, task_policies = _load_primary_parity_contract()
@@ -4753,9 +4806,20 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
             print(f"ERROR: cannot start canonical parity run: {exc}")
             sys.exit(1)
 
+    try:
+        arm_orders = _arm_orders_by_task(
+            task_list,
+            arms_to_run,
+            model=model,
+            provider_parity=canonical_matrix,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        sys.exit(1)
+
     if dry_run:
         for task in task_list:
-            for arm_name in arms_to_run:
+            for arm_name in arm_orders[task["id"]]:
                 print(f"PLAN\t{task['id']}\t{arm_name}")
         return
 
@@ -4802,11 +4866,11 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     print()
 
     runs: list[BenchRun] = []
-    combos = [(task, arm) for task in task_list for arm in arms_to_run]
+    combos = [(task, arm) for task in task_list for arm in arm_orders[task["id"]]]
     run_loop = _StructuralRunLoop(
         runner=runner,
         repo_path=repo_path,
-        arms_to_run=arms_to_run,
+        arm_orders=arm_orders,
         patch_ids=patch_id_set,
         runs=runs,
     )

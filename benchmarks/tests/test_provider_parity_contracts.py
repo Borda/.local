@@ -1012,6 +1012,20 @@ class TestAgenticAnswerContracts:
 
         assert parsed == {"production_importers": ["pkg.caller"]}
 
+    def test_parse_labeled_answer_rejects_unclosed_markdown_fence(self) -> None:
+        """A cosmetic fence must close before its enclosed payload is accepted."""
+        task = {
+            "id": "T-03c",
+            "primary_module": "pkg.target",
+            "answer_contract": {"fields": ["production_importers"], "params": {}},
+        }
+
+        with pytest.raises(ValueError, match="markdown code fence"):
+            agentic_contracts.parse_labeled_answer(
+                task,
+                'BEGIN_ANSWER_JSON\n```json\n{"production_importers": ["pkg.caller"]}\nEND_ANSWER_JSON',
+            )
+
     def test_parse_labeled_answer_rejects_missing_contract_label(self) -> None:
         """A partial answer cannot be converted into accidental component credit."""
         task = {

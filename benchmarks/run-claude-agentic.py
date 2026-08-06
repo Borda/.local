@@ -2935,7 +2935,7 @@ class Benchmark:
         )
         answer_oracle = self.answer_oracles.get(task.id)
         if result.parity_arm and answer_oracle is not None:
-            assessment = assess_answer_response(task.answer_task, result.output_text)
+            assessment = assess_answer_response(task.answer_task, report_corpus)
             evidence = score_evidence_metrics(
                 answer_oracle,
                 exposure_text=result.output_text,

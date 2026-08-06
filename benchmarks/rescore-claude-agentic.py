@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Offline answer-envelope rescore for a completed run-claude-agentic snapshot.
 
-Re-parses each stored ``output_text`` with the CURRENT ``agentic_contracts.parse_labeled_answer``
+Re-assesses each stored ``output_text`` with the CURRENT ``agentic_contracts.assess_answer_response``
 and re-scores ONLY the rows whose original runtime parse failed (``answer_error`` non-empty).
 Rows that parsed at runtime keep their exact stored scores — the report-text boundary
 (``last_tool_text_offset``) is not persisted in the snapshot, so re-scoring parsed-OK rows
 would replace exact values with approximations for no benefit.
 
 Approximation (rescored rows only): ``report_text`` is taken from the last
-``BEGIN_ANSWER_JSON`` marker onward (the final answer envelope plus trailing prose) instead
-of "all text after the last tool call". ``rrec`` on rescored rows is therefore a lower
-bound; ``erec`` uses the full ``output_text`` exactly as at runtime.
+``BEGIN_ANSWER_JSON`` marker onward instead of "all text after the last tool call". The
+marker may precede the actual final response, so recovered semantic scores and RREC remain
+diagnostic only; they cannot restore strict-envelope or pooling eligibility.
 
 The input snapshot is never modified; output is a sibling ``<stem>-rescored.json`` with a
 ``rescore`` provenance block recording parser hash, changed rows, and the approximation.
@@ -82,7 +82,7 @@ def _approximate_report_text(output_text: str) -> str:
 
 
 def _rescore_row(row: dict, task, oracle, module) -> dict | None:
-    """Re-parse and re-score one failed-parse row; return the change record or None.
+    """Re-assess and re-score one failed-parse row; return the change record or None.
 
     Args:
         row: Mutable snapshot result row (updated in place when the new parse succeeds).
@@ -95,16 +95,21 @@ def _rescore_row(row: dict, task, oracle, module) -> dict | None:
         fails to parse under the current parser (row left untouched).
     """
     output_text = row.get("output_text", "")
-    try:
-        parsed = agentic_contracts.parse_labeled_answer(task.answer_task, output_text)
-    except (ValueError, TypeError) as exc:
-        return {"task_id": row["task_id"], "model": row["model"], "arm": row["arm"], "still_failed": str(exc)}
+    report_text = _approximate_report_text(output_text)
+    assessment = agentic_contracts.assess_answer_response(task.answer_task, report_text)
+    if assessment.answer is None:
+        return {
+            "task_id": row["task_id"],
+            "model": row["model"],
+            "arm": row["arm"],
+            "still_failed": assessment.error or "answer response is unscorable",
+        }
     tool_total = module.ToolCounts(**row.get("tools", {})).total
     score = agentic_contracts.score_answer(
         oracle,
-        parsed,
+        assessment.answer,
         exposure_text=output_text,
-        report_text=_approximate_report_text(output_text),
+        report_text=report_text,
         tool_calls=tool_total,
     )
     before = {
@@ -117,7 +122,13 @@ def _rescore_row(row: dict, task, oracle, module) -> dict | None:
     row["answer_quality_score"] = score.quality_score
     row["answer_correct"] = score.correct
     row["answer_components"] = dict(score.components)
-    row["answer_error"] = ""
+    row["answer_contract_valid"] = False
+    row["answer_diagnostic_only"] = True
+    row["answer_pooling_eligible"] = False
+    row["answer_error"] = assessment.error or (
+        "offline rescore uses an approximate report boundary; strict envelope and pooling eligibility cannot be recovered"
+    )
+    row["answer_scored"] = True
     row["quality"]["scored"] = score.scored
     row["quality"]["erec"] = score.erec
     row["quality"]["rrec"] = score.rrec
@@ -187,13 +198,13 @@ def main(
         if record:
             changes.append(record)
 
-    parser_src = inspect.getsource(agentic_contracts.parse_labeled_answer)
+    parser_src = inspect.getsource(agentic_contracts.assess_answer_response)
     data["rescore"] = {
         "source_snapshot": str(snapshot_path),
-        "parser": "agentic_contracts.parse_labeled_answer",
+        "parser": "agentic_contracts.assess_answer_response",
         "parser_sha256": hashlib.sha256(parser_src.encode("utf-8")).hexdigest(),
         "policy": "only rows with a non-empty runtime answer_error are rescored; parsed-OK rows keep exact runtime scores",
-        "rrec_approximation": "rescored rows use text from the last BEGIN_ANSWER_JSON onward as the report corpus (lower bound)",
+        "rrec_approximation": "rescored rows use text from the last BEGIN_ANSWER_JSON onward as a diagnostic report corpus; strict envelope and pooling eligibility remain unrecoverable",
         "rows_considered": len(candidates),
         "changes": changes,
     }

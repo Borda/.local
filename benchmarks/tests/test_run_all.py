@@ -6,6 +6,7 @@ import hashlib
 import errno
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ pytestmark = pytest.mark.skipif(
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SCRIPT = BENCHMARKS_DIR / "run-all.sh"
+REAL_GIT = shutil.which("git")
 LEGACY_SCRIPT = BENCHMARKS_DIR / "run-all-claude.sh"
 ACTIVE_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 ACTIVE_MANIFEST_SHA = hashlib.sha256(ACTIVE_MANIFEST.read_bytes()).hexdigest()
@@ -39,6 +41,7 @@ AGENTIC_SELECTED_TASK_IDS = ("BA-02", "BA-04")
 AGENTIC_SELECTED_TOTAL_CELLS = len(AGENTIC_SELECTED_TASK_IDS) * 3
 METHODOLOGY_MANIFEST = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
 METHODOLOGY_MANIFEST_DATA = json.loads(METHODOLOGY_MANIFEST.read_text(encoding="utf-8"))
+SHARED_STRUCTURAL_TASK_IDS = METHODOLOGY_MANIFEST_DATA["preregistered_cells"]["structural_execution_task_ids"]
 CLAUDE_AGENTIC_TOTAL_CELLS = METHODOLOGY_MANIFEST_DATA["agentic_execution_contract"]["default_total_cells_by_provider"][
     "claude"
 ]
@@ -106,6 +109,13 @@ def _task_id_values(call: str) -> list[str]:
     return tokens[tokens.index("--task-id") + 1].split(",")
 
 
+def _claude_task_values(call: str) -> list[str]:
+    """Return the JSON task list carried by one Claude structural call."""
+    start = call.index("--tasks ") + len("--tasks ")
+    end = call.index(" --model ", start)
+    return json.loads(call[start:end])
+
+
 def _write_executable(path: Path, body: str) -> None:
     """Create one executable command stub for shell orchestration tests."""
     path.write_text(f"#!/usr/bin/env bash\n{body}\n", encoding="utf-8")
@@ -129,7 +139,8 @@ def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
 
     _write_executable(
         bin_dir / "git",
-        'printf "fixture-head\\n"',
+        f'''if [[ "$*" == *"ls-files --stage -- ."* ]]; then exec "{REAL_GIT}" "$@"; fi
+printf "fixture-head\\n"''',
     )
     _write_executable(
         bin_dir / "python3",
@@ -455,6 +466,10 @@ def test_paid_codex_executes_from_a_run_scoped_source_snapshot(
     assert (source_root / "benchmarks" / "run-all.sh").read_bytes() == expected_launcher
     assert (source_root / "benchmarks" / "manifests" / "codex-integration.json").read_bytes() == expected_manifest
     assert (source_root / "plugins" / "codemap-py" / ".codex-plugin" / "plugin.json").is_file()
+    mode_map = json.loads(
+        (source_root / "benchmarks" / "manifests" / "codemap-package-mode-map.json").read_text(encoding="utf-8")
+    )
+    assert mode_map["README.md"] is False
     paid_call = next(line for line in call_log.read_text(encoding="utf-8").splitlines() if "--auth-source" in line)
     assert str(source_root / "benchmarks" / "run-codex-structural.py") in paid_call
 
@@ -522,6 +537,7 @@ def test_codex_agentic_dry_run_dispatches_the_default_shared_scope_once(
     assert f"--manifest-path {AGENTIC_MANIFEST}" in agentic_call
     assert "--task-id" not in agentic_call
     assert "--repetitions 1" in agentic_call
+    assert "--scope-sha256" not in agentic_call
     assert "--dry-run" in agentic_call
     assert "--auth-source" not in agentic_call
     assert "--output-path" not in agentic_call
@@ -551,7 +567,7 @@ def test_codex_agentic_launcher_resolves_a_positive_repeat_override_before_setup
         if "run-codex-agentic.py" in line and "--dry-run" in line
     )
     assert "--repetitions 2" in agentic_call
-    assert "--scope-sha256" in agentic_call
+    assert f"--scope-sha256 {AGENTIC_REPEAT_TWO_SCOPE_SHA}" in agentic_call
     assert "96 cells" in completed.stdout
 
 
@@ -578,7 +594,7 @@ def test_claude_agentic_dry_run_dispatches_only_the_default_shared_scope(
     assert "--dry-run" not in resolver_call
     assert f"--manifest-path {METHODOLOGY_MANIFEST}" in plan_call
     assert "--repeat 1" in plan_call
-    assert f"--scope-sha256 {CLAUDE_AGENTIC_SCOPE_SHA}" in plan_call
+    assert "--scope-sha256" not in plan_call
     assert "--dry-run" in plan_call
     assert "--tasks" not in plan_call
     assert "--arm" not in plan_call
@@ -729,6 +745,7 @@ def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
         ("--paid-approval", AGENTIC_MANIFEST_SHA),
     ):
         assert f"{flag} {value}" in paid_call
+    assert "--scope-sha256" not in paid_call
     assert "--dry-run" not in paid_call
     assert "run-codex-structural.py" not in paid_call
     assert launcher_snapshot.read_bytes() == SCRIPT.read_bytes()
@@ -742,6 +759,23 @@ def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
     assert sum(line == "LEGEND" for line in completed.stdout.splitlines()) == 1
     assert sum(line == "END LEGEND" for line in completed.stdout.splitlines()) == 1
     assert "PLAN " not in completed.stdout
+
+
+def test_paid_codex_agentic_final_checksums_exclude_archived_source_tree(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Publish launcher attestations without rehashing the validated source archive."""
+    env, _ = batch_env
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-checksum-run"))
+
+    completed = _run_batch("codex", env, "--agentic")
+
+    assert completed.returncode == 0, completed.stderr
+    entries = (Path(env["CODEX_RUN_DIR"]) / "checksums.sha256").read_text(encoding="utf-8").splitlines()
+    assert any(".launcher/run-all.sh" in entry for entry in entries)
+    assert any(".launcher/source.sha256" in entry for entry in entries)
+    assert not any(".launcher/source/" in entry for entry in entries)
 
 
 def test_paid_codex_agentic_admits_the_run_directory_before_console_capture(
@@ -960,7 +994,7 @@ def test_top_level_provider_invocation_emits_one_bounded_legend(
     ("mode", "failure_pattern", "full_marker"),
     [
         ("smoke", "run-claude-structural.py", "run-codex-structural.py"),
-        ("claude", "run-claude-structural.py", "--run-all"),
+        ("claude", "run-claude-structural.py", "--model haiku --arm A_plain"),
         ("codex", "--task-id FN-02 --arm all --dry-run", "--repetitions 1"),
     ],
     ids=["both-providers", "claude", "codex"],
@@ -1035,6 +1069,50 @@ def test_stale_generated_manifest_blocks_provider_preflights(
     assert "build-codex-integration-manifest.py" in calls
     assert "run-claude-" not in calls
     assert "run-codex-structural.py" not in calls
+
+
+def test_stale_codex_manifest_permits_claude_plan_but_blocks_codex(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Keep Claude planning bound only to the shared methodology lock."""
+    env, call_log = batch_env
+    env["FAIL_MANIFEST_CHECK"] = "1"
+
+    claude = _run_batch("claude", env, "--struct", "--dry-run")
+
+    assert claude.returncode == 0, claude.stderr
+    claude_calls = call_log.read_text(encoding="utf-8")
+    assert "build-provider-parity-methodology-manifest.py" in claude_calls
+    assert "build-codex-integration-manifest.py" not in claude_calls
+    claude_contract = next(line for line in claude_calls.splitlines() if "prepare-codex-index.py" in line)
+    assert f"--manifest-path {METHODOLOGY_MANIFEST}" in claude_contract
+    assert "--methodology-path" not in claude_contract
+
+    call_log.unlink()
+    codex = _run_batch("codex", env, "--struct", "--dry-run")
+
+    assert codex.returncode == 47
+    assert "stale generated Codex manifest" in codex.stderr
+    codex_calls = call_log.read_text(encoding="utf-8")
+    assert "build-codex-integration-manifest.py" in codex_calls
+
+
+def test_codex_index_preparation_retains_the_dual_lock_cross_check(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Codex keeps its integration-lock comparison against the methodology lock."""
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, "--struct", "--dry-run")
+
+    assert completed.returncode == 0, completed.stderr
+    contract_call = next(
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "prepare-codex-index.py" in line and "--print-contract" in line
+    )
+    assert f"--manifest-path {ACTIVE_MANIFEST}" in contract_call
+    assert f"--methodology-path {METHODOLOGY_MANIFEST}" in contract_call
 
 
 @pytest.mark.parametrize(
@@ -1240,6 +1318,30 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert f"--invocation-launcher-path {launcher_snapshot}" in paid_call
 
 
+def test_paid_claude_structural_dispatches_shared_provider_parity_matrix(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Each model receives the shared tasks and deterministic A/B/C scheduler."""
+    env, call_log = batch_env
+
+    completed = _run_batch("claude", env, "--struct")
+
+    assert completed.returncode == 0, completed.stderr
+    structural_calls = [
+        line
+        for line in call_log.read_text(encoding="utf-8").splitlines()
+        if "run-claude-structural.py" in line and "--tasks" in line and "--dry-run" not in line
+    ]
+    models = {line.split()[line.split().index("--model") + 1] for line in structural_calls}
+    assert models == {"haiku", "sonnet", "opus"}
+    assert len(structural_calls) == len(models)
+    assert all("--provider-parity" in call for call in structural_calls)
+    assert all("--arm" not in call for call in structural_calls)
+    assert all(_claude_task_values(call) == SHARED_STRUCTURAL_TASK_IDS for call in structural_calls)
+    assert SHARED_STRUCTURAL_TASK_IDS == CONFIRMATORY_TASK_IDS
+    assert not any(task_id.startswith("RI-") for task_id in SHARED_STRUCTURAL_TASK_IDS)
+
+
 def test_paid_codex_tasks_runs_only_resolved_scope(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
@@ -1363,6 +1465,21 @@ def test_paid_codex_runner_failure_survives_the_artifact_tee(
     assert completed.returncode == 41
     assert "--auth-source" in call_log.read_text(encoding="utf-8")
     assert (Path(env["CODEX_RUN_DIR"]) / "run.log").is_file()
+
+
+def test_paid_claude_runner_failure_stops_the_batch(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Do not reclassify a failed Claude runner as a successful cell outcome."""
+    env, call_log = batch_env
+    env["FAIL_WHEN_ARGS_CONTAIN"] = "--model haiku --provider-parity"
+
+    completed = _run_batch("claude", env, "--struct")
+
+    assert completed.returncode == 41
+    calls = call_log.read_text(encoding="utf-8")
+    assert "--model haiku --provider-parity" in calls
+    assert "--model sonnet --provider-parity" not in calls
 
 
 def test_paid_codex_renderer_failure_survives_the_artifact_pipeline(
