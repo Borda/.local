@@ -61,6 +61,7 @@ _OLD_BIN_FILES = ("scan-index", "_exclusions.py", "_schema.py", "_telemetry.py")
 _VOLATILE_KEYS = ("scanned_at", "git_sha")
 _V12_ROOT_ADDITIONS = frozenset({"symbol_aliases", "symbol_alias_limitations"})
 _V12_MODULE_ADDITIONS = frozenset({"symbol_aliases", "symbol_alias_limitations"})
+_V13_MODULE_ADDITIONS = frozenset({"unresolved_direct_imports", "from_import_submodules"})
 
 # The monolith is roughly 10x-100x larger than its post-extraction thin
 # launcher/shim counterpart; thresholds sit with headroom below the monolith
@@ -116,15 +117,27 @@ def old_scan_index(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _legacy_index(index: dict) -> dict:
-    """Remove only volatile and explicitly declared v12 index additions."""
+    """Normalize v12/v13 additions while restoring legacy import metrics."""
+    modules = []
+    for module in index["modules"]:
+        normalized = dict(module)
+        raw_imports = normalized.get("unresolved_direct_imports")
+        if raw_imports is not None:
+            normalized["direct_imports"] = raw_imports
+            normalized["dep_count"] = len(raw_imports)
+        if normalized.get("status") != "ok" and not normalized.get("direct_imports"):
+            normalized.pop("direct_imports", None)
+            normalized.pop("dep_count", None)
+        normalized = {
+            key: value for key, value in normalized.items() if key not in _V12_MODULE_ADDITIONS | _V13_MODULE_ADDITIONS
+        }
+        modules.append(normalized)
     legacy = {
         key: value
         for key, value in index.items()
         if key not in _VOLATILE_KEYS and key not in _V12_ROOT_ADDITIONS and key != "scan_version"
     }
-    legacy["modules"] = [
-        {key: value for key, value in module.items() if key not in _V12_MODULE_ADDITIONS} for module in index["modules"]
-    ]
+    legacy["modules"] = modules
     return legacy
 
 
@@ -132,15 +145,22 @@ def _canonical(index: dict) -> str:
     return json.dumps(index, sort_keys=True, ensure_ascii=False)
 
 
-def _assert_v12_index_delta(old: dict, new: dict) -> None:
-    """Prove frozen v11 content is identical except the declared v12 alias fields."""
+def _assert_v13_index_delta(old: dict, new: dict) -> None:
+    """Prove frozen v11 content is identical except declared v12/v13 graph semantics."""
     assert old["scan_version"] == 11
-    assert new["scan_version"] == 12
+    assert new["scan_version"] == 13
     assert set(new) == set(old) | _V12_ROOT_ADDITIONS
     assert len(old["modules"]) == len(new["modules"])
     for legacy_module, current_module in zip(old["modules"], new["modules"], strict=True):
-        additions = _V12_MODULE_ADDITIONS if current_module["status"] == "ok" else frozenset()
-        assert set(current_module) == set(legacy_module) | additions
+        additions = _V12_MODULE_ADDITIONS | _V13_MODULE_ADDITIONS if current_module["status"] == "ok" else frozenset()
+        current_keys = set(current_module)
+        if (
+            current_module["status"] != "ok"
+            and current_module.get("direct_imports") == []
+            and "direct_imports" not in legacy_module
+        ):
+            current_keys.remove("direct_imports")
+        assert current_keys == set(legacy_module) | additions
         if additions:
             assert isinstance(current_module["symbol_aliases"], dict)
             assert isinstance(current_module["symbol_alias_limitations"], list)
@@ -149,11 +169,11 @@ def _assert_v12_index_delta(old: dict, new: dict) -> None:
     assert _canonical(_legacy_index(old)) == _canonical(_legacy_index(new))
 
 
-def test_v12_normalization_rejects_unrelated_legacy_change() -> None:
-    """The v12 allowance cannot mask a changed pre-v12 field."""
+def test_v13_normalization_rejects_unrelated_legacy_change() -> None:
+    """The v13 allowance cannot mask a changed pre-v12 field."""
     old = {"scan_version": 11, "project": "legacy", "modules": [{"name": "mod", "status": "ok"}]}
     new = {
-        "scan_version": 12,
+        "scan_version": 13,
         "project": "changed",
         "modules": [{"name": "mod", "status": "ok", "symbol_aliases": {}, "symbol_alias_limitations": []}],
         "symbol_aliases": {},
@@ -161,7 +181,7 @@ def test_v12_normalization_rejects_unrelated_legacy_change() -> None:
     }
 
     with pytest.raises(AssertionError):
-        _assert_v12_index_delta(old, new)
+        _assert_v13_index_delta(old, new)
 
 
 def _run_scan(
@@ -292,7 +312,7 @@ def test_graph_aggregates_byte_identical_old_vs_new(tmp_path: Path, old_scan_ind
     ):
         assert old_index[field] == new_index[field], f"graph aggregate {field!r} diverged"
 
-    _assert_v12_index_delta(old_index, new_index)
+    _assert_v13_index_delta(old_index, new_index)
 
 
 # --- dedup / collision resolution across a colliding module tree -----------
@@ -315,7 +335,7 @@ def test_dedup_collision_resolution_identical(tmp_path: Path, old_scan_index: Pa
     old_names = sorted(m["name"] for m in old_index["modules"])
     new_names = sorted(m["name"] for m in new_index["modules"])
     assert old_names == new_names
-    _assert_v12_index_delta(old_index, new_index)
+    _assert_v13_index_delta(old_index, new_index)
 
 
 # --- coverage annotation (--with-coverage) ---------------------------------
@@ -356,7 +376,7 @@ def test_coverage_annotation_identical_old_vs_new(tmp_path: Path, old_scan_index
     assert any("coverage_pct" in s for s in old_leaf.get("symbols", [])), (
         "fixture must actually exercise coverage annotation"
     )
-    _assert_v12_index_delta(old_index, new_index)
+    _assert_v13_index_delta(old_index, new_index)
 
 
 # --- test-impact's underlying graph data (fixture graph + mock patches) ----

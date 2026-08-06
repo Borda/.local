@@ -91,9 +91,9 @@ class TestScanVersion:
         """Version must be a positive number (≥1)."""
         assert SCAN_VERSION >= 1
 
-    def test_value_is_twelve(self) -> None:
-        """v5.6 bumps SCAN_VERSION for alias-aware reverse-call semantics."""
-        assert SCAN_VERSION == 12
+    def test_value_is_thirteen(self) -> None:
+        """v5.7 bumps SCAN_VERSION for resolved static submodule imports."""
+        assert SCAN_VERSION == 13
 
 
 class TestPerFeatureVersionConstants:

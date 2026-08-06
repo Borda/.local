@@ -628,6 +628,22 @@ def _canonicalize_symbol_aliases(modules: list[dict]) -> dict[str, str]:
     return dict(sorted(resolved.items()))
 
 
+def _resolve_import_submodule_edges(modules: list[dict]) -> None:
+    """Add statically proven ``from package import submodule`` edges in-place.
+
+    The parser keeps every ``package.name`` candidate because a ``from`` import
+    may bind either a module or an attribute. Only candidates matching an
+    indexed module become import edges; this retains parent-package imports
+    without inventing reverse module edges for imported symbols.
+    """
+    indexed_names = {module["name"] for module in modules if module.get("status") == "ok"}
+    for module in modules:
+        candidates = module.get("from_import_submodules", [])
+        direct = set(module.get("unresolved_direct_imports", module.get("direct_imports", [])))
+        direct.update(candidate for candidate in candidates if candidate in indexed_names)
+        module["direct_imports"] = sorted(direct)
+
+
 def _collect_symbol_alias_limitations(modules: list[dict]) -> list[dict[str, str]]:
     """Return sorted target-specific evidence for rejected alias paths.
 
@@ -1154,6 +1170,7 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
     indexed_names = {m["name"] for m in modules if m.get("status") == "ok"}
     module_aliases = _collect_module_aliases(conftest_paths, indexed_names, root)
 
+    _resolve_import_submodule_edges(modules)
     symbol_aliases = _canonicalize_symbol_aliases(modules)
     symbol_alias_limitations = _collect_symbol_alias_limitations(modules)
     _recompute_metrics(modules, module_aliases, symbol_aliases)
@@ -1270,6 +1287,7 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
     indexed_names = {m["name"] for m in modules if m.get("status") == "ok"}
     module_aliases = _collect_module_aliases(conftest_paths, indexed_names, root)
 
+    _resolve_import_submodule_edges(modules)
     symbol_aliases = _canonicalize_symbol_aliases(modules)
     symbol_alias_limitations = _collect_symbol_alias_limitations(modules)
     _recompute_metrics(modules, module_aliases, symbol_aliases)
@@ -1334,7 +1352,7 @@ def _build_index(args: argparse.Namespace, root: Path, out_path: Path) -> dict:
         if int(old_index.get("scan_version", 0)) >= SCAN_VERSION and old_index.get("file_shas"):
             print(f"[codemap] Incremental scan {root} ...", file=sys.stderr)
             return incremental_scan(root, old_index, coverage_path=coverage_path)
-        print("[codemap] pre-v12 index found — falling back to full scan ...", file=sys.stderr)
+        print("[codemap] pre-v13 index found — falling back to full scan ...", file=sys.stderr)
         return scan(root, coverage_path=coverage_path)
     if args.incremental:
         print("[codemap] No existing index found — running full scan ...", file=sys.stderr)

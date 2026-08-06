@@ -424,10 +424,33 @@ def _error_suffix(stderr: str) -> str:
 
 _ADDITIVE_QUERY_KEYS = frozenset({"unique_total", "unique_qualified_names", "count_semantics"})
 _V12_QUERY_ADDITIONS = {"fn-rdeps": frozenset({"resolved_qname"})}
+_V13_REMOVED_NOT_COVERED = frozenset({"relative-import", "from-import-submodule"})
 _COUNT_SEMANTIC_KEYS = {
     "undocumented": frozenset({"total", "unique_total"}),
     "uncovered": frozenset({"definition", "total", "showing", "unique_total"}),
 }
+
+
+def _restore_v13_not_covered(legacy: object, current: object) -> None:
+    """Restore only v13 import-gap labels removed from current query payloads.
+
+    Scan v13 resolves relative and ``from package import submodule`` edges that
+    the frozen v11 query oracle reported as uncovered. The parity allowance is
+    deliberately limited to those two labels and preserves the legacy order.
+    """
+    if isinstance(legacy, dict) and isinstance(current, dict):
+        for key, legacy_value in legacy.items():
+            current_value = current.get(key)
+            if key == "not_covered" and isinstance(legacy_value, list) and isinstance(current_value, list):
+                present = set(current_value)
+                current_value.extend(
+                    item for item in legacy_value if item in _V13_REMOVED_NOT_COVERED and item not in present
+                )
+                continue
+            _restore_v13_not_covered(legacy_value, current_value)
+    elif isinstance(legacy, list) and isinstance(current, list):
+        for legacy_item, current_item in zip(legacy, current, strict=False):
+            _restore_v13_not_covered(legacy_item, current_item)
 
 
 def _assert_golden_query_parity(
@@ -442,18 +465,23 @@ def _assert_golden_query_parity(
         current = json.loads(new.stdout)
         assert isinstance(legacy, dict)
         assert isinstance(current, dict)
+        _restore_v13_not_covered(legacy, current)
         assert set(current) == set(legacy) | _V12_QUERY_ADDITIONS[command]
         assert {key: current[key] for key in legacy} == legacy
         assert current["resolved_qname"] == legacy["qname"]
         return
     if command not in _COUNT_SEMANTIC_KEYS:
-        assert old.stdout == new.stdout
+        legacy = json.loads(old.stdout)
+        current = json.loads(new.stdout)
+        _restore_v13_not_covered(legacy, current)
+        assert current == legacy
         return
 
     legacy = json.loads(old.stdout)
     current = json.loads(new.stdout)
     assert isinstance(legacy, dict)
     assert isinstance(current, dict)
+    _restore_v13_not_covered(legacy, current)
     assert set(current) == set(legacy) | _ADDITIVE_QUERY_KEYS
     assert {key: current[key] for key in legacy} == legacy
 
@@ -494,7 +522,10 @@ class TestOldVsNewBinParity:
         old = _run_old(old_scan_query, ["batch"], built_project, stdin=stdin)
         new = _run_new_bin(["batch"], built_project, stdin=stdin)
         assert old.returncode == new.returncode
-        assert old.stdout == new.stdout
+        legacy = json.loads(old.stdout)
+        current = json.loads(new.stdout)
+        _restore_v13_not_covered(legacy, current)
+        assert current == legacy
         assert old.stderr == new.stderr
 
     def test_missing_index_matches_golden(self, old_scan_query: Path, tmp_path: Path) -> None:

@@ -35,7 +35,7 @@ ARM_ORDER_POLICY = (
 )
 TASK_SELECTION_REPETITIONS = 3
 TASK_SELECTION_COORDINATE_TIMEOUT_SECONDS = 600
-LOCKED_CODEX_CLI_VERSION = "codex-cli 0.146.0"
+REVIEWED_CODEX_CLI_VERSION = "codex-cli 0.146.1"
 
 
 def _sha256(path: Path) -> str:
@@ -65,8 +65,12 @@ def _plugin_version(path: Path, expected_name: str) -> str:
 
 
 def _codex_cli_identity() -> dict[str, str | bool]:
-    """Return the reviewed CLI identity without consulting the build host."""
-    return {"available": True, "path": "<codex-cli>", "version": LOCKED_CODEX_CLI_VERSION}
+    """Return reviewed CLI provenance without making it an admission pin."""
+    return {
+        "available": True,
+        "path": "<codex-cli>",
+        "reviewed_version": REVIEWED_CODEX_CLI_VERSION,
+    }
 
 
 def _artifact_hashes() -> dict[str, str]:
@@ -176,7 +180,7 @@ def _codex_permission_profiles(source: dict[str, Any]) -> dict[str, Any]:
         "C_skill_required": "deny",
     }
     profiles["preflight"] = [
-        "reject Codex CLI versions older than 0.138.0",
+        "record the observed Codex CLI identity without version-based admission",
         "reject profile parse or selection failure",
         "prove source-tree write denial",
         "prove copied auth.json read denial without disclosing credential bytes",
@@ -196,7 +200,7 @@ def _codex_permission_profiles(source: dict[str, Any]) -> dict[str, Any]:
 
 
 def _execution_controls(source: dict[str, Any]) -> dict[str, Any]:
-    """Lock retry-inclusive coordinate and caller-approved run budgets."""
+    """Lock the retry-inclusive per-cell timeout and execution controls."""
     controls = copy.deepcopy(source["execution_controls"])
     controls["applies_to"] = ["codex"]
     controls["codex_permission_profiles"] = (
@@ -213,11 +217,6 @@ def _execution_controls(source: dict[str, Any]) -> dict[str, Any]:
     controls["coordinate_timeout_scope"] = (
         "one total 600-second budget shared by the initial attempt and at most two eligible retries"
     )
-    controls["complete_run_wall_clock"] = (
-        "paid execution requires a positive human-approved --max-wall-clock-seconds value; "
-        "the exact value is recorded in every result row"
-    )
-    controls["confirmatory_max_wall_clock_seconds"] = 86_400
     controls["arm_order"] = ARM_ORDER_POLICY
     controls["token_prompt_cache_policy"] = (
         "Console and primary efficiency reports use gross provider input tokens only. "
@@ -307,10 +306,6 @@ def _task_selection_contract(source: dict[str, Any]) -> dict[str, Any]:
         "arms": list(_arms()),
         "allowed_families": families,
         "allowed_task_ids": task_ids,
-        "complete_run_max_wall_clock_seconds": {
-            "derived_at_runtime": True,
-            "formula": "resolved_task_count × repetitions × arm_count × coordinate_timeout_seconds",
-        },
         "confirmatory_product_acceptance": "ineligible",
         "coordinate_timeout_seconds": TASK_SELECTION_COORDINATE_TIMEOUT_SECONDS,
         "nonpoolable": True,
@@ -334,7 +329,6 @@ def _task_selection_contract(source: dict[str, Any]) -> dict[str, Any]:
                 "repetitions",
                 "arms",
                 "coordinate timeout seconds",
-                "derived complete-run wall-clock ceiling",
             ],
             "runtime_derived": True,
             "stored_in_manifest": False,
@@ -526,7 +520,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "## Execution controls",
         "",
         "- The 600-second coordinate budget is shared by the initial attempt and any eligible zero-token transport retries.",
-        "- Paid execution requires a positive, human-approved `--max-wall-clock-seconds` value recorded in every result row.",
+        "- The manifest's per-cell timeout includes the initial attempt and all eligible zero-token transport retries.",
         "- Arm order uses deterministic six-permutation counterbalancing by frozen structural task ordinal; across the "
         "55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times.",
         "- Console and primary efficiency reports use gross provider input tokens only. Cached and fresh input counts "
@@ -555,7 +549,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         f"- Diagnostic tasks: `{len(manifest['preregistered_cells']['structural_diagnostic_task_ids'])}`.",
         f"- Repetitions: `{repetitions}`.",
         f"- Total cells: `{total_cells}` (`{execution_tasks} tasks × {repetitions} repetition × {arm_count} arms`).",
-        "- Model-cell failures are recorded and do not stop the study after admission; integrity, interruption, and complete-run ceiling failures preserve a partial artifact and stop execution.",
+        "- Model-cell failures are recorded and do not stop the study after admission; integrity and interruption failures preserve a partial artifact and stop execution.",
         "",
         "## Selected-task scope",
         "",
@@ -565,7 +559,6 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "- Resolved IDs always follow frozen manifest order, independent of selector order.",
         "- Omit --tasks for the full confirmatory scope; providing --tasks requires separate targeted approval and cannot authorize or replace the full scope.",
         f"- Selected-task runs use `{task_selection['repetitions']}` repetitions × `{len(task_selection['arms'])}` arms and `{task_selection['coordinate_timeout_seconds']}` seconds per coordinate.",
-        "- The complete-run ceiling is derived at runtime as `resolved tasks × repetitions × arms × coordinate seconds`.",
         "- Selected-task runs are explicitly nonpoolable and ineligible for confirmatory or product acceptance.",
         "- The runtime scope digest covers the active manifest SHA-256, resolved ordered IDs, and execution controls; it is derived at runtime and is not stored in this manifest.",
         "",
@@ -588,8 +581,6 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "```bash",
         "CODEX_PAID_APPROVAL=<resolved-scope-sha256> \\",
         '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
-        '    CODEX_RUN_DIR="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)" \\',
-        "    CODEX_MAX_WALL_CLOCK_SECONDS=<derived-ceiling> \\",
         "    bash benchmarks/run-all.sh codex --struct --tasks=DI,GR",
         "```",
         "",
@@ -606,12 +597,10 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "```bash",
         f"CODEX_PAID_APPROVAL={machine_sha256} \\",
         '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
-        '    CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \\',
-        f"    CODEX_MAX_WALL_CLOCK_SECONDS={manifest['execution_controls']['confirmatory_max_wall_clock_seconds']} \\",
         "    bash benchmarks/run-all.sh codex --struct",
         "```",
         "",
-        "Setting `CODEX_PAID_APPROVAL` to this exact machine-manifest SHA-256 in the launch command is the human authorization and stale-manifest lock; no separate chat authorization is required. The run directory must not already exist. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless the user deliberately exports them for review.",
+        "Setting `CODEX_PAID_APPROVAL` to this exact machine-manifest SHA-256 in the launch command is the human authorization and stale-manifest lock; no separate chat authorization is required. The launcher creates a fresh run directory unless `CODEX_RUN_DIR` selects another new path. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless the user deliberately exports them for review.",
         "",
         "## Status",
         "",

@@ -19,6 +19,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import stat
 import sys
 import tempfile
 import time
@@ -356,21 +357,22 @@ def resolve_agentic_scope(
     manifest_path: Path = _MANIFEST_PATH,
     *,
     task_ids: Sequence[str] | None = None,
-    repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
+    repetitions: int | None = None,
 ) -> dict[str, Any]:
     """Resolve and hash one manifest-bound Codex agentic coordinate scope.
 
     The manifest is the immutable source lock. A caller may explicitly narrow
     its ordered task set or increase positive repetitions, but the derived
-    scope hash binds every resulting coordinate and its wall-clock ceiling.
+    scope hash binds every resulting coordinate and its per-cell timeout.
     """
-    if repetitions < 1:
-        raise ValueError("agentic repetitions must be at least 1")
     manifest_path = Path(manifest_path)
     manifest = _read_agentic_manifest(manifest_path)
     preregistered = manifest.get("preregistered_scope")
     if not isinstance(preregistered, Mapping):
         raise ValueError("Codex agentic manifest lacks preregistered scope")
+    repetitions = preregistered.get("repetitions") if repetitions is None else repetitions
+    if type(repetitions) is not int or repetitions < 1:
+        raise ValueError("agentic repetitions must be at least 1")
     locked_task_ids = preregistered.get("task_ids")
     if not isinstance(locked_task_ids, list) or not all(isinstance(task_id, str) for task_id in locked_task_ids):
         raise ValueError("Codex agentic manifest has invalid task IDs")
@@ -381,10 +383,9 @@ def resolve_agentic_scope(
         raise ValueError("agentic scope includes a task outside the manifest")
     ordered_task_ids = [task_id for task_id in locked_task_ids if task_id in set(selected_task_ids)]
     coordinate_timeout_seconds = preregistered.get("coordinate_timeout_seconds")
-    if coordinate_timeout_seconds != 600:
-        raise ValueError("Codex agentic manifest must lock a 600-second coordinate budget")
+    if type(coordinate_timeout_seconds) is not int or coordinate_timeout_seconds < 1:
+        raise ValueError("Codex agentic manifest must lock a positive per-cell timeout")
     total_cells = len(ordered_task_ids) * len(AGENTIC_ARMS) * repetitions
-    complete_run_max_wall_clock_seconds = total_cells * coordinate_timeout_seconds
     payload = {
         "manifest_sha256": _manifest_sha256(manifest_path),
         "experiment_revision": manifest.get("experiment_revision"),
@@ -393,7 +394,6 @@ def resolve_agentic_scope(
         "repetitions": repetitions,
         "coordinate_timeout_seconds": coordinate_timeout_seconds,
         "total_cells": total_cells,
-        "complete_run_max_wall_clock_seconds": complete_run_max_wall_clock_seconds,
         "nonpoolable": True,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -412,20 +412,33 @@ def validate_paid_admission(manifest_path: Path, approval_sha256: str) -> dict[s
     admission = manifest.get("admission")
     if not isinstance(scope, Mapping) or not isinstance(model, Mapping) or not isinstance(admission, Mapping):
         raise ValueError("Codex agentic manifest lacks admission, model, or scope")
-    expected_scope = {
-        "arms": list(AGENTIC_ARMS),
-        "task_ids": [f"BA-{number:02d}" for number in range(1, 17)],
-        "repetitions": AGENTIC_DEFAULT_REPETITIONS,
-        "coordinate_timeout_seconds": 600,
-        "complete_run_max_wall_clock_seconds": 28800,
-        "total_cells": 48,
-    }
+    task_ids = scope.get("task_ids")
+    arms = scope.get("arms")
+    repetitions = scope.get("repetitions")
+    coordinate_timeout = scope.get("coordinate_timeout_seconds")
+    expected_cells = (
+        len(task_ids) * len(arms) * repetitions
+        if isinstance(task_ids, list)
+        and task_ids
+        and all(isinstance(task_id, str) for task_id in task_ids)
+        and len(task_ids) == len(set(task_ids))
+        and isinstance(arms, list)
+        and arms == list(AGENTIC_ARMS)
+        and type(repetitions) is int
+        and repetitions > 0
+        and type(coordinate_timeout) is int
+        and coordinate_timeout > 0
+        else None
+    )
     if (
         manifest.get("schema_version") != "codex-agentic-manifest-v1"
         or admission.get("paid_execution") != "admitted"
-        or any(scope.get(key) != value for key, value in expected_scope.items())
-        or model.get("name") != "gpt-5.6-luna"
-        or model.get("reasoning_effort") != "high"
+        or expected_cells is None
+        or scope.get("total_cells") != expected_cells
+        or not isinstance(model.get("name"), str)
+        or not model.get("name")
+        or not isinstance(model.get("reasoning_effort"), str)
+        or not model.get("reasoning_effort")
         or model.get("strict_config") is not True
     ):
         raise ValueError("Codex agentic manifest does not admit the default shared paid scope")
@@ -487,12 +500,16 @@ class AgenticCodexRunner:
         self.agentic_manifest = agentic_manifest
         self.agentic_manifest_path = Path(agentic_manifest_path or _MANIFEST_PATH)
         self.transport = transport
+        model = agentic_manifest.get("model")
+        scope = agentic_manifest.get("preregistered_scope")
+        if not isinstance(model, Mapping) or not isinstance(scope, Mapping):
+            raise ValueError("Codex agentic manifest lacks model or per-cell timeout")
         self.adapter = _structural.CodexRunner(
-            "gpt-5.6-luna",
+            str(model["name"]),
             self.repo_path,
-            reasoning_effort="high",
+            reasoning_effort=str(model["reasoning_effort"]),
             index_path=self.index_path,
-            timeout=600,
+            timeout=float(scope["coordinate_timeout_seconds"]),
             marketplace_root=marketplace_root,
             codemap_bin=codemap_bin,
             manifest_path=adapter_manifest_path,
@@ -561,6 +578,7 @@ class AgenticCodexRunner:
                     arm_archives[arm] = {"codemap-py": home.codemap_plugin_path, "codex-rig": home.codex_rig_path}
                     if home.codemap_context_path is not None:
                         arm_files[arm]["codemap-context.json"] = home.codemap_context_path
+                    self.adapter._record_runtime_success(_NATIVE_HOME_ARM[arm], home)
             snapshot = _write_agentic_input_snapshot(
                 snapshot_root,
                 manifest_path=Path(manifest_path),
@@ -617,7 +635,6 @@ class AgenticCodexRunner:
         *,
         repetition: int,
         oracle: Any | None = None,
-        deadline: float,
         ground_truth: Any | None = None,
     ) -> AgenticRun:
         """Run one agentic coordinate, retrying only empty retryable transport failures."""
@@ -637,7 +654,7 @@ class AgenticCodexRunner:
         try:
             command = self.adapter.build_command(f"{_agentic_envelope(arm, task)}\n\n{task['prompt']}")
             for attempt in range(3):
-                remaining = min(600.0 - (time.monotonic() - started), deadline - time.monotonic())
+                remaining = self.adapter.timeout - (time.monotonic() - started)
                 if remaining <= 0:
                     timeout_stream = json.dumps({"type": "error", "error": "cell timeout", "error_type": "timeout"})
                     result = parse_agentic_stream(
@@ -878,6 +895,46 @@ def _write_checksums(run_dir: Path) -> None:
     (run_dir / "checksums.sha256").write_text(payload, encoding="utf-8")
 
 
+def _runtime_plugin_identities_are_valid(identities: Mapping[str, Any]) -> bool:
+    """Return whether identities exactly describe the two required locked plugins."""
+    if set(identities) != {"codemap-py", "codex-rig"}:
+        return False
+    for identity in identities.values():
+        if not isinstance(identity, Mapping):
+            return False
+        version = identity.get("version")
+        manifest_sha256 = identity.get("manifest_sha256")
+        if (
+            not isinstance(version, str)
+            or not version
+            or not isinstance(manifest_sha256, str)
+            or len(manifest_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in manifest_sha256)
+        ):
+            return False
+    return True
+
+
+def _attest_runtime_isolation(path: Path) -> None:
+    """Require verified, non-secret runtime identity evidence before paid cells run."""
+    try:
+        rows = [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line]
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("runtime isolation evidence is unavailable or malformed") from exc
+    if not any(
+        isinstance(row, Mapping)
+        and row.get("arm") == "C_skill_required"
+        and row.get("status") == "verified"
+        and isinstance(expected := row.get("expected_plugin_identities"), Mapping)
+        and isinstance(observed := row.get("observed_plugin_identities"), Mapping)
+        and expected == observed
+        and _runtime_plugin_identities_are_valid(expected)
+        and _runtime_plugin_identities_are_valid(observed)
+        for row in rows
+    ):
+        raise RuntimeError("runtime isolation evidence lacks a verified C expected/observed identity match")
+
+
 def _progress_line(execution_index: int, total_cells: int, run: AgenticRun) -> str:
     """Render one compact agentic result after its immutable telemetry row is persisted."""
     status = "✓" if run.success else "✗"
@@ -913,6 +970,8 @@ def _initial_metadata(
     invocation_launcher_path: Path,
 ) -> dict[str, Any]:
     """Build compact provenance before the first paid coordinate is scheduled."""
+    manifest = _read_agentic_manifest(manifest_path)
+    model = manifest["model"]
     coordinates = [
         {"task_id": task["id"], "repetition": repetition, "arm": arm}
         for task in tasks
@@ -931,10 +990,10 @@ def _initial_metadata(
         "scope": dict(scope),
         "invocation_launcher": {"path": str(invocation_launcher_path.resolve())},
         "execution": {
-            "model": "gpt-5.6-luna",
-            "reasoning_effort": "high",
-            "cell_wall_clock_seconds": 600,
-            "max_wall_clock_seconds": scope["complete_run_max_wall_clock_seconds"],
+            "model": model["name"],
+            "reasoning_effort": model["reasoning_effort"],
+            "codex_cli_observed_version": os.environ.get("CODEX_CLI_OBSERVED_VERSION"),
+            "cell_wall_clock_seconds": scope["coordinate_timeout_seconds"],
             "coordinates": coordinates,
             "pooling_eligible": False,
         },
@@ -947,16 +1006,25 @@ def _initial_metadata(
 
 
 def _admit_run_directory(run_dir: Path, invocation_launcher_path: Path, launcher_hash: str) -> None:
-    """Allow only run-all's verified launcher snapshot before a paid run starts."""
+    """Allow only run-all's verified launcher and frozen source before a paid run starts."""
     expected_launcher = run_dir / ".launcher" / "run-all.sh"
+    source_root = expected_launcher.parent / "source"
+    source_manifest = expected_launcher.parent / "source.sha256"
     if invocation_launcher_path.absolute() != expected_launcher.absolute():
         raise FileExistsError(run_dir)
     try:
         entries = {entry.name for entry in run_dir.iterdir()}
         launcher_entries = {entry.name for entry in expected_launcher.parent.iterdir()}
+        source_metadata = source_root.lstat()
+        source_manifest_metadata = source_manifest.lstat()
     except OSError as exc:
         raise FileExistsError(run_dir) from exc
-    if entries != {".launcher"} or launcher_entries != {"run-all.sh"}:
+    if (
+        entries != {".launcher"}
+        or launcher_entries != {"run-all.sh", "source", "source.sha256"}
+        or not stat.S_ISDIR(source_metadata.st_mode)
+        or not stat.S_ISREG(source_manifest_metadata.st_mode)
+    ):
         raise FileExistsError(run_dir)
     _structural._validate_invocation_launcher(expected_launcher, launcher_hash)
 
@@ -973,9 +1041,8 @@ def run_paid(
     codemap_bin: Path | None = None,
     invocation_launcher_path: Path | None = None,
     task_ids: Sequence[str] | None = None,
-    repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
+    repetitions: int | None = None,
     scope_sha256: str | None = None,
-    max_wall_clock_seconds: float | None = None,
     runner_factory: Callable[..., Any] | None = None,
 ) -> Path:
     """Execute one admitted shared-task scope with immutable partial evidence.
@@ -989,7 +1056,9 @@ def run_paid(
     if invocation_launcher_path is None:
         raise ValueError("paid Codex agentic execution requires the invocation launcher path")
     scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
-    is_default_scope = task_ids is None and repetitions == AGENTIC_DEFAULT_REPETITIONS
+    repetitions = int(scope["repetitions"])
+    preregistered = _read_agentic_manifest(manifest_path)["preregistered_scope"]
+    is_default_scope = task_ids is None and repetitions == preregistered["repetitions"]
     if is_default_scope:
         manifest = validate_paid_admission(manifest_path, approval_sha256)
         if scope_sha256 is not None and scope_sha256 != scope["scope_sha256"]:
@@ -998,8 +1067,6 @@ def run_paid(
         manifest = validate_paid_admission(manifest_path, _manifest_sha256(Path(manifest_path)))
         if approval_sha256 != scope["scope_sha256"] or scope_sha256 != scope["scope_sha256"]:
             raise ValueError("nondefault agentic scope requires its exact derived scope SHA-256 approval")
-    if max_wall_clock_seconds is not None and max_wall_clock_seconds != scope["complete_run_max_wall_clock_seconds"]:
-        raise ValueError("agentic complete-run wall-clock limit must equal the resolved scope ceiling")
     repo_path = Path(repo_path).resolve()
     index_path = Path(index_path).resolve()
     _validate_agentic_runtime(manifest, repo_path, index_path)
@@ -1036,7 +1103,6 @@ def run_paid(
         handle.write(_OUTPUT_LEGEND + "\n")
     factory = runner_factory or AgenticCodexRunner
     runner: Any | None = None
-    deadline = time.monotonic() + float(scope["complete_run_max_wall_clock_seconds"])
     try:
         oracles = {task["id"]: build_oracle(task, repo_path) for task in tasks}
         runner = factory(
@@ -1050,20 +1116,23 @@ def run_paid(
             agentic_manifest_path=Path(manifest_path),
         )
         snapshot_builder = getattr(runner, "create_input_snapshot", None)
-        if callable(snapshot_builder):
-            metadata["inputs"] = {
-                "snapshot": snapshot_builder(
-                    run_dir, manifest_path=Path(manifest_path), invocation_launcher_path=invocation_launcher_path
-                )
-            }
-            _structural._write_run_metadata(metadata_path, metadata)
-            _write_checksums(run_dir)
+        if not callable(snapshot_builder):
+            raise RuntimeError("agentic runner must create and attest an immutable runtime snapshot")
+        metadata["inputs"] = {
+            "snapshot": snapshot_builder(
+                run_dir, manifest_path=Path(manifest_path), invocation_launcher_path=invocation_launcher_path
+            )
+        }
+        runtime_evidence = run_dir / "runtime-isolation.jsonl"
+        _attest_runtime_isolation(runtime_evidence)
+        metadata["artifacts"]["runtime_isolation_jsonl"] = str(runtime_evidence.resolve())
+        metadata["artifacts"]["runtime_isolation_sha256"] = hashlib.sha256(runtime_evidence.read_bytes()).hexdigest()
+        _structural._write_run_metadata(metadata_path, metadata)
+        _write_checksums(run_dir)
         for task in tasks:
             for repetition in range(1, repetitions + 1):
                 for arm in AGENTIC_ARMS:
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("agentic complete-run wall-clock limit exhausted before next cell")
-                    run = runner.run(task, arm, repetition=repetition, oracle=oracles[task["id"]], deadline=deadline)
+                    run = runner.run(task, arm, repetition=repetition, oracle=oracles[task["id"]])
                     _validate_agentic_runtime(manifest, repo_path, index_path)
                     _structural._validate_invocation_launcher(invocation_launcher_path, launcher_hash)
                     _append_telemetry(raw_path, run, int(metadata["persisted_cells"]))
@@ -1201,7 +1270,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     tasks_path: Path = _TASKS_PATH,
     manifest_path: Path = _MANIFEST_PATH,
     task_id: str | Sequence[str] | None = None,
-    repetitions: int = AGENTIC_DEFAULT_REPETITIONS,
+    repetitions: int | None = None,
     repo_path: Path | None = None,
     index_path: Path | None = None,
     marketplace_root: Path | None = None,
@@ -1211,7 +1280,6 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     run_dir: Path | None = None,
     paid_approval: str | None = None,
     scope_sha256: str | None = None,
-    max_wall_clock_seconds: float | None = None,
 ) -> None:
     """Run a no-model scope preflight or a separately admitted paid study.
 
@@ -1232,7 +1300,6 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         run_dir: Empty run directory holding only that launcher snapshot (paid execution only).
         paid_approval: Exact SHA-256 of the reviewed admitted agentic manifest.
         scope_sha256: Exact SHA-256 of a nondefault resolved scope.
-        max_wall_clock_seconds: Complete-run ceiling; must equal the resolved scope ceiling.
 
     Raises:
         SystemExit: When the invocation is rejected before any paid coordinate runs.
@@ -1244,13 +1311,14 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     # fire passes CLI strings through regardless of annotation — coerce every typed argument.
     task_ids = _normalize_task_ids(task_id)
     manifest_path = Path(manifest_path)
-    repetitions = int(repetitions)
+    repetitions = None if repetitions is None else int(repetitions)
     paid_approval = None if paid_approval is None else str(paid_approval)
     scope_sha256 = None if scope_sha256 is None else str(scope_sha256)
     try:
         scope = resolve_agentic_scope(manifest_path, task_ids=task_ids, repetitions=repetitions)
     except ValueError as exc:
         _cli_error(str(exc))
+    repetitions = int(scope["repetitions"])
     if scope_sha256 is not None and scope_sha256 != scope["scope_sha256"]:
         _cli_error("--scope-sha256 does not match the resolved agentic scope")
     if resolve_scope:
@@ -1322,7 +1390,6 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         task_ids=task_ids,
         repetitions=repetitions,
         scope_sha256=scope_sha256,
-        max_wall_clock_seconds=None if max_wall_clock_seconds is None else float(max_wall_clock_seconds),
     )
 
 

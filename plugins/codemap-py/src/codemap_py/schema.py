@@ -14,7 +14,7 @@ from enum import Enum
 from typing import TypedDict
 
 # Increment when persisted index data changes query semantics incompatibly.
-SCAN_VERSION: int = 12
+SCAN_VERSION: int = 13
 
 # Per-feature minimum index versions.
 # v4 and v5 were design epochs shipped together in one release (SCAN_VERSION 4–10).

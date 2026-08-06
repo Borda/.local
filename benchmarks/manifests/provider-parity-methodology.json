@@ -25,7 +25,7 @@
       "claude",
       "codex"
     ],
-    "repeat_override": "Each provider adapter admits a nondefault positive repeat only with a deterministic scope hash binding the provider, current manifest, ordered tasks, arms, models, repetitions, total cells, and exact wall-clock ceiling.",
+    "repeat_override": "Each provider adapter admits a nondefault positive repeat only with a deterministic scope hash binding the provider, current manifest, ordered tasks, arms, models, repetitions, total cells, and per-cell timeout.",
     "scoring": "Macro mean across every required answer_contract component for a strict labelled envelope. Exactly one complete bare JSON object may be scored as diagnostic-only and is never pooling-eligible; malformed or ambiguous answers remain semantically unscored. EREC and RREC are raw-text recall diagnostics independent of the answer protocol, and DEFF is their unbounded expected-importer exposure-hit count per command.",
     "task_ids": [
       "BA-01",
@@ -47,7 +47,6 @@
     ]
   },
   "codex_permission_profiles": {
-    "cli_min_version": "0.138.0",
     "command_contract": "canonical Codex cells omit --sandbox because an explicit legacy sandbox mode disables permission profiles",
     "config_mode": "0600",
     "plain": {
@@ -62,15 +61,16 @@
       "write_roots": []
     },
     "preflight": [
-      "reject Codex CLI versions older than 0.138.0",
+      "record the observed Codex CLI identity without version-based admission",
       "reject profile parse or selection failure",
       "prove source-tree write denial",
       "prove copied auth.json read denial without disclosing credential bytes",
       "for A, prove the locked index directory is unreadable",
       "for B/C, prove write access only in the initialized index-local .index-rw coordination root",
-      "for B/C, prove the locked CODEMAP_PYTHON executable reports the required major/minor before model execution",
+      "for B/C, resolve an eligible treatment Python and prove it reports the required major/minor before model execution",
       "for B/C, prove CODEMAP_BIN is a contained regular single-link executable resolved from the installed plugin and record its SHA-256"
     ],
+    "reviewed_cli_version": "0.146.1",
     "shell_environment": {
       "inherit": "none",
       "secret_inheritance": false,
@@ -103,19 +103,16 @@
       ]
     },
     "treatment_runtime": {
-      "environment": {
-        "CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"
-      },
       "required_major_minor": [
         3,
         11
       ],
+      "resolution": "first executable Python reporting the required major/minor from the reviewed runtime path candidates",
       "scope": [
         "B_auto",
         "C_strict"
       ]
-    },
-    "validated_cli_version": "0.145.0"
+    }
   },
   "evaluation_contract": {
     "binary_guardrail": "correct",
@@ -158,7 +155,7 @@
     ],
     "budget": "wall_clock_only",
     "claude_max_turns": "omitted for canonical A/B/C cells; legacy arms retain their existing caps",
-    "codex_max_turns": "unavailable in Codex CLI 0.145.0",
+    "codex_max_turns": "unavailable in the exercised Codex CLI surface; observed CLI identity is recorded as provenance",
     "codex_permission_profiles": "A uses provider-parity-plain and denies the shared locked-index directory; B/C use provider-parity-codemap; both extend :read-only, deny auth.json reads, disable network, and inherit no shell environment; only B/C may write the exact index-local .index-rw root",
     "codex_transport": "run-codex-structural.py and run-codex-agentic.py provider adapters",
     "parity_timeout_seconds": 600,
@@ -225,17 +222,17 @@
   },
   "implementation_contract": {
     "artifact_sha256": {
-      "agentic_contracts": "fc229f2a618682d74990cee0a81b4ba8af085e12b221f908fd0a1bd1f570b0f4",
+      "agentic_contracts": "0f7598ab6afc10969309247656525f1f932c37d081b83e360e7a69b2830c74d1",
       "claude_query_skill": "f3452552ee85f4ece88dd3489ba684f3f6e244be06154314eb4124cb80b13125",
-      "codemap_graph": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
-      "codemap_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
+      "codemap_graph": "9cf3783cd208a843660509a810bffa549ed2376329a4fba9e65fc4ba54b9ea58",
+      "codemap_query": "ed01cc895c79221ffdd274b3210386724e847bd16a7a397a41fe2c2211192901",
       "codex_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
       "provider_parity_contracts": "2aab874d22d87a8fdd3ee47e581d7459f95f2c5785fd96bc8bd6bc6bab4961dd",
-      "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4",
-      "run_claude_agentic": "a14badb79b6f60e9d90c616a24292b844833d9e30df09fff5a2ee2da76cf3491",
+      "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482",
+      "run_claude_agentic": "ef5ca06f4e9996cb04cce399570344e21e494e871ce477e3cf79be45e5926f82",
       "run_claude_structural": "7be75768e3859cb7577dd15f6885f8cf131b774a160dccadeb46244ce69dad45",
-      "run_codex_agentic": "361f8073fcd69909e1b4f793f82004398aec7ff0548d918675fe52c67b7f423d",
-      "run_codex_structural": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c"
+      "run_codex_agentic": "3d91b6553f082b70559cf9acd43844388ae346167cf4fb2a0523237b61296bbc",
+      "run_codex_structural": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -246,15 +243,15 @@
     }
   },
   "index": {
-    "change_reason": "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; production-only centrality is recomputed from production importers without changing the schema.",
+    "change_reason": "Scanner schema 13 preserves static reverse-import edges for relative imports and known from-package submodule imports; production-only centrality remains derived from production importers.",
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
     "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
     "project": "codemap-provider-parity-pl-2.6.5",
-    "raw_sha256": "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb",
+    "raw_sha256": "3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1",
     "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
-    "scan_version": 12,
-    "scanned_at": "2026-08-03T10:58:35.335616+00:00"
+    "scan_version": 13,
+    "scanned_at": "2026-08-06T09:04:54.432797+00:00"
   },
   "oracle_remediation": {
     "codex_runner_added": false,
@@ -365,7 +362,7 @@
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
     "semantic_suite_sha256": {
-      "benchmarks/suites/tasks-agentic.json": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
+      "benchmarks/suites/tasks-agentic.json": "545fb1110494490fb298ea9b25eabd00806734a7d95f0e568e96fc409d039474",
       "benchmarks/suites/tasks-bench.json": "6d05bb66b97961251f34215ab9c4381bf30cc80b19dc821074bd31ba5330dda8",
       "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
@@ -401,9 +398,9 @@
         "BA-16"
       ],
       "path": "benchmarks/suites/tasks-agentic.json",
-      "raw_sha256": "f973a313c9bf7cf1f09e2b51a47b4a4cd77d9e83be385fc5ea075ffa4e54e177",
+      "raw_sha256": "d45c89766655d82f7df5e80e015737db3c2cd0c940b94b8e034758de8d50f44c",
       "root_shape": "object_with_tasks",
-      "semantic_suite_sha256": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
+      "semantic_suite_sha256": "545fb1110494490fb298ea9b25eabd00806734a7d95f0e568e96fc409d039474",
       "task_count": 16,
       "tasks": [
         {
@@ -799,7 +796,7 @@
           "answer_contract": {
             "fields": [
               "production_importers",
-              "test_importer_count",
+              "excluded_test_importer_count",
               "ranking",
               "production_importer_count"
             ],
@@ -810,7 +807,7 @@
               }
             }
           },
-          "canonical_task_sha256": "80b79e21c967d75c1e826d435100ed27a33a446a941467fd48d70579bf274d61",
+          "canonical_task_sha256": "0cad46c3cb2cefcb0cf25517652955e40533d00c0cd3bd70762cc18fe7b46dd7",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -818,7 +815,7 @@
           "id": "BA-12",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "dee2434d3369700bd3a40d55e1b43c81cd11f612af412c68c9531025871c83a2",
+          "prompt_sha256": "9d18826adad1e05deebd30dca39908ac337d43941cc6a24b404099af3ec8a734",
           "providers": [
             "claude",
             "codex"
@@ -948,10 +945,14 @@
             "params": {
               "high_centrality": {
                 "min_rdep_count": 10
+              },
+              "risk_tier": {
+                "critical_min_high_centrality_count": 1,
+                "critical_min_production_importer_count": 10
               }
             }
           },
-          "canonical_task_sha256": "d3757420c71617a2ee53bc1bd4c2bbc0279b09816083194725e310968c7a5271",
+          "canonical_task_sha256": "67c1b58a03a5379db3a4cc3f5faf2fc46114b59a0d5033892523a417d0338234",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -959,7 +960,7 @@
           "id": "BA-16",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "16cae5414ed77b5210e5f132f6f99563867b46c0f072edea840c934b531d2b4f",
+          "prompt_sha256": "6230904db57efb77d4033f3468e2a8a43f8ec9c6a6f04a4a9522c8842e1afbc7",
           "providers": [
             "claude",
             "codex"
@@ -2955,7 +2956,7 @@
     "tag": "2.6.5",
     "tag_ref": "refs/tags/2.6.5",
     "tree": "812e327b141dd04a4ce25fe2f62c8acd111c7a8c",
-    "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
+    "validation_worktree": "runtime-derived temporary worktree",
     "validation_worktree_clean": true
   },
   "validation": {

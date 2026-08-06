@@ -1,6 +1,5 @@
 {
   "codex_permission_profiles": {
-    "cli_min_version": "0.138.0",
     "command_contract": "canonical Codex cells omit --sandbox because an explicit legacy sandbox mode disables permission profiles",
     "config_mode": "0600",
     "plain": {
@@ -15,13 +14,13 @@
       "write_roots": []
     },
     "preflight": [
-      "reject Codex CLI versions older than 0.138.0",
+      "record the observed Codex CLI identity without version-based admission",
       "reject profile parse or selection failure",
       "prove source-tree write denial",
       "prove copied auth.json read denial without disclosing credential bytes",
       "for A, prove the locked index directory is unreadable",
       "for B/C, prove write access only in the initialized index-local .index-rw coordination root",
-      "for B/C, prove the locked CODEMAP_PYTHON executable reports the required major/minor before model execution",
+      "for B/C, resolve an eligible treatment Python and prove it reports the required major/minor before model execution",
       "for B/C, prove CODEMAP_BIN is a contained regular single-link executable resolved from the installed plugin and record its SHA-256"
     ],
     "shell_environment": {
@@ -56,9 +55,7 @@
       ]
     },
     "treatment_runtime": {
-      "environment": {
-        "CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"
-      },
+      "resolution": "first executable Python reporting the required major/minor from the reviewed runtime path candidates",
       "required_major_minor": [
         3,
         11
@@ -68,7 +65,7 @@
         "C_strict"
       ]
     },
-    "validated_cli_version": "0.145.0"
+    "reviewed_cli_version": "0.146.1"
   },
   "evaluation_contract": {
     "binary_guardrail": "correct",
@@ -88,7 +85,7 @@
     ],
     "budget": "wall_clock_only",
     "claude_max_turns": "omitted for canonical A/B/C cells; legacy arms retain their existing caps",
-    "codex_max_turns": "unavailable in Codex CLI 0.145.0",
+    "codex_max_turns": "unavailable in the exercised Codex CLI surface; observed CLI identity is recorded as provenance",
     "codex_permission_profiles": "A uses provider-parity-plain and denies the shared locked-index directory; B/C use provider-parity-codemap; both extend :read-only, deny auth.json reads, disable network, and inherit no shell environment; only B/C may write the exact index-local .index-rw root",
     "codex_transport": "run-codex-structural.py; no Codex agentic adapter is registered for the active manifest",
     "parity_timeout_seconds": 600,
@@ -169,7 +166,7 @@
     "tag": "2.6.5",
     "tag_ref": "refs/tags/2.6.5",
     "tree": "812e327b141dd04a4ce25fe2f62c8acd111c7a8c",
-    "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
+    "validation_worktree": "runtime-derived temporary worktree",
     "validation_worktree_clean": true
   },
   "validation": {

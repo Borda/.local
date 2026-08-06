@@ -2911,7 +2911,7 @@ class TestCoverageScanIntegration:
         assert result.returncode == 0, result.stderr
         index_path = root / ".cache" / "codemap" / f"{root.name}.json"
         index = json.loads(index_path.read_text())
-        assert index["scan_version"] == 12
+        assert index["scan_version"] == 13
         mod = next(m for m in index["modules"] if m["name"] == "mymod")
         foo = next(s for s in mod["symbols"] if s["qualified_name"] == "foo")
         bar = next(s for s in mod["symbols"] if s["qualified_name"] == "bar")

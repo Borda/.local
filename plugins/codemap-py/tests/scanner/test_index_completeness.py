@@ -284,21 +284,17 @@ class TestModuleImportCompleteness:
         reported = set(cquery("rdeps", _CORE_MODULE)["imported_by"])
         assert {"mypkg.plain_import", "mypkg.aliased"} <= reported
 
-    def test_missed_importers_are_relative_or_submodule_forms(self, cquery):
-        """Any true importer the index omits uses a relative / from-submodule import."""
+    def test_relative_and_submodule_importers_match_the_ast_oracle(self, cquery):
+        """Relative and parent-package submodule importers are retained."""
         reported = set(cquery("rdeps", _CORE_MODULE)["imported_by"])
         true_importers, _ = _oracle_edges()
-        missed = true_importers - reported
-        # The fixture's uncovered importers are exactly the relative-import and
-        # ``from pkg import submodule`` shapes; guard against a regression that
-        # would drop a plain/aliased importer into this set.
-        assert missed == {"mypkg", "mypkg.from_import", "mypkg.rel_dot", "mypkg.sub.deep"}
+        assert reported == true_importers
 
-    def test_import_gap_is_disclosed_in_not_covered(self, cquery):
-        """The omitted relative / submodule importers are documented, not silent."""
+    def test_resolved_import_forms_are_not_reported_as_coverage_gaps(self, cquery):
+        """The coverage block does not claim known static forms are omitted."""
         not_covered = cquery("rdeps", _CORE_MODULE)["index"]["not_covered"]
-        assert "relative-import" in not_covered
-        assert "from-import-submodule" in not_covered
+        assert "relative-import" not in not_covered
+        assert "from-import-submodule" not in not_covered
 
 
 # --------------------------------------------------------------------------- #
@@ -327,16 +323,16 @@ class TestFunctionCallCompleteness:
         }
         assert expected <= reported
 
-    def test_missed_caller_is_the_module_less_relative_import(self, cquery):
-        """The only omitted caller reaches ``run`` through ``from . import core``."""
+    def test_relative_callers_match_the_ast_oracle(self, cquery):
+        """Module-less relative imports resolve call aliases before query time."""
         reported = {c["caller"] for c in cquery("fn-rdeps", "mypkg.core::run")["called_by"]}
         _, true_callers = _oracle_edges()
-        assert true_callers - reported == {"mypkg.rel_dot::go4"}
+        assert reported == true_callers
 
-    def test_call_gap_is_disclosed_in_not_covered(self, cquery):
-        """The omitted relative-import caller is documented in ``not_covered``."""
+    def test_relative_calls_are_not_reported_as_coverage_gaps(self, cquery):
+        """The coverage block does not claim resolved relative calls are omitted."""
         not_covered = cquery("fn-rdeps", "mypkg.core::run")["index"]["not_covered"]
-        assert "relative-import" in not_covered
+        assert "relative-import" not in not_covered
 
     def test_unique_caller_count_is_deduped_caller_total(self, cquery):
         """``unique_caller_count`` mirrors the deduped caller list and ``count``."""

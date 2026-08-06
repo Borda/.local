@@ -252,6 +252,12 @@ repos:
         # and missed the other 16 plugin hooks; this glob picks up new hooks automatically.
         files: ^plugins/[^/]+/hooks/.*\.(js|py)$|^\.claude/hooks/.*\.(js|py)$|^\.codex/hooks/.*\.(js|py)$
 
+      - id: check-benchmark-portable-paths
+        name: 🧳 No hardcoded machine paths in benchmark source
+        language: system
+        entry: python3 benchmarks/check-portable-paths.py
+        files: ^benchmarks/(?!manifests/|results/|tests/).*\.(md|py|sh)$|^benchmarks/manifests/provider-parity-methodology-policy\.json$
+
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1 # run `pre-commit autoupdate --repo https://github.com/jorisroovers/gitlint` to set
     hooks:

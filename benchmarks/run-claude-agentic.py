@@ -344,7 +344,6 @@ def resolve_agentic_scope(
         "repetitions": repetitions,
         "coordinate_timeout_seconds": coordinate_timeout_seconds,
         "total_cells": total_cells,
-        "complete_run_max_wall_clock_seconds": total_cells * coordinate_timeout_seconds,
         "nonpoolable": True,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -900,7 +899,7 @@ def _tool_key_arg(name: str, inp: dict) -> str:
 
     >>> _tool_key_arg("Grep", {"pattern": "import auth", "path": "src/"})
     "'import auth' in src/"
-    >>> _tool_key_arg("mcp__semble__search", {"query": "import checkpoint_connector", "repo": "/tmp/r", "top_k": 20})
+    >>> _tool_key_arg("mcp__semble__search", {"query": "import checkpoint_connector", "repo": "repo", "top_k": 20})
     "query='import checkpoint_connector'"
     >>> _tool_key_arg("mcp__semble__find_related", {"query": "find related", "line": 42})
     "query='find related'"

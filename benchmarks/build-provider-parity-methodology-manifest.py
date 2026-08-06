@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -22,23 +23,24 @@ ROOT = Path(__file__).resolve().parents[1]
 BENCHMARKS = ROOT / "benchmarks"
 OUTPUT_MANIFEST = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 POLICY_SEED = BENCHMARKS / "manifests" / "provider-parity-methodology-policy.json"
-POLICY_SEED_SHA256 = "a2eb3bb2a7a1a36b8afe40e3922c1971e0f044dffe8ef96c06b018f654e2097e"
+POLICY_SEED_SHA256 = "271e1a9f5c52f95dfc11baa2d93cbe2a5960486603e936821ebb306fbb76018b"
 EXPERIMENT_REVISION = "provider-parity-shared-structural-and-agentic-protocol-evidence-methodology-2026-08-05"
 TASKS_BENCH = "benchmarks/suites/tasks-bench.json"
 TASKS_AGENTIC = "benchmarks/suites/tasks-agentic.json"
+CANONICAL_TARGET = (Path(os.sep) / "tmp" / "codemap-provider-parity-pl-2.6.5").resolve()
 INDEX_LOCK = {
     "change_reason": (
-        "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; "
-        "production-only centrality is recomputed from production importers without changing the schema."
+        "Scanner schema 13 preserves static reverse-import edges for relative imports and known from-package "
+        "submodule imports; production-only centrality remains derived from production importers."
     ),
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
-    "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
+    "path": str(CANONICAL_TARGET / ".cache/codemap/codemap-provider-parity-pl-2.6.5.json"),
     "project": "codemap-provider-parity-pl-2.6.5",
-    "raw_sha256": "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb",
-    "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
-    "scan_version": 12,
-    "scanned_at": "2026-08-03T10:58:35.335616+00:00",
+    "raw_sha256": "3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1",
+    "scan_root": str(CANONICAL_TARGET),
+    "scan_version": 13,
+    "scanned_at": "2026-08-06T09:04:54.432797+00:00",
 }
 PRODUCT_ACCEPTANCE_POLICY = {
     "efficiency_path": {
@@ -300,7 +302,7 @@ def _build_manifest() -> dict[str, Any]:
         "providers": ["claude", "codex"],
         "repeat_override": (
             "Each provider adapter admits a nondefault positive repeat only with a deterministic scope hash binding "
-            "the provider, current manifest, ordered tasks, arms, models, repetitions, total cells, and exact wall-clock ceiling."
+            "the provider, current manifest, ordered tasks, arms, models, repetitions, total cells, and per-cell timeout."
         ),
         "scoring": (
             "Macro mean across every required answer_contract component for a strict labelled envelope. Exactly one "

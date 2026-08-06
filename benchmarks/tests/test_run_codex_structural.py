@@ -88,13 +88,13 @@ def test_codex_command_is_ephemeral_json_profile_backed_and_keeps_prompt_exact(
 
 
 def test_codex_stratum_locks_luna_and_high_effort(script_run_codex: Any) -> None:
-    """Future paid cells must not silently add a model or effort stratum."""
-    script_run_codex._validate_codex_stratum("gpt-5.6-luna", "high")
+    """The accepted model/effort pair is consumed from the active manifest."""
+    script_run_codex._validate_codex_stratum("gpt-5.6-luna", "high", MANIFEST_PATH)
 
     with pytest.raises(ValueError, match="gpt-5.6-luna"):
-        script_run_codex._validate_codex_stratum("gpt-5.3-codex", "high")
+        script_run_codex._validate_codex_stratum("gpt-5.3-codex", "high", MANIFEST_PATH)
     with pytest.raises(ValueError, match="reasoning effort"):
-        script_run_codex._validate_codex_stratum("gpt-5.6-luna", "medium")
+        script_run_codex._validate_codex_stratum("gpt-5.6-luna", "medium", MANIFEST_PATH)
 
 
 def test_deterministic_order_uses_only_current_plain_cli_skill_arms(script_run_codex: Any) -> None:
@@ -342,16 +342,16 @@ def test_skill_home_preserves_plugin_registration_when_permissions_are_applied(
     script_run_codex._cleanup_coordination_root(coordination_path)
 
 
-def test_active_manifest_locks_exact_treatment_python_runtime() -> None:
-    """Prevent another paid treatment from discovering or choosing its own Python."""
+def test_active_manifest_requires_a_portable_treatment_python_resolver() -> None:
+    """Treatments must resolve Python 3.11 from reviewed candidate paths, not a host path."""
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     runtime = manifest["codex_permission_profiles"]["treatment_runtime"]
 
     assert manifest["experiment_revision"]
     assert runtime == {
-        "environment": {"CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"},
         "required_major_minor": [3, 11],
         "scope": ["B_direct_required", "C_skill_required"],
+        "resolution": "first executable Python reporting the required major/minor from the reviewed runtime path candidates",
     }
 
 
@@ -612,7 +612,7 @@ def test_permission_profile_resolves_workspace_python_symlink_before_sandbox(
     def reject_after_capture(command: list[str], **_kwargs: Any) -> SimpleNamespace:
         commands.append(command)
         if command == ["codex", "--version"]:
-            return SimpleNamespace(returncode=0, stdout="codex-cli 0.146.0", stderr="")
+            return SimpleNamespace(returncode=0, stdout="codex-cli 0.146.1", stderr="")
         return SimpleNamespace(returncode=2, stdout="", stderr="fixture stop")
 
     monkeypatch.setattr(script_run_codex.sys, "executable", str(workspace_python))
@@ -1815,6 +1815,38 @@ def test_bound_runtime_snapshot_rejects_byte_drift_and_records_observed_identity
     assert evidence["observed_plugin_identities"]["codemap-py"]["version"] == "drifted"
 
 
+def test_verified_runtime_identity_is_recorded_before_home_cleanup(script_run_codex: Any, tmp_path: Path) -> None:
+    """A successful first C admission preserves the exact identities that later cells reuse."""
+    codemap = _write_snapshot_plugin_tree(tmp_path / "plugins", "codemap-py", "0.28.6")
+    codex_rig = _write_snapshot_plugin_tree(tmp_path / "plugins", "codex-rig", "0.4.3")
+    codemap_manifest = codemap / ".codex-plugin" / "plugin.json"
+    codex_rig_manifest = codex_rig / ".codex-plugin" / "plugin.json"
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "artifact_sha256": {
+                    "codemap_candidate_manifest": hashlib.sha256(codemap_manifest.read_bytes()).hexdigest(),
+                    "codex_rig_plugin_manifest": hashlib.sha256(codex_rig_manifest.read_bytes()).hexdigest(),
+                },
+                "codemap_candidate": {"version": "0.28.6"},
+                "codex_rig_candidate": {"version": "0.4.3"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path, manifest_path=manifest_path)
+    runner._runtime_evidence_path = tmp_path / "runtime-isolation.jsonl"
+    home = SimpleNamespace(codemap_plugin_path=codemap, codex_rig_path=codex_rig)
+
+    runner._record_runtime_success("C_skill_required", home)
+
+    evidence = json.loads(runner._runtime_evidence_path.read_text(encoding="utf-8"))
+    assert evidence["status"] == "verified"
+    assert evidence["error"] is None
+    assert evidence["expected_plugin_identities"] == evidence["observed_plugin_identities"]
+
+
 @POSIX_SECURITY
 def test_initial_skill_admission_failure_keeps_identity_evidence_after_cleanup(
     script_run_codex: Any,
@@ -1951,12 +1983,11 @@ def test_arm_home_drops_batch_controls_from_codex_process_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Local approval, auth-source, result, and budget values must not reach Codex."""
+    """Local approval, auth-source, and result values must not reach Codex."""
     control_names = (
         "CODEX_PAID_APPROVAL",
         "CODEX_AUTH_SOURCE",
         "CODEX_RUN_DIR",
-        "CODEX_MAX_WALL_CLOCK_SECONDS",
     )
     for name in control_names:
         monkeypatch.setenv(name, f"private-{name.lower()}")
@@ -2447,6 +2478,8 @@ def test_main_dry_run_never_requires_or_writes_output(
     class FixtureRunner:
         """Supply deterministic no-model arm probes."""
 
+        timeout = 600.0
+
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             pass
 
@@ -2465,15 +2498,17 @@ def test_main_dry_run_never_requires_or_writes_output(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_dry_run_prints_the_proposed_complete_run_limit_without_model_execution(
+def test_dry_run_prints_the_manifest_driven_per_cell_timeout_without_global_deadline(
     script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A reviewable plan exposes the exact proposed total-run authorization boundary."""
+    """A reviewable plan exposes only the retry-inclusive per-cell timeout."""
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     planned: list[str] = []
 
     class FixtureRunner:
         """Supply deterministic no-model probe evidence."""
+
+        timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             pass
@@ -2492,18 +2527,10 @@ def test_dry_run_prints_the_proposed_complete_run_limit_without_model_execution(
         tasks_path=tmp_path / "tasks.json",
         arm="A_plain",
         dry_run=True,
-        max_wall_clock_seconds=86_400.0,
     )
 
-    assert "CONTROL\tcell_wall_clock_seconds=600\tmax_wall_clock_seconds=86400" in planned
-    with pytest.raises(ValueError, match="max-wall-clock-seconds"):
-        script_run_codex.main(
-            repo_path=tmp_path,
-            model=script_run_codex.PARITY_CODEX_MODEL,
-            tasks_path=tmp_path / "tasks.json",
-            dry_run=True,
-            max_wall_clock_seconds=0.0,
-        )
+    assert "CONTROL\tcell_wall_clock_seconds=600" in planned
+    assert all("max_wall_clock_seconds" not in row for row in planned)
 
 
 def test_main_rejects_missing_or_existing_output_before_model_execution(
@@ -2561,7 +2588,6 @@ def test_main_rejects_existing_canonical_telemetry_before_model_execution_or_mut
             tasks_path=tmp_path / "tasks.json",
             output_path=output_path,
             metadata_path=metadata_path,
-            max_wall_clock_seconds=600.0,
         )
 
     assert canonical_path.read_text(encoding="utf-8") == '{"preserve": true}\n'
@@ -2569,111 +2595,11 @@ def test_main_rejects_existing_canonical_telemetry_before_model_execution_or_mut
     assert not metadata_path.exists()
 
 
-def test_main_requires_positive_complete_run_wall_clock_limit_before_output_reservation(
-    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Paid execution cannot begin without a bounded human-reviewable total exposure."""
-    task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
-    output_path = tmp_path / "paid.jsonl"
-
-    for limit in (None, 0.0, -1.0):
-        with pytest.raises(ValueError, match="max-wall-clock-seconds"):
-            script_run_codex.main(
-                repo_path=tmp_path,
-                model=script_run_codex.PARITY_CODEX_MODEL,
-                tasks_path=tmp_path / "tasks.json",
-                output_path=output_path,
-                max_wall_clock_seconds=limit,
-            )
-        assert not output_path.exists()
-
-
-def test_main_stops_at_complete_run_deadline_after_persisting_finished_cells(
+def test_paid_main_uses_manifest_timeout_without_a_global_deadline(
     script_run_codex: Any,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The complete-run deadline stops new cells without erasing durable prior evidence."""
-    tasks = [
-        {"id": "first", "prompt": "one", "type": "demo"},
-        {"id": "second", "prompt": "two", "type": "demo"},
-    ]
-    observed_deadlines: list[float] = []
-
-    class FixtureRunner:
-        """Return a serializable row while recording the enforced absolute deadline."""
-
-        def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
-            self.model = model
-
-        def run(
-            self,
-            task: dict[str, Any],
-            arm: str,
-            *,
-            repetition: int = 1,
-            deadline: float | None = None,
-        ) -> Any:
-            assert deadline is not None
-            observed_deadlines.append(deadline)
-            return script_run_codex.CodexRun(
-                arm=arm,
-                task_id=task["id"],
-                task_type=task["type"],
-                model=self.model,
-                parity_arm=arm,
-                repetition=repetition,
-                success=True,
-                scoreable=True,
-                input_tokens=1,
-                output_tokens=1,
-                compliance=True,
-            )
-
-    monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: tasks)
-    monkeypatch.setattr(script_run_codex, "_read_manifest_revision", lambda *_args: "fixture-revision")
-    monkeypatch.setattr(script_run_codex, "_validate_execution_manifest", lambda _path: None)
-    monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
-    monkeypatch.setattr(script_run_codex, "deterministic_arm_order", lambda *_args, **_kwargs: ("A_plain",))
-    clock = iter([100.0, 100.0, 111.0])
-    monkeypatch.setattr(script_run_codex.time, "monotonic", lambda: next(clock))
-    output_path = tmp_path / "deadline.jsonl"
-
-    with pytest.raises(TimeoutError, match="complete-run wall-clock limit"):
-        script_run_codex.main(
-            repo_path=tmp_path,
-            model=script_run_codex.PARITY_CODEX_MODEL,
-            tasks_path=tmp_path / "tasks.json",
-            output_path=output_path,
-            max_wall_clock_seconds=10.0,
-            arm="A_plain",
-        )
-
-    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
-    assert [(row["task_id"], row["arm"]) for row in rows] == [("first", "A_plain")]
-    assert rows[0]["run_wall_clock_limit_s"] == pytest.approx(10.0)
-    assert observed_deadlines == [pytest.approx(110.0)]
-    metadata = json.loads((tmp_path / "deadline-metadata.json").read_text(encoding="utf-8"))
-    assert metadata["status"] == "failed"
-    assert metadata["persisted_cells"] == 1
-    assert metadata["last_persisted_coordinate"] == {
-        "task_id": "first",
-        "repetition": 1,
-        "arm": "A_plain",
-    }
-    assert metadata["error"]["type"] == "TimeoutError"
-    stdout = capsys.readouterr().out
-    metadata_path = tmp_path / "deadline-metadata.json"
-    assert stdout.count(str(output_path)) == 1
-    assert stdout.count(str(metadata_path)) == 1
-    assert all(
-        str(path) not in line
-        for path in (output_path, metadata_path)
-        for line in stdout.splitlines()
-        if line.startswith("SUMMARY")
-    )
+    """The public runner exposes no process-wide wall-clock control surface."""
+    assert "max_wall_clock_seconds" not in script_run_codex.main.__annotations__
 
 
 def test_main_rejects_unreviewed_implementation_revision_before_reserving_output(
@@ -2682,15 +2608,11 @@ def test_main_rejects_unreviewed_implementation_revision_before_reserving_output
     """Paid execution cannot use a manifest that does not hash the active runner."""
     task = {"id": "fixture", "prompt": "prompt", "type": "demo"}
     manifest_path = tmp_path / "manifest.json"
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    manifest["experiment_revision"] = "prior-fixture-revision"
+    manifest["implementation_contract"]["artifact_sha256"]["run_codex_structural"] = "0" * 64
     manifest_path.write_text(
-        json.dumps(
-            {
-                "experiment_revision": "prior-fixture-revision",
-                "implementation_contract": {
-                    "artifact_sha256": {"run_codex_structural": "0" * 64},
-                },
-            }
-        ),
+        json.dumps(manifest),
         encoding="utf-8",
     )
     monkeypatch.setattr(script_run_codex, "load_tasks_with_provenance", lambda _path, *_args: [task])
@@ -2708,7 +2630,6 @@ def test_main_rejects_unreviewed_implementation_revision_before_reserving_output
             tasks_path=tmp_path / "tasks.json",
             manifest_path=manifest_path,
             output_path=output_path,
-            max_wall_clock_seconds=600.0,
         )
 
     assert not output_path.exists()
@@ -2728,6 +2649,8 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
     class FixtureRunner:
         """Return one minimal serializable result per planned cell."""
 
+        timeout = 600.0
+
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
 
@@ -2737,9 +2660,7 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
             arm: str,
             *,
             repetition: int = 1,
-            deadline: float | None = None,
         ) -> Any:
-            assert deadline is not None
             return script_run_codex.CodexRun(
                 arm=arm,
                 task_id=task["id"],
@@ -2769,7 +2690,6 @@ def test_main_persists_each_completed_cell_in_task_then_arm_order(
         tasks_path=tmp_path / "tasks.json",
         output_path=output_path,
         repetitions=3,
-        max_wall_clock_seconds=600.0,
     )
 
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
@@ -2803,6 +2723,8 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     class FixtureRunner:
         """Return one non-compliant cell followed by one compliant cell."""
 
+        timeout = 600.0
+
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             pass
 
@@ -2832,7 +2754,6 @@ def test_main_records_cell_failures_and_continues_after_smoke(
         tasks_path=tmp_path / "tasks.json",
         output_path=output_path,
         arm="B_direct_required",
-        max_wall_clock_seconds=600,
     )
 
     assert len(output_path.read_text(encoding="utf-8").splitlines()) == 2
@@ -2874,6 +2795,8 @@ def test_main_stops_after_three_equivalent_unknown_infrastructure_failures(
     class FixtureRunner:
         """Return the same provider failure for every coordinate."""
 
+        timeout = 600.0
+
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
 
@@ -2905,7 +2828,6 @@ def test_main_stops_after_three_equivalent_unknown_infrastructure_failures(
             tasks_path=tmp_path / "tasks.json",
             output_path=output_path,
             arm="A_plain",
-            max_wall_clock_seconds=600.0,
         )
 
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
@@ -2936,6 +2858,8 @@ def test_main_stops_immediately_after_a_deterministic_authentication_failure(
 
     class FixtureRunner:
         """Return a recognized authentication failure for every coordinate."""
+
+        timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
@@ -2968,7 +2892,6 @@ def test_main_stops_immediately_after_a_deterministic_authentication_failure(
             tasks_path=tmp_path / "tasks.json",
             output_path=output_path,
             arm="A_plain",
-            max_wall_clock_seconds=600.0,
         )
 
     rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
@@ -2995,6 +2918,8 @@ def test_main_continues_after_semantic_or_model_quality_failures(
 
     class FixtureRunner:
         """Return independent answer-quality failures with provider usage."""
+
+        timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
@@ -3028,7 +2953,6 @@ def test_main_continues_after_semantic_or_model_quality_failures(
         tasks_path=tmp_path / "tasks.json",
         output_path=output_path,
         arm="A_plain",
-        max_wall_clock_seconds=600.0,
     )
 
     assert calls == [(f"task-{index}", "A_plain") for index in range(1, 5)]
@@ -3055,6 +2979,8 @@ def test_main_closes_runner_auth_state_on_all_study_exits(
 
     class FixtureRunner:
         """Expose a close seam without creating an authenticated process."""
+
+        timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
@@ -3092,7 +3018,6 @@ def test_main_closes_runner_auth_state_on_all_study_exits(
                 tasks_path=tmp_path / "tasks.json",
                 output_path=output_path,
                 arm="A_plain",
-                max_wall_clock_seconds=600.0,
             )
     else:
         script_run_codex.main(
@@ -3101,7 +3026,6 @@ def test_main_closes_runner_auth_state_on_all_study_exits(
             tasks_path=tmp_path / "tasks.json",
             output_path=output_path,
             arm="A_plain",
-            max_wall_clock_seconds=600.0,
         )
 
     assert closed == 1
@@ -3125,6 +3049,8 @@ def test_main_closes_runner_when_setup_raises_before_the_first_cell(
 
     class FixtureRunner:
         """Expose the run-lifecycle seams without preparing a real credential."""
+
+        timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             pass
@@ -3161,7 +3087,6 @@ def test_main_closes_runner_when_setup_raises_before_the_first_cell(
             tasks_path=tmp_path / "tasks.json",
             output_path=tmp_path / f"{failure_site}.jsonl",
             arm="A_plain",
-            max_wall_clock_seconds=600.0,
         )
 
     assert closed == 1
@@ -3178,6 +3103,8 @@ def test_main_emits_plans_only_for_dry_runs_and_paths_only_in_artifact_announcem
 
     class FixtureRunner:
         """Provide deterministic probe evidence and one successful paid cell."""
+
+        timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
@@ -3221,7 +3148,6 @@ def test_main_emits_plans_only_for_dry_runs_and_paths_only_in_artifact_announcem
         tasks_path=tmp_path / "tasks.json",
         output_path=output_path,
         arm="A_plain",
-        max_wall_clock_seconds=600.0,
     )
     paid_stdout = capsys.readouterr().out
     assert not any(line.startswith("PLAN") for line in paid_stdout.splitlines())
@@ -3259,6 +3185,8 @@ def test_main_progress_denominator_matches_selected_cells(
     class FixtureRunner:
         """Return a minimal completed result for each selected cell."""
 
+        timeout = 600.0
+
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
 
@@ -3293,7 +3221,6 @@ def test_main_progress_denominator_matches_selected_cells(
         output_path=tmp_path / "selected.jsonl",
         task_ids=["second"],
         arm=arm,
-        max_wall_clock_seconds=600.0,
     )
 
     result_rows = [line for line in capsys.readouterr().out.splitlines() if line.startswith("(")]
@@ -3314,6 +3241,8 @@ def test_main_prints_interrupted_partial_block_with_planned_denominator(
 
     class FixtureRunner:
         """Persist C/B, then interrupt before A can produce a result."""
+
+        timeout = 600.0
 
         def __init__(self, model: str, *_args: Any, **_kwargs: Any) -> None:
             self.model = model
@@ -3349,7 +3278,6 @@ def test_main_prints_interrupted_partial_block_with_planned_denominator(
             model=script_run_codex.PARITY_CODEX_MODEL,
             tasks_path=tmp_path / "tasks.json",
             output_path=tmp_path / "interrupted.jsonl",
-            max_wall_clock_seconds=600.0,
         )
 
     result_rows = [line for line in capsys.readouterr().out.splitlines() if line.startswith("(")]
@@ -3892,6 +3820,8 @@ def test_main_filters_locked_tasks_in_suite_order_and_rejects_invalid_ids(
     class FixtureRunner:
         """Record selected dry-run tasks without model execution."""
 
+        timeout = 600.0
+
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             pass
 
@@ -3959,6 +3889,8 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
 
     class FixtureRunner:
         """Provide no-model probe evidence while the plan is constructed."""
+
+        timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             pass
@@ -4815,7 +4747,7 @@ def test_resolve_task_selection_is_manifest_ordered_and_deduplicated(
     assert scope["repetitions"] == 3
     assert scope["arms"] == list(script_run_codex.CODEX_STRUCTURAL_ARMS)
     assert scope["coordinate_timeout_seconds"] == 600
-    assert scope["complete_run_max_wall_clock_seconds"] == len(expected_ids) * 3 * 3 * 600
+    assert "complete_run_max_wall_clock_seconds" not in scope
     assert scope["scope_sha256"] == script_run_codex._targeted_scope_sha256(scope)
 
 
@@ -4825,11 +4757,11 @@ def test_resolve_task_selection_is_manifest_ordered_and_deduplicated(
         ("", "empty tokens"),
         ("DI,,GR", "empty tokens"),
         ("ZZ", "unknown task selector"),
-        ("RI", "excluded"),
-        ("RI-01", "excluded"),
+        ("RI", "unknown task selector"),
+        ("RI-01", "unknown task selector"),
     ],
 )
-def test_resolve_task_selection_rejects_empty_unknown_and_excluded_selectors(
+def test_resolve_task_selection_rejects_empty_and_unknown_selectors(
     script_run_codex: Any, selectors: str, error: str
 ) -> None:
     """The public selector surface fails closed before any task loading occurs."""
@@ -4838,20 +4770,18 @@ def test_resolve_task_selection_rejects_empty_unknown_and_excluded_selectors(
 
 
 @pytest.mark.parametrize(
-    ("repetitions", "arm", "ceiling", "scope_sha256", "error"),
+    ("repetitions", "arm", "scope_sha256", "error"),
     [
-        (2, "all", 32_400, "match", "repetition"),
-        (3, "A_plain", 32_400, "match", "arm all"),
-        (3, "all", 32_399, "match", "wall-clock"),
-        (3, "all", 32_400, "0" * 64, "SHA-256"),
-        (3, "all", 32_400, None, "requires --scope-sha256"),
+        (2, "all", "match", "repetition"),
+        (3, "A_plain", "match", "arm all"),
+        (3, "all", "0" * 64, "SHA-256"),
+        (3, "all", None, "requires --scope-sha256"),
     ],
 )
 def test_paid_targeted_scope_rejects_control_or_hash_tampering(
     script_run_codex: Any,
     repetitions: int,
     arm: str,
-    ceiling: int,
     scope_sha256: str | None,
     error: str,
 ) -> None:
@@ -4864,7 +4794,6 @@ def test_paid_targeted_scope_rejects_control_or_hash_tampering(
             scope,
             repetitions=repetitions,
             arm=arm,
-            max_wall_clock_seconds=ceiling,
             scope_sha256=scope_sha256,
             dry_run=False,
         )
@@ -4919,7 +4848,7 @@ def test_targeted_scope_is_persisted_separately_from_confirmatory_metadata(
         reasoning_effort=script_run_codex.PARITY_CODEX_REASONING_EFFORT,
         repetitions=scope["repetitions"],
         task_arms=task_arms,
-        max_wall_clock_seconds=float(scope["complete_run_max_wall_clock_seconds"]),
+        cell_wall_clock_seconds=float(scope["coordinate_timeout_seconds"]),
         auth_provisioned=False,
         study_mode="targeted",
         targeted_scope=scope,
@@ -5203,6 +5132,8 @@ def test_main_dry_run_calls_diff_impact_preflight_and_can_suppress_legend(
 
     class FixtureRunner:
         """Expose only no-model probe seams for main's dry-run contract."""
+
+        timeout = 600.0
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             pass

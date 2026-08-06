@@ -285,7 +285,7 @@ class TestProviderParityTaskIntegration:
         """The public resolver fingerprints every default Claude coordinate.
 
         Prevents a scope token that omits the provider, model cohort, task
-        order, or time ceiling. Those omissions could authorize a different
+        order, or retry-inclusive cell timeout. Those omissions could authorize a different
         paid study than the one a reviewer inspected.
         """
         first = script_run_agentic.resolve_agentic_scope()
@@ -301,7 +301,7 @@ class TestProviderParityTaskIntegration:
         assert first["repetitions"] == 1
         assert first["coordinate_timeout_seconds"] == 600
         assert first["total_cells"] == 144
-        assert first["complete_run_max_wall_clock_seconds"] == 86400
+        assert "complete_run_max_wall_clock_seconds" not in first
         assert first["manifest_sha256"] == hashlib.sha256(PARITY_MANIFEST_PATH.read_bytes()).hexdigest()
         assert first["scope_sha256"] == hashlib.sha256(encoded).hexdigest()
 

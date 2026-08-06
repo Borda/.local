@@ -1,6 +1,6 @@
 # `codex-integration-v1`
 
-**Manifest SHA-256**: `a23cc19c659bc3c5999e098bdc4fe48ab8c84792a843e47cafe612116d8f8558`
+**Manifest SHA-256**: `0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1`
 
 ## Purpose
 
@@ -22,7 +22,7 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 ## Execution controls
 
 - The 600-second coordinate budget is shared by the initial attempt and any eligible zero-token transport retries.
-- Paid execution requires a positive, human-approved `--max-wall-clock-seconds` value recorded in every result row.
+- The manifest's per-cell timeout includes the initial attempt and all eligible zero-token transport retries.
 - Arm order uses deterministic six-permutation counterbalancing by frozen structural task ordinal; across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times.
 - Console and primary efficiency reports use gross provider input tokens only. Cached and fresh input counts are retained as raw telemetry diagnostics.
 - The Codex CLI exposes no supported per-cell provider prompt-cache reset or disable control. Deterministic arm-order counterbalancing mitigates order exposure without claiming cache elimination.
@@ -35,11 +35,11 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 
 ## Locked candidates
 
-- `codemap-py` `0.28.5`.
-  Package manifest SHA-256: `982e634ba30ef8a6fb0612263b94c9f85caa263d1e0e59ca8b3c348192cb48fa`.
-- `codex-rig` `0.4.3`.
-- Codex CLI: `{'available': True, 'path': '<codex-cli>', 'version': 'codex-cli 0.146.0'}`.
-- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `4e579394797c0adde4c26575e4cb2bccc2e4792d8c63b2584e7f8a47465cb5f8`.
+- `codemap-py` `0.28.6`.
+  Package manifest SHA-256: `baabde9b948cb70d2720af620c53164d2c73617fbbe4f58bb38cce977e5df37d`.
+- `codex-rig` `0.4.4`.
+- Codex CLI: `{'available': True, 'path': '<codex-cli>', 'reviewed_version': 'codex-cli 0.146.1'}`.
+- Source manifest: `benchmarks/manifests/provider-parity-methodology.json` SHA-256 `dd805ca3ba8ae732cf95fe0511a1316c8f9ca4294bee722e0633b1a9ed313367`.
 
 ## Study scope
 
@@ -48,7 +48,7 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 - Diagnostic tasks: `10`.
 - Repetitions: `1`.
 - Total cells: `165` (`55 tasks × 1 repetition × 3 arms`).
-- Model-cell failures are recorded and do not stop the study after admission; integrity, interruption, and complete-run ceiling failures preserve a partial artifact and stop execution.
+- Model-cell failures are recorded and do not stop the study after admission; integrity and interruption failures preserve a partial artifact and stop execution.
 
 ## Selected-task scope
 
@@ -58,7 +58,6 @@ Codex-only A/B/C experiment over the immutable provider-parity task and scoring 
 - Resolved IDs always follow frozen manifest order, independent of selector order.
 - Omit --tasks for the full confirmatory scope; providing --tasks requires separate targeted approval and cannot authorize or replace the full scope.
 - Selected-task runs use `3` repetitions × `3` arms and `600` seconds per coordinate.
-- The complete-run ceiling is derived at runtime as `resolved tasks × repetitions × arms × coordinate seconds`.
 - Selected-task runs are explicitly nonpoolable and ineligible for confirmatory or product acceptance.
 - The runtime scope digest covers the active manifest SHA-256, resolved ordered IDs, and execution controls; it is derived at runtime and is not stored in this manifest.
 
@@ -81,8 +80,6 @@ python3 benchmarks/run-codex-structural.py --manifest-path benchmarks/manifests/
 ```bash
 CODEX_PAID_APPROVAL=<resolved-scope-sha256> \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
-    CODEX_RUN_DIR="benchmarks/results/codex-integration-selected-$(date -u +%Y%m%dT%H%M%SZ)" \
-    CODEX_MAX_WALL_CLOCK_SECONDS=<derived-ceiling> \
     bash benchmarks/run-all.sh codex --struct --tasks=DI,GR
 ```
 
@@ -97,14 +94,12 @@ bash benchmarks/run-all.sh codex --struct --dry-run
 After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:
 
 ```bash
-CODEX_PAID_APPROVAL=a23cc19c659bc3c5999e098bdc4fe48ab8c84792a843e47cafe612116d8f8558 \
+CODEX_PAID_APPROVAL=0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1 \
     CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \
-    CODEX_RUN_DIR="benchmarks/results/codex-integration-$(date -u +%Y%m%dT%H%M%SZ)" \
-    CODEX_MAX_WALL_CLOCK_SECONDS=86400 \
     bash benchmarks/run-all.sh codex --struct
 ```
 
-Setting `CODEX_PAID_APPROVAL` to this exact machine-manifest SHA-256 in the launch command is the human authorization and stale-manifest lock; no separate chat authorization is required. The run directory must not already exist. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless the user deliberately exports them for review.
+Setting `CODEX_PAID_APPROVAL` to this exact machine-manifest SHA-256 in the launch command is the human authorization and stale-manifest lock; no separate chat authorization is required. The launcher creates a fresh run directory unless `CODEX_RUN_DIR` selects another new path. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless the user deliberately exports them for review.
 
 ## Status
 

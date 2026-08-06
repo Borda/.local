@@ -364,7 +364,6 @@ def _admitted_manifest(agentic: Any, tmp_path: Path) -> tuple[Path, str]:
     """Copy the checked-in agentic lock and admit it for mocked paid-path tests."""
     manifest = json.loads(agentic._MANIFEST_PATH.read_text(encoding="utf-8"))
     manifest["admission"]["paid_execution"] = "admitted"
-    manifest["preregistered_scope"]["complete_run_max_wall_clock_seconds"] = 28800
     manifest["artifact_sha256"]["codex_agentic_runner"] = hashlib.sha256(
         Path(agentic.__file__).read_bytes()
     ).hexdigest()
@@ -398,6 +397,40 @@ class _FixtureRunner:
 
     def close(self) -> None:
         """Match the production runner cleanup protocol."""
+
+    def create_input_snapshot(self, run_dir: Path, **_kwargs: Any) -> dict[str, Any]:
+        """Create the minimal immutable inputs and verified runtime evidence used by paid-path tests."""
+        snapshot_root = run_dir / "inputs"
+        snapshot_root.mkdir(mode=0o700)
+        snapshot_path = snapshot_root / "input-snapshot.json"
+        serialized = b'{"schema_version":"fixture-agentic-input-snapshot-v1"}\n'
+        snapshot_path.write_bytes(serialized)
+        identity = {
+            "codemap-py": {"version": "fixture", "manifest_sha256": "a" * 64},
+            "codex-rig": {"version": "fixture", "manifest_sha256": "b" * 64},
+        }
+        evidence_path = run_dir / "runtime-isolation.jsonl"
+        evidence_path.write_text(
+            json.dumps(
+                {
+                    "arm": "C_skill_required",
+                    "status": "verified",
+                    "error": None,
+                    "expected_plugin_identities": identity,
+                    "observed_plugin_identities": identity,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "schema_version": "fixture-agentic-input-snapshot-v1",
+            "files": [],
+            "path": str(snapshot_path.resolve()),
+            "sha256": hashlib.sha256(serialized).hexdigest(),
+            "bytes": len(serialized),
+        }
 
     def run(self, task: Any, arm: str, *, repetition: int, **_kwargs: Any) -> Any:
         """Return a completed scored row or inject a deterministic interruption."""
@@ -457,10 +490,12 @@ def _prepare_paid_fixture(
 
 
 def _lock_run_launcher(manifest_path: Path, run_dir: Path) -> tuple[str, Path]:
-    """Create run-all's sole permitted pre-dispatch artifact and lock its bytes."""
+    """Create run-all's launcher plus immutable source-snapshot admission entries."""
     launcher_path = run_dir / ".launcher" / "run-all.sh"
     launcher_path.parent.mkdir(parents=True)
     launcher_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    (launcher_path.parent / "source").mkdir()
+    (launcher_path.parent / "source.sha256").write_text("fixture  run-all.sh\n", encoding="utf-8")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["artifact_sha256"]["run_all"] = hashlib.sha256(launcher_path.read_bytes()).hexdigest()
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
@@ -596,7 +631,9 @@ def test_paid_run_rejects_changed_or_unlocked_launcher(
     ("kind", "artifact_name", "accepted"),
     [
         pytest.param("new", None, False, id="new-directory-without-launcher"),
-        pytest.param("launcher", None, True, id="run-all-launcher-only-directory"),
+        pytest.param("snapshot", None, True, id="run-all-launcher-and-source-snapshot-directory"),
+        pytest.param("launcher", None, False, id="launcher-without-source-snapshot"),
+        pytest.param("source-manifest-directory", None, False, id="source-manifest-must-be-a-regular-file"),
         pytest.param("artifact", "telemetry.jsonl", False, id="reused-telemetry-artifact-directory"),
         pytest.param("artifact", ".agentic-console.log", False, id="reused-agentic-console-artifact-directory"),
     ],
@@ -604,16 +641,23 @@ def test_paid_run_rejects_changed_or_unlocked_launcher(
 def test_run_directory_admission_allows_only_locked_launcher_snapshot(
     agentic: Any, tmp_path: Path, kind: str, artifact_name: str | None, accepted: bool
 ) -> None:
-    """Run-all may pre-create only its locked launcher snapshot; all other reuse is rejected."""
+    """Run-all may pre-create only its locked launcher and source snapshot; all reuse is rejected."""
     run_dir = tmp_path / kind
     launcher = tmp_path / "launcher.sh"
     launcher.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     launcher_hash = hashlib.sha256(launcher.read_bytes()).hexdigest()
-    if kind == "launcher":
+    if kind in {"launcher", "snapshot", "source-manifest-directory"}:
         launcher = run_dir / ".launcher" / "run-all.sh"
         launcher.parent.mkdir(parents=True)
         launcher.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
         launcher_hash = hashlib.sha256(launcher.read_bytes()).hexdigest()
+        if kind in {"snapshot", "source-manifest-directory"}:
+            (launcher.parent / "source").mkdir()
+            source_manifest = launcher.parent / "source.sha256"
+            if kind == "source-manifest-directory":
+                source_manifest.mkdir()
+            else:
+                source_manifest.write_text("fixture  run-all.sh\n", encoding="utf-8")
     elif kind == "artifact":
         run_dir.mkdir()
         assert artifact_name is not None
@@ -775,6 +819,9 @@ def test_agentic_snapshot_attempts_every_cleanup_after_auth_refresh_failure(
         def _bind_runtime_snapshot(self, *_args: Any, **_kwargs: Any) -> None:
             """Accept binding after the synthetic archive write."""
 
+        def _record_runtime_success(self, *_args: Any, **_kwargs: Any) -> None:
+            """Accept verified identity recording at the adapter seam."""
+
         def _prepare_verified_home(self, native_arm: str) -> Home:
             return Home(native_arm)
 
@@ -847,6 +894,9 @@ def test_agentic_snapshot_cleans_a_shared_treatment_coordination_root_once(
             """Capture the runtime paths that agentic cells must reuse."""
             self.bound_sources = (root, sources)
 
+        def _record_runtime_success(self, *_args: Any, **_kwargs: Any) -> None:
+            """Accept verified identity recording at the adapter seam."""
+
         def _prepare_verified_home(self, native_arm: str) -> Home:
             return Home(native_arm)
 
@@ -916,6 +966,8 @@ def test_native_runner_refreshes_auth_and_fails_postflight_contamination(
     class Adapter:
         """Native transport seam with a refreshable private auth state."""
 
+        timeout = 600.0
+
         class AuthState:
             """Record whether cleanup transfers refreshed auth out of the disposable home."""
 
@@ -944,7 +996,7 @@ def test_native_runner_refreshes_auth_and_fails_postflight_contamination(
     runner.transport = None
     runner.adapter = Adapter()
     monkeypatch.setattr(agentic, "_validate_agentic_runtime", lambda *_args: None)
-    successful = runner.run(task, "A_plain", repetition=1, oracle=truth, deadline=10**12)
+    successful = runner.run(task, "A_plain", repetition=1, oracle=truth)
     assert successful.success is True
     assert refreshes == [home.path]
 
@@ -952,7 +1004,7 @@ def test_native_runner_refreshes_auth_and_fails_postflight_contamination(
         raise ValueError("locked index bytes changed")
 
     monkeypatch.setattr(agentic, "_validate_agentic_runtime", contaminated)
-    failed = runner.run(task, "A_plain", repetition=1, ground_truth=truth, deadline=10**12)
+    failed = runner.run(task, "A_plain", repetition=1, ground_truth=truth)
     assert failed.success is False
     assert failed.incomplete is True
     assert failed.error_type == "runtime_contamination"

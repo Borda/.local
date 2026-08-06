@@ -458,7 +458,7 @@ def test_codex_canonical_sidecar_keeps_raw_order_and_starts_non_poolable(script_
         reasoning_effort="high",
         repetitions=1,
         task_arms={("SE-01", 1): ("A_plain", "B_direct_required", "C_skill_required")},
-        max_wall_clock_seconds=600,
+        cell_wall_clock_seconds=600,
         auth_provisioned=False,
     )
 

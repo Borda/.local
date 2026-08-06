@@ -318,8 +318,10 @@ class TestArmContracts:
         assert profiles["shell_environment"]["inherit"] == "none"
         assert profiles["shell_environment"]["secret_inheritance"] is False
         assert profiles["treatment_runtime"] == {
-            "environment": {"CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"},
             "required_major_minor": [3, 11],
+            "resolution": (
+                "first executable Python reporting the required major/minor from the reviewed runtime path candidates"
+            ),
             "scope": ["B_auto", "C_strict"],
         }
         assert manifest["execution_controls"]["codex_transport"] == (
@@ -1113,6 +1115,38 @@ class TestAgenticAnswerContracts:
 
         assert "may approximate" not in prompt
         assert "exact total number of unique modules affected" in prompt
+
+    def test_risk_tier_is_derived_from_locked_counts_not_audited_metadata(self, tmp_path: Path) -> None:
+        """BA-16 risk must follow its declared thresholds even when stale metadata disagrees."""
+        for relative, source in {
+            "pkg/target.py": "",
+            "pkg/alpha.py": "import pkg.target\n",
+            "pkg/beta.py": "import pkg.target\n",
+            "pkg/consumer.py": "import pkg.alpha\n",
+        }.items():
+            path = tmp_path / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        task = {
+            "id": "BA-16-synthetic",
+            "primary_module": "pkg.target",
+            "audited_risk_tier": "low",
+            "answer_contract": {
+                "fields": ["production_importers", "high_centrality", "risk_tier"],
+                "params": {
+                    "high_centrality": {"min_rdep_count": 1},
+                    "risk_tier": {
+                        "critical_min_production_importer_count": 2,
+                        "critical_min_high_centrality_count": 1,
+                    },
+                },
+            },
+        }
+
+        oracle = agentic_contracts.build_oracle(task, tmp_path)
+
+        assert oracle.expected["high_centrality"] == {"pkg.alpha": 1}
+        assert oracle.expected["risk_tier"] == "critical"
 
     def test_ba03_declares_the_prefix_bucket_taxonomy_used_by_its_oracle(self, tmp_path: Path) -> None:
         """Trainer-core excludes core and loop modules; callbacks remain a separate prefix bucket."""

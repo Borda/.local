@@ -20,35 +20,34 @@
     }
   },
   "artifact_sha256": {
-    "codemap_candidate_manifest": "3ed5b171e3028582a76c2744675bed79ac9b1b0468e72dab32640a14a46aeb47",
+    "codemap_candidate_manifest": "cd2d304383ca762a485290fb86588629201ed860042393e1bd00a153e1d6f44b",
     "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
     "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
     "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-    "codemap_runtime_graph": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
+    "codemap_runtime_graph": "9cf3783cd208a843660509a810bffa549ed2376329a4fba9e65fc4ba54b9ea58",
     "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-    "codemap_runtime_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
+    "codemap_runtime_query": "ed01cc895c79221ffdd274b3210386724e847bd16a7a397a41fe2c2211192901",
     "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
     "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
-    "codex_rig_package_manifest": "f0dbefd5cd4f69ec6348f910e90d263ffb71da6c2d69e16a42b629b5e2cbbcf1",
-    "codex_rig_plugin_manifest": "0a49fcb7e4dd59bd0b59e1fed041ead909397681338d7cfa6ef716d707042f8c",
-    "prepare_codex_index": "055f7b842992064d4f6dd431e844fda45b2506638d4096dad3b191d55f6d50ea",
-    "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4",
-    "run_codex_structural": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c"
+    "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+    "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
+    "prepare_codex_index": "8dca952f7eaf81b08f59263154f8d29fdc0b905aed9454c15e43b81641b66d22",
+    "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482",
+    "run_codex_structural": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2"
   },
   "codemap_candidate": {
-    "package_manifest_sha256": "982e634ba30ef8a6fb0612263b94c9f85caa263d1e0e59ca8b3c348192cb48fa",
+    "package_manifest_sha256": "baabde9b948cb70d2720af620c53164d2c73617fbbe4f58bb38cce977e5df37d",
     "plugin_manifest": "plugins/codemap-py/.codex-plugin/plugin.json",
     "query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
-    "version": "0.28.5"
+    "version": "0.28.6"
   },
   "codex_cli": {
     "available": true,
     "path": "<codex-cli>",
-    "version": "codex-cli 0.146.0"
+    "reviewed_version": "codex-cli 0.146.1"
   },
   "codex_permission_profiles": {
-    "cli_min_version": "0.138.0",
     "command_contract": "canonical Codex cells omit --sandbox because an explicit legacy sandbox mode disables permission profiles",
     "config_mode": "0600",
     "host_tooling_isolation": {
@@ -86,7 +85,7 @@
       "write_roots": []
     },
     "preflight": [
-      "reject Codex CLI versions older than 0.138.0",
+      "record the observed Codex CLI identity without version-based admission",
       "reject profile parse or selection failure",
       "prove source-tree write denial",
       "prove copied auth.json read denial without disclosing credential bytes",
@@ -102,6 +101,7 @@
       "for C, preserve and re-verify exactly both enabled plugin registrations after final permission composition",
       "for C, execute the installed Codex Rig adapter through the installed provider launcher and persist one compact-query context"
     ],
+    "reviewed_cli_version": "0.146.1",
     "shell_environment": {
       "inherit": "none",
       "secret_inheritance": false,
@@ -137,24 +137,21 @@
       ]
     },
     "treatment_runtime": {
-      "environment": {
-        "CODEMAP_PYTHON": "/opt/homebrew/bin/python3.11"
-      },
       "required_major_minor": [
         3,
         11
       ],
+      "resolution": "first executable Python reporting the required major/minor from the reviewed runtime path candidates",
       "scope": [
         "B_direct_required",
         "C_skill_required"
       ]
-    },
-    "validated_cli_version": "0.145.0"
+    }
   },
   "codex_rig_candidate": {
     "package_manifest": "plugins/codex-rig/package-manifest.json",
     "plugin_manifest": "plugins/codex-rig/.codex-plugin/plugin.json",
-    "version": "0.4.3"
+    "version": "0.4.4"
   },
   "codex_rig_integration_admission": {
     "adapter": "plugins/codex-rig/shared/codemap_adapter.py",
@@ -173,7 +170,7 @@
     "required_before_paid_execution": "Execute this compact query through B's staged launcher under the treatment permission profile; require exit 0, index.query_complete=true, and unchanged locked-index bytes."
   },
   "direct_cli_runtime": {
-    "aggregate_sha256": "55c042f4b2aa828a2178c23e31c0dece291893d035125dee6d7196576f5115a2",
+    "aggregate_sha256": "7ece0223d159bec5bd823db5b3a2f1107a387cefedd2e59db970b55fe9916899",
     "files": {
       "bin/_exclusions.py": "1aa5857b5012f1a433f7d2001e4eee07d275a951a80b6a87e026183e5bf7622e",
       "bin/codemap-py": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
@@ -181,14 +178,14 @@
       "src/codemap_py/__init__.py": "06a6ab7c0099412092c6bf7a9cc8e1743e2d2abff893b5d88f01efb455f3492f",
       "src/codemap_py/__main__.py": "19ed5044f96af22c034fd9c816dc9398eacced444c7d884782388a9ad98a988c",
       "src/codemap_py/cli.py": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-      "src/codemap_py/graph.py": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
+      "src/codemap_py/graph.py": "9cf3783cd208a843660509a810bffa549ed2376329a4fba9e65fc4ba54b9ea58",
       "src/codemap_py/index_paths.py": "35b533c4d8080639d80dffcff0d1a4694eccd40869c2a719348704b6876faf00",
       "src/codemap_py/integration.py": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "src/codemap_py/query.py": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
+      "src/codemap_py/query.py": "ed01cc895c79221ffdd274b3210386724e847bd16a7a397a41fe2c2211192901",
       "src/codemap_py/runtime_log.py": "2f8030bd31bf36413d851c0d49081913948a566758158b45faaed545dee9b0ac",
       "src/codemap_py/rwgate.py": "161b9f67aa87c30863ac2f2fe210a339af65b35fde3fada14ca2cd32e4f756a0",
-      "src/codemap_py/scanner.py": "ebf5be8e3e9868d6c13ef744d538347fca59b35037d33f6dbdba02bd5047e7a1",
-      "src/codemap_py/schema.py": "584310c543130b51dc4795351ec4d2649d27eacf190a4fc9f7decd0a30e9b24c",
+      "src/codemap_py/scanner.py": "785c5f5823b1b35e830af74711707910ddb5bec64e9d9d2de969ce0210909450",
+      "src/codemap_py/schema.py": "05b4d375d5de580e0ec72642472d08af94a6e66707d1d7490ad84e84dc3e1467",
       "src/codemap_py/telemetry.py": "eb305260c3ed61e4fe12b18815cc32b357da5664317bfc686a9a48ec02491819"
     },
     "staged_root": "<disposable-CODEX_HOME>/direct-cli"
@@ -239,11 +236,9 @@
     "arm_order": "deterministic six-permutation counterbalancing by frozen structural task ordinal; across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times",
     "budget": "wall_clock_only",
     "claude_max_turns": "omitted for canonical A/B/C cells; legacy arms retain their existing caps",
-    "codex_max_turns": "unavailable in Codex CLI 0.145.0",
+    "codex_max_turns": "unavailable in the exercised Codex CLI surface; observed CLI identity is recorded as provenance",
     "codex_permission_profiles": "A uses provider-parity-plain; B uses a locked direct CLI without plugins; C installs locked codemap-py and codex-rig packages and validates their adapter bridge. All profiles extend :read-only, deny auth.json, host-agent-root, and local marketplace-source reads, disable network, and inherit no shell environment. B stages only the locked direct CLI runtime inside its disposable home; C uses the installed package pair.",
     "codex_transport": "run-codex-structural.py with A_plain, B_direct_required, and C_skill_required; no Codex agentic adapter is registered",
-    "complete_run_wall_clock": "paid execution requires a positive human-approved --max-wall-clock-seconds value; the exact value is recorded in every result row",
-    "confirmatory_max_wall_clock_seconds": 86400,
     "coordinate_timeout_scope": "one total 600-second budget shared by the initial attempt and at most two eligible retries",
     "parity_timeout_seconds": 600,
     "provider_native_internal_limits": "retained as provider-native telemetry and limitations, never treated as a shared turn count",
@@ -311,21 +306,21 @@
   },
   "implementation_contract": {
     "artifact_sha256": {
-      "codemap_candidate_manifest": "3ed5b171e3028582a76c2744675bed79ac9b1b0468e72dab32640a14a46aeb47",
+      "codemap_candidate_manifest": "cd2d304383ca762a485290fb86588629201ed860042393e1bd00a153e1d6f44b",
       "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
       "codemap_runtime_cli": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
       "codemap_runtime_entrypoint": "3f6bc331b49a4525d8b9455f89c1d890febedf4d3ed8cfa350428ae727bce2d6",
-      "codemap_runtime_graph": "bec49ff4399af06e041ef2a91597d41687a3c9bf14d8755729efc8f288b377ae",
+      "codemap_runtime_graph": "9cf3783cd208a843660509a810bffa549ed2376329a4fba9e65fc4ba54b9ea58",
       "codemap_runtime_integration": "c53fc784c9f643f8ca6d41079c5c0b11956d5c0458028b431928ba6881eb9285",
-      "codemap_runtime_query": "9c6814c733a97b101cb2a7900f30881353400b69e1fddd92b92e91f082797e91",
+      "codemap_runtime_query": "ed01cc895c79221ffdd274b3210386724e847bd16a7a397a41fe2c2211192901",
       "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
       "codex_rig_integration_host": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28",
-      "codex_rig_package_manifest": "f0dbefd5cd4f69ec6348f910e90d263ffb71da6c2d69e16a42b629b5e2cbbcf1",
-      "codex_rig_plugin_manifest": "0a49fcb7e4dd59bd0b59e1fed041ead909397681338d7cfa6ef716d707042f8c",
-      "prepare_codex_index": "055f7b842992064d4f6dd431e844fda45b2506638d4096dad3b191d55f6d50ea",
-      "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4",
-      "run_codex_structural": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c"
+      "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+      "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
+      "prepare_codex_index": "8dca952f7eaf81b08f59263154f8d29fdc0b905aed9454c15e43b81641b66d22",
+      "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482",
+      "run_codex_structural": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2"
     },
     "benchmark_repository_commit": "68919a4d510ca9682c320f46cfacaf6ba0584378",
     "benchmark_repository_tree": "b7f18a97529f495cd08e3b9da386b0ff75cfc491",
@@ -336,15 +331,15 @@
     }
   },
   "index": {
-    "change_reason": "Scanner schema 12 now preserves regular-package module identities outside a conventional tests/ prefix; production-only centrality is recomputed from production importers without changing the schema.",
+    "change_reason": "Scanner schema 13 preserves static reverse-import edges for relative imports and known from-package submodule imports; production-only centrality remains derived from production importers.",
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
     "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
     "project": "codemap-provider-parity-pl-2.6.5",
-    "raw_sha256": "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb",
+    "raw_sha256": "3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1",
     "scan_root": "/private/tmp/codemap-provider-parity-pl-2.6.5",
-    "scan_version": 12,
-    "scanned_at": "2026-08-03T10:58:35.335616+00:00"
+    "scan_version": 13,
+    "scanned_at": "2026-08-06T09:04:54.432797+00:00"
   },
   "model": {
     "name": "gpt-5.6-luna",
@@ -552,12 +547,12 @@
   "schema_version": "codex-integration-manifest-v2",
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "4e579394797c0adde4c26575e4cb2bccc2e4792d8c63b2584e7f8a47465cb5f8"
+    "sha256": "dd805ca3ba8ae732cf95fe0511a1316c8f9ca4294bee722e0633b1a9ed313367"
   },
   "suite_integrity": {
     "all_tasks_have_id_and_prompt": true,
     "semantic_suite_sha256": {
-      "benchmarks/suites/tasks-agentic.json": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
+      "benchmarks/suites/tasks-agentic.json": "545fb1110494490fb298ea9b25eabd00806734a7d95f0e568e96fc409d039474",
       "benchmarks/suites/tasks-bench.json": "6d05bb66b97961251f34215ab9c4381bf30cc80b19dc821074bd31ba5330dda8",
       "benchmarks/suites/tasks-code.json": "9c54e51ee5f98f6e1a07fa2dd649c73a5a0df57f70954d0be3e4954b8a32f3af",
       "benchmarks/suites/tasks-fix-multi.json": "2db6be6bd7a2d2ac77693bc24595641a1eeab3c5ce219cd3e0ad5a76823784b5",
@@ -593,9 +588,9 @@
         "BA-16"
       ],
       "path": "benchmarks/suites/tasks-agentic.json",
-      "raw_sha256": "f973a313c9bf7cf1f09e2b51a47b4a4cd77d9e83be385fc5ea075ffa4e54e177",
+      "raw_sha256": "d45c89766655d82f7df5e80e015737db3c2cd0c940b94b8e034758de8d50f44c",
       "root_shape": "object_with_tasks",
-      "semantic_suite_sha256": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
+      "semantic_suite_sha256": "545fb1110494490fb298ea9b25eabd00806734a7d95f0e568e96fc409d039474",
       "task_count": 16,
       "tasks": [
         {
@@ -991,7 +986,7 @@
           "answer_contract": {
             "fields": [
               "production_importers",
-              "test_importer_count",
+              "excluded_test_importer_count",
               "ranking",
               "production_importer_count"
             ],
@@ -1002,7 +997,7 @@
               }
             }
           },
-          "canonical_task_sha256": "80b79e21c967d75c1e826d435100ed27a33a446a941467fd48d70579bf274d61",
+          "canonical_task_sha256": "0cad46c3cb2cefcb0cf25517652955e40533d00c0cd3bd70762cc18fe7b46dd7",
           "difficulty": "hard",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -1010,7 +1005,7 @@
           "id": "BA-12",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "dee2434d3369700bd3a40d55e1b43c81cd11f612af412c68c9531025871c83a2",
+          "prompt_sha256": "9d18826adad1e05deebd30dca39908ac337d43941cc6a24b404099af3ec8a734",
           "providers": [
             "claude",
             "codex"
@@ -1140,10 +1135,14 @@
             "params": {
               "high_centrality": {
                 "min_rdep_count": 10
+              },
+              "risk_tier": {
+                "critical_min_high_centrality_count": 1,
+                "critical_min_production_importer_count": 10
               }
             }
           },
-          "canonical_task_sha256": "d3757420c71617a2ee53bc1bd4c2bbc0279b09816083194725e310968c7a5271",
+          "canonical_task_sha256": "67c1b58a03a5379db3a4cc3f5faf2fc46114b59a0d5033892523a417d0338234",
           "difficulty": "extreme",
           "effective_scoreable": true,
           "effective_type": "blast_radius_analysis",
@@ -1151,7 +1150,7 @@
           "id": "BA-16",
           "oracle_class": "independent",
           "profiles": [],
-          "prompt_sha256": "16cae5414ed77b5210e5f132f6f99563867b46c0f072edea840c934b531d2b4f",
+          "prompt_sha256": "6230904db57efb77d4033f3468e2a8a43f8ec9c6a6f04a4a9522c8842e1afbc7",
           "providers": [
             "claude",
             "codex"
@@ -3147,7 +3146,7 @@
     "tag": "2.6.5",
     "tag_ref": "refs/tags/2.6.5",
     "tree": "812e327b141dd04a4ce25fe2f62c8acd111c7a8c",
-    "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
+    "validation_worktree": "runtime-derived temporary worktree",
     "validation_worktree_clean": true
   },
   "task_selection": {
@@ -3225,10 +3224,6 @@
       "B_direct_required",
       "C_skill_required"
     ],
-    "complete_run_max_wall_clock_seconds": {
-      "derived_at_runtime": true,
-      "formula": "resolved_task_count \u00d7 repetitions \u00d7 arm_count \u00d7 coordinate_timeout_seconds"
-    },
     "confirmatory_product_acceptance": "ineligible",
     "coordinate_timeout_seconds": 600,
     "nonpoolable": true,
@@ -3252,8 +3247,7 @@
         "resolved ordered task IDs",
         "repetitions",
         "arms",
-        "coordinate timeout seconds",
-        "derived complete-run wall-clock ceiling"
+        "coordinate timeout seconds"
       ],
       "runtime_derived": true,
       "stored_in_manifest": false

@@ -8,8 +8,8 @@ its complete SHA-256 matches the reviewed manifest.
 
 Usage:
     python3 benchmarks/prepare-codex-index.py \
-        --index-path /private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json \
-        --source-root /private/tmp/codemap-provider-parity-pl-2.6.5 \
+        --index-path <managed-repo>/.cache/codemap/codemap-provider-parity-pl-2.6.5.json \
+        --source-root <managed-repo> \
         --manifest-path benchmarks/manifests/codex-integration.json \
         --methodology-path benchmarks/manifests/provider-parity-methodology.json \
         --schema-path plugins/codemap-py/src/codemap_py/schema.py

@@ -42,21 +42,21 @@
       "runtime-isolation.jsonl (0600 expected/observed plugin identity evidence; may be empty)",
       "checksums.sha256"
     ],
-    "stop_behavior": "Stop on the first runtime or admission-integrity failure or complete-run wall-clock exhaustion; do not stop on an ordinary model, task, or treatment-nonadherence row; preserve every partial artifact and never pool partial or nonpoolable evidence."
+    "stop_behavior": "Stop on the first runtime or admission-integrity failure; do not stop on an ordinary model, task, or treatment-nonadherence row; preserve every partial artifact and never pool partial or nonpoolable evidence."
   },
   "artifact_sha256": {
-    "agentic_contracts": "fc229f2a618682d74990cee0a81b4ba8af085e12b221f908fd0a1bd1f570b0f4",
+    "agentic_contracts": "0f7598ab6afc10969309247656525f1f932c37d081b83e360e7a69b2830c74d1",
     "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
-    "codemap_plugin_manifest": "3ed5b171e3028582a76c2744675bed79ac9b1b0468e72dab32640a14a46aeb47",
+    "codemap_plugin_manifest": "cd2d304383ca762a485290fb86588629201ed860042393e1bd00a153e1d6f44b",
     "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
-    "codex_agentic_runner": "361f8073fcd69909e1b4f793f82004398aec7ff0548d918675fe52c67b7f423d",
+    "codex_agentic_runner": "3d91b6553f082b70559cf9acd43844388ae346167cf4fb2a0523237b61296bbc",
     "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
     "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
-    "codex_rig_package_manifest": "f0dbefd5cd4f69ec6348f910e90d263ffb71da6c2d69e16a42b629b5e2cbbcf1",
-    "codex_rig_plugin_manifest": "0a49fcb7e4dd59bd0b59e1fed041ead909397681338d7cfa6ef716d707042f8c",
-    "codex_structural_manifest": "a23cc19c659bc3c5999e098bdc4fe48ab8c84792a843e47cafe612116d8f8558",
-    "codex_structural_runner": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c",
-    "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4"
+    "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+    "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
+    "codex_structural_manifest": "0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1",
+    "codex_structural_runner": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2",
+    "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482"
   },
   "experiment_id": "codex-agentic",
   "experiment_revision": "codex-agentic-protocol-evidence-separation-2026-08-05",
@@ -64,8 +64,8 @@
     "git_sha": "be98784a1a03581b7051a355ae1084fd352d7cea",
     "module_count": 645,
     "path": "/private/tmp/codemap-provider-parity-pl-2.6.5/.cache/codemap/codemap-provider-parity-pl-2.6.5.json",
-    "raw_sha256": "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb",
-    "scan_version": 12
+    "raw_sha256": "3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1",
+    "scan_version": 13
   },
   "model": {
     "name": "gpt-5.6-luna",
@@ -73,21 +73,21 @@
     "strict_config": true
   },
   "plugin_runtime": {
-    "codemap_version": "0.28.5",
-    "codex_rig_version": "0.4.3",
+    "codemap_version": "0.28.6",
+    "codex_rig_version": "0.4.4",
     "source_hashes": {
-      "agentic_contracts": "fc229f2a618682d74990cee0a81b4ba8af085e12b221f908fd0a1bd1f570b0f4",
+      "agentic_contracts": "0f7598ab6afc10969309247656525f1f932c37d081b83e360e7a69b2830c74d1",
       "codemap_launcher": "318a53c6f0ce655300c0e062884c1acdeb9dc082ef99755b10a30984af0b6bb0",
-      "codemap_plugin_manifest": "3ed5b171e3028582a76c2744675bed79ac9b1b0468e72dab32640a14a46aeb47",
+      "codemap_plugin_manifest": "cd2d304383ca762a485290fb86588629201ed860042393e1bd00a153e1d6f44b",
       "codemap_query_skill": "6d8463086b8ec4b9923ac949ada5e5c39ef775cfe32db8b5ce17f88f84757f2b",
-      "codex_agentic_runner": "361f8073fcd69909e1b4f793f82004398aec7ff0548d918675fe52c67b7f423d",
+      "codex_agentic_runner": "3d91b6553f082b70559cf9acd43844388ae346167cf4fb2a0523237b61296bbc",
       "codex_rig_adapter": "6a5a59f6d171c4ec587f0c924984b099fe6885947824791ede20944ef20302b2",
       "codex_rig_contract": "4c36415ac31d4d19b816dc0f864643832ee6a4b3aa988be83ff99501e1c4d519",
-      "codex_rig_package_manifest": "f0dbefd5cd4f69ec6348f910e90d263ffb71da6c2d69e16a42b629b5e2cbbcf1",
-      "codex_rig_plugin_manifest": "0a49fcb7e4dd59bd0b59e1fed041ead909397681338d7cfa6ef716d707042f8c",
-      "codex_structural_manifest": "a23cc19c659bc3c5999e098bdc4fe48ab8c84792a843e47cafe612116d8f8558",
-      "codex_structural_runner": "f952535f77ea7db8b534c338532a27dfaf7995de5ac0cf56313eee3ec040030c",
-      "run_all": "fbf8c7c62e8dabcc1505586d8be5999e95d4430670bcdc647cd4e7dc478454a4"
+      "codex_rig_package_manifest": "7312944c41ffc4e62c0c53c2184400e45159a3ceda9bbf3713a4f5d5b582449f",
+      "codex_rig_plugin_manifest": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506",
+      "codex_structural_manifest": "0e7a91100f667015367e42b0848ebbc499828c256bb2c298311682a93a4b6cd1",
+      "codex_structural_runner": "31b39daa481efffba3271599941cfe670e3cea9ead7ef73fe88c5a0311a987c2",
+      "run_all": "9b2765a541cec23c19fe4346ad00e85051b5a304b1b7c1f416e2e0c02fd1c482"
     }
   },
   "preregistered_scope": {
@@ -97,7 +97,6 @@
       "B_auto",
       "C_strict"
     ],
-    "complete_run_max_wall_clock_seconds": 28800,
     "coordinate_timeout_seconds": 600,
     "nonpoolable": true,
     "pooling_eligibility": "ineligible; exploratory evidence only",
@@ -143,7 +142,7 @@
       "path": "benchmarks/agentic_contracts.py",
       "response_symbol": "assess_answer_response",
       "semantic_symbol": "score_answer",
-      "sha256": "fc229f2a618682d74990cee0a81b4ba8af085e12b221f908fd0a1bd1f570b0f4"
+      "sha256": "0f7598ab6afc10969309247656525f1f932c37d081b83e360e7a69b2830c74d1"
     },
     "metrics": {
       "DEFF": "unbounded expected-importer exposure hits per command",
@@ -156,13 +155,13 @@
   },
   "source_manifest": {
     "path": "benchmarks/manifests/provider-parity-methodology.json",
-    "sha256": "4e579394797c0adde4c26575e4cb2bccc2e4792d8c63b2584e7f8a47465cb5f8"
+    "sha256": "dd805ca3ba8ae732cf95fe0511a1316c8f9ca4294bee722e0633b1a9ed313367"
   },
   "status": "review_ready_paid_execution_pending_human_launch",
   "suite": {
     "path": "benchmarks/suites/tasks-agentic.json",
-    "raw_sha256": "f973a313c9bf7cf1f09e2b51a47b4a4cd77d9e83be385fc5ea075ffa4e54e177",
-    "semantic_suite_sha256": "99b653009d2c32ac6fa1af2e05878b3d20551e7c3628307e1c416adabfececfc",
+    "raw_sha256": "d45c89766655d82f7df5e80e015737db3c2cd0c940b94b8e034758de8d50f44c",
+    "semantic_suite_sha256": "545fb1110494490fb298ea9b25eabd00806734a7d95f0e568e96fc409d039474",
     "task_count": 16,
     "task_ids": [
       "BA-01",
@@ -192,7 +191,7 @@
     "tag": "2.6.5",
     "tag_ref": "refs/tags/2.6.5",
     "tree": "812e327b141dd04a4ce25fe2f62c8acd111c7a8c",
-    "validation_worktree": "/private/tmp/codemap-provider-parity-pl-2.6.5",
+    "validation_worktree": "runtime-derived temporary worktree",
     "validation_worktree_clean": true
   },
   "tasks": [
@@ -285,12 +284,12 @@
       "prompt_sha256": "805962e3299f750aa5d43f2c62155f4f936c90f81e16e6235bfb473dc453817a"
     },
     {
-      "canonical_task_sha256": "80b79e21c967d75c1e826d435100ed27a33a446a941467fd48d70579bf274d61",
+      "canonical_task_sha256": "0cad46c3cb2cefcb0cf25517652955e40533d00c0cd3bd70762cc18fe7b46dd7",
       "effective_scoreable": true,
       "headline_eligible_v1": false,
       "id": "BA-12",
       "oracle_class": "independent",
-      "prompt_sha256": "dee2434d3369700bd3a40d55e1b43c81cd11f612af412c68c9531025871c83a2"
+      "prompt_sha256": "9d18826adad1e05deebd30dca39908ac337d43941cc6a24b404099af3ec8a734"
     },
     {
       "canonical_task_sha256": "739a667d6e24a4da8bdea76e84bc55e287ac91008075ca3399d4d8ca0b388142",
@@ -317,12 +316,12 @@
       "prompt_sha256": "b1876fe02811f0101d3eedb72df97da303f5c1f0152c0c4a9d6a2b8c021145ff"
     },
     {
-      "canonical_task_sha256": "d3757420c71617a2ee53bc1bd4c2bbc0279b09816083194725e310968c7a5271",
+      "canonical_task_sha256": "67c1b58a03a5379db3a4cc3f5faf2fc46114b59a0d5033892523a417d0338234",
       "effective_scoreable": true,
       "headline_eligible_v1": false,
       "id": "BA-16",
       "oracle_class": "independent",
-      "prompt_sha256": "16cae5414ed77b5210e5f132f6f99563867b46c0f072edea840c934b531d2b4f"
+      "prompt_sha256": "6230904db57efb77d4033f3468e2a8a43f8ec9c6a6f04a4a9522c8842e1afbc7"
     }
   ]
 }

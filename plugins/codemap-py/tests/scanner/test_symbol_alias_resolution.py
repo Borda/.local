@@ -33,6 +33,8 @@ _SOURCES = {
     "pkg/cycle_a.py": "from .cycle_b import cycle_target\n",
     "pkg/cycle_b.py": "from .cycle_a import cycle_target\n",
     "pkg/cycle_consumer.py": ("from .cycle_a import cycle_target\n\n\ndef use_cycle():\n    return cycle_target()\n"),
+    "pkg/relative_consumer.py": "from . import api\nfrom .api import target\n",
+    "pkg/parent_consumer.py": "from pkg import api\n",
 }
 
 _AMBIGUOUS_SOURCES = {
@@ -103,6 +105,18 @@ def test_external_terminal_alias_is_queryable_when_proven_by_import(tmp_path: Pa
 
     assert {entry["caller"] for entry in data["called_by"]} == {"pkg.external_consumer::use_external"}
     assert data["index"]["query_complete"] is True
+
+
+def test_reverse_imports_include_resolved_relative_and_parent_package_submodules(tmp_path: Path) -> None:
+    """Reverse imports retain the parent edge and known submodule edges."""
+    _write_project(tmp_path)
+    index_path = _write_index(tmp_path, scan(tmp_path))
+
+    package = _query(tmp_path, index_path, "rdeps", "pkg")
+    api = _query(tmp_path, index_path, "rdeps", "pkg.api")
+
+    assert set(package["imported_by"]) == {"pkg.consumer", "pkg.parent_consumer", "pkg.relative_consumer"}
+    assert set(api["imported_by"]) == {"pkg", "pkg.parent_consumer", "pkg.relative_consumer"}
 
 
 def test_ambiguous_alias_paths_veto_target_completeness(tmp_path: Path) -> None:
@@ -238,7 +252,32 @@ def test_incremental_alias_index_matches_fresh_full_scan(tmp_path: Path) -> None
     assert incremental["modules"] == full["modules"]
 
 
-def test_incremental_cli_rebuilds_v11_alias_index_to_v12(tmp_path: Path) -> None:
+def test_incremental_submodule_add_and_remove_matches_fresh_scan(tmp_path: Path) -> None:
+    """Unchanged from-import candidates are re-resolved when submodules appear or disappear."""
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "consumer.py").write_text("from pkg import child\n")
+    initial = scan(tmp_path)
+
+    (package / "child.py").write_text("")
+    after_add = incremental_scan(tmp_path, initial)
+    fresh_after_add = scan(tmp_path)
+
+    assert after_add["modules"] == fresh_after_add["modules"]
+    added_consumer = next(module for module in after_add["modules"] if module["name"] == "pkg.consumer")
+    assert added_consumer["direct_imports"] == ["pkg", "pkg.child"]
+
+    (package / "child.py").unlink()
+    after_remove = incremental_scan(tmp_path, after_add)
+    fresh_after_remove = scan(tmp_path)
+
+    assert after_remove["modules"] == fresh_after_remove["modules"]
+    removed_consumer = next(module for module in after_remove["modules"] if module["name"] == "pkg.consumer")
+    assert removed_consumer["direct_imports"] == ["pkg"]
+
+
+def test_incremental_cli_rebuilds_v11_alias_index_to_v13(tmp_path: Path) -> None:
     """The scan-index entrypoint fully rebuilds persisted v11 data before serving aliases."""
     _write_project(tmp_path, ambiguous=True)
     legacy = scan(tmp_path)
@@ -261,8 +300,8 @@ def test_incremental_cli_rebuilds_v11_alias_index_to_v12(tmp_path: Path) -> None
     )
 
     assert result.returncode == 0, result.stderr
-    assert "pre-v12 index found — falling back to full scan" in result.stderr
+    assert "pre-v13 index found — falling back to full scan" in result.stderr
     rebuilt = json.loads(index_path.read_text())
-    assert rebuilt["scan_version"] == SCAN_VERSION == 12
+    assert rebuilt["scan_version"] == SCAN_VERSION == 13
     assert rebuilt["symbol_aliases"]["pkg::target"] == "pkg.impl::target"
     assert rebuilt["symbol_alias_limitations"]

@@ -6,7 +6,6 @@ import hashlib
 import errno
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -32,17 +31,17 @@ AGENTIC_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-agentic.json"
 AGENTIC_MANIFEST_SHA = hashlib.sha256(AGENTIC_MANIFEST.read_bytes()).hexdigest()
 AGENTIC_MANIFEST_DATA = json.loads(AGENTIC_MANIFEST.read_text(encoding="utf-8"))
 AGENTIC_TOTAL_CELLS = AGENTIC_MANIFEST_DATA["preregistered_scope"]["total_cells"]
-AGENTIC_WALL_CLOCK = AGENTIC_MANIFEST_DATA["preregistered_scope"]["complete_run_max_wall_clock_seconds"]
+AGENTIC_CELL_TIMEOUT = AGENTIC_MANIFEST_DATA["preregistered_scope"]["coordinate_timeout_seconds"]
 AGENTIC_SCOPE_SHA = "agentic-default-scope"
 AGENTIC_REPEAT_TWO_SCOPE_SHA = "agentic-repeat-two-scope"
+AGENTIC_SELECTED_SCOPE_SHA = "agentic-selected-scope"
+AGENTIC_SELECTED_TASK_IDS = ("BA-02", "BA-04")
+AGENTIC_SELECTED_TOTAL_CELLS = len(AGENTIC_SELECTED_TASK_IDS) * 3
 METHODOLOGY_MANIFEST = BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
 METHODOLOGY_MANIFEST_DATA = json.loads(METHODOLOGY_MANIFEST.read_text(encoding="utf-8"))
 CLAUDE_AGENTIC_TOTAL_CELLS = METHODOLOGY_MANIFEST_DATA["agentic_execution_contract"]["default_total_cells_by_provider"][
     "claude"
 ]
-CLAUDE_AGENTIC_WALL_CLOCK = (
-    CLAUDE_AGENTIC_TOTAL_CELLS * METHODOLOGY_MANIFEST_DATA["agentic_execution_contract"]["coordinate_timeout_seconds"]
-)
 CLAUDE_AGENTIC_SCOPE_SHA = "claude-agentic-default-scope"
 CLAUDE_AGENTIC_REPEAT_TWO_SCOPE_SHA = "claude-agentic-repeat-two-scope"
 ACTIVE_MANIFEST_DATA = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))
@@ -54,7 +53,6 @@ CONFIRMATORY_TASK_IDS = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))[
 SELECTED_SCOPE_SHA = "selection-scope-di-gr"
 SELECTED_TASK_IDS = ("DI-01", "GR-01")
 SELECTED_REPETITIONS = 2
-SELECTED_WALL_CLOCK = 7200
 
 
 def _assert_safe_paid_preflight(calls: list[str], *, agentic: bool) -> None:
@@ -142,22 +140,24 @@ if [[ "$*" == *"--resolve-tasks"* ]]; then
     printf "invalid task selector\\n" >&2
     exit 2
   fi
-  printf '{{"task_ids":["DI-01","GR-01"],"repetitions":{SELECTED_REPETITIONS},"total_cells":12,"complete_run_max_wall_clock_seconds":{SELECTED_WALL_CLOCK},"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
+  printf '{{"task_ids":["DI-01","GR-01"],"repetitions":{SELECTED_REPETITIONS},"total_cells":12,"arms":["A_plain","B_direct_required","C_skill_required"],"coordinate_timeout_seconds":600,"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
   exit 0
 fi
 if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--resolve-scope"* ]]; then
-  if [[ "$*" == *"--repetitions 2"* ]]; then
-    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":2,"total_cells":96,"complete_run_max_wall_clock_seconds":57600,"scope_sha256":"{AGENTIC_REPEAT_TWO_SCOPE_SHA}"}}\n'
+  if [[ "$*" == *"--task-id BA-02,BA-04"* ]]; then
+    printf '{{"task_ids":["BA-02","BA-04"],"repetitions":1,"total_cells":{AGENTIC_SELECTED_TOTAL_CELLS},"arms":["A_plain","B_auto","C_strict"],"models":["gpt-5.6-luna"],"coordinate_timeout_seconds":600,"scope_sha256":"{AGENTIC_SELECTED_SCOPE_SHA}"}}\n'
+  elif [[ "$*" == *"--repetitions 2"* ]]; then
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":2,"total_cells":96,"arms":["A_plain","B_auto","C_strict"],"models":["gpt-5.6-luna"],"coordinate_timeout_seconds":600,"scope_sha256":"{AGENTIC_REPEAT_TWO_SCOPE_SHA}"}}\n'
   else
-    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{AGENTIC_TOTAL_CELLS},"complete_run_max_wall_clock_seconds":{AGENTIC_WALL_CLOCK},"scope_sha256":"{AGENTIC_SCOPE_SHA}"}}\n'
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{AGENTIC_TOTAL_CELLS},"arms":["A_plain","B_auto","C_strict"],"models":["gpt-5.6-luna"],"coordinate_timeout_seconds":600,"scope_sha256":"{AGENTIC_SCOPE_SHA}"}}\n'
   fi
   exit 0
 fi
 if [[ "$*" == *"run-claude-agentic.py"* && "$*" == *"--resolve-scope"* ]]; then
   if [[ "$*" == *"--repeat 2"* ]]; then
-    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":2,"total_cells":{CLAUDE_AGENTIC_TOTAL_CELLS * 2},"complete_run_max_wall_clock_seconds":{CLAUDE_AGENTIC_WALL_CLOCK * 2},"scope_sha256":"{CLAUDE_AGENTIC_REPEAT_TWO_SCOPE_SHA}"}}\n'
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":2,"total_cells":{CLAUDE_AGENTIC_TOTAL_CELLS * 2},"arms":["A_plain","B_auto","C_strict"],"models":["haiku","sonnet","opus"],"coordinate_timeout_seconds":600,"scope_sha256":"{CLAUDE_AGENTIC_REPEAT_TWO_SCOPE_SHA}"}}\n'
   else
-    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{CLAUDE_AGENTIC_TOTAL_CELLS},"complete_run_max_wall_clock_seconds":{CLAUDE_AGENTIC_WALL_CLOCK},"scope_sha256":"{CLAUDE_AGENTIC_SCOPE_SHA}"}}\n'
+    printf '{{"task_ids":["BA-01","BA-02","BA-03","BA-04","BA-05","BA-06","BA-07","BA-08","BA-09","BA-10","BA-11","BA-12","BA-13","BA-14","BA-15","BA-16"],"repetitions":1,"total_cells":{CLAUDE_AGENTIC_TOTAL_CELLS},"arms":["A_plain","B_auto","C_strict"],"models":["haiku","sonnet","opus"],"coordinate_timeout_seconds":600,"scope_sha256":"{CLAUDE_AGENTIC_SCOPE_SHA}"}}\n'
   fi
   exit 0
 fi
@@ -233,7 +233,13 @@ if [[ "$*" == *"--auth-source"* ]]; then
   fi
 fi""",
     )
-    _write_executable(bin_dir / "codex", 'printf "codex-cli 0.146.0\\n"')
+    _write_executable(
+        bin_dir / "python3.11",
+        """if [[ "$*" == *"version_info"* ]]; then exit 0; fi
+if [[ "$*" == *"realpath"* ]]; then printf "%s\\n" "$0"; exit 0; fi
+printf "Python 3.11.0\\n""",
+    )
+    _write_executable(bin_dir / "codex", 'printf "codex-cli 0.146.1\\n"')
     _write_executable(
         bin_dir / "shasum",
         f"""if [[ "$3" == "$REPO/"* && "$(sed -n '1p' "$3")" == *'"scan_version": {LOCKED_INDEX_SCAN_VERSION}'* && "$(sed -n '1p' "$3")" == *'"modules": []'* ]]; then
@@ -256,7 +262,6 @@ fi""",
         "CODEX_AUTH_SOURCE": str(auth_source),
         "CODEX_RUN_DIR": str(tmp_path / "codex-run"),
         "CODEX_PAID_APPROVAL": ACTIVE_MANIFEST_SHA,
-        "CODEX_MAX_WALL_CLOCK_SECONDS": "86400",
         "CODEMAP_BIN": str(bin_dir / "codemap-py"),
         "REPO": str(repo),
     }
@@ -358,7 +363,6 @@ def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Pat
         "CODEX_PAID_APPROVAL",
         "CODEX_AUTH_SOURCE",
         "CODEX_RUN_DIR",
-        "CODEX_MAX_WALL_CLOCK_SECONDS",
     ):
         env.pop(name)
 
@@ -372,12 +376,87 @@ def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Pat
     full_plan = next(line for line in codex_calls if "--repetitions 1" in line)
     assert full_plan.count("--task-id") == 1
     assert _task_id_values(full_plan) == CONFIRMATORY_TASK_IDS
-    assert "--max-wall-clock-seconds 86400" in full_plan
+    assert "--max-wall-clock-seconds" not in full_plan
     assert all("--auth-source" not in line for line in codex_calls)
     assert all("--output-path" not in line for line in codex_calls)
     assert all("--render-results" not in line for line in codex_calls)
     assert "PLAN " in completed.stdout
     assert "165 cells" in completed.stdout
+
+
+def test_codex_accepts_supported_flags_without_an_argument_count_ceiling(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Supported selectors remain composable as the launcher grows new options."""
+    env, _ = batch_env
+
+    completed = _run_batch(
+        "codex",
+        env,
+        "--agentic",
+        "--tasks=BA-02,BA-04",
+        "--repetitions=2",
+        "--dry-run",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_codex_version_is_observed_without_becoming_an_admission_requirement(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """CLI version is provenance only; direct capability checks protect execution."""
+    env, _ = batch_env
+    codex = Path(env["PATH"].split(":", maxsplit=1)[0]) / "codex"
+    _write_executable(codex, 'printf "codex-cli 0.999.0\\n"')
+
+    accepted = _run_batch("codex", env, "--dry-run")
+
+    assert accepted.returncode == 0, accepted.stderr
+    assert "Codex CLI: codex-cli 0.999.0" in accepted.stdout
+
+    _write_executable(codex, 'printf "codex-cli 0.1.0\\n"')
+    older = _run_batch("codex", env, "--dry-run")
+
+    assert older.returncode == 0, older.stderr
+    assert "Codex CLI: codex-cli 0.1.0" in older.stdout
+
+
+def test_paid_codex_uses_a_fresh_default_run_directory_without_total_timeout(
+    batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
+) -> None:
+    """Paid launch needs approval and auth, while run naming and total duration stay automatic."""
+    env, _ = batch_env
+    results_root = tmp_path / "results"
+    env["CODEX_RESULTS_ROOT"] = str(results_root)
+    env.pop("CODEX_RUN_DIR")
+
+    completed = _run_batch("codex", env, "--struct")
+
+    assert completed.returncode == 0, completed.stderr
+    run_dirs = list(results_root.glob("codex-integration-*"))
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "run-metadata.json").is_file()
+
+
+def test_paid_codex_executes_from_a_run_scoped_source_snapshot(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """Workspace edits after launch cannot change benchmark code, manifests, or plugins."""
+    env, call_log = batch_env
+    expected_launcher = SCRIPT.read_bytes()
+    expected_manifest = ACTIVE_MANIFEST.read_bytes()
+
+    completed = _run_batch("codex", env, "--struct")
+
+    assert completed.returncode == 0, completed.stderr
+    source_root = Path(env["CODEX_RUN_DIR"]) / ".launcher" / "source"
+    assert (source_root / "benchmarks" / "run-all.sh").read_bytes() == expected_launcher
+    assert (source_root / "benchmarks" / "manifests" / "codex-integration.json").read_bytes() == expected_manifest
+    assert (source_root / "plugins" / "codemap-py" / ".codex-plugin" / "plugin.json").is_file()
+    paid_call = next(line for line in call_log.read_text(encoding="utf-8").splitlines() if "--auth-source" in line)
+    assert str(source_root / "benchmarks" / "run-codex-structural.py") in paid_call
 
 
 @pytest.mark.parametrize("provider", ["claude", "codex"])
@@ -432,7 +511,6 @@ def test_codex_agentic_dry_run_dispatches_the_default_shared_scope_once(
         "CODEX_AGENTIC_PAID_APPROVAL",
         "CODEX_AUTH_SOURCE",
         "CODEX_RUN_DIR",
-        "CODEX_MAX_WALL_CLOCK_SECONDS",
     ):
         env.pop(name, None)
 
@@ -568,10 +646,8 @@ def test_claude_agentic_launcher_rejects_invalid_or_duplicate_flags_before_setup
     [
         ("approval", "CODEX_AGENTIC_PAID_APPROVAL"),
         ("auth", "CODEX_AUTH_SOURCE"),
-        ("run-dir", "CODEX_RUN_DIR"),
-        ("wall-clock", "CODEX_MAX_WALL_CLOCK_SECONDS"),
     ],
-    ids=["missing-approval", "missing-auth", "missing-run-dir", "missing-wall-clock"],
+    ids=["missing-approval", "missing-auth"],
 )
 def test_codex_agentic_rejects_missing_paid_inputs_before_setup(
     batch_env: tuple[dict[str, str], Path],
@@ -585,8 +661,6 @@ def test_codex_agentic_rejects_missing_paid_inputs_before_setup(
         {
             "approval": "CODEX_AGENTIC_PAID_APPROVAL",
             "auth": "CODEX_AUTH_SOURCE",
-            "run-dir": "CODEX_RUN_DIR",
-            "wall-clock": "CODEX_MAX_WALL_CLOCK_SECONDS",
         }[missing]
     )
 
@@ -597,8 +671,8 @@ def test_codex_agentic_rejects_missing_paid_inputs_before_setup(
     assert "bash benchmarks/run-all.sh codex --agentic --dry-run" in completed.stderr
     assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
     assert "CODEX_AUTH_SOURCE=" in completed.stderr
-    assert "CODEX_RUN_DIR=" in completed.stderr
-    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={AGENTIC_WALL_CLOCK}" in completed.stderr
+    assert "CODEX_RUN_DIR only to choose another new path" in completed.stderr
+    assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
     assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
     _assert_safe_paid_preflight(call_log.read_text(encoding="utf-8").splitlines(), agentic=True)
 
@@ -609,7 +683,6 @@ def test_codex_agentic_rejects_reused_run_directory_before_setup(
     """Agentic evidence cannot overwrite an earlier paid run directory."""
     env, call_log = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     Path(env["CODEX_RUN_DIR"]).mkdir()
 
     completed = _run_batch("codex", env, "--agentic")
@@ -622,10 +695,9 @@ def test_codex_agentic_rejects_reused_run_directory_before_setup(
     assert f"Then launch the paid {AGENTIC_TOTAL_CELLS}-cell study with one scope-bound command:" in completed.stderr
     assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
-    assert re.search(r'CODEX_RUN_DIR="benchmarks/results/codex-agentic-\d{8}T\d{6}Z"', completed.stderr)
-    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={AGENTIC_WALL_CLOCK}" in completed.stderr
+    assert "set CODEX_RUN_DIR only to choose another new path" in completed.stderr
+    assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
     assert "bash benchmarks/run-all.sh codex --agentic" in completed.stderr
-    assert "CODEX_RUN_DIR must not already exist." in completed.stderr
     assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
     _assert_safe_paid_preflight(call_log.read_text(encoding="utf-8").splitlines(), agentic=True)
 
@@ -636,7 +708,6 @@ def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
     """The paid default scope passes only the admitted manifest-bound controls."""
     env, call_log = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-run"))
 
     completed = _run_batch("codex", env, "--agentic")
@@ -645,17 +716,17 @@ def test_paid_codex_agentic_uses_snapshot_and_exact_runner_contract(
     calls = call_log.read_text(encoding="utf-8").splitlines()
     paid_call = next(line for line in calls if "run-codex-agentic.py" in line and "--auth-source" in line)
     launcher_snapshot = Path(env["CODEX_RUN_DIR"]) / ".launcher" / "run-all.sh"
+    source_root = launcher_snapshot.parent / "source"
     for flag, value in (
         ("--repo-path", env["REPO"]),
         ("--index-path", f"{env['REPO']}/.cache/codemap/target.json"),
-        ("--marketplace-root", str(BENCHMARKS_DIR.parent)),
+        ("--marketplace-root", str(source_root)),
         ("--codemap-bin", env["CODEMAP_BIN"]),
-        ("--manifest-path", str(AGENTIC_MANIFEST)),
+        ("--manifest-path", str(source_root / "benchmarks/manifests/codex-agentic.json")),
         ("--auth-source", env["CODEX_AUTH_SOURCE"]),
         ("--invocation-launcher-path", str(launcher_snapshot)),
         ("--run-dir", env["CODEX_RUN_DIR"]),
         ("--paid-approval", AGENTIC_MANIFEST_SHA),
-        ("--max-wall-clock-seconds", str(AGENTIC_WALL_CLOCK)),
     ):
         assert f"{flag} {value}" in paid_call
     assert "--dry-run" not in paid_call
@@ -680,7 +751,6 @@ def test_paid_codex_agentic_admits_the_run_directory_before_console_capture(
     env, _ = batch_env
     env["ASSERT_AGENTIC_ADMISSION_FRESH"] = "1"
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-admission-run"))
 
     completed = _run_batch("codex", env, "--agentic")
@@ -695,7 +765,6 @@ def test_paid_codex_agentic_failure_preserves_artifacts_and_prints_fresh_command
     """A failed paid runner preserves diagnostics and explains the fresh retry contract."""
     env, _ = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-failed-run"))
     env["FAIL_WHEN_ARGS_CONTAIN"] = "--auth-source"
 
@@ -706,8 +775,8 @@ def test_paid_codex_agentic_failure_preserves_artifacts_and_prints_fresh_command
     assert "any retry requires a fresh CODEX_RUN_DIR" in completed.stderr
     assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
-    assert re.search(r'CODEX_RUN_DIR="benchmarks/results/codex-agentic-\d{8}T\d{6}Z"', completed.stderr)
-    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={AGENTIC_WALL_CLOCK}" in completed.stderr
+    assert "set CODEX_RUN_DIR only to choose another new path" in completed.stderr
+    assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
     assert "bash benchmarks/run-all.sh codex --agentic" in completed.stderr
     assert (Path(env["CODEX_RUN_DIR"]) / "run.log").is_file()
     assert (Path(env["CODEX_RUN_DIR"]) / "checksums.sha256").is_file()
@@ -719,7 +788,6 @@ def test_paid_codex_agentic_tty_output_uses_shared_renderer(
     """Interactive agentic runs show one colored shared legend, not raw plan output."""
     env, _ = batch_env
     env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(AGENTIC_WALL_CLOCK)
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-agentic-tty-run"))
 
     completed = _run_batch_tty("codex", env, "--agentic")
@@ -734,17 +802,29 @@ def test_paid_codex_agentic_tty_output_uses_shared_renderer(
     assert run_log.count("END LEGEND") == 1
 
 
-def test_codex_agentic_rejects_task_selection_before_setup(
+def test_codex_agentic_selected_dry_run_dispatches_resolved_scope(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """The shared 16-task agentic suite cannot become a selected structural run."""
+    """Selected agentic tasks resolve and dispatch without paid credentials."""
     env, call_log = batch_env
+    for name in (
+        "CODEX_AGENTIC_PAID_APPROVAL",
+        "CODEX_AUTH_SOURCE",
+        "CODEX_RUN_DIR",
+    ):
+        env.pop(name, None)
 
-    completed = _run_batch("codex", env, "--agentic", "--tasks=DI")
+    completed = _run_batch("codex", env, "--agentic", "--tasks=BA-02,BA-04", "--dry-run")
 
-    assert completed.returncode == 2
-    assert "cannot be combined with --tasks" in completed.stderr
-    assert not call_log.exists()
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    resolver = next(line for line in calls if "run-codex-agentic.py" in line and "--resolve-scope" in line)
+    dispatched = next(line for line in calls if "run-codex-agentic.py" in line and "--dry-run" in line)
+    assert "--task-id BA-02,BA-04" in resolver
+    assert "--task-id BA-02,BA-04" in dispatched
+    assert f"--scope-sha256 {AGENTIC_SELECTED_SCOPE_SHA}" in dispatched
+    assert "--auth-source" not in dispatched
+    assert f"{AGENTIC_SELECTED_TOTAL_CELLS} cells" in completed.stdout
 
 
 def test_codex_tasks_dry_run_dispatches_resolved_scope(
@@ -756,7 +836,6 @@ def test_codex_tasks_dry_run_dispatches_resolved_scope(
         "CODEX_PAID_APPROVAL",
         "CODEX_AUTH_SOURCE",
         "CODEX_RUN_DIR",
-        "CODEX_MAX_WALL_CLOCK_SECONDS",
     ):
         env.pop(name)
 
@@ -774,7 +853,7 @@ def test_codex_tasks_dry_run_dispatches_resolved_scope(
     assert "--tasks DI,GR" in selected
     assert "--task-id DI-01" not in selected
     assert f"--repetitions {SELECTED_REPETITIONS}" in selected
-    assert f"--max-wall-clock-seconds {SELECTED_WALL_CLOCK}" in selected
+    assert "--max-wall-clock-seconds" not in selected
     assert f"--scope-sha256 {SELECTED_SCOPE_SHA}" in selected
     assert "--auth-source" not in selected
     assert "--output-path" not in selected
@@ -849,13 +928,13 @@ def test_smoke_checks_claude_and_codex_without_paid_codex(
 
 
 @pytest.mark.parametrize(
-    ("mode", "args", "wall_clock"),
+    ("mode", "args"),
     [
-        ("smoke", (), "86400"),
-        ("codex", ("--dry-run",), "86400"),
-        ("codex", (), "86400"),
-        ("codex", ("--tasks=DI,GR", "--dry-run"), str(SELECTED_WALL_CLOCK)),
-        ("codex", ("--tasks=DI,GR",), str(SELECTED_WALL_CLOCK)),
+        ("smoke", ()),
+        ("codex", ("--dry-run",)),
+        ("codex", ()),
+        ("codex", ("--tasks=DI,GR", "--dry-run")),
+        ("codex", ("--tasks=DI,GR",)),
     ],
     ids=["smoke", "codex-dry-run", "codex-paid", "tasks-dry-run", "tasks-paid"],
 )
@@ -863,11 +942,9 @@ def test_top_level_provider_invocation_emits_one_bounded_legend(
     batch_env: tuple[dict[str, str], Path],
     mode: str,
     args: tuple[str, ...],
-    wall_clock: str,
 ) -> None:
     """Launcher suppresses nested runner legends and retains one invocation legend."""
     env, _ = batch_env
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = wall_clock
     if "--tasks=DI,GR" in args:
         env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-selected-run"))
         env["CODEX_PAID_APPROVAL"] = SELECTED_SCOPE_SHA
@@ -1036,11 +1113,9 @@ def test_smoke_accepts_git_worktree_metadata_file(
     [
         ("approval", "CODEX_PAID_APPROVAL"),
         ("auth", "CODEX_AUTH_SOURCE"),
-        ("run-dir", "CODEX_RUN_DIR"),
-        ("wall-clock", "CODEX_MAX_WALL_CLOCK_SECONDS"),
         ("existing-run-dir", "already exists"),
     ],
-    ids=["missing-approval", "missing-auth", "missing-run-dir", "missing-wall-clock", "existing-run-dir"],
+    ids=["missing-approval", "missing-auth", "existing-run-dir"],
 )
 def test_codex_mode_requires_explicit_paid_inputs_before_setup(
     batch_env: tuple[dict[str, str], Path],
@@ -1056,8 +1131,6 @@ def test_codex_mode_requires_explicit_paid_inputs_before_setup(
             {
                 "approval": "CODEX_PAID_APPROVAL",
                 "auth": "CODEX_AUTH_SOURCE",
-                "run-dir": "CODEX_RUN_DIR",
-                "wall-clock": "CODEX_MAX_WALL_CLOCK_SECONDS",
             }[invalid_input]
         )
 
@@ -1083,10 +1156,10 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
     assert "CODEX_AUTH_SOURCE=" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
     assert str(Path.home()) not in completed.stderr
-    assert "CODEX_RUN_DIR=" in completed.stderr
-    assert "CODEX_MAX_WALL_CLOCK_SECONDS=86400" in completed.stderr
+    assert "set CODEX_RUN_DIR only to choose another new path" in completed.stderr
+    assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
     assert "benchmarks/manifests/codex-integration.md" in completed.stderr
-    assert "The command itself records paid authorization" in completed.stderr
+    assert "The command records paid authorization for this exact scope" in completed.stderr
     assert "use an immutable, user-owned 0600 auth source" in completed.stderr
     assert "Do not run a concurrent Codex session with it" in completed.stderr
     assert "independently authenticated benchmark credential" in completed.stderr
@@ -1132,9 +1205,10 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert "--repetitions 1" in paid_call
     assert "--reasoning-effort high" in paid_call
     assert "--arm all" in codex_calls
-    assert f"--manifest-path {ACTIVE_MANIFEST}" in codex_calls
+    frozen_manifest = Path(env["CODEX_RUN_DIR"]) / ".launcher/source/benchmarks/manifests/codex-integration.json"
+    assert f"--manifest-path {frozen_manifest}" in codex_calls
     assert f"--codemap-bin {env['CODEMAP_BIN']}" in codex_calls
-    assert "--max-wall-clock-seconds 86400" in codex_calls
+    assert "--max-wall-clock-seconds" not in codex_calls
     assert "run-claude-" not in codex_calls
     codex_lines = [
         line
@@ -1169,9 +1243,8 @@ def test_provider_modes_dispatch_only_the_selected_provider(
 def test_paid_codex_tasks_runs_only_resolved_scope(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """A paid selected run uses the resolver scope for approval, budget, and cells."""
+    """A paid selected run uses the resolver scope for approval and cells."""
     env, call_log = batch_env
-    env["CODEX_MAX_WALL_CLOCK_SECONDS"] = str(SELECTED_WALL_CLOCK)
     env["CODEX_PAID_APPROVAL"] = SELECTED_SCOPE_SHA
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-selected-run"))
 
@@ -1192,7 +1265,7 @@ def test_paid_codex_tasks_runs_only_resolved_scope(
     assert "--tasks DI,GR" in paid
     assert "--task-id DI-01" not in paid
     assert f"--repetitions {SELECTED_REPETITIONS}" in paid
-    assert f"--max-wall-clock-seconds {SELECTED_WALL_CLOCK}" in paid
+    assert "--max-wall-clock-seconds" not in paid
     assert "--task-id FN-02" not in paid
     diagnostic_smoke = next(line for line in codex_calls if "--task-id FN-02 --arm all --dry-run" in line)
     assert "--no-legend" in diagnostic_smoke

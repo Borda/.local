@@ -114,7 +114,6 @@ path. This invokes the model and creates the JSONL file exclusively:
       --model gpt-5.6-luna \\
       --task-id FN-02 \\
       --arm all \\
-      --max-wall-clock-seconds 1800 \\
       --output-path benchmarks/results/codex-fn02-post-pilot.jsonl
 
 Use ``--arm A_plain``, ``--arm B_direct_required``, or
@@ -127,7 +126,8 @@ on every JSONL row. Pass ``--task-id`` a comma-separated list, for example
 ## Requirements
 
   - Python 3.10+ and the benchmark dependency group
-  - Codex CLI >=0.138.0; the active permission profiles were validated with 0.145.0
+  - an installed Codex CLI that satisfies the exercised command and permission probes;
+    its observed version is provenance, not an admission requirement
   - A clean target at PyTorch Lightning tag ``2.6.5`` and its locked index
   - A direct Codemap launcher for B and the local plugin marketplace root for C
   - For authenticated execution, a user-owned regular ``auth.json`` with mode
@@ -144,8 +144,7 @@ or a broad coordination write surface.
 During execution, timeouts, non-zero Codex exits, malformed/incomplete native
 events, extraction failures, and target/index/coordination mutations remain
 visible in the result. Only zero-token retryable transport failures may retry,
-at most twice, within the original coordinate's 600-second total budget. Paid
-execution also requires an explicit complete-run wall-clock limit. A required arm without a successful compact query is recorded as
+at most twice, within the original cell's timeout. A required arm without a successful compact query is recorded as
 ``compliance=false`` rather than rewritten as an incorrect task answer.
 
 ## Output
@@ -222,7 +221,6 @@ _PROVENANCE_KEY = "_codex_provenance"
 _NATIVE_ITEM_TELEMETRY_CONTRACT_ID = "canonical-skill-file-locked-query-components-v2"
 _PLAIN_PERMISSION_PROFILE = "provider-parity-plain"
 _CODEMAP_PERMISSION_PROFILE = "provider-parity-codemap"
-_MIN_PERMISSION_PROFILE_VERSION = (0, 138, 0)
 _COORDINATION_NAME = ".index-rw"
 _FROZEN_MARKETPLACE_NAME = "borda-ai-rig-frozen"
 _REGISTRY_NAME = "registry.lock"
@@ -718,12 +716,18 @@ def build_codex_command(
     ]
 
 
-def _validate_codex_stratum(model: str, reasoning_effort: str) -> None:
-    """Reject benchmark execution outside the preregistered Luna/high stratum."""
-    if model != PARITY_CODEX_MODEL:
-        raise ValueError(f"Codex provider parity currently permits only {PARITY_CODEX_MODEL}")
-    if reasoning_effort != PARITY_CODEX_REASONING_EFFORT:
-        raise ValueError(f"Codex provider-parity reasoning effort must be {PARITY_CODEX_REASONING_EFFORT}")
+def _validate_codex_stratum(model: str, reasoning_effort: str, manifest_path: Path) -> None:
+    """Reject execution outside the model and effort declared by the active manifest."""
+    try:
+        configured = json.loads(Path(manifest_path).read_text(encoding="utf-8"))["model"]
+        expected_model = configured["name"]
+        expected_effort = configured["reasoning_effort"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("provider-parity model stratum is unavailable or malformed") from exc
+    if model != expected_model:
+        raise ValueError(f"Codex provider parity requires model {expected_model}")
+    if reasoning_effort != expected_effort:
+        raise ValueError(f"Codex provider-parity reasoning effort must be {expected_effort}")
 
 
 def _manifest_revision(manifest: Mapping[str, Any]) -> str:
@@ -744,24 +748,19 @@ def _read_manifest_revision(manifest_path: Path = PARITY_MANIFEST_PATH) -> str:
 
 
 def _task_selection_contract(manifest_path: Path) -> dict[str, Any]:
-    """Read the locked selector contract, deriving the legacy form when needed.
-
-    The generated manifest will carry ``task_selection``.  The derivation keeps
-    older, already-reviewed manifests usable until their next regeneration; it
-    uses only their immutable preregistered execution order and fixed controls.
-    """
+    """Read and validate the active manifest's targeted-selection contract."""
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        preregistered = manifest["preregistered_cells"]
+        contract = manifest["task_selection"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("task selection contract is unavailable or malformed") from exc
-    configured = manifest.get("task_selection")
-    contract = configured if isinstance(configured, Mapping) else {}
-    execution_ids = contract.get("execution_task_ids", preregistered.get("structural_execution_task_ids"))
-    excluded_families = contract.get("excluded_task_families", ["RI"])
-    repetitions = contract.get("targeted_repetitions", 3)
-    arms = contract.get("arms", list(CODEX_STRUCTURAL_ARMS))
-    coordinate_timeout = contract.get("coordinate_timeout_seconds", PARITY_TIMEOUT_SECONDS)
+    if not isinstance(contract, Mapping):
+        raise ValueError("task selection contract is unavailable or malformed")
+    execution_ids = contract.get("allowed_task_ids")
+    allowed_families = contract.get("allowed_families")
+    repetitions = contract.get("repetitions")
+    arms = contract.get("arms")
+    coordinate_timeout = contract.get("coordinate_timeout_seconds")
     if (
         not isinstance(execution_ids, list)
         or not execution_ids
@@ -769,20 +768,23 @@ def _task_selection_contract(manifest_path: Path) -> dict[str, Any]:
             isinstance(task_id, str) and re.fullmatch(r"[A-Z]{2}-[0-9]{2}", task_id) for task_id in execution_ids
         )
         or len(execution_ids) != len(set(execution_ids))
-        or not isinstance(excluded_families, list)
-        or not all(isinstance(family, str) and re.fullmatch(r"[A-Z]{2}", family) for family in excluded_families)
-        or len(excluded_families) != len(set(excluded_families))
+        or not isinstance(allowed_families, list)
+        or not all(isinstance(family, str) and re.fullmatch(r"[A-Z]{2}", family) for family in allowed_families)
+        or len(allowed_families) != len(set(allowed_families))
+        or allowed_families != list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in execution_ids))
         or type(repetitions) is not int
-        or repetitions != 3
-        or arms != list(CODEX_STRUCTURAL_ARMS)
+        or repetitions < 1
+        or not isinstance(arms, list)
+        or len(arms) != len(set(arms))
+        or set(arms) != set(CODEX_STRUCTURAL_ARMS)
         or type(coordinate_timeout) is not int
-        or coordinate_timeout != PARITY_TIMEOUT_SECONDS
+        or coordinate_timeout < 1
     ):
         raise ValueError("task selection contract is unavailable or malformed")
     return {
         "execution_task_ids": execution_ids,
-        "excluded_task_families": excluded_families,
-        "targeted_repetitions": repetitions,
+        "allowed_families": allowed_families,
+        "repetitions": repetitions,
         "arms": arms,
         "coordinate_timeout_seconds": coordinate_timeout,
     }
@@ -814,7 +816,6 @@ def _targeted_scope_sha256(scope: Mapping[str, Any]) -> str:
             "repetitions",
             "arms",
             "coordinate_timeout_seconds",
-            "complete_run_max_wall_clock_seconds",
         )
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -827,13 +828,9 @@ def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str]) 
     contract = _task_selection_contract(manifest_path)
     normalized = _selector_tokens(selectors)
     task_ids = contract["execution_task_ids"]
-    excluded = set(contract["excluded_task_families"])
     selected: set[str] = set()
-    known_families = {task_id.split("-", 1)[0] for task_id in task_ids} | excluded
+    known_families = set(contract["allowed_families"])
     for selector in normalized:
-        family = selector.split("-", 1)[0]
-        if family in excluded:
-            raise ValueError(f"task family {family!r} is excluded from targeted execution")
         if selector in task_ids:
             selected.add(selector)
             continue
@@ -844,7 +841,7 @@ def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str]) 
     resolved_ids = [task_id for task_id in task_ids if task_id in selected]
     if not resolved_ids:
         raise ValueError("task selectors resolved to no executable tasks")
-    repetitions = contract["targeted_repetitions"]
+    repetitions = contract["repetitions"]
     arms = contract["arms"]
     coordinate_timeout = contract["coordinate_timeout_seconds"]
     scope = {
@@ -856,7 +853,6 @@ def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str]) 
         "repetitions": repetitions,
         "arms": arms,
         "coordinate_timeout_seconds": coordinate_timeout,
-        "complete_run_max_wall_clock_seconds": len(resolved_ids) * repetitions * len(arms) * coordinate_timeout,
         "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
     }
     scope["scope_sha256"] = _targeted_scope_sha256(scope)
@@ -868,7 +864,6 @@ def _validate_targeted_scope_request(
     *,
     repetitions: int,
     arm: str,
-    max_wall_clock_seconds: float | None,
     scope_sha256: str | None,
     dry_run: bool,
 ) -> None:
@@ -877,8 +872,6 @@ def _validate_targeted_scope_request(
         raise ValueError("targeted execution requires the scope repetition count")
     if arm != "all":
         raise ValueError("targeted execution requires --arm all")
-    if max_wall_clock_seconds != scope["complete_run_max_wall_clock_seconds"]:
-        raise ValueError("targeted execution requires the derived wall-clock ceiling")
     expected_sha = scope["scope_sha256"]
     if scope_sha256 is not None and scope_sha256 != expected_sha:
         raise ValueError("targeted execution scope SHA-256 does not match the resolved scope")
@@ -1932,7 +1925,6 @@ def prepare_arm_home(
             "CODEX_PAID_APPROVAL",
             "CODEX_AUTH_SOURCE",
             "CODEX_RUN_DIR",
-            "CODEX_MAX_WALL_CLOCK_SECONDS",
         ):
             env.pop(variable, None)
         env.pop("CODEMAP_SKILL_FILE", None)
@@ -2069,36 +2061,43 @@ def _verify_locked_codemap_python(
     manifest_path: Path = PARITY_MANIFEST_PATH,
     command_runner: Callable[..., Any] | None = None,
 ) -> str:
-    """Validate and return the manifest-locked treatment Python executable."""
+    """Resolve and validate a Python matching the manifest's treatment runtime."""
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         runtime = manifest["codex_permission_profiles"]["treatment_runtime"]
-        python_path = runtime["environment"]["CODEMAP_PYTHON"]
         required_major_minor = tuple(runtime["required_major_minor"])
         scope = runtime["scope"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("provider-parity treatment runtime is unavailable or malformed") from exc
-    if (
-        not isinstance(python_path, str)
-        or not Path(python_path).is_absolute()
-        or not Path(python_path).is_file()
-        or not os.access(python_path, os.X_OK)
-    ):
-        raise ValueError("locked CODEMAP_PYTHON must be an executable absolute file")
     if required_major_minor != (3, 11) or scope != ["B_direct_required", "C_skill_required"]:
         raise ValueError("provider-parity treatment runtime contract does not match the active manifest")
-
-    code, stdout, stderr = _invoke_plugin_command(
-        [python_path, "--version"],
-        {},
-        command_runner=command_runner,
-    )
-    version_match = re.search(r"(\d+)\.(\d+)(?:\.\d+)?", f"{stdout}\n{stderr}")
-    found_major_minor = tuple(int(part) for part in version_match.groups()) if version_match else ()
-    if code != 0 or found_major_minor != required_major_minor:
-        required = ".".join(str(part) for part in required_major_minor)
-        raise ValueError(f"locked CODEMAP_PYTHON must report Python {required}")
-    return python_path
+    configured = runtime.get("environment", {}).get("CODEMAP_PYTHON")
+    candidates = [
+        configured,
+        shutil.which("python3.11"),
+        sys.executable,
+        shutil.which("python3"),
+        shutil.which("python"),
+    ]
+    checked: set[Path] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not candidate:
+            continue
+        path = Path(candidate).resolve()
+        if path in checked or not path.is_file() or not os.access(path, os.X_OK):
+            continue
+        checked.add(path)
+        code, stdout, stderr = _invoke_plugin_command(
+            [str(path), "--version"],
+            {},
+            command_runner=command_runner,
+        )
+        version_match = re.search(r"(\d+)\.(\d+)(?:\.\d+)?", f"{stdout}\n{stderr}")
+        found_major_minor = tuple(int(part) for part in version_match.groups()) if version_match else ()
+        if code == 0 and found_major_minor == required_major_minor:
+            return str(path)
+    required = ".".join(str(part) for part in required_major_minor)
+    raise ValueError(f"Codemap treatment runtime requires an executable Python {required}")
 
 
 def _verify_permission_profile(
@@ -2113,12 +2112,8 @@ def _verify_permission_profile(
         home.env,
         command_runner=command_runner,
     )
-    version_match = re.search(r"(\d+)\.(\d+)\.(\d+)", f"{stdout}\n{stderr}")
-    if code != 0 or version_match is None:
+    if code != 0 or not f"{stdout}\n{stderr}".strip():
         raise ValueError("Codex permission-profile version probe failed")
-    version = tuple(int(part) for part in version_match.groups())
-    if version < _MIN_PERMISSION_PROFILE_VERSION:
-        raise ValueError(f"Codex permission profiles require >= {'.'.join(map(str, _MIN_PERMISSION_PROFILE_VERSION))}")
 
     profile = home.permission_profile or (
         _PLAIN_PERMISSION_PROFILE if home.arm == "A_plain" else _CODEMAP_PERMISSION_PROFILE
@@ -3061,7 +3056,6 @@ class CodexRun:
     retry_count: int = 0
     execution_index: int = -1
     cell_wall_clock_limit_s: float = PARITY_TIMEOUT_SECONDS
-    run_wall_clock_limit_s: float | None = None
     turn_budget_enforced: bool = False
 
 
@@ -3582,6 +3576,42 @@ class CodexRunner:
         """Persist non-secret expected and observed runtime identities before home cleanup."""
         if self._runtime_evidence_path is None:
             return
+        expected, expected_plugins = self._expected_runtime_identities()
+        payload = {
+            "arm": arm,
+            "error": str(error),
+            "expected_artifact_sha256": expected,
+            "expected_plugin_identities": expected_plugins,
+            "observed_plugin_identities": self._observed_plugin_identities(home, source_paths),
+            "status": "failed",
+        }
+        self._append_runtime_evidence(payload)
+
+    def _record_runtime_success(self, arm: str, home: ArmHome) -> None:
+        """Persist the verified plugin identities before the disposable home is removed."""
+        if self._runtime_evidence_path is None:
+            return
+        expected, expected_plugins = self._expected_runtime_identities()
+        observed = self._observed_plugin_identities(home, ())
+        if observed != expected_plugins:
+            raise ValueError("verified runtime plugin identities differ from the locked manifest")
+        self._append_runtime_evidence(
+            {
+                "arm": arm,
+                "error": None,
+                "expected_artifact_sha256": expected,
+                "expected_plugin_identities": expected_plugins,
+                "observed_plugin_identities": observed,
+                "status": "verified",
+            }
+        )
+
+    def _observed_plugin_identities(
+        self,
+        home: ArmHome | None,
+        source_paths: Iterable[Path],
+    ) -> dict[str, dict[str, str]]:
+        """Return public plugin identity fields from sources that still exist."""
         observed: dict[str, dict[str, str]] = {}
         for source in source_paths:
             manifest_path = Path(source) / ".codex-plugin" / "plugin.json"
@@ -3606,6 +3636,10 @@ class CodexRunner:
                         "version": str(payload.get("version", "")) if isinstance(payload, Mapping) else "",
                         "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
                     }
+        return observed
+
+    def _expected_runtime_identities(self) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+        """Return locked public artifact and plugin identities from the manifest."""
         expected: Mapping[str, Any] = {}
         expected_plugins: dict[str, dict[str, str]] = {}
         try:
@@ -3624,13 +3658,12 @@ class CodexRunner:
                 }
         except (OSError, TypeError, json.JSONDecodeError):
             pass
-        payload = {
-            "arm": arm,
-            "error": str(error),
-            "expected_artifact_sha256": expected,
-            "expected_plugin_identities": expected_plugins,
-            "observed_plugin_identities": observed,
-        }
+        return dict(expected), expected_plugins
+
+    def _append_runtime_evidence(self, payload: Mapping[str, Any]) -> None:
+        """Append one private runtime-identity record with deterministic JSON bytes."""
+        if self._runtime_evidence_path is None:
+            return
         self._runtime_evidence_path.parent.mkdir(parents=True, exist_ok=True)
         with self._runtime_evidence_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, sort_keys=True) + "\n")
@@ -4002,7 +4035,6 @@ class CodexRunner:
         arm: str,
         *,
         repetition: int = 1,
-        deadline: float | None = None,
         diff_impact_stage: DiffImpactStageAdmission | None = None,
     ) -> CodexRun:
         """Execute one task cell within a retry-inclusive coordinate deadline."""
@@ -4083,8 +4115,6 @@ class CodexRunner:
                 home = self._prepare_verified_home(arm, diff_impact_stage=diff_impact_stage)
         started_at = time.monotonic()
         coordinate_deadline = started_at + self.timeout
-        if deadline is not None:
-            coordinate_deadline = min(coordinate_deadline, deadline)
         attempt_events: list[list[dict[str, Any]]] = []
         parsed = CodexParseResult()
         postflight_error = ""
@@ -4635,7 +4665,7 @@ def _initial_run_metadata(
     reasoning_effort: str,
     repetitions: int,
     task_arms: Mapping[tuple[str, int], tuple[str, ...]],
-    max_wall_clock_seconds: float,
+    cell_wall_clock_seconds: float,
     auth_provisioned: bool,
     input_snapshot: Mapping[str, Any] | None = None,
     study_mode: str = "confirmatory",
@@ -4688,10 +4718,12 @@ def _initial_run_metadata(
             "targeted_scope": scope,
             "targeted_scope_sha256": scope["scope_sha256"] if scope is not None else None,
             "coordinates": coordinates,
-            "cell_wall_clock_seconds": PARITY_TIMEOUT_SECONDS,
-            "max_wall_clock_seconds": max_wall_clock_seconds,
+            "cell_wall_clock_seconds": cell_wall_clock_seconds,
             "python": sys.version,
-            "codex_cli": manifest["codex_cli"],
+            "codex_cli": {
+                "reviewed": manifest["codex_cli"],
+                "observed_version": os.environ.get("CODEX_CLI_OBSERVED_VERSION"),
+            },
         },
         "inputs": {
             "target_path": str(repo_path.resolve()),
@@ -4742,34 +4774,35 @@ def main(
     repetitions: int | None = None,
     arm: str = "all",
     dry_run: bool = False,
-    max_wall_clock_seconds: float | None = None,
     show_legend: bool = True,
 ) -> None:
-    """Validate and plan cells; paid execution also requires a total deadline."""
-    _validate_codex_stratum(model, reasoning_effort)
+    """Validate, plan, and execute cells under the manifest's per-cell timeout."""
+    manifest_path = Path(manifest_path)
+    _validate_codex_stratum(model, reasoning_effort, manifest_path)
+    try:
+        active_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        confirmatory_repetitions = active_manifest["preregistered_cells"]["confirmatory_repetitions"]
+        cell_wall_clock_seconds = active_manifest["execution_controls"]["parity_timeout_seconds"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("provider-parity execution controls are unavailable or malformed") from exc
+    if type(confirmatory_repetitions) is not int or confirmatory_repetitions < 1:
+        raise ValueError("confirmatory repetitions must be a positive integer")
+    if type(cell_wall_clock_seconds) not in {int, float} or cell_wall_clock_seconds <= 0:
+        raise ValueError("per-cell timeout must be positive")
     if task_ids and task_selectors is not None:
         raise ValueError("--task-id and --tasks cannot be combined")
     targeted_scope = resolve_task_selection(Path(manifest_path), task_selectors) if task_selectors is not None else None
     if targeted_scope is not None:
         task_ids = list(targeted_scope["task_ids"])
         repetitions = targeted_scope["repetitions"] if repetitions is None else repetitions
-        max_wall_clock_seconds = (
-            targeted_scope["complete_run_max_wall_clock_seconds"]
-            if max_wall_clock_seconds is None
-            else max_wall_clock_seconds
-        )
-    repetitions = 1 if repetitions is None else repetitions
+    repetitions = confirmatory_repetitions if repetitions is None else repetitions
     if repetitions < 1:
         raise ValueError("--repetitions must be a positive integer")
-    if max_wall_clock_seconds is not None and max_wall_clock_seconds <= 0:
-        raise ValueError("--max-wall-clock-seconds must be positive")
-    manifest_path = Path(manifest_path)
     if targeted_scope is not None:
         _validate_targeted_scope_request(
             targeted_scope,
             repetitions=repetitions,
             arm=arm,
-            max_wall_clock_seconds=max_wall_clock_seconds,
             scope_sha256=scope_sha256,
             dry_run=dry_run,
         )
@@ -4808,8 +4841,6 @@ def main(
         canonical_path = _canonical_telemetry_path(output_path)
         if canonical_path.exists():
             raise FileExistsError(canonical_path)
-        if max_wall_clock_seconds is None:
-            raise ValueError("non-dry Codex runs require positive --max-wall-clock-seconds")
         _validate_execution_manifest(manifest_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         metadata_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4834,6 +4865,11 @@ def main(
         manifest_path=manifest_path,
         auth_source=auth_source,
         targeted=explicit_selection,
+        timeout=(
+            float(targeted_scope["coordinate_timeout_seconds"])
+            if targeted_scope is not None
+            else float(cell_wall_clock_seconds)
+        ),
     )
     if show_legend:
         render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
@@ -4854,11 +4890,7 @@ def main(
                 staged_preflight(tasks, selected_arms)
         finally:
             _close_runner(runner)
-    if max_wall_clock_seconds is not None:
-        print(
-            f"CONTROL\tcell_wall_clock_seconds={PARITY_TIMEOUT_SECONDS:g}"
-            f"\tmax_wall_clock_seconds={max_wall_clock_seconds:g}"
-        )
+    print(f"CONTROL\tcell_wall_clock_seconds={runner.timeout:g}")
     if not dry_run:
         assert output_path is not None
         assert metadata_path is not None
@@ -4890,7 +4922,6 @@ def main(
                 for selected in task_arms[(task["id"], repetition)]:
                     _print_arm_row(_format_plan_row(task["id"], repetition, selected), selected)
         return
-    assert max_wall_clock_seconds is not None
     assert output_path is not None
     assert metadata_path is not None
     snapshot_builder = getattr(runner, "create_input_snapshot", None)
@@ -4917,7 +4948,7 @@ def main(
             reasoning_effort=reasoning_effort,
             repetitions=repetitions,
             task_arms=task_arms,
-            max_wall_clock_seconds=max_wall_clock_seconds,
+            cell_wall_clock_seconds=runner.timeout,
             auth_provisioned=auth_source is not None,
             input_snapshot=input_snapshot,
             study_mode="targeted" if explicit_selection else "confirmatory",
@@ -4929,7 +4960,6 @@ def main(
     except BaseException:
         _close_runner(runner)
         raise
-    run_deadline = time.monotonic() + max_wall_clock_seconds
     planned_cells = sum(len(arms) for arms in task_arms.values())
     printed_cells = 0
     pending_result_rows: list[tuple[str, str]] = []
@@ -4955,17 +4985,14 @@ def main(
                         raise
                 pending_result_rows = []
                 for selected in task_arms[(task["id"], repetition)]:
-                    if time.monotonic() >= run_deadline:
-                        raise TimeoutError("complete-run wall-clock limit exhausted before next cell")
                     if invocation_launcher_path is not None and invocation_launcher_sha256 is not None:
                         _validate_invocation_launcher(invocation_launcher_path, invocation_launcher_sha256)
-                    run_kwargs: dict[str, Any] = {"repetition": repetition, "deadline": run_deadline}
+                    run_kwargs: dict[str, Any] = {"repetition": repetition}
                     if active_diff_impact_stage is not None:
                         run_kwargs["diff_impact_stage"] = active_diff_impact_stage
                     run = runner.run(task, selected, **run_kwargs)
                     if invocation_launcher_path is not None and invocation_launcher_sha256 is not None:
                         _validate_invocation_launcher(invocation_launcher_path, invocation_launcher_sha256)
-                    run.run_wall_clock_limit_s = max_wall_clock_seconds
                     _append_run(output_path, run, execution_index=int(metadata["persisted_cells"]))
                     metadata["persisted_cells"] = int(metadata["persisted_cells"]) + 1
                     outcomes = metadata["cell_outcomes"]
@@ -5044,8 +5071,6 @@ def main(
                             "infrastructure failure recurred three times before a model response; "
                             "preserved partial artifacts and stopped scheduling"
                         )
-                    if time.monotonic() >= run_deadline:
-                        raise TimeoutError("complete-run wall-clock limit exhausted after persisted cell")
                 printed_cells = _print_result_block(
                     pending_result_rows, printed_cells=printed_cells, planned_cells=planned_cells
                 )
@@ -5308,7 +5333,6 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
     arm: str = "all",
     dry_run: bool = False,
     no_legend: bool = False,
-    max_wall_clock_seconds: float | None = None,
 ) -> None:
     """Dispatch the Codex structural runner's four CLI modes.
 
@@ -5349,7 +5373,6 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
         arm: Single arm name, or ``all`` for the manifest's arm ordering.
         dry_run: Validate locked inputs and print the cell plan without a model call.
         no_legend: Suppress the output legend block.
-        max_wall_clock_seconds: Complete-run wall-clock limit; required for paid runs.
 
     Raises:
         SystemExit: With status ``2`` when flags are combined illegally, a
@@ -5405,7 +5428,6 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
         repetitions=None if repetitions is None else int(repetitions),
         arm=arm,
         dry_run=dry_run,
-        max_wall_clock_seconds=None if max_wall_clock_seconds is None else float(max_wall_clock_seconds),
         show_legend=not no_legend,
     )
 

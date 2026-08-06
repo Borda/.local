@@ -178,7 +178,6 @@ def _build_manifest() -> dict[str, Any]:
             "repetitions": REPETITIONS,
             "total_cells": cells,
             "coordinate_timeout_seconds": COORDINATE_TIMEOUT_SECONDS,
-            "complete_run_max_wall_clock_seconds": cells * COORDINATE_TIMEOUT_SECONDS,
             "nonpoolable": True,
             "pooling_eligibility": "ineligible; exploratory evidence only",
             "arm_order": "deterministic lexical arm order within each repetition",
@@ -232,7 +231,7 @@ def _build_manifest() -> dict[str, Any]:
                 "checksums.sha256",
             ],
             "stop_behavior": (
-                "Stop on the first runtime or admission-integrity failure or complete-run wall-clock exhaustion; do not stop "
+                "Stop on the first runtime or admission-integrity failure; do not stop "
                 "on an ordinary model, task, or treatment-nonadherence row; preserve every partial artifact and never pool "
                 "partial or nonpoolable evidence."
             ),
@@ -292,7 +291,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "## Scope and arms",
         "",
         f"- Tasks: `{scope['task_ids']}`; repetitions: `{scope['repetitions']}`; arms: `{scope['arms']}`.",
-        f"- Cells: `{scope['total_cells']}`; coordinate budget: `{scope['coordinate_timeout_seconds']}s`; complete-run ceiling: `{scope['complete_run_max_wall_clock_seconds']}s`.",
+        f"- Cells: `{scope['total_cells']}`; per-cell timeout: `{scope['coordinate_timeout_seconds']}s`, including retries.",
         "- `A_plain`: Codemap absent; no-call is valid.",
         "- `B_auto`: Codemap CLI available; use is optional, and adoption is measured.",
         "- `C_strict`: exact Skill read must precede a successful compact query; noncompliant rows remain scored but are excluded from pooling.",
@@ -300,7 +299,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "## Artifact and stop contract",
         "",
         "- Required package: `run.log`, raw `telemetry.jsonl`, `telemetry-canonical.jsonl`, `run-metadata.json`, frozen `inputs/`, and `checksums.sha256`.",
-        "- Stop on the first runtime or admission-integrity failure or complete-run wall-clock exhaustion; ordinary model/task/treatment-nonadherence rows do not stop scheduling; preserve partial artifacts and never pool partial/nonpoolable evidence.",
+        "- Stop on the first runtime or admission-integrity failure; ordinary model/task/treatment-nonadherence rows do not stop scheduling; preserve partial artifacts and never pool partial/nonpoolable evidence.",
         "",
         "## Shared scoring",
         "",
@@ -321,13 +320,11 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "bash benchmarks/run-all.sh codex --agentic --dry-run",
         "```",
         "",
-        "Then run the exact reviewed scope with a fresh run directory:",
+        "Then run the exact reviewed scope; the launcher creates a fresh run directory:",
         "",
         "```bash",
         "CODEX_AGENTIC_PAID_APPROVAL=<MANIFEST_SHA256> \\",
         'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
-        'CODEX_RUN_DIR="benchmarks/results/codex-agentic-$(date -u +%Y%m%dT%H%M%SZ)" \\',
-        f"CODEX_MAX_WALL_CLOCK_SECONDS={scope['complete_run_max_wall_clock_seconds']} \\",
         "  bash benchmarks/run-all.sh codex --agentic",
         "```",
         "",

@@ -6,6 +6,10 @@ repository directory, and skill namespace change. Pre-`0.25.0` history was recor
 `codemap` under `plugins/codemap/` — see the repository git history for that line; it is
 not reproduced here.
 
+## 0.28.6
+
+- Preserve static reverse-import edges for relative imports and known `from package import submodule` forms without adding false module edges for symbol imports.
+
 ## 0.28.5
 
 - Harden cross-platform test isolation and publish synchronized structural and agentic benchmark evidence.

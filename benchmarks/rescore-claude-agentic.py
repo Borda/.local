@@ -16,9 +16,9 @@ The input snapshot is never modified; output is a sibling ``<stem>-rescored.json
 ``rescore`` provenance block recording parser hash, changed rows, and the approximation.
 
 Examples:
-    python3 benchmarks/rescore-claude-agentic.py \
+    REPO=path/to/codemap-provider-parity-pl-2.6.5 python3 benchmarks/rescore-claude-agentic.py \
         --snapshot benchmarks/results/code-2026-08-04.json \
-        --repo-path /private/tmp/codemap-provider-parity-pl-2.6.5
+        --repo-path "$REPO"
 """
 
 from __future__ import annotations
@@ -155,8 +155,8 @@ def main(
             the input snapshot).
 
     Examples:
-        python3 benchmarks/rescore-claude-agentic.py --snapshot .../code-2026-08-04.json \
-            --repo-path /private/tmp/codemap-provider-parity-pl-2.6.5
+        REPO=path/to/codemap-provider-parity-pl-2.6.5
+        python3 benchmarks/rescore-claude-agentic.py --snapshot .../code-2026-08-04.json --repo-path "$REPO"
     """
     if not snapshot or not repo_path:
         sys.exit("ERROR: --snapshot and --repo-path are required")

@@ -120,20 +120,32 @@ def test_generated_manifest_uses_environment_neutral_cli_and_posix_paths() -> No
     assert manifest["codex_cli"] == {
         "available": True,
         "path": "<codex-cli>",
-        "version": "codex-cli 0.146.0",
+        "reviewed_version": "codex-cli 0.146.1",
     }
     assert manifest["source_manifest"]["path"] == "benchmarks/manifests/provider-parity-methodology.json"
     assert "\\" not in manifest["source_manifest"]["path"]
 
 
-def test_cli_identity_is_a_host_neutral_reviewed_lock() -> None:
-    """Manifest checks must use the reviewed CLI identity on every runner."""
+def test_cli_identity_is_host_neutral_reviewed_provenance() -> None:
+    """The manifest records the reviewed identity without imposing an admission pin."""
     builder = runpy.run_path(str(GENERATOR))
-    assert builder["LOCKED_CODEX_CLI_VERSION"] == "codex-cli 0.146.0"
+    assert builder["REVIEWED_CODEX_CLI_VERSION"] == "codex-cli 0.146.1"
     assert builder["_codex_cli_identity"]() == {
         "available": True,
         "path": "<codex-cli>",
-        "version": "codex-cli 0.146.0",
+        "reviewed_version": "codex-cli 0.146.1",
+    }
+
+
+def test_repository_marketplace_remains_the_installable_source_root() -> None:
+    """The live marketplace must not be overwritten by a frozen snapshot manifest."""
+    marketplace = _load(ROOT / ".agents" / "plugins" / "marketplace.json")
+    sources = {entry["name"]: entry["source"] for entry in marketplace["plugins"]}
+
+    assert marketplace["name"] == "borda-ai-rig"
+    assert sources == {
+        "codemap-py": {"path": "./plugins/codemap-py", "source": "local"},
+        "codex-rig": {"path": "./plugins/codex-rig", "source": "local"},
     }
 
 
@@ -230,11 +242,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     assert manifest["execution_controls"]["coordinate_timeout_scope"] == (
         "one total 600-second budget shared by the initial attempt and at most two eligible retries"
     )
-    assert manifest["execution_controls"]["complete_run_wall_clock"] == (
-        "paid execution requires a positive human-approved --max-wall-clock-seconds value; "
-        "the exact value is recorded in every result row"
-    )
-    assert manifest["execution_controls"]["confirmatory_max_wall_clock_seconds"] == 86_400
+    assert "complete_run_wall_clock" not in manifest["execution_controls"]
+    assert "confirmatory_max_wall_clock_seconds" not in manifest["execution_controls"]
     assert manifest["execution_controls"]["arm_order"] == (
         "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
         "across the 55-task single-repetition execution suite, every arm occupies every ordinal 18 or 19 times"
@@ -359,10 +368,7 @@ def test_integration_manifest_locks_generic_nonpoolable_task_selection() -> None
     assert scope["arms"] == ["A_plain", "B_direct_required", "C_skill_required"]
     assert scope["repetitions"] == 3
     assert scope["coordinate_timeout_seconds"] == 600
-    assert scope["complete_run_max_wall_clock_seconds"] == {
-        "derived_at_runtime": True,
-        "formula": "resolved_task_count × repetitions × arm_count × coordinate_timeout_seconds",
-    }
+    assert "complete_run_max_wall_clock_seconds" not in scope
     assert scope["nonpoolable"] is True
     assert scope["pooling_eligibility"] == "ineligible"
     assert scope["confirmatory_product_acceptance"] == "ineligible"
@@ -374,7 +380,6 @@ def test_integration_manifest_locks_generic_nonpoolable_task_selection() -> None
             "repetitions",
             "arms",
             "coordinate timeout seconds",
-            "derived complete-run wall-clock ceiling",
         ],
         "runtime_derived": True,
         "stored_in_manifest": False,

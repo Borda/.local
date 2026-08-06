@@ -54,6 +54,7 @@ _PARAMETERIZED_FIELDS = frozenset(
         "dependency_chain",
         "affected_module_count",
         "high_centrality",
+        "risk_tier",
     }
 )
 _CANDIDATE_SETS = frozenset({"production_importers", "non_migrated_importers", "helper_dependent_importers"})
@@ -142,6 +143,8 @@ def validate_answer_contract(task: Mapping[str, Any]) -> Mapping[str, Any]:
         raise ValueError("answer_contract params must be an object")
     if any(field not in fields or field not in _PARAMETERIZED_FIELDS for field in params):
         raise ValueError("answer_contract params are only allowed for declared parameterized fields")
+    if "risk_tier" in fields and "high_centrality" not in fields:
+        raise ValueError("answer_contract risk_tier requires high_centrality")
     for field in fields:
         if field in _PARAMETERIZED_FIELDS and field not in params:
             raise ValueError(f"answer_contract field {field!r} requires params")
@@ -590,6 +593,24 @@ def _validate_field_params(field: str, params: Any) -> None:
         if keys == {"min_rdep_count"} and not isinstance(minimum, bool) and isinstance(minimum, int) and minimum >= 0:
             return
         raise ValueError(f"{field} params require non-negative min_rdep_count")
+    if field == "risk_tier":
+        production_minimum = params.get("critical_min_production_importer_count")
+        centrality_minimum = params.get("critical_min_high_centrality_count")
+        if (
+            keys
+            == {
+                "critical_min_production_importer_count",
+                "critical_min_high_centrality_count",
+            }
+            and not isinstance(production_minimum, bool)
+            and isinstance(production_minimum, int)
+            and production_minimum >= 0
+            and not isinstance(centrality_minimum, bool)
+            and isinstance(centrality_minimum, int)
+            and centrality_minimum >= 0
+        ):
+            return
+        raise ValueError("risk_tier params require non-negative critical thresholds")
     raise ValueError(f"unsupported answer_contract parameterized field {field!r}")
 
 
@@ -752,10 +773,21 @@ def _expected_values(
                 "isolated" if all(count <= 5 for count in production_rdeps.values()) else "widely-imported"
             )
         elif field == "risk_tier":
-            audited = task.get("audited_risk_tier")
-            if audited not in {"low", "medium", "high", "critical"}:
-                raise ValueError("risk_tier requires an audited_risk_tier task value")
-            expected[field] = audited
+            thresholds = params[field]
+            high_centrality_count = sum(
+                count >= params["high_centrality"]["min_rdep_count"] for count in production_rdeps.values()
+            )
+            if (
+                len(production) >= thresholds["critical_min_production_importer_count"]
+                and high_centrality_count >= thresholds["critical_min_high_centrality_count"]
+            ):
+                expected[field] = "critical"
+            elif high_centrality_count:
+                expected[field] = "high"
+            elif production:
+                expected[field] = "medium"
+            else:
+                expected[field] = "low"
         else:
             raise ValueError(f"unsupported answer_contract field {field!r}")
     return expected

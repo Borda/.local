@@ -76,13 +76,13 @@ def test_manifest_locks_shared_scope_and_identity() -> None:
     assert scope["repetitions"] == 1
     assert scope["total_cells"] == 48
     assert scope["coordinate_timeout_seconds"] == 600
-    assert scope["complete_run_max_wall_clock_seconds"] == 28800
+    assert "complete_run_max_wall_clock_seconds" not in scope
     assert scope["nonpoolable"] is True
     assert scope["pooling_eligibility"] == "ineligible; exploratory evidence only"
     assert manifest["target_source"]["tag"] == "2.6.5"
     assert manifest["target_source"]["commit"] == "be98784a1a03581b7051a355ae1084fd352d7cea"
     assert manifest["frozen_index_contract"]["raw_sha256"] == (
-        "2d48a5ea4ddc3830f83de950713580bbc2e2dd3b43d1326f047cd3e21acec1eb"
+        "3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1"
     )
 
 
@@ -123,21 +123,15 @@ def test_claude_and_codex_load_identical_shared_agentic_prompts() -> None:
         assert hashlib.sha256(claude_task.prompt.encode("utf-8")).hexdigest() == locked_hashes[claude_task.id]
 
 
-def test_human_launch_guidance_uses_complete_run_ceiling() -> None:
-    """Launch guidance must use the machine manifest's complete-run ceiling.
-
-    Prevents stale historical timeout guidance from truncating the
-    preregistered complete scope while the machine lock advertises a larger ceiling.
-    """
+def test_human_launch_guidance_uses_retry_inclusive_per_cell_timeout_only() -> None:
+    """Launch guidance describes the manifest's per-cell timeout without a global deadline."""
     builder = runpy.run_path(str(BUILDER))
     manifest = builder["_build_manifest"]()
     machine = builder["_json_bytes"](manifest)
     human = builder["_human_bytes"](manifest, hashlib.sha256(machine).hexdigest()).decode("utf-8")
-    ceiling = manifest["preregistered_scope"]["complete_run_max_wall_clock_seconds"]
-
-    assert f"CODEX_MAX_WALL_CLOCK_SECONDS={ceiling}" in human
-    assert "5400" not in human
-    assert "first-slice" not in human.lower()
+    assert "per-cell timeout: `600s`, including retries" in human
+    assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in human
+    assert "complete-run" not in human.lower()
 
 
 def test_ba12_and_ba16_declare_every_answer_contract_field_for_scoring() -> None:
@@ -153,7 +147,7 @@ def test_ba12_and_ba16_declare_every_answer_contract_field_for_scoring() -> None
 
     assert tasks["BA-12"]["answer_contract"]["fields"] == [
         "production_importers",
-        "test_importer_count",
+        "excluded_test_importer_count",
         "ranking",
         "production_importer_count",
     ]
@@ -170,6 +164,10 @@ def test_ba12_and_ba16_declare_every_answer_contract_field_for_scoring() -> None
     ]
     assert tasks["BA-16"]["answer_contract"]["params"]["high_centrality"] == {
         "min_rdep_count": 10,
+    }
+    assert tasks["BA-16"]["answer_contract"]["params"]["risk_tier"] == {
+        "critical_min_production_importer_count": 10,
+        "critical_min_high_centrality_count": 1,
     }
 
 

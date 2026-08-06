@@ -124,29 +124,20 @@ from codemap_py.telemetry import log_cli  # noqa: E402
 _ = MODULE_ALIASES_MIN_VER
 
 # Blind spots disclosed in every import-graph result's ``not_covered`` field.
-# ``relative-import`` and ``from-import-submodule``: scan-index records the raw
-# ``ImportFrom`` base (e.g. ``from mypkg import core`` stores ``mypkg`` and
-# ``from . import core`` stores nothing), so submodule-level reverse-dependency
-# and shortest-path queries cannot see those edges — verify with grep when they
-# matter. Kept as a single source of truth so every command discloses the same
-# gaps.
+# Relative imports and known ``from package import submodule`` edges are resolved
+# during scanning; dynamic import forms remain outside the static import graph.
 _IMPORT_GRAPH_NOT_COVERED = [
     "importlib.import_module",
     "__import__",
     "lazy-loading",
-    "relative-import",
-    "from-import-submodule",
 ]
 
 # Blind spots disclosed in every static call-graph result's ``not_covered``
-# field. ``relative-import`` is listed because a module-less relative import
-# (``from . import core``) is skipped at scope-build time, leaving calls through
-# that alias unresolved and absent from reverse call-graph queries.
+# field. Relative import aliases are resolved during scope construction.
 _CALL_GRAPH_NOT_COVERED = [
     "dynamic-dispatch",
     "hook-callbacks",
     "string-dispatch",
-    "relative-import",
 ]
 
 

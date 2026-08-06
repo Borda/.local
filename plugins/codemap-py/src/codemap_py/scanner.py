@@ -916,26 +916,38 @@ def build_import_scope(tree: ast.Module, module_name: str) -> tuple[dict[str, st
 
 
 def _extract_imports_and_scope(
-    tree: ast.Module, module_name: str
-) -> tuple[list[str], dict[str, str], dict[str, str], list[str]]:
-    """Single ast.walk: returns (sorted_imports, name_map, module_map, star_imports)."""
+    tree: ast.Module, module_name: str, is_package: bool = False
+) -> tuple[list[str], list[str], dict[str, str], dict[str, str], list[str]]:
+    """Return imports, possible submodules, and the call-resolution scope.
+
+    ``from package import name`` always imports ``package``. It can also bind an
+    importable ``package.name`` submodule, but the scanner cannot decide that
+    from the statement alone. The candidate list is resolved against indexed
+    modules by :func:`codemap_py.graph._resolve_import_submodule_edges`.
+    """
     name_map: dict[str, str] = {}
     module_map: dict[str, str] = {}
     star_imports: list[str] = []
     imports: set[str] = set()
-    package = module_name.rsplit(".", 1)[0] if "." in module_name else ""
+    submodule_candidates: set[str] = set()
+    package = module_name if is_package else module_name.rsplit(".", 1)[0] if "." in module_name else ""
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 imports.add(alias.name)
             _process_ast_import(node, name_map, module_map)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imports.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            base = _resolve_import_from_base(node, package)
+            if base:
+                imports.add(base)
+            for alias in node.names:
+                if base and alias.name != "*":
+                    submodule_candidates.add(f"{base}.{alias.name}")
             _process_ast_import_from(node, package, name_map, star_imports)
 
     _drop_top_level_rebindings(tree, name_map, module_map)
-    return sorted(imports), name_map, module_map, star_imports
+    return sorted(imports), sorted(submodule_candidates), name_map, module_map, star_imports
 
 
 def _drop_top_level_rebindings(tree: ast.Module, name_map: dict[str, str], module_map: dict[str, str]) -> None:
@@ -2836,11 +2848,13 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             return {"name": name, "path": rel_path.as_posix(), "status": "degraded", "reason": f"encoding: {exc}"}
         tree = ast.parse(source, filename=str(filepath))
         try:
-            imports, nm, mm, star_imports = _extract_imports_and_scope(tree, name)
+            imports, submodule_candidates, nm, mm, star_imports = _extract_imports_and_scope(
+                tree, name, filepath.name in {"__init__.py", "__init__.pyi"}
+            )
         except Exception as exc:
             print(f"[codemap] ⚠ import scope build failed for {rel_path}: {exc}", file=sys.stderr)
             imports = extract_imports(tree)
-            nm, mm, star_imports = {}, {}, []
+            submodule_candidates, nm, mm, star_imports = [], {}, {}, []
         symbols = extract_symbols(tree, name, nm, mm, star_imports or None)
         dynamic_imports = extract_dynamic_imports(tree)
         _loc, _is_entry = _count_loc_and_main_guard(source)
@@ -2860,6 +2874,8 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             "loc": _loc,
             "dep_count": len(imports),
             "direct_imports": imports,
+            "unresolved_direct_imports": imports,
+            "from_import_submodules": submodule_candidates,
             "symbols": symbol_dicts,
             "is_entry_point": _is_entry,
             "is_test": is_test,
