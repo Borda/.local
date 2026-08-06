@@ -76,6 +76,18 @@ def test_global_agents_template_is_packaged_not_repository_policy() -> None:
     }
 
 
+def test_global_agents_template_rejects_hypothetical_complexity() -> None:
+    """Keep future-only scenarios from justifying current machinery."""
+    policy = TEMPLATE.read_text(encoding="utf-8")
+
+    assert "Hypothetical future states, risks, scale, reuse, or edge cases do not justify machinery" in policy
+    assert "verified current evidence proves the simpler solution insufficient" in policy
+    assert "Prefer maintained standard-library, native-platform, and already-installed package functionality" in policy
+    assert "over custom code that duplicates it" in policy
+    assert "Simplicity never removes trust-boundary validation" in policy
+    assert "record the ceiling and observable trigger for revisiting it" in policy
+
+
 def test_global_agents_installer_creates_managed_file_when_absent(tmp_path: Path) -> None:
     """Prove explicit installation creates one authenticated managed block."""
     source = tmp_path / "template.md"

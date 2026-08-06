@@ -362,6 +362,22 @@ def test_commit_contract_requires_exact_history_rewrite_authorization() -> None:
     assert history_case["expected_findings"] == ["history-rewrite-not-explicitly-authorized"]
 
 
+def test_commit_contract_requires_descriptive_user_facing_handoffs() -> None:
+    """Keep commit handoffs specific enough to audit without reading the diff."""
+    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    for required in (
+        "required user-facing commit summary",
+        "hash and title",
+        "behavior",
+        "affected surfaces",
+        "verification",
+        "residual limits",
+        "why the boundary exists",
+        "never claim a check passed without concrete execution evidence",
+    ):
+        assert required in contract
+
+
 def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
     """Keep calibration fixtures aligned with the recurrence escalation contract."""
     cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]

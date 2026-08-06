@@ -30,3 +30,14 @@ Rules:
 - Keep `---` before trailer. End with exactly:
 
 `Co-authored-by: Codex <codex@openai.com>`
+
+## Required User-Facing Commit Summary
+
+After creating or describing commits, report each commit separately with its hash and title, then concise bullets grouped by:
+
+- **Behavior**: what changed and the user-visible or methodological impact.
+- **Affected surfaces**: the principal components, workflows, or packages changed; do not dump an unexplained filename list.
+- **Verification**: exact tests, lint, build, package, or manifest checks run and their results.
+- **Residual limits**: skipped gates, warnings, deferred work, or remaining uncertainty; state `none known` when verified and no material limit remains.
+
+For multiple commits, also state why the boundary exists. Keep the Git commit message concise; the user-facing summary carries the fuller evidence and impact record. Never claim a check passed without concrete execution evidence.

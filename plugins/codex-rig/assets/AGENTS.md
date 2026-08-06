@@ -60,10 +60,10 @@ ______________________________________________________________________
 
 Coding principles = canonical standard for implementation + review:
 
-01. Simplicity, readability, reproducibility first. Complexity is maintenance cost, never evidence of quality; unexplained layers often mask an unclear problem or wrong solution. Clear structure beats long docstrings/comments.
+01. Simplicity, readability, reproducibility first. Complexity is maintenance cost, never evidence of quality; unexplained layers often mask an unclear problem or wrong solution. Clear structure beats long docstrings/comments. Simplicity never removes trust-boundary validation, data-loss prevention, security controls, accessibility requirements, or explicit contract behavior.
 02. Understand before minimizing. Read the touched flow and callers; solve the coherent root cause once. A smaller symptom patch that leaves sibling paths broken is not simple.
-03. Stop at the first solution that satisfies the contract: no change → existing project code/pattern → standard library/native platform → installed dependency → direct local code → new abstraction or dependency.
-04. Every complexity expansion must be justified as unavoidable now. Record the required current behavior and evidence, simpler alternatives considered and why each fails, the maintenance owner/cost, and the rollback or removal path. Missing evidence or a viable simpler option rejects the expansion. New registry, factory, plugin layer, protocol/base class, configuration surface, or dependency needs current demand such as runtime discovery, third-party extension, repeated dispatch, multiple concrete variants, or substantial complexity hidden behind a small stable boundary. Hypothetical reuse fails this gate.
+03. Stop at the first solution that satisfies the contract: no change → existing project code/pattern → standard library/native platform → installed dependency → direct local code → new abstraction or dependency. Prefer maintained standard-library, native-platform, and already-installed package functionality over custom code that duplicates it.
+04. Every complexity expansion must be justified as unavoidable now. Record the required current behavior and evidence, simpler alternatives considered and why each fails, the maintenance owner/cost, and the rollback or removal path. Missing evidence or a viable simpler option rejects the expansion. New registry, factory, plugin layer, protocol/base class, configuration surface, or dependency needs current demand such as runtime discovery, third-party extension, repeated dispatch, multiple concrete variants, or substantial complexity hidden behind a small stable boundary. Hypothetical future states, risks, scale, reuse, or edge cases do not justify machinery; add it only when verified current evidence proves the simpler solution insufficient.
 05. For a small closed choice, prefer explicit condition/mapping and conditional or lazy import over a registry. Catch only the expected missing optional dependency; nested/transitive import failures must surface. Use a registry when discovery or extension is an actual requirement.
 06. Minimize owned concepts: files, layers, public APIs, mutable state, dependencies, dispatch points, and configuration. Prefer deletion, local convention, boring technology, and reversible changes. State what maintenance burden new machinery removes and who owns what remains.
 07. Do not force DRY. A little visible duplication is cheaper than premature coupling; extract only a stable concept, repeated behavior, or substantial complexity. An abstraction with one caller is valid when it creates a genuinely deep boundary.
@@ -71,7 +71,7 @@ Coding principles = canonical standard for implementation + review:
 09. Keep code blocks short and the main path shallow. Split long/dense logic at meaningful boundaries; prefer guard clauses and early `return`, `yield`, or `continue` over nested control flow.
 10. Documentation concise, useful. Every new or material-changed function/method needs purpose docstring; docstrings explain intent + contract, no compensating for hard-to-read code.
 11. Resolve docstring style from project before writing: project config + contributor docs first, nearby established code style second, 6-point Google/Napoleon fallback only when no project style discoverable.
-12. Inline comments for non-trivial implementation blocks: why block exists, what invariant/edge case it protects, how it works. No comments on obvious assignments or control flow.
+12. Inline comments for non-trivial implementation blocks: why block exists, what invariant/edge case it protects, how it works. No comments on obvious assignments or control flow. When a deliberately bounded simple approach has a known present ceiling, record the ceiling and observable trigger for revisiting it; do not document hypothetical limits.
 13. No explanatory comments immediately before function/class definition. Purpose, behavior, constraints, usage belong in that definition docstring.
 14. Type annotations on all new public APIs, Python 3.10 syntax: `list[T]`, `dict[K, V]`, `X | Y`.
 15. Prefer doctest-driven or executable acceptance checks: define interface + failing check before implementation when behavior changes.
@@ -219,6 +219,8 @@ Every local commit created by Codex must end with:
 `Co-authored-by: Codex <codex@openai.com>`
 
 This applies to every skill and workflow. Use Codex Rig's packaged `shared/commit-response-template.md` exactly for commit and summary messages; the `commit_attribution` setting and individual skill rules reinforce this project-wide requirement.
+
+After creating or describing commits, report each hash and title with behavior, affected surfaces, exact verification evidence, and residual limits. For multiple commits, explain the boundary between them. Keep commit messages concise; put the complete impact and evidence record in the user-facing summary.
 
 - Explicit request: commit after checks.
 - Implicit request: show proposed message; commit only after confirmation.

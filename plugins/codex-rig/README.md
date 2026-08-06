@@ -51,7 +51,7 @@ $codex-rig:audit
 
 ## Managed global instructions
 
-`assets/AGENTS.md` is a versioned template, not an automatically installed plugin capability. Direct marketplace and plugin installation leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged. Repository sync installs or updates its managed block by default whenever Codex scope is active.
+`assets/AGENTS.md` is a versioned template, not an automatically installed plugin capability. It requires the simplest solution for verified current behavior, prefers maintained standard-library/native/already-installed package functionality over duplicating custom code, rejects machinery justified only by hypothetical future states, risks, scale, reuse, or edge cases, and preserves trust-boundary, data-loss, security, accessibility, and explicit-contract safeguards. A deliberately bounded simplification records its present ceiling and observable revisit trigger without creating a separate debt system. Direct marketplace and plugin installation leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged. Repository sync installs or updates its managed block by default whenever Codex scope is active.
 
 From an AI-Rig checkout:
 
@@ -227,6 +227,10 @@ python3 plugins/codex-rig/runtime/calibration/run.py --layout plugin --root .
 It validates packaged skills, role cards, shared contracts, behavior fixtures, accepted routing evidence, confidence scoring, and known workflow leaks. The offline CI harness shadows network and LLM commands, uses an isolated home, and writes compact failure artifacts without contacting an LLM.
 
 Paid live A/B calibration is separate, explicit, and never implied by the offline result.
+
+## Commit handoffs
+
+Codex-created commit handoffs identify every commit by hash and title, summarize behavior and affected surfaces, list exact verification evidence, disclose residual limits, and explain boundaries between multiple commits. The Git message remains concise; the user-facing handoff carries the fuller impact and evidence record.
 
 ## Optional SessionStart diagnostic
 

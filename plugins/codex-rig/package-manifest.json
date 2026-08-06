@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "0a49fcb7e4dd59bd0b59e1fed041ead909397681338d7cfa6ef716d707042f8c"
+      "sha256": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "a6fcb31d973316e75155851053508a9a315d37e1aef1077f6e6da2377a5f2065"
+      "sha256": "3d6f5ecfe14c002927f63f9be8b53ee691fd8ffa8882d749546dd122a3293fa3"
     },
     {
       "mode": "0644",
@@ -42,12 +42,12 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "365f8339be6e6e8ab1cfd9d83eb501ced7990353b0a06da9b1bdf78f1a54a6f4"
+      "sha256": "87a9f9e54f2d2aa959bfc684f54103ac690e16878313f538248964b30b363536"
     },
     {
       "mode": "0644",
       "path": "assets/AGENTS.md",
-      "sha256": "b323ecf1f7514f075f4596dc6b03629cf70799b2831680b1e423a2b4b5a6984e"
+      "sha256": "c825f5d682d12b9bf281c8f7317c50e56d01f0ddffff957a25ca5b61687a6474"
     },
     {
       "mode": "0644",
@@ -347,7 +347,7 @@
     {
       "mode": "0644",
       "path": "shared/commit-response-template.md",
-      "sha256": "cd72f08f059f49822d55736017a4342431ac32d59c4958298b8aeea53afc70b5"
+      "sha256": "7e0153977926777078d62723f801255e8173de091f852667fab4202741b91123"
     },
     {
       "mode": "0755",
@@ -672,7 +672,7 @@
     {
       "mode": "0644",
       "path": "tests/test_global_agents_installer.py",
-      "sha256": "5b844a220c059f5e1e5355d7f7d06fbfc646c47c70e33e624636195160ddf636"
+      "sha256": "e69ec8224cbd217bc880804987be1230bad196098d0588561b2ed1fd373009cb"
     },
     {
       "mode": "0644",
@@ -697,7 +697,7 @@
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "960e28ad6ceb6e68ac2febf88acc05a81aaf87c830b0608e32e14761218f984b"
+      "sha256": "b588f4bdcd5cc332a76e0f5d250b5d155700f3e8187bc213f53a52c58a6382d8"
     },
     {
       "mode": "0644",
@@ -953,5 +953,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.4.3"
+  "version": "0.4.4"
 }

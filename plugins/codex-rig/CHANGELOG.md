@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4
+
+- Prefer maintained standard-library, native-platform, and already-installed package functionality over duplicating custom code; reject complexity justified only by hypothetical future states, risks, scale, reuse, or edge cases; preserve trust-boundary, data-loss, security, accessibility, and explicit-contract safeguards; record a deliberately bounded simplification's present ceiling and observable revisit trigger.
+- Require descriptive user-facing commit handoffs with each hash and title, behavioral impact, affected surfaces, exact verification evidence, residual limits, and the rationale for multiple-commit boundaries.
+
 ## 0.4.3
 
 - Keep compact `investigate` and `sync` routing descriptions aligned with the offline calibration contract.
