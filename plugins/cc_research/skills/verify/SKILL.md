@@ -361,7 +361,7 @@ echo "DEVELOP_FIX_AVAILABLE=$DEVELOP_FIX_AVAILABLE"  # the `|| ...=false` fallba
 - **Timeout advisory**: 900s HARD_CUTOFF is advisory only — synchronous `Agent()` cannot be interrupted mid-flight; after Agent() returns, check `$RUN_DIR/audit-raw.md`; if absent/empty → TIMED_OUT, mark ⏱.
 - Verify read-only — never modifies code, commits, or writes to `.experiments/state/`
 - `.experiments/verify-<timestamp>/` stores scientist agent's full audit output for reference
-- Verify run dirs don't write `result.jsonl` — exempt from 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/verify-*/`)
+- Verify run dirs don't write `result.jsonl` — exempt from 30-day TTL cleanup (exempt per `.claude/rules/foundry-artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/verify-*/`)
 - Re-run verify after fixing mismatches to confirm fixes resolved flagged items
 - For papers with appendices beyond 20 pages, iterate Read with `pages: "21-40"` etc. to capture full hyperparameter tables
 - Fidelity score = ratio, not probability — 0.9 means 90% of verified claims match, not 90% confidence

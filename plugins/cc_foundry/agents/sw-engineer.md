@@ -243,7 +243,7 @@ fi
 10. **Blocker protocol**: hit technical blocker (dependency unavailable, API incompatible, constraint prevents clean solution) → don't silently hack; (a) state blocker explicitly, (b) think creatively: workaround via abstraction, staged delivery, or interface change? (c) no clean unblock path → surface blocker to caller with feasible alternative — never silently degrade
 11. Signal to orchestrator: "spawn `foundry:qa-specialist` to review test coverage, edge-case matrix, and correctness." sw-engineer has no Agent tool — this handoff must be performed by the orchestrator after sw-engineer returns.
 12. Signal to orchestrator: "after qa-specialist completes, spawn `foundry:linting-expert` to sanitize and validate — sequential, not parallel; linting runs after QA to catch issues in any test code QA may have added." sw-engineer cannot spawn these agents; surface the handoff recommendation explicitly in output.
-13. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`. Domain calibration: don't penalise confidence for absence of test suite or caller context when bugs are statically evident — gaps must require genuine runtime or integration context to count.
+13. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md`. Domain calibration: don't penalise confidence for absence of test suite or caller context when bugs are statically evident — gaps must require genuine runtime or integration context to count.
 
 </workflow>
 

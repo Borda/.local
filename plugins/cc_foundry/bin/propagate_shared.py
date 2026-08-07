@@ -132,6 +132,20 @@ MANIFEST: list[dict[str, object]] = [
             "plugins/cc_develop/bin/find-polluter.py",
         ],
     },
+    {
+        # Each of these three plugins ships a rules/ directory that no installed
+        # workflow used to deliver, so those rules were inert. Every plugin now
+        # installs its own via /<plugin>:setup, and the delivery mechanism must be
+        # identical everywhere — an ownership bug fixed in one copy but not the
+        # others would let a sibling plugin delete a user's link. The canonical
+        # lives in cc_develop (which owns the only test suite for it); foundry
+        # keeps its own delivery in symlink_with_guard.py and is NOT a copy.
+        "canonical": "plugins/cc_develop/bin/sync_rules.py",
+        "copies": [
+            "plugins/cc_oss/bin/sync_rules.py",
+            "plugins/cc_research/bin/sync_rules.py",
+        ],
+    },
 ]
 
 

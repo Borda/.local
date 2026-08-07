@@ -471,7 +471,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — judge verdict complete
 - Validation executes on current machine — use `--skip-validation` for cross-machine workflows
 - Verdict deterministic (finding counts + methodology_rating); not inferred from prose
 - Re-run judge after editing `program.md` to confirm fixes
-- Judge run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (per `.claude/rules/artifact-lifecycle.md` TTL policy — no `result.jsonl` = cleanup skipped); remove manually (`rm -rf .experiments/judge-*/`)
+- Judge run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (per `.claude/rules/foundry-artifact-lifecycle.md` TTL policy — no `result.jsonl` = cleanup skipped); remove manually (`rm -rf .experiments/judge-*/`)
 - **Calibration scope**: J1–J2 sub-steps only — synthetic result file with known verdict (APPROVED/NEEDS-REVISION/BLOCKED) and injected finding counts; score whether judge correctly identifies verdict and extracts counts. Full J3 validation execution loop excluded — needs live git state and executable metric commands. See `/foundry:calibrate` skills mode domain table for path resolution.
 
 </notes>

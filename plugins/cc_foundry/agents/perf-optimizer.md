@@ -318,7 +318,7 @@ Before loop: `git stash` to checkpoint pre-change state; on regression: `git sta
 
 06. **Internal Quality Loop and Confidence block**
 
-Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
+Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md`.
 Domain calibration:
 - Pure static-analysis (all issues code-visible, no runtime needed) → 0.95–0.98
 - Static + runtime-only mix → 0.85–0.94

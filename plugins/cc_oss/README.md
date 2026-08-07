@@ -19,6 +19,7 @@ ______________________________________________________________________
   - [/oss:review](#ossreview)
   - [/oss:resolve](#ossresolve)
   - [/oss:release](#ossrelease)
+  - [/oss:setup](#osssetup)
 - [Agents reference](#agents-reference)
   - [oss:gh-scraper](#gh-scraper)
   - [oss:repo-warden](#repo-warden)
@@ -62,6 +63,8 @@ ______________________________________________________________________
 claude plugin marketplace add Borda/AI-Rig
 claude plugin install oss@borda-ai-rig
 ```
+
+Then run `/oss:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade; `bash sync.sh claude` does it for you.
 
 Full suite for best results:
 
@@ -430,6 +433,27 @@ Added → Breaking Changes → Changed → Deprecated → Removed → Fixed → 
 **`--append`:** assumes an earlier `notes` run already produced `DRAFT.md` (and, when their flags were used, `CHANGELOG.md`/`SUMMARY.md`/`MIGRATION.md`) and reruns the full pipeline — unchanged, Gather changes through Draft executive summary — scoped to only the commits landed since then, tracked via a per-branch marker at `.temp/release-last-processed-<branch>`. Results integrate into every existing artifact in place via Read + Edit tool (no parsing script): DRAFT.md's Summary/Spotlights/Migration-guide/Notable-changes/Contributors sections all merge (not overwrite); root-level `SUMMARY.md`/`MIGRATION.md` merge the same way when their flags are set, guarded by a mechanical byte-count collapse guard against an accidental whole-file wipe. Purely additive — *except* when this cycle detects a commit reverting or materially changing something a prior cycle already wrote (cross-cycle revert/pivot detection): that stale entry is struck or superseded, never left stale beside a contradicting new one. A genuine `git revert` is resolved deterministically against a per-branch patch-id-keyed provenance store (`.temp/release-provenance-<branch>.json`, recording which commit's diff-content wrote which exact bullet — keyed on `git patch-id --stable` rather than raw commit sha, so a reword, rebase, or cherry-pick of the original commit since it was recorded doesn't defeat the lookup); a pivot (no literal revert commit) still relies on grep-narrowed semantic judgment. **After merge**, a post-merge re-validation pass re-runs Truth check, Identify highlights re-ranking, Validate migration docs, and Validate docs against the final merged content (not just this cycle's incremental diff) — catches prior-cycle content gone stale from this cycle's changes without a clean detected revert/pivot (e.g. a spotlight built on a commit a later cycle reverts gets replaced, not left beside the new set). No marker found (first use, or history rewritten by rebase/force-push) → falls back to the default `$LAST_TAG..HEAD` range and a full overwrite — identical to plain `notes` — establishing the baseline for the next `--append` run. Every successful `notes`-mode write refreshes the marker to current `HEAD`.
 
 **Output location:** `releases/<version>/` for `prepare` mode (including `demo.py` when version tag stable); `.temp/` for individual modes and demo on non-release branches.
+
+______________________________________________________________________
+
+### /oss:setup
+
+**Purpose**: Deliver this plugin's `rules/*.md` into Claude's user-level rule namespace. Maintenance command, not part of any OSS workflow.
+
+**When to use**: after installing oss on a new machine, or after upgrading it. `bash sync.sh claude` runs it automatically for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
+
+**Invocation**:
+
+```text
+/oss:setup            # interactive — asks before replacing anything it does not own
+/oss:setup --approve  # non-interactive — used by sync.sh
+```
+
+Each rule installs as a symlink at `~/.claude/rules/oss-<source-name>.md`. The `oss-` prefix keeps the flat rule namespace collision-free — four plugins ship a `rules/quality-gates.md`. A filename prefix does not change how Claude loads a rule or how its `paths:` frontmatter matches.
+
+Only links this plugin provably owns are replaced or removed: the existing target must resolve under the current plugin root or under the same install-cache lineage. A real file, a link into another marketplace, a source checkout, or a dotfiles tree is reported as a conflict and left alone unless you approve replacing it.
+
+**Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/oss-*.md` survives both `claude plugin uninstall` and `bash sync.sh clear`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
 
 ______________________________________________________________________
 

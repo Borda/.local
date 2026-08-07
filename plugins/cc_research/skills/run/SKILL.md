@@ -28,7 +28,7 @@ VERIFY_TIMEOUT_SEC:         120 (local), 300 (--colab)
 COLAB_KNOWN_HW:             H100, L4, T4, A100
 SUMMARY_INTERVAL:           10 iterations
 DIMINISHING_RETURNS_WINDOW: 5 iterations < 0.5% each → warn user and suggest stopping
-STATE_DIR:                  .experiments/state/<run-id>/  (timestamped dir per run — see .claude/rules/artifact-lifecycle.md)
+STATE_DIR:                  .experiments/state/<run-id>/  (timestamped dir per run — see .claude/rules/foundry-artifact-lifecycle.md)
 SENTINEL_SLUG_FORMULA: |
   eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"
   # Sentinel path: ${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}  # tmpdir-exempt: user-shell-boundary

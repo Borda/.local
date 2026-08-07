@@ -283,6 +283,6 @@ Next steps:
 
 - **Scope boundary**: plan writes `program.md` only — methodology validation = `/research:judge`; execution = `/research:run`; full pipeline = `/research:sweep`.
 - **`--team` note**: `--team` applies at run step, not plan step. Plan produces standard `program.md`; pass flag when invoking `/research:run <program.md> --team`.
-- **TTL exemption**: plan run dirs (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from 30-day TTL cleanup per `.claude/rules/artifact-lifecycle.md` (installed via `/foundry:setup` — requires `foundry` plugin); remove manually when no longer needed.
+- **TTL exemption**: plan run dirs (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from 30-day TTL cleanup per `.claude/rules/foundry-artifact-lifecycle.md` (installed via `/foundry:setup` — requires `foundry` plugin); remove manually when no longer needed.
 
 </notes>

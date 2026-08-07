@@ -15,11 +15,13 @@ Set up foundry on new machine:
 | --- | --- |
 | Detect Python 3.10+ (`python` / `py -3` / `python3`); install `~/.local/bin/python` shim if needed | ✓ |
 | Merge `statusLine`, `permissions.allow`, `enabledPlugins`, `advisorModel` → `~/.claude/settings.json` | ✓ |
-| `rules/*.md` → `~/.claude/rules/` | symlink |
+| `rules/<name>.md` → `~/.claude/rules/foundry-<name>.md` | symlink |
 | `TEAM_PROTOCOL.md` → `~/.claude/` | symlink |
 | Purge orphaned plugin cache versions (`.orphaned_at`, age-gated, confirm-gated) | ✓ |
 | `hooks/hooks.json` | auto — plugin system |
 | Conflict review before overwriting existing user files | ✓ |
+
+**Why is every rule renamed `foundry-<name>.md`?** `~/.claude/rules/` is one flat directory shared by every installed plugin, and four of them ship a `rules/quality-gates.md`. Installing source basenames would have them overwrite each other, so each plugin namespaces its own rules with its plugin name. The prefix is inert — verified against Claude Code 2.1.220 that it changes neither unconditional loading nor `paths:` frontmatter matching. Phase 1 migrates a pre-namespace unprefixed link (`quality-gates.md` → `foundry-quality-gates.md`) by removing the old one, but only when that old link provably belongs to foundry.
 
 **Why symlink rules and TEAM_PROTOCOL.md (not copy)?** Both load at session startup. Symlinks = every session gets plugin's current version — no stale copies, no re-run after upgrades. Broken symlink after upgrade = obvious error; stale copy silently serves old content.
 
@@ -303,7 +305,9 @@ PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_plug
 python "$PLUGIN_ROOT/bin/symlink_with_guard.py" cleanup --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
 ```
 
-The script iterates rules (`*.md`) and `TEAM_PROTOCOL.md`; removes any foundry-managed symlink (target contains `borda-ai-rig/foundry/`) that is both stale (target does not resolve under `$PLUGIN_ROOT`) and whose source no longer exists in current plugin tree. Each removal prints `  removed obsolete: <name>`.
+The script walks `~/.claude/rules/` and `TEAM_PROTOCOL.md` and removes every link the current version does not provide — an obsolete rule, a dangling link left by a source rename, or a pre-namespace unprefixed link now superseded by `foundry-<name>.md`. Each removal prints `  removed obsolete: <name>`.
+
+Removal requires proof of ownership: the link's target must resolve under `$PLUGIN_ROOT` or under the same `~/.claude/plugins/cache/<marketplace>/foundry/` lineage. A path *substring* is never accepted as proof — an earlier implementation used one and deleted a user's `dotfiles/plugins/cc_foundry/rules/…` link. A link into another marketplace, a sibling plugin's namespace, an arbitrary source checkout, or a dotfiles tree is left untouched even when its name collides.
 
 Cleanup also purges two dest dirs unconditionally — both skills and agents are served from the plugin namespace, never via `~/.claude/` entries:
 
@@ -318,7 +322,7 @@ mapfile -t LINK_CONFLICTS < <(python "$PLUGIN_ROOT/bin/symlink_with_guard.py" sc
 printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-setup-conflicts-${CSID}.txt"  # timeout: 3000; persist for Phase 4; Bash calls don't share state
 ```
 
-The `scan` mode walks the same two patterns (rules `*.md`, `TEAM_PROTOCOL.md`) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>`.
+The `scan` mode walks the same two patterns (rules `*.md`, `TEAM_PROTOCOL.md`) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink failing the same ownership proof Phase 1 uses. Each line names the *destination* file: `rules/foundry-<name>.md → <target>` · `rules/foundry-<name>.md  (real file)` · `TEAM_PROTOCOL.md → <target>`.
 
 **Phase 3 — Handle remaining conflicts** (real files or symlinks to non-foundry paths):
 
@@ -341,7 +345,7 @@ Options:
 (c) Review one by one
 
 On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. **Cap**: if `${#LINK_CONFLICTS[@]} > 10`, emit warning "⚠ ${#LINK_CONFLICTS[@]} conflicts found — per-item review capped at 10; showing first 10. Run again for the rest." and process only the first 10. Iterate over each entry (up to cap); for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CSID}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
+On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. **Cap**: if `${#LINK_CONFLICTS[@]} > 10`, emit warning "⚠ ${#LINK_CONFLICTS[@]} conflicts found — per-item review capped at 10; showing first 10. Run again for the rest." and process only the first 10. Iterate over each entry (up to cap); for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier — the destination basename, i.e. `foundry-<name>.md` for rules, or `TEAM_PROTOCOL.md` — to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CSID}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
 **Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
 
@@ -374,8 +378,11 @@ _in_conflicts() {
 }
 
 for src in "$PLUGIN_ROOT/rules/"*.md; do
-    dest="$HOME/.claude/rules/$(basename "$src")"
-    base="$(basename "$src")"
+    # `foundry-` prefix must match _RULE_PREFIX in symlink_with_guard.py — the scan
+    # output and this loop key on the same destination name or Phase 3's answers
+    # apply to the wrong file
+    base="foundry-$(basename "$src")"
+    dest="$HOME/.claude/rules/$base"
     if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
         echo "  skipped (user choice b): $base"; continue
     fi
@@ -451,7 +458,7 @@ Print summary:
 - Rules removed obsolete: N (files no longer in current plugin version)
 - User-level skill links removed: N (foundry skills invoke as `/foundry:<name>`)
 - Agent symlinks removed from ~/.claude/agents/: N (stale foundry-managed symlinks purged)
-- Rules linked: N → ~/.claude/rules/
+- Rules linked: N → ~/.claude/rules/foundry-*.md
 - TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
 - Cache purged: N orphaned version(s), M MB (or `skipped` / `nothing to purge`)
 - CLAUDE.md written → ~/.claude/CLAUDE.md
@@ -460,6 +467,8 @@ Print summary:
 </workflow>
 
 <notes>
+
+**Uninstall leaves state behind**: Claude Code runs no cleanup hook on uninstall, and neither `claude plugin uninstall` nor `bash sync.sh clear` removes what setup created. After removing foundry, delete `~/.claude/rules/foundry-*.md` and `~/.claude/TEAM_PROTOCOL.md` by hand — they dangle once the plugin cache version is gone — and review the `statusLine`, `permissions`, `enabledPlugins`, and `advisorModel` keys setup merged into `~/.claude/settings.json`, which also survive.
 
 **Follow-up gate omitted** — setup is one-shot; no iterative follow-up action applies. Step 13 Final report is terminal output; no `AskUserQuestion` gate required. (Step 11 has its own confirm gate before deleting cache dirs — that is a safety prompt, not a follow-up gate.)
 

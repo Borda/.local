@@ -106,7 +106,7 @@ Stops zombie tasks piling up across sessions, showing false progress.
 
 ## Self-Setup Maintenance
 
-`.claude/rules/foundry-config.md` = `.claude/` editing checklist (plan mode gate, post-edit steps, XML conventions, sync). `.claude/rules/claude-config.md` = universal Bash timeout + directory navigation rules.
+`.claude/rules/foundry-foundry-config.md` = `.claude/` editing checklist (plan mode gate, post-edit steps, XML conventions, sync). `.claude/rules/foundry-claude-config.md` = universal Bash timeout + directory navigation rules.
 
 ## Compact Instructions
 

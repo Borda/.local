@@ -1,13 +1,22 @@
 """Tests for ``bin/symlink_with_guard.py``.
 
 Doctests cover the pure helpers (``_is_foundry_managed``, ``_is_current``,
-``_conflict_label``). This file exercises the end-to-end behaviours of
-``cleanup`` and ``scan`` against a real temporary filesystem so the
-symlink-handling logic is verified without mocks.
+``_owns``, ``_cache_lineage``, ``_conflict_label``). This file exercises the
+end-to-end behaviours of ``cleanup`` and ``scan`` against a real temporary
+filesystem so the symlink-handling logic is verified without mocks.
+
+Rules install as ``~/.claude/rules/foundry-<source>.md``. Every mutation there is
+gated on the ownership proof in ``_owns`` — the target must resolve under the
+current plugin root or the same installed-cache lineage. The "foreign target"
+cases below exist because an earlier implementation used a path substring
+instead and deleted a user's ``dotfiles/plugins/cc_foundry/rules/…`` link.
 """
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,21 +26,30 @@ import symlink_with_guard  # noqa: E402
 from symlink_with_guard import cleanup, create_link, main, scan  # noqa: E402
 
 _MARKER = "borda-ai-rig/foundry/"
+_SKILL_MD = Path(__file__).resolve().parent.parent / "skills" / "setup" / "SKILL.md"
 
 
 @pytest.fixture
 def env(tmp_path: Path) -> tuple[Path, Path]:
-    """Build a current plugin tree + an empty fake $HOME, return both.
+    """Build a current installed plugin tree + a fake $HOME, return both.
+
+    The plugin root sits where a real install puts it — under the fake home's
+    plugin cache — so both ownership regimes are exercised faithfully: the
+    ``borda-ai-rig/foundry/`` marker matches the path (skills/agents scopes) and
+    ``_cache_lineage`` resolves (rules/TEAM_PROTOCOL scopes). A root outside the
+    cache would make several assertions pass vacuously.
 
     Layout::
 
-        tmp/plugin/{rules,skills/{curator,shepherd,_shared},TEAM_PROTOCOL.md}
+        tmp/home/.claude/plugins/cache/borda-ai-rig/foundry/0.40.0/
+            {rules/{current,another}.md,skills/{curator,shepherd,_shared},TEAM_PROTOCOL.md}
         tmp/home/.claude/{rules,skills,agents}/
 
     The ``skills/`` dirs exist to prove they are NOT linked into ``$HOME`` —
     they never enter ``_build_entries``.
     """
-    plugin = tmp_path / "plugin"
+    home = tmp_path / "home"
+    plugin = home / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "foundry" / "0.40.0"
     (plugin / "rules").mkdir(parents=True)
     (plugin / "rules" / "current.md").write_text("current\n")
     (plugin / "rules" / "another.md").write_text("another\n")
@@ -40,7 +58,6 @@ def env(tmp_path: Path) -> tuple[Path, Path]:
     (plugin / "skills" / "shepherd").mkdir(parents=True)
     (plugin / "skills" / "_shared").mkdir(parents=True)
 
-    home = tmp_path / "home"
     (home / ".claude" / "rules").mkdir(parents=True)
     (home / ".claude" / "skills").mkdir(parents=True)
     (home / ".claude" / "agents").mkdir(parents=True)
@@ -48,30 +65,19 @@ def env(tmp_path: Path) -> tuple[Path, Path]:
 
 
 @pytest.fixture
-def marked_env(tmp_path: Path) -> tuple[Path, Path]:
-    """Same as :func:`env`, but the plugin root path itself contains the foundry marker.
+def marked_env(env: tuple[Path, Path]) -> tuple[Path, Path]:
+    """Alias of :func:`env`, kept for tests that assert on current-version links.
 
-    Needed whenever a test asserts on a symlink pointing at the CURRENT plugin
-    root: ``_is_foundry_managed`` matches the ``borda-ai-rig/foundry/`` substring
-    against the readlink target, so a plugin root like ``tmp/plugin`` is never
-    recognised as foundry-managed and the assertion would pass vacuously. Real
-    installs live at ``~/.claude/plugins/cache/borda-ai-rig/foundry/<version>/``.
-
-    Layout::
-
-        tmp/cache/borda-ai-rig/foundry/0.38.4/skills/{curator,_shared}
-        tmp/home/.claude/{rules,skills,agents}/
+    The distinction the two fixtures used to draw disappeared when ``env`` moved
+    its plugin root into the install cache: that root now carries the
+    ``borda-ai-rig/foundry/`` marker on its own.
     """
-    plugin = tmp_path / "cache" / "borda-ai-rig" / "foundry" / "0.38.4"
-    (plugin / "rules").mkdir(parents=True)
-    (plugin / "skills" / "curator").mkdir(parents=True)
-    (plugin / "skills" / "_shared").mkdir(parents=True)
+    return env
 
-    home = tmp_path / "home"
-    (home / ".claude" / "rules").mkdir(parents=True)
-    (home / ".claude" / "skills").mkdir(parents=True)
-    (home / ".claude" / "agents").mkdir(parents=True)
-    return plugin, home
+
+def _stale_root(plugin: Path, version: str = "0.39.0") -> Path:
+    """Path of an older version of this plugin — same install-cache lineage."""
+    return plugin.parent / version
 
 
 def _ln(target: str, link: Path) -> None:
@@ -83,20 +89,20 @@ class TestCleanup:
     """cleanup: removes only foundry-managed symlinks whose source vanished."""
 
     def test_removes_obsolete_foundry_rule_link(self, env: tuple[Path, Path]) -> None:
-        """Stale foundry symlink whose source no longer exists is removed."""
+        """Stale same-lineage symlink whose source no longer exists is removed."""
         plugin, home = env
-        link = home / ".claude" / "rules" / "obsolete.md"
-        _ln("/old/borda-ai-rig/foundry/0.10.0/rules/obsolete.md", link)
+        link = home / ".claude" / "rules" / "foundry-obsolete.md"
+        _ln(str(_stale_root(plugin) / "rules" / "obsolete.md"), link)
 
         log = cleanup(plugin, home, _MARKER)
 
         assert not link.is_symlink()
-        assert "removed obsolete: obsolete.md" in log
+        assert "removed obsolete: foundry-obsolete.md" in log
 
     def test_keeps_current_foundry_rule_link(self, env: tuple[Path, Path]) -> None:
-        """Symlink already pointing into current plugin root is untouched."""
+        """Namespaced symlink already pointing into current plugin root is untouched."""
         plugin, home = env
-        link = home / ".claude" / "rules" / "current.md"
+        link = home / ".claude" / "rules" / "foundry-current.md"
         _ln(str(plugin / "rules" / "current.md"), link)
 
         log = cleanup(plugin, home, _MARKER)
@@ -107,12 +113,76 @@ class TestCleanup:
     def test_keeps_non_foundry_rule_link(self, env: tuple[Path, Path]) -> None:
         """Symlink to a non-foundry path is left alone (user owns it)."""
         plugin, home = env
-        link = home / ".claude" / "rules" / "user.md"
+        link = home / ".claude" / "rules" / "foundry-user.md"
         _ln("/somewhere/else/user.md", link)
 
         cleanup(plugin, home, _MARKER)
 
         assert link.is_symlink()
+
+    def test_migrates_legacy_unprefixed_link(self, env: tuple[Path, Path]) -> None:
+        """Pre-namespace link into the current root is removed so Phase 4 can re-link namespaced."""
+        plugin, home = env
+        legacy = home / ".claude" / "rules" / "current.md"
+        _ln(str(plugin / "rules" / "current.md"), legacy)
+
+        log = cleanup(plugin, home, _MARKER)
+
+        assert not legacy.is_symlink()
+        assert "removed obsolete: current.md" in log
+
+    def test_migrates_legacy_link_from_older_installed_version(self, env: tuple[Path, Path]) -> None:
+        """A pre-namespace link from an older install shares the lineage, so it migrates too."""
+        plugin, home = env
+        legacy = home / ".claude" / "rules" / "current.md"
+        _ln(str(_stale_root(plugin) / "rules" / "current.md"), legacy)
+
+        cleanup(plugin, home, _MARKER)
+
+        assert not legacy.is_symlink()
+
+    def test_removes_dangling_owned_link_after_source_rename(self, env: tuple[Path, Path]) -> None:
+        """A link into the current root whose file was renamed away is owned, so it goes."""
+        plugin, home = env
+        dangling = home / ".claude" / "rules" / "testing.md"
+        _ln(str(plugin / "rules" / "testing.md"), dangling)
+
+        log = cleanup(plugin, home, _MARKER)
+
+        assert not dangling.is_symlink()
+        assert "removed obsolete: testing.md" in log
+
+    @pytest.mark.parametrize(
+        "target_rel",
+        [
+            pytest.param(".claude/plugins/cache/other-market/foundry/0.39.0/rules/current.md", id="other-marketplace"),
+            pytest.param(
+                ".claude/plugins/cache/borda-ai-rig/develop/0.19.0/rules/quality-gates.md", id="sibling-plugin"
+            ),
+            pytest.param("src/AI-Rig/plugins/cc_foundry/rules/current.md", id="source-checkout"),
+            pytest.param("dotfiles/plugins/cc_foundry/rules/current.md", id="dotfiles"),
+        ],
+    )
+    def test_keeps_legacy_link_with_foreign_target(self, env: tuple[Path, Path], target_rel: str) -> None:
+        """An unprefixed link failing the ownership proof survives migration untouched."""
+        plugin, home = env
+        legacy = home / ".claude" / "rules" / "current.md"
+        _ln(str(home / target_rel), legacy)
+
+        log = cleanup(plugin, home, _MARKER)
+
+        assert legacy.is_symlink()
+        assert log == []
+
+    def test_keeps_sibling_plugin_namespaced_link(self, env: tuple[Path, Path]) -> None:
+        """Another plugin's namespace is never foundry's to prune."""
+        plugin, home = env
+        sibling = home / ".claude" / "rules" / "develop-quality-gates.md"
+        _ln(str(home / ".claude/plugins/cache/borda-ai-rig/develop/0.19.0/rules/quality-gates.md"), sibling)
+
+        cleanup(plugin, home, _MARKER)
+
+        assert sibling.is_symlink()
 
     def test_keeps_real_file(self, env: tuple[Path, Path]) -> None:
         """Real files are never deleted by cleanup."""
@@ -130,18 +200,30 @@ class TestCleanup:
         # source file removed from current plugin → cleanup should drop the stale link
         (plugin / "TEAM_PROTOCOL.md").unlink()
         link = home / ".claude" / "TEAM_PROTOCOL.md"
-        _ln("/old/borda-ai-rig/foundry/0.10.0/TEAM_PROTOCOL.md", link)
+        _ln(str(_stale_root(plugin) / "TEAM_PROTOCOL.md"), link)
 
         log = cleanup(plugin, home, _MARKER)
 
         assert not link.is_symlink()
         assert "removed obsolete: TEAM_PROTOCOL.md" in log
 
+    def test_keeps_foreign_team_protocol_when_source_gone(self, env: tuple[Path, Path]) -> None:
+        """An unowned TEAM_PROTOCOL.md link survives even when foundry stops shipping the file."""
+        plugin, home = env
+        (plugin / "TEAM_PROTOCOL.md").unlink()
+        link = home / ".claude" / "TEAM_PROTOCOL.md"
+        _ln(str(home / "dotfiles" / "TEAM_PROTOCOL.md"), link)
+
+        log = cleanup(plugin, home, _MARKER)
+
+        assert link.is_symlink()
+        assert log == []
+
     def test_keeps_team_protocol_when_source_still_present(self, env: tuple[Path, Path]) -> None:
         """Even a stale foundry TEAM_PROTOCOL.md link stays when source exists (Phase 4 will refresh)."""
         plugin, home = env
         link = home / ".claude" / "TEAM_PROTOCOL.md"
-        _ln("/old/borda-ai-rig/foundry/0.10.0/TEAM_PROTOCOL.md", link)
+        _ln(str(_stale_root(plugin) / "TEAM_PROTOCOL.md"), link)
 
         cleanup(plugin, home, _MARKER)
 
@@ -267,42 +349,59 @@ class TestScan:
     """scan: surfaces only conflicts requiring user confirmation."""
 
     def test_skips_current_foundry_link(self, env: tuple[Path, Path]) -> None:
-        """Current symlink is not a conflict."""
+        """Current namespaced symlink is not a conflict."""
         plugin, home = env
         _ln(
             str(plugin / "rules" / "current.md"),
-            home / ".claude" / "rules" / "current.md",
+            home / ".claude" / "rules" / "foundry-current.md",
         )
 
         assert scan(plugin, home, _MARKER) == []
 
     def test_skips_stale_foundry_link(self, env: tuple[Path, Path]) -> None:
-        """Stale foundry symlink is auto-replaced in Phase 4 — not a conflict."""
+        """Same-lineage stale symlink is auto-replaced in Phase 4 — not a conflict."""
         plugin, home = env
         _ln(
-            "/old/borda-ai-rig/foundry/0.10.0/rules/current.md",
-            home / ".claude" / "rules" / "current.md",
+            str(_stale_root(plugin) / "rules" / "current.md"),
+            home / ".claude" / "rules" / "foundry-current.md",
         )
 
         assert scan(plugin, home, _MARKER) == []
 
-    def test_reports_non_foundry_symlink(self, env: tuple[Path, Path]) -> None:
-        """Symlink to a non-foundry path surfaces as a conflict descriptor."""
+    def test_ignores_legacy_unprefixed_link(self, env: tuple[Path, Path]) -> None:
+        """A pre-namespace link is not at any current destination, so it raises no conflict."""
         plugin, home = env
-        _ln("/home/user/dotfiles/another.md", home / ".claude" / "rules" / "another.md")
+        _ln(str(plugin / "rules" / "current.md"), home / ".claude" / "rules" / "current.md")
+
+        assert scan(plugin, home, _MARKER) == []
+
+    def test_reports_non_foundry_symlink(self, env: tuple[Path, Path]) -> None:
+        """Symlink failing the ownership proof surfaces as a conflict descriptor."""
+        plugin, home = env
+        _ln("/home/user/dotfiles/another.md", home / ".claude" / "rules" / "foundry-another.md")
 
         conflicts = scan(plugin, home, _MARKER)
 
-        assert conflicts == ["rules/another.md → /home/user/dotfiles/another.md"]
+        assert conflicts == ["rules/foundry-another.md → /home/user/dotfiles/another.md"]
+
+    def test_reports_other_marketplace_symlink(self, env: tuple[Path, Path]) -> None:
+        """Another marketplace's cache path is a different lineage — conflict, not a silent refresh."""
+        plugin, home = env
+        foreign = home / ".claude/plugins/cache/other-market/foundry/0.39.0/rules/current.md"
+        _ln(str(foreign), home / ".claude" / "rules" / "foundry-current.md")
+
+        conflicts = scan(plugin, home, _MARKER)
+
+        assert conflicts == [f"rules/foundry-current.md → {foreign}"]
 
     def test_reports_real_file_conflict(self, env: tuple[Path, Path]) -> None:
         """Real file at dest path surfaces with the (real file) suffix."""
         plugin, home = env
-        (home / ".claude" / "rules" / "current.md").write_text("hand-written\n")
+        (home / ".claude" / "rules" / "foundry-current.md").write_text("hand-written\n")
 
         conflicts = scan(plugin, home, _MARKER)
 
-        assert "rules/current.md  (real file)" in conflicts
+        assert "rules/foundry-current.md  (real file)" in conflicts
 
     def test_reports_team_protocol_conflict(self, env: tuple[Path, Path]) -> None:
         """TEAM_PROTOCOL.md conflict is labeled without the rules/ or skills/ prefix."""
@@ -340,8 +439,8 @@ class TestMain:
         """cleanup mode emits ``  removed obsolete: ...`` lines (two-space indent)."""
         plugin, home = env
         _ln(
-            "/old/borda-ai-rig/foundry/0.10.0/rules/another.md",
-            home / ".claude" / "rules" / "another.md",
+            str(_stale_root(plugin) / "rules" / "another.md"),
+            home / ".claude" / "rules" / "foundry-another.md",
         )
         # required: source file deleted to mark it obsolete
         (plugin / "rules" / "another.md").unlink()
@@ -350,7 +449,7 @@ class TestMain:
 
         assert rc == 0
         out = capsys.readouterr().out
-        assert "  removed obsolete: another.md" in out
+        assert "  removed obsolete: foundry-another.md" in out
 
     def test_scan_prints_one_conflict_per_line(
         self,
@@ -359,13 +458,13 @@ class TestMain:
     ) -> None:
         """scan mode emits the bash-array-ready format on stdout."""
         plugin, home = env
-        _ln("/elsewhere/foo.md", home / ".claude" / "rules" / "current.md")
+        _ln("/elsewhere/foo.md", home / ".claude" / "rules" / "foundry-current.md")
 
         rc = main(["scan", "--plugin-root", str(plugin), "--home", str(home)])
 
         assert rc == 0
         out = capsys.readouterr().out.strip().splitlines()
-        assert out == ["rules/current.md → /elsewhere/foo.md"]
+        assert out == ["rules/foundry-current.md → /elsewhere/foo.md"]
 
     def test_missing_plugin_root_exits_1(
         self,
@@ -382,13 +481,17 @@ class TestMain:
         env: tuple[Path, Path],
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--marker override changes the substring used to detect foundry links."""
+        """--marker override changes the substring used to purge the skills scope.
+
+        The rules and TEAM_PROTOCOL scopes ignore the marker entirely — they are
+        destinations foundry writes, so they demand the stricter path-lineage
+        proof instead.
+        """
         plugin, home = env
         _ln(
-            "/x/custom-marker/0.1/rules/another.md",
-            home / ".claude" / "rules" / "another.md",
+            "/x/custom-marker/0.1/skills/curator",
+            home / ".claude" / "skills" / "curator",
         )
-        (plugin / "rules" / "another.md").unlink()
 
         rc = main(
             [
@@ -404,7 +507,25 @@ class TestMain:
 
         assert rc == 0
         out = capsys.readouterr().out
-        assert "  removed obsolete: another.md" in out
+        assert "  removed user-level skill link: curator" in out
+
+    def test_marker_does_not_authorise_rule_deletion(
+        self,
+        env: tuple[Path, Path],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A marker-matching but unowned rules link is never deleted."""
+        plugin, home = env
+        link = home / ".claude" / "rules" / "current.md"
+        _ln("/x/custom-marker/0.1/rules/current.md", link)
+
+        rc = main(
+            ["cleanup", "--plugin-root", str(plugin), "--home", str(home), "--marker", "custom-marker/"],
+        )
+
+        assert rc == 0
+        assert link.is_symlink()
+        assert "removed obsolete" not in capsys.readouterr().out
 
 
 class TestCreateLink:
@@ -560,3 +681,59 @@ def test_module_exposes_expected_helpers() -> None:
     assert callable(symlink_with_guard.scan)
     assert callable(symlink_with_guard.create_link)
     assert callable(symlink_with_guard.main)
+
+
+def _phase4_block() -> str:
+    """Return the setup skill's Phase 4 linking block, verbatim from SKILL.md.
+
+    Two destination calculations exist for the same files — this Python module's
+    ``_build_entries`` and the shell loop the skill actually executes. The first
+    attempt at namespacing changed only the Python side and still created
+    unprefixed links at runtime, so the shell block is executed here rather than
+    trusted.
+
+    Returns:
+        The fenced block's contents.
+
+    Raises:
+        AssertionError: When the block can no longer be located.
+    """
+    text = _SKILL_MD.read_text(encoding="utf-8")
+    blocks = re.findall(r"^```bash\n(.*?)^```", text, flags=re.DOTALL | re.MULTILINE)
+    matches = [b for b in blocks if 'for src in "$PLUGIN_ROOT/rules/"*.md' in b]
+    assert len(matches) == 1, f"expected exactly one Phase 4 link loop in {_SKILL_MD}, found {len(matches)}"
+    return matches[0]
+
+
+class TestSkillPhase4Block:
+    """The executable SKILL.md block must agree with this module's destinations."""
+
+    def test_block_uses_the_module_rule_prefix(self) -> None:
+        """Drift guard: the shell loop's literal prefix equals ``_RULE_PREFIX``."""
+        assert f'base="{symlink_with_guard._RULE_PREFIX}$(basename "$src")"' in _phase4_block()
+
+    def test_block_creates_namespaced_links(self, env: tuple[Path, Path], tmp_path: Path) -> None:
+        """Running the real block produces exactly the destinations ``_build_entries`` expects."""
+        plugin, home = env
+        run_env = {
+            **os.environ,
+            "HOME": str(home),
+            "PLUGIN_ROOT": str(plugin),
+            "TMPDIR": str(tmp_path),
+            "CLAUDE_CODE_SESSION_ID": "test-session",
+        }
+
+        proc = subprocess.run(
+            ["bash", "-c", _phase4_block()],
+            env=run_env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert proc.returncode == 0, proc.stderr
+        rules_dest = home / ".claude" / "rules"
+        created = sorted(p.name for p in rules_dest.iterdir())
+        assert created == ["foundry-another.md", "foundry-current.md"]
+        assert (rules_dest / "foundry-current.md").readlink() == plugin / "rules" / "current.md"
+        assert (home / ".claude" / "TEAM_PROTOCOL.md").is_symlink()

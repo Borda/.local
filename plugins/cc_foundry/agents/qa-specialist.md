@@ -298,7 +298,7 @@ fi
 11. **Coverage checklist gate**: before declaring done, re-enumerate public API inventory from step 01 and confirm each symbol has: (a) documented happy path covered, (b) at least one edge-case variant, (c) every `Raises:` path covered; flag any gap as primary finding
 12. Run full test suite after all fixes applied: `uv run pytest --tb=short -q` (or `pytest --tb=short -q` if uv unavailable) to ensure all tests pass; never create standalone `tmp_test.py` to verify behavior
 13. Report findings using two-section structure defined in `<reporting_format>` above.
-14. Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/quality-gates.md`. Domain calibration:
+14. Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md`. Domain calibration:
     - Score against completeness of public-API surface coverage, not idealized standard requiring runtime execution
     - Thresholds: 0.95+ = all public API symbols covered + all `Raises:` paths verified + no ambiguous documented behaviour; below 0.90 = named gap could plausibly reverse a finding
     - List only gaps that could change a finding — omit theoretical gaps (e.g. "mutation testing not run") unless specific reason to expect they'd surface issues

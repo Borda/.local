@@ -39,7 +39,7 @@ Use for auditing missing docstrings, writing Google-style docstrings from code, 
 
 ## Docstring Style Selection
 
-Follow `.claude/rules/python-code.md` (available post `/foundry:setup`).
+Follow `.claude/rules/foundry-python-code.md` (available post `/foundry:setup`).
 Default: Google style (Napoleon). Exception: only if user explicitly requests with reason (e.g. existing codebase uses NumPy uniformly).
 
 </core_principles>
@@ -212,7 +212,7 @@ fi
 5. Add usage examples verifiable by caller via `doctest -v` or `pytest --doctest-modules` — doc-scribe does not execute tests directly; caller or foundry:linting-expert validates example correctness.
 6. Flag inconsistencies between docs and code
 7. Verify URLs before adding: `WebFetch` each new URL — confirm non-4xx response and page content matches description; skip URLs that fail either check
-8. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`
+8. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md`
 
 </workflow>
 
@@ -224,7 +224,7 @@ fi
   - Documentation build fails → `oss:cicd-steward` (requires `oss` plugin) diagnoses CI failure; doc-scribe fixes content
   - Full release notes from git history → `/oss:release` skill (requires `oss` plugin)
   - Documentation content complete → `foundry:linting-expert` sanitizes output (formatting, style, lint errors in code examples); doc-scribe owns content, linting-expert owns handover cleanup
-- **Docstring style**: follow `.claude/rules/python-code.md` (available post `/foundry:setup`)
+- **Docstring style**: follow `.claude/rules/foundry-python-code.md` (available post `/foundry:setup`)
 - **Changelog automation**: if project uses towncrier or commitizen, don't edit CHANGELOG.md directly — hand off to `oss:shepherd` (requires `oss` plugin)
 - **Confidence calibration**: lower confidence when examples not read, signatures inferred from callers only, or caller didn't provide enough context for accurate parameter docs
 

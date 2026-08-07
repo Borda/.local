@@ -364,7 +364,7 @@ If `scientist_status == "timed_out"` or `<RUN_DIR>/hypotheses.jsonl` does not ex
 
 - Retro read-only — never modifies code, commits, or writes to `.experiments/state/<run-id>/`
 - `.experiments/retro-<timestamp>/` stores analysis scripts, intermediate JSON, scientist output, hypotheses.jsonl
-- Retro run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when done (`rm -rf .experiments/retro-*/`)
+- Retro run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (exempt per `.claude/rules/foundry-artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when done (`rm -rf .experiments/retro-*/`)
 - `hypotheses.jsonl` uses `source: "retro"` — compatible with `--hypothesis` flag of `/research:run`; `"retro"` extends oracle schema (see `protocol.md`); feasibility fields omitted, treated as feasible:true by run
 - `--compare` requires both runs use same metric; if metric names differ, stop: `"Cannot compare runs with different metrics: <metric-1> vs <metric-2>"`
 - Dead iteration threshold (`--threshold`) should match metric's noise floor — default 0.001 for normalized metrics; adjust for raw values (e.g. `--threshold 0.1` for loss in hundreds)

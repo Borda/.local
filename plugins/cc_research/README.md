@@ -24,6 +24,7 @@ ______________________________________________________________________
   - [`/research:fortify`](#researchfortify--ablation-study-runner)
   - [`/research:retro`](#researchretro--post-run-retrospective)
   - [`/research:kaggle`](#researchkaggle--kaggle-competition-notebook)
+  - [`/research:setup`](#researchsetup--post-install-rule-delivery)
 - [Agents reference](#agents-reference)
   - [`research:scientist`](#researchscientist)
   - [`research:data-steward`](#researchdata-steward)
@@ -71,6 +72,8 @@ ______________________________________________________________________
 claude plugin marketplace add Borda/AI-Rig
 claude plugin install research@borda-ai-rig
 ```
+
+Then run `/research:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade; `bash sync.sh claude` does it for you.
 
 Full suite best (`foundry` unlocks specialist agents):
 
@@ -574,6 +577,27 @@ Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + Dat
 # Generating notebook...
 # Output: .experiments/kaggle/rsna-breast-cancer.py (574 lines)
 ```
+
+______________________________________________________________________
+
+### `/research:setup` — post-install rule delivery
+
+**Purpose**: Deliver this plugin's `rules/*.md` into Claude's user-level rule namespace. Maintenance command, not part of any research workflow.
+
+**When to use**: after installing research on a new machine, or after upgrading it. `bash sync.sh claude` runs it automatically for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
+
+**Invocation**:
+
+```text
+/research:setup            # interactive — asks before replacing anything it does not own
+/research:setup --approve  # non-interactive — used by sync.sh
+```
+
+Each rule installs as a symlink at `~/.claude/rules/research-<source-name>.md`. The `research-` prefix keeps the flat rule namespace collision-free — four plugins ship a `rules/quality-gates.md`. A filename prefix does not change how Claude loads a rule or how its `paths:` frontmatter matches.
+
+Only links this plugin provably owns are replaced or removed: the existing target must resolve under the current plugin root or under the same install-cache lineage. A real file, a link into another marketplace, a source checkout, or a dotfiles tree is reported as a conflict and left alone unless you approve replacing it.
+
+**Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/research-*.md` survives both `claude plugin uninstall` and `bash sync.sh clear`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
 
 ______________________________________________________________________
 

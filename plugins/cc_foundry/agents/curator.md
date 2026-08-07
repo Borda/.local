@@ -289,7 +289,7 @@ Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
 8. If fixes requested: apply P1 (broken refs) first, then P2 (duplication), then P3 (trimming), then P4 (outdated content), then P5 (structural). Any fix that touches a `policy-sibling`-marked section or restated cross-file policy → run the Policy reference-graph tracing bullet (Content Quality) before considering that fix done, not just the file in hand
 9. After any edits: re-run `wc -l` (no dedicated tool for aggregate line counts; Bash intentional here)
    and verify no new broken refs introduced
-10. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
+10. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md`.
 
 </workflow>
 

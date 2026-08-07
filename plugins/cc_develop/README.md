@@ -21,6 +21,7 @@ ______________________________________________________________________
   - [`/develop:refactor`](#developrefactor)
   - [`/develop:debug`](#developdebug)
   - [`/develop:review`](#developreview)
+  - [`/develop:setup`](#developsetup)
 - [Workflow overview](#workflow-overview)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -70,6 +71,8 @@ ______________________________________________________________________
 claude plugin marketplace add Borda/AI-Rig
 claude plugin install develop@borda-ai-rig
 ```
+
+Then run `/develop:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade; `bash sync.sh claude` does it for you.
 
 <details>
 
@@ -485,6 +488,25 @@ git add src/mypackage/trainer.py tests/test_trainer.py
 
 ______________________________________________________________________
 
+### `/develop:setup`
+
+**Purpose**: Deliver this plugin's `rules/*.md` into Claude's user-level rule namespace. Maintenance command, not part of any development workflow.
+
+**When to use**: after installing develop on a new machine, or after upgrading it. `bash sync.sh claude` runs it automatically for every installed managed plugin that ships a setup skill, so a normal sync needs no manual step.
+
+**Invocation**:
+
+```text
+/develop:setup            # interactive — asks before replacing anything it does not own
+/develop:setup --approve  # non-interactive — used by sync.sh
+```
+
+Each rule installs as a symlink at `~/.claude/rules/develop-<source-name>.md`. The `develop-` prefix keeps the flat rule namespace collision-free — four plugins ship a `rules/quality-gates.md`. A filename prefix does not change how Claude loads a rule or how its `paths:` frontmatter matches.
+
+Only links this plugin provably owns are replaced or removed: the existing target must resolve under the current plugin root or under the same install-cache lineage. A real file, a link into another marketplace, a source checkout, or a dotfiles tree is reported as a conflict and left alone unless you approve replacing it.
+
+______________________________________________________________________
+
 ## 🗺️ Workflow overview
 
 Skills chain naturally. Typical session:
@@ -697,6 +719,10 @@ claude plugin uninstall develop
 plugins/cc_develop/
 ├── .claude-plugin/
 │   └── plugin.json          -- manifest (name, version, author)
+├── bin/
+│   └── sync_rules.py        -- installs rules/*.md into ~/.claude/rules/
+├── rules/
+│   └── quality-gates.md     -- delivered as ~/.claude/rules/develop-quality-gates.md
 └── skills/
     ├── plan/
     │   └── SKILL.md
@@ -708,8 +734,12 @@ plugins/cc_develop/
     │   └── SKILL.md
     ├── debug/
     │   └── SKILL.md
-    └── review/
+    ├── review/
+    │   └── SKILL.md
+    └── setup/
         └── SKILL.md
 ```
+
+**Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/develop-*.md` survives both `claude plugin uninstall` and `bash sync.sh clear`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
 
 Modify any skill → update this README before finishing — unsynced change = incomplete change.

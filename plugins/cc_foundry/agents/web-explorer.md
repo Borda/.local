@@ -262,7 +262,7 @@ Load pytorch_tracking from `${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/_sh
     - Cross-check examples against library's test suite if available
     - Flag when docs sparse, outdated, or contradict source code
     - Note if feature experimental, beta, or subject to change
-09. Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/quality-gates.md`. In Gaps: note explicitly if absence-of-content checks weren't performed — omission gaps distinct from accuracy gaps, must be named separately.
+09. Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md`. In Gaps: note explicitly if absence-of-content checks weren't performed — omission gaps distinct from accuracy gaps, must be named separately.
 
 </workflow>
 

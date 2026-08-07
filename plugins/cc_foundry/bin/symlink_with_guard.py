@@ -20,13 +20,24 @@ Two modes, both consume the same input:
 Two iteration patterns are evaluated by both modes; cleanup adds two
 unconditional purge scopes:
 
-1. ``<plugin>/rules/*.md`` ↔ ``$HOME/.claude/rules/*.md``
+1. ``<plugin>/rules/<name>.md`` ↔ ``$HOME/.claude/rules/foundry-<name>.md``
 2. ``<plugin>/TEAM_PROTOCOL.md`` ↔ ``$HOME/.claude/TEAM_PROTOCOL.md`` (single file)
 3. (cleanup only) ``$HOME/.claude/skills/`` — purge any foundry-managed symlink
 4. (cleanup only) ``$HOME/.claude/agents/`` — purge any foundry-managed symlink
 
-Foundry-management is detected by substring match on the readlink target:
-default marker ``borda-ai-rig/foundry/``.
+Rules are namespaced because ``~/.claude/rules/`` is one flat directory shared by
+every plugin and four of them ship a ``rules/quality-gates.md``. Cleanup migrates
+a pre-namespace unprefixed link to the new name — but only when it passes the
+ownership proof below.
+
+Two ownership regimes, deliberately different. Scopes 1–2 are destinations
+foundry legitimately writes, so mutating one requires :func:`_owns`: the target
+must resolve under the current plugin root or the same
+``$HOME/.claude/plugins/cache/<marketplace>/foundry/`` lineage. Path substrings
+are not accepted — an earlier implementation used one and deleted a user's
+``dotfiles/plugins/cc_foundry/rules/…`` link. Scopes 3–4 are destinations foundry
+never writes at all, so any symlink there matching the ``borda-ai-rig/foundry/``
+marker substring is obsolete by construction and purged on that cheaper test.
 
 Usage:
     python "${CLAUDE_PLUGIN_ROOT}/bin/symlink_with_guard.py" cleanup --plugin-root <path> [--home <path>] [--marker <str>]
@@ -68,6 +79,13 @@ class GuardMode(str, Enum):
 
 
 _DEFAULT_MARKER = "borda-ai-rig/foundry/"
+
+# Rules land in Claude's flat ``~/.claude/rules/`` namespace, which every plugin
+# shares. Four plugins ship a ``rules/quality-gates.md``, so source basenames
+# would collide; each rule installs as ``foundry-<source-name>.md`` instead. The
+# prefix is inert — verified against Claude Code 2.1.220 that it changes neither
+# unconditional loading nor ``paths:`` frontmatter matching.
+_RULE_PREFIX = "foundry-"
 
 # Marker is used in substring matches against `readlink` output (see
 # `_is_foundry_managed`). Restricting to filesystem-safe characters prevents a
@@ -221,6 +239,98 @@ def _is_current(target: str, plugin_root: Path) -> bool:
         return str(plugin_root) in target  # fallback if resolution fails
 
 
+def _cache_lineage(plugin_root: Path, home: Path) -> Path | None:
+    """Return the ``cache/<marketplace>/foundry/`` prefix of an installed root.
+
+    A link left by a previous version of this plugin, installed from this
+    marketplace, sits under the same two-segment prefix. Anything else — another
+    marketplace, another plugin, a source checkout, a dotfiles tree — shares no
+    lineage and is never adopted.
+
+    Args:
+        plugin_root: Currently-installed plugin root.
+        home: Value of ``$HOME``.
+
+    Returns:
+        The lineage directory, or ``None`` when ``plugin_root`` is not an
+        installed cache root (e.g. the local source checkout fallback).
+
+    Examples:
+        >>> _cache_lineage(Path("/h/.claude/plugins/cache/mkt/foundry/0.40.0"), Path("/h")).as_posix()
+        '/h/.claude/plugins/cache/mkt/foundry'
+        >>> _cache_lineage(Path("/src/plugins/cc_foundry"), Path("/h")) is None
+        True
+    """
+    cache = Path(os.path.normpath(str(home / ".claude" / "plugins" / "cache")))
+    root = Path(os.path.normpath(str(plugin_root)))
+    if not root.is_relative_to(cache):
+        return None
+    parts = root.relative_to(cache).parts
+    if len(parts) < 3:
+        return None
+    return cache / parts[0] / parts[1]
+
+
+def _resolve_target(dest: Path, target: str) -> Path:
+    """Absolutise a raw ``readlink`` target without following symlinks.
+
+    ``realpath`` is deliberately not used: resolving a foreign path could walk it
+    into a directory this plugin owns and turn a user's own link into an
+    adoption. Relative targets anchor at the link's directory, as the kernel
+    reads them.
+
+    Args:
+        dest: The symlink whose target this is.
+        target: Raw ``readlink`` output.
+
+    Returns:
+        Normalised absolute path of the target.
+
+    Examples:
+        >>> _resolve_target(Path("/h/.claude/rules/x.md"), "../../dotfiles/x.md").as_posix()
+        '/h/dotfiles/x.md'
+    """
+    if os.path.isabs(target):
+        return Path(os.path.normpath(target))
+    return Path(os.path.normpath(str(dest.parent / target)))
+
+
+def _owns(dest: Path, target: str, plugin_root: Path, lineage: Path | None) -> bool:
+    """True when foundry may replace or delete ``dest``.
+
+    This is the proof gate for every rules-scope mutation, including migrating a
+    pre-namespace unprefixed link. Substring shapes such as
+    ``/borda-ai-rig/foundry/`` or ``/plugins/cc_foundry/rules/`` are NOT accepted
+    — an earlier implementation used one and deleted a user's
+    ``dotfiles/plugins/cc_foundry/rules/…`` link.
+
+    Args:
+        dest: Existing entry under ``$HOME/.claude/``.
+        target: Raw ``readlink`` output for ``dest``.
+        plugin_root: Currently-installed plugin root.
+        lineage: Result of :func:`_cache_lineage`, or ``None``.
+
+    Returns:
+        True iff the target lies under the current plugin root or the same
+        installed-cache lineage. Broken targets are judged on path alone, so a
+        dangling link foundry created is still owned (and cleanable) while a
+        dangling foreign link stays untouched.
+
+    Examples:
+        >>> root = Path("/h/.claude/plugins/cache/mkt/foundry/0.40.0")
+        >>> dest = Path("/h/.claude/rules/foundry-quality-gates.md")
+        >>> _owns(dest, str(root / "rules/quality-gates.md"), root, None)
+        True
+        >>> _owns(dest, "/h/dotfiles/plugins/cc_foundry/rules/quality-gates.md", root, None)
+        False
+    """
+    resolved = _resolve_target(dest, target)
+    bases = {os.path.normpath(str(plugin_root)), os.path.realpath(str(plugin_root))}
+    if lineage is not None:
+        bases |= {os.path.normpath(str(lineage)), os.path.realpath(str(lineage))}
+    return any(resolved.is_relative_to(base) for base in bases)
+
+
 def _list_rule_files(plugin_root: Path) -> list[Path]:
     """List ``*.md`` files in ``<plugin_root>/rules``.
 
@@ -264,7 +374,7 @@ def _build_entries(plugin_root: Path, home: Path) -> list[_Entry]:
     entries: list[_Entry] = []
     rules_target = home / ".claude" / "rules"
     for rule in _list_rule_files(plugin_root):
-        entries.append(_Entry(source=rule, dest=rules_target / rule.name, kind="file"))
+        entries.append(_Entry(source=rule, dest=rules_target / f"{_RULE_PREFIX}{rule.name}", kind="file"))
 
     team_src = plugin_root / "TEAM_PROTOCOL.md"
     if team_src.is_file():
@@ -276,13 +386,17 @@ def _build_entries(plugin_root: Path, home: Path) -> list[_Entry]:
 
 
 def _conflict_label(entry: _Entry, target: str | None) -> str:
-    """Render a conflict descriptor consistent with the legacy bash format.
+    """Render a conflict descriptor keyed on the destination filename.
 
-    Format examples (preserved verbatim for back-compat with existing prose):
+    Format examples:
 
-    * ``rules/foo.md → /other/path/foo.md``
-    * ``rules/foo.md  (real file)``
+    * ``rules/foundry-foo.md → /other/path/foo.md``
+    * ``rules/foundry-foo.md  (real file)``
     * ``TEAM_PROTOCOL.md → /other/...``
+
+    The rules label names the *destination* (``foundry-foo.md``), not the source
+    basename, because that is the file the user is being asked about and the key
+    SKILL.md Phase 4 matches against.
 
     Only rules and ``TEAM_PROTOCOL.md`` reach this function — skills left
     :func:`_build_entries` (see its docstring for the shadowing hazard), so no
@@ -293,14 +407,14 @@ def _conflict_label(entry: _Entry, target: str | None) -> str:
         target: ``readlink`` output, or ``None`` when the dest is a real file.
 
     Returns:
-        Single conflict line matching the legacy SKILL.md format.
+        Single conflict line consumed by SKILL.md Phase 3/4.
 
     Examples:
-        >>> e = _Entry(Path("/p/rules/foo.md"), Path("/d/rules/foo.md"), "file")
+        >>> e = _Entry(Path("/p/rules/foo.md"), Path("/d/rules/foundry-foo.md"), "file")
         >>> _conflict_label(e, "/elsewhere/foo.md")
-        'rules/foo.md → /elsewhere/foo.md'
+        'rules/foundry-foo.md → /elsewhere/foo.md'
         >>> _conflict_label(e, None)
-        'rules/foo.md  (real file)'
+        'rules/foundry-foo.md  (real file)'
         >>> ts = _Entry(Path("/p/TEAM_PROTOCOL.md"), Path("/d/TEAM_PROTOCOL.md"), "file")
         >>> _conflict_label(ts, "/elsewhere/team.md")
         'TEAM_PROTOCOL.md → /elsewhere/team.md'
@@ -308,7 +422,7 @@ def _conflict_label(entry: _Entry, target: str | None) -> str:
     if entry.dest.name == "TEAM_PROTOCOL.md":
         prefix = "TEAM_PROTOCOL.md"
     else:
-        prefix = f"rules/{entry.source.name}"
+        prefix = f"rules/{entry.dest.name}"
 
     if target is None:
         return f"{prefix}  (real file)"
@@ -329,28 +443,66 @@ def _existing_dest_symlinks(target_dir: Path) -> list[Path]:
     return sorted(p for p in target_dir.iterdir() if p.is_symlink())
 
 
-def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
-    """Remove foundry-managed symlinks whose source no longer exists.
+def _cleanup_rules(plugin_root: Path, home: Path, log: list[str]) -> None:
+    """Remove every owned link in ``~/.claude/rules/`` the current version does not provide.
 
-    Four scopes evaluated. Two are conditional (rules files, TEAM_PROTOCOL.md) —
-    the link is removed only when ALL three predicates hold:
+    Ownership is the only licence to delete (:func:`_owns`) — never the link's
+    name and never a path substring. Three cases are therefore all handled by one
+    rule, "owned but not expected":
 
-    * the readlink target contains the foundry ``marker`` substring,
-    * the readlink target does NOT resolve under ``plugin_root`` (stale, not current),
-    * the matching source does not exist in the current plugin tree.
+    * a link to a rule dropped in this version (obsolete),
+    * a dangling link into the current root left by a source rename,
+    * a pre-namespace unprefixed link such as ``quality-gates.md``, superseded by
+      ``foundry-quality-gates.md`` (migration).
 
-    The other two scopes (``~/.claude/skills/`` and ``~/.claude/agents/``) are
-    unconditional: every foundry-managed symlink in either is obsolete by
-    design, because both skills and agents are dispatched from the plugin
-    namespace and are never re-created there by :func:`_build_entries`. They are
-    purged with no source-existence check. The two differ in one respect — see
-    the inline comments for why the skills scope also removes links pointing at
-    the *current* plugin root while the agents scope deliberately keeps those.
+    A same-named link owned by a sibling plugin, a foreign marketplace, a source
+    checkout, or a dotfiles tree fails the proof and stays.
 
     Args:
         plugin_root: Currently-installed plugin root.
         home: Value of ``$HOME``.
-        marker: Substring identifying foundry-managed targets.
+        log: Accumulator appended in place.
+    """
+    rules_dest = home / ".claude" / "rules"
+    lineage = _cache_lineage(plugin_root, home)
+    expected = {f"{_RULE_PREFIX}{rule.name}" for rule in _list_rule_files(plugin_root)}
+    for link_path in _existing_dest_symlinks(rules_dest):
+        if link_path.name in expected:
+            continue
+        target = _readlink(link_path)
+        if target is None or not _owns(link_path, target, plugin_root, lineage):
+            continue
+        try:
+            link_path.unlink()
+        except OSError:
+            continue
+        log.append(f"removed obsolete: {link_path.name}")
+
+
+def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
+    """Remove foundry-managed symlinks the current plugin version does not provide.
+
+    Four scopes evaluated, under two different ownership regimes.
+
+    ``~/.claude/rules/`` and ``TEAM_PROTOCOL.md`` are destinations foundry
+    legitimately writes, so removal there demands the strict proof in
+    :func:`_owns` — under the current root, or the same installed-cache lineage.
+    See :func:`_cleanup_rules` for the rules pass, which also performs the
+    unprefixed-to-``foundry-`` migration.
+
+    ``~/.claude/skills/`` and ``~/.claude/agents/`` are destinations foundry
+    never writes at all: both are dispatched from the plugin namespace and are
+    never produced by :func:`_build_entries`. Any foundry-marked symlink there is
+    obsolete by construction, so those two scopes keep the cheaper ``marker``
+    substring test and purge with no source-existence check. The two differ in
+    one respect — see the inline comments for why the skills scope also removes
+    links pointing at the *current* plugin root while the agents scope keeps
+    those.
+
+    Args:
+        plugin_root: Currently-installed plugin root.
+        home: Value of ``$HOME``.
+        marker: Substring identifying foundry-managed targets (skills/agents scopes).
 
     Returns:
         List of ``"removed obsolete: <name>"`` / ``"removed user-level skill
@@ -358,35 +510,21 @@ def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
         implies stdout side-effect when invoked via :func:`main`).
     """
     log: list[str] = []
-    rules_dest = home / ".claude" / "rules"
     skills_dest = home / ".claude" / "skills"
     agents_dest = home / ".claude" / "agents"
     team_dest = home / ".claude" / "TEAM_PROTOCOL.md"
 
-    # --- rules/*.md ---
-    for link_path in _existing_dest_symlinks(rules_dest):
-        target = _readlink(link_path)
-        if target is None or not _is_foundry_managed(target, marker):
-            continue
-        if _is_current(target, plugin_root):
-            continue
-        if not (plugin_root / "rules" / link_path.name).is_file():
-            try:
-                link_path.unlink()
-            except OSError:
-                continue
-            log.append(f"removed obsolete: {link_path.name}")
+    _cleanup_rules(plugin_root, home, log)
 
     # --- TEAM_PROTOCOL.md ---
-    if team_dest.is_symlink():
+    if team_dest.is_symlink() and not (plugin_root / "TEAM_PROTOCOL.md").is_file():
         target = _readlink(team_dest)
-        if target is not None and _is_foundry_managed(target, marker) and not _is_current(target, plugin_root):
-            if not (plugin_root / "TEAM_PROTOCOL.md").is_file():
-                try:
-                    team_dest.unlink()
-                    log.append("removed obsolete: TEAM_PROTOCOL.md")
-                except OSError:
-                    pass
+        if target is not None and _owns(team_dest, target, plugin_root, _cache_lineage(plugin_root, home)):
+            try:
+                team_dest.unlink()
+                log.append("removed obsolete: TEAM_PROTOCOL.md")
+            except OSError:
+                pass
 
     # --- skills/ (unconditional purge) ---
     # No source-existence check and — unlike the agents scope below — no
@@ -431,30 +569,27 @@ def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
 def scan(plugin_root: Path, home: Path, marker: str) -> list[str]:
     """Identify dest entries needing user confirmation before symlink replacement.
 
-    Stale foundry symlinks are auto-replaced in Phase 4 without prompting; only
-    these states surface as conflicts:
+    An owned link — current version or same installed-cache lineage — is
+    auto-replaced in Phase 4 without prompting. Only these states surface:
 
     * dest is a real file (not a symlink),
-    * dest is a symlink whose target is not foundry-managed.
+    * dest is a symlink whose target fails the :func:`_owns` proof.
 
     Args:
         plugin_root: Currently-installed plugin root.
         home: Value of ``$HOME``.
-        marker: Substring identifying foundry-managed targets.
+        marker: Unused here; kept so ``scan`` and ``cleanup`` share one CLI.
 
     Returns:
         Sorted list of conflict descriptor strings, one per affected dest.
     """
+    del marker  # ownership is proved by path lineage, not by a substring
     conflicts: list[str] = []
+    lineage = _cache_lineage(plugin_root, home)
     for entry in _build_entries(plugin_root, home):
         if entry.dest.is_symlink():
             target = _readlink(entry.dest)
-            if target is None:
-                continue
-            if _is_current(target, plugin_root):
-                continue
-            if _is_foundry_managed(target, marker):
-                # stale foundry version — auto-replace in Phase 4 (no prompt)
+            if target is None or _owns(entry.dest, target, plugin_root, lineage):
                 continue
             conflicts.append(_conflict_label(entry, target))
         elif entry.dest.exists():

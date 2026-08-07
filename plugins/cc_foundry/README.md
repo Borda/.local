@@ -99,7 +99,7 @@ claude plugin install research@borda-ai-rig
 /foundry:setup
 ```
 
-Merges `statusLine`, `permissions.allow`, `enabledPlugins` into `~/.claude/settings.json`; symlinks all rule files + `TEAM_PROTOCOL.md` into `~/.claude/`. Idempotent — safe to re-run.
+Merges `statusLine`, `permissions.allow`, `enabledPlugins` into `~/.claude/settings.json`; symlinks all rule files into `~/.claude/rules/` as `foundry-<name>.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Idempotent — safe to re-run.
 
 **After any plugin upgrade**, re-run `/foundry:setup` — auto-replaces stale foundry symlinks, removes rules gone from new version. No prompt for old-version symlinks.
 
@@ -142,7 +142,7 @@ What it does:
 - Backs up `~/.claude/settings.json` before touching
 - Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, `advisorModel` (copied from project `.claude/settings.json` when pinned)
 - Copies `permissions-guide.md` to `.claude/` (only if absent — preserves project-local edits)
-- Symlinks all `plugins/cc_foundry/rules/*.md` + `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks, removes rules gone from current version\`
+- Symlinks all `plugins/cc_foundry/rules/*.md` into `~/.claude/rules/` as `foundry-<name>.md`, plus `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks, removes rules gone from the current version, and migrates pre-namespace unprefixed links it provably owns\`
 - Removes stale `hooks` block from settings if present (hooks now register via plugin manifest)
 
 Hooks (`hooks.json`) register automatically when plugin enabled — `/foundry:setup` never touches them directly.
@@ -640,7 +640,9 @@ ______________________________________________________________________
 
 ## 📋 Rules installed
 
-`/foundry:setup` symlinks all rule files from `plugins/cc_foundry/rules/` into `~/.claude/rules/`. Govern Claude behavior globally, all sessions after install.
+`/foundry:setup` symlinks all 13 rule files from `plugins/cc_foundry/rules/` into `~/.claude/rules/`, each renamed to `foundry-<source-name>.md`. They govern Claude behavior globally, in all sessions after install.
+
+`~/.claude/rules/` is one flat directory shared by every installed plugin, and four of this marketplace's plugins ship a `rules/quality-gates.md`, so source basenames would silently overwrite one another. Each plugin therefore namespaces its own rules with its plugin name: `quality-gates.md` installs as `foundry-quality-gates.md`, alongside `develop-quality-gates.md`, `oss-quality-gates.md`, and `research-quality-gates.md` from the sibling plugins' own setup skills. The prefix is inert — verified against Claude Code 2.1.220 that it changes neither unconditional rule loading nor `paths:` frontmatter matching. Re-running setup after an upgrade migrates any pre-namespace unprefixed link, but only when that link provably belongs to foundry; a link into another marketplace, a source checkout, or a dotfiles tree is preserved and reported as a conflict instead.
 
 > **Stub + on-demand split (token diet):** `git-commit.md`, `debugging.md`, `external-data.md`, `artifact-lifecycle.md` = thin always-loaded stubs with hard constraints only; full procedural bodies live in `rules/_full/` (resolved from plugin cache, NOT symlinked or injected), Read on demand at trigger point named in each stub — drafting commit, multi-file fix, multi-page fetch, defining new output dirs. Cuts ~6K tokens per-session injection, zero constraint loss.
 
@@ -751,7 +753,7 @@ plugins/cc_foundry/
 │   └── permissions-deny.json    deny-list merged by /foundry:setup
 ├── agents/                      10 specialist agent files
 ├── skills/                      11 skill directories (audit, brainstorm, calibrate, create, distill, humanizer, investigate, manage, profile, session, setup)
-├── rules/                       10 rule files symlinked to ~/.claude/rules/ by /foundry:setup
+├── rules/                       13 rule files symlinked to ~/.claude/rules/foundry-*.md by /foundry:setup (+ 4 on-demand bodies in rules/_full/)
 ├── CLAUDE.src.md                workflow rules; /foundry:setup Step 10 copies → ~/.claude/CLAUDE.md
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol
 ├── permissions-guide.md         annotated allow/deny reference (copied to .claude/ by /foundry:setup)
@@ -807,7 +809,7 @@ ______________________________________________________________________
 claude plugin uninstall foundry
 ```
 
-Settings keys merged by `/foundry:setup` (`statusLine`, `permissions.allow` entries) remain in `~/.claude/settings.json` after uninstall — remove manually if desired. Symlinks from `/foundry:setup` in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist.
+Claude Code runs no cleanup hook on uninstall, so nothing `/foundry:setup` created is removed by `claude plugin uninstall` or by `bash sync.sh clear`. Settings keys merged into `~/.claude/settings.json` (`statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, `advisorModel`) remain — remove manually if desired. The `~/.claude/rules/foundry-*.md` symlinks and `~/.claude/TEAM_PROTOCOL.md` also persist and dangle once the plugin cache version is gone; delete them by hand.
 
 ______________________________________________________________________
 

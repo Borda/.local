@@ -716,6 +716,11 @@
     },
     {
       "mode": "0644",
+      "path": "tests/test_sync_setup_dispatch.py",
+      "sha256": "a913719ea6b3989d3942f391abd39e9bba96604898b1fde8b0c3e32e7b0d7d30"
+    },
+    {
+      "mode": "0644",
       "path": "tests/test_windows_skip_budget.py",
       "sha256": "75b0680dc632de2ecb6eb59b9b022beb048cd1b3f0d767172cc7511c3c3ed093"
     }

@@ -370,7 +370,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
    - ✗ Never: real type errors, S-rule security findings, or whole-file suppressions in production code
 7. Configure per-file ignores for test files + generated code
 8. Install pre-commit hooks so issues don't creep back in
-9. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md` (available post `/foundry:setup`).
+9. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md` (available post `/foundry:setup`).
 
 </workflow>
 

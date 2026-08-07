@@ -233,7 +233,7 @@ For `research:scientist` hypothesis architectural-feasibility assessment (invoke
 
 10. **Confidence**
 
-Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
+Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/foundry-quality-gates.md`.
 Domain calibration: for static-analysis outputs, confidence reflects coverage of audited scope, not code correctness.
 
 </workflow>
