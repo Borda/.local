@@ -224,9 +224,18 @@ process.stdin.on("end", () => {
             // Persist run_in_background here, where tool_input reliably carries it. PostToolUse reads
             // this flag to decide whether the Agent() call returned at dispatch (background) or at
             // completion (foreground) — its own tool_input may omit run_in_background.
+            // Persist name too: a named Agent()'s SubagentStart payload carries the *name* in its
+            // agent_type field, not subagent_type (confirmed live: dispatched as
+            // type="foundry:challenger", SubagentStart's agent_type arrived as the assigned name) — the
+            // tool_use_id-less matching fallback below needs to match on either.
             fs.writeFileSync(
               path.join(pendingDir, `${data.tool_use_id}.json`),
-              JSON.stringify({ type: agentType, ts, bg: tool_input?.run_in_background === true }),
+              JSON.stringify({
+                type: agentType,
+                name: tool_input?.name || null,
+                ts,
+                bg: tool_input?.run_in_background === true,
+              }),
             );
           } catch (_) {}
         }
@@ -280,13 +289,15 @@ process.stdin.on("end", () => {
       }
       // Refresh a running subagent's liveness on its own tool activity, so a still-working
       // long-running agent is never reaped by the statusline's staleness filter. An agent file's
-      // `since` is dispatch time and is never updated once running, so after 10 min the agent
+      // `since` is dispatch time and is never updated once running, so after its cutoff the agent
       // vanishes even while working. Tool events carry no agent_id (CC hook schema: only
       // session_id/tool_name/tool_input/tool_result/tool_use_id/cwd), so the one reliable
       // per-agent join is `cwd` for worktree-isolated agents: the worktree dir is
       // .claude/worktrees/agent-<agent_id>/ and the agent state file is keyed by that same
-      // agent_id. Non-worktree agents share the parent's cwd (indistinguishable from the
-      // orchestrator's own calls) and stay covered by the staleness backstop.
+      // agent_id — renameAgentFile (SubagentStart) re-keys the PreToolUse-time tool_use_id record to
+      // agent_id before the worktree agent's own tool calls land here, so this lookup actually finds
+      // it. Non-worktree agents share the parent's cwd (indistinguishable from the orchestrator's
+      // own calls) and stay covered by the (longer) staleness backstop instead.
       touchAgentLastActive(data.cwd, agentsDir);
       // Write timing start marker. PostToolUse reads it to compute wall-clock duration.
       // isDuplicateEvent dedup prevents double-write when both project and home settings.json fire.
@@ -317,13 +328,14 @@ process.stdin.on("end", () => {
         // the 🤖 counter drops promptly. Background agents (run_in_background) return at *dispatch*,
         // so PostToolUse fires while the agent is still running — keep agents/ + pending/ so the agent
         // stays visible (and a later SubagentStart, if it fires, consumes pending/ without writing a
-        // duplicate). Background-ness is read from pending/ (captured at PreToolUse) since this event's
-        // tool_input may omit run_in_background.
-        // ponytail: a finished background agent lingers until SubagentStop or the statusline's 10-min
-        // staleness filter reaps it — SubagentStop carries only agent_id, so it can't match this
-        // tool_use_id-keyed entry; the staleness filter is the backstop. A *still-running* worktree
-        // agent keeps its last_active fresh via touchAgentLastActive (PreToolUse), so only genuinely
-        // dead agents (no activity) age out — that is the filter's intended job.
+        // duplicate; renameAgentFile re-keys it from tool_use_id to agent_id there). Background-ness
+        // is read from pending/ (captured at PreToolUse) since this event's tool_input may omit
+        // run_in_background.
+        // A finished background agent is reaped by SubagentStop as soon as it fires — its unlink
+        // (agentsDir/<agent_id>.json) now matches because SubagentStart already re-keyed the record
+        // to agent_id. The statusline's staleness filter is a backstop for the case SubagentStop
+        // never fires at all (crash, session drop), not the primary reaper. A *still-running*
+        // worktree agent keeps its last_active fresh via touchAgentLastActive (PreToolUse).
         if (tool_name === "Agent") {
           let isBackground = tool_input?.run_in_background === true;
           try {
@@ -384,11 +396,16 @@ process.stdin.on("end", () => {
             resolvedType = resolvedType || p.type;
             fs.unlinkSync(pendingFile); // consume — PreToolUse already wrote to agents/
             preToolUseTracked = true;
+            renameAgentFile(agentsDir, data.tool_use_id, id);
           } catch (_) {}
         } else if (agent_type) {
           // SubagentStart payload omits tool_use_id — scan pending/ for most-recent entry
           // matching this agent_type, consume it. PreToolUse already wrote agents/<tool_use_id>.json,
           // so skipping the second write below avoids double-counting in statusline.
+          // Match on type OR name: a *named* Agent()'s SubagentStart carries the assigned name in
+          // agent_type, not its subagent_type — matching only on p.type would miss it, leaving
+          // agents/<tool_use_id>.json unrenamed (SubagentStop's later unlink then never finds it,
+          // reopening the exact leak this function exists to close).
           try {
             const files = fs
               .readdirSync(pendingDir)
@@ -399,11 +416,12 @@ process.stdin.on("end", () => {
                   return null;
                 }
               })
-              .filter((x) => x && x.p && x.p.type === agent_type)
+              .filter((x) => x && x.p && (x.p.type === agent_type || (x.p.name && x.p.name === agent_type)))
               .sort((a, b) => (b.p.ts > a.p.ts ? 1 : -1));
             if (files.length > 0) {
               fs.unlinkSync(path.join(pendingDir, files[0].f)); // consume most-recent match
               preToolUseTracked = true;
+              renameAgentFile(agentsDir, files[0].f.replace(/\.json$/, ""), id);
             }
           } catch (_) {}
         }
@@ -775,6 +793,25 @@ function isDuplicateEvent(eventName, tmpDir) {
     fs.writeFileSync(lockFile, String(process.pid));
   } catch (_) {}
   return false;
+}
+
+// renameAgentFile — re-key an agents/ record from its PreToolUse-time tool_use_id to its
+// SubagentStart-time agent_id. PreToolUse only ever has tool_use_id (agent_id doesn't exist yet),
+// so agents/<tool_use_id>.json is the only record until SubagentStart resolves the real agent_id.
+// SubagentStop and touchAgentLastActive both key by agent_id — without this rename those lookups
+// permanently miss: SubagentStop's unlink silently no-ops (a finished agent's record leaks in
+// agents/ until the statusline's staleness backstop reaps it, not on actual completion) and a
+// worktree agent's own tool events never find their file to refresh last_active.
+function renameAgentFile(agentsDir, fromId, toId) {
+  if (!fromId || !toId || fromId === toId) return;
+  const fromFile = path.join(agentsDir, `${fromId}.json`);
+  const toFile = path.join(agentsDir, `${toId}.json`);
+  try {
+    const rec = JSON.parse(fs.readFileSync(fromFile, "utf8"));
+    rec.id = toId;
+    fs.writeFileSync(toFile, JSON.stringify(rec));
+    fs.unlinkSync(fromFile);
+  } catch (_) {} // source file gone/unreadable — nothing to re-key
 }
 
 // touchAgentLastActive — refresh a worktree-isolated subagent's liveness on its own tool activity.

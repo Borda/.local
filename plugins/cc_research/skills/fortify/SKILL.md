@@ -370,7 +370,7 @@ echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-best-commit-${CSID}"  # persist f
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # re-hydrate (Check 41: fresh shell)
 IFS= read -r _VIDX < "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}" 2>/dev/null || _VIDX=1
-_TOTAL=$(grep -c . "$FORTIFY_DIR/variants.jsonl" 2>/dev/null || echo 0)
+_TOTAL=$(grep -c . "$FORTIFY_DIR/variants.jsonl" 2>/dev/null) || _TOTAL=0  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches, and the 2>/dev/null below then hides the resulting bad-number error
 if [ "$_VIDX" -gt "$_TOTAL" ] 2>/dev/null; then
     echo "FORTIFY_LOOP_DONE=1 — all $_TOTAL variants processed; proceed to post-loop delta computation"
     exit 0

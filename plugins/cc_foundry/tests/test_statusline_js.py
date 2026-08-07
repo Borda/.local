@@ -154,9 +154,27 @@ class TestAgentDisplay:
         assert "rescue" in rendered
         assert "🤖 none" not in rendered
 
-    def test_stale_agent_shows_none(self, sid: str, tmp_home: Path, run_hook) -> None:
-        """Agent older than the 10-min safety net is dropped → ``🤖 none`` rendered."""
+    def test_non_worktree_agent_past_10_min_stays_visible(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """A non-worktree agent (since-only, no ``last_active``) past the old 10-min cutoff stays visible.
+
+        Non-worktree agents (plain ``Agent()`` calls, the common case) get no per-agent liveness
+        signal — CC's tool-event payload carries no agent_id, so ``last_active`` is never refreshed
+        for them. They use the longer 60-min backstop instead of the worktree-only 10-min one, so a
+        genuinely still-working 20-min background task (e.g. a multi-file refactor) is not hidden.
+        """
         stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        _write_agent(sid, "a-longrun", since=stale)
+
+        result = run_hook("statusline.js", _payload(sid), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rendered = _strip_ansi(result.stdout)
+        assert "sw-engineer" in rendered
+        assert "🤖 none" not in rendered
+
+    def test_non_worktree_agent_dropped_after_60_min(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """A non-worktree agent past the 60-min backstop is dropped → ``🤖 none`` rendered."""
+        stale = (datetime.now(timezone.utc) - timedelta(minutes=70)).isoformat()
         _write_agent(sid, "a-stale", since=stale)
 
         result = run_hook("statusline.js", _payload(sid), home=tmp_home)
@@ -235,8 +253,8 @@ class TestCodexDisplay:
         assert "🤖 none" not in rendered
 
     def test_stale_codex_dir_agent_dropped(self, sid: str, tmp_home: Path, run_hook) -> None:
-        """codex/ entry older than the 10-min safety net is dropped → ``🤖 none`` rendered."""
-        stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        """codex/ entry (non-worktree, since-only) older than the 60-min backstop is dropped → ``🤖 none`` rendered."""
+        stale = (datetime.now(timezone.utc) - timedelta(minutes=70)).isoformat()
         _write_codex(sid, "tu-cdx-stale", since=stale)
 
         result = run_hook("statusline.js", _payload(sid), home=tmp_home)

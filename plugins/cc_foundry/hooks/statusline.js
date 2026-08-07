@@ -18,7 +18,8 @@
 //   4. Build Line 2 skills segment (⚡): read state/skills/*.json; render each active skill in
 //      bright yellow; shows "none" when idle (consistent with agents/tools segments)
 //   5. Build Line 2 agent segment (🤖): read state/agents/*.json; skip entries idle > 10 min
-//      (freshness = last_active ?? since, safety net); group by type; color from frontmatter; codex:* here
+//      (worktree agents, real last_active signal) or > 60 min (non-worktree agents, no per-agent
+//      liveness signal exists — see line ~228); group by type; color from frontmatter; codex:* here
 //   6. Build Line 2 tool segment (🛠️): read state/tools/*.json; skip entries older than 30 s;
 //      render per-type call counts with fixed TOOL_COLORS palette
 //   7. Write both lines to stdout with \x1b[K (clear-to-end-of-line) on each line
@@ -54,9 +55,17 @@
 //   🤖 agents   reads /tmp/claude-state-<session_id>/agents/*.json written by task-log.js
 //               SubagentStart/Stop. Groups by type; all agents (incl. codex:*) shown in their
 //               declared color (from agent frontmatter color: field); general-purpose gray.
-//               Safety-net: ignores entries idle > 10 min, measured from last_active (last tool
-//               activity, worktree agents only) ?? since (dispatch time) — so a still-working
-//               long-running agent stays visible while a crashed/hung one (no activity) ages out.
+//               Safety-net: ignores entries idle too long, measured from last_active (last tool
+//               activity, worktree agents only) ?? since (dispatch time). Worktree agents get a
+//               tight 10-min cutoff (last_active is a real per-agent signal). Non-worktree agents
+//               (the common case — plain Agent() calls with no isolation:"worktree") have no
+//               per-agent liveness signal at all (CC's PreToolUse payload carries no agent_id), so
+//               a tight cutoff would hide genuinely still-working agents; they get a 60-min cutoff
+//               instead — long enough to cover normal multi-file coding runs. This is a backstop,
+//               not the primary reaper: task-log.js's SubagentStart re-keys the record from
+//               tool_use_id to agent_id (renameAgentFile) so SubagentStop's unlink matches and
+//               removes it promptly on actual completion; the 60-min cutoff only catches entries
+//               that never got a SubagentStop at all (crash, dropped session).
 //   🛠️ tools    reads /tmp/claude-state-<session_id>/tools/*.json written by task-log.js
 //               PreToolUse. Shows tool types active within the last 30 s with per-type
 //               call counts. Each tool type has a fixed ANSI color for visual stability.
@@ -225,11 +234,17 @@ process.stdin.on("end", () => {
       try {
         files = fs.readdirSync(agentsDir).filter((f) => f.endsWith(".json"));
       } catch (_) {}
-      // Safety-net: drop agents idle > 10 min. Freshness is measured from last_active (last tool
-      // activity, refreshed by task-log.js for worktree agents) falling back to since (dispatch time)
-      // for agents that have never been refreshed. A still-working long-running agent keeps last_active
-      // current and stays visible; a crashed/hung agent stops emitting activity and ages out as before.
-      const MAX_AGE_MS = 10 * 60 * 1000;
+      // Safety-net: drop agents idle too long. Freshness is measured from last_active (last tool
+      // activity, refreshed by task-log.js for worktree agents only — no agent_id in the tool-event
+      // payload means non-worktree agents can never be attributed) falling back to since (dispatch
+      // time). A worktree agent with fresh last_active is a real liveness signal → tight 10-min
+      // cutoff. A non-worktree agent has no such signal — since is only ever dispatch time, so a
+      // still-working 20-30 min conversion/refactor task looks identical to a crashed one; use a
+      // longer 60-min cutoff so normal long-running background agents don't vanish from the badge
+      // while they're still working (was 10 min for both — hid genuinely active agents, see
+      // .temp/investigate/2026-08-07T16-51-33Z/hypotheses.md).
+      const WORKTREE_MAX_AGE_MS = 10 * 60 * 1000;
+      const NON_WORKTREE_MAX_AGE_MS = 60 * 60 * 1000;
       const allAgents = files.flatMap((f) => {
         try {
           return [JSON.parse(fs.readFileSync(path.join(agentsDir, f), "utf8"))];
@@ -253,7 +268,9 @@ process.stdin.on("end", () => {
       } catch (_) {}
       const agents = allAgents.filter((a) => {
         const freshness = a.last_active || a.since;
-        return !freshness || now - new Date(freshness).getTime() < MAX_AGE_MS;
+        if (!freshness) return true;
+        const maxAge = a.last_active ? WORKTREE_MAX_AGE_MS : NON_WORKTREE_MAX_AGE_MS;
+        return now - new Date(freshness).getTime() < maxAge;
       });
       if (agents.length > 0) {
         // Specialized + pinned model → type name, normal color

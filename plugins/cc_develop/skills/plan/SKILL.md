@@ -25,6 +25,7 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 
 ```bash
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
@@ -34,6 +35,7 @@ Contains: foundry check + fallback table. If foundry not installed: substitute e
 
 ```bash
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/task-hygiene.md"
 ```
 
@@ -83,6 +85,7 @@ echo "$CODEMAP_ENABLED" > "$PLAN_NS/codemap-enabled"
 
 ```bash
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
 Follow Gate A and Gate B.
@@ -96,6 +99,7 @@ IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null
 IFS= read -r SEMBLE_ENABLED < "$PLAN_NS/semble-enabled" 2>/dev/null || SEMBLE_ENABLED=false
 if [ "$SEMBLE_ENABLED" = "true" ]; then
     _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+    [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
     cat "$_DEV_SHARED/preflight-helpers.md"
 else
     echo "→ --semble not passed — skipping semble preflight"
@@ -140,6 +144,7 @@ IFS= read -r SEMBLE_ENABLED  < "$PLAN_NS/semble-enabled"  2>/dev/null || SEMBLE_
 echo "CODEMAP_ENABLED=$CODEMAP_ENABLED SEMBLE_ENABLED=$SEMBLE_ENABLED"
 if [ "$CODEMAP_ENABLED" = "true" ] || [ "$SEMBLE_ENABLED" = "true" ]; then
     _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+    [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
     cat "$_DEV_SHARED/codemap-context.md"
 else
     echo "→ codemap and semble both off — skipping structural context"

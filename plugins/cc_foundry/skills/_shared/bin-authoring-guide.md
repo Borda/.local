@@ -47,6 +47,30 @@ See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plu
 
 ---
 
+## Silent-Failure Bash Idioms
+
+Two traps that produce no error and no output — the command "succeeds" while the check it powers never fires. Both were found live in shipped skills; neither is caught by shellcheck.
+
+**1. `$(cmd) || echo N` where `cmd` prints on failure.** `grep -c` prints `0` **and** exits 1 when there are zero matches, so the fallback fires too and the substitution captures `"0\n0"`. Every later `[ "$v" -eq 0 ]` then errors, and because a failed test exits non-zero, any `&&` action hanging off it is skipped — the warning is suppressed exactly when the condition it tests is true.
+
+```bash
+v=$(grep -c PAT "$f" 2>/dev/null || echo 0)   # ✗ file exists, zero matches → v="0\n0"
+v=$(grep -c PAT "$f" 2>/dev/null) || v=0      # ✓ correct in both the zero-match and missing-file cases
+```
+
+The missing-file case works either way (`grep` prints nothing, so the fallback is clean), which is why the bug reads as harmless and survives review. Applies to any counter that prints a valid result on a non-zero exit; `wc` is **not** affected (it does not print-and-fail).
+
+**2. Glob patterns held in a variable.** The tool shell may be `zsh`, which — unlike bash — applies neither word-splitting nor filename generation to an unquoted `$VAR`. `for f in $_SKILL_GLOB` iterates once over the literal pattern string and matches nothing; the same line under bash expands normally.
+
+```bash
+G="plugins/*/skills/*/SKILL.md"; for f in $G; do ...     # ✗ zsh: 1 literal iteration, 0 files
+while IFS= read -r f; do ... done < <(find plugins -path "*/skills/*/SKILL.md")   # ✓ identical in both shells
+```
+
+Keep variables holding **plain paths**, never patterns, and enumerate with `find` piped into `while IFS= read -r`. Note `find -path "*/agents/*.md"` recurses (`*` matches `/`) where the glob `*/agents/*.md` does not — add `! -path "*/agents/*/*"` when the flat scope is intended.
+
+---
+
 ## Extraction Gate
 
 Before writing ANY inline code block, first apply the Prose check (§Prose over Code, Case 3). If prose is precision-equivalent and shorter — write prose and stop. Otherwise apply this gate. All three must pass — if any fails, stay inline.

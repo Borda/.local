@@ -26,7 +26,6 @@
 | 18 | Rules integrity | high/medium | rules | 18a inventory, 18b frontmatter, 18c redundancy, 18d cross-ref integrity |
 | 19 | Model tier appropriateness | medium/high | agents | Tier policy: opusplan/opus/sonnet/haiku - report only |
 | 20 | Agent description routing | medium/low | agents | 20a overlap pairs, 20b NOT-for coverage, 20c trigger specificity, 20d keep/sharpen/prune |
-| 21 | Skill frontmatter conflicts | critical | skills | context:fork + disable-model-invocation:true is broken |
 | 22 | Calibration coverage gap | medium/low | agents/skills | Unregistered calibratable skills/agents; stale domain table entries |
 | 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools; 23a python inline; 23b `# timeout: N` without `timeout S` shell prefix or Python `subprocess.*` without `timeout=`; 23c `eval "$(...)"` for multi-value bin/ output — use §Script Output Routing (TMPDIR files) instead; 23d shell variable used across `Bash()` calls — var dies at shell boundary, write to TMPDIR file |
 | 24 | Skill sequence compatibility | high/medium | skills | 24a target skill not on disk; 24b argument absent from argument-hint; scans skills, agents, READMEs |

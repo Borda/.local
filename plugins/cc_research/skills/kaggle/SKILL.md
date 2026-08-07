@@ -300,7 +300,7 @@ echo "=== Sections ===";   grep "^# %% \[markdown\]" "$OUTFILE"  # timeout: 5000
 echo "=== File size ===";  wc -l "$OUTFILE"  # timeout: 5000
 
 echo "=== Bare '#' heading-spacer check (rule 13) ==="
-BARE_HASH_COUNT=$(grep -cE '^#+[[:space:]]*$' "$OUTFILE" 2>/dev/null || echo 0)
+BARE_HASH_COUNT=$(grep -cE '^#+[[:space:]]*$' "$OUTFILE" 2>/dev/null) || BARE_HASH_COUNT=0  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
 echo "Found: $BARE_HASH_COUNT"
 if [ "$BARE_HASH_COUNT" -gt 0 ]; then
     grep -nE '^#+[[:space:]]*$' "$OUTFILE"  # timeout: 5000

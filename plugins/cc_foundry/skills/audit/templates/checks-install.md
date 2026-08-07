@@ -253,7 +253,8 @@ else
             _FAIL=1
         else
             # R4-THIN: non-empty file with zero def test_ functions
-            test_fn_count=$(grep -c "^def test_" "$test_file" 2>/dev/null || echo 0)
+            # `|| echo 0` would append a second 0: on zero matches grep -c prints 0 *and* exits 1.
+            test_fn_count=$(grep -c "^def test_" "$test_file" 2>/dev/null) || test_fn_count=0
             if [ "$test_fn_count" -eq 0 ]; then
                 printf "R4-FAIL (no test functions): %s — has no def test_ functions\n" "$test_file"
                 _FAIL=1

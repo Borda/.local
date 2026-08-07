@@ -13,6 +13,7 @@
 
 - Use sub-agents liberally — keep main context clean
 - Prefer specialised agents over general-purpose; offload research + exploration
+- **Always pass explicit `subagent_type` matching the task, even when the right specialist is already named in your own spawn prompt** — telemetry shows `general-purpose` gets picked *despite* the prompt's own lead line naming the correct specialist (e.g. prompt says "foundry:sw-engineer — convert X to jsonargparse", dispatch says `general-purpose` anyway); the likely cause is misreading "Agent Teams: user-invoked only" (below) as covering *any* named specialist rather than only the formal multi-agent Team protocol. §Agent Teams is a separate, narrower gate (model tiering + TEAM_PROTOCOL.md + AgentSpeak v2, user-invoked only) — it does NOT restrict picking a specialist for an ordinary single-agent spawn, ad-hoc or background included. Separately: omitting `subagent_type` entirely also defaults to `general-purpose` (tool-level fallback) and skips agent-tracking writes, making the spawn invisible in the 🤖 status segment from dispatch — always pass it explicitly for that reason too.
 - Independent subtasks run parallel, not serial; one tack per sub-agent
 - **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path)
 - Complex problem → more compute via sub-agents
@@ -65,7 +66,7 @@ Operations in `settings.json` pre-approved — execute direct. Not covered → r
 
 ## Agent Teams
 
-Teams always user-invoked:
+Teams always user-invoked — this gate is scoped to the formal multi-agent Team protocol below (model tiering, TEAM_PROTOCOL.md, AgentSpeak v2); it does not apply to picking a specialist for an ordinary single-agent spawn — that's §2 Subagent Strategy, always in effect:
 
 - **Models**: lead = session model; reasoning (foundry:sw-engineer, foundry:perf-optimizer, research:scientist) = `opus`; execution (foundry:qa-specialist, foundry:doc-scribe, foundry:linting-expert, oss:cicd-steward, research:data-steward, foundry:web-explorer) = `sonnet`; max 3–5
 - **Protocol**: every spawn prompt must include `Read ~/.claude/TEAM_PROTOCOL.md and use AgentSpeak v2`; preserve file paths, errors, test results, task IDs; discard verbose output

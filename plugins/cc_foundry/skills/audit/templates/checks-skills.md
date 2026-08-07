@@ -1,27 +1,18 @@
-# Skill Checks — 21, 22, 23, 24, 27, 28, 30, 31
+# Skill Checks — 22, 23, 24, 27, 28, 30, 31
 
-## Check 21 — Skill frontmatter conflicts
+## Scan-root derivation — prepend to every bash block in this file
 
-`context:fork + disable-model-invocation:true` is broken.
+Each fenced block below runs as its own Bash tool call in a **fresh shell**, so no variable set in one block survives into the next (`audit/SKILL.md` §State re-derivation; Check 43 in this file flags the same pattern). Each block therefore re-reads `LOCAL_MODE` and re-derives its own scan root.
+
+Roots are **plain directory paths**, never glob patterns held in variables: the tool shell may be `zsh`, which — unlike bash — performs neither word-splitting nor filename generation on an unquoted `$VAR`. A var-held glob such as `for f in $_SKILL_GLOB` iterates once over the literal pattern string and matches nothing. Enumerate with `find` piped into `while IFS= read -r`, which behaves identically under both shells.
 
 ```bash
-# LOCAL_MODE-aware globs — reused across checks in this file
-[ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
-[ "$LOCAL_MODE" = "true" ] && _SKILL_DIR_GLOB="plugins/*/skills/*/" || _SKILL_DIR_GLOB=".claude/skills/*/"
-[ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
-[ "$LOCAL_MODE" = "true" ] && _RULE_GLOB="plugins/*/rules/*.md" || _RULE_GLOB=".claude/rules/*.md"
-[ "$LOCAL_MODE" = "true" ] && _SKILL_DIR_ROOT="plugins/*/skills/" || _SKILL_DIR_ROOT=".claude/skills/"
-
-for f in $_SKILL_GLOB; do # timeout: 5000
-    name=$(basename "$(dirname "$f")")
-    if awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'context: fork' &&
-    awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'disable-model-invocation: true'; then
-        printf "! BREAKING skills/%s: context:fork + disable-model-invocation:true\n" "$name"
-        printf "  → forked skill has no model to coordinate agents or synthesize results\n"
-        printf "  fix: remove disable-model-invocation:true (or remove context:fork if purely tool-only)\n"
-    fi
-done
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 ```
+
+`find "$_ROOT" -path "*/skills/*/SKILL.md"` enumerates skills; `find "$_ROOT" -path "*/agents/*.md"` enumerates agents **including nested subdirectories** (a `*/agents/*.md` glob silently misses `agents/<parent>/<file>.md`); `find "$_ROOT" -path "*/rules/*.md"` enumerates rules.
 
 ## Check 22 — Calibration coverage gap
 
@@ -95,12 +86,15 @@ After scan, apply model reasoning to each match — exclude cases where shell co
 `Bash(python:*)` in allow list, covers bare `python script.py`. But `python -c "..."` does NOT match `Bash(python:*)` — Claude Code's permission matcher tokenizes the full prefix, so `python -c` needs a separate `Bash(python -c:*)` entry (intentionally absent). Any `python -c` in a skill body pauses for a permission prompt mid-workflow; user deny = phase fails. Enforcement mechanism for the inline-Python antipattern, not a coverage gap.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 23a: python inline policy ===\n"
-grep -rn 'python -c\b' $_SKILL_GLOB 2>/dev/null |
+find "$_ROOT" -path "*/skills/*/SKILL.md" -exec grep -Hn 'python -c\b' {} + 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: python not in allow list by design — move logic to bin/*.py or use native tools (Read/Write/Edit/Bash with jq)\n" || true
 printf "=== Check 23a: heredoc python policy ===\n"
-grep -rn "python << '\|python <<\"" $_SKILL_GLOB 2>/dev/null |
+find "$_ROOT" -path "*/skills/*/SKILL.md" -exec grep -Hn "python << '\|python <<\"" {} + 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: CLAUDE.md bans heredoc python; use bin/*.py instead\n" || true
 printf "✓: Check 23a scan complete\n"  # timeout: 5000
@@ -125,25 +119,28 @@ Rules:
 - **Python `bin/` scripts with subprocess**: must expose `--timeout SECS` and pass it to every `subprocess.*` call.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 23b: # timeout: comment without shell enforcement ===\n"
 # Exempt: python — timeout enforced by --timeout default inside script
 # (colon in timeout: distinguishes comment from command)
-grep -rn '# timeout: [0-9]' $_SKILL_GLOB $_AGENT_GLOB $_RULE_GLOB 2>/dev/null |
+find "$_ROOT" \( -path "*/skills/*/SKILL.md" -o -path "*/agents/*.md" -o -path "*/rules/*.md" \) \
+  -exec grep -Hn '# timeout: [0-9]' {} + 2>/dev/null |
   grep -v '^Binary' |
   grep -v '^\s*#' |
   grep -v 'timeout [0-9][0-9]* ' |
   grep -v 'python ' &&
 printf "  hint: prepend 'timeout S' (S = ms ÷ 1000) — e.g. 'timeout 5 \$(command 2>/dev/null || echo fallback)'\n" || true
 
-[ "$LOCAL_MODE" = "true" ] && _BIN_PY_GLOB="plugins/*/bin/*.py" || _BIN_PY_GLOB=".claude/bin/*.py"
 printf "=== Check 23b: Python subprocess missing timeout= ===\n"
-grep -rn 'subprocess\.\(check_output\|run\|call\|Popen\)' $_BIN_PY_GLOB 2>/dev/null |
+find "$_ROOT" -path "*/bin/*.py" -exec grep -Hn 'subprocess\.\(check_output\|run\|call\|Popen\)' {} + 2>/dev/null |
   grep -v 'timeout=' |
   grep -v '^\s*#' &&
 printf "  hint: add timeout=args.timeout to every subprocess call; --timeout default must equal # timeout: N ÷ 1000\n" || true
 
 printf "=== Check 23b: Python --timeout default compliance ===\n"
-grep -rln 'subprocess\.' $_BIN_PY_GLOB 2>/dev/null | while read -r f; do
+find "$_ROOT" -path "*/bin/*.py" -exec grep -l 'subprocess\.' {} + 2>/dev/null | sort -u | while IFS= read -r f; do
   grep -q 'add_argument.*--timeout' "$f" ||
     printf "  %s: --timeout argparse argument absent; add with default= matching call site # timeout: N ÷ 1000\n" "$f"
 done || true
@@ -399,9 +396,12 @@ Four static-grep patterns catching silent failures in skill SKILL.md bash blocks
 ### 30a — Pipe exit code capture (PIPESTATUS)
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 30a: Pipe exit code capture ===\n"
 # Find | tail or | head followed by $? assignment within 3 lines — tail/head always exit 0
-grep -rn '| tail\b\|| head\b' $_SKILL_DIR_ROOT 2>/dev/null |
+find "$_ROOT" -path "*/skills/*" -name "*.md" -exec grep -Hn '| tail\b\|| head\b' {} + 2>/dev/null |
   grep -v 'PIPESTATUS\|pipefail\|#.*tail\|#.*head' |
   grep -v '^Binary' &&
 printf "  hint: use \${PIPESTATUS[0]} or set -o pipefail; \$? captures tail/head exit (always 0)\n" || true
@@ -415,8 +415,11 @@ Fix pattern: `cmd 2>&1 | tail -N; EXIT=${PIPESTATUS[0]}`
 ### 30b — SKIP variable guard missing
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 30b: SKIP variable guard ===\n"
-grep -rn 'SKIP_[A-Z_]*=1' $_SKILL_DIR_ROOT 2>/dev/null |
+find "$_ROOT" -path "*/skills/*" -name "*.md" -exec grep -Hn 'SKIP_[A-Z_]*=1' {} + 2>/dev/null |
   grep -v '^Binary' | grep -v '#' | while IFS= read -r match; do
     file=$(echo "$match" | cut -d: -f1)
     grep -q '\[ "\${SKIP_' "$file" 2>/dev/null ||
@@ -446,9 +449,12 @@ Fix: standardize to bare agent name in both spawn prompt and consolidator read p
 ### 30d — TEST_CMD used with pytest-specific flags without PYTEST_CMD split
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 30d: TEST_CMD/PYTEST_CMD split ===\n"
-grep -rn '\$TEST_CMD.*--tb\b\|\$TEST_CMD.*--co\b\|\$TEST_CMD.*::\|\$TEST_CMD.*--cov\b\|\$TEST_CMD.*--doctest' \
-  $_SKILL_DIR_ROOT 2>/dev/null |
+find "$_ROOT" -path "*/skills/*" -name "*.md" -exec grep -Hn \
+  '\$TEST_CMD.*--tb\b\|\$TEST_CMD.*--co\b\|\$TEST_CMD.*::\|\$TEST_CMD.*--cov\b\|\$TEST_CMD.*--doctest' {} + 2>/dev/null |
   grep -v 'PYTEST_CMD\|#' | grep -v '^Binary' &&
 printf "  hint: derive PYTEST_CMD for pytest-specific flags; TEST_CMD=tox or make won't accept --tb/--co/::/--cov\n" || true
 printf "✓: Check 30d scan complete\n"  # timeout: 5000
@@ -465,8 +471,11 @@ Fix: after detecting TEST_CMD, derive `PYTEST_CMD` for targeted runs: `tox` → 
 Heredoc python blocks (`python << 'EOF'`) banned by CLAUDE.md. Distinct from 23a (targets `python -c` one-liners); 30e catches multi-line heredoc forms that bypass one-liner size limit.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 30e: Heredoc python ===\n"
-grep -rn "python <<\|python << '" $_SKILL_DIR_ROOT 2>/dev/null |
+find "$_ROOT" -path "*/skills/*" -name "*.md" -exec grep -Hn "python <<\|python << '" {} + 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: CLAUDE.md bans python heredoc; use bin/*.py script instead\n" || true
 printf "✓: Check 30e scan complete\n"  # timeout: 5000
@@ -477,9 +486,12 @@ Severity: **high** — heredoc triggers permission prompt; user deny = workflow 
 ### 30f — Missing exit on confirmed failure path
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 30f: Missing exit on confirmed failure ===\n"
-grep -rn 'GENUINE.FAILURE\|all retries failed\|failed.*abort\|error.*critical\|cannot continue' \
-  $_SKILL_DIR_ROOT 2>/dev/null |
+find "$_ROOT" -path "*/skills/*" -name "*.md" -exec grep -Hn \
+  'GENUINE.FAILURE\|all retries failed\|failed.*abort\|error.*critical\|cannot continue' {} + 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' | while IFS= read -r match; do
     file=$(echo "$match" | cut -d: -f1)
     line=$(echo "$match" | cut -d: -f2)
@@ -516,8 +528,12 @@ For each SKILL.md, verify every **gating or dispatch tool** called in workflow b
 | `Agent` | Sub-agent spawns blocked; orchestration phase fails silently |
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 found=0
-for f in $_SKILL_GLOB; do  # timeout: 5000
+# Process substitution, not a pipe: a piped `while` runs in a subshell and `found` would not survive it.
+while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     skill_name=$(basename "$(dirname "$f")")
     allowed=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null | grep '^allowed-tools:' | sed 's/allowed-tools:[[:space:]]*//')
@@ -532,7 +548,7 @@ for f in $_SKILL_GLOB; do  # timeout: 5000
             fi
         fi
     done
-done
+done < <(find "$_ROOT" -path "*/skills/*/SKILL.md" 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 31 — all gating tool calls covered by allowed-tools\n"  # timeout: 5000
 ```
 
@@ -549,9 +565,12 @@ Auto-fix: append missing tool name to `allowed-tools:` frontmatter line.
 Verify required frontmatter fields present in every SKILL.md. Missing fields cause undocumented default behavior or miscategorized routing.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 31a: Frontmatter completeness ===\n"
 found=0
-for f in $_SKILL_GLOB; do  # timeout: 5000
+while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     skill=$(basename "$(dirname "$f")")
     fm=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null)
@@ -565,7 +584,7 @@ for f in $_SKILL_GLOB; do  # timeout: 5000
         printf "⚠ 31a: %s — when_to_use: present (deprecated; merge content into description: then remove)\n" "$skill"
         found=1
     }
-done
+done < <(find "$_ROOT" -path "*/skills/*/SKILL.md" 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 31a — frontmatter complete across all skills\n"
 ```
 
@@ -584,29 +603,42 @@ CLAUDE.md §6 requires every skill spawning background agents to implement: (1) 
 **Step 1 — Find skills with background agent spawns**:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check C35: Background agent health monitoring ===\n"
-BG_SKILLS=$(grep -rl 'run_in_background.*true\|run_in_background=true' $_SKILL_GLOB 2>/dev/null)
-if [ -z "$BG_SKILLS" ]; then
+mkdir -p "${TMPDIR:-/tmp}/audit-state-${CSID}"
+find "$_ROOT" -path "*/skills/*/SKILL.md" -exec grep -l 'run_in_background.*true\|run_in_background=true' {} + 2>/dev/null |
+  sort > "${TMPDIR:-/tmp}/audit-state-${CSID}/c35-bg-skills"
+if [ ! -s "${TMPDIR:-/tmp}/audit-state-${CSID}/c35-bg-skills" ]; then
     printf "✓: No background agent spawns found — C35 N/A\n"
+else
+    cat "${TMPDIR:-/tmp}/audit-state-${CSID}/c35-bg-skills"
 fi  # timeout: 5000
 ```
 
 **Step 2 — For each skill found, verify §8 protocol elements**:
 
+Step 1's list is re-read from the state file — a variable set in Step 1's block is gone by the time this block runs (fresh shell per Bash call).
+
 ```bash
-for f in $BG_SKILLS; do  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+while IFS= read -r f; do  # timeout: 5000
+    [ -f "$f" ] || continue
     skill=$(basename "$(dirname "$f")")
     if grep -q 'agent-spawn-protocol' "$f" 2>/dev/null; then
         printf "✓ C35: %s — references agent-spawn-protocol.md\n" "$skill"
         continue
     fi
-    has_sentinel=$(grep -c 'LAUNCH_AT\|touch /tmp/' "$f" 2>/dev/null || echo 0)
-    has_poll=$(grep -c 'find.*-newer.*-type f.*wc -l\|MONITOR_INTERVAL' "$f" 2>/dev/null || echo 0)
-    has_cutoff=$(grep -c 'HARD_CUTOFF\|timed.out\|15 min\|900' "$f" 2>/dev/null || echo 0)
+    # `|| echo 0` would append a second 0: on zero matches grep -c prints 0 *and* exits 1, and the
+    # "0\n0" then breaks the numeric tests below — which is the common case here, not the rare one.
+    has_sentinel=$(grep -c 'LAUNCH_AT\|touch /tmp/' "$f" 2>/dev/null) || has_sentinel=0
+    has_poll=$(grep -c 'find.*-newer.*-type f.*wc -l\|MONITOR_INTERVAL' "$f" 2>/dev/null) || has_poll=0
+    has_cutoff=$(grep -c 'HARD_CUTOFF\|timed.out\|15 min\|900' "$f" 2>/dev/null) || has_cutoff=0
     [ "$has_sentinel" -eq 0 ] && printf "⚠ C35a: %s — no launch sentinel (CLAUDE.md §6 step 1)\n" "$skill"
     [ "$has_poll" -eq 0 ]    && printf "⚠ C35b: %s — no 5-min file-activity poll (§8 step 2)\n" "$skill"
     [ "$has_cutoff" -eq 0 ]  && printf "⚠ C35c: %s — no 15-min hard cutoff (§8 step 3)\n" "$skill"
-done
+done < "${TMPDIR:-/tmp}/audit-state-${CSID}/c35-bg-skills"
 ```
 
 Severity: **high** for C35a/b/c — stalled background agents drop findings with no user-visible signal.
@@ -627,21 +659,20 @@ Surfaces skill subdirectory files and rule files that exist on disk but are neve
 Mode files in `*/skills/*/modes/` that are not referenced from the parent skill's `SKILL.md` are never executed. They create maintenance confusion and may contain outdated logic that silently diverges from the live mode.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 32a: Dead mode files ===\n"
 found=0
-for skill_dir in $_SKILL_DIR_GLOB; do  # timeout: 5000
-    [ -d "${skill_dir}modes" ] || continue
-    skill_md="${skill_dir}SKILL.md"
+while IFS= read -r mode_file; do  # timeout: 5000
+    skill_md="$(dirname "$(dirname "$mode_file")")/SKILL.md"
     [ -f "$skill_md" ] || continue
-    for mode_file in "${skill_dir}modes/"*.md; do
-        [ -f "$mode_file" ] || continue
-        mode_name=$(basename "$mode_file")
-        if ! /usr/bin/grep -qF "$mode_name" "$skill_md" 2>/dev/null; then
-            printf "⚠ 32a: %s — not referenced in %s\n" "$mode_file" "$skill_md"
-            found=1
-        fi
-    done
-done
+    mode_name=$(basename "$mode_file")
+    if ! /usr/bin/grep -qF "$mode_name" "$skill_md" 2>/dev/null; then
+        printf "⚠ 32a: %s — not referenced in %s\n" "$mode_file" "$skill_md"
+        found=1
+    fi
+done < <(find "$_ROOT" -path "*/skills/*/modes/*.md" 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 32a — all mode files referenced in parent SKILL.md\n"
 ```
 
@@ -653,21 +684,20 @@ Auto-fix: delete the file, or add a reference in SKILL.md if omission was accide
 Template files in `*/skills/*/templates/` not referenced from the parent `SKILL.md` are never injected into prompts.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 32b: Dead template files ===\n"
 found=0
-for skill_dir in $_SKILL_DIR_GLOB; do  # timeout: 5000
-    [ -d "${skill_dir}templates" ] || continue
-    skill_md="${skill_dir}SKILL.md"
+while IFS= read -r tpl_file; do  # timeout: 5000
+    skill_md="$(dirname "$(dirname "$tpl_file")")/SKILL.md"
     [ -f "$skill_md" ] || continue
-    for tpl_file in "${skill_dir}templates/"*; do
-        [ -f "$tpl_file" ] || continue
-        tpl_name=$(basename "$tpl_file")
-        if ! /usr/bin/grep -qF "$tpl_name" "$skill_md" 2>/dev/null; then
-            printf "⚠ 32b: %s — not referenced in %s\n" "$tpl_file" "$skill_md"
-            found=1
-        fi
-    done
-done
+    tpl_name=$(basename "$tpl_file")
+    if ! /usr/bin/grep -qF "$tpl_name" "$skill_md" 2>/dev/null; then
+        printf "⚠ 32b: %s — not referenced in %s\n" "$tpl_file" "$skill_md"
+        found=1
+    fi
+done < <(find "$_ROOT" -path "*/skills/*/templates/*" -type f 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 32b — all template files referenced in parent SKILL.md\n"
 ```
 
@@ -679,9 +709,12 @@ Auto-fix: delete if confirmed unused; no auto-delete.
 Rule files with `paths:` frontmatter that match no existing project files are never applied. Rules without `paths:` (global rules) are always active — skip those.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+[ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 32c: Dead rule files ===\n"
 found=0
-for rule_file in $_RULE_GLOB; do  # timeout: 5000
+while IFS= read -r rule_file; do  # timeout: 5000
     [ -f "$rule_file" ] || continue
     # Extract paths: list from frontmatter
     paths_block=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$rule_file" 2>/dev/null | awk '/^paths:/{p=1;next} p && /^[^ ]/{p=0} p{print}')
@@ -698,7 +731,7 @@ for rule_file in $_RULE_GLOB; do  # timeout: 5000
         printf "⚠ 32c: %s — paths: patterns match no project files (rule never applied)\n" "$rule_file"
         found=1
     fi
-done
+done < <(find "$_ROOT" -path "*/rules/*.md" 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 32c — all scoped rules match at least one project file\n"
 ```
 
@@ -743,8 +776,9 @@ printf "=== Check 32e: bin/ script cross-similarity ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check 32e skipped in non-local mode (no plugin source tree)\n"
 else
-    mapfile -t _C32E_SCRIPTS < <(find plugins -path '*/bin/*.py' -not -name '_*.py' 2>/dev/null | sort)  # timeout: 5000
-    _C32E_N=${#_C32E_SCRIPTS[@]}
+    # newline-delimited scalar, not an array — `mapfile` is a bash builtin with no zsh equivalent (see checks-shared.md Check 45's note)
+    _C32E_SCRIPTS=$(find plugins -path '*/bin/*.py' -not -name '_*.py' 2>/dev/null | sort)  # timeout: 5000
+    _C32E_N=$(printf '%s' "$_C32E_SCRIPTS" | grep -c '^')
     if [ "$_C32E_N" -lt 2 ]; then
         printf "✓: Check 32e — fewer than 2 bin/ scripts, skip\n"
     else
@@ -777,7 +811,8 @@ else
         for mode_file in "$modes_dir"/*.md; do
             basename_mode=$(basename "$mode_file")
             grep -qF "$basename_mode" "$skill_md" || continue
-            mode_lines=$(grep -c -v '^[[:space:]]*$\|^#' "$mode_file" 2>/dev/null || echo 0)
+            # `|| echo 0` would append a second 0 (grep -c prints 0 and exits 1 on zero matches).
+            mode_lines=$(grep -c -v '^[[:space:]]*$\|^#' "$mode_file" 2>/dev/null) || mode_lines=0
             [ "$mode_lines" -lt 20 ] && continue
             overlap=$(grep -Fxf <(grep -v '^[[:space:]]*$\|^#' "$mode_file") "$skill_md" 2>/dev/null | wc -l | tr -d ' ')
             if [ "$overlap" -ge 20 ]; then
@@ -914,7 +949,9 @@ Scan all SKILL.md files in scope. For each file, count the total number of `AskU
 ```bash
 printf "=== Check 38: AskUserQuestion cap ===\n"
 for f in $(find . -path "*/skills/*/SKILL.md" 2>/dev/null | sort); do
-    count=$(grep -c "AskUserQuestion" "$f" 2>/dev/null || echo 0)
+    # `|| echo 0` would append a second 0 (grep -c prints 0 and exits 1 on zero matches) — and most
+    # SKILL.md files have no AskUserQuestion at all, so this fired on the majority of the corpus.
+    count=$(grep -c "AskUserQuestion" "$f" 2>/dev/null) || count=0
     if [ "$count" -gt 8 ]; then
         printf "C38-HIGH: %d AskUserQuestion calls in %s — review for >4-per-branch\n" "$count" "$f"
     elif [ "$count" -gt 4 ]; then

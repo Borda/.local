@@ -579,7 +579,7 @@ CHANGE_LINES=$(( INSERTIONS + DELETIONS ))
 **Double-revert guard** (ADV-H19) — Phase 7 rework→revert can collide with a partial Phase 5 timeout revert or Phase 6 guard-fail revert performed in the same iteration. Always check before issuing the revert:
 
 ```bash
-ALREADY_REVERTED=$(git log --oneline -5 2>/dev/null | grep -c "^[0-9a-f]\+ Revert " || echo 0)
+ALREADY_REVERTED=$(git log --oneline -5 2>/dev/null | grep -c "^[0-9a-f]\+ Revert ") || ALREADY_REVERTED=0  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
 if [ "$ALREADY_REVERTED" -gt 0 ]; then
     echo "Phase 7: prior revert detected (Phase 5/6 already reverted this iteration) — skipping double-revert."
 else

@@ -21,7 +21,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
   - `--local` — audit source tree (`plugins/*/`) not user setup (`.claude/` + installed cache); plugin-dev workflows where local edits not yet installed; sets `LOCAL_MODE=true`
   - `--upgrade` — fetch latest Claude Code docs, filter new features by genuine value, apply: **config** changes (apply + correctness check), **capability** changes (calibrate before → apply → calibrate after → accept if Δrecall ≥ 0 and ΔF1 ≥ 0). Skip to **Mode: upgrade**. Mutually exclusive with `--adversarial` and `--efficiency` — error if combined with either.
   - `--adversarial` (alias: `--challenge`) — adversarial review of all agents + skills in scope using `foundry:challenger` (Phase A) + Codex adversarial pass (Phase B); surfaces issues beyond standard per-file audit; see **Mode: adversarial**. Mutually exclusive with `--upgrade` only; combinable with `--efficiency`.
-  - `--efficiency` — cost and efficiency sweep: model tier validation, token bloat detection, unbounded spawn patterns, cross-file boilerplate duplication, missing model declarations, dead model specs, bin/ extraction candidates (Check 33). Generates prioritized cost-reduction plan with estimated savings. Detection only — run `/distill executables` to act on extraction candidates. Skip to **Mode: efficiency**. Mutually exclusive with `--upgrade` only; combinable with `--adversarial`.
+  - `--efficiency` — cost and efficiency sweep: model tier validation, token bloat detection, unbounded spawn patterns, cross-file boilerplate duplication, missing model declarations, bin/ extraction candidates (Check 33). Generates prioritized cost-reduction plan with estimated savings. Detection only — run `/distill executables` to act on extraction candidates. Skip to **Mode: efficiency**. Mutually exclusive with `--upgrade` only; combinable with `--adversarial`.
   - `--skip-gate` — suppress follow-up gate (for automation pipelines)
 
   **Legacy positional tokens** (`fix`, `upgrade`, `adversarial`, `challenge`, `ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`fix medium` removed — run `/audit` and pick fix level from gate, or pass `--upgrade` / `--adversarial` as flags."
@@ -38,7 +38,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
   - `plugins <name>` — same as `plugins` scoped to one plugin: `plugins/<name>/agents/*.md` + `plugins/<name>/skills/*/SKILL.md` + integration checks; `<name>` must match dir under `plugins/` (e.g. `plugins foundry`, `plugins oss`, `plugins research`)
   - `<plugin-name>` — **tier 2 shorthand**: bare plugin dir name (e.g. `oss`, `foundry`, `research`, `develop`, `codemap`) auto-resolved when token matches dir under `plugins/`; equivalent to `plugins <name>`; no `plugins` prefix needed
   - `<agent-name>` — **tier 3**: name matches `plugins/*/agents/<name>.md` or `.claude/agents/<name>.md`; runs agent checks only (Checks 14a, 14b, 15, 19, 20, 17, 12, 13, 25, 22, 26, 29); one file in Step 3
-  - `<skill-name>` — **tier 3**: name matches `plugins/*/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`; runs skill checks only (Checks 14a, 14b, 15, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29); one file in Step 3
+  - `<skill-name>` — **tier 3**: name matches `plugins/*/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`; runs skill checks only (Checks 14a, 14b, 15, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29); one file in Step 3
   - Multiple scope tokens — space-separated, any combo; scope = union of resolved file sets: `agents skills`, `oss research`, `shepherd curator`, `review resolve`; check list = union (de-duplicated)
 
   **Scope token resolution** (each remaining token after flag-strip, resolved before Step 2): (1) reserved keywords (`agents`, `skills`, `rules`, `communication`, `setup`, `plugin`, `plugins`) → use as-is; (2) matches dir under `plugins/<token>/` → tier 2; (3) matches agent file in `plugins/*/agents/<token>.md` or `.claude/agents/<token>.md` → tier 3 agent; (4) matches skill dir `plugins/*/skills/<token>/` or `.claude/skills/<token>/` → tier 3 skill; (5) no match → error and stop
@@ -86,7 +86,7 @@ cat "$_FS/task-hygiene.md"
 - Phase 6: print report header (Step 11b) → `blockedBy` Phase 5; mark completed immediately BEFORE emitting the header block (task-lifecycle.md §TaskUpdate before long output), then print
 - On loop retry or scope change → new task; do not reuse completed task
 
-Surface progress at milestones: after system-wide checks ("✓ Checks 1-21 complete, N findings so far — spawning per-file audits"), after agent reports ("Agent reports received — N medium, N low findings"), before each fix batch ("Fixing N medium findings in parallel").
+Surface progress at milestones: after system-wide checks ("✓ Checks 1-20 complete, N findings so far — spawning per-file audits"), after agent reports ("Agent reports received — N medium, N low findings"), before each fix batch ("Fixing N medium findings in parallel").
 
 ## Pre-flight checks
 
@@ -95,9 +95,8 @@ Surface progress at milestones: after system-wide checks ("✓ Checks 1-21 compl
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
+# grep+sed, not `[[ =~ ]]` — zsh leaves BASH_REMATCH empty on match, silently dropping the user's --keep list
+KEEP_ITEMS=$(printf '%s' "$ARGUMENTS" | grep -o -- '--keep[[:space:]]"[^"]*"' | head -1 | sed 's/^--keep[[:space:]]"//; s/"$//')
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
 rm -f .temp/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
 LOCAL_MODE=false;       [[ " $ARGUMENTS " == *" --local "* ]]       && LOCAL_MODE=true

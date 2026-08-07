@@ -1,4 +1,4 @@
-# Shared Checks (all scopes) — 17, 21, 4, 5, 9, 16, 15
+# Shared Checks (all scopes) — 17, 4, 5, 9, 16, 15
 
 ## Check 12 — File length (context budget risk)
 
@@ -198,23 +198,42 @@ Report per-file: `N examples total, K high-value, M low-value (est. ~X tokens wa
 Block count across all .md files in scope. NxN similarity analysis is expensive — runs in `--efficiency` mode only (Phase B2), which subsumes this check. When `--efficiency` active, skip Check 17.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+# Patterns go straight to `find`, never into a variable: zsh applies neither word-splitting nor
+# filename generation to an unquoted $VAR, so a var holding six space-separated globs would be
+# read as one literal string and match nothing.
 if [ "$LOCAL_MODE" = "true" ]; then
-    _C17_GLOBS="plugins/*/skills/*/SKILL.md plugins/*/skills/*/modes/*.md plugins/*/skills/_shared/*.md plugins/*/skills/*/templates/*.md plugins/*/agents/*.md plugins/*/rules/*.md"
+    # The two `! -path "*/<dir>/*/*"` guards keep those sweeps one level deep, matching the flat
+    # globs this replaced: agent sidecar fragments live in references/<parent>/ (deliberately
+    # outside the agent tree) and rules/_full/ holds long-form bodies of the rule stubs beside it.
+    find plugins \( \
+        -path "*/skills/*/SKILL.md" -o \
+        -path "*/skills/*/modes/*.md" -o \
+        -path "*/skills/_shared/*.md" -o \
+        -path "*/skills/*/templates/*.md" -o \
+        \( -path "*/agents/*.md" ! -path "*/agents/*/*" \) -o \
+        \( -path "*/rules/*.md" ! -path "*/rules/*/*" \) \) 2>/dev/null | sort
 else
-    _C17_GLOBS=".claude/skills/*/SKILL.md .claude/agents/*.md"
-fi
+    find .claude \( -path "*/skills/*/SKILL.md" -o \
+        \( -path "*/agents/*.md" ! -path "*/agents/*/*" \) \) 2>/dev/null | sort
+fi > "${TMPDIR:-/tmp}/audit-state-${CSID}/c17-files"
 printf "%-55s %s\n" "FILE" "BLOCKS"
-for f in $_C17_GLOBS; do # timeout: 5000
+while IFS= read -r f; do # timeout: 5000
     [ -f "$f" ] || continue
     name="${f#plugins/}"
     name="${name#.claude/}"
-    blocks=$(grep -c '^\`\`\`' "$f" 2>/dev/null || echo 0)
+    # No `|| echo 0` fallback: on zero matches grep -c already prints 0 and *also* exits 1, so the
+    # fallback appended a second 0 and the arithmetic below aborted on "0\n0".
+    blocks=$(grep -c '^\`\`\`' "$f" 2>/dev/null) || blocks=0
     blocks=$(( blocks / 2 ))
     printf "%-55s %d\n" "$name" "$blocks"
-done
+done < "${TMPDIR:-/tmp}/audit-state-${CSID}/c17-files"
 ```
 
 Flag files with block count ≥ 10 as extraction candidates — recommend `--efficiency` run for full NxN analysis.
+
+> **A `0` in the BLOCKS column is a correct result, not a filtering bug** — `_shared/agent-resolution.md` is the standing example. Those rows are the regression test for the `grep -c` fallback defect fixed in the block above: with `|| echo 0`, a zero-match file captured `"0\n0"` and aborted the arithmetic, so the check emitted nothing at all. Keep zero rows in the output; their presence is the evidence the count path still works.
 
 For 17a (step-level prose overlap, ≥40% consecutive steps): flag pair, name canonical owner; route to Check 20 `merge-prune` if no clear owner.
 
@@ -418,11 +437,7 @@ Via model reasoning: extract (symbol, concept) pairs from legend. Per concept, s
 Config files consumed primarily by LLM at inference time. Formatting inconsistencies force LLM to resolve ambiguity before parsing content — wasted tokens, degraded reliability.
 **Principle**: compact + robust + minimal variation. One canonical form per pattern type per file.
 
-**Scan targets**: all `*.md` files under `.claude/` and `plugins/`, excluding any file named `README.md`.
-
-```bash
-mapfile -t MD_FILES < <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)  # timeout: 5000
-```
+**Scan targets**: all `*.md` files under `.claude/` and `plugins/`, excluding any file named `README.md`. Each sub-check block below re-derives that file list inline — a shared assignment in its own block would not survive into the next Bash call (Check 43), and `mapfile` is a bash builtin absent from zsh (Check 45's note).
 
 Via model reasoning, apply four sub-checks per file:
 
@@ -430,11 +445,11 @@ Via model reasoning, apply four sub-checks per file:
 
 ```bash
 printf "=== Check 41a: List marker uniformity ===\n"
-for f in "${MD_FILES[@]}"; do  # timeout: 5000
+while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     markers=$(awk '/^```/{skip=!skip} !skip && /^[[:space:]]*[*+] /{print $1}' "$f" | sort -u | tr '\n' ' ')
     [ -n "$markers" ] && echo "$f: uses markers: $markers"
-done
+done < <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)
 ```
 
 Via model reasoning: for each file printing markers, confirm multiple distinct markers present outside code fences. Flag files with `*` or `+` alongside `-`.
@@ -449,10 +464,10 @@ Violations to flag:
 
 ```bash
 printf "=== Check 41b: Numbering intent ===\n"
-for f in "${MD_FILES[@]}"; do  # timeout: 5000
+while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     grep -n 'AskUserQuestion' "$f" 2>/dev/null | grep -q '.' && grep -B5 -A5 'AskUserQuestion' "$f" | grep -n '^\s*[0-9]\.' 2>/dev/null | head -5 && echo "  ^^^ $f (numbered options in AskUserQuestion block)"
-done
+done < <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)
 ```
 
 Via model reasoning: around each AskUserQuestion block, check whether options use `1.`/`2.` (violation) or `(a)`/`(b)` (compliant). In workflow steps, verify numbered sub-items (`1.`, `2.`) represent sequential actions, not option choices.
@@ -468,11 +483,11 @@ Exception: skip when attributes vary per item (non-uniform schema — prose corr
 ```bash
 printf "=== Check 41d: Legacy phase/step numbering ===\n"
 found41d=0
-for f in "${MD_FILES[@]}"; do  # timeout: 5000
+while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     hdr=$(grep -nE '^#{1,6}[[:space:]]+(Phase|Step|Check|Mode|Section)[[:space:]]+[A-Za-z]*[0-9]+\.[0-9A-Za-z]+' "$f" 2>/dev/null)
     [ -n "$hdr" ] && { echo "$hdr" | sed "s|^|$f:|"; found41d=1; }
-done
+done < <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)
 [ "$found41d" -eq 0 ] && printf "✓: Check 41d — no legacy decimal/mixed phase-step headers\n"
 ```
 
@@ -494,7 +509,7 @@ Sub-check letter suffixes must be contiguous starting at `a`. A file containing 
 ```bash
 printf "=== Check 44: Sub-check naming symmetry ===\n"
 found=0
-for f in "${MD_FILES[@]}"; do  # timeout: 5000
+while IFS= read -r f <&3; do  # timeout: 5000
     [ -f "$f" ] || continue
     # skip CLAUDE.md — cross-references check numbers, not defining sub-checks
     [ "$(basename "$f")" = "CLAUDE.md" ] && continue
@@ -507,7 +522,7 @@ for f in "${MD_FILES[@]}"; do  # timeout: 5000
             found=1
         fi
     done < <(grep -oE 'Check [0-9]+[b-z]' "$f" 2>/dev/null | sort -u)
-done
+done 3< <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)
 [ "$found" -eq 0 ] && printf "✓: Check 44 — sub-check naming symmetric across all files\n"
 ```
 

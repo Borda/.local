@@ -11,7 +11,7 @@
 > | `plugins` | `checks-setup.md` (7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14a, 14b, 15, 17, 12, 13, 25, 26, 29, 41, 45) + checks 32, 32d, 33, 38, 40 + `checks-install.md` (R1–R5 — LOCAL_MODE) + `checks-security.md` (35, 36, 37) |
 > | `plugins <name>` | same as `plugins` — scoped to one plugin directory |
 > | `agents` | `checks-agents.md` (19, 20) + `checks-shared.md` (run only: 14a, 14b, 15, 17, 12, 13, 25, 26, 29, 41, 45) + `checks-skills.md` (22, 40 only) + `checks-security.md` (35, 36) |
-> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33, 38, 40) + `checks-shared.md` (run only: 14a, 14b, 15, 17, 12, 13, 25, 26, 29, 41, 45) + `checks-security.md` (35–37) |
+> | `skills` | `checks-skills.md` (22–24, 27, 28, 30, 31, 32, 33, 38, 40) + `checks-shared.md` (run only: 14a, 14b, 15, 17, 12, 13, 25, 26, 29, 41, 45) + `checks-security.md` (35–37) |
 > | `rules` | `checks-shared.md` (run only: 18, 12, 13, 29, 41, 45) + `checks-skills.md` (32c only) |
 > | `communication` | `checks-shared.md` (run only: 15, 16, 12, 13, 29, 45) |
 > | No scope (full) | all 5 files |
@@ -38,15 +38,15 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 > Checks 42, 43 (and 14a/14b/14c/14d/14e, 32d, cli-flag-drift, R3) run in Step 1b on every invocation regardless of scope — never list them here; SKILL.md:198 forbids prose re-derivation.
 
 - `agents` — Checks 14a, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40, 41 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
-- `skills` — Checks 14a, 14b, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 40, 41 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
+- `skills` — Checks 14a, 14b, 15, 16, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37,  38, 40, 41 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
 - `rules` — Checks 18, 12, 13, 29, 32c, 41 (32d skipped — no plugin bin/ in rules scope)
 - `communication` — Checks 15, 16, 12, 13, 29
 - `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, 37, 39, I1, I2, I3 (Step 3: one foundry:curator spawn for `setup` SKILL.md only; I1–I3 read `~/.claude/`)
 - `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/setup/SKILL.md` only)
-- `plugins` — Checks 7, 8, 14, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, 41, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's setup SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
+- `plugins` — Checks 7, 8, 14, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, 41, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's setup SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
 - `plugins <name>` or `<plugin-name>` (tier 2) — same check list as `plugins`, scoped to `plugins/<name>/` only
 - `<agent-name>` (tier 3) — Checks 14, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40, 41 (one file only; no cross-plugin Checks 7/8)
-- `<skill-name>` (tier 3) — Checks 14, 14b, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a, 35, 36, 37, 38, 40, 41 (one file only)
+- `<skill-name>` (tier 3) — Checks 14, 14b, 15, 16, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a, 35, 36, 37, 38, 40, 41 (one file only)
 - Multiple scope tokens — union of check lists for all resolved scope types; de-duplicate; run each check once against union file set
 - No scope argument — run all checks
 

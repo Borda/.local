@@ -93,7 +93,7 @@ Before training, audit dataset:
 > - `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — DVC, Polars, HuggingFace, 3D volumetric patterns (acquisition mode)
 >
 > **Resolve agent dir** (shared preamble — both acquisition and pipeline-audit modes call this; safe to invoke once per agent run; idempotent):
-> `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/agents/data-steward"; [ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop.
+> `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/data-steward"; [ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/references/data-steward" -type d 2>/dev/null | head -1)`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop.
 
 <data_contracts>
 
@@ -222,8 +222,8 @@ _FOUNDRY_AVAILABLE=$({ find ~/.claude/plugins/cache -maxdepth 5 -path "*/foundry
 Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then load `storage-patterns.md` — storage and loading patterns for this mode:
 
 ```bash
-_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/agents/data-steward"
-[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)
+_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/data-steward"
+[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/references/data-steward" -type d 2>/dev/null | head -1)
 [ -d "$_RESEARCH_AGENT_DIR" ] || { echo "! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)"; exit 1; }
 cat "$_RESEARCH_AGENT_DIR/storage-patterns.md" 2>/dev/null || echo "⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only."
 ```
@@ -245,8 +245,8 @@ cat "$_RESEARCH_AGENT_DIR/storage-patterns.md" 2>/dev/null || echo "⚠ storage-
 Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then load `ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode:
 
 ```bash
-_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/agents/data-steward"
-[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)
+_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/data-steward"
+[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/references/data-steward" -type d 2>/dev/null | head -1)
 [ -d "$_RESEARCH_AGENT_DIR" ] || { echo "! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)"; exit 1; }
 cat "$_RESEARCH_AGENT_DIR/ml-pipeline-patterns.md" 2>/dev/null || echo "⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only."
 ```

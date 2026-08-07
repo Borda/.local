@@ -2,7 +2,7 @@
 """verify_patient_split.py — detect patient_id overlap between train/test CSV splits.
 
 Reproduces the inline ``python -c`` block from
-``plugins/cc_research/agents/data-steward/ml-pipeline-patterns.md`` (Patient-Level Split
+``plugins/cc_research/references/data-steward/ml-pipeline-patterns.md`` (Patient-Level Split
 section). Loads two CSV files via pandas, computes the set intersection on the
 ``patient_id`` column, and prints a human-readable verdict identical to the original
 block:

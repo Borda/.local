@@ -163,7 +163,7 @@ Fixtures return minimal valid object needed for test scope — only fields test 
 <!-- ML/PyTorch codebases only — skip for non-ML projects -->
 <ml_testing>
 
-For ML model testing (PyTorch, TensorFlow, JAX, model inference, tensor-shape checks, DataLoader determinism, model-mode contracts): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/agents/qa-specialist/ml-testing.md"` via the Bash tool for ML-specific test patterns — tensor assertions, GPU markers, DataLoader tests, model mode invariants. Skip for non-ML Python tasks.
+For ML model testing (PyTorch, TensorFlow, JAX, model inference, tensor-shape checks, DataLoader determinism, model-mode contracts): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/references/qa-specialist/ml-testing.md"` via the Bash tool for ML-specific test patterns — tensor assertions, GPU markers, DataLoader tests, model mode invariants. Skip for non-ML Python tasks.
 
 </ml_testing>
 

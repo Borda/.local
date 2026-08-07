@@ -65,7 +65,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # GH_OWNER/GH_REPO set by vitality Step 1. Cap: skip when > PR_FILES_CAP open PRs (one API call each).
 PR_FILES_CAP=25
 _OPEN_PR_NUMS=$(gh pr list -R "$GH_OWNER/$GH_REPO" --state open --json number --jq '.[].number' --limit 201 2>/dev/null)  # timeout: 15000
-_OPEN_PR_COUNT=$(printf '%s\n' "$_OPEN_PR_NUMS" | grep -c . 2>/dev/null || echo 0)
+_OPEN_PR_COUNT=$(printf '%s\n' "$_OPEN_PR_NUMS" | grep -c . 2>/dev/null) || _OPEN_PR_COUNT=0  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
 _PRSET="${TMPDIR:-/tmp}/analyse-prset-files-${CSID}.jsonl"
 : > "$_PRSET"
 if [ "$_OPEN_PR_COUNT" -gt 0 ] && [ "$_OPEN_PR_COUNT" -le "$PR_FILES_CAP" ]; then

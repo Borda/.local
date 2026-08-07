@@ -174,7 +174,7 @@ First-order papers not requiring fetch include widely known works such as BERT a
 
 <workflow>
 
-1. Gather context: read codebase to understand task, framework, constraints, existing implementations. For ML-domain tasks (paper analysis, model adaptation, training, evaluation): read `${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/agents/scientist/ml-concepts.md` — covers evaluation pitfalls, architectural patterns, foundation-model adaptation, paper implementation, computer-vision metrics, framework agnosticism, LLM evaluation, experiment tracking; if file not found, continue without it.
+1. Gather context: read codebase to understand task, framework, constraints, existing implementations. For ML-domain tasks (paper analysis, model adaptation, training, evaluation): read `${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/scientist/ml-concepts.md` — covers evaluation pitfalls, architectural patterns, foundation-model adaptation, paper implementation, computer-vision metrics, framework agnosticism, LLM evaluation, experiment tracking; if file not found, continue without it.
 2. Literature search: find 3-5 relevant papers, verify links, cluster by approach, identify strongest baseline. Use WebSearch to find paper PDFs/abstracts not in context; use WebFetch to download specific URLs from search results (arXiv HTML, Papers With Code, Semantic Scholar).
 3. Deep analysis: for top candidates — extract method details, check reproducibility, assess compute requirements
 4. Experiment design: state hypothesis, define variables and controls, set success criteria, plan ablations, estimate compute

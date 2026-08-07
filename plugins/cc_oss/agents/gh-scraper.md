@@ -128,7 +128,7 @@ Rules:
 ## Step 5 — Return Envelope
 
 ```bash
-DATASET_COUNT=$(grep -c '' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000  # grep -c counts lines incl. files with no trailing newline
+DATASET_COUNT=$(grep -c '' "$DATA_FILE" 2>/dev/null) || DATASET_COUNT=0  # timeout: 5000  # grep -c counts lines incl. files with no trailing newline; `|| echo 0` would append a second 0 on an empty file (grep -c prints 0 *and* exits 1), and DATASET_COUNT is interpolated into the JSON envelope below — "datasets":0\n0 is unparsable
 PARTIAL_COUNT=$(jq -c 'select(.partial == true)' "$DATA_FILE" 2>/dev/null | wc -l || echo 0)  # timeout: 5000
 if [ "$PARTIAL_COUNT" -eq 0 ]; then CONFIDENCE=0.95
 elif [ "$PARTIAL_COUNT" -le 2 ]; then CONFIDENCE=0.88

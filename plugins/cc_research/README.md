@@ -889,7 +889,7 @@ Skill files (`plugins/cc_research/skills/*/SKILL.md`) and agent files (`plugins/
 
 Version bumps per project policy: new capability → minor bump; fixes, wording, refactors → patch bump.
 
-**Mode-dispatch layout**: large conditional sections externalised under `skills/<skill>/modes/*.md`, loaded on demand. Run's hypothesis pipeline, team, report modes under `skills/run/modes/`. ML-concepts reference for `research:scientist` under `agents/scientist/ml-concepts.md` — loaded only for ML-domain tasks.
+**Mode-dispatch layout**: large conditional sections externalised under `skills/<skill>/modes/*.md`, loaded on demand. Run's hypothesis pipeline, team, report modes under `skills/run/modes/`. Agent sidecar references live under `references/<agent>/*.md` (outside `agents/`, so they never register as dispatchable subagents): ML-concepts for `research:scientist` under `references/scientist/ml-concepts.md`, data-steward's storage and ML-pipeline patterns under `references/data-steward/` — all loaded only for ML-domain tasks.
 
 **Shared bin/ scripts** (`plugins/cc_research/bin/`) — all 13 referenced from at least one skill or agent:
 

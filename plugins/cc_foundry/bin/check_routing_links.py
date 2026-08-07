@@ -270,7 +270,7 @@ _VAR_ROOTS: dict[str, tuple[str, str]] = {
     "_SHARED": ("cc_foundry", "skills/_shared"),
     "_RESEARCH_SHARED": ("cc_research", "skills/_shared"),
     "_RESEARCH_RUN_MODES": ("cc_research", "skills/run/modes"),
-    "_RESEARCH_AGENT_DIR": ("cc_research", "agents/data-steward"),
+    "_RESEARCH_AGENT_DIR": ("cc_research", "references/data-steward"),
 }
 
 

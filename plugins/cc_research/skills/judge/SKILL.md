@@ -171,7 +171,7 @@ fi
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PROGRAM_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || PROGRAM_PATH=""  # re-hydrate (Check 41: fresh shell — persisted in J3 pre-spawn block)
-_SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null || echo 0)  # timeout: 5000
+_SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null) || _SCOPE_COUNT=0  # timeout: 5000  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
 _STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
 SPAWN_ARCHITECT=false
 if [ "${_SCOPE_COUNT:-0}" -gt 1 ] || [ "$_STRATEGY" = "arch" ] || grep -qiE "cross.domain|multi.system|distributed|multiple.*component|pipeline.*stage" "$PROGRAM_PATH" 2>/dev/null; then
@@ -265,7 +265,7 @@ Record validation results for J6 report.
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PROGRAM_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || PROGRAM_PATH=""  # re-hydrate (Check 41: fresh shell)
-_SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null || echo 0)  # timeout: 5000
+_SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null) || _SCOPE_COUNT=0  # timeout: 5000  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
 _STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
 J5A_COMPLEX=false
 if [ "${_SCOPE_COUNT:-0}" -gt 1 ] || [ "$_STRATEGY" = "arch" ] || grep -qiE "cross.domain|multi.system|distributed|multiple.*component|pipeline.*stage" "$PROGRAM_PATH" 2>/dev/null; then

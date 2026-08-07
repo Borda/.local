@@ -12,17 +12,9 @@ Triggered by `/audit --upgrade`. Read+executed by `/audit` when `--upgrade` flag
 
 ### Phase 1: Gate check
 
-Verify baseline structurally sound before applying anything:
+Verify no unresolved blocking findings before applying anything.
 
-```bash
-for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
-    awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'context: fork' &&
-    awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'disable-model-invocation: true' &&
-    echo "BREAKING: $f — context:fork + disable-model-invocation:true"
-done
-```
-
-Critical/high issues from recent `/audit` run, or gate check finds BREAKING: stop, print "⚠ Resolve critical/high findings first (run `/audit` and pick fix level from gate), then re-run `/audit --upgrade`."
+Critical/high issues from recent `/audit` run: stop, print "⚠ Resolve critical/high findings first (run `/audit` and pick fix level from gate), then re-run `/audit --upgrade`."
 
 ### Phase 2: Fetch and classify proposals
 

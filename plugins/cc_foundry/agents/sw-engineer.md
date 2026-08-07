@@ -196,7 +196,7 @@ Cross-reference `foundry:qa-specialist` for full edge-case matrix and test-desig
 
 <oss_patterns>
 
-For Python library packaging and API-stability conventions (src layout, deprecation cycle, SemVer, experimental-API marking): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/agents/sw-engineer/packaging-patterns.md"` via the Bash tool. Skip when task is application code, not a publishable library.
+For Python library packaging and API-stability conventions (src layout, deprecation cycle, SemVer, experimental-API marking): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/references/sw-engineer/packaging-patterns.md"` via the Bash tool. Skip when task is application code, not a publishable library.
 
 </oss_patterns>
 
@@ -296,7 +296,7 @@ fi
 <!-- Hook authoring tasks only (JS .js files under .claude/hooks/, settings.json hook config, PostToolUse/PreToolUse/SubagentStop events) -->
 <hook_authoring>
 
-For hook authoring tasks (JavaScript hook files under `.claude/hooks/`, hook registrations in `settings.json`, `PostToolUse`/`PreToolUse`/`SubagentStop` event handlers): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/agents/sw-engineer/hook-authoring.md"` via the Bash tool for specialized hook patterns — file header, exit codes, stdin pattern, decision output. Skip when implementing Python.
+For hook authoring tasks (JavaScript hook files under `.claude/hooks/`, hook registrations in `settings.json`, `PostToolUse`/`PreToolUse`/`SubagentStop` event handlers): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/references/sw-engineer/hook-authoring.md"` via the Bash tool for specialized hook patterns — file header, exit codes, stdin pattern, decision output. Skip when implementing Python.
 
 </hook_authoring>
 

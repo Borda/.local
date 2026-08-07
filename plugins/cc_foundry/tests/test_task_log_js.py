@@ -60,12 +60,18 @@ def tmp_home(tmp_path: Path) -> Path:
 
 
 def _pre_agent(
-    sid: str, tool_use_id: str, subagent_type: str = "foundry:sw-engineer", run_in_background: bool = False
+    sid: str,
+    tool_use_id: str,
+    subagent_type: str = "foundry:sw-engineer",
+    run_in_background: bool = False,
+    name: str | None = None,
 ) -> dict:
     """Build a ``PreToolUse`` payload for an ``Agent()`` tool call."""
     tool_input: dict = {"subagent_type": subagent_type, "description": "x", "prompt": "p"}
     if run_in_background:
         tool_input["run_in_background"] = True
+    if name is not None:
+        tool_input["name"] = name
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Agent",
@@ -288,7 +294,12 @@ class TestAgentLifecycle:
     def test_foreground_agent_subagent_start_consumes_pending(
         self, sid: str, tmp_home: Path, run_hook, state_dir
     ) -> None:
-        """SubagentStart with a matching pending entry consumes it without double-writing agents/<agent_id>.json."""
+        """SubagentStart with a matching pending entry re-keys agents/<tool_use_id>.json to agents/<agent_id>.json.
+
+        Without the re-key, SubagentStop's later unlink (keyed by agent_id) can never find the
+        record — it stays keyed by tool_use_id forever, leaking until the statusline's staleness
+        backstop reaps it instead of being removed on actual completion.
+        """
         tool_use_id = "tu-fg"
         agent_id = "agent-fg"
         run_hook("task-log.js", _pre_agent(sid, tool_use_id), home=tmp_home)
@@ -301,9 +312,81 @@ class TestAgentLifecycle:
         )
 
         assert result.returncode == 0, result.stderr
-        assert (state_dir(sid) / "agents" / f"{tool_use_id}.json").exists()
-        assert not (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
+        assert not (state_dir(sid) / "agents" / f"{tool_use_id}.json").exists()
+        assert (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
         assert not (state_dir(sid) / "pending" / f"{tool_use_id}.json").exists()
+
+    def test_subagent_start_rekey_lets_subagent_stop_remove_it(
+        self, sid: str, tmp_home: Path, run_hook, state_dir
+    ) -> None:
+        """End-to-end: Pre(Agent) → SubagentStart(re-key) → SubagentStop actually removes the record.
+
+        Regression test for the leak the challenger found: before renameAgentFile, SubagentStop's
+        unlink (agentsDir/<agent_id>.json) silently no-op'd because the record was still keyed by
+        tool_use_id, so a finished agent's entry lingered until the statusline's staleness filter
+        aged it out — up to an hour, not on actual completion.
+        """
+        tool_use_id = "tu-e2e"
+        agent_id = "agent-e2e"
+        run_hook("task-log.js", _pre_agent(sid, tool_use_id, run_in_background=True), home=tmp_home)
+        run_hook("task-log.js", _subagent_start(sid, agent_id, tool_use_id=tool_use_id), home=tmp_home)
+        assert (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
+
+        result = run_hook("task-log.js", _subagent_stop(sid, agent_id), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        assert not (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
+
+    def test_subagent_start_without_tool_use_id_rekeys_matched_pending(
+        self, sid: str, tmp_home: Path, run_hook, state_dir
+    ) -> None:
+        """SubagentStart payload omitting tool_use_id still re-keys via the agent_type pending scan.
+
+        Some SubagentStart payloads carry agent_type but not tool_use_id — the hook falls back to
+        scanning pending/ for the most recent entry matching agent_type. That fallback must re-key
+        the matched agents/<tool_use_id>.json to agents/<agent_id>.json too, the same as the direct
+        tool_use_id match path.
+        """
+        tool_use_id = "tu-typematch"
+        agent_id = "agent-typematch"
+        run_hook("task-log.js", _pre_agent(sid, tool_use_id, subagent_type="foundry:qa-specialist"), home=tmp_home)
+
+        result = run_hook(
+            "task-log.js",
+            _subagent_start(sid, agent_id, agent_type="foundry:qa-specialist"),
+            home=tmp_home,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert not (state_dir(sid) / "agents" / f"{tool_use_id}.json").exists()
+        assert (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
+
+    def test_subagent_start_named_agent_matches_by_name_not_type(
+        self, sid: str, tmp_home: Path, run_hook, state_dir
+    ) -> None:
+        """A named agent's tool_use_id-less SubagentStart matches pending/ via name, not subagent_type.
+
+        Live-observed shape: SubagentStart's ``agent_type`` field carries the assigned *name* for a
+        named Agent() call, not its subagent_type. Matching only on subagent_type would miss it,
+        leaving agents/<tool_use_id>.json un-re-keyed — the exact leak renameAgentFile exists to close.
+        """
+        tool_use_id = "tu-named"
+        agent_id = "agent-named"
+        run_hook(
+            "task-log.js",
+            _pre_agent(sid, tool_use_id, subagent_type="foundry:challenger", name="post-fix-challenger-2"),
+            home=tmp_home,
+        )
+
+        result = run_hook(
+            "task-log.js",
+            _subagent_start(sid, agent_id, agent_type="post-fix-challenger-2"),
+            home=tmp_home,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert not (state_dir(sid) / "agents" / f"{tool_use_id}.json").exists()
+        assert (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
 
     def test_subagent_start_no_pending_writes_agent_file(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
         """Team-mode SubagentStart (no pending entry) writes agents/<agent_id>.json directly."""

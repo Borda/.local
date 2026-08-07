@@ -10,7 +10,7 @@ Triggered by `/audit --efficiency`. Read+executed by `/audit` when `--efficiency
 
 Sweeps agents and skills for cost inefficiency signals. Does NOT run standard per-file quality audit (Steps 3–6) — efficiency-only analysis. Generates prioritized cost-reduction plan with estimated savings. Note: mode produces heuristic estimates only — no live token-cost baseline measured, no post-fix delta computed. Savings figures are directional guidance.
 
-**Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Fragment files (`*/modes/*`, `*/templates/*`, `*/_shared/*`): skip checks 1–4 and 6 (no model frontmatter); run checks 5 (token bloat) and 7 (bin/ extraction) only.
+**Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Fragment files (`*/modes/*`, `*/templates/*`, `*/_shared/*`): skip checks 1–3 and 6 (no model frontmatter); run checks 5 (token bloat) and 7 (bin/ extraction) only.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -34,8 +34,8 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 > 1. **Model tier**: is `model:` declared? If `model: opus` or `model: opusplan`, does task genuinely require reasoning depth — adversarial multi-step analysis, architectural design, complex implementation? Flag if task is primarily: template fill, pattern matching, structured summarization, orchestrator-only dispatch, or single-pass structured write.
 >    **Performance-safety sub-check (mandatory before any downgrade recommendation)**: does the agent produce quality-sensitive output? Quality-sensitive signals: public-facing text (contributor replies, blog posts), security analysis (OWASP, exploit reasoning), adversarial reasoning, complex multi-file code design, creative original content. If any signal present, add `performance_risk: medium|high` to the finding and require empirical validation note — do NOT recommend downgrade as P1/P2 without this caveat. A lower-cost model that degrades output quality is not an efficiency gain.
 > 2. **Effort level**: is `effort: xhigh` declared? Flag if agent is read-only, single-pass, or executes a fixed decision tree — xhigh planning budget has nowhere to spend. Exception: `xhigh` on sonnet is acceptable only for these agent roles: adversarial reviewer (challenger, qa-specialist), multi-file code designer (sw-engineer, solution-architect), or public-facing content writer (creator, shepherd). All other roles: flag regardless of quality-sensitivity claim.
-> 3. **Missing model declaration**: for skill files only: no `model:` AND no `disable-model-invocation: true` → session model inherited; flag with recommended tier (opus/sonnet/haiku based on role complexity). For agent files: no `model:` → session model inherited (agents have no `disable-model-invocation` field — omit that half of the check).
-> 4. **Dead model spec**: `model:` declared + `disable-model-invocation: true` → model never runs; spec is vestigial and misleading. Applies to skill files only — `disable-model-invocation` is not a valid agent frontmatter field.
+> 3. **Missing model declaration**: no `model:` → session model inherited; flag with recommended tier (opus/sonnet/haiku based on role complexity). Applies to skill and agent files alike. `disable-model-invocation: true` is **not** an exemption: it blocks only Claude-automatic invocation, subagent preloading, and scheduled dispatch — the skill is still user-invocable via `/skill-name`, still runs a model, and so still inherits the session model when it declares none.
+> <!-- Item 4 (dead model spec) removed: `disable-model-invocation: true` blocks only Claude-automatic invocation, subagent preloading, and scheduled dispatch — user-typed `/skill-name` still runs and `model:` still governs it. Numbering gap at 4 is intentional; items 5–9 keep their numbers because E8/E9 are named identifiers referenced across this file and the envelope schema. -->
 > 5. **Token bloat**: identify inline reference blocks >40 lines that load unconditionally but apply only to a subset of invocations (e.g., ML-specific patterns for non-ML projects, hook authoring for non-hook tasks, domain CI blocks always loaded). Flag with estimated line count and suggested gate/extraction. A block "applies only to a subset" if its heading keyword does not appear in the skill's `description:` field or is scoped by a conditional the skill rarely enters. Curator must verify subset-applicability before flagging — do not flag always-on decision tables or check indexes.
 > 6. **Tool grant scope**: for agent files: does `tools:` include `*` or tools not used in the agent's workflow prose? For skill files: does `allowed-tools:` include `*` or tools not used in the skill workflow body? Note: skills with `disable-model-invocation: true` have no model execution and tool grants are irrelevant — skip.
 > 7. **Bin/ extraction candidates**: scan fenced code blocks of any language (bash, python, sh, perl, etc.) for self-contained patterns appearing 3+ times in this file with only constant differences (variable names, path segments, string literals). Self-contained means: block produces output to stdout, has no shell function definitions, reads no caller shell state beyond `$HOME`, `$ARGUMENTS`, `$RUN_DIR`, `$AUDIT_TPL`. Flag each candidate: block language, purpose, occurrence count, suggested `bin/<script-name>.sh` or `bin/<script-name>.py`. Skip: blocks defining bash functions, blocks mutating shell state used in later blocks.
@@ -54,8 +54,9 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
-[ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
-[ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
+# Scan root is a plain path, never a glob held in a variable: under zsh an unquoted $VAR is
+# neither word-split nor filename-expanded, so `for f in $_SKILL_GLOB` would iterate once over
+# the literal pattern and match nothing. `find` piped to `read` behaves the same in zsh and bash.
 [ "$LOCAL_MODE" = "true" ] && _SCAN_DIR="plugins/" || _SCAN_DIR=".claude/"
 
 echo "=== Unbounded spawn patterns ==="
@@ -68,23 +69,19 @@ while IFS= read -r f; do
   fi
 done < <(find "$_SCAN_DIR" -name "*.md" 2>/dev/null)
 
-echo "=== Dead model specs ==="
-for f in $_SKILL_GLOB; do
-  [ -f "$f" ] || continue
-  grep -q "^model:" "$f" && grep -q "disable-model-invocation: true" "$f" && echo "DEAD_SPEC: $f"
-done
-
 echo "=== Missing model declarations ==="
-for f in $_SKILL_GLOB; do
+# Frontmatter-scoped: a whole-file grep matches these fields in prose discussing other skills.
+while IFS= read -r f; do
   [ -f "$f" ] || continue
-  grep -q "disable-model-invocation: true" "$f" && continue
-  grep -q "^model:" "$f" || echo "NO_MODEL: $f"
-done
+  # No disable-model-invocation exemption: such a skill is still user-invocable and still inherits.
+  awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q "^model:" || echo "NO_MODEL: $f"
+done < <(find "$_SCAN_DIR" -path "*/skills/*/SKILL.md" 2>/dev/null | sort)
 
-for f in $_AGENT_GLOB; do
+# -path "*/agents/*.md" also reaches agents/<subdir>/<file>.md; a */agents/*.md glob does not.
+while IFS= read -r f; do
   [ -f "$f" ] || continue
-  grep -q "^model:" "$f" || echo "NO_MODEL: $f"
-done
+  awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q "^model:" || echo "NO_MODEL: $f"
+done < <(find "$_SCAN_DIR" -path "*/agents/*.md" 2>/dev/null | sort)
 
 echo "=== Boilerplate duplication ==="
 AGENT_RES=$(grep -rl "=\$(ls -td.*plugins/cache" "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
@@ -150,17 +147,16 @@ Spawn **foundry:curator** per plugin with this prompt:
 
 Spawn **foundry:curator** consolidator to merge all findings:
 
-> Read all per-file reports from `<RUN_DIR>/efficiency-*.md` and all Check 33 reports from `<RUN_DIR>/efficiency-check33-*.md`. Also read Phase B bash output passed as context. Deduplicate findings by `(file, finding_type)` pair — Phase A curator and Phase B bash both scan for missing-model and dead-model-spec conditions; prefer Phase A curator finding (has file context) over Phase B bash line (no context) when both report same file+condition.
+> Read all per-file reports from `<RUN_DIR>/efficiency-*.md` and all Check 33 reports from `<RUN_DIR>/efficiency-check33-*.md`. Also read Phase B bash output passed as context. Deduplicate findings by `(file, finding_type)` pair — Phase A curator and Phase B bash both scan for the missing-model condition; prefer Phase A curator finding (has file context) over Phase B bash line (no context) when both report same file+condition.
 > Produce a cost-reduction report with these sections:
 > 1. **Cheapest Viable Model table** — one row per agent/skill with cost issue: `| file | current model+effort | minimum viable | rationale | estimated saving |`; saving = opus→sonnet: LARGE, opusplan→sonnet: LARGE, xhigh→high: MEDIUM, xhigh→medium: MEDIUM (heuristic tiers — not measured against live run costs)
-> 2. **Dead Model Specs** — list files with contradictory model+disable-model-invocation; exact fix (remove `model:` line)
-> 3. **Unbounded Spawn Patterns** — list files with uncapped per-item agent dispatch; recommended cap and batch strategy
-> 4. **Token Bloat Hotspots** — top 5 files by redundant inline content; section name, line count, suggested action
-> 5. **Boilerplate Duplication + Bin/ Extraction Candidates** — pattern name × occurrence count × total redundant lines × extraction target; for each bin/ candidate from Phase A+B: block purpose, occurrence count, suggested `bin/<script-name>.sh`, estimated line reduction. Merge with Check 33 (Phase B2) similarity clusters: include Table 1 and Table 2 per plugin inline in this section, sorted by feasibility HIGH→LOW
-> 6. **Missing Model Declarations** — list files inheriting session model; recommended tier per file
-> 7. **Prioritized Improvement Plan** — P1 (critical: correctness/highest cost), P2 (high: model downgrades), P3 (medium: hygiene/dedup), P4 (low: compression); each item: file + exact change + estimated saving + `performance_risk: low|medium|high`. Items with `performance_risk: high` are automatically downgraded to P-HOLD (do not apply without empirical benchmarking). Items with `performance_risk: medium` stay in plan but carry a `⚠ validate first` marker.
-> 8. **Estimated Combined Savings** — rough directional reduction for most common workflows if all P1+P2 applied; note: savings are heuristic estimates only — no live cost measurement performed; treat as directional guidance, not engineering targets
-> 9. **Instruction Quality Issues** — table of E8/E9 findings aggregated from per-file envelopes (`e8_complexity` + `e9_noise` fields) and detailed findings in `efficiency-*.md` reports: `| file | check | location | issue | impact | suggested simplification |`; sorted by estimated noise reduction (high→low). NON_AUTO_FIXABLE — E8 findings contribute to `medium` count; E9 findings contribute to `low` count; both enter the follow-up gate under option (c) "Fix ALL" as a separate "instruction-quality" AskUserQuestion category. Do not auto-fix instruction-quality findings via options (a) or (b). Omit section entirely when both E8 and E9 totals are zero.
+> 2. **Unbounded Spawn Patterns** — list files with uncapped per-item agent dispatch; recommended cap and batch strategy
+> 3. **Token Bloat Hotspots** — top 5 files by redundant inline content; section name, line count, suggested action
+> 4. **Boilerplate Duplication + Bin/ Extraction Candidates** — pattern name × occurrence count × total redundant lines × extraction target; for each bin/ candidate from Phase A+B: block purpose, occurrence count, suggested `bin/<script-name>.sh`, estimated line reduction. Merge with Check 33 (Phase B2) similarity clusters: include Table 1 and Table 2 per plugin inline in this section, sorted by feasibility HIGH→LOW
+> 5. **Missing Model Declarations** — list files inheriting session model; recommended tier per file
+> 6. **Prioritized Improvement Plan** — P1 (critical: correctness/highest cost), P2 (high: model downgrades), P3 (medium: hygiene/dedup), P4 (low: compression); each item: file + exact change + estimated saving + `performance_risk: low|medium|high`. Items with `performance_risk: high` are automatically downgraded to P-HOLD (do not apply without empirical benchmarking). Items with `performance_risk: medium` stay in plan but carry a `⚠ validate first` marker.
+> 7. **Estimated Combined Savings** — rough directional reduction for most common workflows if all P1+P2 applied; note: savings are heuristic estimates only — no live cost measurement performed; treat as directional guidance, not engineering targets
+> 8. **Instruction Quality Issues** — table of E8/E9 findings aggregated from per-file envelopes (`e8_complexity` + `e9_noise` fields) and detailed findings in `efficiency-*.md` reports: `| file | check | location | issue | impact | suggested simplification |`; sorted by estimated noise reduction (high→low). NON_AUTO_FIXABLE — E8 findings contribute to `medium` count; E9 findings contribute to `low` count; both enter the follow-up gate under option (c) "Fix ALL" as a separate "instruction-quality" AskUserQuestion category. Do not auto-fix instruction-quality findings via options (a) or (b). Omit section entirely when both E8 and E9 totals are zero.
 > Write full report to `<RUN_DIR>/efficiency-report.md`. End report with `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements).
 > Return ONLY: `{"status":"done","file":"<RUN_DIR>/efficiency-report.md","critical":N,"high":N,"medium":N,"low":N,"total_issues":N,"clusters":N,"extract_count":N,"recommended_count":N,"e8_complexity":N,"e9_noise":N,"top_saving":"<description>","confidence":0.N}`
 
