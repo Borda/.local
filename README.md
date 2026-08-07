@@ -74,15 +74,18 @@ claude plugin install codemap-py@borda-ai-rig   # structural index: import graph
 
 > [!NOTE]
 >
-> **Safe to install alongside any existing Claude Code setup.** Plugins live in a private cache (`~/.claude/plugins/cache/<plugin>/`) under their own namespace. Your existing `~/.claude/agents/`, `~/.claude/skills/`, and `settings.json` are never modified or overwritten — custom agents and skills you have created remain fully independent. See the [Claude Code plugin reference](https://code.claude.com/docs/en/plugins-reference) for details.
+> **Safe to install alongside any existing Claude Code setup.** Plugins live in a private cache (`~/.claude/plugins/cache/<plugin>/`) under their own namespace. Custom agents and skills remain independent; setup only merges its documented settings keys and creates namespaced rule links. See the [Claude Code plugin reference](https://code.claude.com/docs/en/plugins-reference) for details.
 
-**3. One-time settings merge** — run inside Claude Code:
+**3. Setup Claude** — when installing plugins directly, run the setup skill for each installed managed plugin inside Claude Code:
 
 ```text
 /foundry:setup
+/oss:setup
+/develop:setup
+/research:setup
 ```
 
-OSS, develop, and research skills always use their plugin prefix (`/oss:review`, `/develop:fix`, `/research:run`). Safe to re-run.
+These skills create flat, namespaced links such as `~/.claude/rules/foundry-quality-gates.md`, `~/.claude/rules/develop-quality-gates.md`, `~/.claude/rules/oss-quality-gates.md`, and `~/.claude/rules/research-quality-gates.md`; they are safe to re-run. `bash sync.sh` installs the managed Claude plugins and automatically invokes every installed managed plugin's setup skill that is present, so this step is automatic when syncing from this checkout.
 
 > [!IMPORTANT]
 >
@@ -183,15 +186,16 @@ Agents and skills for [Claude Code](https://claude.ai/code) (Anthropic's AI codi
 ### Skills
 
 <details>
-<summary><strong>20+ slash-command skills reference (expand)</strong></summary>
+<summary><strong>30+ slash-command skills reference (expand)</strong></summary>
 
 Skills are multi-agent workflows invoked via slash commands. Each skill composes several agents in a defined topology.
 
-After running `/foundry:setup`, foundry skills are available without a prefix. OSS, develop, and research skills always use their plugin prefix.
+All plugin skills use their plugin namespace: `/foundry:*`, `/oss:*`, `/develop:*`, and `/research:*`.
 
 | Skill                     | What It Does                                                                                                                                                                                                            |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🟠 `/foundry:brainstorm`  | `/brainstorm <idea>` — clarifying questions → approaches → spec → curator review → approval gate; `breakdown <spec>` — ordered task table with per-task skill tags                                                      |
+| 🟠 `/foundry:setup`       | Sync Foundry settings and `foundry-*.md` rule links                                                                                                                                                                     |
+| 🟠 `/foundry:brainstorm`  | `/foundry:brainstorm <idea>` — clarifying questions → approaches → spec → curator review → approval gate; `breakdown <spec>` — ordered task table with per-task skill tags                                              |
 | 🟠 `/foundry:manage`      | Create, update, delete agents/skills/rules; manage `settings.json` permissions; auto type-detection and cross-ref propagation                                                                                           |
 | 🟠 `/foundry:investigate` | Systematic diagnosis for unknown failures — env, tools, hooks, CI divergence; ranks hypotheses and hands off to the right skill                                                                                         |
 | 🟠 `/foundry:session`     | Parking lot for diverging ideas — auto-parks unanswered questions and deferred threads; `resume` shows pending, `archive` closes, `summary` digests the session                                                         |
@@ -201,22 +205,25 @@ After running `/foundry:setup`, foundry skills are available without a prefix. O
 | 🟠 `/foundry:create`      | Interactive outline co-creation for developer advocacy content — format, audience, arc, voice → `.plans/content/<slug>-outline.md`; hand-off to `foundry:creator` for one-shot generation                               |
 | 🟠 `/foundry:humanizer`   | Strips AI-writing tells (clichéd vocabulary, triads, weasel attribution, formatting tics) from human-facing prose — docs, PR/commit bodies, reports, blog posts; auto-invocable before shipping an artifact             |
 | 🔵 `/develop:plan`        | Scope analysis and implementation planning without code changes                                                                                                                                                         |
+| 🔵 `/develop:setup`       | Sync the `develop-*.md` rule links without changing Codex                                                                                                                                                               |
 | 🔵 `/develop:feature`     | TDD-first feature implementation: codebase analysis, demo test, TDD loop, docs, review                                                                                                                                  |
 | 🔵 `/develop:fix`         | Reproduce-first bug fixes: regression test, minimal fix, quality stack                                                                                                                                                  |
 | 🔵 `/develop:debug`       | Systematic debugging for known test failures                                                                                                                                                                            |
 | 🔵 `/develop:refactor`    | Test-first refactors with scope analysis                                                                                                                                                                                |
 | 🔵 `/develop:review`      | Six-agent parallel review of local files or current git diff; no GitHub PR needed                                                                                                                                       |
 | 🟢 `/oss:analyse`         | GitHub thread analysis; `health` = repo overview + duplicate issue clustering                                                                                                                                           |
+| 🟢 `/oss:setup`           | Sync the `oss-*.md` rule links without changing Codex                                                                                                                                                                   |
 | 🟢 `/oss:review`          | Tiered parallel review of GitHub PRs; `--reply` drafts welcoming contributor comments                                                                                                                                   |
 | 🟢 `/oss:resolve`         | OSS fast-close: resolving conflicts + applying review comments via codex-plugin-cc; three source modes: `pr`, `report`, `pr + report`                                                                                   |
 | 🟢 `/oss:release`         | SemVer-disciplined release pipeline: notes, changelog with deprecation tracking, migration guides, full prepare pipeline                                                                                                |
 | 🟣 `/research:topic`      | SOTA literature research with codebase-mapped implementation plan                                                                                                                                                       |
+| 🟣 `/research:setup`      | Sync the `research-*.md` rule links without changing Codex                                                                                                                                                              |
 | 🟣 `/research:plan`       | Config wizard: profile-first bottleneck discovery → `program.md`                                                                                                                                                        |
 | 🟣 `/research:judge`      | Research-supervisor review of experimental methodology (APPROVED/NEEDS-REVISION/BLOCKED)                                                                                                                                |
 | 🟣 `/research:run`        | Metric-driven iteration loop; `--resume` continues after crash; `--team` for parallel exploration; `--colab` for GPU workloads                                                                                          |
 | 🟣 `/research:sweep`      | Non-interactive pipeline: auto-plan → judge gate → run                                                                                                                                                                  |
 
-→ Full command reference, orchestration flows, rules (10 auto-loaded rule files), architecture internals, status line — see [`.claude/README.md` → Skills](.claude/README.md#-skills)
+→ Full command reference, orchestration flows, rule loading (13 Foundry source rules plus three namespaced companion rules when installed), architecture internals, status line — see [`.claude/README.md` → Skills](.claude/README.md#-skills)
 
 </details>
 
@@ -304,7 +311,7 @@ Start a fresh session. The plugin uses exact role-card injection for parallel bl
 
 ### Product boundary
 
-`plugins/codex-rig/` is the installable source of truth for workflows, role cards, shared gates, calibration, hooks, lifecycle tooling, and an inert global-instructions template. Direct `codex plugin` installation leaves global and project instructions untouched. From this checkout, plain `bash sync.sh` performs the full Claude + Codex restore; `bash sync.sh codex` limits it to Codex. Both install or update one backup-protected block in `$CODEX_HOME/AGENTS.md` by default. Pass `--no-codex-global-agents` to skip it; `bash sync.sh claude` changes only Claude scope. Project `AGENTS.md` files and the installed plugin cache remain untouched. `--codex-ref REF` remains a Codex source selector. `bash sync.sh clear` reverses a sync: it uninstalls this marketplace's Claude plugins and the Codex Rig plugin, then strips the managed `$CODEX_HOME/AGENTS.md` block (timestamped backup kept, user content preserved), honoring `claude`/`codex` scope and leaving marketplace registrations plus external plugins in place.
+`plugins/codex-rig/` is the installable source of truth for workflows, role cards, shared gates, calibration, hooks, lifecycle tooling, and an inert global-instructions template. Direct `codex plugin` installation leaves global and project instructions untouched. From this checkout, plain `bash sync.sh` performs the full Claude + Codex restore; during Claude sync it runs each installed managed plugin's setup skill when present, refreshing that plugin's namespaced rule links. `bash sync.sh codex` limits it to Codex. Both install or update one backup-protected block in `$CODEX_HOME/AGENTS.md` by default. Pass `--no-codex-global-agents` to skip it; `bash sync.sh claude` changes only Claude scope. Project `AGENTS.md` files and the installed plugin cache remain untouched. `--codex-ref REF` remains a Codex source selector. `bash sync.sh clear` uninstalls this marketplace's Claude plugins and the Codex Rig plugin, strips the managed `$CODEX_HOME/AGENTS.md` block (timestamped backup kept, user content preserved), and leaves settings plus `~/.claude/rules/<plugin>-<source-name>.md` links for manual cleanup; marketplace registrations and external plugins remain in place.
 
 Use `$codex-rig:sync` for a dry-run installation report and approval-gated marketplace refresh. Older AI-Rig versions copied files into `~/.codex/`; because those files had no durable ownership marker, they require a separate backup and ownership review before manual cleanup.
 
@@ -349,7 +356,7 @@ Cheaper tiers gate the expensive ones — this keeps full agent spawns reserved 
 
    Claude identifies what needs to change and delegates execution to the plugin agent. Claude keeps its context clean and validates the output via `git diff HEAD`.
 
-   Dispatched automatically by `/oss:review`, `/oss:resolve`, `/calibrate`, and `/research:run` via `codex-delegation.md`. The plugin agent has full working-tree access.
+   Dispatched automatically by `/oss:review`, `/oss:resolve`, `/foundry:calibrate`, and `/research:run` via `codex-delegation.md`. The plugin agent has full working-tree access.
 
 2. **Codex reviewing staged work**
 
@@ -424,7 +431,7 @@ AI-Rig/
 │   │   │   └── plugin.json # plugin manifest
 │   │   ├── agents/         # 10 foundry agents (canonical source)
 │   │   ├── skills/         # foundry skills (canonical source)
-│   │   ├── rules/          # rule files (canonical source; symlinked from .claude/rules/)
+│   │   ├── rules/          # rule files (canonical source; installed as foundry-<source-name>.md links)
 │   │   ├── CLAUDE.md       # workflow rules (symlinked from .claude/CLAUDE.md)
 │   │   ├── TEAM_PROTOCOL.md # AgentSpeak v2 protocol (symlinked from .claude/TEAM_PROTOCOL.md)
 │   │   ├── permissions-guide.md # allow-entry reference (symlinked from .claude/permissions-guide.md)
@@ -473,7 +480,7 @@ codex plugin marketplace upgrade borda-ai-rig
 codex plugin add codex-rig@borda-ai-rig
 ```
 
-Re-run `/foundry:setup` only if permissions, `enabledPlugins`, or `advisorModel` changed. Re-run `/foundry:setup` if you previously used the link mode — symlinks point to the old plugin cache after an upgrade.
+After a direct plugin upgrade, re-run that plugin's setup skill (`/foundry:setup`, `/oss:setup`, `/develop:setup`, or `/research:setup`) to refresh its versioned rule links. `bash sync.sh` runs the available setup skills automatically; Foundry's settings merge remains safe to repeat.
 
 ### Session-only (no install, for development)
 
@@ -504,7 +511,7 @@ codex plugin remove codex-rig@borda-ai-rig
 
 Start a fresh Codex session. Removing the plugin first can leave pre-release thin shims broken; reinstall Codex Rig to run authenticated cleanup.
 
-Settings added by `/foundry:setup` remain in `~/.claude/settings.json`; remove manually if desired. If `/foundry:setup` was run, symlinks in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist and will be broken after uninstall — remove with `rm ~/.claude/rules/<name>.md` and `rm ~/.claude/TEAM_PROTOCOL.md`. Nothing is linked into `~/.claude/agents/` or `~/.claude/skills/`: agents and skills dispatch from the plugin namespace (`foundry:sw-engineer`, `/foundry:audit`), and a linked skill would shadow Claude Code's bundled skill of the same name.
+Settings merged by `/foundry:setup` remain in `~/.claude/settings.json`; remove manually if desired. Setup-created rule links persist after plugin uninstall or `bash sync.sh clear` and become broken: remove the matching `~/.claude/rules/<plugin>-<source-name>.md` links (for example `foundry-quality-gates.md`, `oss-quality-gates.md`, `develop-quality-gates.md`, and `research-quality-gates.md`) and `~/.claude/TEAM_PROTOCOL.md`. Nothing is linked into `~/.claude/agents/` or `~/.claude/skills/`: agents and skills dispatch from plugin namespaces such as `foundry:sw-engineer` and `/foundry:audit`, and a linked skill would shadow Claude Code's bundled skill of the same name.
 
 ______________________________________________________________________
 

@@ -37,9 +37,8 @@ registered roles, reducing duplicated context and serial latency, and consolidat
 ## Execution constraints
 
 - Apply the nearest consuming-project `AGENTS.md`; one owner controls each file set or evidence axis at a time.
-- Choose the least expensive capable registered role: Luna for bounded coordination, documentation, CI/CD, web
-  evidence, OSS triage, and static analysis; Terra for implementation, tests, runtime, data, performance, research,
-  curation, and adversarial challenge; Sol only for solution architecture or security.
+- Apply the canonical [model-difficulty policy](../../shared/specialist-orchestration.md#delegation-lead-and-model-routing): classify current evidence, select the smallest capable tier, and record any escalation or de-escalation evidence.
+- Luna owns bounded coordination, documentation, CI/CD, web evidence, OSS triage, and static analysis; Terra owns implementation, tests, runtime, data, performance, research, curation, and adversarial challenge; Sol only solution architecture or security.
 - Never assign runtime or API behavior, executable acceptance, release-blocking judgment, architecture, or security
   to Luna for cost. Luna behavior-changing edits require Terra executable verification.
 - Parallelize only independent read-only evidence, tests, docs, or profiling; serialize overlapping edits and state

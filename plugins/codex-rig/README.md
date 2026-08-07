@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.5.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.4.6`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -184,6 +184,8 @@ Use delegation only when two or more disjoint workstreams can proceed without du
 - Luna owns bounded coordination, documentation, CI/CD, web evidence, OSS, and linting support.
 - Terra owns implementation, runtime behavior, tests, data/ML, performance, curation, challenge, and executable verification.
 - Sol is reserved for solution architecture and security.
+
+Select the smallest capable tier from current task evidence: escalate only for a mandatory boundary or observed lower-tier insufficiency, de-escalate only after an evidenced scope split leaves bounded support, and never change tiers on cost alone. The canonical policy is [`shared/specialist-orchestration.md`](shared/specialist-orchestration.md#delegation-lead-and-model-routing).
 
 The delegation lead returns one handover. Executable acceptance, runtime/API changes, release-blocking decisions, and security/architecture conclusions remain parent- or appropriate Terra/Sol-owned. Narrow work stays in the parent when handoff cost would exceed its value.
 

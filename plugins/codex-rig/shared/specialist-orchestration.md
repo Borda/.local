@@ -32,13 +32,21 @@ Use `delegation-lead` for 2+ separable workstreams when delegation beats context
 specialists only when the active runtime proves the required depth; otherwise keep delegation at the parent. The lead
 returns one consolidated handover, never final ownership.
 
-Choose the lowest-cost capable canonical role:
+Classify each workstream from current task evidence before selecting a role; a task label, file count, or a cheaper available model is not evidence of capability:
+
+- Bounded support with no behavior, API, runtime, release-blocking, architecture, or security authority: Luna.
+- Implementation, runtime behavior, tests, data/ML, performance, research method, curation, adversarial challenge, or executable verification: Terra.
+- Architecture or security judgment: Sol only.
+
+Choose the smallest tier satisfying that classification while preserving each role card's trigger and NOT-for boundary. Escalate only for a specific mandatory boundary or observed lower-tier insufficiency; record the boundary or failed/insufficient evidence. De-escalate only after an evidenced scope split leaves bounded support with no retained Terra/Sol authority; record that reduced scope. Cost alone never escalates or de-escalates a tier.
+
+Current canonical assignments:
 
 - Luna: delegation coordination, documentation, CI/CD stewardship, web evidence, OSS triage, and static analysis.
 - Terra: implementation, tests, runtime behavior, data/ML, performance, research method, curation, adversarial challenge, and final executable verification.
 - Sol: solution architecture and security only.
 
-Never downgrade architecture, security, runtime/API, release-blocking judgment, executable acceptance; never escalate bounded support to Sol. Avoid delegation when all need same context or parent can finish before handoff packaging/validation.
+Never downgrade architecture, security, runtime/API, release-blocking judgment, executable acceptance; never escalate bounded support to Sol. Record the classification and any escalation/de-escalation evidence in the routing decision. Avoid delegation when all need same context or parent can finish before handoff packaging/validation.
 
 ## Context Packs
 

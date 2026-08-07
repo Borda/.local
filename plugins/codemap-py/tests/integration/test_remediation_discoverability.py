@@ -33,16 +33,16 @@ def test_top_level_no_arguments_remain_a_syntax_error(capsys: pytest.CaptureFixt
     assert "usage: codemap-py" in capsys.readouterr().err
 
 
-def test_codex_query_skill_is_compact_required_and_oriented_to_one_query() -> None:
-    """Prevent the Codex Skill arm from adding avoidable discovery overhead.
-
-    The mature Claude Skill is intentionally out of scope: it has its own
-    established integration contract and is not changed by this remediation.
-    """
+def test_codex_query_skill_is_compact_required_and_oriented_to_the_smallest_complete_query_set() -> None:
+    """Prevent avoidable discovery overhead without dropping independently required facts."""
     skill_text = (_PLUGIN_ROOT / "codex-skills/query-code/SKILL.md").read_text(encoding="utf-8")
 
     assert len(skill_text.encode("utf-8")) <= 2500
-    assert all(phrase in skill_text for phrase in ("one query", "query --compact", 'cat "$CODEMAP_SKILL_FILE"'))
+    assert all(
+        phrase in skill_text
+        for phrase in ("smallest complete query set", "query --compact", 'cat "$CODEMAP_SKILL_FILE"')
+    )
+    assert "make one query" not in skill_text
     assert "Maximum: three Codemap calls" not in skill_text
 
 

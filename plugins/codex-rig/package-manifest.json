@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "54f6cad00be31e31ac130ed900bbc3a2b8603fdbfca0362254f246bec66a3fe0"
+      "sha256": "a1a7bf7c3660d217227d39eadb20a926dc91efe7e0af8d7a576736a218ae106b"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "72e6397f1daa9fca68011bbbb662b31fb4be2423bdfc243d571541a5a88ce0e0"
+      "sha256": "bb3aebb36eb75ff80e14bac002cfe148975b1c22a78856f72af01f7a8b0425aa"
     },
     {
       "mode": "0644",
@@ -42,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "87a9f9e54f2d2aa959bfc684f54103ac690e16878313f538248964b30b363536"
+      "sha256": "d2ca83eec431af6dc2e480494a98c75de0a1ee152cabf93dee9220a040c1260f"
     },
     {
       "mode": "0644",
@@ -67,7 +67,7 @@
     {
       "mode": "0644",
       "path": "roles/README.md",
-      "sha256": "d46878e74bd2c6e65667beed4bcbf4ad50ac778174b913d330666a34a407bd08"
+      "sha256": "0cf437716f1b2d645cabedf126568f058e2f560936975dd918ef7bcdca3f9a6c"
     },
     {
       "mode": "0644",
@@ -92,7 +92,7 @@
     {
       "mode": "0644",
       "path": "roles/delegation-lead/ROLE.md",
-      "sha256": "a0264cbb70cfacfc6f44f87dc6d6119d9e85772c77a6442def0e4eb4864f870e"
+      "sha256": "3ceca6ae9b7771b11a26c67541e2c921edddc794e72d4ca472f0c15b55dd3589"
     },
     {
       "mode": "0644",
@@ -392,7 +392,7 @@
     {
       "mode": "0644",
       "path": "shared/specialist-orchestration.md",
-      "sha256": "e7db0516f9589ef857e8d38da55d2b11a0e84a6e04b6c59ddad3bb8ec51a29c1"
+      "sha256": "e175b940b24c83237e56bf47038b82a399a0b3ec98a5eb01eab6255701294620"
     },
     {
       "mode": "0755",
@@ -672,7 +672,7 @@
     {
       "mode": "0644",
       "path": "tests/test_global_agents_installer.py",
-      "sha256": "e69ec8224cbd217bc880804987be1230bad196098d0588561b2ed1fd373009cb"
+      "sha256": "38a6aa7587aa37b9cc664b3dc2fec3c8ef2b0159c75e5d022e7d7a0058e7ed95"
     },
     {
       "mode": "0644",
@@ -781,7 +781,7 @@
         "model_reasoning_effort": "high",
         "sandbox_mode": "workspace-write"
       },
-      "sha256": "a0264cbb70cfacfc6f44f87dc6d6119d9e85772c77a6442def0e4eb4864f870e"
+      "sha256": "3ceca6ae9b7771b11a26c67541e2c921edddc794e72d4ca472f0c15b55dd3589"
     },
     {
       "id": "doc-scribe",
@@ -953,5 +953,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.4.5"
+  "version": "0.4.6"
 }

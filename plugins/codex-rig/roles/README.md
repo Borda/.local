@@ -30,6 +30,10 @@ The tier assignment is not a preference guess — it is recorded, evidence-deriv
 
 `sandbox_mode` is set per role, independent of tier: `read-only` for the five pure-analysis roles — `challenger`, `squeezer`, `security-auditor`, `oss-shepherd`, `web-explorer` — and `workspace-write` for the remaining ten, which are expected to produce or modify artifacts as part of their job.
 
+### Task-difficulty selection
+
+Role selection uses the canonical [model-difficulty policy](../shared/specialist-orchestration.md#delegation-lead-and-model-routing), not a model preference. Luna is limited to bounded support; Terra owns behavior and executable verification; Sol is reserved for architecture and security. The routing record must cite the current task boundary or observed lower-tier insufficiency to escalate, and an evidenced scope split to de-escalate; cost alone is insufficient.
+
 ## Role roster
 
 | Role                 | Tier  | Sandbox mode    | Purpose                                                                                                 |

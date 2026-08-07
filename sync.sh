@@ -4,7 +4,7 @@
 # Run from the project root: bash sync.sh [claude] [codex] [clear] [--no-clean] [--codex-ref REF] [--no-codex-global-agents]
 #
 # Arguments (order-independent):
-#   claude   — sync Claude plugins + foundry:setup (default: both)
+#   claude   — sync Claude plugins + their installed setup skills (default: both)
 #   codex    — install or update the Codex Rig plugin (default: both)
 #   clear    — teardown instead of install: uninstall this marketplace's Claude plugins
 #              + the Codex Rig plugin, and strip the managed block from $CODEX_HOME/AGENTS.md
@@ -14,7 +14,8 @@
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
 #   --no-codex-global-agents — skip Codex Rig's managed block in $CODEX_HOME/AGENTS.md
 #
-# foundry:setup runs headlessly at end of script — no manual step needed.
+# Setup skills shipped by installed managed plugins run headlessly at the end of
+# Claude sync — no manual step needed.
 
 set -e
 
@@ -208,8 +209,26 @@ for p in "${PLUGINS[@]}"; do
     fi
 done
 
-echo "Initializing Foundry (sync settings + symlinks)..."
-claude --print "/foundry:setup --approve"
+echo "Initializing installed plugin setup skills..."
+for p in "${PLUGINS[@]}"; do
+    install_path=$(jq -r --arg plugin "${p}@${MARKETPLACE}" '
+      (.plugins[$plugin] // [])
+      | map(select(.installPath?))
+      | sort_by(.installedAt // "")
+      | last // {}
+      | .installPath // ""
+    ' "$INSTALLED_PLUGINS")
+    if [[ -z "$install_path" ]]; then
+        echo "  – ${p} not installed, skipping setup"
+        continue
+    fi
+    if [[ ! -f "$install_path/skills/setup/SKILL.md" ]]; then
+        echo "  – ${p} has no setup skill, skipping"
+        continue
+    fi
+    echo "  → ${p}:setup"
+    claude --print "/${p}:setup --approve"
+done
 
 fi  # SYNC_CLAUDE
 

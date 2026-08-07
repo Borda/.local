@@ -34,11 +34,13 @@ _SKILL_REF_RE = re.compile(r"[/$]codemap-py:([a-z][a-z-]*)")
 # Query routing is a product contract, not merely documentation style.  Both
 # surfaces must steer the model to the same supported high-leverage command.
 _QUERY_CODE_REQUIRED_SNIPPETS = (
+    "choose the smallest complete query set",
     "production module importers / blast radius | `rdeps <module> --exclude-tests`",
     "production centrality / highest in-degree | `central --top n --exclude-tests`",
     "internal-import coupling (not centrality)",
     "direct production callers | `fn-rdeps <module::symbol> --exclude-tests`",
     "transitive callers / function blast | `fn-blast <module::symbol>`",
+    "broken sphinx cross-references | `xrefs --broken <module>`",
     "never `--depth`",
     "never invent flags",
     "ordinary repository reads remain allowed",
@@ -55,6 +57,10 @@ _DIRECT_TEST_IMPORT_ROUTING_SNIPPETS = (
     "`rdeps <module>`",
     "filter/report test modules",
     "reserve `test-impact <target>` for transitive affected-test selection",
+)
+_CALLER_AND_TEST_IMPORT_ROUTING_SNIPPETS = (
+    "callers plus test-module importers",
+    "`fn-rdeps <module::symbol> --exclude-tests`, then `rdeps <module>`",
 )
 _SYMBOL_TARGET_GRAMMAR_SNIPPETS = (
     "`symbol <name>` accepts a bare function name",
@@ -275,6 +281,14 @@ def test_query_code_routes_direct_test_importers_to_module_rdeps(contract_path: 
     skill_text = " ".join(contract_path.read_text(encoding="utf-8").lower().split())
 
     assert all(snippet in skill_text for snippet in _DIRECT_TEST_IMPORT_ROUTING_SNIPPETS)
+
+
+@pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
+def test_query_code_allows_two_queries_when_one_answer_requires_callers_and_test_importers(runtime_dir: Path) -> None:
+    """Keep a one-query optimization from dropping an independently required result set."""
+    skill_text = " ".join((runtime_dir / "query-code" / "SKILL.md").read_text(encoding="utf-8").lower().split())
+
+    assert all(snippet in skill_text for snippet in _CALLER_AND_TEST_IMPORT_ROUTING_SNIPPETS)
 
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))

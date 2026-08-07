@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6
+
+- Require evidence-based model-difficulty routing: use Luna only for bounded support, Terra for behavior and executable verification, and Sol only for architecture or security; record concrete escalation or de-escalation evidence and never route on cost alone.
+
 ## 0.4.5
 
 - Replace bare option strings with named `(str, Enum)` types: `SyncAction` in `sync_codex.py`, and `ResultStatus`, `ClosureStatus`, and `RecoveryStatus` in `write-result.py`. `argparse` now derives `choices=` from the enum instead of repeating the literals, so the CLI surface and the accepted values cannot drift apart. Accepted CLI values and emitted output are unchanged.
@@ -23,8 +27,7 @@
 
 - Require root-cause investigation when the same or plausibly shared obstacle occurs a second time, even when its surface symptom changes.
 - Stop after a third occurrence and ask the human with attempted actions, current hypotheses and evidence, and a concise description of the recurring obstacle.
-- Enforce recurrence-policy references only at recurrence-owning workflows (`develop`, `code-remediate`,
-  `investigate`, and `delegation-lead`) with calibrated behavioral cases.
+- Enforce recurrence-policy references only at recurrence-owning workflows (`develop`, `code-remediate`, `investigate`, and `delegation-lead`) with calibrated behavioral cases.
 
 ## 0.4.0
 
@@ -69,8 +72,7 @@
 - Add a trust-gated, read-only SessionStart shim-health diagnostic.
 - Keep MCP and native plugin-bundled agent registration out of scope.
 
-Known limit: standalone shim installation proves ownership and link integrity, not selection by the active
-collaboration interface. Runtimes without an explicit custom-agent selector use blank-agent role injection.
+Known limit: standalone shim installation proves ownership and link integrity, not selection by the active collaboration interface. Runtimes without an explicit custom-agent selector use blank-agent role injection.
 
 ## 0.1.0
 

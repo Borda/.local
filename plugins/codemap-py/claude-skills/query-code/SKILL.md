@@ -18,7 +18,7 @@ NOT for: rebuilding the index (use `/codemap-py:scan-codebase`), renaming symbol
 
 <workflow>
 
-## Choose one query
+## Choose the smallest complete query set
 
 Direction matters: "affected if X changes" means reverse dependencies.
 
@@ -37,8 +37,10 @@ Direction matters: "affected if X changes" means reverse dependencies.
 | symbol source or module symbols | `symbol <name> [--with-imports]` · `symbols <module>` |
 | regex symbol search | `find-symbol <pattern>` |
 | direct production callers | `fn-rdeps <module::symbol> --exclude-tests` |
+| callers plus test-module importers | `fn-rdeps <module::symbol> --exclude-tests`, then `rdeps <module>` |
 | direct imports / callees | `fn-deps <module::symbol>` |
 | transitive callers / function blast | `fn-blast <module::symbol>` |
+| broken Sphinx cross-references | `xrefs --broken <module>` |
 | changed-code blast radius | `diff-impact [--base REF]` |
 | transitive affected tests / mocks | `test-impact <target>` · `mock-rdeps <target>` |
 | pytest fixtures | `fixture-rdeps <name>` · `fixture-graph <test-file>` |
@@ -60,8 +62,7 @@ Use `codemap-py query --help` only when needed.
 
 ## Index and completeness contract
 
-Run the selected query first; do not spend a call on an unconditional freshness
-probe.
+Run the selected query set first; do not spend a call on an unconditional freshness probe. Run independently required queries as separate commands rather than `batch`.
 
 - Normal mode may perform the CLI's bounded incremental self-heal.
 - With `SCAN_NO_AUTOBUILD=1`, do not run a freshness query, incremental
