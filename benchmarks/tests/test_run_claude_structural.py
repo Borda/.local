@@ -156,6 +156,98 @@ class TestProviderParityIntegration:
 
         assert calls == [("FN-02", "C_strict"), ("FN-02", "A_plain"), ("FN-02", "B_auto")]
 
+    def test_base_command_disables_session_persistence(self, script_run_bench: Any) -> None:
+        """Every structural cell starts a non-resumable Claude process session."""
+        assert "--no-session-persistence" in script_run_bench._CMD
+        assert "--continue" not in script_run_bench._CMD
+        assert "--resume" not in script_run_bench._CMD
+        assert "--session-id" not in script_run_bench._CMD
+
+    def test_run_loop_aligns_result_metrics_after_the_longest_arm(self, script_run_bench: Any, tmp_path: Path) -> None:
+        """Every result row reserves the longest arm label plus one separating space."""
+        lines: list[str] = []
+
+        class Runner:
+            """Return a minimal successful run for each requested arm."""
+
+            def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                elapsed_s = 8.0 if arm == "plain" else 95.0
+                return _make_run(script_run_bench, task_id=task["id"], arm=arm, elapsed_s=elapsed_s)
+
+        loop = script_run_bench._StructuralRunLoop(
+            runner=Runner(),
+            repo_path=tmp_path,
+            arm_orders={"SE-01": ("plain", "C_strict")},
+            patch_ids=set(),
+        )
+        task = {"id": "SE-01", "type": "fixture", "scoreable": False}
+
+        loop.run_combo(task, "plain", lines.append)
+        loop.run_combo(task, "C_strict", lines.append)
+
+        expected_width = max(map(len, (*script_run_bench.ARMS, *script_run_bench.PARITY_ARMS))) + 1
+        assert lines[0].split("\t", 1)[0] == f"  ✓? SE-01 {'plain':<{expected_width}}"
+        assert lines[1].split("\t", 1)[0] == f"  ✓? SE-01 {'C_strict':<{expected_width}}"
+        assert lines[0].index("\ttok:") == lines[1].index("\ttok:")
+        assert lines[0].index("recall=") == lines[1].index("recall=")
+
+    def test_run_loop_labels_and_aligns_unscored_recall(self, script_run_bench: Any, tmp_path: Path) -> None:
+        """Unscored recall is explicit and does not shift the following total column."""
+        lines: list[str] = []
+
+        class Runner:
+            """Return one unscored and one scored result for output comparison."""
+
+            def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                run = _make_run(script_run_bench, task_id=task["id"], arm=arm)
+                if arm == "C_strict":
+                    run.quality = script_run_bench.BenchQuality(scored=True, correct=True, recall=0.857)
+                return run
+
+        loop = script_run_bench._StructuralRunLoop(
+            runner=Runner(),
+            repo_path=tmp_path,
+            arm_orders={"CQ-01": ("A_plain", "C_strict")},
+            patch_ids=set(),
+        )
+        task = {"id": "CQ-01", "type": "code_quality"}
+
+        loop.run_combo(task, "A_plain", lines.append)
+        loop.run_combo(task, "C_strict", lines.append)
+
+        assert "recall=?unscored" in lines[0]
+        assert lines[0].index("total=") == lines[1].index("total=")
+
+    def test_run_loop_summarizes_list_valued_expected_metrics(self, script_run_bench: Any, tmp_path: Path) -> None:
+        """CQ-03 result rendering reports ranking size without formatting the list as a scalar."""
+        lines: list[str] = []
+
+        class Runner:
+            """Return the list-valued quality contract produced by the CQ-03 evaluator."""
+
+            def run(self, task: dict[str, Any], arm: str, update_fn: Any = None) -> Any:
+                run = _make_run(script_run_bench, task_id=task["id"], arm=arm)
+                run.quality = script_run_bench.BenchQuality(
+                    scored=True,
+                    correct=True,
+                    metric_expected=[
+                        {"name": "pkg.alpha", "dep_count": 49},
+                        {"name": "pkg.bravo", "dep_count": 42},
+                    ],
+                )
+                return run
+
+        loop = script_run_bench._StructuralRunLoop(
+            runner=Runner(),
+            repo_path=tmp_path,
+            arm_orders={"CQ-03": ("B_auto",)},
+            patch_ids=set(),
+        )
+
+        loop.run_combo({"id": "CQ-03", "type": "code_quality"}, "B_auto", lines.append)
+
+        assert "\ttotal=   2\t" in lines[0]
+
     def test_primary_contract_preserves_raw_task_identity_and_manifest_policy(self, script_run_bench: Any) -> None:
         """The primary suite uses shared raw loading, hashes, and revision-bound policy without a model call."""
         tasks, policies = script_run_bench._load_primary_parity_contract()

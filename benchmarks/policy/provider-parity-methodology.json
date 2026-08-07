@@ -23,6 +23,7 @@
       "for B/C, resolve an eligible treatment Python and prove it reports the required major/minor before model execution",
       "for B/C, prove CODEMAP_BIN is a contained regular single-link executable resolved from the installed plugin and record its SHA-256"
     ],
+    "reviewed_cli_version": "0.146.1",
     "shell_environment": {
       "inherit": "none",
       "secret_inheritance": false,
@@ -55,17 +56,16 @@
       ]
     },
     "treatment_runtime": {
-      "resolution": "first executable Python reporting the required major/minor from the reviewed runtime path candidates",
       "required_major_minor": [
         3,
         11
       ],
+      "resolution": "first executable Python reporting the required major/minor from the reviewed runtime path candidates",
       "scope": [
         "B_auto",
         "C_strict"
       ]
-    },
-    "reviewed_cli_version": "0.146.1"
+    }
   },
   "evaluation_contract": {
     "binary_guardrail": "correct",
@@ -102,7 +102,51 @@
     "policy": "tasks-bench only; independent non-approximate oracle; validator PASS; effectively scoreable; not self-consistency; known exact-oracle/tool divergence remains an intentional tool-accuracy outcome",
     "task_count": 45,
     "task_ids": [
-      "FN-01", "FN-02", "FN-03", "FN-04", "FN-05", "RV-01", "RV-02", "RV-03", "RV-04", "CQ-01", "BR-01", "BR-02", "BR-03", "BR-04", "BR-05", "BR-06", "BR-07", "BR-08", "BR-09", "DG-01", "DG-02", "DG-03", "DG-04", "DG-05", "DG-06", "FT-01", "FT-02", "FT-03", "FT-04", "FT-05", "DI-01", "DI-02", "DI-03", "DI-04", "DI-05", "DI-06", "GR-01", "GR-02", "GR-03", "GR-04", "MB-01", "MB-02", "MB-03", "MB-04", "MB-05"
+      "FN-01",
+      "FN-02",
+      "FN-03",
+      "FN-04",
+      "FN-05",
+      "RV-01",
+      "RV-02",
+      "RV-03",
+      "RV-04",
+      "CQ-01",
+      "BR-01",
+      "BR-02",
+      "BR-03",
+      "BR-04",
+      "BR-05",
+      "BR-06",
+      "BR-07",
+      "BR-08",
+      "BR-09",
+      "DG-01",
+      "DG-02",
+      "DG-03",
+      "DG-04",
+      "DG-05",
+      "DG-06",
+      "FT-01",
+      "FT-02",
+      "FT-03",
+      "FT-04",
+      "FT-05",
+      "DI-01",
+      "DI-02",
+      "DI-03",
+      "DI-04",
+      "DI-05",
+      "DI-06",
+      "GR-01",
+      "GR-02",
+      "GR-03",
+      "GR-04",
+      "MB-01",
+      "MB-02",
+      "MB-03",
+      "MB-04",
+      "MB-05"
     ]
   },
   "implementation_contract": {
@@ -118,7 +162,12 @@
     "codex_runner_added": false,
     "headline_divergence_policy": "exact independent caller-oracle divergence is measured as tool accuracy; approximate uncovered-oracle divergence stays diagnostic",
     "known_tool_divergence_ids": [
-      "FN-04", "RV-05", "CQ-02", "BR-04", "BR-07", "BR-09"
+      "FN-04",
+      "RV-05",
+      "CQ-02",
+      "BR-04",
+      "BR-07",
+      "BR-09"
     ],
     "original_counts": {
       "fail": 20,
@@ -132,7 +181,8 @@
       "skip": 0
     },
     "tool_derived_update_ids": [
-      "SE-03", "CQ-04"
+      "SE-03",
+      "CQ-04"
     ],
     "tool_derived_update_reason": "target-version relock only; both rows remain diagnostic and cannot enter headline correctness",
     "tool_derived_update_used": true
@@ -140,21 +190,78 @@
   "preregistered_cells": {
     "arm_order": "sort arms by sha256(experiment_revision|provider|model|reasoning_effort|task_id|repetition|arm), ascending raw digest; Claude uses an empty effort coordinate",
     "arms": [
-      "A_plain", "B_auto", "C_strict"
+      "A_plain",
+      "B_auto",
+      "C_strict"
     ],
     "confirmatory_repetitions": 5,
     "pilot_repetitions": 3,
     "providers": [
-      "claude", "codex"
+      "claude",
+      "codex"
     ],
     "smoke_task_ids": [
-      "FN-02", "BA-01", "RC-01", "FS-01", "FM-01", "PT-01"
+      "FN-02",
+      "BA-01",
+      "RC-01",
+      "FS-01",
+      "FM-01",
+      "PT-01"
     ],
     "structural_confirmatory_task_ids": [
-      "FN-01", "FN-02", "FN-03", "FN-04", "FN-05", "RV-01", "RV-02", "RV-03", "RV-04", "CQ-01", "BR-01", "BR-02", "BR-03", "BR-04", "BR-05", "BR-06", "BR-07", "BR-08", "BR-09", "DG-01", "DG-02", "DG-03", "DG-04", "DG-05", "DG-06", "FT-01", "FT-02", "FT-03", "FT-04", "FT-05", "DI-01", "DI-02", "DI-03", "DI-04", "DI-05", "DI-06", "GR-01", "GR-02", "GR-03", "GR-04", "MB-01", "MB-02", "MB-03", "MB-04", "MB-05"
+      "FN-01",
+      "FN-02",
+      "FN-03",
+      "FN-04",
+      "FN-05",
+      "RV-01",
+      "RV-02",
+      "RV-03",
+      "RV-04",
+      "CQ-01",
+      "BR-01",
+      "BR-02",
+      "BR-03",
+      "BR-04",
+      "BR-05",
+      "BR-06",
+      "BR-07",
+      "BR-08",
+      "BR-09",
+      "DG-01",
+      "DG-02",
+      "DG-03",
+      "DG-04",
+      "DG-05",
+      "DG-06",
+      "FT-01",
+      "FT-02",
+      "FT-03",
+      "FT-04",
+      "FT-05",
+      "DI-01",
+      "DI-02",
+      "DI-03",
+      "DI-04",
+      "DI-05",
+      "DI-06",
+      "GR-01",
+      "GR-02",
+      "GR-03",
+      "GR-04",
+      "MB-01",
+      "MB-02",
+      "MB-03",
+      "MB-04",
+      "MB-05"
     ],
     "structural_pilot_task_ids": [
-      "FN-02", "FN-05", "BR-02", "BR-05", "MB-01", "MB-04"
+      "FN-02",
+      "FN-05",
+      "BR-02",
+      "BR-05",
+      "MB-01",
+      "MB-04"
     ]
   },
   "target_source": {
@@ -180,12 +287,72 @@
     "fail_closed_on_skip": true,
     "fail_ids": [],
     "pass_ids": [
-      "SE-01", "SE-02", "SE-03", "SE-04", "SE-05", "FN-01", "FN-02", "FN-03", "FN-04", "FN-05", "RV-01", "RV-02", "RV-03", "RV-04", "RV-05", "CQ-01", "CQ-02", "CQ-03", "CQ-04", "CQ-05", "BR-01", "BR-02", "BR-03", "BR-04", "BR-05", "BR-06", "BR-07", "BR-08", "BR-09", "DG-01", "DG-02", "DG-03", "DG-04", "DG-05", "DG-06", "FT-01", "FT-02", "FT-03", "FT-04", "FT-05", "RI-01", "RI-02", "RI-03", "RI-04", "RI-05", "DI-01", "DI-02", "DI-03", "DI-04", "DI-05", "DI-06", "GR-01", "GR-02", "GR-03", "GR-04", "MB-01", "MB-02", "MB-03", "MB-04", "MB-05"
+      "SE-01",
+      "SE-02",
+      "SE-03",
+      "SE-04",
+      "SE-05",
+      "FN-01",
+      "FN-02",
+      "FN-03",
+      "FN-04",
+      "FN-05",
+      "RV-01",
+      "RV-02",
+      "RV-03",
+      "RV-04",
+      "RV-05",
+      "CQ-01",
+      "CQ-02",
+      "CQ-03",
+      "CQ-04",
+      "CQ-05",
+      "BR-01",
+      "BR-02",
+      "BR-03",
+      "BR-04",
+      "BR-05",
+      "BR-06",
+      "BR-07",
+      "BR-08",
+      "BR-09",
+      "DG-01",
+      "DG-02",
+      "DG-03",
+      "DG-04",
+      "DG-05",
+      "DG-06",
+      "FT-01",
+      "FT-02",
+      "FT-03",
+      "FT-04",
+      "FT-05",
+      "RI-01",
+      "RI-02",
+      "RI-03",
+      "RI-04",
+      "RI-05",
+      "DI-01",
+      "DI-02",
+      "DI-03",
+      "DI-04",
+      "DI-05",
+      "DI-06",
+      "GR-01",
+      "GR-02",
+      "GR-03",
+      "GR-04",
+      "MB-01",
+      "MB-02",
+      "MB-03",
+      "MB-04",
+      "MB-05"
     ],
     "reported_summary": "60/60 passed",
     "skip_ids": [],
     "update_from_tool_ids": [
-      "SE-03", "CQ-04"
+      "SE-03",
+      "CQ-04"
     ],
     "update_from_tool_performed": true,
     "update_mode": "target_relock: independent oracles plus explicit diagnostic-only tool refresh",

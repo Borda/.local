@@ -11,9 +11,9 @@
 #   bash benchmarks/run-all.sh claude --agentic --repetitions=2 --dry-run  # scope-bound Claude repeat override
 #   bash benchmarks/run-all.sh codex --struct --dry-run  # exact 165-cell Codex structural plan, no model
 #   bash benchmarks/run-all.sh codex --struct  # paid 55-task Codex structural study
-#   bash benchmarks/run-all.sh codex --dry-run  # smoke + exact 165-cell Codex plan, no model
-#   bash benchmarks/run-all.sh codex   # fail-fast Codex smoke, then full 55-task A/B/C study
-#   bash benchmarks/run-all.sh codex --tasks=DI,GR [--dry-run]  # selected, nonpoolable task study
+#   bash benchmarks/run-all.sh codex --dry-run  # structural + agentic Codex plans, no model
+#   bash benchmarks/run-all.sh codex   # paid structural study, then paid agentic study
+#   bash benchmarks/run-all.sh codex --struct --tasks=DI,GR [--dry-run]  # selected, nonpoolable structural study
 #   bash benchmarks/run-all.sh codex --agentic --dry-run  # shared 48-cell agentic plan, no model
 #   bash benchmarks/run-all.sh codex --agentic --tasks=BA-02,BA-04,BA-12,BA-16 --dry-run  # selected nonpoolable Codex plan
 #   bash benchmarks/run-all.sh codex --agentic --repetitions=2 --dry-run  # scope-bound repeat override
@@ -146,6 +146,11 @@ case "$MODE" in
       usage
       exit 2
     fi
+    if [ "$MODE" = "codex" ] && [ -n "$CODEX_TASKS" ] && [ "$AGENTIC" != true ] && [ "$STRUCTURAL" != true ]; then
+      echo "ERROR: Codex --tasks requires an explicit --struct or --agentic selector." >&2
+      usage
+      exit 2
+    fi
     ;;
   *)
     usage
@@ -154,6 +159,24 @@ case "$MODE" in
 esac
 
 cd "$ROOT"
+
+refresh_generated_manifests() {
+  if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" = "1" ] || {
+    [ "$ROOT" = "${CODEX_LAUNCHER_ROOT:-}" ] && [ -n "${CODEX_SOURCE_MANIFEST_SHA256:-}" ]
+  }; then
+    echo "== CHECK frozen generated benchmark manifests (no model) =="
+    CODEX_LAUNCHER_SNAPSHOT_ACTIVE=1 python3 "$METHODOLOGY_CHECKER" --check
+    CODEX_LAUNCHER_SNAPSHOT_ACTIVE=1 python3 "$MANIFEST_CHECKER" --check
+    CODEX_LAUNCHER_SNAPSHOT_ACTIVE=1 python3 "$AGENTIC_MANIFEST_CHECKER" --check
+    return
+  fi
+  echo "== BUILD generated benchmark manifests (no model) =="
+  python3 "$METHODOLOGY_CHECKER"
+  python3 "$MANIFEST_CHECKER"
+  python3 "$AGENTIC_MANIFEST_CHECKER"
+}
+
+refresh_generated_manifests
 
 sha256_file() {
   if command -v shasum >/dev/null 2>&1; then
@@ -282,21 +305,6 @@ write_codex_result_checksums() {
     done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
   fi
   append_launcher_checksum_attestation "$checksum_path"
-}
-
-validate_generated_manifest() {
-  validate_generated_methodology_manifest || return "$?"
-  echo "== CHECK generated Codex integration manifest (no model) =="
-  python3 "$MANIFEST_CHECKER" --check || return "$?"
-}
-
-validate_generated_methodology_manifest() {
-  python3 "$METHODOLOGY_CHECKER" --check || return "$?"
-}
-
-validate_generated_agentic_manifest() {
-  echo "== CHECK generated Codex agentic manifest (no model) =="
-  python3 "$AGENTIC_MANIFEST_CHECKER" --check || return "$?"
 }
 
 resolve_agentic_scope() {
@@ -466,7 +474,7 @@ resolve_codemap_python() {
 }
 
 set_default_codex_run_dir() {
-  local prefix="codex-integration"
+  local prefix="codex-combined"
   if [ -n "${CODEX_RUN_DIR:-}" ]; then
     if [[ "$CODEX_RUN_DIR" != /* ]]; then
       CODEX_RUN_DIR="$ROOT/$CODEX_RUN_DIR"
@@ -476,6 +484,8 @@ set_default_codex_run_dir() {
   fi
   if [ "$AGENTIC" = true ]; then
     prefix="codex-agentic"
+  elif [ "$STRUCTURAL" = true ]; then
+    prefix="codex-integration"
   fi
   if [ -n "$CODEX_TASKS" ]; then
     prefix="$prefix-selected"
@@ -528,13 +538,11 @@ prepare_index_inputs() {
 }
 
 prepare_locked_inputs() {
-  validate_generated_manifest || return "$?"
   load_shared_structural_tasks || return "$?"
   prepare_index_inputs "$MANIFEST_PATH" "$METHODOLOGY_PATH"
 }
 
 prepare_claude_inputs() {
-  validate_generated_methodology_manifest || return "$?"
   load_shared_structural_tasks || return "$?"
   prepare_index_inputs "$METHODOLOGY_PATH"
 }
@@ -696,7 +704,6 @@ require_codex_paid_inputs() {
     echo "ERROR: active provider-parity manifest is missing: $MANIFEST_PATH" >&2
     exit 2
   fi
-  validate_generated_manifest || exit "$?"
   active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
   if [ -n "$CODEX_TASKS" ]; then
     ensure_codex_scope_resolved
@@ -740,7 +747,11 @@ exec_codex_launcher_snapshot() {
   local source_manifest="$launcher_dir/source.sha256"
   mkdir -p "$launcher_dir"
   archive_paid_source "$source_root"
-  capture_codemap_mode_map "$source_root/benchmarks/manifests/codemap-package-mode-map.json"
+  if [ -f "$ROOT/benchmarks/manifests/codemap-package-mode-map.json" ]; then
+    cp "$ROOT/benchmarks/manifests/codemap-package-mode-map.json" "$source_root/benchmarks/manifests/codemap-package-mode-map.json"
+  else
+    capture_codemap_mode_map "$source_root/benchmarks/manifests/codemap-package-mode-map.json"
+  fi
   build_source_checksum_manifest "$source_root" "$source_manifest"
   cp "$source_root/benchmarks/run-all.sh" "$launcher_snapshot"
   chmod 500 "$launcher_snapshot"
@@ -826,8 +837,6 @@ require_codex_agentic_paid_inputs() {
     echo "ERROR: active Codex agentic manifest is missing: $AGENTIC_MANIFEST_PATH" >&2
     exit 2
   fi
-  validate_generated_manifest || exit "$?"
-  validate_generated_agentic_manifest || exit "$?"
   local agentic_manifest_sha
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
   resolve_agentic_scope
@@ -861,6 +870,59 @@ require_codex_agentic_paid_inputs() {
   elif [ -e "$CODEX_RUN_DIR" ]; then
     echo "ERROR: CODEX_RUN_DIR already exists: $CODEX_RUN_DIR" >&2
     print_codex_agentic_paid_guidance
+    exit 2
+  fi
+}
+
+print_codex_combined_paid_guidance() {
+  local agentic_manifest_sha structural_manifest_sha
+  structural_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
+  agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
+  cat >&2 <<EOF
+
+Review both exact no-model plans first:
+  bash benchmarks/run-all.sh codex --dry-run
+
+Then launch the paid structural and agentic studies from one frozen source:
+  CODEX_PAID_APPROVAL=$structural_manifest_sha \
+  CODEX_AGENTIC_PAID_APPROVAL=$agentic_manifest_sha \
+  CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \
+    bash benchmarks/run-all.sh codex
+
+The launcher creates one combined result root with structural/ and agentic/ child runs; set CODEX_RUN_DIR only to choose another new combined root. Review benchmarks/manifests/codex-integration.md and benchmarks/manifests/codex-agentic.md before running the paid studies.
+Credential warning: use an immutable, user-owned 0600 auth source. Do not run a concurrent Codex session with it; use an independently authenticated benchmark credential instead. The two studies run sequentially and stop on the first failure while preserving completed artifacts.
+EOF
+}
+
+require_codex_combined_paid_inputs() {
+  local agentic_manifest_sha structural_manifest_sha expected_launcher
+  structural_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
+  agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
+  if [ "${CODEX_PAID_APPROVAL:-}" != "$structural_manifest_sha" ] || [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$agentic_manifest_sha" ]; then
+    echo "ERROR: paid combined Codex mode requires both manifest-bound approvals." >&2
+    print_codex_combined_paid_guidance
+    exit 2
+  fi
+  if [ -z "${CODEX_AUTH_SOURCE:-}" ] || [ ! -f "$CODEX_AUTH_SOURCE" ]; then
+    echo "ERROR: paid combined Codex mode requires CODEX_AUTH_SOURCE pointing to a private auth.json." >&2
+    print_codex_combined_paid_guidance
+    exit 2
+  fi
+  set_default_codex_run_dir
+  if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" = "1" ]; then
+    expected_launcher="$CODEX_RUN_DIR/.launcher/run-all.sh"
+    if [ "$0" != "$expected_launcher" ] || [ "${CODEX_INVOCATION_LAUNCHER:-}" != "$expected_launcher" ]; then
+      echo "ERROR: paid combined Codex mode is not executing its private launcher snapshot." >&2
+      exit 2
+    fi
+    if [ "$(sha256_file "$expected_launcher")" != "${CODEX_LAUNCHER_SHA256:-}" ]; then
+      echo "ERROR: paid combined Codex launcher snapshot changed before execution." >&2
+      exit 2
+    fi
+    validate_paid_source_snapshot
+  elif [ -e "$CODEX_RUN_DIR" ]; then
+    echo "ERROR: CODEX_RUN_DIR already exists: $CODEX_RUN_DIR" >&2
+    print_codex_combined_paid_guidance
     exit 2
   fi
 }
@@ -993,12 +1055,7 @@ run_codex_study() {
     --metadata-path "$CODEX_RUN_DIR/run-metadata.json"
 }
 
-run_codex_agentic_plan() {
-  # Agentic execution reuses the structural target/index preparation contract
-  # but resolves its own shared task/repeat scope before dispatch.
-  prepare_locked_inputs || return "$?"
-  validate_codex_cli || return "$?"
-  validate_generated_agentic_manifest || return "$?"
+run_codex_agentic_prepared_plan() {
   resolve_agentic_scope || return "$?"
   echo "== CODEX SHARED AGENTIC A/B/C PREFLIGHT (no model) =="
   echo "→ design: $AGENTIC_TOTAL_CELLS cells (${#AGENTIC_TASK_IDS[@]} tasks × $AGENTIC_REPETITIONS repetitions × 3 arms; nonpoolable)"
@@ -1008,6 +1065,14 @@ run_codex_agentic_plan() {
   if [ -n "$CODEX_TASKS" ]; then
     print_codex_agentic_paid_guidance
   fi
+}
+
+run_codex_agentic_plan() {
+  # Agentic execution reuses the structural target/index preparation contract
+  # but resolves its own shared task/repeat scope before dispatch.
+  prepare_locked_inputs || return "$?"
+  validate_codex_cli || return "$?"
+  run_codex_agentic_prepared_plan
 }
 
 run_codex_agentic_study() {
@@ -1080,6 +1145,23 @@ run_codex_agentic_with_artifacts() {
   return "$run_status"
 }
 
+run_codex_combined_child() {
+  local child_run_dir="$1"
+  local selector="$2"
+  validate_paid_source_snapshot
+  (
+    unset CODEX_INVOCATION_LAUNCHER CODEX_LAUNCHER_SHA256 CODEX_LAUNCHER_SNAPSHOT_ACTIVE
+    export CODEX_RUN_DIR="$child_run_dir"
+    /bin/bash "$ROOT/benchmarks/run-all.sh" codex "$selector"
+  )
+}
+
+run_codex_combined_studies() {
+  local combined_root="$CODEX_RUN_DIR"
+  run_codex_combined_child "$combined_root/structural" --struct
+  run_codex_combined_child "$combined_root/agentic" --agentic
+}
+
 case "$MODE" in
   smoke)
     prepare_locked_inputs
@@ -1116,25 +1198,37 @@ case "$MODE" in
         fi
         prepare_locked_inputs
         validate_codex_cli
-        validate_generated_agentic_manifest
         run_codex_agentic_with_artifacts run_codex_agentic_study
       fi
       echo "→ done. Results in benchmarks/results/"
       exit 0
     fi
-    if [ -n "$CODEX_TASKS" ]; then
-      ensure_codex_scope_resolved
-    fi
-    if [ "$DRY_RUN" = true ]; then
+    if [ "$STRUCTURAL" = true ]; then
+      if [ -n "$CODEX_TASKS" ]; then
+        ensure_codex_scope_resolved
+      fi
+      if [ "$DRY_RUN" = true ]; then
+        prepare_locked_inputs
+        run_codex_plan
+      else
+        require_codex_paid_inputs
+        if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" != "1" ]; then
+          exec_codex_launcher_snapshot "$@"
+        fi
+        prepare_locked_inputs
+        run_codex_with_artifacts run_codex_study
+      fi
+    elif [ "$DRY_RUN" = true ]; then
       prepare_locked_inputs
+      validate_codex_cli
       run_codex_plan
+      run_codex_agentic_prepared_plan
     else
-      require_codex_paid_inputs
+      require_codex_combined_paid_inputs
       if [ "${CODEX_LAUNCHER_SNAPSHOT_ACTIVE:-}" != "1" ]; then
         exec_codex_launcher_snapshot "$@"
       fi
-      prepare_locked_inputs
-      run_codex_with_artifacts run_codex_study
+      run_codex_combined_studies
     fi
     ;;
 esac

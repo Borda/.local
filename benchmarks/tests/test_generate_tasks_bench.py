@@ -1459,7 +1459,12 @@ class TestBuildUpdatedGroundTruth:
 
     @pytest.mark.parametrize(
         "task_type",
-        ["symbol_extraction", "fn_call_graph", "develop_blast_radius", "code_quality"],
+        [
+            "SYMBOL_EXTRACTION",
+            "FN_CALL_GRAPH",
+            "DEVELOP_BLAST_RADIUS",
+            "CODE_QUALITY",
+        ],
     )
     def test_merges_live_into_existing(self, script_gen_bench: Any, task_type: str) -> None:
         """Returns merged dict with live values overriding existing for standard types.
@@ -1469,7 +1474,7 @@ class TestBuildUpdatedGroundTruth:
         """
         existing = {"preserved_field": "keep", "start_line": 99}
         live = {"start_line": 10, "end_line": 20}
-        result = script_gen_bench._build_updated_ground_truth(task_type, live, existing)
+        result = script_gen_bench._build_updated_ground_truth(script_gen_bench.TaskType[task_type], live, existing)
         assert result["start_line"] == 10  # live overrides
         assert result["preserved_field"] == "keep"  # existing preserved
 
@@ -1481,24 +1486,98 @@ class TestBuildUpdatedGroundTruth:
         """
         existing = {"old_key": "old_value"}
         live = {"sq1": {"count": 5}}
-        result = script_gen_bench._build_updated_ground_truth("review_assistance", live, existing)
+        result = script_gen_bench._build_updated_ground_truth(
+            script_gen_bench.TaskType.REVIEW_ASSISTANCE, live, existing
+        )
         assert result == live
         assert "old_key" not in result
-
-    def test_unknown_type_returns_existing(self, script_gen_bench: Any) -> None:
-        """Returns existing GT unchanged for unknown task types.
-
-        Scenario: new task type not yet handled; existing GT must be preserved.
-        """
-        existing = {"some": "data"}
-        live = {"new": "data"}
-        result = script_gen_bench._build_updated_ground_truth("unknown_type", live, existing)
-        assert result == existing
 
 
 # ===========================================================================
 # VALIDATORS routing dict
 # ===========================================================================
+
+
+class TestTaskType:
+    """Contract: task types are a closed enum internally and plain strings in JSON."""
+
+    def test_enum_members_match_authoritative_validator_keys(self, script_gen_bench: Any) -> None:
+        """The enum and validator routing table declare exactly the same task types."""
+        expected_values = {
+            "symbol_extraction",
+            "fn_call_graph",
+            "review_assistance",
+            "code_quality",
+            "develop_blast_radius",
+            "diff_impact",
+            "graph_central",
+            "graph_path",
+            "graph_fn_blast",
+            "module_blast_radius",
+            "debug_from_trace",
+            "feature_scaffolding",
+            "real_issue",
+        }
+        assert {task_type.value for task_type in script_gen_bench.TaskType} == expected_values
+        assert set(script_gen_bench.TaskType) == set(script_gen_bench.VALIDATORS)
+
+    def test_main_update_serializes_only_plain_strings_and_preserves_json_bytes(
+        self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Task-type enum instances never cross the JSON write boundary.
+
+        A no-op full-file update must keep canonical JSON bytes unchanged, so
+        benchmark suite consumers continue to receive plain task-type strings.
+        """
+        payload = {
+            "repo": {},
+            "tasks": [
+                {
+                    "id": "A-01",
+                    "type": "symbol_extraction",
+                    "ground_truth": {},
+                    "expected_queries": [{"cmd": "symbol", "args": ["first"]}],
+                }
+            ],
+        }
+        original = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        tasks_file = tmp_path / "tasks.json"
+        tasks_file.write_text(original)
+        monkeypatch.setattr(script_gen_bench, "TASKS_FILE", tasks_file)
+
+        fake_sq = tmp_path / "scan-query"
+        fake_sq.write_text("#!/bin/sh")
+        fake_index = tmp_path / "index.json"
+        fake_index.write_text("{}")
+        real_json_dump = json.dump
+        serialized_payloads: list[object] = []
+
+        def dump_plain_json(value: object, file: Any, **kwargs: Any) -> None:
+            def contains_task_type(item: object) -> bool:
+                if isinstance(item, script_gen_bench.TaskType):
+                    return True
+                if isinstance(item, dict):
+                    return any(contains_task_type(key) or contains_task_type(value) for key, value in item.items())
+                if isinstance(item, list):
+                    return any(contains_task_type(value) for value in item)
+                return False
+
+            assert not contains_task_type(value)
+            serialized_payloads.append(value)
+            real_json_dump(value, file, **kwargs)
+
+        with (
+            patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
+            patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
+            patch.object(
+                script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: lambda *_: (True, {}, "")}
+            ),
+            patch.object(script_gen_bench.json, "dump", side_effect=dump_plain_json),
+        ):
+            script_gen_bench.main(repo_path=str(tmp_path), update=True)
+
+        assert serialized_payloads
+        assert tasks_file.read_bytes() == original.encode()
 
 
 class TestValidatorsDict:
@@ -1507,11 +1586,11 @@ class TestValidatorsDict:
     @pytest.mark.parametrize(
         "task_type,expected_fn_name",
         [
-            ("symbol_extraction", "_validate_symbol"),
-            ("fn_call_graph", "_validate_fn"),
-            ("develop_blast_radius", "_validate_fn"),
-            ("review_assistance", "_validate_rv"),
-            ("code_quality", "_validate_oss"),
+            ("SYMBOL_EXTRACTION", "_validate_symbol"),
+            ("FN_CALL_GRAPH", "_validate_fn"),
+            ("DEVELOP_BLAST_RADIUS", "_validate_fn"),
+            ("REVIEW_ASSISTANCE", "_validate_rv"),
+            ("CODE_QUALITY", "_validate_oss"),
         ],
     )
     def test_task_type_routes_to_correct_validator(
@@ -1522,7 +1601,7 @@ class TestValidatorsDict:
         Scenario: main() looks up VALIDATORS[task_type]; mapping must be
         correct for all five documented task types.
         """
-        actual_fn = script_gen_bench.VALIDATORS.get(task_type)
+        actual_fn = script_gen_bench.VALIDATORS.get(script_gen_bench.TaskType[task_type])
         expected_fn = getattr(script_gen_bench, expected_fn_name)
         assert actual_fn is expected_fn
 
@@ -2608,13 +2687,13 @@ class TestMainUnitBehavior:
                     "tasks": [
                         {
                             "id": "P-01",
-                            "type": "passing",
+                            "type": "symbol_extraction",
                             "ground_truth": {},
                             "expected_queries": [{"cmd": "symbol", "args": ["passing"]}],
                         },
                         {
                             "id": "F-01",
-                            "type": "failing",
+                            "type": "fn_call_graph",
                             "ground_truth": {},
                             "expected_queries": [{"cmd": "symbol", "args": ["failing"]}],
                         },
@@ -2636,8 +2715,8 @@ class TestMainUnitBehavior:
                 script_gen_bench,
                 "VALIDATORS",
                 {
-                    "passing": lambda *_args: (True, {}, ""),
-                    "failing": lambda *_args: (False, {}, "intentional failure"),
+                    script_gen_bench.TaskType.SYMBOL_EXTRACTION: lambda *_args: (True, {}, ""),
+                    script_gen_bench.TaskType.FN_CALL_GRAPH: lambda *_args: (False, {}, "intentional failure"),
                 },
             ),
             pytest.raises(SystemExit) as exc_info,
@@ -2665,13 +2744,13 @@ class TestMainUnitBehavior:
                     "tasks": [
                         {
                             "id": "SE-01",
-                            "type": "unknown_type",
+                            "type": "symbol_extraction",
                             "ground_truth": {},
                             "expected_queries": [{"cmd": "symbol", "args": ["selected"]}],
                         },
                         {
                             "id": "SE-02",
-                            "type": "unknown_type",
+                            "type": "symbol_extraction",
                             "ground_truth": {},
                             "expected_queries": [{"cmd": "symbol", "args": ["unselected"]}],
                         },
@@ -2695,7 +2774,9 @@ class TestMainUnitBehavior:
         with (
             patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
             patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
-            patch.object(script_gen_bench, "VALIDATORS", {"unknown_type": tracking_validator}),
+            patch.object(
+                script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: tracking_validator}
+            ),
         ):
             script_gen_bench.main(repo_path=str(tmp_path), task="SE-01")
 
@@ -2749,13 +2830,13 @@ class TestMainUnitBehavior:
                     "tasks": [
                         {
                             "id": "A-01",
-                            "type": "t",
+                            "type": "symbol_extraction",
                             "ground_truth": {},
                             "expected_queries": [{"cmd": "symbol", "args": ["first"]}],
                         },
                         {
                             "id": "A-02",
-                            "type": "t",
+                            "type": "symbol_extraction",
                             "ground_truth": {},
                             "expected_queries": [{"cmd": "symbol", "args": ["second"]}],
                         },
@@ -2779,7 +2860,9 @@ class TestMainUnitBehavior:
         with (
             patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
             patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
-            patch.object(script_gen_bench, "VALIDATORS", {"t": tracking_validator}),
+            patch.object(
+                script_gen_bench, "VALIDATORS", {script_gen_bench.TaskType.SYMBOL_EXTRACTION: tracking_validator}
+            ),
         ):
             script_gen_bench.main(repo_path=str(tmp_path), update=True)
 

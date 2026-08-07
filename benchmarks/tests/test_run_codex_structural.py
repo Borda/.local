@@ -4033,9 +4033,13 @@ def test_codex_arm_envelopes_define_plain_cli_and_skill_treatments(script_run_co
     assert "Codemap is absent" in script_run_codex._arm_envelope("A_plain")
     assert '"$CODEMAP_BIN" query --compact' in script_run_codex._arm_envelope("B_direct_required")
     assert "dedicated native command item" in script_run_codex._arm_envelope("B_direct_required")
+    assert "Do not use batch" in script_run_codex._arm_envelope("B_direct_required")
+    assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("B_direct_required")
     assert "$codemap-py:query-code" in script_run_codex._arm_envelope("C_skill_required")
     assert "separate dedicated native item" in script_run_codex._arm_envelope("C_skill_required")
     assert 'cat "$CODEMAP_SKILL_FILE"' in script_run_codex._arm_envelope("C_skill_required")
+    assert "Do not use batch" in script_run_codex._arm_envelope("C_skill_required")
+    assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("C_skill_required")
     assert "sed -n" not in script_run_codex._arm_envelope("C_skill_required")
 
 

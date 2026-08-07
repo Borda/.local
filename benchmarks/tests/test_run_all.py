@@ -59,23 +59,23 @@ SELECTED_REPETITIONS = 2
 
 
 def _assert_safe_paid_preflight(calls: list[str], *, agentic: bool) -> None:
-    """Assert manifest-only admission checks occur before paid execution.
+    """Assert manifest generation occurs before paid-input admission.
 
-    Paid-input rejection still validates generated locks, and agentic admission
-    additionally resolves its immutable scope. Neither route may prepare the
-    repository, access auth, or start a model runner.
+    Every launch rebuilds the five generated manifest records from source before
+    paid-input admission. Agentic admission then resolves its immutable scope.
+    Neither route may prepare the repository, access auth, or start a model
+    runner.
     """
     expected_checkers = [
         "build-provider-parity-methodology-manifest.py",
         "build-codex-integration-manifest.py",
+        "build-codex-agentic-manifest.py",
     ]
-    if agentic:
-        expected_checkers.append("build-codex-agentic-manifest.py")
 
     assert len(calls) == len(expected_checkers) + int(agentic)
     for call, checker in zip(calls[: len(expected_checkers)], expected_checkers, strict=True):
         assert checker in call
-        assert call.endswith(" --check")
+        assert not call.endswith(" --check")
     if agentic:
         assert "run-codex-agentic.py" in calls[-1]
         assert "--resolve-scope" in calls[-1]
@@ -114,6 +114,12 @@ def _claude_task_values(call: str) -> list[str]:
     start = call.index("--tasks ") + len("--tasks ")
     end = call.index(" --model ", start)
     return json.loads(call[start:end])
+
+
+def _option_value(call: str, option: str) -> str:
+    """Return one space-separated command option value from a recorded call."""
+    tokens = call.split()
+    return tokens[tokens.index(option) + 1]
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -183,19 +189,19 @@ if [[ "$*" == *"prepare-codex-index.py"* && "$*" == *"--verify"* ]]; then
   fi
   exit 43
 fi
-if [[ "$*" == *"build-codex-integration-manifest.py"* && "$*" == *"--check"* ]]; then
+if [[ "$*" == *"build-codex-integration-manifest.py"* ]]; then
   if [ -n "${{FAIL_MANIFEST_CHECK:-}}" ]; then
-    printf "stale generated Codex manifest\\n" >&2
+    printf "generated Codex manifest build failed\\n" >&2
     exit 47
   fi
 fi
-if [[ "$*" == *"build-provider-parity-methodology-manifest.py"* && "$*" == *"--check"* ]]; then
+if [[ "$*" == *"build-provider-parity-methodology-manifest.py"* ]]; then
   if [ -n "${{FAIL_METHODOLOGY_CHECK:-}}" ]; then
-    printf "stale generated methodology manifest; run the exact builder\n" >&2
+    printf "generated methodology manifest build failed\n" >&2
     exit 46
   fi
 fi
-if [[ "$*" == *"build-codex-agentic-manifest.py"* && "$*" == *"--check"* ]]; then
+if [[ "$*" == *"build-codex-agentic-manifest.py"* ]]; then
   if [ -n "${{FAIL_AGENTIC_MANIFEST_CHECK:-}}" ]; then
     printf "stale generated Codex agentic manifest\\n" >&2
     exit 48
@@ -255,9 +261,9 @@ printf "Python 3.11.0\\n""",
         bin_dir / "shasum",
         f"""if [[ "$3" == "$REPO/"* && "$(sed -n '1p' "$3")" == *'"scan_version": {LOCKED_INDEX_SCAN_VERSION}'* && "$(sed -n '1p' "$3")" == *'"modules": []'* ]]; then
   printf "{LOCKED_INDEX_SHA}  %s\\n" "$3"
-elif [ "$3" = "{ACTIVE_MANIFEST}" ]; then
+elif [[ "$3" == *"/benchmarks/manifests/codex-integration.json" ]]; then
   printf "{ACTIVE_MANIFEST_SHA}  %s\\n" "$3"
-elif [ "$3" = "{AGENTIC_MANIFEST}" ]; then
+elif [[ "$3" == *"/benchmarks/manifests/codex-agentic.json" ]]; then
   printf "{AGENTIC_MANIFEST_SHA}  %s\\n" "$3"
 elif [[ "$3" == "$CODEX_RUN_DIR/"* ]]; then
   exec /usr/bin/shasum -a 256 "$3"
@@ -367,15 +373,18 @@ def test_batch_entrypoint_accepts_exactly_three_modes(batch_env: tuple[dict[str,
     assert not call_log.exists()
 
 
-def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Path]) -> None:
-    """Expose the exact full Codex plan without authorization, credentials, or writes."""
+def test_codex_default_dry_run_dispatches_structural_then_agentic_without_paid_inputs(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """The selector-free no-model command advertises both Codex study plans in order."""
     env, call_log = batch_env
     for name in (
         "CODEX_PAID_APPROVAL",
+        "CODEX_AGENTIC_PAID_APPROVAL",
         "CODEX_AUTH_SOURCE",
         "CODEX_RUN_DIR",
     ):
-        env.pop(name)
+        env.pop(name, None)
 
     completed = _run_batch("codex", env, "--dry-run")
 
@@ -388,11 +397,27 @@ def test_codex_dry_run_needs_no_paid_inputs(batch_env: tuple[dict[str, str], Pat
     assert full_plan.count("--task-id") == 1
     assert _task_id_values(full_plan) == CONFIRMATORY_TASK_IDS
     assert "--max-wall-clock-seconds" not in full_plan
+    agentic_calls = [line for line in calls if "run-codex-agentic.py" in line and "--resolve-scope" not in line]
+    assert len(agentic_calls) == 1
+    agentic_plan = agentic_calls[0]
+    assert f"--manifest-path {AGENTIC_MANIFEST}" in agentic_plan
+    assert "--repetitions 1" in agentic_plan
+    assert "--dry-run" in agentic_plan
+    dispatched = [
+        line
+        for line in calls
+        if "run-codex-structural.py" in line or ("run-codex-agentic.py" in line and "--resolve-scope" not in line)
+    ]
+    assert all("run-codex-structural.py" in line for line in dispatched[: len(codex_calls)])
+    assert all("run-codex-agentic.py" in line for line in dispatched[len(codex_calls) :])
     assert all("--auth-source" not in line for line in codex_calls)
+    assert all("--auth-source" not in line for line in agentic_calls)
     assert all("--output-path" not in line for line in codex_calls)
+    assert all("--output-path" not in line for line in agentic_calls)
     assert all("--render-results" not in line for line in codex_calls)
     assert "PLAN " in completed.stdout
     assert "165 cells" in completed.stdout
+    assert "48 cells" in completed.stdout
 
 
 def test_codex_accepts_supported_flags_without_an_argument_count_ceiling(
@@ -873,7 +898,7 @@ def test_codex_tasks_dry_run_dispatches_resolved_scope(
     ):
         env.pop(name)
 
-    completed = _run_batch("codex", env, "--tasks=DI,GR", "--dry-run")
+    completed = _run_batch("codex", env, "--struct", "--tasks=DI,GR", "--dry-run")
 
     assert completed.returncode == 0, completed.stderr
     codex_calls = [
@@ -914,15 +939,21 @@ def test_codex_tasks_reject_invalid_selector_before_setup(
     """Resolver syntax errors propagate before target/index preparation."""
     env, call_log = batch_env
 
-    completed = _run_batch("codex", env, "--tasks=INVALID", "--dry-run")
+    completed = _run_batch("codex", env, "--struct", "--tasks=INVALID", "--dry-run")
 
     assert completed.returncode == 2
     assert "invalid Codex task selection" in completed.stderr
     assert not any("prepare-codex-index.py" in line for line in call_log.read_text(encoding="utf-8").splitlines())
 
 
-@pytest.mark.parametrize("args", [("--tasks=DI,GR", "--dry-run"), ("--dry-run", "--tasks=DI,GR")])
-def test_codex_tasks_accepts_option_ordering(batch_env: tuple[dict[str, str], Path], args: tuple[str, str]) -> None:
+@pytest.mark.parametrize(
+    "args",
+    [("--struct", "--tasks=DI,GR", "--dry-run"), ("--dry-run", "--tasks=DI,GR", "--struct")],
+)
+def test_codex_tasks_accepts_option_ordering(
+    batch_env: tuple[dict[str, str], Path],
+    args: tuple[str, str, str],
+) -> None:
     """Task selection composes with dry-run regardless of option order."""
     env, call_log = batch_env
     completed = _run_batch("codex", env, *args)
@@ -966,11 +997,11 @@ def test_smoke_checks_claude_and_codex_without_paid_codex(
     [
         ("smoke", ()),
         ("codex", ("--dry-run",)),
-        ("codex", ()),
-        ("codex", ("--tasks=DI,GR", "--dry-run")),
-        ("codex", ("--tasks=DI,GR",)),
+        ("codex", ("--struct",)),
+        ("codex", ("--struct", "--tasks=DI,GR", "--dry-run")),
+        ("codex", ("--struct", "--tasks=DI,GR")),
     ],
-    ids=["smoke", "codex-dry-run", "codex-paid", "tasks-dry-run", "tasks-paid"],
+    ids=["smoke", "codex-dry-run", "codex-struct-paid", "tasks-dry-run", "tasks-paid"],
 )
 def test_top_level_provider_invocation_emits_one_bounded_legend(
     batch_env: tuple[dict[str, str], Path],
@@ -1008,6 +1039,8 @@ def test_provider_smoke_failure_prevents_full_dispatch(
     """A failed provider smoke must stop before that mode's full workload."""
     env, call_log = batch_env
     env["FAIL_WHEN_ARGS_CONTAIN"] = failure_pattern
+    if mode == "codex":
+        env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
 
     completed = _run_batch(mode, env)
 
@@ -1054,47 +1087,48 @@ def test_smoke_rebuilds_wrong_bytes_with_current_schema_before_provider_commands
     assert "run-codex-structural.py" in calls
 
 
-def test_stale_generated_manifest_blocks_provider_preflights(
+def test_generated_manifest_build_failure_blocks_provider_preflights(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """Reject stale generated Codex records before either provider can run."""
+    """Reject a generated Codex record failure before either provider can run."""
     env, call_log = batch_env
     env["FAIL_MANIFEST_CHECK"] = "1"
 
     completed = _run_batch("smoke", env)
 
     assert completed.returncode == 47
-    assert "stale generated Codex manifest" in completed.stderr
+    assert "generated Codex manifest build failed" in completed.stderr
     calls = call_log.read_text(encoding="utf-8")
     assert "build-codex-integration-manifest.py" in calls
     assert "run-claude-" not in calls
     assert "run-codex-structural.py" not in calls
 
 
-def test_stale_codex_manifest_permits_claude_plan_but_blocks_codex(
+def test_generated_codex_manifest_build_failure_blocks_claude_and_codex_plans(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
-    """Keep Claude planning bound only to the shared methodology lock."""
+    """Every entrypoint builds the complete manifest closure before planning."""
     env, call_log = batch_env
     env["FAIL_MANIFEST_CHECK"] = "1"
 
     claude = _run_batch("claude", env, "--struct", "--dry-run")
 
-    assert claude.returncode == 0, claude.stderr
+    assert claude.returncode == 47
+    assert "generated Codex manifest build failed" in claude.stderr
     claude_calls = call_log.read_text(encoding="utf-8")
     assert "build-provider-parity-methodology-manifest.py" in claude_calls
-    assert "build-codex-integration-manifest.py" not in claude_calls
-    claude_contract = next(line for line in claude_calls.splitlines() if "prepare-codex-index.py" in line)
-    assert f"--manifest-path {METHODOLOGY_MANIFEST}" in claude_contract
-    assert "--methodology-path" not in claude_contract
+    assert "build-codex-integration-manifest.py" in claude_calls
+    assert "build-codex-agentic-manifest.py" not in claude_calls
+    assert "prepare-codex-index.py" not in claude_calls
 
     call_log.unlink()
     codex = _run_batch("codex", env, "--struct", "--dry-run")
 
     assert codex.returncode == 47
-    assert "stale generated Codex manifest" in codex.stderr
+    assert "generated Codex manifest build failed" in codex.stderr
     codex_calls = call_log.read_text(encoding="utf-8")
     assert "build-codex-integration-manifest.py" in codex_calls
+    assert "build-codex-agentic-manifest.py" not in codex_calls
 
 
 def test_codex_index_preparation_retains_the_dual_lock_cross_check(
@@ -1123,7 +1157,7 @@ def test_codex_index_preparation_retains_the_dual_lock_cross_check(
         pytest.param("codex", ("--agentic", "--dry-run"), id="codex-agentic"),
     ],
 )
-def test_stale_methodology_stops_every_public_study_before_setup(
+def test_methodology_manifest_build_failure_stops_every_public_study_before_setup(
     batch_env: tuple[dict[str, str], Path],
     mode: str,
     arguments: tuple[str, ...],
@@ -1135,7 +1169,7 @@ def test_stale_methodology_stops_every_public_study_before_setup(
     completed = _run_batch(mode, env, *arguments)
 
     assert completed.returncode == 46
-    assert "run the exact builder" in completed.stderr
+    assert "generated methodology manifest build failed" in completed.stderr
     calls = call_log.read_text(encoding="utf-8")
     assert "build-provider-parity-methodology-manifest.py" in calls
     assert "build-codex-integration-manifest.py" not in calls
@@ -1151,7 +1185,7 @@ def test_stale_methodology_stops_every_public_study_before_setup(
         pytest.param(("--agentic",), "CODEX_AGENTIC_PAID_APPROVAL", id="agentic"),
     ],
 )
-def test_stale_methodology_never_prints_unrunnable_paid_guidance(
+def test_methodology_manifest_build_failure_never_prints_unrunnable_paid_guidance(
     batch_env: tuple[dict[str, str], Path],
     arguments: tuple[str, ...],
     approval_variable: str,
@@ -1164,7 +1198,7 @@ def test_stale_methodology_never_prints_unrunnable_paid_guidance(
     completed = _run_batch("codex", env, *arguments)
 
     assert completed.returncode == 46
-    assert "stale generated methodology manifest" in completed.stderr
+    assert "generated methodology manifest build failed" in completed.stderr
     assert f"{approval_variable}=" not in completed.stderr
     calls = call_log.read_text(encoding="utf-8")
     assert "build-provider-parity-methodology-manifest.py" in calls
@@ -1212,7 +1246,7 @@ def test_codex_mode_requires_explicit_paid_inputs_before_setup(
             }[invalid_input]
         )
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 2
     assert expected_error in completed.stderr
@@ -1226,10 +1260,10 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
     env, _ = batch_env
     env.pop("CODEX_PAID_APPROVAL")
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 2
-    assert "bash benchmarks/run-all.sh codex --dry-run" in completed.stderr
+    assert "bash benchmarks/run-all.sh codex --struct --dry-run" in completed.stderr
     assert f"CODEX_PAID_APPROVAL={ACTIVE_MANIFEST_SHA}" in completed.stderr
     assert "CODEX_AUTH_SOURCE=" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
@@ -1243,6 +1277,33 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
     assert "independently authenticated benchmark credential" in completed.stderr
     assert "private sequential refresh can invalidate an unchanged source" in completed.stderr
     assert "reauthenticate after the run if needed" in completed.stderr
+
+
+@pytest.mark.parametrize(
+    "missing_approval",
+    ["CODEX_PAID_APPROVAL", "CODEX_AGENTIC_PAID_APPROVAL"],
+    ids=["structural-approval", "agentic-approval"],
+)
+def test_codex_default_paid_rejection_requires_both_scope_approvals_before_dispatch(
+    batch_env: tuple[dict[str, str], Path],
+    missing_approval: str,
+) -> None:
+    """Default paid Codex admission is all-or-nothing across its two study scopes."""
+    env, call_log = batch_env
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env.pop(missing_approval)
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 2
+    assert f"CODEX_PAID_APPROVAL={ACTIVE_MANIFEST_SHA}" in completed.stderr
+    assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
+    assert "bash benchmarks/run-all.sh codex --dry-run" in completed.stderr
+    assert "benchmarks/manifests/codex-integration.md" in completed.stderr
+    assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
+    calls = call_log.read_text(encoding="utf-8").splitlines() if call_log.exists() else []
+    assert not any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
+    assert not any("run-codex-agentic.py" in line and "--auth-source" in line for line in calls)
 
 
 def test_explicit_codex_struct_rejection_preserves_selector_in_guidance(
@@ -1261,8 +1322,9 @@ def test_explicit_codex_struct_rejection_preserves_selector_in_guidance(
 
 def test_provider_modes_dispatch_only_the_selected_provider(
     batch_env: tuple[dict[str, str], Path],
+    tmp_path: Path,
 ) -> None:
-    """Claude and Codex modes must not invoke the other provider's runner."""
+    """Selector-free Codex runs both suites from one frozen source in suite order."""
     env, call_log = batch_env
 
     claude = _run_batch("claude", env)
@@ -1273,49 +1335,50 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     assert "run-codex-structural.py" not in claude_calls
 
     call_log.unlink()
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_RESULTS_ROOT"] = str(tmp_path / "results")
+    env.pop("CODEX_RUN_DIR")
     codex = _run_batch("codex", env)
     assert codex.returncode == 0, codex.stderr
-    codex_calls = call_log.read_text(encoding="utf-8")
-    assert "run-codex-structural.py" in codex_calls
-    paid_call = next(line for line in codex_calls.splitlines() if "--auth-source" in line)
-    assert paid_call.count("--task-id") == 1
-    assert _task_id_values(paid_call) == CONFIRMATORY_TASK_IDS
-    assert "--repetitions 1" in paid_call
-    assert "--reasoning-effort high" in paid_call
-    assert "--arm all" in codex_calls
-    frozen_manifest = Path(env["CODEX_RUN_DIR"]) / ".launcher/source/benchmarks/manifests/codex-integration.json"
-    assert f"--manifest-path {frozen_manifest}" in codex_calls
-    assert f"--codemap-bin {env['CODEMAP_BIN']}" in codex_calls
-    assert "--max-wall-clock-seconds" not in codex_calls
-    assert "run-claude-" not in codex_calls
-    codex_lines = [
-        line
-        for line in codex_calls.splitlines()
-        if "run-codex-structural.py" in line and "--render-results" not in line
-    ]
-    assert len(codex_lines) == 3
-    smoke_call = next(line for line in codex_lines if "--task-id FN-02 --arm all --dry-run" in line)
-    full_dry_run = next(line for line in codex_lines if "--dry-run" in line and "--task-id FN-02 --arm all" not in line)
-    assert "--repetitions 1" not in smoke_call
-    assert "--no-legend" in smoke_call
-    assert full_dry_run.count("--task-id") == 1
-    assert _task_id_values(full_dry_run) == CONFIRMATORY_TASK_IDS
-    assert "--repetitions 1" in full_dry_run
-    assert "--no-legend" not in full_dry_run
-    paid_call = next(line for line in codex_lines if "--auth-source" in line)
-    assert "--no-legend" in paid_call
-    assert any(
-        "--dry-run" not in line and "--output-path" in line and "--metadata-path" in line for line in codex_lines
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    paid_structural = [line for line in calls if "run-codex-structural.py" in line and "--auth-source" in line]
+    paid_agentic = [line for line in calls if "run-codex-agentic.py" in line and "--auth-source" in line]
+    assert len(paid_structural) == 1
+    assert len(paid_agentic) == 1
+    structural_call = paid_structural[0]
+    agentic_call = paid_agentic[0]
+    assert calls.index(structural_call) < calls.index(agentic_call)
+    assert _task_id_values(structural_call) == CONFIRMATORY_TASK_IDS
+    assert "--repetitions 1" in structural_call
+    assert "--reasoning-effort high" in structural_call
+    assert "--arm all" in structural_call
+    assert "--max-wall-clock-seconds" not in "\n".join(calls)
+    assert not any("run-claude-" in line for line in calls)
+
+    structural_run_dir = Path(_option_value(structural_call, "--output-path")).parent
+    agentic_run_dir = Path(_option_value(agentic_call, "--run-dir"))
+    assert structural_run_dir != agentic_run_dir
+    assert structural_run_dir.is_dir()
+    assert agentic_run_dir.is_dir()
+
+    structural_launcher = Path(_option_value(structural_call, "--invocation-launcher-path"))
+    agentic_launcher = Path(_option_value(agentic_call, "--invocation-launcher-path"))
+    assert structural_launcher != agentic_launcher
+    structural_source = structural_launcher.parent / "source"
+    agentic_source = agentic_launcher.parent / "source"
+    assert _option_value(structural_call, "--manifest-path") == str(
+        structural_source / "benchmarks/manifests/codex-integration.json"
     )
-    run_dir = Path(env["CODEX_RUN_DIR"])
-    assert run_dir.is_dir()
-    launcher_snapshot = run_dir / ".launcher" / "run-all.sh"
-    assert launcher_snapshot.read_bytes() == SCRIPT.read_bytes()
-    assert (run_dir / "run.log").is_file()
-    checksums = (run_dir / "checksums.sha256").read_text(encoding="utf-8")
-    assert "run.log" in checksums
-    assert ".launcher/run-all.sh" in checksums
-    assert f"--invocation-launcher-path {launcher_snapshot}" in paid_call
+    assert _option_value(agentic_call, "--manifest-path") == str(
+        agentic_source / "benchmarks/manifests/codex-agentic.json"
+    )
+    assert (
+        structural_source / "benchmarks/manifests/codex-integration.json"
+    ).read_bytes() == ACTIVE_MANIFEST.read_bytes()
+    assert (agentic_source / "benchmarks/manifests/codex-agentic.json").read_bytes() == AGENTIC_MANIFEST.read_bytes()
+    assert (structural_launcher.parent / "source.sha256").read_bytes() == (
+        agentic_launcher.parent / "source.sha256"
+    ).read_bytes()
 
 
 def test_paid_claude_structural_dispatches_shared_provider_parity_matrix(
@@ -1350,7 +1413,7 @@ def test_paid_codex_tasks_runs_only_resolved_scope(
     env["CODEX_PAID_APPROVAL"] = SELECTED_SCOPE_SHA
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-selected-run"))
 
-    completed = _run_batch("codex", env, "--tasks=DI,GR")
+    completed = _run_batch("codex", env, "--struct", "--tasks=DI,GR")
 
     assert completed.returncode == 0, completed.stderr
     codex_calls = [
@@ -1381,7 +1444,7 @@ def test_paid_codex_checksums_include_canonical_telemetry_sidecar(
     """Record and verify the canonical telemetry sidecar in the artifact checksum list."""
     env, _ = batch_env
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 0, completed.stderr
     run_dir = Path(env["CODEX_RUN_DIR"])
@@ -1400,7 +1463,7 @@ def test_codex_mode_reconstructs_a_missing_locked_index_before_dispatch(
     index_path = Path(env["REPO"]) / ".cache" / "codemap" / "target.json"
     index_path.unlink()
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 0, completed.stderr
     rebuilt = json.loads(index_path.read_text(encoding="utf-8"))
@@ -1415,7 +1478,7 @@ def test_paid_codex_noninteractive_output_and_artifact_log_remain_plain(
     """A redirected paid run must retain plain terminal output and a plain tee log."""
     env, _ = batch_env
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 0, completed.stderr
     run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
@@ -1444,7 +1507,7 @@ def test_paid_codex_tty_output_hides_plan_rows_and_uses_shared_renderer(
     """An interactive paid run uses the same renderer while preserving its plan log."""
     env, call_log = batch_env
 
-    completed = _run_batch_tty("codex", env)
+    completed = _run_batch_tty("codex", env, "--struct")
 
     assert completed.returncode == 0, completed.stdout
     run_log = (Path(env["CODEX_RUN_DIR"]) / "run.log").read_text(encoding="utf-8")
@@ -1460,7 +1523,7 @@ def test_paid_codex_runner_failure_survives_the_artifact_tee(
     env, call_log = batch_env
     env["FAIL_WHEN_ARGS_CONTAIN"] = "--auth-source"
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 41
     assert "--auth-source" in call_log.read_text(encoding="utf-8")
@@ -1489,7 +1552,7 @@ def test_paid_codex_renderer_failure_survives_the_artifact_pipeline(
     env, _ = batch_env
     env["FAIL_RENDER_RESULTS"] = "1"
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 43
     assert (Path(env["CODEX_RUN_DIR"]) / "run.log").is_file()
@@ -1503,6 +1566,6 @@ def test_paid_codex_tee_failure_survives_the_artifact_pipeline(
     tee = Path(env["PATH"].split(":", maxsplit=1)[0]) / "tee"
     _write_executable(tee, "exit 44")
 
-    completed = _run_batch("codex", env)
+    completed = _run_batch("codex", env, "--struct")
 
     assert completed.returncode == 44

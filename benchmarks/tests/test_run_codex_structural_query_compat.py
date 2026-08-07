@@ -1670,6 +1670,7 @@ def test_main_threads_an_explicit_manifest_path_into_task_loading_and_ordering(
 ) -> None:
     """A future relock must not be silently replaced by the module-global manifest."""
     manifest_path = tmp_path / "future-manifest.json"
+    manifest_path.write_bytes(MANIFEST_PATH.read_bytes())
     seen: dict[str, Path] = {}
     tasks = [{"id": "fixture", "prompt": "prompt", "type": "demo"}]
 
@@ -1686,6 +1687,7 @@ def test_main_threads_an_explicit_manifest_path_into_task_loading_and_ordering(
 
         def __init__(self, *_args: Any, **kwargs: Any) -> None:
             seen["runner"] = kwargs["manifest_path"]
+            self.timeout = kwargs["timeout"]
 
         def probe_arm(self, _arm: str) -> dict[str, bool]:
             return {"codemap_available": False}

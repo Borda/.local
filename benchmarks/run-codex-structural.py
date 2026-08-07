@@ -4374,6 +4374,8 @@ def _arm_envelope(arm: str) -> str:
             "Codemap is available only through the direct CLI. Before answering, complete a dedicated native "
             'command item of the exact form "$CODEMAP_BIN" query --compact <subcommand> <arguments>. '
             "It must exit 0 and emit one JSON document whose index.query_complete and index.compact are true. "
+            "Do not use batch; repeat the dedicated command for each independently required fact. "
+            'If discovery is needed, use "$CODEMAP_BIN" query --help; help is not a subcommand. '
             "Additional reads and shell work are allowed only as separate native items and are ignored for credit."
         )
     if arm == "C_skill_required":
@@ -4382,8 +4384,10 @@ def _arm_envelope(arm: str) -> str:
             "CODEMAP_SKILL_FILE binding. Before the canonical query, complete a separate dedicated native item whose "
             'exact command is cat "$CODEMAP_SKILL_FILE". Then complete a dedicated '
             'native command item of the exact form "$CODEMAP_BIN" query --compact <subcommand> <arguments> with '
-            "exit 0 and one JSON document whose index.query_complete and index.compact are true. Additional reads "
-            "and shell work are allowed only as separate native items and are ignored for credit."
+            "exit 0 and one JSON document whose index.query_complete and index.compact are true. "
+            "Do not use batch; repeat the dedicated command for each independently required fact. "
+            'If discovery is needed, use "$CODEMAP_BIN" query --help; help is not a subcommand. '
+            "Additional reads and shell work are allowed only as separate native items and are ignored for credit."
         )
     raise ValueError(f"unknown benchmark arm {arm!r}")
 

@@ -159,6 +159,7 @@ _TIER_OPUS = "opus"
 
 ARMS = ("plain", "codemap")
 PARITY_ARMS = tuple(ARM_CONTRACTS)
+_RESULT_ARM_WIDTH = max(map(len, (*ARMS, *PARITY_ARMS))) + 1
 PARITY_ARM_BY_LEGACY_ARM: dict[str, str] = {}
 PARITY_MANIFEST_FILE = Path(__file__).parent / "manifests" / "provider-parity-methodology.json"
 LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
@@ -226,7 +227,17 @@ def _arm_orders_by_task(
 # inflated tokens equally on both arms — noise, not signal. scan-query still reaches the codemap
 # arm via PATH (_subprocess_env), and the plain arm needs no plugins, so both arms run clean.
 # Subscription auth is unaffected (auth is not a setting source). Applied to both arms identically.
-_CMD = ["claude", "-p", "--verbose", "--output-format", "stream-json", "--setting-sources", "project,local"]
+# --no-session-persistence makes every cell non-resumable, preventing conversational state reuse.
+_CMD = [
+    "claude",
+    "-p",
+    "--no-session-persistence",
+    "--verbose",
+    "--output-format",
+    "stream-json",
+    "--setting-sources",
+    "project,local",
+]
 
 _ARM_DISALLOWED: dict[str, list[str]] = {
     # plain: also block scan-query via Bash so the control arm can't use the index
@@ -4527,19 +4538,27 @@ class _StructuralRunLoop:
         # Three distinct states, never conflated:
         #   number  — scored & parsed: recall in [0, 1] (0.000 = wrong answer, real miss)
         #   !parse  — scored but answer unparsable: parser-coverage issue, NOT degradation
-        #   ?       — not scored (task type not evaluable)
+        #   ?unscored — not scored (for example, contaminated or non-evaluable)
         if _eff is not None:
             q_str = f"{_eff:.3f}"
         elif run.quality.scored and run.quality.extraction_failed:
             q_str = "!parse"
         else:
-            q_str = "?"
+            q_str = "?unscored"
         # Sk (Skill-tool calls) omitted from the terminal line: the codemap arm queries
         # scan-query via Bash (counted in SQ), never the Skill tool, so it is always 0 here.
         # The raw skill_counts field is still recorded in the results JSONL if it ever fires.
         tool_summary = f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d}"
+        # Ranking evaluators retain their complete oracle in telemetry; the terminal total is
+        # the number of expected rows, matching the scalar-count meaning used by other tasks.
+        metric_expected = run.quality.metric_expected
+        metric_total = len(metric_expected) if isinstance(metric_expected, list) else metric_expected
+        metric_total_str = "?" if metric_total is None else str(metric_total)
         log_fn(
-            f"  {status}{correct} {task['id']}\t{arm}\ttok: in={fmt_tok(run.input_tokens):>6} out={fmt_tok(run.output_tokens):>5}{cost_str} time={fmt_time(run.elapsed_s)}\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
+            f"  {status}{correct} {task['id']} {arm:<{_RESULT_ARM_WIDTH}}"
+            f"\ttok: in={fmt_tok(run.input_tokens):>6} out={fmt_tok(run.output_tokens):>5}{cost_str}"
+            f" time={fmt_time(run.elapsed_s):<6} recall={q_str:<9}"
+            f"\ttotal={metric_total_str:>4}\t{tool_summary}"
         )
         return run
 

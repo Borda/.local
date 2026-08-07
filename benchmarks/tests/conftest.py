@@ -6,12 +6,84 @@ import importlib.util
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 BENCHMARKS_DIR = Path(__file__).parent.parent
 REPO_ROOT = BENCHMARKS_DIR.parent
+_MANIFEST_BUILDERS = (
+    BENCHMARKS_DIR / "build-provider-parity-methodology-manifest.py",
+    BENCHMARKS_DIR / "build-codex-integration-manifest.py",
+    BENCHMARKS_DIR / "build-codex-agentic-manifest.py",
+)
+_GENERATED_MANIFEST_PATHS = (
+    BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json",
+    BENCHMARKS_DIR / "manifests" / "codex-integration.json",
+    BENCHMARKS_DIR / "manifests" / "codex-integration.md",
+    BENCHMARKS_DIR / "manifests" / "codex-agentic.json",
+    BENCHMARKS_DIR / "manifests" / "codex-agentic.md",
+)
+
+
+@dataclass(frozen=True)
+class GeneratedManifestArtifacts:
+    """Paths made available by the deterministic manifest pre-collection build."""
+
+    paths: tuple[Path, ...]
+    initially_missing: tuple[Path, ...]
+    generation_count: int
+
+
+def _generate_manifest_artifacts() -> None:
+    """Generate the methodology, integration, and agentic manifests in dependency order."""
+    for builder in _MANIFEST_BUILDERS:
+        subprocess.run(
+            [sys.executable, str(builder)],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Generate manifests before test-module imports require their JSON payloads."""
+    initially_missing = tuple(path for path in _GENERATED_MANIFEST_PATHS if not path.exists())
+    session.config._generated_manifest_artifacts = GeneratedManifestArtifacts(
+        paths=_GENERATED_MANIFEST_PATHS,
+        initially_missing=initially_missing,
+        generation_count=0,
+    )
+    try:
+        _generate_manifest_artifacts()
+    except subprocess.CalledProcessError as exc:
+        for path in initially_missing:
+            path.unlink(missing_ok=True)
+        details = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+        raise pytest.UsageError(f"generated benchmark manifests could not be built: {details}") from exc
+    session.config._generated_manifest_artifacts = GeneratedManifestArtifacts(
+        paths=_GENERATED_MANIFEST_PATHS,
+        initially_missing=initially_missing,
+        generation_count=1,
+    )
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Remove only manifests created for this test session from an ignored checkout."""
+    artifacts = getattr(session.config, "_generated_manifest_artifacts", None)
+    if artifacts is None:
+        return
+    for path in artifacts.initially_missing:
+        path.unlink(missing_ok=True)
+
+
+@pytest.fixture(scope="session")
+def generated_manifest_artifacts(pytestconfig: pytest.Config) -> GeneratedManifestArtifacts:
+    """Expose the generated benchmark manifest paths and their session provenance."""
+    return pytestconfig._generated_manifest_artifacts
 
 
 def _load_module(module_name: str, filename: str):

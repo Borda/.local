@@ -2001,6 +2001,14 @@ class TestConfigIsolation:
         assert "--setting-sources" in cmd
         assert cmd[cmd.index("--setting-sources") + 1] == "project,local"
 
+    def test_base_cmd_disables_session_persistence(self, script_run_agentic: Any) -> None:
+        """Every agentic cell starts a non-resumable Claude process session."""
+        cmd = script_run_agentic.ModelRunner._CMD
+        assert "--no-session-persistence" in cmd
+        assert "--continue" not in cmd
+        assert "--resume" not in cmd
+        assert "--session-id" not in cmd
+
     @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_strict"])
     def test_canonical_commands_omit_fixed_turn_cap_while_legacy_keeps_40(
         self, script_run_agentic: Any, tmp_path: Path, arm: str

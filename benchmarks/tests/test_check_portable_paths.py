@@ -99,7 +99,7 @@ def test_precommit_runs_portability_checker_on_governed_files() -> None:
     governed = re.compile(portability["files"])
     assert governed.search("benchmarks/run-all.sh")
     assert governed.search("benchmarks/README.md")
-    assert governed.search("benchmarks/manifests/provider-parity-methodology-policy.json")
+    assert governed.search("benchmarks/policy/provider-parity-methodology.json")
     assert not governed.search("benchmarks/manifests/codex-agentic.json")
     assert not governed.search("benchmarks/results/run/telemetry.jsonl")
     assert not governed.search("benchmarks/tests/test_fixture.py")

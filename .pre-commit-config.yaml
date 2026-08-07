@@ -23,9 +23,11 @@ repos:
     hooks:
       - id: end-of-file-fixer
         name: 📄 end-of-file-fixer
+        # Excludes identity-locked benchmark JSON owned by dedicated builders and tests.
         exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: trailing-whitespace
         name: ✂️ trailing-whitespace
+        # Excludes identity-locked benchmark JSON owned by dedicated builders and tests.
         exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: check-json
         name: 🔍 check-json
@@ -47,6 +49,7 @@ repos:
       - id: mixed-line-ending
         name: ↩️ mixed-line-ending
         args: ["--fix=lf"]
+        # Excludes identity-locked benchmark JSON owned by dedicated builders and tests.
         exclude: ^benchmarks/(manifests|suites|tests/fixtures)/.*\.json$
       - id: pretty-format-json
         name: ✨ pretty-format-json
@@ -60,6 +63,7 @@ repos:
     hooks:
       - id: prettier
         name: 🎨 prettier
+        # Coverage: HTML, YAML, TOML, and JavaScript source files.
         files: \.(html|yml|yaml|toml|js)$
         # https://prettier.io/docs/en/options.html#print-width
         args: ["--print-width=120"]
@@ -98,9 +102,9 @@ repos:
     hooks:
       - id: mdformat
         name: 📝 mdformat (general)
-        # Generated benchmark review manifests are checked byte-for-byte by their
-        # builders; generic Markdown formatting would create false source drift.
-        exclude: ^(benchmarks/manifests/|plugins/(?!.*README\.md$)|docs/)
+        # Coverage: general Markdown plus plugin README.md and CHANGELOG.md files.
+        # Excludes generated benchmark manifests, plugin agent/skill sources, and docs handled below.
+        exclude: ^(benchmarks/manifests/|plugins/(?!.*(?:README|CHANGELOG)\.md$)|docs/)
         args: ["--number", "--wrap=no"]
         additional_dependencies:
           - mdformat-gfm
@@ -112,6 +116,7 @@ repos:
           - mdformat-web
       - id: mdformat
         name: 📝 mdformat (docs)
+        # Coverage: docs/ Markdown with the MkDocs-aware extension set; excluded from the general hook.
         files: ^docs/
         args: ["--number", "--wrap=no"]
         additional_dependencies:
@@ -148,6 +153,7 @@ repos:
         name: 🏷️ XML empty structural blocks
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check empty-block
+        # Coverage: plugin agent cards and top-level SKILL.md instruction files.
         files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
         types: [markdown]
 
@@ -155,6 +161,7 @@ repos:
         name: ⚖️ XML unbalanced tag pairs
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check unbalanced
+        # Coverage: plugin agent cards and top-level SKILL.md instruction files.
         files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
         types: [markdown]
 
@@ -162,6 +169,7 @@ repos:
         name: 🔖 XML escaped structural tags
         language: system
         entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check escaped-tag
+        # Coverage: plugin agent cards and top-level SKILL.md instruction files.
         files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
         types: [markdown]
 
@@ -197,6 +205,7 @@ repos:
         name: 🔐 Codex Rig package manifest update
         language: system
         entry: python3 plugins/codex-rig/scripts/build_package.py --update
+        # Coverage: every source or metadata change under the Codex Rig plugin.
         files: ^plugins/codex-rig/
         pass_filenames: false
 
@@ -204,6 +213,7 @@ repos:
         name: 🚧 code fence symmetry
         language: system
         entry: python3 plugins/cc_foundry/bin/check_fence_symmetry.py
+        # Coverage: all Markdown files shipped by plugins.
         files: ^plugins/.*\.md$
         types: [markdown]
 
@@ -260,7 +270,9 @@ repos:
         name: ✂️ trim plugin table padding
         language: system
         entry: python3 plugins/cc_foundry/bin/trim_plugin_tables.py
+        # Coverage: all plugin Markdown tables.
         files: ^plugins/.*\.md$
+        # Excludes plugin README tables, whose deliberate alignment remains human-owned.
         exclude: (?:^|/)README\.md$
         types: [markdown]
 
@@ -291,7 +303,8 @@ repos:
         name: 🧳 No hardcoded machine paths in benchmark source
         language: system
         entry: python3 benchmarks/check-portable-paths.py
-        files: ^benchmarks/(?!manifests/|results/|tests/).*\.(md|py|sh)$|^benchmarks/manifests/provider-parity-methodology-policy\.json$
+        # Coverage: maintained benchmark docs/scripts plus the tracked methodology policy; excludes generated, result, and test trees.
+        files: ^benchmarks/(?!manifests/|results/|tests/).*\.(md|py|sh)$|^benchmarks/policy/provider-parity-methodology\.json$
 
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1 # run `pre-commit autoupdate --repo https://github.com/jorisroovers/gitlint` to set

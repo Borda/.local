@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -41,6 +42,33 @@ from _utilities import find_codemap_bin, git_toplevel, prune_walk_dirs, walk_py_
 from _utilities import gt_is_pending  # noqa: E402
 from _utilities import module_from_init_chain  # noqa: E402
 from _utilities import resolve_index_path as _util_resolve_index_path  # noqa: E402
+
+
+class TaskType(str, Enum):
+    """Closed set of task types supported by the benchmark validator.
+
+    Task JSON uses each member's string value; the generator converts that
+    boundary value to this enum before internal routing.
+
+    Examples:
+        >>> TaskType("symbol_extraction").value
+        'symbol_extraction'
+    """
+
+    SYMBOL_EXTRACTION = "symbol_extraction"
+    FN_CALL_GRAPH = "fn_call_graph"
+    REVIEW_ASSISTANCE = "review_assistance"
+    CODE_QUALITY = "code_quality"
+    DEVELOP_BLAST_RADIUS = "develop_blast_radius"
+    DIFF_IMPACT = "diff_impact"
+    GRAPH_CENTRAL = "graph_central"
+    GRAPH_PATH = "graph_path"
+    GRAPH_FN_BLAST = "graph_fn_blast"
+    MODULE_BLAST_RADIUS = "module_blast_radius"
+    DEBUG_FROM_TRACE = "debug_from_trace"
+    FEATURE_SCAFFOLDING = "feature_scaffolding"
+    REAL_ISSUE = "real_issue"
+
 
 # Test-file / test-directory detection — mirrors scan-index ``_TEST_PATH_RE`` so the AST oracle
 # excludes the same test modules scan-query does (review N1). Matched against repo-relative paths.
@@ -87,7 +115,7 @@ _EXPECTED_QUERY_POLICIES: frozenset[str] = frozenset({"any_match", "all_required
 
 
 def _expected_query_contract_errors(
-    tasks: Iterable[Mapping[str, Any]], *, executable_task_types: frozenset[str] | None = None
+    tasks: Iterable[Mapping[str, Any]], *, executable_task_types: frozenset[TaskType] | None = None
 ) -> list[str]:
     """Return structural and command-support defects in executable task query contracts.
 
@@ -102,8 +130,14 @@ def _expected_query_contract_errors(
     errors: list[str] = []
     for task in tasks:
         task_id = task.get("id", "<unknown>")
-        task_type = task.get("type")
-        if task_type == "real_issue" or (executable_task_types is not None and task_type not in executable_task_types):
+        raw_task_type = task.get("type")
+        try:
+            task_type = TaskType(raw_task_type)
+        except ValueError:
+            task_type = None
+        if task_type == TaskType.REAL_ISSUE or (
+            executable_task_types is not None and task_type not in executable_task_types
+        ):
             continue
         queries = task.get("expected_queries")
         if not isinstance(queries, list) or not queries:
@@ -2315,32 +2349,32 @@ def _validate_real_issue(task: dict, sq: Path, index: Path, repo: Path) -> tuple
 
 
 VALIDATORS = {
-    "symbol_extraction": _validate_symbol,
-    "fn_call_graph": _validate_fn,
-    "review_assistance": _validate_rv,
-    "code_quality": _validate_oss,
-    "develop_blast_radius": _validate_fn,
-    "diff_impact": _validate_diff_impact,
-    "graph_central": _validate_graph_central,
-    "graph_path": _validate_graph_path,
-    "graph_fn_blast": _validate_graph_fn_blast,
-    "module_blast_radius": _validate_module_blast_radius,
-    "debug_from_trace": _validate_debug,
-    "feature_scaffolding": _validate_feature,
-    "real_issue": _validate_real_issue,
+    TaskType.SYMBOL_EXTRACTION: _validate_symbol,
+    TaskType.FN_CALL_GRAPH: _validate_fn,
+    TaskType.REVIEW_ASSISTANCE: _validate_rv,
+    TaskType.CODE_QUALITY: _validate_oss,
+    TaskType.DEVELOP_BLAST_RADIUS: _validate_fn,
+    TaskType.DIFF_IMPACT: _validate_diff_impact,
+    TaskType.GRAPH_CENTRAL: _validate_graph_central,
+    TaskType.GRAPH_PATH: _validate_graph_path,
+    TaskType.GRAPH_FN_BLAST: _validate_graph_fn_blast,
+    TaskType.MODULE_BLAST_RADIUS: _validate_module_blast_radius,
+    TaskType.DEBUG_FROM_TRACE: _validate_debug,
+    TaskType.FEATURE_SCAFFOLDING: _validate_feature,
+    TaskType.REAL_ISSUE: _validate_real_issue,
 }
 
 
 # ---- GROUND TRUTH UPDATER ----
 
 
-def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existing_gt: dict) -> dict:
+def _build_updated_ground_truth(task_type: TaskType, live_gt: dict[str, Any], existing_gt: dict) -> dict:
     """Merge live computed values into the existing ground_truth dict.
 
     Args:
-        task_type: One of "symbol_extraction", "fn_call_graph", "develop_blast_radius",
-            "review_assistance", "code_quality", "diff_impact", "graph_central", "graph_path",
-            "graph_fn_blast", or "module_blast_radius".
+        task_type: Any key of ``VALIDATORS``. Named there rather than re-listed here — the
+            previous inline list had already drifted, omitting "debug_from_trace",
+            "feature_scaffolding", and "real_issue".
         live_gt: Computed ground truth (scan-query output for legacy types; AST oracle for the
             diff-impact / graph series).
         existing_gt: Existing ground_truth from the task file (for fields not recomputed).
@@ -2348,19 +2382,25 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
     Returns:
         Updated ground_truth dict.
     """
-    if task_type == "symbol_extraction":
+    if task_type == TaskType.SYMBOL_EXTRACTION:
         return {**existing_gt, **live_gt}
-    if task_type in ("fn_call_graph", "develop_blast_radius", "debug_from_trace"):
+    if task_type in (TaskType.FN_CALL_GRAPH, TaskType.DEVELOP_BLAST_RADIUS, TaskType.DEBUG_FROM_TRACE):
         return {**existing_gt, **live_gt}
-    if task_type in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast", "module_blast_radius"):
+    if task_type in (
+        TaskType.DIFF_IMPACT,
+        TaskType.GRAPH_CENTRAL,
+        TaskType.GRAPH_PATH,
+        TaskType.GRAPH_FN_BLAST,
+        TaskType.MODULE_BLAST_RADIUS,
+    ):
         # AST-oracle-only GT (review DI/GR/MB); live_gt already carries the cleared gt_pending flag.
         return {**existing_gt, **live_gt}
-    if task_type == "review_assistance":
+    if task_type == TaskType.REVIEW_ASSISTANCE:
         # Review refreshes nested answer keys in place.  Top-level
         # ``ground_truth.oracle_views`` deliberately remains attached to the
         # task so a regeneration never erases the named AST/static semantics.
         return live_gt  # caller updates sub_questions in place
-    if task_type == "code_quality":
+    if task_type == TaskType.CODE_QUALITY:
         return {**existing_gt, **live_gt}
     return existing_gt
 
@@ -2370,16 +2410,16 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
 # other type is scan-query-derived (circular) and requires --update-from-tool (review C-3).
 # The diff-impact / graph series (review DI/GR) are AST-oracle-only by construction — their GT never
 # touches scan-query — so they refresh under a plain --update alongside the caller-graph types.
-_ORACLE_BACKED_TYPES: frozenset[str] = frozenset(
+_ORACLE_BACKED_TYPES: frozenset[TaskType] = frozenset(
     {
-        "fn_call_graph",
-        "develop_blast_radius",
-        "diff_impact",
-        "graph_central",
-        "graph_path",
-        "graph_fn_blast",
-        "module_blast_radius",
-        "debug_from_trace",
+        TaskType.FN_CALL_GRAPH,
+        TaskType.DEVELOP_BLAST_RADIUS,
+        TaskType.DIFF_IMPACT,
+        TaskType.GRAPH_CENTRAL,
+        TaskType.GRAPH_PATH,
+        TaskType.GRAPH_FN_BLAST,
+        TaskType.MODULE_BLAST_RADIUS,
+        TaskType.DEBUG_FROM_TRACE,
     }
 )
 
@@ -2408,13 +2448,16 @@ def _update_is_oracle_backed(task: dict) -> bool:
         >>> _update_is_oracle_backed({"type": "review_assistance", "expected_queries": [{"cmd": "rdeps"}]})
         True
     """
-    ttype = task.get("type", "")
-    if ttype in _ORACLE_BACKED_TYPES:
+    try:
+        task_type = TaskType(task.get("type", ""))
+    except ValueError:
+        return False
+    if task_type in _ORACLE_BACKED_TYPES:
         return True
-    if ttype == "review_assistance":
+    if task_type == TaskType.REVIEW_ASSISTANCE:
         queries = task.get("expected_queries", [])
         return bool(queries) and all(query.get("cmd") in _RV_AST_COMMANDS for query in queries)
-    return ttype == "code_quality" and task.get("ground_truth", {}).get("check") in _ORACLE_BACKED_CQ_CHECKS
+    return task_type == TaskType.CODE_QUALITY and task.get("ground_truth", {}).get("check") in _ORACLE_BACKED_CQ_CHECKS
 
 
 def _warn_circular_update(task_id: str, existing_gt: dict, live_gt: dict) -> None:
@@ -2470,13 +2513,13 @@ def _refresh_task_gt(task: dict, live_gt: dict, update_from_tool: bool) -> tuple
         (task_to_store, status_message) — when a circular refresh is skipped, the original
         task is returned unchanged with a SKIP status.
     """
-    task_type = task.get("type", "")
+    task_type = TaskType(task.get("type", ""))
     if not _update_is_oracle_backed(task):
         if not update_from_tool:
             return task, "SKIP UPDATE (scan-query-derived; circular — pass --update-from-tool to force)"
         _warn_circular_update(task.get("id", "?"), task.get("ground_truth", {}), live_gt)
     updated_task = dict(task)
-    if task_type == "review_assistance":
+    if task_type == TaskType.REVIEW_ASSISTANCE:
         updated_task["sub_questions"] = _merge_rv_sub_questions(task, live_gt)
     else:
         updated_task["ground_truth"] = _build_updated_ground_truth(task_type, live_gt, task.get("ground_truth", {}))
@@ -2582,11 +2625,15 @@ def main(
     # would leave it pointing at the last task dict, making the full-file write-back unreachable.
     for entry in tasks:
         task_id = entry.get("id", "?")
-        task_type = entry.get("type", "")
+        raw_task_type = entry.get("type", "")
+        try:
+            task_type = TaskType(raw_task_type)
+        except ValueError:
+            task_type = None
         validator = VALIDATORS.get(task_type)
 
         if validator is None:
-            print(f"  SKIP  {task_id}: unknown type {task_type!r}")
+            print(f"  SKIP  {task_id}: unknown type {raw_task_type!r}")
             skipped.append(task_id)
             updated_tasks.append(entry)
             continue

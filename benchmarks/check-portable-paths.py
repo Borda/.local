@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 BENCHMARKS = Path(__file__).resolve().parent
-POLICY_SEED = BENCHMARKS / "manifests" / "provider-parity-methodology-policy.json"
+POLICY_SEED = BENCHMARKS / "policy" / "provider-parity-methodology.json"
 SOURCE_SUFFIXES = frozenset({".json", ".md", ".py", ".sh"})
 EXCLUDED_DIRS = frozenset({"manifests", "results", "tests"})
 _SLASH = re.escape(chr(47))

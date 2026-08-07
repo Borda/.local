@@ -1438,9 +1438,11 @@ class ModelRunner:
     # codemap plugin and semble MCP, so they are re-supplied per arm via --plugin-dir / --mcp-config
     # in _arm_isolation_flags (the tools under test must survive isolation). Subscription auth is
     # not a setting source, so it is unaffected.
+    # --no-session-persistence makes every cell non-resumable, preventing conversational state reuse.
     _CMD = [
         "claude",
         "-p",
+        "--no-session-persistence",
         "--verbose",
         "--output-format",
         "stream-json",

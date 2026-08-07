@@ -222,9 +222,9 @@ def test_agentic_execution_contract_records_provider_specific_default_cells() ->
 def test_methodology_builder_rejects_tampered_passthrough_policy_seed(tmp_path: Path) -> None:
     """A generated methodology file can never bootstrap changed policy into acceptance."""
     builder = runpy.run_path(str(METHODOLOGY_BUILDER))
-    seed = _load(BENCHMARKS / "manifests" / "provider-parity-methodology-policy.json")
+    seed = _load(BENCHMARKS / "policy" / "provider-parity-methodology.json")
     seed["execution_controls"]["budget"] = "tampered"
-    seed_path = tmp_path / "provider-parity-methodology-policy.json"
+    seed_path = tmp_path / "provider-parity-methodology.json"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
     builder["_load_policy_seed"].__globals__["POLICY_SEED"] = seed_path
 
@@ -371,7 +371,7 @@ def _assert_manifest_matches_materialized_suite_inputs(manifest: dict[str, Any])
 
 def test_methodology_manifest_uses_policy_seed_and_current_suite_inputs() -> None:
     """The shared committed source binds current suites without prior-run history."""
-    policy = _load(BENCHMARKS / "manifests" / "provider-parity-methodology-policy.json")
+    policy = _load(BENCHMARKS / "policy" / "provider-parity-methodology.json")
     methodology = _load(METHODOLOGY_MANIFEST)
 
     assert "methodology_change_ledger" not in methodology
