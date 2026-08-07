@@ -10,6 +10,7 @@ import dev_parse_args
 from dev_parse_args import (
     SKILL_SPECS,
     FlagSpec,
+    SpecType,
     extract_flags,
     main,
     parse_specs,
@@ -29,27 +30,27 @@ class TestParseSpecs:
     def test_bool_spec(self):
         """--bool produces FlagSpec with correct fields."""
         specs = parse_specs(["--bool", "semble", "SEMBLE_ENABLED", "false"])
-        assert specs == [FlagSpec(kind="bool", flag="semble", var="SEMBLE_ENABLED", default="false")]
+        assert specs == [FlagSpec(kind=SpecType.BOOL, flag="semble", var="SEMBLE_ENABLED", default="false")]
 
     def test_neg_bool_spec(self):
         """--neg-bool produces FlagSpec with neg-bool kind."""
         specs = parse_specs(["--neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"])
-        assert specs == [FlagSpec(kind="neg-bool", flag="no-challenge", var="CHALLENGE_ENABLED", default="true")]
+        assert specs == [FlagSpec(kind=SpecType.NEG_BOOL, flag="no-challenge", var="CHALLENGE_ENABLED", default="true")]
 
     def test_codemap_spec(self):
         """--codemap takes only VAR + DEFAULT (no FLAG token)."""
         specs = parse_specs(["--codemap", "CODEMAP_RAW", "auto"])
-        assert specs == [FlagSpec(kind="codemap", flag="", var="CODEMAP_RAW", default="auto")]
+        assert specs == [FlagSpec(kind=SpecType.CODEMAP, flag="", var="CODEMAP_RAW", default="auto")]
 
     def test_int_spec(self):
         """--int spec stored with default as string."""
         specs = parse_specs(["--int", "max-depth", "MAX_DEPTH", "3"])
-        assert specs == [FlagSpec(kind="int", flag="max-depth", var="MAX_DEPTH", default="3")]
+        assert specs == [FlagSpec(kind=SpecType.INT, flag="max-depth", var="MAX_DEPTH", default="3")]
 
     def test_str_spec(self):
         """--str spec with empty default."""
         specs = parse_specs(["--str", "plan", "PLAN_FILE", ""])
-        assert specs == [FlagSpec(kind="str", flag="plan", var="PLAN_FILE", default="")]
+        assert specs == [FlagSpec(kind=SpecType.STR, flag="plan", var="PLAN_FILE", default="")]
 
     def test_multiple_specs(self):
         """Multiple specs parsed in order."""
@@ -65,8 +66,8 @@ class TestParseSpecs:
             ]
         )
         assert len(specs) == 2
-        assert specs[0].kind == "bool"
-        assert specs[1].kind == "codemap"
+        assert specs[0].kind == SpecType.BOOL
+        assert specs[1].kind == SpecType.CODEMAP
 
     def test_unknown_keyword_exits(self):
         """Unknown spec keyword calls sys.exit(1)."""

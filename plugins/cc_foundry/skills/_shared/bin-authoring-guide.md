@@ -278,6 +278,8 @@ def _subprocess_call(timeout: int = 5) -> str:
 
 ## Python Script Skeleton
 
+> Closed option sets (severity, mode, status, kind, action) must be a named `(str, Enum)` — never bare strings compared inline. `argparse` derives `choices=` from the enum so CLI and type cannot drift; convert at the boundary, pass the enum inward. Full rule + `Enum` vs `Literal` table: `rules/python-code.md` §Closed Option Sets.
+
 Minimum required structure for any new Python bin/ script:
 
 ```python

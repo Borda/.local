@@ -34,7 +34,23 @@ import argparse
 import re
 import shlex
 import sys
+from enum import Enum
 from typing import Final
+
+
+class ResolveMode(str, Enum):
+    """Routing verdict emitted as the ``MODE`` shell variable.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
+    ``>=3.10``. Members are listed in match order — PR, PR-with-report, bare
+    report, then the comment-dispatch fallback.
+    """
+
+    PR = "pr"
+    PR_REPORT = "pr+report"
+    REPORT = "report"
+    COMMENT_DISPATCH = "comment-dispatch"
+
 
 _PR_NUMBER_RE: Final = re.compile(r"^\s*#?(\d+)(\s+report)?\s*$")
 _PR_URL_RE: Final = re.compile(r"^\s*(https://github\.com/\S+?)(\s+report)?\s*$")
@@ -65,31 +81,30 @@ def parse_resolve_args(arguments: str) -> dict[str, str]:
     """
     pr_number = ""
     pr_url = ""
-    mode = ""
+    mode = ResolveMode.COMMENT_DISPATCH
     out_args = arguments
 
     m = _PR_NUMBER_RE.match(arguments)
     if m:
         pr_number = m.group(1)
-        mode = "pr+report" if m.group(2) else "pr"
+        mode = ResolveMode.PR_REPORT if m.group(2) else ResolveMode.PR
     else:
         m = _PR_URL_RE.match(arguments)
         if m:
             pr_url = m.group(1)
-            mode = "pr+report" if m.group(2) else "pr"
+            mode = ResolveMode.PR_REPORT if m.group(2) else ResolveMode.PR
         elif _BARE_REPORT_RE.match(arguments):
-            mode = "report"
+            mode = ResolveMode.REPORT
         else:
             # Only now strip a single leading '#'; comment dispatch may carry it
             # as a Markdown header anchor.
             if out_args.startswith("#"):
                 out_args = out_args[1:]
-            mode = "comment-dispatch"
 
     return {
         "PR_NUMBER": pr_number,
         "PR_URL": pr_url,
-        "MODE": mode,
+        "MODE": mode.value,
         "ARGUMENTS": out_args,
     }
 

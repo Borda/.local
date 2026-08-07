@@ -105,7 +105,7 @@ def test_doctor_validates_package_without_writing_user_state(tmp_path: Path) -> 
     before = snapshot(tmp_path)
 
     result = module.diagnose(
-        action="doctor",
+        action=module.ManagerAction.DOCTOR,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=codex,
@@ -168,7 +168,7 @@ def test_status_reports_corrupt_state_as_blocked_without_mutation(tmp_path: Path
     before = snapshot(tmp_path)
 
     result = module.diagnose(
-        action="status",
+        action=module.ManagerAction.STATUS,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=codex,
@@ -266,7 +266,7 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     install_id = "123e4567-e89b-42d3-a456-426614174001"
     before_plan = snapshot(tmp_path)
     install = module.plan_mutation(
-        action="install",
+        action=module.ManagerAction.INSTALL,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=codex,
@@ -285,7 +285,7 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     assert stat.S_IMODE(agents.stat().st_mode) == 0o755
     installed = snapshot(home)
     repeated = module.plan_mutation(
-        action="install",
+        action=module.ManagerAction.INSTALL,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=codex,
@@ -297,7 +297,7 @@ def test_internal_approved_install_reinstall_remove_converges(tmp_path: Path) ->
     assert snapshot(home) == installed
 
     removal = module.plan_mutation(
-        action="remove",
+        action=module.ManagerAction.REMOVE,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=codex,
@@ -383,7 +383,7 @@ def test_wrong_approval_digest_causes_zero_writes(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     plan = module.plan_mutation(
-        action="install",
+        action=module.ManagerAction.INSTALL,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=executable(tmp_path),
@@ -405,7 +405,7 @@ def test_under_lock_drift_preserves_concurrent_foreign_target(tmp_path: Path) ->
     home = tmp_path / "home"
     home.mkdir(mode=0o700)
     plan = module.plan_mutation(
-        action="install",
+        action=module.ManagerAction.INSTALL,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=executable(tmp_path),
@@ -461,7 +461,7 @@ def test_active_package_probe_uses_disposable_home_copy(tmp_path: Path) -> None:
     before = snapshot(home)
 
     result = module.diagnose(
-        action="doctor",
+        action=module.ManagerAction.DOCTOR,
         codex_home=home,
         plugin_root=plugin,
         codex_binary=codex,
@@ -503,16 +503,16 @@ manager.apply_mutation(plan, plan.approval.digest, checkpoint=kill)
     killed = subprocess.run([sys.executable, "-c", child], check=False, timeout=30)
 
     assert killed.returncode == 97
-    recovery = module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT)
+    recovery = module.plan_recovery(action=module.ManagerAction.INSTALL, codex_home=home, plugin_root=PLUGIN_ROOT)
     assert recovery is not None
     assert recovery.journal.journal_state == "MUTATING"
     terminal = module.apply_recovery(recovery, recovery.digest)
     assert terminal.journal_state == "ROLLED_BACK"
     assert list((home / "agents").glob("codex-rig-*.toml")) == []
-    assert module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT) is None
+    assert module.plan_recovery(action=module.ManagerAction.INSTALL, codex_home=home, plugin_root=PLUGIN_ROOT) is None
 
     resumed = module.plan_mutation(
-        action="install",
+        action=module.ManagerAction.INSTALL,
         codex_home=home,
         plugin_root=PLUGIN_ROOT,
         codex_binary=codex,
@@ -555,7 +555,7 @@ manager.apply_mutation(plan, plan.approval.digest, checkpoint=kill)
     killed = subprocess.run([sys.executable, "-c", child], check=False, timeout=30)
 
     assert killed.returncode == 98
-    recovery = module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT)
+    recovery = module.plan_recovery(action=module.ManagerAction.INSTALL, codex_home=home, plugin_root=PLUGIN_ROOT)
     assert recovery.journal.journal_state == "STATE_COMMITTED"
     terminal = module.apply_recovery(recovery, recovery.digest)
     assert terminal.journal_state == "COMMITTED"
@@ -575,7 +575,7 @@ def test_partial_initial_journal_cleanup_requires_exact_approval(tmp_path: Path)
     initial.write_bytes(b'{"partial"')
     initial.chmod(0o600)
 
-    recovery = module.plan_recovery(action="install", codex_home=home, plugin_root=PLUGIN_ROOT)
+    recovery = module.plan_recovery(action=module.ManagerAction.INSTALL, codex_home=home, plugin_root=PLUGIN_ROOT)
 
     assert recovery.journal is None
     assert module.apply_recovery(recovery, recovery.digest) is None

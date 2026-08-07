@@ -45,7 +45,7 @@ def test_windows_doctor_verifies_package_and_inventories_shims(
     before = {path.relative_to(tmp_path): path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
 
     result = module.diagnose(
-        action="status",
+        action=module.ManagerAction.STATUS,
         codex_home=codex_home,
         plugin_root=plugin_root,
         codex_binary=executable,

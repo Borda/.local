@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from live_contract import build_prompt, candidate_findings, prompt_sha256, role_context, task_contract_sha256
+from live_contract import Layout, build_prompt, candidate_findings, prompt_sha256, role_context, task_contract_sha256
 
 PRICING_REF = "normalized-token-v1:uncached+0.1*cached+4*output"
 
@@ -384,8 +384,8 @@ def main() -> int:
     parser.add_argument("--out", required=True, type=Path, help="Output directory for plans and observations.")
     parser.add_argument(
         "--layout",
-        choices=("source", "plugin"),
-        default="plugin",
+        choices=[layout.value for layout in Layout],
+        default=Layout.PLUGIN.value,
         help="Instruction layout: source uses project .codex agents; plugin uses packaged role cards.",
     )
     parser.add_argument(

@@ -48,7 +48,24 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+
+
+class GuardMode(str, Enum):
+    """Operation this invocation performs.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``.
+
+    Examples:
+        >>> GuardMode.CREATE == "create"
+        True
+    """
+
+    CLEANUP = "cleanup"
+    SCAN = "scan"
+    CREATE = "create"
+
 
 _DEFAULT_MARKER = "borda-ai-rig/foundry/"
 
@@ -517,7 +534,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "mode",
-        choices=("cleanup", "scan", "create"),
+        choices=[mode.value for mode in GuardMode],
         help=(
             "`cleanup` removes obsolete foundry-managed symlinks; "
             "`scan` prints conflicts; "
@@ -562,7 +579,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: home directory {str(home)!r} is not a directory", file=sys.stderr)
         return 1
 
-    if args.mode == "create":
+    if args.mode == GuardMode.CREATE:
         if not args.src or not args.dest:
             print(
                 "symlink_with_guard: `create` mode requires both --src and --dest",
@@ -602,12 +619,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if args.mode == "cleanup":
+    if args.mode == GuardMode.CLEANUP:
         for line in cleanup(plugin_root, home, args.marker):
             print(f"  {line}")
         return 0
 
-    # mode == "scan"
+    # mode == GuardMode.SCAN
     for conflict in scan(plugin_root, home, args.marker):
         print(conflict)
     return 0

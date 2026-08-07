@@ -50,7 +50,23 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from shutil import which
+
+
+class CommitMode(str, Enum):
+    """How ``oss:resolve`` turns the cherry-picked action items into commits.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
+    ``>=3.10``. Only ``EACH`` keeps one commit per action item; every other mode
+    stages the diff and lets a later step decide the commit shape.
+    """
+
+    EACH = "each"
+    GROUPED = "grouped"
+    ALL = "all"
+    STAGE = "stage"
+
 
 # git argv guard: a sha reaches `git cherry-pick <sha>` unquoted, so a value
 # starting with '-' would be parsed as an option (e.g. --strategy=evil can
@@ -203,7 +219,7 @@ def _conflicted_files(git: str) -> list[str]:
     return [f for f in proc.stdout.splitlines() if f.strip()]
 
 
-def run_plan(entries: list[PlanEntry], commit_mode: str) -> dict[str, object]:
+def run_plan(entries: list[PlanEntry], commit_mode: CommitMode) -> dict[str, object]:
     """Cherry-pick each plan entry in order, soft-resetting when not in ``each`` mode.
 
     Stops at the first cherry-pick conflict and leaves the repository in that
@@ -213,9 +229,9 @@ def run_plan(entries: list[PlanEntry], commit_mode: str) -> dict[str, object]:
 
     Args:
         entries: Ordered cherry-pick plan.
-        commit_mode: One of ``each``, ``grouped``, ``all``, ``stage``. Any
-            value other than ``each`` triggers an immediate soft-reset after
-            each successful cherry-pick.
+        commit_mode: A ``CommitMode`` member. Any mode other than
+            ``CommitMode.EACH`` triggers an immediate soft-reset after each
+            successful cherry-pick.
 
     Returns:
         ``{"applied": [item_id, ...], "conflict": {"item_id", "sha", "files"} | None,
@@ -240,7 +256,7 @@ def run_plan(entries: list[PlanEntry], commit_mode: str) -> dict[str, object]:
                 },
                 "remaining": [e.item_id for e in entries[i + 1 :]],
             }
-        if commit_mode != "each":
+        if commit_mode != CommitMode.EACH:
             subprocess.run([git, "reset", "--soft", "HEAD~1"], check=False, timeout=3)  # noqa: S603
         applied.append(entry.item_id)
     return {"applied": applied, "conflict": None, "remaining": []}
@@ -264,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Cherry-pick per-item commits from parallel specialist worktrees, in priority order.",
     )
     parser.add_argument("--plan", required=True, help="Path to plan JSON file: [{item_id, sha, group?, module?}, ...]")
-    parser.add_argument("--commit-mode", required=True, choices=["each", "grouped", "all", "stage"])
+    parser.add_argument("--commit-mode", required=True, choices=[m.value for m in CommitMode])
     parser.add_argument(
         "--centrality-file",
         default=None,
@@ -286,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
             centrality = {str(k): float(v) for k, v in json.load(f).items()}
         entries = order_plan(entries, centrality)
 
-    result = run_plan(entries, args.commit_mode)
+    result = run_plan(entries, CommitMode(args.commit_mode))
     print(json.dumps(result))
     return 0 if result["conflict"] is None else 1
 

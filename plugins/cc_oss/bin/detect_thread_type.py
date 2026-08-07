@@ -36,7 +36,23 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from enum import Enum
 from shutil import which
+
+
+class ThreadType(str, Enum):
+    """Kind of GitHub thread behind a number/URL.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
+    ``>=3.10``. ``UNKNOWN`` is the conservative result when neither the issues
+    API nor the discussions GraphQL query returns a record.
+    """
+
+    ISSUE = "issue"
+    PR = "pr"
+    DISCUSSION = "discussion"
+    UNKNOWN = "unknown"
+
 
 # Match the number at the end of a GitHub thread URL:
 # https://github.com/<owner>/<repo>/(issues|pull|discussions)/<N>
@@ -248,7 +264,7 @@ def _gh_discussion_lookup(gh: str, number: str, timeout: int) -> dict | None:
     return discussion
 
 
-def detect(number: str, report_mtime: int | None, gh: str, timeout: int) -> tuple[str, str, bool]:
+def detect(number: str, report_mtime: int | None, gh: str, timeout: int) -> tuple[ThreadType, str, bool]:
     """Detect the thread type and the drift flag.
 
     Probes the issues API first (covers both issues and PRs); falls back
@@ -261,29 +277,29 @@ def detect(number: str, report_mtime: int | None, gh: str, timeout: int) -> tupl
         timeout: Subprocess timeout in seconds for every gh invocation.
 
     Returns:
-        ``(type, updated_at, drift)`` tuple where ``type`` is one of
-        ``"issue" | "pr" | "discussion" | "unknown"`` and ``updated_at``
-        is the ISO 8601 timestamp (empty string for unknown).
+        ``(type, updated_at, drift)`` tuple where ``type`` is a ``ThreadType``
+        member and ``updated_at`` is the ISO 8601 timestamp (empty string for
+        ``ThreadType.UNKNOWN``).
     """
     item = _gh_issue_lookup(gh, number, timeout)
     if item is not None:
-        type_ = "pr" if item.get("pull_request") else "issue"
+        type_ = ThreadType.PR if item.get("pull_request") else ThreadType.ISSUE
         updated_at = item.get("updated_at", "") or ""
         return type_, updated_at, compute_drift(updated_at, report_mtime)
     disc = _gh_discussion_lookup(gh, number, timeout)
     if disc is not None:
         updated_at = disc.get("updatedAt", "") or ""
-        return "discussion", updated_at, compute_drift(updated_at, report_mtime)
-    return "unknown", "", False
+        return ThreadType.DISCUSSION, updated_at, compute_drift(updated_at, report_mtime)
+    return ThreadType.UNKNOWN, "", False
 
 
-def _emit(type_: str, updated_at: str, drift: bool) -> None:
+def _emit(type_: ThreadType, updated_at: str, drift: bool) -> None:
     """Write TYPE, UPDATED_AT, DRIFT to ${TMPDIR:-/tmp}/oss-detect-*-<CSID> temp files.
 
     Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
 
     Args:
-        type_: One of ``"issue" | "pr" | "discussion" | "unknown"``.
+        type_: Detected ``ThreadType`` member; written out as its plain value.
         updated_at: ISO 8601 timestamp (empty when unknown).
         drift: ``True`` when the report should be refetched.
     """
@@ -293,7 +309,7 @@ def _emit(type_: str, updated_at: str, drift: bool) -> None:
     csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
     tmpdir = os.environ.get("TMPDIR") or tempfile.gettempdir()
     drift_str = "true" if drift else "false"
-    for key, val in (("type", type_), ("updated-at", updated_at), ("drift", drift_str)):
+    for key, val in (("type", type_.value), ("updated-at", updated_at), ("drift", drift_str)):
         with open(f"{tmpdir}/oss-detect-{key}-{csid}", "w") as fh:
             fh.write(val)
 
@@ -337,14 +353,14 @@ def main(argv: list[str] | None = None) -> int:
     number = parse_number(args.number)
     if number is None:
         print(f"⚠ detect_thread_type: cannot parse '{args.number}' as number or URL", file=sys.stderr)
-        _emit("unknown", "", False)
+        _emit(ThreadType.UNKNOWN, "", False)
         return 0
 
     try:
         gh = _resolve("gh")
     except FileNotFoundError as exc:
         print(f"⚠ detect_thread_type: {exc}", file=sys.stderr)
-        _emit("unknown", "", False)
+        _emit(ThreadType.UNKNOWN, "", False)
         return 0
 
     type_, updated_at, drift = detect(number, args.report_mtime, gh, args.timeout)

@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "7e5e66a874366d6f75969780fbdee16ee483d6bb089e5cc84495f2ee2cb8e506"
+      "sha256": "54f6cad00be31e31ac130ed900bbc3a2b8603fdbfca0362254f246bec66a3fe0"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "3d6f5ecfe14c002927f63f9be8b53ee691fd8ffa8882d749546dd122a3293fa3"
+      "sha256": "72e6397f1daa9fca68011bbbb662b31fb4be2423bdfc243d571541a5a88ce0e0"
     },
     {
       "mode": "0644",
@@ -212,22 +212,22 @@
     {
       "mode": "0644",
       "path": "runtime/calibration/live_contract.py",
-      "sha256": "f90ae5f96fe56547003024e66815e711a1e240cd6dbe89717d9b53ece40e7c04"
+      "sha256": "b821bc6557f123128ca7f2d0f57b3232a865b90f3071f396830540178f22c0c1"
     },
     {
       "mode": "0755",
       "path": "runtime/calibration/run.py",
-      "sha256": "25e869dc963c28c669f3f9dda513943e4a0c557a9f5c0ea4ea59fb3c6afa489f"
+      "sha256": "dbe26c4b6c3ea4b4f6328e9f4d09c17ca70161bea5c96623f62e052a82ce3dbe"
     },
     {
       "mode": "0755",
       "path": "runtime/calibration/run_live_ab.py",
-      "sha256": "578768ca3348fad28df8e12cb8200b952cec11f4c9e3dbcd9d0af1033f453afb"
+      "sha256": "75fad95b3309f64ea814b211ba647391b891c1ce847c82dece35c55a98096d72"
     },
     {
       "mode": "0755",
       "path": "runtime/calibration/score_behavioral.py",
-      "sha256": "1d5db893130bd22e31f99fdee6be6abc1d395849416d40199e312c2e42e6d5e5"
+      "sha256": "a303f348d76407425c028361206e4dc58071c04084116a9f2ed35c8ebcd1873b"
     },
     {
       "mode": "0644",
@@ -302,12 +302,12 @@
     {
       "mode": "0644",
       "path": "scripts/manage_role_agents.py",
-      "sha256": "57f34f685a9610728758cf7e05d461b6f0e6bc3abdfa4a6e3c9a4de6c940d19f"
+      "sha256": "2a298413ff9b2a1925ca6f793c392b92553afc055a0fe67f4d7a7f9deeb0e215"
     },
     {
       "mode": "0755",
       "path": "scripts/sync_codex.py",
-      "sha256": "5e151b48bbf33a50c92f107f1502e20ebe5bc343755022ac75ba08ec3ad740f6"
+      "sha256": "d6f6998ea86fc894d0237c9c18d9bc90846a1ec2b57639d61dfb1e6fe361a3b9"
     },
     {
       "mode": "0755",
@@ -402,7 +402,7 @@
     {
       "mode": "0755",
       "path": "shared/write-result.py",
-      "sha256": "94f9f5253a600b8cf02899ff1a1840d4e59d868623097f808a88fb514b945b3c"
+      "sha256": "2d783c1a42c37bf72cc4abce00cf7ec40b856d0ab1d41a0500869df72f37783f"
     },
     {
       "mode": "0644",
@@ -682,12 +682,12 @@
     {
       "mode": "0644",
       "path": "tests/test_manage_role_agents.py",
-      "sha256": "68dad54ab96282dc03ff705d88cd5da8dd5c666856829deb36dd27b88c898053"
+      "sha256": "64e1fe65a41d85904e2f84a470385db9e0e3edc01eabb6118c101c755da231ef"
     },
     {
       "mode": "0644",
       "path": "tests/test_manage_role_agents_windows.py",
-      "sha256": "7056cc7c69bfd0deb52dd224bb0ae34b09e89d5e492299d9a7f197c9a537f2ea"
+      "sha256": "67b9c5df334c6f0c4a15f5be62cdd0f1663c7840dc81db0d544d1de520980d6c"
     },
     {
       "mode": "0644",
@@ -953,5 +953,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.4.4"
+  "version": "0.4.5"
 }

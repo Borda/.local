@@ -598,16 +598,16 @@ _Empty rows = no direct agent dispatches (intentional, not an omission). ✓ = a
 | `external-data.md`      | (global)                        | Pagination and completeness rules for REST, GraphQL, `gh` CLI — never work on partial result sets                        |
 | `foundry-config.md`     | `.claude/**`                    | Plan mode gate for `.claude/` edits, post-edit checklist, XML tag conventions, cleanup hook, settings.json allow entries |
 | `git-commit.md`         | (global)                        | Commit message format, push safety (explicit confirmation required), branch safety                                       |
-| `python-code.md`        | `**/*.py`                       | Python style: docstrings, deprecation (pyDeprecate), library API freshness checks, version policy, PyTorch AMP           |
+| `python-code.md`        | `**/*.py`                       | Python style: docstrings, closed option sets as enums, dataclass/TypedDict, deprecation, library API freshness           |
 | `quality-gates.md`      | (global)                        | Confidence blocks on all analysis tasks, internal quality loop, output routing rules                                     |
-| `testing.md`            | `tests/**/*.py`, `**/test_*.py` | pytest AAA structure, parametrize standards, doctest location (source files, not tests)                                  |
+| `python-testing.md`     | `tests/**/*.py`, `**/test_*.py` | pytest AAA structure, parametrize standards, mocking, doctest location (source files, not tests)                         |
 | `public-github.md`      | (global)                        | Read-only policy for public GitHub operations — permitted reads and forbidden writes                                     |
 
 ### How rules are auto-loaded
 
 Each rule file has `paths:` frontmatter listing glob patterns. Claude Code loads matching rule files automatically when you open or edit a file matching it — no explicit invocation needed. Global rules (no `paths:` restriction, or `paths: "*"`) load every session. Rules additive: multiple rules can apply to same file.
 
-Example: editing `tests/test_transforms.py` auto-loads `testing.md` (matches `tests/**/*.py`) and `python-code.md` (matches `**/*.py`). Editing `.claude/agents/sw-engineer.md` loads `foundry-config.md` (matches `.claude/**`).
+Example: editing `tests/test_transforms.py` auto-loads `python-testing.md` (matches `tests/**/*.py`) and `python-code.md` (matches `**/*.py`). Editing `.claude/agents/sw-engineer.md` loads `foundry-config.md` (matches `.claude/**`).
 
 ## 🏗️ Architecture
 

@@ -75,7 +75,7 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 
 ## Report File Format
 
-<!-- policy-sibling: plugins/cc_foundry/rules/quality-gates.md, plugins/cc_develop/rules/quality-gates.md (cc_research/cc_oss use different plain-ASCII-verdict format, no YAML table — not a sibling) -->
+<!-- policy-sibling: plugins/cc_foundry/rules/quality-gates.md, plugins/cc_develop/rules/quality-gates.md, plugins/cc_research/rules/quality-gates.md, plugins/cc_oss/rules/quality-gates.md -->
 
 Every report file from output routing must begin with YAML metadata block between `---` delimiter lines. Block = canonical meta summary — file keeps raw YAML (machine-parseable by downstream skills); when printed to terminal, convert to two-column table (`Field | Value`, one row per key) before executive summary — never raw YAML in terminal.
 

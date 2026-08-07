@@ -653,8 +653,8 @@ ______________________________________________________________________
 | `artifact-lifecycle.md` | all                             | Canonical artifact layout (`.plans/`, `.reports/`, `.temp/`), run directory naming, TTL policy                             |
 | `external-data.md`      | all                             | Pagination rules: GitHub CLI, REST APIs, GraphQL, Cloud APIs — never work on partial result set                            |
 | `foundry-config.md`     | `.claude/**`                    | Plan-mode gate before any `.claude/` edit, post-edit checklist, XML tag conventions, distribution rules                    |
-| `python-code.md`        | `**/*.py`                       | Google-style docstrings (no exceptions), deprecation version check before generating deprecation code                      |
-| `testing.md`            | `tests/**/*.py`, `**/test_*.py` | pytest design: TDD process, fixture conventions, parametrization, what to test in priority order                           |
+| `python-code.md`        | `**/*.py`                       | Google-style docstrings, closed option sets as enums, dataclass/TypedDict selection, deprecation API, complexity limits    |
+| `python-testing.md`     | `tests/**/*.py`, `**/test_*.py` | pytest design: TDD process, fixtures, parametrization, mocking, what to test in priority order                             |
 | `public-github.md`      | all                             | Read-only policy on public GitHub — permitted reads vs permanently forbidden write operations                              |
 
 ______________________________________________________________________

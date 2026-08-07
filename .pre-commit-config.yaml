@@ -144,10 +144,24 @@ repos:
         files: ^plugins/[^/]+/hooks/.*\.js$|^\.claude/hooks/.*\.js$|^\.codex/hooks/.*\.js$
         types: [javascript]
 
-      - id: check-tag-symmetry
-        name: 🏷️ XML tag symmetry (agents/skills)
+      - id: check-tag-symmetry-empty
+        name: 🏷️ XML empty structural blocks
         language: system
-        entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py
+        entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check empty-block
+        files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
+        types: [markdown]
+
+      - id: check-tag-symmetry-unbalanced
+        name: ⚖️ XML unbalanced tag pairs
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check unbalanced
+        files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
+        types: [markdown]
+
+      - id: check-tag-symmetry-escaped
+        name: 🔖 XML escaped structural tags
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_tag_symmetry.py --check escaped-tag
         files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
         types: [markdown]
 
@@ -165,10 +179,17 @@ repos:
         pass_filenames: false
         always_run: true
 
-      - id: check-readme-drift
-        name: 📄 README drift (version + bin/ refs)
+      - id: check-readme-drift-version
+        name: 🔢 README version marker drift
         language: system
-        entry: python3 plugins/cc_foundry/bin/check_readme_drift.py --scan-dir plugins
+        entry: python3 plugins/cc_foundry/bin/check_readme_drift.py --scan-dir plugins --check version
+        pass_filenames: false
+        always_run: true
+
+      - id: check-readme-drift-bin-refs
+        name: 📄 README bin/ script reference drift
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_readme_drift.py --scan-dir plugins --check bin-refs
         pass_filenames: false
         always_run: true
 
@@ -186,10 +207,24 @@ repos:
         files: ^plugins/.*\.md$
         types: [markdown]
 
-      - id: check-routing-links
-        name: 🧭 bin/ + computed-path reference integrity
+      - id: check-routing-links-r1
+        name: 🧭 R1 computed-path resolution
         language: system
-        entry: python3 plugins/cc_foundry/bin/check_routing_links.py
+        entry: python3 plugins/cc_foundry/bin/check_routing_links.py --check R1
+        pass_filenames: false
+        always_run: true
+
+      - id: check-routing-links-r2
+        name: 🔗 R2 grep-visible referencing (orphan risk)
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_routing_links.py --check R2
+        pass_filenames: false
+        always_run: true
+
+      - id: check-routing-links-r3
+        name: 🧰 R3 bin/ script reference integrity
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_routing_links.py --check R3
         pass_filenames: false
         always_run: true
 

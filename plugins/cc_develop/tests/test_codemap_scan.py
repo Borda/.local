@@ -116,6 +116,19 @@ def test_main_missing_source_returns_1(in_tmp_cwd: Path, capsys: pytest.CaptureF
     assert "--source=find|diff required" in err
 
 
+@pytest.mark.parametrize("source", [pytest.param(s, id=s.value) for s in cs.ScanSource])
+def test_source_accepts_every_enum_member(source: cs.ScanSource) -> None:
+    """Every ScanSource member is a valid --source value — CLI choices cannot drift from the enum."""
+    assert cs._parse_args([f"--source={source.value}"]).source == source
+
+
+def test_source_rejects_value_outside_enum() -> None:
+    """A --source value with no ScanSource member exits 2 (argparse bad-choice)."""
+    with pytest.raises(SystemExit) as excinfo:
+        cs._parse_args(["--source=bogus"])
+    assert excinfo.value.code == 2
+
+
 def test_main_missing_scan_query_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_scan_query_present(monkeypatch, present=False)
     rc = cs.main(["--source=diff"])

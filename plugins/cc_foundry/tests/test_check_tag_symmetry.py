@@ -1,6 +1,7 @@
 """Tests for check_tag_symmetry bin script.
 
-Covers empty-block detection, unbalanced tag detection, clean files, and CLI integration.
+Covers empty-block detection, unbalanced tag detection, escaped-tag detection, the
+per-subcheck ``--check`` selector, clean files, and CLI integration.
 """
 
 from __future__ import annotations
@@ -10,6 +11,18 @@ from pathlib import Path
 import pytest
 
 import check_tag_symmetry as cts
+
+
+def _messages(findings: list[cts.Finding]) -> list[str]:
+    """Return the message text of each finding, for substring assertions.
+
+    Args:
+        findings: Findings returned by ``check_file``.
+
+    Returns:
+        One message string per finding, in the original order.
+    """
+    return [f.message for f in findings]
 
 
 class TestCheckFile:
@@ -25,7 +38,7 @@ class TestCheckFile:
         """Empty structural block returns one violation."""
         f = tmp_path / "bad.md"
         f.write_text("<objective></objective>\n", encoding="utf-8")
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert len(violations) == 1
         assert "empty block <objective></objective>" in violations[0]
 
@@ -33,21 +46,21 @@ class TestCheckFile:
         """Block with only whitespace between tags is flagged as empty."""
         f = tmp_path / "ws.md"
         f.write_text("<notes>   </notes>\n", encoding="utf-8")
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert any("empty block" in v and "<notes>" in v for v in violations)
 
     def test_unbalanced_open_without_close(self, tmp_path: Path) -> None:
         """Tag opened but never closed is flagged as unbalanced."""
         f = tmp_path / "unclosed.md"
         f.write_text("<workflow>\ncontent\n", encoding="utf-8")
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert any("unbalanced" in v and "<workflow>" in v for v in violations)
 
     def test_unbalanced_close_without_open(self, tmp_path: Path) -> None:
         """Close tag without matching open tag is flagged as unbalanced."""
         f = tmp_path / "unopened.md"
         f.write_text("content\n</inputs>\n", encoding="utf-8")
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert any("unbalanced" in v and "<inputs>" in v for v in violations)
 
     def test_unreadable_file_returns_error(self, tmp_path: Path) -> None:
@@ -55,7 +68,8 @@ class TestCheckFile:
         fake = tmp_path / "ghost.md"
         result = cts.check_file(fake)
         assert len(result) == 1
-        assert "cannot read" in result[0]
+        assert result[0].kind is cts.FindingKind.READ_ERROR
+        assert "cannot read" in result[0].message
 
     def test_multiple_tags_each_violation_reported(self, tmp_path: Path) -> None:
         """File with two empty blocks returns two violations."""
@@ -95,7 +109,7 @@ class TestCheckFile:
         """Block with only whitespace (no code fence) is still flagged as empty."""
         f = tmp_path / "empty.md"
         f.write_text("<constants>\n\n</constants>\n", encoding="utf-8")
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert any("empty block" in v and "constants" in v for v in violations)
 
     def test_escaped_structural_tag_flagged_as_low(self, tmp_path: Path) -> None:
@@ -105,7 +119,7 @@ class TestCheckFile:
             "<role>\ncontent\n</role>\nProse mentioning \\<antipatterns_to_flag> should be flagged.\n",
             encoding="utf-8",
         )
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert any("escaped structural tag" in v and "antipatterns_to_flag" in v for v in violations)
         assert any("[low]" in v for v in violations)
 
@@ -116,7 +130,7 @@ class TestCheckFile:
             "<role>\ncontent\n</role>\nUse `\\<notes>` to suppress navigation.\n",
             encoding="utf-8",
         )
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert not any("escaped structural tag" in v for v in violations)
 
     def test_escaped_tag_inside_code_fence_not_flagged(self, tmp_path: Path) -> None:
@@ -126,7 +140,7 @@ class TestCheckFile:
             "<role>\ncontent\n</role>\n```markdown\n\\<workflow>\nexample\n```\n",
             encoding="utf-8",
         )
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert not any("escaped structural tag" in v for v in violations)
 
     @pytest.mark.parametrize(
@@ -149,8 +163,48 @@ class TestCheckFile:
         """Every structural tag name triggers an empty-block finding when empty."""
         f = tmp_path / "tag.md"
         f.write_text(f"<{tag}></{tag}>\n", encoding="utf-8")
-        violations = cts.check_file(f)
+        violations = _messages(cts.check_file(f))
         assert any("empty block" in v for v in violations)
+
+    def test_every_finding_carries_its_kind(self, tmp_path: Path) -> None:
+        """A file violating all three modes yields one finding of each kind."""
+        f = tmp_path / "all.md"
+        f.write_text(
+            "<objective></objective>\n<workflow>\nProse with \\<notes> escaped.\n",
+            encoding="utf-8",
+        )
+        kinds = {finding.kind for finding in cts.check_file(f)}
+        assert kinds == {
+            cts.FindingKind.EMPTY_BLOCK,
+            cts.FindingKind.UNBALANCED,
+            cts.FindingKind.ESCAPED_TAG,
+        }
+
+
+class TestParseKinds:
+    """Covers parse_kinds() selector parsing."""
+
+    def test_all_selectable_kinds_parse(self) -> None:
+        """The default spec resolves to every selectable kind."""
+        spec = ",".join(k.value for k in cts.SELECTABLE_KINDS)
+        assert cts.parse_kinds(spec) == set(cts.SELECTABLE_KINDS)
+
+    def test_whitespace_and_case_tolerated(self) -> None:
+        """Tokens are trimmed and lower-cased before lookup."""
+        assert cts.parse_kinds(" Empty-Block , UNBALANCED ") == {
+            cts.FindingKind.EMPTY_BLOCK,
+            cts.FindingKind.UNBALANCED,
+        }
+
+    def test_read_error_is_not_selectable(self) -> None:
+        """read-error is always emitted, never nameable in --check."""
+        with pytest.raises(ValueError, match="read-error"):
+            cts.parse_kinds("read-error")
+
+    def test_unknown_token_raises(self) -> None:
+        """An unrecognised mode name raises ValueError naming the token."""
+        with pytest.raises(ValueError, match="bogus"):
+            cts.parse_kinds("empty-block,bogus")
 
 
 class TestMain:
@@ -192,3 +246,94 @@ class TestMain:
         f.write_text("<workflow>\nok\n</workflow>\n", encoding="utf-8")
         rc = cts.main([str(f), "--timeout", "5"])
         assert rc == 0
+
+
+class TestMainSubcheckSelection:
+    """Covers --check selecting one subcheck at a time on an all-modes-violating file."""
+
+    @staticmethod
+    def _all_modes_file(tmp_path: Path) -> Path:
+        """Write a file that violates empty-block, unbalanced, and escaped-tag at once."""
+        f = tmp_path / "all.md"
+        f.write_text(
+            "<objective></objective>\n<workflow>\nProse with \\<notes> escaped.\n",
+            encoding="utf-8",
+        )
+        return f
+
+    def test_no_arg_default_runs_every_subcheck(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """Bare invocation reports all three violations and exits 1."""
+        rc = cts.main([str(self._all_modes_file(tmp_path))])
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "empty block" in out
+        assert "unbalanced" in out
+        assert "escaped structural tag" in out
+
+    @pytest.mark.parametrize(
+        ("mode", "expected", "excluded"),
+        [
+            pytest.param(
+                "empty-block",
+                "empty block",
+                ("unbalanced", "escaped structural tag"),
+                id="empty-block",
+            ),
+            pytest.param(
+                "unbalanced",
+                "unbalanced",
+                ("empty block", "escaped structural tag"),
+                id="unbalanced",
+            ),
+            pytest.param(
+                "escaped-tag",
+                "escaped structural tag",
+                ("empty block", "unbalanced"),
+                id="escaped-tag",
+            ),
+        ],
+    )
+    def test_single_subcheck_reports_only_its_own_findings(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        mode: str,
+        expected: str,
+        excluded: tuple[str, ...],
+    ) -> None:
+        """Selecting one subcheck reports that mode's findings only, still exiting 1."""
+        rc = cts.main([str(self._all_modes_file(tmp_path)), "--check", mode])
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert expected in out
+        assert not any(other in out for other in excluded)
+
+    def test_subcheck_clean_for_unrelated_violation_exits_zero(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A file with only an empty block passes the escaped-tag subcheck."""
+        f = tmp_path / "empty_only.md"
+        f.write_text("<constants></constants>\n", encoding="utf-8")
+        rc = cts.main([str(f), "--check", "escaped-tag"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "[escaped-tag]" in out
+
+    def test_unknown_subcheck_exits_two(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """An unknown --check mode exits 2 with the token named on stderr."""
+        rc = cts.main([str(self._all_modes_file(tmp_path)), "--check", "bogus"])
+        assert rc == 2
+        assert "bogus" in capsys.readouterr().err
+
+    def test_read_error_survives_subcheck_narrowing(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """An unreadable file is reported under any --check mode, never filtered away."""
+        unreadable = tmp_path / "locked.md"
+        unreadable.write_text("<role>\nok\n</role>\n", encoding="utf-8")
+        unreadable.chmod(0o000)
+        try:
+            rc = cts.main([str(unreadable), "--check", "empty-block"])
+            out = capsys.readouterr().out
+        finally:
+            unreadable.chmod(0o644)
+        assert rc == 1
+        assert "cannot read" in out

@@ -1,9 +1,11 @@
 ---
-description: pytest test design standards — structure, fixtures, parametrization
+description: pytest test design standards — structure, fixtures, parametrization, mocking
 paths:
   - tests/**/*.py
   - '**/test_*.py'
 ---
+
+> **Precedence — the rule closer to the code wins.** These are plugin-level defaults. Where a project states its own convention that conflicts with anything here — in its `CLAUDE.md`, its own `rules/`, a linter/formatter config it enforces, or a consistent established style in the surrounding code — the project's convention wins. Follow it and do not "correct" the codebase toward this file. Apply these rules only where the project is silent. When a project convention looks like an oversight rather than a decision, say so once and still follow the project.
 
 ## Adding Tests — Process
 
@@ -30,7 +32,13 @@ paths:
   - Exception: list-comprehension/generator inside `@pytest.mark.parametrize(...)` to build args — allowed if it spans <30% of the decorator's own lines (lines inside the outer parentheses only, not the test body)
 - Parametrize aggressively — 3+ test functions same structure → `@pytest.mark.parametrize`
 - Test case IDs: use `pytest.param(..., id="slug")` per case — never `ids=[...]` on decorator; keeps ID and args co-located, survives reordering
-- Group topic-related tests into class; class name carries unit (and optionally condition) so method names describe expected outcome only
+- Group topic-related tests into class; class name carries unit (and optionally condition) so method names describe expected outcome only. The shared prefix moves into the class name and comes out of every method name — the method reads as the assertion, not as a restatement of its subject:
+
+```python
+class TestParseArgs:                  # subject stated once
+    def test_rejects_unknown_flag(self): ...      # not test_parse_args_rejects_unknown_flag
+    def test_defaults_to_install(self): ...       # not test_parse_args_defaults_to_install
+```
 
 ## File Layout
 
@@ -57,9 +65,57 @@ def test_cuda_inference(): ...
 
 ## Docstrings
 
-- Every test function/method needs one-line docstring min (max 120 chars)
-- Complex tests: include scenario covered
+- Every test function/method needs a one-line docstring (max 120 chars) — **required even when it restates the test name**. The name is an identifier constrained by naming rules; the docstring is prose and is what surfaces in failure output and `-v` listings.
+- Below the one-liner, add a short paragraph giving the **scenario or use case**: the starting state, what is exercised, and why that combination matters. This is what tells a reader whether a failure is a real regression or a stale expectation — the name alone never carries it.
 - Module-level docstrings required
+
+```python
+def test_rejects_unknown_flag(self):
+    """Unknown CLI flags are rejected instead of silently ignored.
+
+    A typo'd flag that parses as a no-op is the failure this guards: the run
+    appears to succeed while the intended option never took effect.
+    """
+```
+
+## Mocking
+
+Decorator or context manager — never hand-assigned attributes (`mod.fn = fake`), which leak into every later test in the session when an assertion fails before restore.
+
+```python
+@mock.patch("pkg.mod.fetch", return_value={"ok": True})   # patch WHERE USED, not where defined
+def test_x(mock_fetch): ...
+```
+
+- **Patch the reference, not the origin** — `pkg.consumer.fetch`, not `pkg.source.fetch`; `from x import fetch` binds a new name the origin patch never reaches.
+- `autospec=True` (or `spec=`) on anything non-trivial — a bare `Mock` happily accepts calls the real object would reject, so the test passes after the real signature changes.
+- Prefer `monkeypatch` (pytest fixture) for env vars, `cwd`, and attributes — auto-restores at teardown, no decorator stacking.
+- Mock only what crosses a process boundary you don't own: network, clock, filesystem, subprocess, randomness. Mocking your own logic asserts the mock, not the code.
+- **Never add a mock to silence a newly failing test** — see §Test-Softening Anti-patterns; that hides the regression the test just caught.
+- Assert the interaction when it is the contract (`assert_called_once_with`), not merely that the function returned.
+
+## Fixtures
+
+Repetitive setup goes in a fixture, not the test body — the body should read as Act + Assert, with Arrange reduced to naming what it needs. Same input built in 2+ tests ⇒ fixture.
+
+```python
+@pytest.fixture
+def config(tmp_path):
+    """Minimal valid config on disk."""
+    (tmp_path / "cfg.toml").write_text('name = "demo"\n')
+    return tmp_path / "cfg.toml"
+
+
+def test_loads_name(config):        # Arrange is one parameter
+    assert load(config).name == "demo"
+```
+
+- **Keep assertion-relevant values visible in the test.** A fixture hiding the exact value under assertion makes failures unreadable — factor out the scaffolding, not the thing being verified.
+- **Parametrized inputs → factory fixture** (fixture returning a callable) when each test needs a different variant; a plain fixture returning one object forces copy-paste variants.
+- Narrowest scope that works: default `function`. Widen to `module`/`session` only for genuinely expensive, immutable setup — a shared mutable fixture leaks state between tests and creates order-dependent failures.
+- Use the built-ins before writing your own: `tmp_path`, `monkeypatch`, `capsys`, `caplog`.
+- Shared across files → `conftest.py` at the narrowest covering directory; don't duplicate per file.
+- Teardown via `yield` in the fixture — never `try`/`finally` in a test body (§Test-Softening Anti-patterns).
 
 ## Helpers in Tests
 

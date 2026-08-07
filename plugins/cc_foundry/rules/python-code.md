@@ -4,6 +4,8 @@ paths:
   - '**/*.py'
 ---
 
+> **Precedence — the rule closer to the code wins.** These are plugin-level defaults. Where a project states its own convention that conflicts with anything here — in its `CLAUDE.md`, its own `rules/`, a linter/formatter config it enforces, or a consistent established style in the surrounding code — the project's convention wins. Follow it and do not "correct" the codebase toward this file. Apply these rules only where the project is silent. When a project convention looks like an oversight rather than a decision, say so once and still follow the project.
+
 ## Docstring Style
 
 - **Google style (Napoleon)** — no exceptions unless user explicitly requests otherwise
@@ -14,87 +16,20 @@ paths:
 
 ## Deprecation
 
-**Version check first**: before generating any deprecation code:
+Use `pyDeprecate`, never `warnings.warn`. Import from `deprecate` (not `pyDeprecate`). Not installed → add it, don't fall back.
 
-- Agentic/tool context: `python -c "import deprecate; print(deprecate.__version__)"` via Bash
-- In conversation context: output command for user to run, wait for confirmation before proceeding
+| Target | API |
+| --- | --- |
+| function / method | `@deprecated(target=new_fn, deprecated_in="X.Y", remove_in="Z.W")` |
+| class (incl. Enum, dataclass) | `@deprecated_class(target=NewClass, ...)` — v0.6.0+ |
+| instance | `deprecated_instance(new_obj, ...)` — v0.6.0+ |
 
-If installed version differs, read `help(deprecate)` or project CHANGELOG before generating code — don't assume Claude knows latest API. Do **not** upgrade pyDeprecate on projects where older version works fine.
+- **Never `@deprecated` on a class** — it emits `UserWarning` and silently delegates; `deprecated_class` is the correct API (transparent proxy: attribute access, calls, `isinstance()`, instantiation all forward with `FutureWarning`).
+- Lifecycle: deprecate in minor → keep ≥1 minor cycle → remove in next major.
+- Check the installed version before writing the code (`deprecate.__version__`); the API differs across versions and training memory is not evidence (§Library API Awareness). Below v0.6.0 with upgrading blocked, `deprecated_class`/`deprecated_instance` don't exist — ask before upgrading, never upgrade silently.
 
-**Never use `warnings.warn` for deprecation** — use `pyDeprecate` exclusively. Import from `deprecate`, not `pyDeprecate`:
+<!-- verified: 2026-04-06 against pyDeprecate 0.6.x; re-verify if upgraded past 0.6.x -->
 
-**Deprecation lifecycle**: deprecate in minor release → keep ≥1 minor cycle → remove in next major.
-
-```python
-from deprecate import deprecated  # correct
-```
-
-If `pyDeprecate` not installed, add it — don't fall back to `warnings.warn`.
-
-### Function / method deprecation
-
-Both parts required — decorator alone incomplete:
-
-```python
-from deprecate import deprecated
-
-
-@deprecated(target=new_fn, deprecated_in="X.Y", remove_in="Z.W")
-def old_fn(*args, **kwargs):
-    """One-line summary.
-
-    Args:
-        ...
-
-    Examples:
-        ...
-    """
-    ...
-```
-
-### Class deprecation — use `deprecated_class` (v0.6.0+) <!-- verified: 2026-04-06; re-verify if pyDeprecate is upgraded past 0.6.x -->
-
-**Don't apply `@deprecated` directly to class** — use `deprecated_class`. Applying `@deprecated` to class emits `UserWarning` and silently delegates, but `deprecated_class` is explicit, correct API for Enum, dataclass, plain classes.
-
-```python
-from deprecate import deprecated_class
-
-
-@deprecated_class(target=NewClass, deprecated_in="X.Y", remove_in="Z.W")
-class OldClass: ...
-```
-
-`deprecated_class` wraps class in transparent proxy — attribute access, method calls, `isinstance()`, instantiation all forward to `NewClass` with `FutureWarning`.
-
-**Version conflict resolution**: If installed pyDeprecate below v0.6.0 and upgrading prohibited (stable project, pinned deps), don't use `deprecated_class` — instead apply `@deprecated` to thin subclass wrapper:
-
-```python
-from deprecate import deprecated
-
-
-class ModelWrapper: ...  # new class
-
-
-class _OldModelWrapperImpl(ModelWrapper):
-    """Transitional subclass — do not use directly."""
-
-    ...
-
-
-@deprecated(target=ModelWrapper, deprecated_in="X.Y", remove_in="Z.W")
-def OldModelWrapper(*args, **kwargs):  # noqa: N802
-    return _OldModelWrapperImpl(*args, **kwargs)
-```
-
-Ask user whether upgrading pyDeprecate acceptable before proceeding. Never silently recommend upgrade.
-
-### Instance deprecation — use `deprecated_instance` (v0.6.0+) <!-- verified: 2026-04-06; re-verify if pyDeprecate is upgraded past 0.6.x -->
-
-```python
-from deprecate import deprecated_instance
-
-old_obj = deprecated_instance(new_obj, deprecated_in="X.Y", remove_in="Z.W")
-```
 
 ## Python Version Policy
 
@@ -141,6 +76,46 @@ Applies to **every code-touching agent**, not `foundry:sw-engineer` alone. Train
 - No global mutable state — use dependency injection
 - `__all__` in `__init__.py` to define public API surface
 - Prefer composition over deep inheritance
+
+## Structured Data — never a bare dict
+
+A dict with known, fixed keys is the same failure as a bare string with fixed values: `d["retires"]` raises only at runtime, `d.get("retires")` silently returns `None`, and no tool flags a renamed key. Pick by what the data must do:
+
+| Need | Use |
+| --- | --- |
+| Behaviour + validation, mutable, methods | `@dataclass` (`slots=True`, `frozen=True` when immutable) |
+| Existing dict-shaped payload (JSON, API, `**kwargs`) — annotate without changing runtime type | `TypedDict` |
+| Immutable, tuple-unpacked, hashable | `NamedTuple` |
+| Field coercion/validation from untrusted input | `pydantic.BaseModel` — only where the dep already exists |
+
+- **`dataclass` is the default** — reach for `TypedDict` only when the value must stay a real `dict` at runtime (already-parsed JSON, kwargs blob you don't own).
+- `frozen=True` for anything used as a key, shared across threads, or passed to code you don't control.
+- `slots=True` on dataclasses instantiated in loops or held in large collections.
+- **Boundary mirrors §Closed Option Sets** — parse into the type once at the edge (`Config(**raw)`), pass the typed object inward; serialize back to plain dict only on the way out (`dataclasses.asdict`).
+- 3+ positional args of the same type ⇒ the call site is unreadable and mis-orderable: make it a dataclass or force keyword-only (`*`).
+
+## Closed Option Sets — never bare strings
+
+Fixed, mutually exclusive options (severity, mode, status, kind, action, direction) = named type, declared once. Bare `str` re-states the set at every comparison: typo `"WANR"` evaluates false instead of raising; renamed member leaves stale literals nothing flags.
+
+**Signals** (any one ⇒ closed set): docstring says `One of "a", "b"` · `argparse choices=(...)` whose value is branched on internally · same literals compared in 2+ places · dataclass field `str` with enumerable legal values.
+
+| Case | Use |
+| --- | --- |
+| Branched on, carries behaviour, crosses module boundary | `class X(str, Enum)` — `X("bad")` raises |
+| Local single-use annotation only | `X = Literal["a", "b"]` — type-check only |
+
+```python
+class Severity(str, Enum):
+    FAIL = "FAIL"
+    WARN = "WARN"
+```
+
+- `(str, Enum)` not `StrEnum` while `requires-python < 3.11` — mixin keeps `Severity.FAIL == "FAIL"` true, so serialization and migration-era string comparisons still work. Check `pyproject.toml` (§Python Version Policy) before assuming.
+- **Enum inside, string at boundary** — CLI/JSON/file formats stay plain; convert once at edge (`Severity(raw)`), pass enum inward.
+- **`==` never `is`** — `is` fails silently when value arrived as plain string from a boundary.
+- **`.value` in f-strings** — bare `f"{Severity.WARN}"` renders `Severity.WARN` on non-mixin Enum.
+- **Derive `argparse choices=`** from the enum (`[s.value for s in Severity]`) — hand-repeated literals drift.
 
 ## Complexity Thresholds
 

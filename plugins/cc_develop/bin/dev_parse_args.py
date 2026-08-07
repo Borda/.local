@@ -61,8 +61,8 @@ import re
 import sys
 import tempfile
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Literal
 
 
 def _csid() -> str:
@@ -85,15 +85,30 @@ def _csid() -> str:
 # ---------------------------------------------------------------------------
 
 
-SpecType = Literal["bool", "neg-bool", "codemap", "int", "str"]
+class SpecType(str, Enum):
+    """Kind of flag a :class:`FlagSpec` declares — the closed set of spec keywords.
 
-_TYPE_ARITIES: dict[str, int] = {
-    "--bool": 3,
-    "--neg-bool": 3,
-    "--codemap": 2,  # VAR DEFAULT (no FLAG — always --codemap/--no-codemap)
-    "--int": 3,
-    "--str": 3,
-}
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``.
+    The mixin keeps ``SpecType.BOOL == "bool"`` true, so values that arrive as plain
+    strings from the CLI boundary still compare equal.
+
+    Examples:
+        >>> SpecType("neg-bool").value
+        'neg-bool'
+        >>> SpecType.CODEMAP == "codemap"
+        True
+    """
+
+    BOOL = "bool"
+    NEG_BOOL = "neg-bool"
+    CODEMAP = "codemap"
+    INT = "int"
+    STR = "str"
+
+
+# Spec keyword → count of positional tokens it consumes. Codemap takes 2 (VAR DEFAULT,
+# no FLAG — it is always the --codemap/--no-codemap pair); every other kind takes 3.
+_TYPE_ARITIES: dict[str, int] = {f"--{kind.value}": (2 if kind == SpecType.CODEMAP else 3) for kind in SpecType}
 
 
 @dataclass
@@ -119,10 +134,14 @@ def parse_specs(tokens: list[str]) -> list[FlagSpec]:
         SystemExit(1): on malformed spec (wrong token count).
 
     Examples:
-        >>> parse_specs(['--bool', 'semble', 'SEMBLE_ENABLED', 'false'])
-        [FlagSpec(kind='bool', flag='semble', var='SEMBLE_ENABLED', default='false')]
-        >>> parse_specs(['--codemap', 'CODEMAP_RAW', 'auto'])
-        [FlagSpec(kind='codemap', flag='', var='CODEMAP_RAW', default='auto')]
+        >>> parse_specs(['--bool', 'semble', 'SEMBLE_ENABLED', 'false']) == [
+        ...     FlagSpec(kind=SpecType.BOOL, flag='semble', var='SEMBLE_ENABLED', default='false')
+        ... ]
+        True
+        >>> parse_specs(['--codemap', 'CODEMAP_RAW', 'auto']) == [
+        ...     FlagSpec(kind=SpecType.CODEMAP, flag='', var='CODEMAP_RAW', default='auto')
+        ... ]
+        True
     """
     specs: list[FlagSpec] = []
     idx = 0
@@ -139,8 +158,8 @@ def parse_specs(tokens: list[str]) -> list[FlagSpec]:
                 file=sys.stderr,
             )
             sys.exit(1)
-        kind: SpecType = tok.lstrip("-")  # type: ignore[assignment]
-        if kind == "codemap":
+        kind = SpecType(tok.lstrip("-"))
+        if kind == SpecType.CODEMAP:
             var, default = rest
             specs.append(FlagSpec(kind=kind, flag="", var=var, default=default))
         else:
@@ -220,7 +239,7 @@ def extract_flags(arguments: str, specs: list[FlagSpec]) -> tuple[dict[str, str]
     clean = arguments
 
     for spec in specs:
-        if spec.kind == "bool":
+        if spec.kind == SpecType.BOOL:
             token = f"--{spec.flag}"
             token_pattern = re.compile(r"(?<!\S)" + re.escape(token) + r"(?![A-Za-z0-9_-])")
             if token_pattern.search(clean):
@@ -229,7 +248,7 @@ def extract_flags(arguments: str, specs: list[FlagSpec]) -> tuple[dict[str, str]
             else:
                 result[spec.var] = spec.default
 
-        elif spec.kind == "neg-bool":
+        elif spec.kind == SpecType.NEG_BOOL:
             token = f"--{spec.flag}"
             token_pattern = re.compile(r"(?<!\S)" + re.escape(token) + r"(?![A-Za-z0-9_-])")
             if token_pattern.search(clean):
@@ -238,7 +257,7 @@ def extract_flags(arguments: str, specs: list[FlagSpec]) -> tuple[dict[str, str]
             else:
                 result[spec.var] = spec.default
 
-        elif spec.kind == "codemap":
+        elif spec.kind == SpecType.CODEMAP:
             # Double-condition guard: --no-codemap wins; --codemap only sets strict
             # when --no-codemap absent.
             no_pattern = re.compile(r"(?<!\S)--no-codemap(?![A-Za-z0-9_-])")
@@ -255,7 +274,7 @@ def extract_flags(arguments: str, specs: list[FlagSpec]) -> tuple[dict[str, str]
             else:
                 result[spec.var] = spec.default
 
-        elif spec.kind == "int":
+        elif spec.kind == SpecType.INT:
             val, clean = _extract_value_flag(spec.flag, clean)
             if val is not None:
                 try:
@@ -270,7 +289,7 @@ def extract_flags(arguments: str, specs: list[FlagSpec]) -> tuple[dict[str, str]
             else:
                 result[spec.var] = spec.default
 
-        elif spec.kind == "str":
+        elif spec.kind == SpecType.STR:
             val, clean = _extract_value_flag(spec.flag, clean)
             result[spec.var] = val if val is not None else spec.default
 
@@ -328,56 +347,56 @@ def _spec(kind: SpecType, flag: str, var: str, default: str) -> FlagSpec:
 # before (e.g. a newly registered flag).
 SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
     "feature": [
-        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
-        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
-        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
-        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
-        (_spec("bool", "worktree", "WORKTREE_ENABLED", "false"), None),
-        (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
-        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
-        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+        (_spec(SpecType.NEG_BOOL, "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec(SpecType.BOOL, "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
+        (_spec(SpecType.BOOL, "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec(SpecType.BOOL, "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec(SpecType.BOOL, "worktree", "WORKTREE_ENABLED", "false"), None),
+        (_spec(SpecType.BOOL, "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
+        (_spec(SpecType.CODEMAP, "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec(SpecType.STR, "repo", "REPO_NAME", ""), "dev-upstream"),
     ],
     "fix": [
-        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
-        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
-        (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
-        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
-        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
-        (_spec("bool", "worktree", "WORKTREE_ENABLED", "false"), None),
-        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
-        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+        (_spec(SpecType.NEG_BOOL, "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec(SpecType.BOOL, "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
+        (_spec(SpecType.BOOL, "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
+        (_spec(SpecType.BOOL, "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec(SpecType.BOOL, "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec(SpecType.BOOL, "worktree", "WORKTREE_ENABLED", "false"), None),
+        (_spec(SpecType.CODEMAP, "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec(SpecType.STR, "repo", "REPO_NAME", ""), "dev-upstream"),
     ],
     "debug": [
-        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
-        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
-        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
-        (_spec("bool", "worktree", "WORKTREE_ENABLED", "false"), None),
-        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
-        (_spec("str", "ci-run", "CI_RUN_ID", ""), "dev-ci-run-id"),
-        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+        (_spec(SpecType.NEG_BOOL, "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec(SpecType.BOOL, "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
+        (_spec(SpecType.BOOL, "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec(SpecType.BOOL, "worktree", "WORKTREE_ENABLED", "false"), None),
+        (_spec(SpecType.CODEMAP, "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec(SpecType.STR, "ci-run", "CI_RUN_ID", ""), "dev-ci-run-id"),
+        (_spec(SpecType.STR, "repo", "REPO_NAME", ""), "dev-upstream"),
     ],
     "refactor": [
-        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
-        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
-        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
-        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
-        (_spec("bool", "worktree", "WORKTREE_ENABLED", "false"), None),
-        (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
-        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
-        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+        (_spec(SpecType.NEG_BOOL, "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec(SpecType.BOOL, "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
+        (_spec(SpecType.BOOL, "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec(SpecType.BOOL, "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec(SpecType.BOOL, "worktree", "WORKTREE_ENABLED", "false"), None),
+        (_spec(SpecType.BOOL, "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
+        (_spec(SpecType.CODEMAP, "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec(SpecType.STR, "repo", "REPO_NAME", ""), "dev-upstream"),
     ],
     "plan": [
-        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
-        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
-        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
-        (_spec("int", "max-depth", "MAX_DEPTH", "3"), None),
+        (_spec(SpecType.NEG_BOOL, "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec(SpecType.BOOL, "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec(SpecType.CODEMAP, "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec(SpecType.INT, "max-depth", "MAX_DEPTH", "3"), None),
     ],
     "review": [
-        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-review-challenge-enabled"),
-        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-review-challenge-forced"),
-        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-review-semble-enabled"),
-        (_spec("bool", "worktree", "WORKTREE_ENABLED", "false"), None),
-        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-review-codemap-enabled"),
+        (_spec(SpecType.NEG_BOOL, "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-review-challenge-enabled"),
+        (_spec(SpecType.BOOL, "challenge", "CHALLENGE_FORCED", "false"), "dev-review-challenge-forced"),
+        (_spec(SpecType.BOOL, "semble", "SEMBLE_ENABLED", "false"), "dev-review-semble-enabled"),
+        (_spec(SpecType.BOOL, "worktree", "WORKTREE_ENABLED", "false"), None),
+        (_spec(SpecType.CODEMAP, "", "CODEMAP_RAW", "auto"), "dev-review-codemap-enabled"),
     ],
 }
 
@@ -389,15 +408,15 @@ def _per_skill_filename(skill: str, spec: FlagSpec) -> str:
 
     Examples:
         >>> _per_skill_filename(
-        ...     "feature", FlagSpec(kind="bool", flag="team", var="TEAM_MODE", default="false")
+        ...     "feature", FlagSpec(kind=SpecType.BOOL, flag="team", var="TEAM_MODE", default="false")
         ... ).startswith("dev-feature-team-")
         True
         >>> _per_skill_filename(
-        ...     "debug", FlagSpec(kind="codemap", flag="", var="CODEMAP_RAW", default="auto")
+        ...     "debug", FlagSpec(kind=SpecType.CODEMAP, flag="", var="CODEMAP_RAW", default="auto")
         ... ).startswith("dev-debug-codemap-")
         True
     """
-    key = spec.flag or ("codemap" if spec.kind == "codemap" else spec.var.lower())
+    key = spec.flag or (SpecType.CODEMAP.value if spec.kind == SpecType.CODEMAP else spec.var.lower())
     return f"dev-{skill}-{key}-{_csid()}"
 
 

@@ -31,6 +31,22 @@ from __future__ import annotations
 
 import argparse
 import sys
+from enum import Enum
+
+
+class PRScope(str, Enum):
+    """Scope verdict driving which oss:review specialists get dispatched.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
+    ``>=3.10``. Values are the uppercase labels the skill's bash blocks read
+    off stdout, so the CLI surface is unchanged.
+    """
+
+    CHORE = "CHORE"
+    FIX = "FIX"
+    REFACTOR = "REFACTOR"
+    FEATURE = "FEATURE"
+    MIXED = "MIXED"
 
 
 # Substrings that, when present in PR labels (csv) or title, upgrade a FIX
@@ -82,8 +98,8 @@ def classify(
     new_api_lines: int,
     labels: str,
     title: str,
-) -> str:
-    """Return one of ``CHORE``, ``FIX``, ``REFACTOR``, ``FEATURE``, ``MIXED``.
+) -> PRScope:
+    """Return the ``PRScope`` verdict for the supplied PR signals.
 
     Args:
         py_files: Count of changed ``.py`` files (any path).
@@ -93,42 +109,42 @@ def classify(
         title: PR title (may be empty).
 
     Returns:
-        Scope label.
+        Scope verdict.
 
     Examples:
-        >>> classify(0, 0, 0, "", "")
+        >>> classify(0, 0, 0, "", "").value
         'CHORE'
-        >>> classify(2, 10, 5, "", "Add public API")
+        >>> classify(2, 10, 5, "", "Add public API").value
         'FEATURE'
-        >>> classify(1, 20, 0, "", "fix small bug")
+        >>> classify(1, 20, 0, "", "fix small bug").value
         'FIX'
-        >>> classify(5, 200, 0, "", "Restructure modules")
+        >>> classify(5, 200, 0, "", "Restructure modules").value
         'REFACTOR'
-        >>> classify(2, 30, 0, "perf", "Speed up loop")
+        >>> classify(2, 30, 0, "perf", "Speed up loop").value
         'REFACTOR'
-        >>> classify(2, 80, 0, "", "Some change")
+        >>> classify(2, 80, 0, "", "Some change").value
         'MIXED'
     """
     # Rule 1: no Python at all → CHORE (deps/tooling/config only)
     if py_files == 0:
-        return "CHORE"
+        return PRScope.CHORE
 
     # Rule 2: new public exports → FEATURE
     if new_api_lines > 0:
-        return "FEATURE"
+        return PRScope.FEATURE
 
     # Rule 3: small diff → FIX (with refactor-signal override)
     if py_files < 3 and loc_delta < 50:
         if _has_refactor_signal(labels, title):
-            return "REFACTOR"
-        return "FIX"
+            return PRScope.REFACTOR
+        return PRScope.FIX
 
     # Rule 4: many files → REFACTOR
     if py_files >= 3:
-        return "REFACTOR"
+        return PRScope.REFACTOR
 
     # Rule 5: catch-all (e.g. 1–2 files with large LOC delta)
-    return "MIXED"
+    return PRScope.MIXED
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -166,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         labels=args.labels,
         title=args.title,
     )
-    print(scope)
+    print(scope.value)
     return 0
 
 

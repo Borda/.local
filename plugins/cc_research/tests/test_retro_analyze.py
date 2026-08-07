@@ -26,7 +26,7 @@ class TestRunWilcoxon:
         """All candidates above baseline with N >= 6 → significant at alpha=0.05."""
         baseline = [1.0] * 8
         candidate = [1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2]
-        result = ra.run_wilcoxon(baseline, candidate, alpha=0.05, direction="higher")
+        result = ra.run_wilcoxon(baseline, candidate, alpha=0.05, direction=ra.Direction.HIGHER)
         assert result["n"] == 8
         assert result["significant"] is True
         assert result["p_value"] is not None and result["p_value"] < 0.05
@@ -35,13 +35,13 @@ class TestRunWilcoxon:
         """Lower-is-better metric: candidates below baseline → significant."""
         baseline = [10.0] * 8
         candidate = [9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5]
-        result = ra.run_wilcoxon(baseline, candidate, alpha=0.05, direction="lower")
+        result = ra.run_wilcoxon(baseline, candidate, alpha=0.05, direction=ra.Direction.LOWER)
         assert result["significant"] is True
         assert result["p_value"] is not None and result["p_value"] < 0.05
 
     def test_insufficient_samples_returns_reason_not_pvalue(self) -> None:
         """N below MIN_SAMPLES_FOR_TEST → significant=False, p_value=None, reason present."""
-        result = ra.run_wilcoxon([1.0] * 3, [2.0] * 3, alpha=0.05, direction="higher")
+        result = ra.run_wilcoxon([1.0] * 3, [2.0] * 3, alpha=0.05, direction=ra.Direction.HIGHER)
         assert result["significant"] is False
         assert result["p_value"] is None
         assert result["statistic"] is None
@@ -51,14 +51,14 @@ class TestRunWilcoxon:
     @pytest.mark.parametrize(
         "baseline,candidate,direction",
         [
-            ([1.0] * 8, [1.0] * 8, "higher"),
-            ([1.0] * 8, [0.8, 1.2, 0.9, 1.1, 0.95, 1.05, 1.0, 1.0], "higher"),
-            ([1.0] * 8, [0.5] * 8, "higher"),
-            ([1.0] * 8, [1.5] * 8, "lower"),
+            ([1.0] * 8, [1.0] * 8, ra.Direction.HIGHER),
+            ([1.0] * 8, [0.8, 1.2, 0.9, 1.1, 0.95, 1.05, 1.0, 1.0], ra.Direction.HIGHER),
+            ([1.0] * 8, [0.5] * 8, ra.Direction.HIGHER),
+            ([1.0] * 8, [1.5] * 8, ra.Direction.LOWER),
         ],
     )
     def test_adequate_sample_non_significant_cases(
-        self, baseline: list[float], candidate: list[float], direction: str
+        self, baseline: list[float], candidate: list[float], direction: ra.Direction
     ) -> None:
         """Adequate sample size alone does not imply significance."""
         result = ra.run_wilcoxon(baseline, candidate, alpha=0.05, direction=direction)

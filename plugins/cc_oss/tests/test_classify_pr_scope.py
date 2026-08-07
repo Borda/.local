@@ -17,16 +17,16 @@ class TestClassify:
     @pytest.mark.parametrize(
         ("py_files", "loc_delta", "new_api_lines", "labels", "title", "expected"),
         [
-            pytest.param(0, 0, 0, "", "", "CHORE", id="zero-py-files"),
-            pytest.param(0, 50, 0, "deps", "Bump numpy", "CHORE", id="deps-only-no-py"),
-            pytest.param(1, 10, 3, "", "", "FEATURE", id="new-api-single-line"),
-            pytest.param(5, 200, 12, "", "Add new exports", "FEATURE", id="new-api-large-pr"),
-            pytest.param(1, 10, 0, "", "fix typo", "FIX", id="fix-tiny-diff"),
-            pytest.param(2, 49, 0, "bug", "fix off-by-one", "FIX", id="fix-just-under-thresholds"),
-            pytest.param(3, 30, 0, "", "Restructure modules", "REFACTOR", id="refactor-3-files"),
-            pytest.param(10, 400, 0, "", "Refactor internals", "REFACTOR", id="refactor-many-files"),
-            pytest.param(1, 80, 0, "", "Heavy single-file change", "MIXED", id="mixed-1-file-large"),
-            pytest.param(2, 100, 0, "", "Large 2-file edit", "MIXED", id="mixed-2-file-large"),
+            pytest.param(0, 0, 0, "", "", cps.PRScope.CHORE, id="zero-py-files"),
+            pytest.param(0, 50, 0, "deps", "Bump numpy", cps.PRScope.CHORE, id="deps-only-no-py"),
+            pytest.param(1, 10, 3, "", "", cps.PRScope.FEATURE, id="new-api-single-line"),
+            pytest.param(5, 200, 12, "", "Add new exports", cps.PRScope.FEATURE, id="new-api-large-pr"),
+            pytest.param(1, 10, 0, "", "fix typo", cps.PRScope.FIX, id="fix-tiny-diff"),
+            pytest.param(2, 49, 0, "bug", "fix off-by-one", cps.PRScope.FIX, id="fix-just-under-thresholds"),
+            pytest.param(3, 30, 0, "", "Restructure modules", cps.PRScope.REFACTOR, id="refactor-3-files"),
+            pytest.param(10, 400, 0, "", "Refactor internals", cps.PRScope.REFACTOR, id="refactor-many-files"),
+            pytest.param(1, 80, 0, "", "Heavy single-file change", cps.PRScope.MIXED, id="mixed-1-file-large"),
+            pytest.param(2, 100, 0, "", "Large 2-file edit", cps.PRScope.MIXED, id="mixed-2-file-large"),
         ],
     )
     def test_branches(
@@ -36,7 +36,7 @@ class TestClassify:
         new_api_lines: int,
         labels: str,
         title: str,
-        expected: str,
+        expected: cps.PRScope,
     ) -> None:
         """Each parametrized case exercises one classification branch."""
         assert (
@@ -70,24 +70,29 @@ class TestRefactorOverride:
     )
     def test_signal_promotes_fix_to_refactor(self, labels: str, title: str) -> None:
         """Tiny diff (would be FIX) + signal token → REFACTOR."""
-        assert cps.classify(py_files=2, loc_delta=30, new_api_lines=0, labels=labels, title=title) == "REFACTOR"
+        assert (
+            cps.classify(py_files=2, loc_delta=30, new_api_lines=0, labels=labels, title=title) == cps.PRScope.REFACTOR
+        )
 
     def test_no_signal_stays_fix(self) -> None:
         """Tiny diff without signal stays FIX."""
         assert (
             cps.classify(py_files=2, loc_delta=30, new_api_lines=0, labels="bug", title="fix typo in docstring")
-            == "FIX"
+            == cps.PRScope.FIX
         )
 
     def test_signal_case_insensitive(self) -> None:
         """Signal matching is case-insensitive."""
-        assert cps.classify(py_files=2, loc_delta=30, new_api_lines=0, labels="PERF", title="Speed UP") == "REFACTOR"
+        assert (
+            cps.classify(py_files=2, loc_delta=30, new_api_lines=0, labels="PERF", title="Speed UP")
+            == cps.PRScope.REFACTOR
+        )
 
     def test_signal_ignored_for_feature(self) -> None:
         """Refactor signal does not override FEATURE — new API takes precedence."""
         assert (
             cps.classify(py_files=2, loc_delta=30, new_api_lines=5, labels="refactor", title="Add new export")
-            == "FEATURE"
+            == cps.PRScope.FEATURE
         )
 
 

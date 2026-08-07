@@ -28,7 +28,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 Mode = Literal["present", "absent"]
 Status = Literal["OK", "MISSING", "STILL_PRESENT"]
@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "mode",
         help="Verification mode.",
-        choices=["present", "absent"],
+        choices=list(get_args(Mode)),
     )
 
     # argparse exits with code 2 for usage errors (invalid mode, missing args) — matches bash version.

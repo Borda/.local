@@ -94,6 +94,12 @@ MANIFEST: list[dict[str, object]] = [
             "plugins/cc_develop/skills/_shared/quality-stack.md",
         ],
     },
+    # No rules/*.md entries here, deliberately. Cross-cutting standards (python-code.md,
+    # python-testing.md, git-commit.md) are single-homed in cc_foundry because rules reach
+    # Claude only as symlinks in ~/.claude/rules/, created by foundry:setup — that flat
+    # namespace means two plugins shipping the same rule filename would collide, and a copy
+    # in a plugin with no installer is simply never loaded. Per-plugin rules/quality-gates.md
+    # variants stay unmanifested for the separate reason that they legitimately differ.
     {
         "canonical": "plugins/cc_foundry/skills/_shared/codex-prepass.md",
         "copies": [

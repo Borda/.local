@@ -6,6 +6,15 @@ Detects two failure modes:
   2. Bad nesting — inner fence uses same or more backticks than outer fence
      (outer must use ```` or more to wrap inner ```).
 
+Deliberately NOT split into selectable subchecks, unlike check_tag_symmetry and
+check_readme_drift. Those detect independently: tag-symmetry's three modes each scan
+for their own pattern, and readme-drift's two read different sources (plugin.json vs
+the bin/ listing). Here both modes are projections of ONE stack parse — a nesting
+violation still pushes its malformed opener (see below), so it cascades into unclosed
+findings for the same file. Verified: a file with one nesting violation emits that
+violation PLUS two unclosed findings. Offering `--check unclosed` alone would show
+those two findings with their actual cause filtered out of view.
+
 Usage:
     python "${CLAUDE_PLUGIN_ROOT}/bin/check_fence_symmetry.py" [files...] [--timeout SECS]
 

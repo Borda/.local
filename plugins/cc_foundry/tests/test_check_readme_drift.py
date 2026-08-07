@@ -1,10 +1,10 @@
 """Tests for ``bin/check_readme_drift.py``.
 
-The checker verifies two classes of README fact against disk: an explicit
-``Current version: `X.Y.Z``` marker vs the plugin manifest, and ``.py``/``.sh``
-bin-script references vs files that actually exist in the plugin. These tests
-build disposable plugin trees under ``tmp_path`` and assert the exit code and
-findings for clean, version-drift, and stale-reference cases.
+The checker verifies two independently selectable classes of README fact against
+disk: an explicit ``Current version: `X.Y.Z``` marker vs the plugin manifest, and
+``.py``/``.sh`` bin-script references vs files that actually exist in the plugin.
+These tests build disposable plugin trees under ``tmp_path`` and assert the exit code
+and findings for clean, version-drift, stale-reference, and per-subcheck cases.
 """
 
 from __future__ import annotations
@@ -19,6 +19,18 @@ _spec = importlib.util.spec_from_file_location("check_readme_drift", _MOD_PATH)
 assert _spec and _spec.loader
 crd = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(crd)
+
+
+def _messages(findings: list[crd.Finding]) -> list[str]:
+    """Return the message text of each finding, for substring assertions.
+
+    Args:
+        findings: Findings returned by ``check_plugin``.
+
+    Returns:
+        One message string per finding, in the original order.
+    """
+    return [f.message for f in findings]
 
 
 def _make_plugin(root: Path, *, version: str, readme: str, bin_scripts: tuple[str, ...] = ()) -> Path:
@@ -66,7 +78,8 @@ def test_version_marker_drift_flagged(tmp_path: Path) -> None:
     )
     findings = crd.check_plugin(plugin)
     assert len(findings) == 1
-    assert "1.0.0" in findings[0] and "2.0.0" in findings[0]
+    assert findings[0].kind is crd.FindingKind.VERSION
+    assert "1.0.0" in findings[0].message and "2.0.0" in findings[0].message
 
 
 def test_stale_bin_reference_flagged(tmp_path: Path) -> None:
@@ -79,7 +92,8 @@ def test_stale_bin_reference_flagged(tmp_path: Path) -> None:
     )
     findings = crd.check_plugin(plugin)
     assert len(findings) == 1
-    assert "gone.sh" in findings[0]
+    assert findings[0].kind is crd.FindingKind.BIN_REFS
+    assert "gone.sh" in findings[0].message
 
 
 def test_script_reference_off_bin_line_ignored(tmp_path: Path) -> None:
@@ -122,3 +136,88 @@ def test_main_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> 
         readme="Current version: `1.0.0`.\n",
     )
     assert crd.main([str(plugin2)]) == 0
+
+
+def _both_modes_plugin(root: Path) -> Path:
+    """Create a plugin whose README drifts on both the version marker and a bin/ ref."""
+    return _make_plugin(
+        root,
+        version="2.0.0",
+        readme="Current version: `1.0.0`.\n\nShared bin/ scripts: `gone.sh`.\n",
+        bin_scripts=("kept.py",),
+    )
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        pytest.param("version,bin-refs", id="both"),
+        pytest.param("bin-refs,version", id="reordered"),
+        pytest.param(" Version , BIN-REFS ", id="padded-and-uppercased"),
+    ],
+)
+def test_parse_kinds_accepts_every_selectable_spelling(spec: str) -> None:
+    """Selector parsing is order-, case-, and whitespace-insensitive."""
+    assert crd.parse_kinds(spec) == set(crd.SELECTABLE_KINDS)
+
+
+def test_parse_kinds_rejects_unknown_token() -> None:
+    """An unrecognised subcheck name raises ValueError naming the token."""
+    with pytest.raises(ValueError, match="nope"):
+        crd.parse_kinds("version,nope")
+
+
+def test_no_arg_default_runs_both_subchecks(tmp_path: Path) -> None:
+    """check_plugin without an explicit kinds set reports both drift classes."""
+    findings = crd.check_plugin(_both_modes_plugin(tmp_path))
+    assert {f.kind for f in findings} == set(crd.SELECTABLE_KINDS)
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected", "excluded"),
+    [
+        pytest.param("version", "1.0.0", "gone.sh", id="version"),
+        pytest.param("bin-refs", "gone.sh", "plugin.json", id="bin-refs"),
+    ],
+)
+def test_single_subcheck_reports_only_its_own_findings(tmp_path: Path, mode: str, expected: str, excluded: str) -> None:
+    """Selecting one subcheck yields that class of finding only."""
+    findings = crd.check_plugin(_both_modes_plugin(tmp_path), crd.parse_kinds(mode))
+    messages = _messages(findings)
+    assert len(messages) == 1
+    assert expected in messages[0]
+    assert excluded not in messages[0]
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        pytest.param("version", "1.0.0", id="version"),
+        pytest.param("bin-refs", "gone.sh", id="bin-refs"),
+    ],
+)
+def test_main_single_subcheck_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: str, expected: str
+) -> None:
+    """A subcheck with findings still drives exit code 1 when selected alone."""
+    plugin = _both_modes_plugin(tmp_path)
+    rc = crd.main([str(plugin), "--check", mode])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert expected in out
+
+
+def test_main_subcheck_clean_for_unrelated_drift_exits_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A plugin drifting only on its version marker passes the bin-refs subcheck."""
+    plugin = _make_plugin(tmp_path, version="2.0.0", readme="Current version: `1.0.0`.\n")
+    rc = crd.main([str(plugin), "--check", "bin-refs"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[bin-refs]" in out
+
+
+def test_main_unknown_subcheck_exits_two(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """An unknown --check mode exits 2 with the token named on stderr."""
+    plugin = _both_modes_plugin(tmp_path)
+    assert crd.main([str(plugin), "--check", "bogus"]) == 2
+    assert "bogus" in capsys.readouterr().err

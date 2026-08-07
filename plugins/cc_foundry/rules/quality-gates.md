@@ -152,7 +152,7 @@ Estimate file size: `$(( $(wc -c < file) / 4 ))` tokens.
 
 ## Report File Format
 
-<!-- policy-sibling: plugins/cc_foundry/rules/quality-gates.md, plugins/cc_develop/rules/quality-gates.md (cc_research/cc_oss use a different plain-ASCII-verdict format with no YAML table — not a sibling) -->
+<!-- policy-sibling: plugins/cc_foundry/rules/quality-gates.md, plugins/cc_develop/rules/quality-gates.md, plugins/cc_research/rules/quality-gates.md, plugins/cc_oss/rules/quality-gates.md -->
 
 **Universal terminal-print rule**: when skill or agent writes report file whose first non-whitespace line is `---` (YAML metadata block), that block MUST be rendered in terminal as a **simple two-column Markdown table** (`Field | Value`, one row per YAML key, in file order) — never dumped as raw YAML — as **first content of reply**, before report path line, before executive summary, before anything else. Raw YAML wraps badly at terminal width; a table keeps each field on its own row regardless of value length, **provided each value stays on one physical line**. Optionally followed by: `→ <path>`, executive summary, skill-specific details. Applies to ALL skills and agents producing such reports — no per-skill duplication of this rule needed (per-skill wording may be kept for emphasis). The table IS reply header; omit `╔═╗` Re:Anchor box when leading with it (see `communication.md` exemption).
 

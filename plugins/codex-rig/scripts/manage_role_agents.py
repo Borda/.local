@@ -15,8 +15,28 @@ import sys
 import tempfile
 import uuid
 from dataclasses import asdict, dataclass, replace
+from enum import Enum
 from pathlib import Path
 from typing import Callable, NoReturn
+
+
+class ManagerAction(str, Enum):
+    """The four verbs of the public manager grammar.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``,
+    so members serialise into the manager's JSON output as plain strings. ``DOCTOR`` and
+    ``STATUS`` are zero-write diagnostics; ``INSTALL`` and ``REMOVE`` are the mutations.
+    """
+
+    DOCTOR = "doctor"
+    STATUS = "status"
+    INSTALL = "install"
+    REMOVE = "remove"
+
+
+# The two disjoint halves of the grammar — every guard below tests one of these.
+_DIAGNOSTIC_ACTIONS = (ManagerAction.DOCTOR, ManagerAction.STATUS)
+_MUTATION_ACTIONS = (ManagerAction.INSTALL, ManagerAction.REMOVE)
 
 # Direct manager commands must not mutate the installed plugin cache with import bytecode.
 if __name__ == "__main__":
@@ -81,7 +101,7 @@ class CheckResult:
 class DiagnosticResult:
     """Expose one complete read-only doctor or status result."""
 
-    action: str
+    action: ManagerAction
     classification: str
     plugin_version: str | None
     python_version: str
@@ -99,7 +119,7 @@ class DiagnosticResult:
 class MutationPlan:
     """Bind one read-only mutation candidate to exact approval evidence."""
 
-    action: str
+    action: ManagerAction
     codex_home: Path
     plugin_root: Path
     python_path: Path
@@ -116,7 +136,7 @@ class MutationPlan:
 class RecoveryPlan:
     """Bind one exact recognized recovery residue to explicit approval bytes."""
 
-    action: str
+    action: ManagerAction
     codex_home: Path
     plugin_root: Path
     observation: FilesystemObservation
@@ -279,7 +299,7 @@ def _windows_inventory(codex_home: Path) -> tuple[CheckResult, tuple[str, ...]]:
 
 def _diagnose_windows(
     *,
-    action: str,
+    action: ManagerAction,
     codex_home: Path,
     plugin_root: Path,
     codex_binary: Path | None,
@@ -347,15 +367,16 @@ def _diagnose_windows(
 
 def diagnose(
     *,
-    action: str,
+    action: ManagerAction | str,
     codex_home: Path,
     plugin_root: Path,
     codex_binary: Path | None = None,
     check_active_package: bool = True,
 ) -> DiagnosticResult:
     """Run a zero-write live doctor and optional installed-state summary."""
-    if action not in {"doctor", "status"}:
+    if action not in _DIAGNOSTIC_ACTIONS:
         raise ValueError("diagnostic action must be doctor or status")
+    action = ManagerAction(action)
     if sys.platform == "win32":
         return _diagnose_windows(
             action=action,
@@ -494,7 +515,7 @@ def _state_bytes(
         },
         "generator_version": plan.roster.generator_version,
         "roles": roles,
-        "transaction_status": "current" if plan.action == "install" else "removed",
+        "transaction_status": "current" if plan.action == ManagerAction.INSTALL else "removed",
     }
     return _canonical(value)
 
@@ -555,7 +576,7 @@ def _journal(
         "transaction_id": plan.candidate.transaction_nonce,
         "transaction_nonce": plan.candidate.transaction_nonce,
         "install_id": plan.candidate.install_id,
-        "action": plan.action,
+        "action": plan.action.value,
         "approved_plan_digest": plan.approval.digest,
         "package_hash": plan.candidate.package_hash,
         "roster_hash": plan.candidate.roster_hash,
@@ -578,7 +599,7 @@ def _journal(
 
 def plan_mutation(
     *,
-    action: str,
+    action: ManagerAction | str,
     codex_home: Path,
     plugin_root: Path,
     codex_binary: Path | None = None,
@@ -587,10 +608,11 @@ def plan_mutation(
     transaction_nonce: str | None = None,
 ) -> MutationPlan:
     """Build one complete read-only install/remove plan and approval digest."""
-    if action not in {"install", "remove"}:
+    if action not in _MUTATION_ACTIONS:
         raise ValueError("mutation action must be install or remove")
+    action = ManagerAction(action)
     diagnostic = diagnose(
-        action="doctor",
+        action=ManagerAction.DOCTOR,
         codex_home=codex_home,
         plugin_root=plugin_root,
         codex_binary=codex_binary,
@@ -618,7 +640,7 @@ def plan_mutation(
         codex_binary_hash=codex_hash,
     )
     candidate = build_candidate(
-        action=action,
+        action=action.value,
         mode="converge",
         roster=roster,
         state_payload=observation.state_payload,
@@ -759,10 +781,11 @@ def _recovery_transaction(codex_home: Path) -> tuple[str, Journal | None, tuple[
         os.close(home_fd)
 
 
-def plan_recovery(*, action: str, codex_home: Path, plugin_root: Path) -> RecoveryPlan | None:
+def plan_recovery(*, action: ManagerAction | str, codex_home: Path, plugin_root: Path) -> RecoveryPlan | None:
     """Build an exact explicit-approval plan for recognized recovery residue."""
-    if action not in {"install", "remove"}:
+    if action not in _MUTATION_ACTIONS:
         raise ValueError("recovery action must be install or remove")
+    action = ManagerAction(action)
     home = codex_home.resolve(strict=True)
     root = plugin_root.resolve(strict=True)
     observation = observe_filesystem(codex_home=home, plugin_root=root)
@@ -928,7 +951,7 @@ def _revalidate_under_lock(plan: MutationPlan, lock_fd: int) -> FilesystemObserv
         raise ValueError("under-lock filesystem observation changed")
     trusted = replace(fresh, coordination_lock_observation=plan.observation.coordination_lock_observation)
     rebuilt = build_candidate(
-        action=plan.action,
+        action=plan.action.value,
         mode="converge",
         roster=plan.roster,
         state_payload=trusted.state_payload,
@@ -1093,7 +1116,7 @@ def _encode(result: DiagnosticResult) -> str:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the exact one-action public manager grammar."""
     parser = ManagerArgumentParser(prog="agent-shims", add_help=True)
-    parser.add_argument("action", choices=("doctor", "status", "install", "remove"))
+    parser.add_argument("action", choices=[a.value for a in ManagerAction])
     return parser.parse_args(argv)
 
 
@@ -1106,11 +1129,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except SystemExit as error:
         return int(error.code)
+    # argparse already gated the value against the enum's own choices, so this cannot raise.
+    action = ManagerAction(arguments.action)
     if not sys.platform.startswith(SUPPORTED_PLATFORMS) and sys.platform != "win32":
         print(
             json.dumps(
                 {
-                    "action": arguments.action,
+                    "action": action.value,
                     "classification": "blocked",
                     "detail": f"platform {sys.platform}; native Windows and unknown POSIX hosts are unsupported",
                     "platform": sys.platform,
@@ -1119,12 +1144,12 @@ def main(argv: list[str] | None = None) -> int:
                 sort_keys=True,
             )
         )
-        return 0 if arguments.action in {"doctor", "status"} else 5
+        return 0 if action in _DIAGNOSTIC_ACTIONS else 5
     home_value = os.environ.get("CODEX_HOME")
     codex_home = Path(home_value) if home_value else Path.home() / ".codex"
     plugin_root = Path(__file__).resolve().parents[1]
     # Only remove may recover prior transactions while new named-agent activation is unsupported.
-    if arguments.action == "install":
+    if action == ManagerAction.INSTALL:
         print(
             json.dumps(
                 {
@@ -1137,7 +1162,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 5
-    if arguments.action == "remove" and sys.platform == "win32":
+    if action == ManagerAction.REMOVE and sys.platform == "win32":
         print(
             json.dumps(
                 {
@@ -1150,17 +1175,17 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 5
-    if arguments.action in {"install", "remove"}:
+    if action in _MUTATION_ACTIONS:
         try:
             recovery = plan_recovery(
-                action=arguments.action,
+                action=action,
                 codex_home=codex_home,
                 plugin_root=plugin_root,
             )
         except (OSError, ValueError) as error:
             print(
                 json.dumps(
-                    {"action": arguments.action, "classification": "blocked", "detail": str(error)},
+                    {"action": action.value, "classification": "blocked", "detail": str(error)},
                     sort_keys=True,
                 )
             )
@@ -1169,7 +1194,7 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 json.dumps(
                     {
-                        "action": arguments.action,
+                        "action": action.value,
                         "approval_digest": recovery.digest,
                         "classification": "recovery-required",
                         "journal_state": recovery.journal.journal_state if recovery.journal is not None else None,
@@ -1183,14 +1208,14 @@ def main(argv: list[str] | None = None) -> int:
             except EOFError:
                 approved = ""
             if not hmac.compare_digest(approved, recovery.digest):
-                print(json.dumps({"action": arguments.action, "classification": "cancelled"}, sort_keys=True))
+                print(json.dumps({"action": action.value, "classification": "cancelled"}, sort_keys=True))
                 return 3
             try:
                 terminal = apply_recovery(recovery, approved)
             except (OSError, ValueError, TransactionError) as error:
                 print(
                     json.dumps(
-                        {"action": arguments.action, "classification": "recovery-required", "detail": str(error)},
+                        {"action": action.value, "classification": "recovery-required", "detail": str(error)},
                         sort_keys=True,
                     )
                 )
@@ -1198,7 +1223,7 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 json.dumps(
                     {
-                        "action": arguments.action,
+                        "action": action.value,
                         "classification": "recovered",
                         "journal_state": terminal.journal_state if terminal is not None else None,
                         "repeat_action_required": True,
@@ -1209,20 +1234,20 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         try:
             plan = plan_mutation(
-                action=arguments.action,
+                action=action,
                 codex_home=codex_home,
                 plugin_root=plugin_root,
             )
         except (OSError, ValueError) as error:
             print(
                 json.dumps(
-                    {"action": arguments.action, "classification": "blocked", "detail": str(error)},
+                    {"action": action.value, "classification": "blocked", "detail": str(error)},
                     sort_keys=True,
                 )
             )
             return 5
         if plan.approval is None:
-            print(json.dumps({"action": arguments.action, "classification": "complete", "writes": 0}, sort_keys=True))
+            print(json.dumps({"action": action.value, "classification": "complete", "writes": 0}, sort_keys=True))
             return 0
         intents = [
             {"role_id": operation.role_id, "intent": operation.intent}
@@ -1232,7 +1257,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 {
-                    "action": arguments.action,
+                    "action": action.value,
                     "approval_digest": plan.approval.digest,
                     "canonical_target_root": str(plan.codex_home / "agents"),
                     "plugin_root": str(plan.plugin_root),
@@ -1246,14 +1271,14 @@ def main(argv: list[str] | None = None) -> int:
         except EOFError:
             approved = ""
         if not hmac.compare_digest(approved, plan.approval.digest):
-            print(json.dumps({"action": arguments.action, "classification": "cancelled"}, sort_keys=True))
+            print(json.dumps({"action": action.value, "classification": "cancelled"}, sort_keys=True))
             return 3
         try:
             terminal = apply_mutation(plan, approved)
         except ValueError as error:
             print(
                 json.dumps(
-                    {"action": arguments.action, "classification": "drift", "detail": str(error)},
+                    {"action": action.value, "classification": "drift", "detail": str(error)},
                     sort_keys=True,
                 )
             )
@@ -1261,7 +1286,7 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, TransactionError) as error:
             print(
                 json.dumps(
-                    {"action": arguments.action, "classification": "recovery-required", "detail": str(error)},
+                    {"action": action.value, "classification": "recovery-required", "detail": str(error)},
                     sort_keys=True,
                 )
             )
@@ -1269,7 +1294,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 {
-                    "action": arguments.action,
+                    "action": action.value,
                     "classification": "complete",
                     "journal_state": terminal.journal_state if terminal is not None else None,
                     "fresh_session_required": True,
@@ -1279,11 +1304,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     try:
-        result = diagnose(action=arguments.action, codex_home=codex_home, plugin_root=plugin_root)
+        result = diagnose(action=action, codex_home=codex_home, plugin_root=plugin_root)
     except (OSError, ValueError) as error:
-        print(
-            json.dumps({"action": arguments.action, "classification": "blocked", "detail": str(error)}, sort_keys=True)
-        )
+        print(json.dumps({"action": action.value, "classification": "blocked", "detail": str(error)}, sort_keys=True))
         return 5
     print(_encode(result))
     return 0

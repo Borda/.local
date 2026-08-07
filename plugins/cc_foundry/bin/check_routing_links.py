@@ -8,9 +8,12 @@ Implements three checks:
        file path via variable substitution. Verify each resolved path exists both:
          (a) locally under plugins/<plugin>/...
          (b) in the active installed plugin cache (version from installed_plugins.json)
-       FAIL: file exists locally but NOT in installed cache (local-only — breaks for users).
+       WARN: file exists locally but NOT in installed cache (local-only — not yet released).
        WARN: file exists in installed cache but NOT locally (installed-only — stale install).
        INFO: plugin not installed — can't verify installed state.
+       Both installed-cache comparisons are advisory (WARN, never FAIL): the cache is
+       machine-local mutable state, so a local-only file is the normal state between adding
+       a file and releasing it. Failing on it would block the commit that releases the file.
 
   R2 — Grep-visible referencing (orphan-risk detection)
        For every .md file under plugins/*/skills/*/modes/, plugins/*/skills/*/templates/,
@@ -42,7 +45,7 @@ Output (stdout):
 
 Exit codes:
     0   all checks pass
-    1   one or more FAIL findings (local missing or installed-missing)
+    1   one or more FAIL findings (R3 script referenced but missing locally)
     2   argument error
 """
 
@@ -53,7 +56,44 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
+
+
+class Severity(str, Enum):
+    """Finding severity. Only FAIL drives a non-zero exit code.
+
+    Subclasses ``str`` rather than ``enum.StrEnum`` because ``requires-python`` is ``>=3.10``
+    and ``StrEnum`` landed in 3.11. The ``str`` mixin keeps ``Severity.FAIL == "FAIL"`` true, so
+    existing string comparisons and f-string interpolation keep working unchanged.
+
+    Examples:
+        >>> Severity.FAIL == "FAIL"
+        True
+        >>> f"R1-{Severity.WARN.value}"
+        'R1-WARN'
+        >>> Severity("INFO") is Severity.INFO
+        True
+    """
+
+    FAIL = "FAIL"
+    WARN = "WARN"
+    INFO = "INFO"
+
+
+class RefType(str, Enum):
+    """How a path reference was expressed in the source file.
+
+    Examples:
+        >>> RefType.COMPUTED_REL == "computed_rel"
+        True
+    """
+
+    COMPUTED_REL = "computed_rel"
+    COMPUTED_ABS = "computed_abs"
+    BIN_SCRIPT = "bin_script"
+    HARDCODED = "hardcoded"
+
 
 _DEFAULT_INSTALLED_PLUGINS_JSON = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
 
@@ -119,7 +159,7 @@ class PathRef:
         resolved_local: Best-effort local path relative to project root, e.g.
             ``plugins/cc_foundry/skills/audit/modes/upgrade.md``.
         target_basename: Final filename component, e.g. ``upgrade.md``.
-        ref_type: One of "computed_rel", "computed_abs", "bin_script", "hardcoded".
+        ref_type: Which RefType the reference was expressed as.
     """
 
     source_file: str
@@ -127,7 +167,7 @@ class PathRef:
     raw_expr: str
     resolved_local: str
     target_basename: str
-    ref_type: str
+    ref_type: RefType
 
 
 @dataclass
@@ -135,7 +175,7 @@ class R1Finding:
     """R1 path-resolution finding.
 
     Attributes:
-        severity: "FAIL", "WARN", or "INFO".
+        severity: Severity.FAIL, Severity.WARN, or Severity.INFO.
         source_file: .md file containing the reference.
         raw_expr: Original expression text.
         resolved_local: Local path (may not exist).
@@ -145,7 +185,7 @@ class R1Finding:
         message: Human-readable description.
     """
 
-    severity: str
+    severity: Severity
     source_file: str
     raw_expr: str
     resolved_local: str
@@ -170,7 +210,7 @@ class R3Finding:
     """R3 bin/ script finding.
 
     Attributes:
-        severity: "FAIL" or "WARN".
+        severity: Severity.FAIL or Severity.WARN.
         source_file: .md file containing the reference.
         script_name: Name of the referenced script, e.g. ``check_orphaned_bin.py``.
         plugin: Plugin owning the bin/ script, e.g. "foundry".
@@ -180,7 +220,7 @@ class R3Finding:
         message: Human-readable description.
     """
 
-    severity: str
+    severity: Severity
     source_file: str
     script_name: str
     plugin: str
@@ -367,7 +407,7 @@ def extract_path_refs(md_file: Path, plugin: str, plugins_dir: Path) -> list[Pat
     refs: list[PathRef] = []
     seen: set[tuple[str, str]] = set()
 
-    def _add(raw: str, resolved: str | None, basename: str, ref_type: str) -> None:
+    def _add(raw: str, resolved: str | None, basename: str, ref_type: RefType) -> None:
         # Dedup by resolved path + type so patterns 2 and 4 don't double-count the same target.
         key = (resolved or raw, ref_type)
         if key in seen or resolved is None:
@@ -389,21 +429,21 @@ def extract_path_refs(md_file: Path, plugin: str, plugins_dir: Path) -> list[Pat
         var, rel = m.group(1), m.group(2)
         resolved = _resolve_computed_rel(var, rel, plugins_dir)
         basename = Path(rel).name
-        _add(m.group(0).strip('"'), resolved, basename, "computed_rel")
+        _add(m.group(0).strip('"'), resolved, basename, RefType.COMPUTED_REL)
 
     # Pattern 2: $VAR/file (but skip bin/ scripts — covered by R3)
     for m in _COMPUTED_ABS_RE.finditer(text):
         var, fname = m.group(1), m.group(2)
         if var in _VAR_ROOTS:
             resolved = _resolve_computed_abs(var, fname, plugins_dir)
-            _add(m.group(0).strip('"'), resolved, fname, "computed_abs")
+            _add(m.group(0).strip('"'), resolved, fname, RefType.COMPUTED_ABS)
 
     # Pattern 4: Read "$VAR/file" (explicit Read calls — same resolution as pattern 2)
     for m in _READ_VAR_RE.finditer(text):
         var, fname = m.group(1), m.group(2)
         if var in _VAR_ROOTS:
             resolved = _resolve_computed_abs(var, fname, plugins_dir)
-            _add(m.group(0).strip('"'), resolved, fname, "computed_abs")
+            _add(m.group(0).strip('"'), resolved, fname, RefType.COMPUTED_ABS)
 
     # Pattern 5: hardcoded plugins/<plugin>/... paths
     for m in _HARDCODED_RE.finditer(text):
@@ -411,7 +451,7 @@ def extract_path_refs(md_file: Path, plugin: str, plugins_dir: Path) -> list[Pat
         raw = m.group(0)
         fname = m.group(2)
         # Full path already embedded in the match
-        _add(raw, raw, fname, "hardcoded")
+        _add(raw, raw, fname, RefType.HARDCODED)
 
     return refs
 
@@ -630,7 +670,7 @@ def run_computed_path_duality(
                     # Cannot verify installed state — info only, not a failure
                     findings.append(
                         R1Finding(
-                            severity="INFO",
+                            severity=Severity.INFO,
                             source_file=ref.source_file,
                             raw_expr=ref.raw_expr,
                             resolved_local=ref.resolved_local,
@@ -650,9 +690,16 @@ def run_computed_path_duality(
                 )
 
                 if local_exists and not installed_found:
+                    # WARN, not FAIL: the installed cache is machine-local mutable state whose
+                    # contents depend on when the user last synced and on what has been pushed to
+                    # the marketplace remote. A newly added shared file is legitimately local-only
+                    # until its commit ships, so failing here would block the very commit that
+                    # releases the file (commit -> push -> sync is the only way to populate the
+                    # cache). Pre-commit must assert facts about the source tree, which is what the
+                    # local-existence checks above and R3 do; cache drift is advisory only.
                     findings.append(
                         R1Finding(
-                            severity="FAIL",
+                            severity=Severity.WARN,
                             source_file=ref.source_file,
                             raw_expr=ref.raw_expr,
                             resolved_local=ref.resolved_local,
@@ -660,18 +707,18 @@ def run_computed_path_duality(
                             installed_versions=checked_paths,
                             exists_installed=False,
                             message=(
-                                f"R1-FAIL: {ref.source_file} — `{ref.raw_expr}` "
+                                f"R1-WARN: {ref.source_file} — `{ref.raw_expr}` "
                                 f"resolves to `{ref.resolved_local}` (exists locally) "
-                                f"but absent from installed cache — breaks for users who install the plugin\n"
-                                f"  fix: run `claude plugin install <plugin>@borda-ai-rig` to sync, "
-                                f"or check that the file is included in the plugin manifest"
+                                f"but absent from installed cache — users on the released version lack it\n"
+                                f"  fix: none needed if the file is newly added and not yet released; "
+                                f"otherwise verify it is included in the plugin manifest"
                             ),
                         )
                     )
                 elif not local_exists and installed_found:
                     findings.append(
                         R1Finding(
-                            severity="WARN",
+                            severity=Severity.WARN,
                             source_file=ref.source_file,
                             raw_expr=ref.raw_expr,
                             resolved_local=ref.resolved_local,
@@ -875,7 +922,7 @@ def run_bin_ref_integrity(
                     # Bare ${CLAUDE_PLUGIN_ROOT}/bin/ form (no :-plugin fallback) is used in
                     # documentation guides as a generic placeholder — downgrade to WARN to avoid
                     # false failures on example snippets.  Explicit :-form refs are real dispatch.
-                    severity = "FAIL" if explicit_plugin else "WARN"
+                    severity = Severity.FAIL if explicit_plugin else Severity.WARN
                     label = "R3-FAIL" if explicit_plugin else "R3-WARN"
                     findings.append(
                         R3Finding(
@@ -905,7 +952,7 @@ def run_bin_ref_integrity(
                 if not installed_found:
                     findings.append(
                         R3Finding(
-                            severity="WARN",
+                            severity=Severity.WARN,
                             source_file=source_file,
                             script_name=script_name,
                             plugin=bin_plugin,
@@ -943,9 +990,9 @@ def format_results(results: CheckResults, active_checks: set[str]) -> tuple[str,
     exit_code = 0
 
     if "R1" in active_checks:
-        r1_fails = [f for f in results.r1 if f.severity == "FAIL"]
-        r1_warns = [f for f in results.r1 if f.severity == "WARN"]
-        r1_infos = [f for f in results.r1 if f.severity == "INFO"]
+        r1_fails = [f for f in results.r1 if f.severity == Severity.FAIL]
+        r1_warns = [f for f in results.r1 if f.severity == Severity.WARN]
+        r1_infos = [f for f in results.r1 if f.severity == Severity.INFO]
         lines.append("=== Check R1: Computed path resolution (local + installed duality) ===")
         if r1_fails or r1_warns:
             for f in r1_fails + r1_warns:
@@ -970,8 +1017,8 @@ def format_results(results: CheckResults, active_checks: set[str]) -> tuple[str,
             lines.append("✓: Check R2 — all indirect-load .md files have grep-visible basename references")
 
     if "R3" in active_checks:
-        r3_fails = [f for f in results.r3 if f.severity == "FAIL"]
-        r3_warns = [f for f in results.r3 if f.severity == "WARN"]
+        r3_fails = [f for f in results.r3 if f.severity == Severity.FAIL]
+        r3_warns = [f for f in results.r3 if f.severity == Severity.WARN]
         lines.append("=== Check R3: bin/ script existence (local + installed) ===")
         if r3_fails or r3_warns:
             for f in r3_fails + r3_warns:
@@ -982,11 +1029,11 @@ def format_results(results: CheckResults, active_checks: set[str]) -> tuple[str,
             lines.append("✓: Check R3 — all bin/ script references resolve at local + installed")
 
     # Summary counts
-    total_fail = sum(1 for f in results.r1 if f.severity == "FAIL") + len(
-        [f for f in results.r3 if f.severity == "FAIL"]
+    total_fail = sum(1 for f in results.r1 if f.severity == Severity.FAIL) + len(
+        [f for f in results.r3 if f.severity == Severity.FAIL]
     )
-    total_warn = sum(1 for f in results.r1 if f.severity == "WARN") + len(
-        [f for f in results.r3 if f.severity == "WARN"]
+    total_warn = sum(1 for f in results.r1 if f.severity == Severity.WARN) + len(
+        [f for f in results.r3 if f.severity == Severity.WARN]
     )
     total_orphan = len(results.r2)
     if total_fail or total_warn or total_orphan:

@@ -46,10 +46,23 @@ import json
 import os
 import sys
 import tempfile
+from enum import Enum
 from pathlib import Path
 from typing import Any, Final
 
 MIN_SAMPLES_FOR_TEST: Final[int] = 6
+
+
+class Direction(str, Enum):
+    """Which way a metric has to move to count as an improvement.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is
+    ``>=3.10``. Values match the ``metric.direction`` field stored in a run's
+    ``state.json`` and the ``--direction`` CLI flag.
+    """
+
+    HIGHER = "higher"
+    LOWER = "lower"
 
 
 def _validate_jsonl_path(raw: str) -> Path | None:
@@ -94,7 +107,7 @@ def run_wilcoxon(
     baseline_scores: list[float],
     candidate_scores: list[float],
     alpha: float = 0.05,
-    direction: str = "higher",
+    direction: Direction | str = Direction.HIGHER,
 ) -> dict[str, Any]:
     """Run a Wilcoxon signed-rank test comparing candidate scores to baseline scores.
 
@@ -105,14 +118,15 @@ def run_wilcoxon(
     test with per-iteration matched baselines. Uses the one-sided alternative matching
     ``direction``:
 
-    - ``"higher"`` → ``alternative="greater"`` (improvement = candidate > baseline)
-    - ``"lower"`` → ``alternative="less"`` (improvement = candidate < baseline)
+    - ``Direction.HIGHER`` → ``alternative="greater"`` (improvement = candidate > baseline)
+    - ``Direction.LOWER`` → ``alternative="less"`` (improvement = candidate < baseline)
 
     Args:
         baseline_scores: Baseline metric values; must equal length of ``candidate_scores``.
         candidate_scores: Candidate metric values (e.g. all kept iterations).
         alpha: Significance threshold (typically 0.05).
-        direction: ``"higher"`` (higher-is-better) or ``"lower"`` (lower-is-better).
+        direction: A :class:`Direction` member, or its plain value when the caller
+            forwards a raw CLI/JSON string.
 
     Returns:
         Dict with keys ``significant`` (bool), ``p_value`` (float), ``statistic`` (float),
@@ -120,12 +134,12 @@ def run_wilcoxon(
         ``{"significant": False, "p_value": None, "statistic": None, "n": N, "reason": "<msg>"}``.
 
     Raises:
-        ValueError: if ``direction`` is not ``"higher"`` or ``"lower"`` or the score
+        ValueError: if ``direction`` is not a legal :class:`Direction` value or the score
             lengths differ.
 
     Examples:
         >>> # Insufficient data (< 6 paired samples) returns a reason rather than a p-value.
-        >>> out = run_wilcoxon([1.0, 1.0, 1.0], [2.0, 2.0, 2.0], alpha=0.05, direction="higher")
+        >>> out = run_wilcoxon([1.0, 1.0, 1.0], [2.0, 2.0, 2.0], alpha=0.05, direction=Direction.HIGHER)
         >>> out["significant"]
         False
         >>> out["n"]
@@ -138,8 +152,11 @@ def run_wilcoxon(
             ...
         ValueError: direction must be 'higher' or 'lower', got: 'sideways'
     """
-    if direction not in {"higher", "lower"}:
-        raise ValueError(f"direction must be 'higher' or 'lower', got: {direction!r}")
+    try:
+        direction = Direction(direction)
+    except ValueError:
+        legal = " or ".join(repr(d.value) for d in Direction)
+        raise ValueError(f"direction must be {legal}, got: {direction!r}") from None
     if len(baseline_scores) != len(candidate_scores):
         raise ValueError(
             f"baseline_scores ({len(baseline_scores)}) and candidate_scores "
@@ -167,7 +184,7 @@ def run_wilcoxon(
             "reason": "scipy not installed — run: pip install scipy",
         }
 
-    alternative = "greater" if direction == "higher" else "less"
+    alternative = "greater" if direction == Direction.HIGHER else "less"
     result = wilcoxon(candidate_scores, baseline_scores, alternative=alternative)
     statistic = float(result.statistic)
     p_value = float(result.pvalue)
@@ -252,8 +269,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--direction",
-        choices=("higher", "lower"),
-        default="higher",
+        choices=[d.value for d in Direction],
+        default=Direction.HIGHER.value,
         help="Improvement direction for the metric (default: higher).",
     )
     parser.add_argument(
@@ -295,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         baseline_repeated,
         candidate_scores,
         alpha=args.alpha,
-        direction=args.direction,
+        direction=Direction(args.direction),
     )
     print(json.dumps(result))
     return 0 if result["significant"] else 1

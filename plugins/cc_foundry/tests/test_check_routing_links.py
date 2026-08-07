@@ -9,6 +9,7 @@ import pytest
 # conftest.py registers bin/ scripts as importable modules
 from check_routing_links import (
     CheckResults,
+    Severity,
     R1Finding,
     R2Finding,
     R3Finding,
@@ -313,10 +314,12 @@ class TestRunR1:
         skill_md.write_text('UPGRADE_MD="$AUDIT_TPL/../modes/upgrade.md"\n')
 
         findings = run_computed_path_duality(plugins_dir, cache_dir)
-        fails = [f for f in findings if f.severity == "FAIL"]
+        fails = [f for f in findings if f.severity == Severity.FAIL]
         assert fails == [], f"Expected no FAIL findings, got: {fails}"
 
-    def test_fail_when_local_only(self, tmp_path: Path) -> None:
+    def test_warn_not_fail_when_local_only(self, tmp_path: Path) -> None:
+        """Local-only is advisory: the cache is machine state, so a not-yet-released file must
+        never block the commit that releases it."""
         plugins_dir, plugin_dir = _make_plugin_tree(tmp_path)
         cache_dir = _make_cache(tmp_path)
 
@@ -328,9 +331,10 @@ class TestRunR1:
         skill_md.write_text('UPGRADE_MD="$AUDIT_TPL/../modes/upgrade.md"\n')
 
         findings = run_computed_path_duality(plugins_dir, cache_dir)
-        fails = [f for f in findings if f.severity == "FAIL"]
-        assert len(fails) >= 1
-        assert "upgrade.md" in fails[0].resolved_local
+        assert [f for f in findings if f.severity == Severity.FAIL] == []
+        warns = [f for f in findings if f.severity == Severity.WARN]
+        assert len(warns) >= 1
+        assert "upgrade.md" in warns[0].resolved_local
 
     def test_warn_when_installed_only(self, tmp_path: Path) -> None:
         plugins_dir, plugin_dir = _make_plugin_tree(tmp_path)
@@ -345,7 +349,7 @@ class TestRunR1:
         skill_md.write_text('UPGRADE_MD="$AUDIT_TPL/../modes/upgrade.md"\n')
 
         findings = run_computed_path_duality(plugins_dir, cache_dir)
-        warns = [f for f in findings if f.severity == "WARN"]
+        warns = [f for f in findings if f.severity == Severity.WARN]
         assert len(warns) >= 1
 
     def test_info_when_not_installed(self, tmp_path: Path) -> None:
@@ -396,7 +400,7 @@ class TestRunR1:
         source_md.write_text("See `plugins/cc_foundry/agents/web-explorer.md` for details.\n")
 
         findings = run_computed_path_duality(plugins_dir.resolve(), cache_dir, active_install_paths)
-        fails = [f for f in findings if f.severity == "FAIL" and "web-explorer.md" in f.raw_expr]
+        fails = [f for f in findings if f.severity == Severity.FAIL and "web-explorer.md" in f.raw_expr]
         assert fails == [], f"web-explorer.md exists in both local and its own installed cache: {fails}"
 
 
@@ -486,7 +490,7 @@ class TestRunR3:
         skill_md.write_text('python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/missing_script.py"\n')
 
         findings = run_bin_ref_integrity(plugins_dir, cache_dir)
-        fails = [f for f in findings if f.severity == "FAIL"]
+        fails = [f for f in findings if f.severity == Severity.FAIL]
         assert len(fails) >= 1
         assert fails[0].script_name == "missing_script.py"
 
@@ -502,7 +506,7 @@ class TestRunR3:
         skill_md.write_text('python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/new_script.py"\n')
 
         findings = run_bin_ref_integrity(plugins_dir, cache_dir)
-        warns = [f for f in findings if f.severity == "WARN"]
+        warns = [f for f in findings if f.severity == Severity.WARN]
         assert len(warns) >= 1
         assert warns[0].script_name == "new_script.py"
 
@@ -536,12 +540,12 @@ class TestFormatResults:
     @pytest.mark.parametrize(
         ("severity", "expected_exit", "expected_fragment"),
         [
-            ("FAIL", 1, "R1-FAIL"),
-            ("WARN", 0, "R1-WARN"),
-            ("INFO", 0, "reference(s) skipped"),
+            (Severity.FAIL, 1, "R1-FAIL"),
+            (Severity.WARN, 0, "R1-WARN"),
+            (Severity.INFO, 0, "reference(s) skipped"),
         ],
     )
-    def test_r1_exit_code_by_severity(self, severity: str, expected_exit: int, expected_fragment: str) -> None:
+    def test_r1_exit_code_by_severity(self, severity: Severity, expected_exit: int, expected_fragment: str) -> None:
         results = CheckResults()
         results.r1 = [
             R1Finding(
@@ -549,10 +553,10 @@ class TestFormatResults:
                 source_file="plugins/cc_foundry/skills/audit/SKILL.md",
                 raw_expr="$AUDIT_TPL/../modes/upgrade.md",
                 resolved_local="plugins/cc_foundry/skills/audit/modes/upgrade.md",
-                exists_locally=severity != "WARN",
+                exists_locally=severity != Severity.WARN,
                 installed_versions=["~/.claude/plugins/cache/borda-ai-rig/foundry/0.17.0"],
-                exists_installed=severity != "FAIL",
-                message=f"R1-{severity}: test",
+                exists_installed=severity != Severity.FAIL,
+                message=f"R1-{severity.value}: test",
             )
         ]
         report, exit_code = format_results(results, {"R1", "R2", "R3"})
@@ -578,11 +582,11 @@ class TestFormatResults:
     @pytest.mark.parametrize(
         ("severity", "expected_exit"),
         [
-            ("FAIL", 1),
-            ("WARN", 0),
+            (Severity.FAIL, 1),
+            (Severity.WARN, 0),
         ],
     )
-    def test_r3_exit_code_by_severity(self, severity: str, expected_exit: int) -> None:
+    def test_r3_exit_code_by_severity(self, severity: Severity, expected_exit: int) -> None:
         results = CheckResults()
         results.r3 = [
             R3Finding(
@@ -591,14 +595,14 @@ class TestFormatResults:
                 script_name="missing.py",
                 plugin="foundry",
                 local_path="plugins/cc_foundry/bin/missing.py",
-                exists_locally=severity != "FAIL",
-                exists_installed=severity != "WARN",
-                message=f"R3-{severity}: test",
+                exists_locally=severity != Severity.FAIL,
+                exists_installed=severity != Severity.WARN,
+                message=f"R3-{severity.value}: test",
             )
         ]
         report, exit_code = format_results(results, {"R1", "R2", "R3"})
         assert exit_code == expected_exit
-        assert f"R3-{severity}" in report
+        assert f"R3-{severity.value}" in report
 
     def test_selective_checks_respected(self) -> None:
         results = CheckResults()

@@ -10,8 +10,19 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
+from enum import Enum
 from pathlib import Path
 from typing import Any, TextIO
+
+
+class SyncAction(str, Enum):
+    """The two restore verbs this script accepts.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``.
+    """
+
+    INSTALL = "install"
+    CLEAR = "clear"
 
 
 MARKETPLACE = "borda-ai-rig"
@@ -57,7 +68,7 @@ def _system_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProces
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the native Codex restore command line."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", nargs="?", choices=("install", "clear"), default="install")
+    parser.add_argument("action", nargs="?", choices=[a.value for a in SyncAction], default=SyncAction.INSTALL.value)
     parser.add_argument("--codex-ref", help="Git ref to pin; default follows the marketplace default branch")
     parser.add_argument(
         "--no-codex-global-agents",
@@ -194,7 +205,7 @@ def sync_codex(
     stdout: TextIO = sys.stdout,
 ) -> int:
     """Execute one Codex-only restore or teardown with argv-safe subprocesses."""
-    if args.action == "clear":
+    if args.action == SyncAction.CLEAR:
         return _clear(run, environ, stdout)
 
     requested_ref = args.codex_ref or ""

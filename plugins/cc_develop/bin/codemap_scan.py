@@ -28,7 +28,26 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable
+from enum import Enum
 from pathlib import Path
+
+
+class ScanSource(str, Enum):
+    """Where the affected-module list is derived from — the closed set of ``--source`` values.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``.
+    The mixin keeps ``ScanSource.FIND == "find"`` true, so the plain string argparse
+    hands back still compares equal.
+
+    Examples:
+        >>> ScanSource("diff").value
+        'diff'
+        >>> ScanSource.FIND == "find"
+        True
+    """
+
+    FIND = "find"
+    DIFF = "diff"
 
 
 def derive_module_from_path(path: str) -> str:
@@ -235,7 +254,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         description="Derive affected modules and emit codemap-py query rdeps + optional coupled output.",
         add_help=True,
     )
-    parser.add_argument("--source", choices=("find", "diff"), default=None)
+    parser.add_argument("--source", choices=[s.value for s in ScanSource], default=None)
     parser.add_argument("--target", default="")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument(
@@ -263,6 +282,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.source:
         print("codemap_scan.py: --source=find|diff required", file=sys.stderr)
         return 1
+    # Boundary conversion: argparse hands back a plain string; everything below is the enum.
+    source = ScanSource(args.source)
 
     # codemap-py query missing → silent skip (caller decides whether to warn).
     if shutil.which("codemap-py") is None:
@@ -275,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     if not index_path.is_file():
         return 0
 
-    if args.source == "find":
+    if source == ScanSource.FIND:
         if not args.target:
             print("codemap_scan.py: --target required for --source=find", file=sys.stderr)
             return 1
@@ -290,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         if mod:
             _scan_query(["rdeps", mod], timeout=args.timeout)
 
-    if args.source == "find":
+    if source == ScanSource.FIND:
         _scan_query(["coupled", "--top", str(args.limit)], timeout=args.timeout)
 
     return 0

@@ -827,7 +827,7 @@ Run `/research:plan "<goal>"` first — writes `program.md` to project root by d
 
 **A question is blocked with "research:topic report gate"**
 
-`enforce-topic-header.js` denied an `AskUserQuestion` call because the report file under `.reports/research/` does not exist — the topic run reached its follow-up question without writing a report, so no report header could have been printed. Write the report to that exact path and print its `---` header; the question then goes through. The gate deactivates two hours after a run resolves its report path, so an aborted run never blocks later questions permanently.
+`enforce-topic-header.js` denied an `AskUserQuestion` call because the report file under `.reports/research/` does not exist — the topic run reached its follow-up question without writing a report, so no report header could have been printed. Write the report to that exact path and render its `---` header as the two-column terminal table; the question then goes through. The gate deactivates two hours after a run resolves its report path, so an aborted run never blocks later questions permanently.
 
 **"Metric command failed or produced no numeric output" during judge or run**
 

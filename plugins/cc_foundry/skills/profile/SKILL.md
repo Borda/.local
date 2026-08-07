@@ -98,7 +98,7 @@ echo '{"status":"complete","since":"'"$SINCE"'","session_id":"'"$SESSION_ID"'","
 
 ## Step 4: Emit terminal output
 
-Read YAML header from `$REPORT_DIR/report.md` (first block between `---` lines) and print verbatim. Then print `→ $REPORT_DIR/report.md`. Then read Headline split block plus top 3 sessions from per-session table and surface as executive summary (per quality-gates.md output routing).
+Read YAML header from `$REPORT_DIR/report.md` (first block between `---` lines) and render as a two-column Markdown table (`Field | Value`, one row per key, file order) per quality-gates.md §Report File Format's Universal terminal-print rule — never print the raw `---`-delimited block. Then print `→ $REPORT_DIR/report.md`. Then read Headline split block plus top 3 sessions from per-session table and surface as executive summary (per quality-gates.md output routing).
 
 Also Write the long-output dump per quality-gates rule:
 

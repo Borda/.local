@@ -5,8 +5,38 @@ from __future__ import annotations
 
 import argparse
 import json
+from enum import Enum
 from pathlib import Path
 from typing import Any
+
+
+class ResultStatus(str, Enum):
+    """Overall verdict recorded in the result payload and mirrored by gates.json.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``,
+    so members serialise into result JSON as plain strings.
+    """
+
+    PASS = "pass"
+    FAIL = "fail"
+    TIMEOUT = "timeout"
+
+
+class ClosureStatus(str, Enum):
+    """How one declared confidence gap was closed out."""
+
+    CLOSED = "closed"
+    UNRESOLVED = "unresolved"
+    DEFERRED = "deferred"
+
+
+class RecoveryStatus(str, Enum):
+    """Confidence band the recovery block claims for the run."""
+
+    FAIR = "fair"
+    CAUTIOUS_LOW = "cautious-low"
+    VERY_QUESTIONABLE = "very-questionable"
+    NOT_ACCEPTABLE_FAILED = "not-acceptable-failed"
 
 
 def parse_items(raw: str) -> list[str]:
@@ -63,13 +93,14 @@ def validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: 
         if not isinstance(gap, str) or not gap.strip():
             raise SystemExit(f"confidence-gap-closure-missing-gap:{index}")
         closure_status = closure.get("status")
-        if closure_status not in {"closed", "unresolved", "deferred"}:
+        if closure_status not in {s.value for s in ClosureStatus}:
             raise SystemExit(f"confidence-gap-closure-invalid-status:{index}")
         evidence = closure.get("evidence") or closure.get("evidence_path")
         rationale = closure.get("rationale")
-        if closure_status == "closed" and not (isinstance(evidence, str) and evidence.strip()):
+        if closure_status == ClosureStatus.CLOSED and not (isinstance(evidence, str) and evidence.strip()):
             raise SystemExit(f"confidence-gap-closure-missing-evidence:{index}")
-        if closure_status in {"unresolved", "deferred"} and not (isinstance(rationale, str) and rationale.strip()):
+        unclosed = {ClosureStatus.UNRESOLVED, ClosureStatus.DEFERRED}
+        if closure_status in unclosed and not (isinstance(rationale, str) and rationale.strip()):
             raise SystemExit(f"confidence-gap-closure-missing-rationale:{index}")
         closed_gaps.add(gap.strip())
 
@@ -79,7 +110,7 @@ def validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: 
 
 
 def validate_confidence_recovery(
-    metadata: dict[str, Any], confidence: float, status: str, checks_failed: list[str]
+    metadata: dict[str, Any], confidence: float, status: ResultStatus, checks_failed: list[str]
 ) -> None:
     """Validate the shared confidence-band recovery contract."""
     recovery = metadata.get("confidence_recovery")
@@ -96,7 +127,7 @@ def validate_confidence_recovery(
         raise SystemExit("confidence-recovery-final-mismatch")
 
     recovery_status = recovery.get("status")
-    if recovery_status not in {"fair", "cautious-low", "very-questionable", "not-acceptable-failed"}:
+    if recovery_status not in {s.value for s in RecoveryStatus}:
         raise SystemExit("invalid-confidence-recovery-status")
 
     evidence = require_string_list(recovery, "evidence")
@@ -108,40 +139,40 @@ def validate_confidence_recovery(
         raise SystemExit("confidence-recovery-actions-required")
 
     if confidence <= 0.8:
-        if status == "pass":
+        if status == ResultStatus.PASS:
             raise SystemExit("pass-confidence-not-acceptable")
         if "confidence-not-acceptable" not in checks_failed:
             raise SystemExit("missing-confidence-not-acceptable-check")
-        if recovery_status != "not-acceptable-failed":
+        if recovery_status != RecoveryStatus.NOT_ACCEPTABLE_FAILED:
             raise SystemExit("confidence-status-should-fail")
         if not any(item.strip() for item in remaining_limits):
             raise SystemExit("low-confidence-remaining-limits-required")
         return
 
     if confidence < 0.85:
-        if status == "pass":
+        if status == ResultStatus.PASS:
             raise SystemExit("pass-confidence-very-questionable")
         if "confidence-very-questionable" not in checks_failed:
             raise SystemExit("missing-confidence-very-questionable-check")
-        if recovery_status != "very-questionable":
+        if recovery_status != RecoveryStatus.VERY_QUESTIONABLE:
             raise SystemExit("confidence-status-should-be-very-questionable")
         if not any(item.strip() for item in remaining_limits):
             raise SystemExit("very-questionable-remaining-limits-required")
         return
 
     if confidence < 0.9:
-        if recovery_status != "cautious-low":
+        if recovery_status != RecoveryStatus.CAUTIOUS_LOW:
             raise SystemExit("confidence-status-should-be-cautious-low")
         if not any(item.strip() for item in remaining_limits):
             raise SystemExit("cautious-low-remaining-limits-required")
         return
 
-    if recovery_status != "fair":
+    if recovery_status != RecoveryStatus.FAIR:
         raise SystemExit("confidence-status-should-be-fair")
 
 
 def validate_confidence_metadata(
-    metadata: dict[str, Any], confidence: float, status: str, checks_failed: list[str]
+    metadata: dict[str, Any], confidence: float, status: ResultStatus, checks_failed: list[str]
 ) -> None:
     """Validate all confidence metadata required by the shared result contract."""
     if not metadata:
@@ -174,11 +205,11 @@ def validate_gate_evidence(args: argparse.Namespace, checks_run: list[str], chec
     if not isinstance(gate_failures, list) or not set(gate_failures).issubset(checks_failed):
         raise SystemExit("result-gate-failure-mismatch")
     gate_status = gates.get("status")
-    if gate_status not in {"pass", "fail", "timeout"}:
+    if gate_status not in {s.value for s in ResultStatus}:
         raise SystemExit("invalid-gate-status")
-    if gate_status == "fail" and args.status == "pass":
+    if gate_status == ResultStatus.FAIL and args.status == ResultStatus.PASS:
         raise SystemExit("pass-with-failed-gates")
-    if gate_status == "timeout" and args.status != "timeout":
+    if gate_status == ResultStatus.TIMEOUT and args.status != ResultStatus.TIMEOUT:
         raise SystemExit("result-status-timeout-mismatch")
 
 
@@ -190,11 +221,11 @@ def validate_result_invariants(args: argparse.Namespace, checks_run: list[str], 
         raise SystemExit("duplicate-checks-run")
     if len(checks_failed) != len(set(checks_failed)):
         raise SystemExit("duplicate-checks-failed")
-    if args.status == "pass" and checks_failed:
+    if args.status == ResultStatus.PASS and checks_failed:
         raise SystemExit("pass-with-failed-checks")
-    if args.status == "pass" and args.critical > 0:
+    if args.status == ResultStatus.PASS and args.critical > 0:
         raise SystemExit("pass-with-critical-findings")
-    if args.status == "timeout" and not checks_failed:
+    if args.status == ResultStatus.TIMEOUT and not checks_failed:
         raise SystemExit("timeout-without-failed-check")
 
 
@@ -205,10 +236,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     validate_result_invariants(args, checks_run, checks_failed)
     validate_gate_evidence(args, checks_run, checks_failed)
     metadata = parse_metadata(args.metadata)
-    validate_confidence_metadata(metadata, args.confidence, args.status, checks_failed)
+    status = ResultStatus(args.status)
+    validate_confidence_metadata(metadata, args.confidence, status, checks_failed)
 
     return {
-        "status": args.status,
+        "status": status.value,
         "checks_run": checks_run,
         "checks_failed": checks_failed,
         "findings": {
@@ -230,7 +262,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path, help="Candidate or final result JSON to write.")
     parser.add_argument("--gates", required=True, type=Path, help="Canonical gates.json evidence path.")
-    parser.add_argument("--status", required=True, choices=("pass", "fail", "timeout"), help="Overall result status.")
+    parser.add_argument(
+        "--status", required=True, choices=[s.value for s in ResultStatus], help="Overall result status."
+    )
     parser.add_argument("--checks-run", required=True, help="Comma-separated canonical gate IDs.")
     parser.add_argument("--checks-failed", default="", help="Comma-separated failed check IDs.")
     parser.add_argument("--critical", type=int, default=0, help="Critical finding count.")

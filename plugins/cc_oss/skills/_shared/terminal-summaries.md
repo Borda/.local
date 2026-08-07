@@ -2,7 +2,9 @@
 
 <!-- file: terminal-summaries.md — canonical here; propagate_shared.py copies it to each consuming plugin's own _shared. Consumers load it from THEIR OWN _shared: oss/skills/analyse/SKILL.md + modes/{vitality,ecosystem,thread}.md -->
 
-Shared compact terminal summary templates for `/analyse` and `/oss:review`. All templates: `---` delimiters, entity identifier line, key-value fields, `→ saved to [skill-specific path]`.
+Shared compact templates for `/analyse` and `/oss:review` **report files** (on-disk content only). All templates: `---` delimiters, entity identifier line, key-value fields, `→ saved to [skill-specific path]`.
+
+**Terminal-print note**: these ` ```text ` fences show the report file's raw on-disk format — write the file exactly as shown. When printing a report's header to the terminal (the consuming skill's "print report header" step), do NOT print this raw `---`-delimited block verbatim. Per quality-gates.md §Report File Format's Universal terminal-print rule, render it as a two-column Markdown table instead (`Field | Value`, one row per key-value line above, `→ saved to ...` as its own trailing line after the table, not a table row).
 
 ## PR Summary
 

@@ -118,7 +118,7 @@ class TestRunPlanEachMode:
         """Two clean cherry-picks in each mode → both applied, no reset call issued."""
         recorded = _patch_git(monkeypatch)
         entries = [msb.PlanEntry(item_id="1", sha="aaa"), msb.PlanEntry(item_id="2", sha="bbb")]
-        result = msb.run_plan(entries, "each")
+        result = msb.run_plan(entries, msb.CommitMode.EACH)
         assert result == {"applied": ["1", "2"], "conflict": None, "remaining": []}
         reset_calls = [c for c in recorded if c[1] == "reset"]
         assert reset_calls == []
@@ -127,8 +127,12 @@ class TestRunPlanEachMode:
 class TestRunPlanNonEachMode:
     """run_plan with commit_mode in {grouped, all, stage}: soft-reset after each pick."""
 
-    @pytest.mark.parametrize("mode", ["grouped", "all", "stage"], ids=["grouped", "all", "stage"])
-    def test_soft_reset_after_each_pick(self, monkeypatch: pytest.MonkeyPatch, mode: str) -> None:
+    @pytest.mark.parametrize(
+        "mode",
+        [msb.CommitMode.GROUPED, msb.CommitMode.ALL, msb.CommitMode.STAGE],
+        ids=["grouped", "all", "stage"],
+    )
+    def test_soft_reset_after_each_pick(self, monkeypatch: pytest.MonkeyPatch, mode: msb.CommitMode) -> None:
         """Each successful cherry-pick is immediately soft-reset in non-each modes."""
         recorded = _patch_git(monkeypatch)
         entries = [msb.PlanEntry(item_id="1", sha="aaa"), msb.PlanEntry(item_id="2", sha="bbb")]
@@ -149,7 +153,7 @@ class TestRunPlanConflict:
             msb.PlanEntry(item_id="2", sha="bbb"),
             msb.PlanEntry(item_id="3", sha="ccc"),
         ]
-        result = msb.run_plan(entries, "each")
+        result = msb.run_plan(entries, msb.CommitMode.EACH)
         assert result["applied"] == ["1"]
         assert result["conflict"] == {"item_id": "2", "sha": "bbb", "files": ["src/foo.py"]}
         assert result["remaining"] == ["3"]
@@ -160,7 +164,7 @@ class TestRunPlanConflict:
         """A conflicting cherry-pick never reaches the soft-reset call, even in non-each mode."""
         recorded = _patch_git(monkeypatch, cherry_pick_rc_by_sha={"aaa": 1})
         entries = [msb.PlanEntry(item_id="1", sha="aaa")]
-        msb.run_plan(entries, "grouped")
+        msb.run_plan(entries, msb.CommitMode.GROUPED)
         reset_calls = [c for c in recorded if c[1] == "reset"]
         assert reset_calls == []
 
