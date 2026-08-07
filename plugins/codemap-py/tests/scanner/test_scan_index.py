@@ -36,6 +36,7 @@ import codemap_py.scanner as _scanner_mod  # noqa: E402
 extract_dynamic_imports = _scanner_mod.extract_dynamic_imports
 scan_config_refs = _scanner_mod.scan_config_refs
 _classify_entity = _scanner_mod._classify_entity
+EntityType = _scanner_mod.EntityType
 _load_exclusions = _scanner_mod._load_exclusions
 _iter_python_files = _scanner_mod._iter_python_files
 _parse_file = _scanner_mod._parse_file
@@ -156,18 +157,20 @@ class TestClassifyEntity:
     @pytest.mark.parametrize(
         "path_str, name, expected_type, expected_pkg",
         [
-            pytest.param("tests/test_foo.py", "tests.test_foo", "test", "tests", id="tests-dir"),
-            pytest.param("test_bar.py", "test_bar", "pkg", "test_bar", id="root-test-file"),
-            pytest.param("src/pkg/conftest.py", "pkg.conftest", "test", "pkg", id="conftest"),
-            pytest.param("docs/conf.py", "docs.conf", "docs", "docs", id="docs-dir"),
-            pytest.param("doc/api.py", "doc.api", "docs", "doc", id="doc-singular"),
-            pytest.param("examples/demo.py", "examples.demo", "example", "examples", id="examples-dir"),
-            pytest.param("example/usage.py", "example.usage", "example", "example", id="example-singular"),
-            pytest.param("mypackage/core.py", "mypackage.core", "pkg", "mypackage", id="pkg-module"),
-            pytest.param("mypackage/sub/mod.py", "mypackage.sub.mod", "pkg", "mypackage", id="pkg-submodule"),
-            pytest.param("standalone.py", "standalone", "pkg", "standalone", id="root-script"),
-            pytest.param("src/mypackage/core.py", "src.mypackage.core", "pkg", "mypackage", id="src-layout-strip"),
-            pytest.param("src/pkg/conftest.py", "src.pkg.conftest", "test", "pkg", id="src-layout-test-strip"),
+            pytest.param("tests/test_foo.py", "tests.test_foo", EntityType.TEST, "tests", id="tests-dir"),
+            pytest.param("test_bar.py", "test_bar", EntityType.PKG, "test_bar", id="root-test-file"),
+            pytest.param("src/pkg/conftest.py", "pkg.conftest", EntityType.TEST, "pkg", id="conftest"),
+            pytest.param("docs/conf.py", "docs.conf", EntityType.DOCS, "docs", id="docs-dir"),
+            pytest.param("doc/api.py", "doc.api", EntityType.DOCS, "doc", id="doc-singular"),
+            pytest.param("examples/demo.py", "examples.demo", EntityType.EXAMPLE, "examples", id="examples-dir"),
+            pytest.param("example/usage.py", "example.usage", EntityType.EXAMPLE, "example", id="example-singular"),
+            pytest.param("mypackage/core.py", "mypackage.core", EntityType.PKG, "mypackage", id="pkg-module"),
+            pytest.param("mypackage/sub/mod.py", "mypackage.sub.mod", EntityType.PKG, "mypackage", id="pkg-submodule"),
+            pytest.param("standalone.py", "standalone", EntityType.PKG, "standalone", id="root-script"),
+            pytest.param(
+                "src/mypackage/core.py", "src.mypackage.core", EntityType.PKG, "mypackage", id="src-layout-strip"
+            ),
+            pytest.param("src/pkg/conftest.py", "src.pkg.conftest", EntityType.TEST, "pkg", id="src-layout-test-strip"),
         ],
     )
     def test_classification(self, path_str, name, expected_type, expected_pkg):

@@ -20,8 +20,8 @@ _PLUGIN_ROOT = Path(__file__).resolve().parents[2]
 _CANONICAL_SKILLS = {"scan-codebase", "query-code", "test-impact", "rename-refs", "integration", "debrief-coding"}
 
 
-def _write_manifest(plugin_dir: Path, runtime: str, name: str, version: str) -> None:
-    manifest_dir = plugin_dir / (".claude-plugin" if runtime == "claude" else ".codex-plugin")
+def _write_manifest(plugin_dir: Path, runtime: integration.Runtime, name: str, version: str) -> None:
+    manifest_dir = plugin_dir / (".claude-plugin" if runtime == integration.Runtime.CLAUDE else ".codex-plugin")
     manifest_dir.mkdir(parents=True, exist_ok=True)
     (manifest_dir / "plugin.json").write_text(json.dumps({"name": name, "version": version}))
 
@@ -30,8 +30,8 @@ def _provider_only_root(base: Path) -> Path:
     """A disposable tree with only ``codemap-py`` present — every declared consumer absent."""
     root = base / "provider-only"
     root.mkdir()
-    _write_manifest(root / integration.PROVIDER_DIR, "claude", integration.PROVIDER_NAME, "1.0.0")
-    _write_manifest(root / integration.PROVIDER_DIR, "codex", integration.PROVIDER_NAME, "1.0.0")
+    _write_manifest(root / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, "1.0.0")
+    _write_manifest(root / integration.PROVIDER_DIR, integration.Runtime.CODEX, integration.PROVIDER_NAME, "1.0.0")
     return root
 
 

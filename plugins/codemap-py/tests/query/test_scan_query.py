@@ -83,6 +83,11 @@ class TestModuleQueries:
         data = query("rdeps", "gamma")
         assert "pkg.delta" not in data["imported_by"]
 
+    def test_rdeps_entity_filter_accepts_existing_cli_value(self, query):
+        """The string ``--entity`` value still filters importers after enum conversion."""
+        data = query("rdeps", "gamma", "--entity", "pkg")
+        assert set(data["imported_by"]) == {"alpha", "beta"}
+
     def test_deps(self, query):
         """alpha imports both beta and gamma."""
         data = query("deps", "alpha")
@@ -1519,7 +1524,7 @@ class TestUncovered:
                 }
             ]
         )
-        data = self._run(capsys, index, self._ns(module="mymod", sort="name"))
+        data = self._run(capsys, index, self._ns(module="mymod", sort=_scan_query_mod.UncoveredSort.NAME))
         names_in_order = [f["name"] for f in data["uncovered"]]
         assert names_in_order == ["alpha", "mu", "zeta"]
 

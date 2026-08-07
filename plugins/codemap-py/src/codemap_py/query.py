@@ -88,6 +88,7 @@ import sys
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
+from enum import Enum
 from pathlib import Path
 
 # Transitional seam: exclusion rules live in codemap_py.scanner, but this
@@ -113,6 +114,7 @@ from codemap_py.schema import (  # noqa: E402
     SUBPROCESS_CALLS_MIN_VER,
     UNCOVERED_MIN_VER,
     VALID_CALL_RESOLUTIONS,
+    EntityType,
     Symbol,
     validate_index,
 )
@@ -1630,7 +1632,7 @@ def cmd_import_types(index: dict, module: str) -> None:
     )
 
 
-def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: str | None = None) -> None:
+def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: EntityType | None = None) -> None:
     """Print all modules that import a given module as JSON.
 
     Includes static importers (``imported_by``), dynamic importers
@@ -1641,7 +1643,7 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: str
         index: parsed codemap index dict.
         module: dotted module name whose reverse dependencies are queried.
         exclude_tests: if True, exclude test modules from static results.
-        entity: if set, restrict importers to this entity_type ("pkg", "test", "docs", "example").
+        entity: if set, restrict importers to this :class:`EntityType`.
     """
     modules_list = index.get("modules", [])
     if exclude_tests:
@@ -1694,14 +1696,14 @@ def _production_rdep_counts(index: dict) -> dict[str, int]:
     return counts
 
 
-def cmd_central(index: dict, top: int, exclude_tests: bool = False, entity: str | None = None) -> None:
+def cmd_central(index: dict, top: int, exclude_tests: bool = False, entity: EntityType | None = None) -> None:
     """Print the top N most-imported modules ranked by reverse-dependency count.
 
     Args:
         index: parsed codemap index dict.
         top: number of top-ranked modules to return.
         exclude_tests: if True, exclude test modules and their importer edges.
-        entity: if set, restrict to this entity_type ("pkg", "test", "docs", "example").
+        entity: if set, restrict to this :class:`EntityType`.
     """
     candidates = [m for m in index.get("modules", []) if m.get("status") != "degraded"]
     if exclude_tests:
@@ -1736,14 +1738,14 @@ def cmd_central(index: dict, top: int, exclude_tests: bool = False, entity: str 
     )
 
 
-def cmd_coupled(index: dict, top: int, exclude_tests: bool = False, entity: str | None = None) -> None:
+def cmd_coupled(index: dict, top: int, exclude_tests: bool = False, entity: EntityType | None = None) -> None:
     """Print the top N most-coupled modules ranked by internal import count.
 
     Args:
         index: parsed codemap index dict.
         top: number of top-ranked modules to return.
         exclude_tests: if True, exclude test modules from results.
-        entity: if set, restrict to this entity_type ("pkg", "test", "docs", "example").
+        entity: if set, restrict to this :class:`EntityType`.
     """
     candidates = [m for m in index.get("modules", []) if m.get("status") != "degraded"]
     if exclude_tests:
@@ -1862,13 +1864,22 @@ def cmd_list(index: dict, limit: int = 100) -> None:
 def _entity_type(m: dict) -> str:
     """Return entity_type for a module, with fallback for pre-v5.5 indexes.
 
+    Stays a plain ``str``: the value is read back from an on-disk index that may have
+    been written by an older or foreign writer, so it is not guaranteed to be an
+    :class:`EntityType` member. Compare it against members with ``==``.
+
     Args:
         m: module entry dict from the index.
     """
     et = m.get("entity_type")
     if et:
         return et
-    return "test" if m.get("is_test") else "pkg"
+    return EntityType.TEST.value if m.get("is_test") else EntityType.PKG.value
+
+
+def _as_entity(raw: str | None) -> EntityType | None:
+    """Convert an ``--entity`` CLI value to its member (argparse already gated the choices)."""
+    return EntityType(raw) if raw else None
 
 
 def cmd_packages(index: dict) -> None:
@@ -3198,6 +3209,14 @@ def _module_uncovered_candidates(m: dict) -> list[dict]:
     return findings
 
 
+class UncoveredSort(str, Enum):
+    """Sort order for the ``uncovered`` query. Inherits str so CLI values map straight onto members."""
+
+    LOC = "loc"
+    NAME = "name"
+    MODULE = "module"
+
+
 def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
     """Print public symbols with no test coverage, sorted and capped to ``--top``.
 
@@ -3215,7 +3234,7 @@ def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
     Args:
         index: parsed codemap index dict (must be v4.2+ with ``fn_rdep_test_count``).
         args: parsed argparse namespace exposing ``module`` (str | None),
-            ``all_modules`` (bool), ``sort`` (``"loc" | "name" | "module"``),
+            ``all_modules`` (bool), ``sort`` (an :class:`UncoveredSort` value),
             and ``top`` (int).
 
     Examples:
@@ -3237,12 +3256,12 @@ def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
 
     findings = [f for m in modules for f in _module_uncovered_candidates(m)]
 
-    sort_key = args.sort
-    if sort_key == "name":
+    sort_key = UncoveredSort(args.sort)
+    if sort_key == UncoveredSort.NAME:
         findings.sort(key=lambda f: (f["qualified_name"], f["module"]))
-    elif sort_key == "module":
+    elif sort_key == UncoveredSort.MODULE:
         findings.sort(key=lambda f: (f["module"], f["qualified_name"]))
-    else:  # "loc" — default
+    else:  # UncoveredSort.LOC — default
         findings.sort(key=lambda f: (-f["loc"], f["module"], f["qualified_name"]))
 
     total = len(findings)
@@ -4331,7 +4350,7 @@ def _add_module_subparsers(sub: argparse._SubParsersAction) -> None:
     p_rdeps.add_argument(
         "--entity",
         default=None,
-        choices=("pkg", "test", "docs", "example"),
+        choices=[e.value for e in EntityType],
         help="Restrict importers to this entity type (requires v5.5+ index for docs/example).",
     )
 
@@ -4343,7 +4362,7 @@ def _add_module_subparsers(sub: argparse._SubParsersAction) -> None:
     p_central.add_argument(
         "--entity",
         default=None,
-        choices=("pkg", "test", "docs", "example"),
+        choices=[e.value for e in EntityType],
         help="Restrict to this entity type (requires v5.5+ index for docs/example).",
     )
 
@@ -4356,7 +4375,7 @@ def _add_module_subparsers(sub: argparse._SubParsersAction) -> None:
     p_coupled.add_argument(
         "--entity",
         default=None,
-        choices=("pkg", "test", "docs", "example"),
+        choices=[e.value for e in EntityType],
         help="Restrict to this entity type (requires v5.5+ index for docs/example).",
     )
 
@@ -4522,8 +4541,8 @@ def _add_docs_coverage_subparsers(sub: argparse._SubParsersAction) -> None:
     )
     p_uncov.add_argument(
         "--sort",
-        choices=("loc", "name", "module"),
-        default="loc",
+        choices=[k.value for k in UncoveredSort],
+        default=UncoveredSort.LOC.value,
         help="Sort order: loc (default — biggest first), name (alphabetical), module (group by module).",
     )
     p_uncov.add_argument(
@@ -4819,9 +4838,9 @@ _COMMAND_HANDLERS: dict[str, Callable[[dict, argparse.Namespace, Path], None]] =
     "deps": lambda i, a, r: cmd_deps(  # noqa: ARG005 (r unused — shared handler signature)
         i, a.module, stdlib_only=a.stdlib, third_party_only=a.third_party, internal_only=a.internal
     ),
-    "rdeps": lambda i, a, r: cmd_rdeps(i, a.module, exclude_tests=a.exclude_tests, entity=a.entity),  # noqa: ARG005
-    "central": lambda i, a, r: cmd_central(i, a.top, exclude_tests=a.exclude_tests, entity=a.entity),  # noqa: ARG005
-    "coupled": lambda i, a, r: cmd_coupled(i, a.top, exclude_tests=a.exclude_tests, entity=a.entity),  # noqa: ARG005
+    "rdeps": lambda i, a, r: cmd_rdeps(i, a.module, exclude_tests=a.exclude_tests, entity=_as_entity(a.entity)),  # noqa: ARG005
+    "central": lambda i, a, r: cmd_central(i, a.top, exclude_tests=a.exclude_tests, entity=_as_entity(a.entity)),  # noqa: ARG005
+    "coupled": lambda i, a, r: cmd_coupled(i, a.top, exclude_tests=a.exclude_tests, entity=_as_entity(a.entity)),  # noqa: ARG005
     "path": lambda i, a, r: cmd_path(i, a.frm, a.to),  # noqa: ARG005
     "list": lambda i, a, r: cmd_list(i, limit=a.limit),  # noqa: ARG005
     "packages": lambda i, a, r: cmd_packages(i),  # noqa: ARG005

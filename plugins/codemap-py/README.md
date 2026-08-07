@@ -91,21 +91,21 @@ Output prepended to agent spawn prompt as structural context. Agent starts refac
 
 Bold = best comparable value within each model tier and column (lower is better for tok/cost/elapsed s, higher for erec/rrec). `erec`/`rrec` = exposure/report recall of expected reverse-dependencies. Codemap-py arms cost less than `A_plain` on every axis for Haiku and Sonnet. **Opus splits**: `C_required` wins cost/tokens/elapsed, `B_auto` wins recall — `B_auto` costs more than plain (299.6k tokens / $0.529 vs 238.3k / $0.497) because opus calls the codemap-py skill and then keeps exploring with bash/grep on top of it instead of substituting for manual search, while `C_required` (skill mandatory, no plain-exploration path available) drops opus to 173.6k tokens / $0.344, the cheapest cell in the table. Full breakdown and caveats: [`benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished).
 
-**Codex agentic study (completed 2026-08-05):** 16 shared import-graph tasks × one repetition × `A_plain`, `B_auto`, and `C_strict` = 48/48 completed cells on `pytorch-lightning` 2.6.5 with `gpt-5.6-luna` at high effort, Codex CLI 0.146.0, codemap-py 0.28.4, and codex-rig 0.4.2.
+**Codex agentic study (completed 2026-08-06):** 16 shared import-graph tasks × one repetition × `A_plain`, `B_auto`, and `C_strict` = 48/48 completed cells on `pytorch-lightning` 2.6.5 with `gpt-5.6-luna` at high effort, codemap-py 0.28.6, and codex-rig 0.4.4.
 
-<a id="codex-agentic-2026-08-05"></a>
+<a id="codex-agentic-2026-08-06"></a>
 
-<!-- result-sync: duplicated in ../../benchmarks/README.md#completed-48-cell-codex-run--2026-08-05; changes require bidirectional updates or an explicit divergence note. -->
+<!-- result-sync: duplicated in ../../benchmarks/README.md#completed-48-cell-codex-run--2026-08-06; changes require bidirectional updates or an explicit divergence note. -->
 
 | Arm        | Mean semantic score | Mean EREC/RREC | Strict answers | Codemap used | Mean input | Mean output | Mean elapsed |
 | ---------- | ------------------: | -------------: | -------------: | -----------: | ---------: | ----------: | -----------: |
-| `A_plain`  |          **0.9024** |         0.9863 |      **15/16** |         0/16 |     282.8k |        7.0k |       165.1s |
-| `B_auto`   |              0.8032 |     **0.9967** |          14/16 |         9/16 |     230.9k |        4.0k |       114.2s |
-| `C_strict` |              0.8551 |     **0.9967** |          10/16 |        16/16 | **105.2k** |    **2.3k** |    **60.8s** |
+| `A_plain`  |              0.8758 |         0.9904 |      **15/16** |         0/16 |     278.8k |        7.8k |       170.1s |
+| `B_auto`   |              0.9079 |         0.9904 |      **15/16** |         6/16 |     251.8k |        4.9k |       119.0s |
+| `C_strict` |          **0.9701** |     **1.0000** |          14/16 |        16/16 |  **97.6k** |    **2.4k** |    **59.3s** |
 
 Bold = best comparable arm value per column (higher is better for semantic score, EREC/RREC, and strict answers; lower is better for input, output, and elapsed time). `Codemap used` is a treatment diagnostic, not a performance metric, so it is not bolded.
 
-`C_strict` reduced paired geometric-mean input/output/elapsed to `0.397×/0.339×/0.402×` of plain and used lower input on 14/16 tasks. Its mean semantic score was `0.0472` below plain, however, so the current result is a strong efficiency signal but not quality parity. C was both higher-quality on average (`+0.0519`) and lower-input on every task than optional B. The result is exploratory and nonpoolable: it has one run per task, 9/48 diagnostic bare-JSON recoveries, one repository/model, and an empty runtime-isolation sidecar omitted from the checksum ledger. The largest actionable quality gap is BA-04's multi-stage centrality/affected-count synthesis; full artifact interpretation and caveats: [`benchmarks/README.md#completed-48-cell-codex-run--2026-08-05`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#completed-48-cell-codex-run--2026-08-05).
+`C_strict` reduced paired geometric-mean input/output/elapsed to `0.406×/0.319×/0.364×` of plain and used lower input on 14/16 tasks while improving mean semantic score by `+0.0943`. It also used less input on all 16 tasks than optional B and improved B's mean score by `+0.0623` with no task regression. This closes the B6 descriptive quality-and-efficiency guardrail for the frozen lock, but the result remains exploratory and nonpoolable: one run per task, one repository/model, optional B adoption in only 6/16 cells, and four diagnostic bare-JSON answers. All 495 checksums verify. Full artifact interpretation and caveats: [`benchmarks/README.md#completed-48-cell-codex-run--2026-08-06`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#completed-48-cell-codex-run--2026-08-06).
 
 **Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap-py) × 3 model tiers on pytorch-lightning-master (646 modules, 8 task types). **Scope**: pre-implementation structural-query tasks (blast-radius enumeration, caller discovery) — end-to-end patch quality and test-pass rate not yet measured. Benchmark **repo-agnostic**: `tasks-bench.json` ships `repo` header so harness points at any Python codebase. Zero codemap-py timeouts; plain-arm agents hit 300-second hard limit on several tasks.
 
@@ -120,6 +120,20 @@ On the 45 preregistered headline task blocks, mean quality was A/B/C `0.8626/0.9
 The claim is bounded to one inexpensive model, one frozen repository, one run per task, a prebuilt index, and structural-answer quality; it does not measure index-build cost, cross-model/repository generalization, or end-to-end patch/test quality. The raw artifact remains local and ignored: raw telemetry SHA-256 `44f0f734bda0f422605041d245442fdbe70115eb575bac976d005d276b381405`, canonical telemetry `0d5d06f730e8a39322781d27a9f82bf58b2e239c25d6bbf2b174a77e0f7e56f5`, metadata `b075e2c05313cfa4f3d186c829e2e5187f64de4092d0343c0362aed53e989831`, and manifest `568caefa6cdd1e876e2f35a5e2476d5e661d9672894191c930017f14a29305e4`.
 
 The run also records 44 exact locked-query mismatches across 110 B/C cells. Every B/C cell still made a successful compact Codemap call and 38/44 mismatch cells were correct, so this is a query-conformance diagnostic rather than a treatment or pooling failure. It exposed concrete follow-up work: production module importers need `--exclude-tests`, feature scaffolding should query the requested extension method, and exact-query reporting should separate endpoint, target, and option/filter fitness. A provider-neutral evaluator defect also penalizes exact FT entry points followed by the terminal period shown in the prompt; a punctuation-tolerant sensitivity changes A/B/C quality to `0.8848/0.9784/0.9859`, but it is post-hoc and does not replace the locked primary result. Full methods, historical diagnostics, and current follow-up status live in [`benchmarks/README.md#codex-integration-study-a-b-c`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#codex-integration-study-a-b-c).
+
+**Prospective Codex structural execution (completed 2026-08-07):** codemap-py 0.28.6 completed 165/165 cells under schema 13, Codex CLI 0.146.1, codex-rig 0.4.4, and machine manifest `14c0792ad2cd43f9d126119f691de863d1820d27ad5b6ddd66660fa6b04995a8`.
+
+<a id="codex-structural-2026-08-07"></a>
+
+<!-- result-sync: duplicated in ../../benchmarks/README.md#prospective-codemap-py-0286-execution--2026-08-07; changes require bidirectional updates or an explicit divergence note. -->
+
+| Arm        | Mean quality | Mean gross input | Mean output | Mean elapsed | Required-use compliant | Exact locked query |
+| ---------- | -----------: | ---------------: | ----------: | -----------: | ---------------------: | -----------------: |
+| `A_plain`  |       0.9089 |           202.2k |       3,776 |       79.4 s |                    N/A |                N/A |
+| `B_direct` |   **0.9782** |           109.7k |       1,942 |       45.8 s |                  44/45 |              21/45 |
+| `C_skill`  |       0.9375 |        **72.3k** |   **1,504** |   **36.6 s** |              **45/45** |          **33/45** |
+
+Bold = best comparable arm value per column (higher is better for quality and conformance; lower is better for token and elapsed measures). The run is descriptive and nonpoolable because `A_plain/CQ-03` failed extraction and B missed required compact use in `CQ-05` and headline `FT-05`. Relative to A, B's total input/output/elapsed ratios were `0.543×/0.514×/0.577×` with quality delta `+0.0693`; C's were `0.358×/0.398×/0.461×` with quality delta `+0.0286` and task-bootstrap interval `[-0.0138, +0.0774]`. Per-task input savings remain heterogeneous: B median 31.6%, range `-163.9%` to `96.3%`; C median 44.0%, range `-86.4%` to `97.4%`. C's main quality regression is `DI-04` (`0.929→0.472`), and the DG family consumes more input at unchanged quality. Full interpretation: [`benchmarks/README.md#prospective-codemap-py-0286-execution--2026-08-07`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#prospective-codemap-py-0286-execution--2026-08-07).
 
 ### Three-model comparison
 

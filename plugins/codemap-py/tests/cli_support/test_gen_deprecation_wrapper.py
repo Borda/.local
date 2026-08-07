@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 import importlib.machinery
 import importlib.util
 import sys
@@ -30,6 +31,7 @@ generate = _mod.generate
 gen_function_wrapper = _mod.gen_function_wrapper
 gen_class_wrapper = _mod.gen_class_wrapper
 gen_wrapper_from_decorator = _mod.gen_wrapper_from_decorator
+SymbolType = _mod.SymbolType
 
 
 # ---------------------------------------------------------------------------
@@ -62,21 +64,26 @@ class TestImportForDecorator:
 
 
 class TestGenerate:
+    def test_symbol_type_uses_python_310_compatible_string_enum(self):
+        """The wrapper accepts enum members without requiring ``enum.StrEnum``."""
+        assert SymbolType.__bases__ == (str, Enum)
+        assert [member.value for member in SymbolType] == ["function", "method", "class"]
+
     def test_function_type(self):
         """function routes to @deprecated wrapper."""
-        code = generate("function", "old_fn", "new_fn")
+        code = generate(SymbolType.FUNCTION, "old_fn", "new_fn")
         assert "@deprecated" in code
         assert "deprecated_class" not in code
 
     def test_method_type(self):
         """method routes to @deprecated wrapper (same as function)."""
-        code = generate("method", "old_m", "new_m")
+        code = generate(SymbolType.METHOD, "old_m", "new_m")
         assert "@deprecated" in code
         assert "deprecated_class" not in code
 
     def test_class_type(self):
         """class routes to @deprecated_class wrapper."""
-        code = generate("class", "OldCls", "NewCls")
+        code = generate(SymbolType.CLASS, "OldCls", "NewCls")
         assert "@deprecated_class" in code
 
     def test_unknown_type_raises(self):
@@ -86,12 +93,12 @@ class TestGenerate:
 
     def test_default_versions_are_question_mark(self):
         """Omitting since/removed_in defaults to '?'."""
-        code = generate("function", "old", "new")
+        code = generate(SymbolType.FUNCTION, "old", "new")
         assert '"?"' in code
 
     def test_no_warnings_warn(self):
         """No fallback — pydeprecate only."""
-        code = generate("function", "old", "new")
+        code = generate(SymbolType.FUNCTION, "old", "new")
         assert "warnings" not in code
 
 

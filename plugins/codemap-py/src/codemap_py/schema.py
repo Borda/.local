@@ -126,6 +126,23 @@ def validate_index(index: object) -> str | None:
     return None
 
 
+class EntityType(str, Enum):
+    """Role a module plays in the project. Inherits str so json.dump serialises values as plain strings."""
+
+    PKG = "pkg"
+    TEST = "test"
+    DOCS = "docs"
+    EXAMPLE = "example"
+
+
+class SymbolType(str, Enum):
+    """Kind of extracted symbol. Inherits str so json.dump serialises values as plain strings."""
+
+    CLASS = "class"
+    FUNCTION = "function"
+    METHOD = "method"
+
+
 class Resolution(str, Enum):
     """Resolution kind for a call edge. Inherits str so json.dump serialises values as plain strings."""
 
@@ -144,7 +161,7 @@ VALID_CALL_RESOLUTIONS: frozenset[str] = frozenset({Resolution.IMPORT, Resolutio
 class Symbol(TypedDict, total=False):
     name: str
     qualified_name: str
-    type: str  # "class" | "function" | "method"
+    type: SymbolType
     start_line: int
     end_line: int
     calls: list[dict]  # v3 call edges — absent in v2 indexes

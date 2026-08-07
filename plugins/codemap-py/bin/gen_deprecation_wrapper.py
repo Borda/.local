@@ -38,6 +38,20 @@ from __future__ import annotations
 import argparse
 import sys
 import textwrap
+from enum import Enum
+
+
+class SymbolType(str, Enum):
+    """Kind of symbol the generated wrapper deprecates.
+
+    Subclasses ``str`` (not ``enum.StrEnum``) because ``requires-python`` is ``>=3.10``.
+    Declared locally rather than imported from ``codemap_py.schema``: this script is a
+    standalone codegen entry point with no package import path of its own.
+    """
+
+    FUNCTION = "function"
+    METHOD = "method"
+    CLASS = "class"
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +192,7 @@ def gen_wrapper_from_decorator(decorator: str, old_name: str, removed_in: str = 
 
 
 def generate(
-    symbol_type: str,
+    symbol_type: SymbolType | str,
     old_name: str,
     new_name: str,
     since: str = "?",
@@ -187,7 +201,7 @@ def generate(
     """Return deprecation wrapper Python source code (auto mode).
 
     Args:
-        symbol_type: ``"function"``, ``"method"``, or ``"class"``
+        symbol_type: A :class:`SymbolType` member, or its plain value from the CLI
         old_name: bare symbol name being deprecated (e.g. ``validate_token``)
         new_name: bare replacement symbol name (e.g. ``validate_access_token``)
         since: ``deprecated_in`` version string; default ``"?"`` when unknown
@@ -200,18 +214,21 @@ def generate(
         ValueError: if *symbol_type* is not one of the three accepted values.
 
     Examples:
-        >>> "deprecated" in generate("function", "old", "new")
+        >>> "deprecated" in generate(SymbolType.FUNCTION, "old", "new")
         True
-        >>> "deprecated_class" in generate("class", "Old", "New")
+        >>> "deprecated_class" in generate(SymbolType.CLASS, "Old", "New")
         True
-        >>> 'deprecated_in="0.9"' in generate("method", "m", "n", since="0.9", removed_in="1.0")
+        >>> 'deprecated_in="0.9"' in generate(SymbolType.METHOD, "m", "n", since="0.9", removed_in="1.0")
         True
     """
-    if symbol_type in ("function", "method"):
+    try:
+        symbol_type = SymbolType(symbol_type)
+    except ValueError:
+        legal = ", ".join(t.value for t in SymbolType)
+        raise ValueError(f"Unknown symbol_type {symbol_type!r}. Expected: {legal}") from None
+    if symbol_type in (SymbolType.FUNCTION, SymbolType.METHOD):
         return gen_function_wrapper(old_name, new_name, since, removed_in)
-    if symbol_type == "class":
-        return gen_class_wrapper(old_name, new_name, since, removed_in)
-    raise ValueError(f"Unknown symbol_type {symbol_type!r}. Expected: function, method, class")
+    return gen_class_wrapper(old_name, new_name, since, removed_in)
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +248,7 @@ def main() -> None:
     parser.add_argument(
         "--type",
         dest="symbol_type",
-        choices=["function", "method", "class"],
+        choices=[t.value for t in SymbolType],
         help="Auto mode: symbol type",
     )
     parser.add_argument("--new-name", help="Auto mode: bare replacement symbol name")
@@ -247,7 +264,7 @@ def main() -> None:
         if args.decorator:
             code = gen_wrapper_from_decorator(args.decorator, args.old_name, args.removed_in)
         elif args.symbol_type and args.new_name:
-            code = generate(args.symbol_type, args.old_name, args.new_name, args.since, args.removed_in)
+            code = generate(SymbolType(args.symbol_type), args.old_name, args.new_name, args.since, args.removed_in)
         else:
             parser.error("Provide either --decorator OR both --type and --new-name.")
             return

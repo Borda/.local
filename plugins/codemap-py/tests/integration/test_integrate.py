@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+from enum import Enum
 from pathlib import Path
 
 import pytest
@@ -42,8 +43,8 @@ def _seed(path: Path, text: str) -> None:
     path.write_text(text, newline="\n")
 
 
-def _write_manifest(plugin_dir: Path, runtime: str, name: str, version: str) -> None:
-    manifest_dir = plugin_dir / (".claude-plugin" if runtime == "claude" else ".codex-plugin")
+def _write_manifest(plugin_dir: Path, runtime: integration.Runtime, name: str, version: str) -> None:
+    manifest_dir = plugin_dir / (".claude-plugin" if runtime == integration.Runtime.CLAUDE else ".codex-plugin")
     manifest_dir.mkdir(parents=True, exist_ok=True)
     _seed(manifest_dir / "plugin.json", json.dumps({"name": name, "version": version}))
 
@@ -54,8 +55,8 @@ def _build_repo(base: Path, *, path_class: str = "normal") -> Path:
     root.mkdir(parents=True)
     for target in integration.ALL_TARGETS:
         _write_manifest(root / target.plugin_dir, target.runtime, target.consumer, "1.0.0")
-    _write_manifest(root / integration.PROVIDER_DIR, "claude", integration.PROVIDER_NAME, "9.9.9")
-    _write_manifest(root / integration.PROVIDER_DIR, "codex", integration.PROVIDER_NAME, "9.9.9")
+    _write_manifest(root / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, "9.9.9")
+    _write_manifest(root / integration.PROVIDER_DIR, integration.Runtime.CODEX, integration.PROVIDER_NAME, "9.9.9")
     return root
 
 
@@ -122,7 +123,7 @@ def test_check_reports_absent_consumer_as_named_state_not_error(
     for target in integration.ALL_TARGETS:
         if target.consumer != "oss":
             _write_manifest(root / target.plugin_dir, target.runtime, target.consumer, "1.0.0")
-    _write_manifest(root / integration.PROVIDER_DIR, "claude", integration.PROVIDER_NAME, "9.9.9")
+    _write_manifest(root / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, "9.9.9")
     monkeypatch.chdir(root)
     monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
     report = integration.build_check_report("claude", root / integration.PROVIDER_DIR)
@@ -133,6 +134,25 @@ def test_check_reports_absent_consumer_as_named_state_not_error(
         "source_version": None,
         "installed_version": None,
     }
+
+
+def test_runtime_and_source_members_preserve_plan_json_values(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enum-backed integration plans preserve the CLI's original JSON strings."""
+    monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
+    plan = integration.build_plan(
+        integration.Runtime.CLAUDE,
+        ["oss"],
+        integration.Source.LOCAL_CANDIDATE,
+        repo / integration.PROVIDER_DIR,
+    )
+    serialized = json.loads(json.dumps(plan))
+
+    assert integration.Runtime.__bases__ == (str, Enum)
+    assert integration.Source.__bases__ == (str, Enum)
+    assert serialized["runtime"] == "claude"
+    assert serialized["source"] == "local-candidate"
+    assert serialized["ops"][0]["runtime"] == "claude"
+    assert serialized["ops"][1]["desired"]["ref"] == "local-candidate"
 
 
 # --------------------------------------------------------------------------------------
@@ -399,7 +419,7 @@ def test_journal_records_full_success_sequence(repo: Path, tmp_path: Path) -> No
 
 
 def _tamper_identity(root: Path, target: integration.ConsumerTarget) -> None:
-    dirname = ".claude-plugin" if target.runtime == "claude" else ".codex-plugin"
+    dirname = ".claude-plugin" if target.runtime == integration.Runtime.CLAUDE else ".codex-plugin"
     manifest_path = root / target.plugin_dir / dirname / "plugin.json"
     manifest = json.loads(manifest_path.read_text())
     manifest["name"] = "tampered-name"

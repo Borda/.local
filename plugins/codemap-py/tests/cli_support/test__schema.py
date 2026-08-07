@@ -2,8 +2,26 @@
 
 from __future__ import annotations
 
+import json
+from enum import Enum
+
 import _schema
-from _schema import SCAN_VERSION, Resolution, VALID_CALL_RESOLUTIONS
+from _schema import EntityType, SCAN_VERSION, Resolution, SymbolType, VALID_CALL_RESOLUTIONS
+
+
+class TestSchemaStringEnums:
+    """Persisted-schema enum types retain their plain-string JSON contract."""
+
+    def test_members_are_direct_str_enum_subclasses_and_serialize_as_values(self) -> None:
+        """Schema enums use Python 3.10-compatible base classes and original wire values."""
+        expected_values = {
+            EntityType: ["pkg", "test", "docs", "example"],
+            SymbolType: ["class", "function", "method"],
+            Resolution: ["import", "local", "self", "builtin", "star", "unresolved"],
+        }
+        for enum_type, values in expected_values.items():
+            assert enum_type.__bases__ == (str, Enum)
+            assert json.loads(json.dumps(list(enum_type))) == values
 
 
 class TestResolutionEnum:

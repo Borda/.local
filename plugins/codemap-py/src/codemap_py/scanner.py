@@ -30,7 +30,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from codemap_py.schema import Resolution
+from codemap_py.schema import EntityType, Resolution, SymbolType
 
 _STDLIB_MODULES: frozenset[str] = frozenset(sys.stdlib_module_names)  # Python 3.10+; project requires 3.10+
 
@@ -343,7 +343,7 @@ class Symbol:
 
     name: str
     qualified_name: str
-    type: str  # "class" | "function" | "method"
+    type: SymbolType
     start_line: int
     end_line: int
     calls: list[CallEdge]
@@ -478,10 +478,9 @@ def _count_py_files(directory: Path) -> int:
     return total
 
 
-def _classify_entity(rel_path: Path, name: str) -> tuple[str, str]:
+def _classify_entity(rel_path: Path, name: str) -> tuple[EntityType, str]:
     """Return ``(entity_type, package)`` for a module.
 
-    ``entity_type`` is one of ``"test"``, ``"docs"``, ``"example"``, or ``"pkg"``.
     ``package`` is the top-level component of the dotted module name (first segment).
 
     Args:
@@ -490,26 +489,26 @@ def _classify_entity(rel_path: Path, name: str) -> tuple[str, str]:
 
     Examples:
         >>> from pathlib import Path
-        >>> _classify_entity(Path("tests/test_foo.py"), "tests.test_foo")
-        ('test', 'tests')
-        >>> _classify_entity(Path("docs/conf.py"), "docs.conf")
-        ('docs', 'docs')
-        >>> _classify_entity(Path("examples/demo.py"), "examples.demo")
-        ('example', 'examples')
-        >>> _classify_entity(Path("mypackage/core.py"), "mypackage.core")
-        ('pkg', 'mypackage')
-        >>> _classify_entity(Path("src/mypackage/core.py"), "src.mypackage.core")
-        ('pkg', 'mypackage')
+        >>> _classify_entity(Path("tests/test_foo.py"), "tests.test_foo") == (EntityType.TEST, "tests")
+        True
+        >>> _classify_entity(Path("docs/conf.py"), "docs.conf") == (EntityType.DOCS, "docs")
+        True
+        >>> _classify_entity(Path("examples/demo.py"), "examples.demo") == (EntityType.EXAMPLE, "examples")
+        True
+        >>> _classify_entity(Path("mypackage/core.py"), "mypackage.core") == (EntityType.PKG, "mypackage")
+        True
+        >>> _classify_entity(Path("src/mypackage/core.py"), "src.mypackage.core") == (EntityType.PKG, "mypackage")
+        True
     """
     posix = rel_path.as_posix()
     if _TEST_PATH_RE.search(posix):
-        entity_type = "test"
+        entity_type = EntityType.TEST
     elif _DOCS_PATH_RE.search(posix):
-        entity_type = "docs"
+        entity_type = EntityType.DOCS
     elif _EXAMPLES_PATH_RE.search(posix):
-        entity_type = "example"
+        entity_type = EntityType.EXAMPLE
     else:
-        entity_type = "pkg"
+        entity_type = EntityType.PKG
     parts = name.split(".")
     # Strip "src" layout prefix that leaks when detect_src_root falls back to root —
     # mirrors _build_internal_prefix_set which applies the same strip for import matching.
@@ -1311,7 +1310,7 @@ def _extract_class_symbol(
         Symbol(
             name=node.name,
             qualified_name=node.name,
-            type="class",
+            type=SymbolType.CLASS,
             start_line=node.lineno,
             end_line=node.end_lineno or node.lineno,
             calls=class_calls,
@@ -1328,7 +1327,7 @@ def _extract_class_symbol(
             Symbol(
                 name=child.name,
                 qualified_name=f"{node.name}.{child.name}",
-                type="method",
+                type=SymbolType.METHOD,
                 start_line=child.lineno,
                 end_line=child.end_lineno or child.lineno,
                 calls=method_calls,
@@ -1373,7 +1372,7 @@ def extract_symbols(
                 Symbol(
                     name=node.name,
                     qualified_name=node.name,
-                    type="function",
+                    type=SymbolType.FUNCTION,
                     start_line=node.lineno,
                     end_line=node.end_lineno or node.lineno,
                     calls=func_calls,

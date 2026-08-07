@@ -49,6 +49,7 @@ import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from io import StringIO
 from pathlib import Path
 
@@ -128,51 +129,84 @@ class ApprovalError(IntegrationError):
         super().__init__(code, message, exit_code=_EXIT_USAGE, detail=detail)
 
 
+class Runtime(str, Enum):
+    """Host runtime a target belongs to, plus the ``BOTH`` selector.
+
+    Inherits ``str`` (not ``enum.StrEnum`` — ``requires-python`` is ``>=3.10``) so members
+    serialise into plan/report JSON as plain strings. ``BOTH`` is a CLI selector only: it
+    never appears on a :class:`ConsumerTarget`, and :func:`_runtimes_of` expands it.
+    """
+
+    CLAUDE = "claude"
+    CODEX = "codex"
+    BOTH = "both"
+
+
+class Source(str, Enum):
+    """Which marketplace source a ``sync`` refreshes from (plan §8.3 two source modes)."""
+
+    LOCAL_CANDIDATE = "local-candidate"
+    RELEASE = "release"
+
+
 @dataclass(frozen=True)
 class ConsumerTarget:
     """One closed-set integration target (plan §8.3 "closed integration/reinstall set").
 
     Attributes:
-        runtime: ``"claude"`` or ``"codex"``.
+        runtime: ``Runtime.CLAUDE`` or ``Runtime.CODEX`` — never ``Runtime.BOTH``.
         consumer: Installed plugin name — must equal that plugin's own manifest ``name``.
         plugin_dir: Repo-relative directory holding the consumer's source checkout.
     """
 
-    runtime: str
+    runtime: Runtime
     consumer: str
     plugin_dir: str
 
 
 CLAUDE_TARGETS: tuple[ConsumerTarget, ...] = (
-    ConsumerTarget("claude", "foundry", "plugins/cc_foundry"),
-    ConsumerTarget("claude", "oss", "plugins/cc_oss"),
-    ConsumerTarget("claude", "develop", "plugins/cc_develop"),
-    ConsumerTarget("claude", "research", "plugins/cc_research"),
+    ConsumerTarget(Runtime.CLAUDE, "foundry", "plugins/cc_foundry"),
+    ConsumerTarget(Runtime.CLAUDE, "oss", "plugins/cc_oss"),
+    ConsumerTarget(Runtime.CLAUDE, "develop", "plugins/cc_develop"),
+    ConsumerTarget(Runtime.CLAUDE, "research", "plugins/cc_research"),
 )
-CODEX_TARGETS: tuple[ConsumerTarget, ...] = (ConsumerTarget("codex", "codex-rig", "plugins/codex-rig"),)
+CODEX_TARGETS: tuple[ConsumerTarget, ...] = (ConsumerTarget(Runtime.CODEX, "codex-rig", "plugins/codex-rig"),)
 ALL_TARGETS: tuple[ConsumerTarget, ...] = CLAUDE_TARGETS + CODEX_TARGETS
 PROVIDER_DIR = "plugins/codemap-py"
 
+# Selectors that include each concrete runtime — `BOTH` is a member of both sets.
+_CLAUDE_SELECTORS: tuple[Runtime, ...] = (Runtime.CLAUDE, Runtime.BOTH)
+_CODEX_SELECTORS: tuple[Runtime, ...] = (Runtime.CODEX, Runtime.BOTH)
 
-def _targets_for_runtime(runtime: str) -> tuple[ConsumerTarget, ...]:
-    """Return the closed-set targets for one runtime selector (``claude``/``codex``/``both``)."""
-    if runtime == "claude":
+
+def _cli_for(runtime: Runtime | str) -> str:
+    """Return the native plugin-manager executable name for *runtime*.
+
+    Accepts a plain string too: ``runtime`` is read straight off a persisted plan op in
+    the apply/sync paths, where it arrives as JSON text rather than a member.
+    """
+    return Runtime.CLAUDE.value if runtime == Runtime.CLAUDE else Runtime.CODEX.value
+
+
+def _targets_for_runtime(runtime: Runtime) -> tuple[ConsumerTarget, ...]:
+    """Return the closed-set targets for one runtime selector."""
+    if runtime == Runtime.CLAUDE:
         return CLAUDE_TARGETS
-    if runtime == "codex":
+    if runtime == Runtime.CODEX:
         return CODEX_TARGETS
     return ALL_TARGETS
 
 
-def _runtimes_of(runtime: str) -> tuple[str, ...]:
-    """Return the concrete runtime names a ``{claude,codex,both}`` selector expands to."""
-    return ("claude", "codex") if runtime == "both" else (runtime,)
+def _runtimes_of(runtime: Runtime) -> tuple[Runtime, ...]:
+    """Return the concrete runtimes a selector expands to (``BOTH`` fans out, others pass through)."""
+    return (Runtime.CLAUDE, Runtime.CODEX) if runtime == Runtime.BOTH else (runtime,)
 
 
-def resolve_targets(runtime: str, consumers: Sequence[str] | None) -> list[ConsumerTarget]:
+def resolve_targets(runtime: Runtime | str, consumers: Sequence[str] | None) -> list[ConsumerTarget]:
     """Return the closed-set targets selected by *runtime*, filtered by optional *consumers*.
 
     Args:
-        runtime: ``"claude"``, ``"codex"``, or ``"both"``.
+        runtime: A :class:`Runtime` member, or its plain value from the CLI.
         consumers: Explicit consumer-name subset, or ``None`` for every target in *runtime*.
 
     Returns:
@@ -188,6 +222,7 @@ def resolve_targets(runtime: str, consumers: Sequence[str] | None) -> list[Consu
         >>> [t.consumer for t in resolve_targets("claude", ["oss"])]
         ['oss']
     """
+    runtime = Runtime(runtime)
     pool = _targets_for_runtime(runtime)
     if consumers is None:
         return list(pool)
@@ -196,14 +231,14 @@ def resolve_targets(runtime: str, consumers: Sequence[str] | None) -> list[Consu
     if unknown:
         raise IntegrationError(
             "unknown_target",
-            f"not in the closed target set for runtime={runtime!r}: {unknown}",
+            f"not in the closed target set for runtime={runtime.value!r}: {unknown}",
             exit_code=_EXIT_USAGE,
-            detail={"unknown": unknown, "runtime": runtime},
+            detail={"unknown": unknown, "runtime": runtime.value},
         )
     return [by_name[name] for name in consumers]
 
 
-def _find_target(runtime: str, consumer: str) -> ConsumerTarget:
+def _find_target(runtime: Runtime | str, consumer: str) -> ConsumerTarget:
     """Return the registered :class:`ConsumerTarget` for *runtime*/*consumer*, or refuse it."""
     for target in ALL_TARGETS:
         if target.runtime == runtime and target.consumer == consumer:
@@ -417,13 +452,13 @@ def _codex_installed_version(consumer: str, payload: object) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def _installed_version_lookup(runtime: str) -> Callable[[str, object], str | None]:
-    return _claude_installed_version if runtime == "claude" else _codex_installed_version
+def _installed_version_lookup(runtime: Runtime | str) -> Callable[[str, object], str | None]:
+    return _claude_installed_version if runtime == Runtime.CLAUDE else _codex_installed_version
 
 
-def _marketplace_entry(runtime: str) -> dict | None:
+def _marketplace_entry(runtime: Runtime | str) -> dict | None:
     """Return the configured ``borda-ai-rig`` marketplace entry for *runtime*, or ``None``."""
-    if runtime == "claude":
+    if runtime == Runtime.CLAUDE:
         payload = _native_json_probe(["claude", "plugin", "marketplace", "list", "--json"])
         entries = payload if isinstance(payload, list) else None
     else:
@@ -594,8 +629,8 @@ def _consumer_check(target: ConsumerTarget, root: Path, installed: object) -> di
     }
 
 
-def _runtime_check(targets: tuple[ConsumerTarget, ...], root: Path, runtime: str) -> dict:
-    cli = "claude" if runtime == "claude" else "codex"
+def _runtime_check(targets: tuple[ConsumerTarget, ...], root: Path, runtime: Runtime) -> dict:
+    cli = _cli_for(runtime)
     installed = _native_json_probe([cli, "plugin", "list", "--json"])
     provider_target = ConsumerTarget(runtime, PROVIDER_NAME, PROVIDER_DIR)
     consumers = {t.consumer: _consumer_check(t, root, installed) for t in targets}
@@ -606,11 +641,11 @@ def _runtime_check(targets: tuple[ConsumerTarget, ...], root: Path, runtime: str
     }
 
 
-def build_check_report(runtime: str, plugin_root: Path) -> dict:
+def build_check_report(runtime: Runtime | str, plugin_root: Path) -> dict:
     """Assemble the non-mutating ``check`` report (plan §8.3 "check" contract).
 
     Args:
-        runtime: ``"claude"``, ``"codex"``, or ``"both"``.
+        runtime: A :class:`Runtime` member, or its plain value from the CLI.
         plugin_root: codemap-py's own resolved plugin root.
 
     Examples:
@@ -620,6 +655,7 @@ def build_check_report(runtime: str, plugin_root: Path) -> dict:
         >>> sorted(report["runtime_log_isolation"])
         ['claude', 'codex', 'direct']
     """
+    runtime = Runtime(runtime)
     root = index_paths.canonical_root()
     identity = index_paths.resolve_index(root=root)
     return {
@@ -635,9 +671,9 @@ def build_check_report(runtime: str, plugin_root: Path) -> dict:
         "runtime_log_isolation": {
             name: str(runtime_log.log_dir_for(name, root=root)) for name in runtime_log.RUNTIME_ALLOWLIST
         },
-        "claude": _runtime_check(CLAUDE_TARGETS, root, "claude") if runtime in ("claude", "both") else None,
-        "codex": _runtime_check(CODEX_TARGETS, root, "codex") if runtime in ("codex", "both") else None,
-        "codex_rig_global_instructions": codex_rig_global_status() if runtime in ("codex", "both") else None,
+        "claude": _runtime_check(CLAUDE_TARGETS, root, Runtime.CLAUDE) if runtime in _CLAUDE_SELECTORS else None,
+        "codex": _runtime_check(CODEX_TARGETS, root, Runtime.CODEX) if runtime in _CODEX_SELECTORS else None,
+        "codex_rig_global_instructions": codex_rig_global_status() if runtime in _CODEX_SELECTORS else None,
     }
 
 
@@ -645,7 +681,7 @@ def _print_check_text(report: dict) -> None:
     print(f"protocol: {report['protocol']}")
     print(f"provider: {report['provider']['name']} {report['provider']['version']}")
     print(f"shared_index: {report['shared_index']['index_path']}")
-    for runtime_name in ("claude", "codex"):
+    for runtime_name in (Runtime.CLAUDE.value, Runtime.CODEX.value):
         block = report.get(runtime_name)
         if block is None:
             continue
@@ -708,37 +744,37 @@ def _source_write_op(index: int, target: ConsumerTarget, root: Path) -> dict:
     }
 
 
-def _marketplace_source(source: str, root: Path) -> str:
+def _marketplace_source(source: Source, root: Path) -> str:
     """Return the marketplace ``add`` source string for *source* (plan §8.3 two source modes)."""
-    return str(root) if source == "local-candidate" else MARKETPLACE_REMOTE
+    return str(root) if source == Source.LOCAL_CANDIDATE else MARKETPLACE_REMOTE
 
 
-def _marketplace_sync_op(index: int, runtime: str, source: str, root: Path) -> dict:
+def _marketplace_sync_op(index: int, runtime: Runtime, source: Source, root: Path) -> dict:
     entry = _marketplace_entry(runtime)
-    cli = "claude" if runtime == "claude" else "codex"
+    cli = _cli_for(runtime)
     if entry is None:
         argv = [cli, "plugin", "marketplace", "add", _marketplace_source(source, root)]
     else:
-        refresh_verb = "update" if cli == "claude" else "upgrade"
+        refresh_verb = "update" if runtime == Runtime.CLAUDE else "upgrade"
         argv = [cli, "plugin", "marketplace", refresh_verb, MARKETPLACE_NAME]
     return {
         "index": index,
         "kind": "runtime_sync",
         "role": "marketplace",
-        "runtime": runtime,
+        "runtime": runtime.value,
         "consumer": None,
         "before_hash": None,
-        "desired": {"version": None, "ref": source, "pkg_hash": None},
+        "desired": {"version": None, "ref": source.value, "pkg_hash": None},
         "argv": [argv],
         "rollback": {"kind": "none", "identity": "marketplace refresh is not rolled back independently"},
         "expected_post_state": {"registered": True},
     }
 
 
-def _plugin_sync_op(index: int, runtime: str, name: str, installed_state: object) -> dict:
-    cli = "claude" if runtime == "claude" else "codex"
+def _plugin_sync_op(index: int, runtime: Runtime, name: str, installed_state: object) -> dict:
+    cli = _cli_for(runtime)
     current_version = _installed_version_lookup(runtime)(name, installed_state)
-    if runtime == "claude":
+    if runtime == Runtime.CLAUDE:
         argv = (
             [cli, "plugin", "update", name]
             if current_version is not None
@@ -757,7 +793,7 @@ def _plugin_sync_op(index: int, runtime: str, name: str, installed_state: object
         "index": index,
         "kind": "runtime_sync",
         "role": "plugin",
-        "runtime": runtime,
+        "runtime": runtime.value,
         "consumer": name,
         "before_hash": current_version,
         "desired": {"version": None, "ref": None, "pkg_hash": None},
@@ -768,18 +804,20 @@ def _plugin_sync_op(index: int, runtime: str, name: str, installed_state: object
 
 
 def _runtime_sync_ops(
-    start_index: int, runtime: str, source: str, targets: Sequence[ConsumerTarget], root: Path
+    start_index: int, runtime: Runtime, source: Source, targets: Sequence[ConsumerTarget], root: Path
 ) -> list[dict]:
     """Return ops for one runtime: one marketplace refresh, then provider-then-consumer installs."""
     ops = [_marketplace_sync_op(start_index, runtime, source, root)]
-    cli = "claude" if runtime == "claude" else "codex"
+    cli = _cli_for(runtime)
     installed_state = _native_json_probe([cli, "plugin", "list", "--json"])
     names = [PROVIDER_NAME, *(t.consumer for t in targets)]
     ops.extend(_plugin_sync_op(start_index + 1 + i, runtime, name, installed_state) for i, name in enumerate(names))
     return ops
 
 
-def build_plan(runtime: str, consumers: Sequence[str] | None, source: str | None, plugin_root: Path) -> dict:
+def build_plan(
+    runtime: Runtime | str, consumers: Sequence[str] | None, source: Source | str | None, plugin_root: Path
+) -> dict:
     """Build the unsigned integration plan for *runtime* (plan §8.3 "plan" contract).
 
     When *source* is given, the plan also carries ``runtime_sync`` ops (native plugin-manager
@@ -787,14 +825,16 @@ def build_plan(runtime: str, consumers: Sequence[str] | None, source: str | None
     consumable only by ``apply``, never ``sync``.
 
     Args:
-        runtime: ``"claude"``, ``"codex"``, or ``"both"``.
+        runtime: A :class:`Runtime` member, or its plain value from the CLI.
         consumers: Explicit consumer-name subset, or ``None`` for every target in *runtime*.
-        source: ``"local-candidate"``, ``"release"``, or ``None``.
+        source: A :class:`Source` member, its plain value, or ``None`` for a source-only plan.
         plugin_root: codemap-py's own resolved plugin root (recorded, not mutated).
 
     Raises:
         IntegrationError: an entry in *consumers* is outside the closed target set (exit ``2``).
     """
+    runtime = Runtime(runtime)
+    source = Source(source) if source is not None else None
     root = index_paths.canonical_root()
     targets = resolve_targets(runtime, consumers)
     ops: list[dict] = [_source_write_op(i, target, root) for i, target in enumerate(targets)]
@@ -807,9 +847,9 @@ def build_plan(runtime: str, consumers: Sequence[str] | None, source: str | None
         "protocol": PROTOCOL_VERSION,
         "op_id": uuid.uuid4().hex,
         "created_at": _utc_now_iso(),
-        "runtime": runtime,
+        "runtime": runtime.value,
         "consumers": [t.consumer for t in targets],
-        "source": source,
+        "source": source.value if source is not None else None,
         "provider": {"name": PROVIDER_NAME, "version": __version__, "root": str(plugin_root)},
         "ops": ops,
     }
@@ -1130,14 +1170,14 @@ def _validate_runtime_sync(op: dict) -> None:
     """Revalidate one ``runtime_sync`` op's before-state immediately before executing it."""
     if op["role"] == "marketplace":
         return  # a marketplace refresh has no single before-hash worth redrift-checking
-    cli = "claude" if op["runtime"] == "claude" else "codex"
+    cli = _cli_for(op["runtime"])
     installed_state = _native_json_probe([cli, "plugin", "list", "--json"])
     current = _installed_version_lookup(op["runtime"])(op["consumer"], installed_state)
     _refuse_if(current != op["before_hash"], "drift", "installed state changed since the plan was made")
 
 
 def _verify_plugin_installed(op: dict) -> None:
-    cli = "claude" if op["runtime"] == "claude" else "codex"
+    cli = _cli_for(op["runtime"])
     installed_state = _native_json_probe([cli, "plugin", "list", "--json"])
     if _installed_version_lookup(op["runtime"])(op["consumer"], installed_state) is None:
         raise IntegrationError("post_state_mismatch", f"{op['consumer']} is not enabled after sync")
@@ -1159,7 +1199,7 @@ def _rollback_runtime_sync(applied: list[dict], journal: Journal) -> str:
     for op in reversed(applied):
         if op["role"] != "plugin" or op["rollback"]["kind"] != "reinstall_previous":
             continue  # marketplace refreshes and first-installs are not reverted automatically
-        cli = "claude" if op["runtime"] == "claude" else "codex"
+        cli = _cli_for(op["runtime"])
         verb = "install" if cli == "claude" else "add"
         argv = [cli, "plugin", verb, f"{op['consumer']}@{MARKETPLACE_NAME}"]
         try:
@@ -1260,7 +1300,7 @@ def _demo_query(identity: index_paths.IndexIdentity) -> dict:
         return {"ran": False, "reason": f"query exited with {exc.code}"}
 
 
-def run_demo(runtime: str, plugin_root: Path) -> dict:
+def run_demo(runtime: Runtime | str, plugin_root: Path) -> dict:
     """Run ``check`` plus one representative structural-context query (plan §8.3 "demo").
 
     Disposable evidence only — writes its JSON result under a fresh
@@ -1294,7 +1334,7 @@ def cmd_demo(ns: argparse.Namespace, plugin_root: Path) -> int:
 
 
 def _add_runtime_flag(sub: argparse.ArgumentParser) -> None:
-    sub.add_argument("--runtime", choices=("claude", "codex", "both"), default="both")
+    sub.add_argument("--runtime", choices=[r.value for r in Runtime], default=Runtime.BOTH.value)
 
 
 def _split_csv(value: str) -> list[str]:
@@ -1311,7 +1351,7 @@ def _add_plan_parser(subparsers: argparse._SubParsersAction) -> None:
     sub = subparsers.add_parser("plan")
     _add_runtime_flag(sub)
     sub.add_argument("--consumers", type=_split_csv, default=None)
-    sub.add_argument("--source", choices=("local-candidate", "release"), default=None)
+    sub.add_argument("--source", choices=[x.value for x in Source], default=None)
     sub.add_argument("--out", default=None)
 
 
@@ -1323,7 +1363,7 @@ def _add_apply_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_sync_parser(subparsers: argparse._SubParsersAction) -> None:
     sub = subparsers.add_parser("sync")
-    sub.add_argument("--source", choices=("local-candidate", "release"), required=True)
+    sub.add_argument("--source", choices=[x.value for x in Source], required=True)
     sub.add_argument("--plan", required=True)
     sub.add_argument("--approve", required=True)
     _add_runtime_flag(sub)
