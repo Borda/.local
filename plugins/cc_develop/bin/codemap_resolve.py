@@ -22,8 +22,8 @@ import tempfile
 from pathlib import Path
 
 CURRENCY_PREFIX = "dev-codemap-currency"
-TOOL_LABEL = "codemap-py"     # warn prefix
-QUERY_LABEL = "codemap-py"    # binary name in the strict BREAKING message
+TOOL_LABEL = "codemap-py"  # warn prefix
+QUERY_LABEL = "codemap-py"  # binary name in the strict BREAKING message
 
 
 def _currency_file() -> Path:

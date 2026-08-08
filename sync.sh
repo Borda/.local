@@ -5,9 +5,9 @@
 #
 # Arguments (order-independent):
 #   claude   — sync Claude plugins + their installed setup skills (default: both)
-#   codex    — install or update the Codex Rig plugin (default: both)
+#   codex    — install or update the Codex Rig and Codemap plugins (default: both)
 #   clear    — teardown instead of install: uninstall this marketplace's Claude plugins
-#              + the Codex Rig plugin, and strip the managed block from $CODEX_HOME/AGENTS.md
+#              + the Codex Rig and Codemap plugins, and strip the managed block from $CODEX_HOME/AGENTS.md
 #              (a timestamped backup is kept). Honors claude/codex scoping (default: both sides).
 #              Leaves marketplace registrations and external plugins (caveman/ponytail/openai-codex) in place.
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
@@ -85,7 +85,7 @@ if $CLEAR; then
         done
     fi
     if $SYNC_CODEX; then
-        echo "Clearing Codex Rig..."
+        echo "Clearing Codex plugins..."
         python3 "$CODEX_SYNC_SCRIPT" clear
     fi
     echo "✓ Cleared (Standard: plugins uninstalled; marketplace registrations + external plugins left in place)"

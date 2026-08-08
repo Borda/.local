@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.4.6`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.4.7`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -73,7 +73,7 @@ python plugins/codex-rig/scripts/sync_codex.py clear
 
 `bash sync.sh claude` changes only Claude scope. `--codex-ref REF` selects a Codex source revision; it does not change product scope.
 
-`bash sync.sh clear` reverses a sync instead of installing: it uninstalls this marketplace's Claude plugins and the Codex Rig plugin, then strips the managed block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`, keeping a timestamped backup and preserving user-owned content byte-for-byte. It honors `claude`/`codex` scoping and leaves marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
+`bash sync.sh clear` reverses a sync instead of installing: it uninstalls this marketplace's Claude plugins plus the Codex Rig and Codemap plugins, then strips the managed block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`, keeping a timestamped backup and preserving user-owned content byte-for-byte. It honors `claude`/`codex` scoping and leaves marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
 Codex sync uses the template from the installed marketplace revision. A missing global file is created as one SHA-256-authenticated managed block. Existing user instructions are backed up and preserved byte-for-byte outside that block. An exact unmarked copy from an older sync is adopted without duplication. Later runs update only an unmodified managed block and otherwise fail without writing when markers are missing, duplicated, malformed, or manually changed.
 
@@ -136,7 +136,7 @@ Every workflow defines an input contract, fail-fast rules, required gates, artif
 
 `analyse`, `audit`, `code-review`, `code-remediate`, `develop`, `investigate`, `optimize`, `release`, and `research` each probe the [codemap-py](https://github.com/Borda/AI-Rig/tree/main/plugins/codemap-py) plugin once at a bounded decision point via `shared/codemap_adapter.py` and persist the result to the run artifact — specialists consume that artifact, never a fresh query. The adapter reads only the public `codemap-py doctor --json`/`query` CLI surface, never codemap-py's cache internals, source paths, or a cross-plugin Python import.
 
-The adapter reports one named status: `available`, `absent`, `stale`, `incompatible`, or `degraded`. Absence and incompatibility are non-fatal — the workflow falls back to its normal bounded file inspection. `manage`, `sync`, `agent-shims`, `calibrate`, and `kaggle` stay not-applicable with a recorded behavioral reason (no Python call-graph subject); see `shared/codemap-contract.md` for the full protocol, category-to-query map, and not-applicable rationale. Codex Rig never requires codemap-py to be installed — packaging, skill discovery, and startup have zero dependency on it either way.
+The adapter reports one named status: `available`, `absent`, `stale`, `incompatible`, or `degraded`. Absence and incompatibility are non-fatal — the workflow falls back to its normal bounded file inspection. `manage`, `sync`, `agent-shims`, `calibrate`, and `kaggle` stay not-applicable with a recorded behavioral reason (no Python call-graph subject); see `shared/codemap-contract.md` for the full protocol, category-to-query map, and not-applicable rationale. Repository sync installs Codemap alongside Codex Rig, but Codex Rig retains zero runtime dependency on it: packaging, skill discovery, and startup still work when Codemap is absent or incompatible.
 
 ## Specialist role cards
 

@@ -606,7 +606,10 @@ elif args[:3] == ["plugin", "marketplace", "add"]:
 elif args[:2] == ["plugin", "add"]:
     pass
 elif args[:2] == ["plugin", "list"]:
-    print(json.dumps({"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"}]}))
+    print(json.dumps({"installed": [
+        {"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"},
+        {"pluginId": "codemap-py@borda-ai-rig", "enabled": True, "version": "0.28.8"},
+    ]}))
 else:
     raise SystemExit(f"unexpected fake Codex call: {args}")
 """
@@ -683,6 +686,7 @@ else:
         assert expected_add in calls
         assert expected_source in result.stdout
         assert "Codex Rig 0.3.0 installed" in result.stdout
+        assert "Codemap 0.28.8 installed" in result.stdout
         assert (codex_home / "AGENTS.md").exists() is expect_global_agents
         if expect_global_agents:
             global_agents = (codex_home / "AGENTS.md").read_text(encoding="utf-8")

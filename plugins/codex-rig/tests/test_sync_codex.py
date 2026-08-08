@@ -60,7 +60,12 @@ def fake_runner(
                         "pluginId": "codex-rig@borda-ai-rig",
                         "enabled": True,
                         "version": "0.3.0",
-                    }
+                    },
+                    {
+                        "pluginId": "codemap-py@borda-ai-rig",
+                        "enabled": True,
+                        "version": "0.28.8",
+                    },
                 ]
             }
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
@@ -88,6 +93,7 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
     assert result == 0
     assert ("codex", "plugin", "marketplace", "upgrade", "borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "codex-rig@borda-ai-rig") in calls
+    assert ("codex", "plugin", "add", "codemap-py@borda-ai-rig") in calls
     installer = root / "plugins" / "codex-rig" / "scripts" / "install_global_agents.py"
     template = root / "plugins" / "codex-rig" / "assets" / "AGENTS.md"
     assert any(
@@ -95,6 +101,7 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
         for call in calls
     )
     assert "Codex Rig 0.3.0 installed" in output.getvalue()
+    assert "Codemap 0.28.8 installed" in output.getvalue()
 
 
 def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None:
@@ -113,7 +120,12 @@ def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None
             payload = {"marketplaces": [] if listings == 1 else [{"name": "borda-ai-rig", "root": str(root)}]}
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
         if rendered[1:5] == ("plugin", "list", "--marketplace", "borda-ai-rig"):
-            payload = {"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"}]}
+            payload = {
+                "installed": [
+                    {"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"},
+                    {"pluginId": "codemap-py@borda-ai-rig", "enabled": True, "version": "0.28.8"},
+                ]
+            }
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
         if rendered[:3] == ("git", "-C", str(root)):
             return subprocess.CompletedProcess(command, 0, "0123456789abcdef\n", "")
@@ -154,9 +166,36 @@ def test_native_sync_rejects_existing_ref_mismatch_without_changes(tmp_path: Pat
         )
 
     assert not any(
-        call[1:4] in {("plugin", "marketplace", "upgrade"), ("plugin", "add", "codex-rig@borda-ai-rig")}
-        for call in calls
+        call[1:4] == ("plugin", "marketplace", "upgrade") or call[1:3] == ("plugin", "add") for call in calls
     )
+
+
+def test_native_sync_requires_both_managed_plugins_after_install(tmp_path: Path) -> None:
+    """Reject a partial restore that enables Codex Rig without Codemap."""
+    module = load_sync()
+    root = marketplace_fixture(tmp_path)
+    calls: list[tuple[str, ...]] = []
+
+    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        rendered = tuple(str(item) for item in command)
+        calls.append(rendered)
+        if rendered[1:5] == ("plugin", "marketplace", "list", "--json"):
+            payload = {"marketplaces": [{"name": "borda-ai-rig", "root": str(root)}]}
+            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+        if rendered[1:5] == ("plugin", "list", "--marketplace", "borda-ai-rig"):
+            payload = {"installed": [{"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"}]}
+            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+        if rendered[:3] == ("git", "-C", str(root)):
+            return subprocess.CompletedProcess(command, 0, "0123456789abcdef\n", "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    with pytest.raises(module.SyncError, match="Codemap is not uniquely enabled"):
+        module.sync_codex(
+            module.parse_args(["--no-codex-global-agents"]),
+            run=run,
+            environ={},
+            stdout=io.StringIO(),
+        )
 
 
 def test_native_sync_clear_removes_plugin_and_managed_block(tmp_path: Path) -> None:
@@ -177,6 +216,7 @@ def test_native_sync_clear_removes_plugin_and_managed_block(tmp_path: Path) -> N
 
     assert result == 0
     assert ("codex", "plugin", "remove", "codex-rig@borda-ai-rig") in calls
+    assert ("codex", "plugin", "remove", "codemap-py@borda-ai-rig") in calls
     assert any(
         call[1:]
         == (
@@ -211,6 +251,8 @@ def test_native_sync_clear_removes_managed_block_when_codex_is_missing(tmp_path:
     assert result == 0
     assert "not installed" in output.getvalue()
     assert "managed block removed" in output.getvalue()
+    assert ("codex", "plugin", "remove", "codex-rig@borda-ai-rig") in calls
+    assert ("codex", "plugin", "remove", "codemap-py@borda-ai-rig") in calls
     assert any(
         call[1:]
         == (

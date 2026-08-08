@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "a1a7bf7c3660d217227d39eadb20a926dc91efe7e0af8d7a576736a218ae106b"
+      "sha256": "434cc417ecb653683f8f057b2e2703263e9ae6d86614ecaaa954803aed168079"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "bb3aebb36eb75ff80e14bac002cfe148975b1c22a78856f72af01f7a8b0425aa"
+      "sha256": "2049729e5f99b192a86e5ea54b84a462a7bd23e8995b63bc945826d8736b64ad"
     },
     {
       "mode": "0644",
@@ -42,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "d2ca83eec431af6dc2e480494a98c75de0a1ee152cabf93dee9220a040c1260f"
+      "sha256": "c8113064663c3dd60bcd31c81de6bcc6f8ecc162248ffb52fde3c3938a9da768"
     },
     {
       "mode": "0644",
@@ -237,7 +237,7 @@
     {
       "mode": "0644",
       "path": "scripts/README.md",
-      "sha256": "8ea1df344ec5df7c3ba215690370ac794545340ca5efa44e534b9f9b1c9d8419"
+      "sha256": "7f4da582aec222185e87fe4cb271972fd01ec98251734ac9ae32e0e323fe3784"
     },
     {
       "mode": "0644",
@@ -307,7 +307,7 @@
     {
       "mode": "0755",
       "path": "scripts/sync_codex.py",
-      "sha256": "d6f6998ea86fc894d0237c9c18d9bc90846a1ec2b57639d61dfb1e6fe361a3b9"
+      "sha256": "8f33cad111a19b367a0dc8eb5682b963bd0057163e3c80991dd62f000c960a8b"
     },
     {
       "mode": "0755",
@@ -697,7 +697,7 @@
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "b588f4bdcd5cc332a76e0f5d250b5d155700f3e8187bc213f53a52c58a6382d8"
+      "sha256": "8c9fabdb2e23fc28f0b74f33bf4e74039681247909fb306befb9484cdfb7c666"
     },
     {
       "mode": "0644",
@@ -712,7 +712,7 @@
     {
       "mode": "0644",
       "path": "tests/test_sync_codex.py",
-      "sha256": "0caf3ebae1d7e4985b6eff618e9a8c5447be04283f91685ca11543238f964751"
+      "sha256": "ec5313755bc00818be798564aed0a4811c64a249ee02aaae1098427b6dbc5701"
     },
     {
       "mode": "0644",
@@ -958,5 +958,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.4.6"
+  "version": "0.4.7"
 }

@@ -126,7 +126,7 @@ python3 plugins/codex-rig/scripts/manage_role_agents.py remove
 
 ### `sync_codex.py`
 
-**Purpose:** Installs, refreshes, or removes Codex Rig without depending on a POSIX shell — resolves system commands cross-platform (including Windows batch-file launchers) and drives the marketplace plugin install/clear flow plus the global-agents block.
+**Purpose:** Installs, refreshes, or removes Codex Rig and Codemap without depending on a POSIX shell — resolves system commands cross-platform (including Windows batch-file launchers) and drives the marketplace plugin install/clear flow plus Codex Rig's global-agents block.
 
 **Usage** (verified via `--help`):
 
@@ -146,7 +146,7 @@ python3 plugins/codex-rig/scripts/sync_codex.py install
 python3 plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
-**When-to-use:** The top-level entry point for getting Codex Rig onto a machine or off it — this is what the repo's `sync.sh` calls for the Codex side of installation. Use `--codex-ref` to pin a specific marketplace ref instead of tracking the default branch, and `--no-codex-global-agents` when you manage `CODEX_HOME/AGENTS.md` yourself and don't want `sync_codex.py` touching it.
+**When-to-use:** The top-level entry point for getting Codex Rig and Codemap onto a machine or off it — this is what the repo's `sync.sh` calls for the Codex side of installation. Use `--codex-ref` to pin a specific marketplace ref instead of tracking the default branch, and `--no-codex-global-agents` when you manage `CODEX_HOME/AGENTS.md` yourself and don't want `sync_codex.py` touching it.
 
 ### `verify_role_link.py`
 

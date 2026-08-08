@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install, refresh, or remove Codex Rig without a POSIX shell dependency."""
+"""Install, refresh, or remove managed Codex plugins without POSIX shell dependencies."""
 
 from __future__ import annotations
 
@@ -27,7 +27,10 @@ class SyncAction(str, Enum):
 
 MARKETPLACE = "borda-ai-rig"
 MARKETPLACE_SOURCE = "Borda/AI-Rig"
-PLUGIN_ID = f"codex-rig@{MARKETPLACE}"
+MANAGED_PLUGINS = (
+    ("Codex Rig", f"codex-rig@{MARKETPLACE}"),
+    ("Codemap", f"codemap-py@{MARKETPLACE}"),
+)
 MAX_JSON_BYTES = 1_048_576
 WINDOWS_BATCH_METACHARACTERS = frozenset('&|<>^()%!"')
 RunCommand = Callable[..., subprocess.CompletedProcess[str]]
@@ -155,25 +158,28 @@ def _configured_ref(root: Path) -> str | None:
     return value
 
 
-def _installed_version(run: RunCommand) -> str:
-    """Return the unique enabled Codex Rig version after installation."""
+def _installed_versions(run: RunCommand) -> dict[str, str]:
+    """Return the enabled version of every managed Codex plugin."""
     result = _run(run, ["codex", "plugin", "list", "--marketplace", MARKETPLACE, "--json"])
     payload = _json_output(result, "plugin list")
     installed = payload.get("installed")
     if not isinstance(installed, list):
         raise SyncError("plugin list is missing installed entries")
-    matches = [
-        item
-        for item in installed
-        if isinstance(item, dict)
-        and item.get("pluginId") == PLUGIN_ID
-        and item.get("enabled") is True
-        and isinstance(item.get("version"), str)
-        and item["version"]
-    ]
-    if len(matches) != 1:
-        raise SyncError("Codex Rig is not uniquely enabled after installation")
-    return str(matches[0]["version"])
+    versions: dict[str, str] = {}
+    for display_name, plugin_id in MANAGED_PLUGINS:
+        matches = [
+            item
+            for item in installed
+            if isinstance(item, dict)
+            and item.get("pluginId") == plugin_id
+            and item.get("enabled") is True
+            and isinstance(item.get("version"), str)
+            and item["version"]
+        ]
+        if len(matches) != 1:
+            raise SyncError(f"{display_name} is not uniquely enabled after installation")
+        versions[plugin_id] = str(matches[0]["version"])
+    return versions
 
 
 def _codex_home(environ: Mapping[str, str]) -> Path:
@@ -183,10 +189,11 @@ def _codex_home(environ: Mapping[str, str]) -> Path:
 
 
 def _clear(run: RunCommand, environ: Mapping[str, str], stdout: TextIO) -> int:
-    """Remove the plugin and authenticated global-instruction block."""
-    removed = _run(run, ["codex", "plugin", "remove", PLUGIN_ID], required=False)
-    state = "removed" if removed.returncode == 0 else "not installed"
-    print(f"  [ok] {PLUGIN_ID}: {state}", file=stdout)
+    """Remove managed plugins and the authenticated global-instruction block."""
+    for _display_name, plugin_id in MANAGED_PLUGINS:
+        removed = _run(run, ["codex", "plugin", "remove", plugin_id], required=False)
+        state = "removed" if removed.returncode == 0 else "not installed"
+        print(f"  [ok] {plugin_id}: {state}", file=stdout)
     installer = Path(__file__).resolve().with_name("install_global_agents.py")
     result = _run(
         run,
@@ -237,9 +244,11 @@ def sync_codex(
     else:
         print(f"  [warn] marketplace source: {requested_ref or 'default branch'}; revision unavailable", file=stdout)
 
-    _run(run, ["codex", "plugin", "add", PLUGIN_ID])
-    version = _installed_version(run)
-    print(f"  [ok] Codex Rig {version} installed", file=stdout)
+    for _display_name, plugin_id in MANAGED_PLUGINS:
+        _run(run, ["codex", "plugin", "add", plugin_id])
+    versions = _installed_versions(run)
+    for display_name, plugin_id in MANAGED_PLUGINS:
+        print(f"  [ok] {display_name} {versions[plugin_id]} installed", file=stdout)
 
     if args.no_codex_global_agents:
         print("  [skip] global instructions unchanged", file=stdout)
