@@ -13,7 +13,7 @@
 
 - Use sub-agents liberally — keep main context clean
 - Prefer specialised agents over general-purpose; offload research + exploration
-- **Always pass explicit `subagent_type` matching the task, even when the right specialist is already named in your own spawn prompt** — telemetry shows `general-purpose` gets picked *despite* the prompt's own lead line naming the correct specialist (e.g. prompt says "foundry:sw-engineer — convert X to jsonargparse", dispatch says `general-purpose` anyway); the likely cause is misreading "Agent Teams: user-invoked only" (below) as covering *any* named specialist rather than only the formal multi-agent Team protocol. §Agent Teams is a separate, narrower gate (model tiering + TEAM_PROTOCOL.md + AgentSpeak v2, user-invoked only) — it does NOT restrict picking a specialist for an ordinary single-agent spawn, ad-hoc or background included. Separately: omitting `subagent_type` entirely also defaults to `general-purpose` (tool-level fallback) and skips agent-tracking writes, making the spawn invisible in the 🤖 status segment from dispatch — always pass it explicitly for that reason too.
+- **Always pass explicit `subagent_type` matching the task**, even when the right specialist is already named in your own spawn prompt — §Agent Teams (below) is a separate, narrower gate (formal multi-agent Team protocol only); it does NOT restrict picking a specialist for an ordinary single-agent spawn, ad-hoc or background included. Omitting `subagent_type` defaults to `general-purpose` and hides the spawn from 🤖 status tracking. (Telemetry evidence + worked failure example: `rules/_full/CLAUDE-full.md` §Subagent Strategy.)
 - Independent subtasks run parallel, not serial; one tack per sub-agent
 - **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path)
 - Complex problem → more compute via sub-agents
@@ -57,6 +57,8 @@ Canonical helper: `_FOUNDRY_SHARED/agent-spawn-protocol.md`. Skills may tighten 
 ## Pre-Authorized Operations
 
 Operations in `settings.json` pre-approved — execute direct. Not covered → restructure to match existing allow entry before requesting new permission; batch missing permissions into one ask.
+
+- **Plugin binary via `${CLAUDE_PLUGIN_ROOT}/bin/X`** (quoted, resolves to absolute versioned cache path) never matches bare `Bash(X:*)` allow entry — matcher compares literal command string, not basename. Re-prompts every call despite an existing bare-name allow entry for `X`. Fix at plugin's `permissions-allow.json`: path-scoped glob (`Bash(*/<plugin>/*/bin/*:*)`), not bare command name — survives version bumps too. Confirmed 2026-08-08 (codemap-py `scan-index`).
 
 **Tool efficiency rule** — native Claude tools (Read, Grep, Glob, Write, Edit, others) always available, never need `settings.json` approval; use first:
 

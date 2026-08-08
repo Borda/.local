@@ -22,27 +22,16 @@ Orchestrator: mark each teammate's task `completed` as its delta arrives — nev
 
 ### Spawn-prompt lead line
 
-FleetView/agent-list shows leading chars of the `Agent()` prompt as each agent's description — Agent tool has no separate description field. Boilerplate-first spawn prompt → every agent reads identical useless label (e.g. "Task tracking: do NOT call TaskCreate or TaskUpdat…").
+FleetView/agent-list shows leading chars of the `Agent()` prompt as each agent's description — Agent tool has no separate description field. Boilerplate-first spawn prompt → every agent reads identical useless label.
 
 Rule: **first line = concise task label** — role + target, ≤10 words, no boilerplate. Place all boilerplate (`Task tracking:`, `Compact Instructions:`, TEAM_PROTOCOL read, run-dir preamble, envelope spec) **after** the task line.
-
-```text
-✓  foundry:sw-engineer — fix token-expiry off-by-one in auth/middleware.py
-   Read ${HOME}/.claude/TEAM_PROTOCOL.md — AgentSpeak v2. …
-   Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. …
-
-✗  Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state.
-   You are a foundry:sw-engineer teammate fixing … [label now useless]
-```
 
 ### Fleet-view description: unique-first
 
 N agents, same task family → description leads with per-agent delta (dir/plugin/module), shared boilerplate after. Cap 1 terminal line — front-load differentiator, FleetView truncates tail not head.
 
-```text
-✓  B1 — cc_develop: session-scope TMPDIR sentinels
-✓  B2 — cc_foundry: session-scope TMPDIR sentinels
-
-✗  B1 — session-scope TMPDIR sentinels in plugins/cc_...
-✗  B2 — session-scope TMPDIR sentinels in plugins/cc_...  [same prefix, rows indistinguishable]
-```
+> Full detail (worked ✓/✗ spawn-prompt and FleetView-label examples) in `_full/task-lifecycle.md`. Read before composing multi-agent spawn prompts:
+>
+> ```bash
+> RULE_FULL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/rules/_full/task-lifecycle.md 2>/dev/null | head -1)"; [ -z "$RULE_FULL" ] && RULE_FULL="plugins/cc_foundry/rules/_full/task-lifecycle.md"  # timeout: 5000
+> ```

@@ -4,34 +4,18 @@ paths:
   - '**/*'
 ---
 
-## Public GitHub — Read-Only
+## Public GitHub — Read-Only (stub)
 
 Claude + all agents (subagents, skills, teammates) **read-only** on public GitHub.
 Hard constraint — not suggestion.
 
-### Permitted (read)
+Any write/mutate command on any public/external GitHub repo is **permanently forbidden** — issue/PR/release/gist create-comment-edit-close-merge-delete, `gh repo fork`/`gh repo create`, `gh api ... --method POST/PATCH/PUT/DELETE`, `gh api graphql` mutations, and all curl write verbs (`-X POST/PATCH/PUT`). Read ops (`gh *list`, `gh *view`, `gh pr diff/checks`, `gh api graphql` reads, `WebFetch` on github.com) stay permitted.
 
-- `gh issue list`, `gh issue view`
-- `gh pr list`, `gh pr view`, `gh pr diff`, `gh pr checks`
-- `gh repo view`, `gh release list`, `gh release view`
-- `gh run list`, `gh run view`
-- `gh api graphql` (read queries only)
-- `gh api search/*`
-- `WebFetch` on `github.com`, `raw.githubusercontent.com`
-
-### Forbidden (write) — enforced via deny list
-
-Any write command on any public/external GitHub repo **permanently forbidden**, including:
-
-- `gh issue create`, `gh issue comment`, `gh issue edit`, `gh issue close`, `gh issue delete`
-- `gh pr create`, `gh pr comment`, `gh pr edit`, `gh pr merge`, `gh pr close`, `gh pr review`
-- `gh release create`, `gh release edit`, `gh release delete`, `gh release upload`
-- `gh repo fork`, `gh repo create`
-- `gh gist create`, `gh gist edit`, `gh gist delete`
-- `gh api <any-path>` with `--method POST/PATCH/PUT/DELETE` — all API mutations regardless of path
-- `gh api graphql` with mutation operations (createIssue, createPullRequest, addComment, etc.) — GraphQL mutations are write ops, forbidden
-- All curl write methods denied globally; curl read-only (GET only)
-  - `curl -X POST`, `curl --request POST`, `curl -X PATCH`, `curl --request PATCH`, `curl -X PUT`, `curl --request PUT`
+> Full protocol in `_full/public-github.md` (exhaustive permitted/forbidden command enumerations). Read when a command's read/write status is unclear:
+>
+> ```bash
+> RULE_FULL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/rules/_full/public-github.md 2>/dev/null | head -1)"; [ -z "$RULE_FULL" ] && RULE_FULL="plugins/cc_foundry/rules/_full/public-github.md"  # timeout: 5000
+> ```
 
 ### When user says "write/file/post/submit X to GitHub"
 

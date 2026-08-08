@@ -4,6 +4,12 @@ paths:
   - '**'
 ---
 
+> §Reply Visibility exemption rationale, §Execution Failure Signaling elaboration, §Artifact Framing register table, §Interactive Questions non-compliant-form catalogue, §Confidence Display full axis spec have worked detail in `_full/communication.md`. Resolve + Read when that section's own trigger applies — not needed for routine work:
+>
+> ```bash
+> RULE_FULL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/rules/_full/communication.md 2>/dev/null | head -1)"; [ -z "$RULE_FULL" ] && RULE_FULL="plugins/cc_foundry/rules/_full/communication.md"  # timeout: 5000
+> ```
+
 ## Re: Anchor
 
 Start every reply with Unicode box header containing one-line summary, then response body, then closing `▓` footer line.
@@ -22,32 +28,29 @@ Example (actual template — copy structure, replace bracketed text):
 
 **Rules:**
 
-- Box: 62 chars total — `╔` + 60 `═` + `╗`; bottom `╚` + 60 `═` + `╝`
-- Summary line: `║` + two spaces + summary text + spaces to pad inner width to 60 + `║`
-- Summary: neutral factual gist of what user asked — not full restatement, no labels
+- Box: 62 chars total — `╔` + 60 `═` + `╗`; bottom `╚` + 60 `═` + `╝`; summary line `║` + two spaces + summary text + pad to 60 + `║`
+- Summary: neutral factual gist of what user asked — not full restatement, no labels; never a pipe char (corrupts box borders)
 - Footer: exactly 62 `▓` chars — matches box width, signals end of reply
-- Never use pipe chars in summary text — corrupts box borders
-- No exceptions except two Exemption blocks below (machine-parsed replies · quality-gates `---` report headers) — any other response not opening with `╔` is non-compliant
+- No exceptions except the two Exemptions in §Reply Visibility below — any other response not opening with `╔` is non-compliant
 - Tables, code blocks, bold headers work normally in body — no per-line prefix conflicts
 
 ## Reply Visibility
 
-Box `╔═╗`/`╚═╝` zone creates header boundary. `▓▓▓` footer creates end boundary. Together they frame response against surrounding tool call output and hook logs. Unicode box-drawing only — no ANSI escape codes.
+Box `╔═╗`/`╚═╝` + `▓` footer frame the reply against surrounding tool-call output and hook logs — Unicode box-drawing only, no ANSI escape codes.
 
-**Exemption — machine-parsed responses**: omit box header and footer when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone triggers exemption; both present also triggers it.
+**Two exemptions** (full rationale + worked cases: `_full/communication.md`):
 
-**Exemption — quality-gates report headers**: when reply leads with quality-gates `---` metadata block (skill's Output Routing report header — YAML between `---` delimiters converted to a two-column Markdown table per `quality-gates.md` Universal terminal-print rule, e.g. `/oss:review`, `/oss:resolve`, `/foundry:audit`, `/foundry:calibrate`), omit `╔═╗` box header — that table IS reply header and box would shadow it. Print the table as first block of reply; keep `▓` footer. Never emit both box header and metadata table in same reply.
+- Response prompt contains `Return ONLY:` or `compact JSON envelope` → omit box header **and** footer entirely (output parsed by parent orchestrator)
+- Reply leads with a quality-gates `---` metadata block (Output Routing report header, converted to a two-column table) → omit `╔═╗` box only, keep `▓` footer — the table IS the reply header
 
 ## Progress and Transparency
 
 - Narrate at milestones; print `[→ what and why]` before significant Bash calls
-- 5+ min silence warrants status note
+- 5+ min silence warrants a status note
 
 ## Execution Failure Signaling
 
-When unable to execute or proceed with any part of request (unsupported flag, `disable-model-invocation` block, parse error, missing prerequisite, permission denied, tool unavailable):
-
-**Mandatory**: lead response with bold failure block — never bury failure at end, never silently skip it:
+When unable to execute or proceed with any part of a request (unsupported flag, `disable-model-invocation` block, parse error, missing prerequisite, permission denied, tool unavailable): lead the response with a bold failure block — never bury it at the end, never silently skip it.
 
 ```
 **! BLOCKED — [one-line reason]**
@@ -55,11 +58,7 @@ When unable to execute or proceed with any part of request (unsupported flag, `d
 **! MISSING — [what is needed]**
 ```
 
-Rules:
-- Color+! block is FIRST content in response — not footnote, not trailing note
-- State: what was asked · what cannot proceed · what alternative available (if any)
-- Applies to partial failures too: if 3 of 4 sub-tasks fail, color-flag the 3 at top before reporting the 1 success
-- Never use grey prose ("note: X was skipped") as substitute — that's what gets missed
+Block is FIRST content in the response, not a footnote; state what was asked, what cannot proceed, what alternative is available. Applies to partial failures too — if 3 of 4 sub-tasks fail, flag the 3 at top before reporting the 1 success. Never use grey prose ("note: X was skipped") as a substitute — that's what gets missed.
 
 ## Tone
 
@@ -72,26 +71,14 @@ Rules:
 ## Artifact Framing
 
 - **Verbal summary as skeleton**: user verbal summary = output skeleton — mirror order, abstraction level, named examples verbatim; no added info user didn't mention; source material (README, code) fill explicit gaps only; preserve quotable phrases exact, no paraphrasing
-- **Format-label register**: translate format label to implied register before writing:
-  - *Slack message* — no headers, 2–4 short paragraphs, casual voice, inline links, one quotable block max
-  - *PR description* — sections with headers, tables ok, technical register
-  - *Executive summary* — bullets, outcome-first, no jargon
-  - When format ambiguous, ask one question before writing.
+- **Format-label register**: translate the format label (Slack message, PR description, executive summary, etc.) to its implied register before writing — per-format register rules: `_full/communication.md`. When format ambiguous, ask one question before writing.
 
 ## Interactive Questions
 
 **Hard constraint — stop before writing any question.** Need user info → invoke `AskUserQuestion` tool immediately. Prose question + "note: should use tool" caveat = still violation. Two options only: answer without asking, or call tool. No plain-text question ever.
 
-Labelled or annotated question (e.g. `[AskUserQuestion simulated] — What format?`) still plain text, still violates rule. Only actual tool invocation satisfies constraint.
+Any bracketed, annotated, narrated, or simulated form of a question — parenthetical, bracket notation, intent narration — is still plain text and still violates this constraint; only an actual tool invocation satisfies it. Full catalogue of non-compliant forms + compliant example: `_full/communication.md`.
 
-Describing, simulating, or annotating a tool call in any form — parenthetical ("AskUserQuestion would be invoked here"), bracket notation (`[Invoking AskUserQuestion: ...]`), or intent narration ("I would ask...") — is plain text and a violation. Call tool directly; emit no prose description of intent before or instead of call.
-
-Compliant example — only valid form:
-> Call `AskUserQuestion(questions=["What format is the data in? (JSON, CSV, XML)"])` — no prose question in response body.
-
-- Plain text questions easily missed, don't block execution, don't surface as distinct UI affordance
-- Bracketed, annotated, or narrated tool calls are plain text and violate this constraint — violations: `[AskUserQuestion: ...]`, `"I would ask..."`, `"AskUserQuestion would be invoked here"`, `(AskUserQuestion simulated)`
-- Only actual tool invocation (tool call block in response) satisfies this constraint
 - Applies to: ambiguous input, clarifying choices, scope decisions, continuation guards, any point where user input required before proceeding
 - **Scope decisions count**: user asks "should I also X?" mid-task → scope decision requiring AskUserQuestion — not rhetorical; never silently resolve
 - Applies globally — all skills, agents, model-generated questions without exception
@@ -101,24 +88,9 @@ Compliant example — only valid form:
 
 ### Confidence Display
 
-For every `AskUserQuestion` multiple-choice call with a genuine model leaning: embed plain-text markers **inside each option's own `description` field** — never as a separate legend before the tool call. A standalone legend needs a label scheme (A/B/C or 1/2/3) mapped back to option order; that mapping silently breaks whenever the legend's item count or order drifts from the actual options (observed failure — legend keyed 3 letters against a 5-option call, no shared referent). Marker-in-description has no mapping step: reader sees the scores on the exact option they score.
+For every `AskUserQuestion` multiple-choice call with a genuine model leaning: embed plain-text markers **inside each option's own `description` field** — never as a separate legend before the tool call (a legend's label scheme silently breaks whenever its item count or order drifts from the actual options).
 
-Format — two axes prefixed to `description`, `·` separator; `←` marks the recommended (highest-`fit`) option:
-
-```
-description: "fit: 55% · conf: 65% ← recommended — <rest of trade-off explanation>"
-```
-
-Rules:
-
-- **Plain text only** — `fit: N%` · `conf: N%`, exact integers, `·` separator. No emoji bar, no ANSI. (Emoji bars were dropped: hand-drawn glyphs malformed — stray digits like `🟩⬜⬜⬜⬜⬜2⬜`, coarse 20% buckets, width misalign per terminal. Plain numbers precise + unbreakable.)
-- **Two distinct axes — never conflate**:
-  - `fit: N%` = how well this option **addresses the problem** — comparative across options, spans them (need not sum to 100). Highest `fit` = the pick.
-  - `conf: N%` = model's **self-confidence that its `fit` read is reliable** — epistemic, per-option, absolute (not comparative). Independent of fit: a high-`fit` pick may carry low `conf` when evidence is thin.
-- Mark highest-`fit` option with trailing `←` (aligns with second-slot recommended option per placement rule above). Near-tie on `fit` → higher `conf` breaks it.
-- Marker goes in `description` (always rendered), **not** `preview` (only shown when focused / side-by-side layout) — `description` is the only field guaranteed visible
-- **Genuine-recommendation gate**: show markers only when the choice is a real, open decision **and** the model has a real leaning (a correct/better answer exists). Omit markers entirely when: (a) pure user-taste, no right answer (theme, naming preference); (b) the crossroad is fixed/given/forced — one viable path, outcome predetermined, or the option only confirms a decision already made. A marker on a non-decision is noise — never fake a recommendation or a spread. (If the choice is fully forced, prefer not asking at all — see AskUserQuestion "genuinely the user's to make".)
-- Applies globally — all skills, agents, model-generated questions
+Format: `fit: N% · conf: N% ← recommended` — `fit` = comparative problem-fit across options (highest = the pick), `conf` = per-option epistemic self-confidence in that fit read (independent of fit). Mark the highest-`fit` option with trailing `←`. Show markers only when the choice is a real, open decision **and** the model has a real leaning — omit entirely for pure user-taste (no right answer) or forced/single-path choices. Full axis definitions, gating conditions, and marker-placement rules: `_full/communication.md`.
 
 ## Output Routing
 
