@@ -155,6 +155,8 @@ Parse JSON:
 
 When `CODEX_AVAILABLE=false` OR `ITEM_EFFORT!=medium`: skip Codex routing; use Phase 1+2 directly.
 
+> **Agent budget** — grouping already bounds parallelism here (one agent per domain group, roster-bounded; `comment-dispatch` batches at `BATCH_SIZE`), so no separate spawn cap applies. What still does: each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call. **Work under ~73 calls total is cheaper inline — spawn nothing**, the common case for a 1–3 item PR. Merge a single-item group into the nearest domain rather than giving it its own agent. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk — so every spawn prompt must require an envelope even on exhaustion (`partial: true` plus the items finished).
+
 ### Phase 1: Challenge — parallel by domain (skip when `--no-challenge`)
 
 Route by domain to foreground challenge agent:

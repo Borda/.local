@@ -93,7 +93,7 @@ Before training, audit dataset:
 > - `storage-patterns.md` — DVC, Polars, HuggingFace, 3D volumetric patterns (acquisition mode)
 >
 > **Load a sidecar fragment** (both acquisition and pipeline-audit modes call this; idempotent):
-> `"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward <fragment.md> "<degraded-msg>"`. If the sidecar dir resolves nowhere the script prints `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and exits non-zero — stop there. A missing individual fragment is not fatal: the script emits the caller's `<degraded-msg>` in its place.
+> `python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward <fragment.md> "<degraded-msg>"`. If the sidecar dir resolves nowhere the script prints `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and exits non-zero — stop there. A missing individual fragment is not fatal: the script emits the caller's `<degraded-msg>` in its place.
 
 <data_contracts>
 
@@ -222,7 +222,7 @@ _FOUNDRY_AVAILABLE=$({ find ~/.claude/plugins/cache -maxdepth 5 -path "*/foundry
 Load `storage-patterns.md` — storage and loading patterns for this mode. The script resolves the sidecar dir itself and stops the run on resolution failure:
 
 ```python
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward storage-patterns.md "⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only." || exit 1
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward storage-patterns.md "⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only." || exit 1
 ```
 
 1. **Identify sources** — review data requirements: note which sources have known URLs (handle directly) vs unknown URLs or HTML pages (delegate to `foundry:web-explorer`); document expected volume and completeness signal (pagination mechanism, `total_count` field)
@@ -242,7 +242,7 @@ Load `storage-patterns.md` — storage and loading patterns for this mode. The s
 Load `ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode. The script resolves the sidecar dir itself and stops the run on resolution failure:
 
 ```python
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward ml-pipeline-patterns.md "⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only." || exit 1
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward ml-pipeline-patterns.md "⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only." || exit 1
 ```
 
 1. **Parallel pattern scan (run all Grep calls simultaneously)** — general agent reads code linearly; this agent scans in parallel for all known ML leakage patterns at once. Launch six Grep calls together — independent:

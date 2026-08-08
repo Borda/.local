@@ -169,7 +169,7 @@ IFS= read -r RETRO_JSONL < "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/nul
 # subprocess only — orchestrator must treat non-zero exit as hard stop, not proceed to T4.
 # One call reports both missing values; a trailing `[ -z ] && { …; }` guard would also
 # leave the block's exit status at 1 whenever the value IS present (T-C1).
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/require-vars.py" "$RUN_DIR" "retro T3: RUN_DIR missing — T1 must run first" "$RUN_ID" "retro T3: RUN_ID missing — T1 must run first" || exit 1
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/require-vars.py" "$RUN_DIR" "retro T3: RUN_DIR missing — T1 must run first" "$RUN_ID" "retro T3: RUN_ID missing — T1 must run first" || exit 1
 ```
 
 Write summary to `$RUN_DIR/dead-iters.json` via Write tool. Format:
@@ -209,6 +209,8 @@ Write to `$RUN_DIR/suspicious-jumps.json` via Write tool.
 ### Step T5: Scientist learning summary
 
 Pre-compute all file paths before spawning. Verify `$RUN_DIR/stats-results.json`, `$RUN_DIR/dead-iters.json`, `$RUN_DIR/suspicious-jumps.json` exist (T2–T4 must complete first).
+
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`:
 

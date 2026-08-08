@@ -50,7 +50,8 @@ Canonical helper: `_FOUNDRY_SHARED/agent-spawn-protocol.md`. Skills may tighten 
 ### 7. Context Cost Discipline
 
 - Cache-read cost = live context size × turn count — dominant cost line; keep both small
-- Multi-phase skill runs (e.g. review → resolve): after phase report file written, prefer fresh session or `/clear` for next phase; resume from report file, not transcript
+- Multi-phase skill runs (e.g. review → resolve): after phase report file written, `/compact` before the next phase; resume from report file, not transcript
+- **Never suggest `/clear`.** It discards the prompt cache, so the next call re-writes the full context at the cache-write rate — ~12.5× the read rate — and buys nothing back, because the rebuilt context is the same size. Measured 2026-08-08 on a `/oss:review`: one mid-run `/clear` cost 179,545 write tokens in a single call, 46% of that session's entire cache-write spend. **`/compact` is the tool for every case** — it pays the same rebuild once, then shrinks what is re-sent on every remaining turn, so it repays across the rest of the session
 - Live context >200K tokens = smell — wrap phase, persist state to file, restart lean
 - Batch tool calls: create all tasks in ONE response (parallel calls); pair `TaskUpdate` with next substantive tool call — never emit response with only task bookkeeping
 

@@ -32,7 +32,7 @@ Print `⚠ codex plugin not found — falling back to <agent> for this comment. 
 
 ### 12a: Dispatch
 
-**BATCH_SIZE=5** — dispatch at most 5 `Agent()` calls per response turn; wait for all to return before next batch. If $ARGUMENTS expands to more than 5 comment items (multi-comment dispatch), process first 5, wait for results, then continue with next 5. Prevents rate-limit hits, unbounded parallel spawn.
+**BATCH_SIZE=3** — dispatch at most 3 `Agent()` calls per response turn; wait for all to return before next batch. More comment items than that (multi-comment dispatch) → process the first 3, wait, continue with the next 3. Prevents rate-limit hits and unbounded parallel spawn. Lowered from 5 on cost evidence: each spawn carries ~120,851 tok of fixed overhead whatever its item size, so a wide batch of small comments pays far more in overhead than the work is worth — batching narrower costs wall-clock, not tokens.
 
 Compute the scoped sentinel path via `compute_commit_sentinel.py`, touch it, and register a cleanup trap:
 

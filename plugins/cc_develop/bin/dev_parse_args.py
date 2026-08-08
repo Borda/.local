@@ -396,6 +396,7 @@ SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
         (_spec(SpecType.BOOL, "challenge", "CHALLENGE_FORCED", "false"), "dev-review-challenge-forced"),
         (_spec(SpecType.BOOL, "semble", "SEMBLE_ENABLED", "false"), "dev-review-semble-enabled"),
         (_spec(SpecType.BOOL, "worktree", "WORKTREE_ENABLED", "false"), None),
+        (_spec(SpecType.BOOL, "full", "FANOUT_FULL", "false"), "dev-review-fanout-full"),
         (_spec(SpecType.CODEMAP, "", "CODEMAP_RAW", "auto"), "dev-review-codemap-enabled"),
     ],
 }

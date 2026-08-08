@@ -532,6 +532,8 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
 
 1. Determine guide category from rule prefix:
 
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
+
    - `WebSearch` → `## Web`
    - `WebFetch(domain:...)` → `## WebFetch — allowed domains`
    - `WebFetch` (bare, no domain) → `## WebFetch — allowed domains`

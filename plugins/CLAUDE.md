@@ -141,7 +141,7 @@ Per-plugin version in `.claude-plugin/plugin.json`, space `0.X.Y`:
 | New capability, new agent/skill, new designed behaviour (not intended before) | `X` |
 | Test-only changes (adding/editing `tests/*.py` or `tests/*_sh.py`, no source file changes) | none — skip |
 
-> **Rule**: Ask "was this *supposed* to work this way?" Yes + it didn't → `Y` (fix). No, new intent → `X` (feature). Internal restructuring always `Y` regardless of size or visibility. Bump once per commit, at the highest-magnitude change: session has both `Y`- and `X`-class changes → bump `X` only, reset `Y` to `0`. Baseline read via `git show HEAD:<plugin-path>/.claude-plugin/plugin.json | grep version`, never from disk — on-disk already differing from HEAD means a bump already landed this session; do not bump again.
+> **Rule**: Ask "was this *supposed* to work this way?" Yes + it didn't → `Y` (fix). No, new intent → `X` (feature). Internal restructuring always `Y` regardless of size or visibility. Bump once per commit, at the highest-magnitude change: session has both `Y`- and `X`-class changes → bump `X` only, reset `Y` to `0`. Baseline read via `git show HEAD:<plugin-path>/.claude-plugin/plugin.json | grep version`, never from disk — on-disk already differing from HEAD means a bump already landed **for this pending commit**; do not bump again before committing it. Scope is the commit, never the session: splitting one session's work into N commits means N bumps for every plugin each commit touches, each derived from the preceding commit.
 
 Full pre-bump checklist (test-only guard, on-disk-vs-HEAD double-check, calculation steps, worked example, multi-manifest note): `AUTHORING.md` §Versioning.
 

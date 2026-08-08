@@ -78,7 +78,7 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" topic "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for Step 2
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" topic "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for Step 2
 ```
 
 ```bash
@@ -116,8 +116,8 @@ mkdir -p .temp .reports/research  # timeout: 3000
 # Anti-overwrite counter-suffix (quality-gates.md §Output Routing) — resolved by bin/resolve-anti-overwrite-path.py.
 # Step 3's report path is resolved HERE, not at Step 3: the hook gate below must exist from the
 # moment the run is committed to producing a report, not from the moment it remembers to.
-AGENT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-agent-$BRANCH-$DATE")  # timeout: 5000
-REPORT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$BRANCH-$DATE")  # timeout: 5000
+AGENT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-agent-$BRANCH-$DATE")  # timeout: 5000
+REPORT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$BRANCH-$DATE")  # timeout: 5000
 echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch-${CSID}"
 echo "$DATE" > "${TMPDIR:-/tmp}/topic-date-${CSID}"
 echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out-${CSID}"
@@ -127,6 +127,8 @@ echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```
 
 Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of top 5 papers found via WebSearch/WebFetch: extract method, key idea, benchmark results, compute cost, code availability. Write full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
+
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 **If `foundry:web-explorer` available** (check `ls ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents/web-explorer.md 2>/dev/null`): spawn `Agent(subagent_type="foundry:web-explorer", prompt="...")` for parallel deep web research, then merge results into `$AGENT_OUT`. Otherwise conduct research inline using WebSearch and WebFetch directly.
 
@@ -148,7 +150,7 @@ IFS= read -r _DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || _DATE="
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/topic-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 IFS= read -r _REPORT_OUT < "${TMPDIR:-/tmp}/topic-report-out-${CSID}" 2>/dev/null || _REPORT_OUT=".reports/research/topic-${_BRANCH}-${_DATE}.md"
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:topic" "synthesis (after Step 2 literature gathered)" "n/a" "agent-out=${_AGENT_OUT}, report-out=${_REPORT_OUT}, branch=${_BRANCH}${_KEEP_APPEND}" "Step 3 synthesize agent findings into report → follow-up gate"  # timeout: 5000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:topic" "synthesis (after Step 2 literature gathered)" "n/a" "agent-out=${_AGENT_OUT}, report-out=${_REPORT_OUT}, branch=${_BRANCH}${_KEEP_APPEND}" "Step 3 synthesize agent findings into report → follow-up gate"  # timeout: 5000
 ```
 
 ## Step 3: Report
@@ -221,7 +223,7 @@ IFS= read -r DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || DATE=$(d
 # verbatim; re-resolving here would drift from the path the hook gate is watching
 IFS= read -r REPORT_OUT < "${TMPDIR:-/tmp}/topic-report-out-${CSID}" 2>/dev/null || REPORT_OUT=""
 if [ -z "$REPORT_OUT" ]; then
-    REPORT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$BRANCH-$DATE")  # timeout: 5000
+    REPORT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$BRANCH-$DATE")  # timeout: 5000
     echo "$REPORT_OUT" > "${TMPDIR:-/tmp}/topic-report-out-${CSID}"
     echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 fi

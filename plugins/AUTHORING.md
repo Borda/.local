@@ -137,6 +137,8 @@ Full rule (trigger, decision table, one-bump-per-commit) in `plugins/CLAUDE.md` 
 4. Calculate the new version from the HEAD baseline: `X` → bump minor, reset patch to `0`; `Y` → bump patch only; max +1 on the bumped component
 5. Write the calculated version — must be exactly HEAD + a single bump; anything higher is a double-bump violation
 
-**One bump per commit session** — after writing once, further edits to that plugin in the same uncommitted session must NOT bump again. Step 2 catches this: on-disk already differs from HEAD. Never treat an on-disk bumped value as a new baseline to increment from.
+**One bump per commit — never per session.** Scope is the commit, not the working session. A session producing N commits that each touch a plugin bumps that plugin N times, once per commit. Step 2's on-disk-vs-HEAD check only suppresses a *second* bump for the *same* pending commit — once you commit, HEAD moves, that check clears, and the next commit touching the same plugin bumps again from the new HEAD. Never treat an on-disk bumped value as a new baseline to increment from *within* one commit's staging.
+
+> **Incident (2026-08-08)**: one session's work was split into two commits. The first (`refine(plugins): split rules into stub plus _full`, foundry-only) shipped with no bump because "one bump per session" was read as covering both; that also invalidated the second commit's number, which had been computed against the un-bumped baseline. One missed bump, two wrong commits. Both were rebuilt via `commit-tree` + compare-and-swap `update-ref` — foundry 0.40.1 → 0.41.0 → 0.42.0. If a split is decided after bumping, re-derive each commit's version from the commit that precedes it, not from the session baseline.
 
 When a plugin ships additional runtime manifests such as `.codex-plugin/plugin.json`, keep every shipped manifest on the same bumped version and update CHANGELOG or release metadata when that plugin's convention requires it.

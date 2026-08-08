@@ -9,6 +9,8 @@ Trigger when: 3+ distinct method families exist AND field has no clear leading m
 **Workflow:**
 
 1. Lead completes Step 1 (codebase context) as normal
+> **Agent budget** — each teammate costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each teammate near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
+
 2. Spawn 2–3 **researcher** teammates, each assigned distinct method cluster
 3. Broadcast constraints to all: `broadcast {topic: <topic>, constraints: <framework/compute/dataset from Step 1>}`
 4. Each teammate researches independently, reports with `deltaT# HOOK:verify` (AgentSpeak v2 completion signal — see TEAM_PROTOCOL.md) and compressed comparison table
@@ -45,9 +47,9 @@ SPAWN_DATE="$(date -u +%Y-%m-%d)"  # timeout: 3000
 mkdir -p .temp .reports/research  # timeout: 3000
 # Anti-overwrite per teammate: run this once per teammate before its spawn, with TNAME set to
 # that teammate's name, and substitute the resolved path (not the template) into its prompt:
-#   _TOUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-$TNAME-$SPAWN_BRANCH-$SPAWN_DATE")  # timeout: 5000
+#   _TOUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-$TNAME-$SPAWN_BRANCH-$SPAWN_DATE")  # timeout: 5000
 # Consolidator report path — same anti-overwrite rule as SKILL.md Step 3 (quality-gates.md)
-REPORT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$SPAWN_BRANCH-$SPAWN_DATE")  # timeout: 5000
+REPORT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$SPAWN_BRANCH-$SPAWN_DATE")  # timeout: 5000
 # Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
 echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```

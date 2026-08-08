@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope. TRIGGER when: user asks to review local Python files, a directory, or the current git diff/working-tree changes, with no GitHub PR number involved; phrases: \"review this\", \"review my changes\", \"code review this diff\", \"review src/foo.py\". SKIP when: input is a bare GitHub PR/issue number (use `/oss:review <PR#>`, requires oss plugin); user wants the Codex-native tiered `$code-review` workflow (codex-rig plugin, JSON artifact + specialist fan-out) — different toolchain; implementation work (use `/develop:fix` or `/develop:feature`); non-Python-only projects."
-argument-hint: "[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble] [--worktree] [--keep \"<items>\"]"
+argument-hint: "[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble] [--worktree] [--full] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 disable-model-invocation: true
 effort: high
@@ -23,6 +23,7 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
   - **Scope**: Python source only. Non-Python file (YAML, JSON, shell script, etc.) → state out of scope, suggest appropriate tool. No findings.
   - `--no-challenge`: skip adversarial review (challenger runs by default)
   - `--challenge`: force challenger (Agent 7) even on small diff that small-diff auto-skip would otherwise skip
+  - `--full`: run **every** dimension the classification preselected, instead of only the `FANOUT_MAX` most relevant of them. Never widens the preselection — a dimension the FIX/CHORE/small-diff rules ruled out stays out. **Not free**: each extra agent costs ~120,851 tok of fixed overhead however little work it does. Default stays capped; pass this when depth matters more than cost.
   - `--codemap`: strict mode — stop and report if codemap not installed (on by default when installed; use `--no-codemap` to opt out)
   - `--semble`: enable semble semantic search companion (off by default)
 
@@ -53,6 +54,9 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 
 <constants>
 
+FANOUT_MAX=4            # default: top-N most relevant of the classification-preselected dimensions
+                        # --full runs ALL preselected dimensions instead — no numeric cap
+AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CHALLENGE_FORCED=false  # set to true via --challenge — forces Agent 7 even on small diffs (overrides small-diff auto-skip)
 CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
@@ -131,9 +135,11 @@ IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/dev-review-challenge-enabled-$
 IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-review-challenge-forced-${CSID}" 2>/dev/null || CHALLENGE_FORCED="false"  # --challenge: force Agent 7 even on small diffs
 IFS= read -r SEMBLE_ENABLED < "${TMPDIR:-/tmp}/dev-review-semble-enabled-${CSID}" 2>/dev/null || SEMBLE_ENABLED="false"
 IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
+IFS= read -r FANOUT_FULL < "${TMPDIR:-/tmp}/dev-review-fanout-full-${CSID}" 2>/dev/null || FANOUT_FULL="false"
+FANOUT_CAP=4; [ "$FANOUT_FULL" = "true" ] && FANOUT_CAP=0  # 0 = no cap: all preselected dimensions
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--full\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Worktree isolation
 
@@ -378,6 +384,19 @@ Codex: first 10 items seeded to review agents; full list in $RUN_DIR/codex.md (N
 Pass notice through to consolidator (Step 5) so it appears in final report header, not just terminal scratch.
 
 ## Step 3: Spawn sub-agents in parallel
+
+**Spawn-count gate — apply before spawning anything.** Each agent costs ~120,851 tok of fixed overhead regardless of how little work it does, i.e. ~73 tool-calls' worth, plus ~12.0 s/call. Rules, all mandatory:
+
+Two stages, in order — never collapse them:
+
+1. **Classification preselection** (always): the FIX / CHORE / small-diff-challenger skips above decide which dimensions are *relevant at all*. A dimension with no changed file in its territory is out here and never comes back, at any flag.
+2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what the classification implies, what the structural context flagged — and spawn the top `FANOUT_MAX` (4). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
+
+- More work → give each agent more, never add agents.
+- **Spawn the fewest that keep each near `AGENT_CALL_BUDGET`** — not the most the cap allows. Total work under ~73 calls → do it inline and spawn nothing.
+- **Merge before you split**: two dimensions whose files overlap go to one agent, not two.
+- Every spawn prompt states the budget and requires an envelope even on exhaustion — `partial: true` plus what was finished.
+- Dimensions dropped by the cap are listed in the report; never silently skipped.
 
 **File-based handoff**:
 

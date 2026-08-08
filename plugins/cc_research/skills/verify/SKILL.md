@@ -66,7 +66,7 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Prints the resolved mode and writes true/false to research-verify-codemap-enabled-${CSID};
 # exits 1 (already reporting `! BLOCKED`) when --codemap is strict but codemap is unavailable.
-CODEMAP_RAW=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-flag.py" research-verify "$ARGUMENTS") || exit 1
+CODEMAP_RAW=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-flag.py" research-verify "$ARGUMENTS") || exit 1
 ```
 
 > loads: codemap-gates.md
@@ -103,7 +103,7 @@ IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}" 2>/dev/
 IFS= read -r OUT < "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null || OUT=""
 # T-C1: one call reports every empty value at once. A trailing `[ -z "$X" ] && { …; }`
 # guard also leaves the whole block's exit status at 1 whenever the value IS present.
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/require-vars.py" "$RUN_DIR" "verify: state files missing — V1 must run first" "$OUT" "verify: state files missing — V1 must run first" || exit 1
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/require-vars.py" "$RUN_DIR" "verify: state files missing — V1 must run first" "$OUT" "verify: state files missing — V1 must run first" || exit 1
 ```
 
 ### Step V2: Resolve codebase scope
@@ -145,10 +145,12 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
 # Default ok = fail open: V2 may legitimately not have written a status yet. Any value other
 # than `ok` closes the gate, so an unrecognised status is treated as a failure, not a pass.
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/gate-on-sentinel.py" "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}" ok ok "verify V3: dimension validation failed in V2 — skipping V3." || exit 1
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/gate-on-sentinel.py" "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}" ok ok "verify V3: dimension validation failed in V2 — skipping V3." || exit 1
 ```
 
 ### Step V3: Five-dimension audit via scientist
+
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`. Single agent handles all five dimensions — cross-dimension context requires holistic paper understanding.
 

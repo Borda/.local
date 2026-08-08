@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design. TRIGGER when: user provides a GitHub PR number (e.g. 42, #42) and asks to review/audit/check it, or provides a saved review-report path with --reply to draft a contributor-facing comment; phrases: 'review PR 123', 'audit this pull request', 'look at PR #42', 'draft a reply for this review report'. SKIP: local file or current git diff review (use /develop:review (requires 'develop' plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use /oss:analyse)."
-argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble] [--worktree] [--keep \"<items>\"]"
+argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble] [--worktree] [--full] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, EnterWorktree, ExitWorktree
 model: sonnet
 effort: high
@@ -24,12 +24,16 @@ NOT for local file review or current git diff — use `/develop:review` (require
   - **Local files**: use `/develop:review` (requires `develop` plugin) for local files or current git diff.
   - `--codemap`: strict mode — stop, report if codemap not installed (on by default when installed; use `--no-codemap` to opt out; requires codemap plugin installed)
   - `--semble`: enable semble semantic search companion (off by default; requires semble MCP server configured)
+  - `--full`: run **every** dimension the scope preselected, instead of only the `FANOUT_MAX` most relevant of them. Never widens the preselection itself — a dimension the scope ruled out stays out. **Not free**: each extra agent costs ~120,851 tok of fixed overhead however little work it does. Default stays capped; pass this when depth matters more than cost.
 - **--plan handoff not supported** — skill doesn't accept plan-mode output from `/develop:plan` (requires `develop` plugin).
 
 </inputs>
 
 <constants>
 
+FANOUT_MAX=4            # default: top-N most relevant of the scope-preselected dimensions
+                        # --full runs ALL scope-preselected dimensions instead — no numeric cap
+AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
 SEMBLE_ENABLED=false    # set to true via --semble
@@ -108,6 +112,7 @@ Parse `$ARGUMENTS` flags first (via `bin/parse-skill-flags.py`, C5) — this set
 | `--codemap` | `CODEMAP_STRICT` | `true` | `false` |
 | `--semble` | `SEMBLE_ENABLED` | `true` | `false` |
 | `--worktree` | `WT_ENABLED` | `true` | `false` |
+| `--full` | `FANOUT_CAP` | `0` — no cap, all preselected | `4` (`FANOUT_MAX`) |
 | `--keep "<items>"` | `KEEP_ITEMS` | value string | `""` |
 
 `CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed (including `--keep "<items>"` and its quoted value), leading whitespace stripped, leading `#` stripped.
@@ -116,7 +121,8 @@ Parse `$ARGUMENTS` flags first (via `bin/parse-skill-flags.py`, C5) — this set
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # parses --reply/--no-challenge/--semble/--worktree/--keep; codemap flags detected-only, re-derived independently below
 # shared flag/--keep parser (C5; also resolve/analyse SKILL.md)
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse-skill-flags.py" --flags reply,no-challenge,no-codemap,codemap,semble,worktree "$ARGUMENTS")"  # timeout: 5000
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse-skill-flags.py" --flags reply,no-challenge,no-codemap,codemap,semble,worktree,full "$ARGUMENTS")"  # timeout: 5000
+FANOUT_CAP=4; [ "$FLAG_FULL" = "true" ] && FANOUT_CAP=0  # 0 = no cap: all scope-preselected dimensions
 REPLY_MODE="$FLAG_REPLY"
 SEMBLE_ENABLED="$FLAG_SEMBLE"
 WT_ENABLED="$FLAG_WORKTREE"
@@ -458,7 +464,20 @@ touch "$REVIEW_CHECKPOINT"
 echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}"
 ```
 
-Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents. All `Agent()` calls issue in a SINGLE response turn — substitute `$RUN_DIR` (literal) and issue numbers before spawning. Agent lineup: `codex:codex-rescue` (if `CODEX_AVAILABLE=1` **and** DOCS_TYPING_MODE/TESTS_CI_MODE both false) · per-issue `foundry:sw-engineer` (skip if `DOCS_CICD_MODE=true`) · Agents 1–8 per scope/mode rules above.
+**Spawn-count gate — apply before spawning anything.** Each agent costs ~120,851 tok of fixed overhead regardless of how little work it does, i.e. ~73 tool-calls' worth, plus ~12.0 s/call. Measured on a real PR review: 11 agents, ~55% of the whole bill. Rules, all mandatory:
+
+Two stages, in order — never collapse them:
+
+1. **Scope preselection** (always): the scope/mode rules above decide which dimensions are *relevant at all*. A dimension with no changed file in its territory is out here and never comes back, at any flag.
+2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what Step 1 pre-classification found, what the structural context flagged — and spawn the top `FANOUT_MAX` (4). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
+
+- More work → give each agent more, never add agents.
+- **Spawn the fewest that keep each near `AGENT_CALL_BUDGET`** — not the most the cap allows. Total work under ~73 calls → do it inline and spawn nothing.
+- **Merge before you split**: two dimensions whose files overlap go to one agent, not two.
+- Every spawn prompt states the budget and requires an envelope even on exhaustion — `partial: true` plus what was finished. An agent that stalls past ~60 calls without an envelope forces full disk reconstruction.
+- Dimensions dropped by the cap are listed in the report; never silently skipped.
+
+Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents. All `Agent()` calls issue in a SINGLE response turn — substitute `$RUN_DIR` (literal) and issue numbers before spawning. Agent lineup: `codex:codex-rescue` (if `CODEX_AVAILABLE=1` **and** DOCS_TYPING_MODE/TESTS_CI_MODE both false) · per-issue `foundry:sw-engineer` (skip if `DOCS_CICD_MODE=true`) · Agents 1–8 per scope/mode rules above — that is stage 1. Then stage 2: unless `--full` was passed, rank the survivors and spawn only the top `FANOUT_MAX`, merging adjacent dimensions into shared agents where their files overlap; name every dropped or merged dimension in the report.
 
 Poll for expected output files per `$MONITOR_INTERVAL` / `$HARD_CUTOFF` until all present or each hits hard cutoff.
 

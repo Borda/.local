@@ -213,6 +213,8 @@ Print diff. If anything unexpected appears, revert individual files before proce
 
 After applying changes, dispatch curator to audit created and modified config files. Substitute `$RUN_DIR` with the value printed by the Step L4 `RUN_DIR=` bash block above before issuing the Agent call — spawned agents receive text, not shell context (same pattern as `external.md`'s `$EXT_RUN_DIR` substitution note):
 
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
+
 ```text
 Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:memory: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to <RUN_DIR>/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"file\":\"<RUN_DIR>/curator-review.md\",\"issues\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}")
 ```

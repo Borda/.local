@@ -62,7 +62,7 @@ ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespac
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" judge "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for J3
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" judge "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for J3
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--skip-validation`, `--keep`.
@@ -167,10 +167,12 @@ fi
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PROGRAM_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || PROGRAM_PATH=""  # re-hydrate (Check 41: fresh shell — persisted in J3 pre-spawn block)
-SPAWN_ARCHITECT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/detect-complexity.py" "$PROGRAM_PATH")  # timeout: 5000
+SPAWN_ARCHITECT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/detect-complexity.py" "$PROGRAM_PATH")  # timeout: 5000
 ```
 
 When `SPAWN_ARCHITECT=false`: skip architect spawn; J5b precedence step 0 sets `methodology_rating="sound"` (scientist review still covers scientific rigor); record `architect: skipped (narrow scope)` in J6 summary.
+
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 When `SPAWN_ARCHITECT=true`: spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opus`). Full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
 
@@ -214,7 +216,7 @@ IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/judge-run-dir-${CSID}" 2>/dev/null || _
 IFS= read -r _PROG_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || _PROG_PATH=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/judge-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:judge" "validation-verdict (after J3 review agents complete)" "${_RUN_DIR}" "run-dir=${_RUN_DIR}, program=${_PROG_PATH}, methodology=${_RUN_DIR}/methodology.md, scientific-review=${_RUN_DIR}/scientific-review.md${_KEEP_APPEND}" "J4 local validation → J5 Codex review → J6 verdict and report"  # timeout: 5000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:judge" "validation-verdict (after J3 review agents complete)" "${_RUN_DIR}" "run-dir=${_RUN_DIR}, program=${_PROG_PATH}, methodology=${_RUN_DIR}/methodology.md, scientific-review=${_RUN_DIR}/scientific-review.md${_KEEP_APPEND}" "J4 local validation → J5 Codex review → J6 verdict and report"  # timeout: 5000
 ```
 
 ## Step J4: Local validation
@@ -250,7 +252,7 @@ Record validation results for J6 report.
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PROGRAM_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || PROGRAM_PATH=""  # re-hydrate (Check 41: fresh shell)
-J5A_COMPLEX=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/detect-complexity.py" "$PROGRAM_PATH")  # timeout: 5000 — same gate as J3; must stay identical, hence the shared script
+J5A_COMPLEX=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/detect-complexity.py" "$PROGRAM_PATH")  # timeout: 5000 — same gate as J3; must stay identical, hence the shared script
 ```
 
 `J5A_COMPLEX=false` → print `note: simple program (single scope file, single-phase strategy) — Codex adversarial pass skipped by complexity gate`, record `codex: skipped (complexity gate)` in J6 summary, continue to J5b. `J5A_COMPLEX=true` → proceed below.

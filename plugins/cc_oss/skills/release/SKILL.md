@@ -85,6 +85,8 @@ In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via
    IFS= read -r SKILL_DIR < "${TMPDIR:-/tmp}/release-setup-${CSID}/SKILL_DIR" 2>/dev/null || SKILL_DIR=""
    cat "$SKILL_DIR/templates/gather-prompt.md"  # timeout: 5000
    ```
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
+
    Template (loaded above). Substitute `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>` with literal values. Spawn:
    > loads: gather-prompt.md
    `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted gather-prompt.md content>)`

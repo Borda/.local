@@ -216,7 +216,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # REJECTED default = fail closed; gate appends actual verdict itself, message never interpolates it
 _GATE_MSG="fortify: BLOCKED — no APPROVED judge verdict found for this program; stopping before implementation (F1–F7).
 Ablation studies require an approved baseline. Run: /research:judge <program.md>"
-"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/gate-on-sentinel.py" "${TMPDIR:-/tmp}/fortify-judge-verdict-${CSID}" APPROVED REJECTED "$_GATE_MSG" || exit 1
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/gate-on-sentinel.py" "${TMPDIR:-/tmp}/fortify-judge-verdict-${CSID}" APPROVED REJECTED "$_GATE_MSG" || exit 1
 ```
 
 > Note: do NOT infer from `methodology.md` alone — `methodology_rating: sound` is one input to verdict, not verdict itself. Only `## Verdict` line in judge output file is authoritative.
@@ -245,6 +245,8 @@ Gather two inputs for scientist:
 
 1. **Git diff**: run `git diff <baseline_commit>...<best_commit> --stat` (summary) and full `git diff <baseline_commit>...<best_commit>`. If full diff exceeds ~200 lines, write to `$FORTIFY_DIR/diff.txt` via Write tool; otherwise inline in prompt.
 2. **Experiment history**: paths to `experiments.jsonl` and `diary.md` from source run directory.
+
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (15-min cutoff, one 5-min extension — same pattern as judge J3).
 

@@ -26,6 +26,8 @@ IFS= read -r TS < "${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}" 2>/dev/null || TS=""
 trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT  # sentinel dir resolved by setup_worktree.py's _sentinel_dir() — TMPDIR when set, else system temp dir; matches this expression
 ```
 
+> **Agent budget** — each teammate costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each teammate near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
+
 Spawn 2 teammates in parallel using Agent() tool:
 
 **IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in prompt strings. `<TS_LITERAL>`, `<_DEV_SHARED_LITERAL>`, and `<ARGUMENTS_LITERAL>` in prompt text below are placeholders — substitute actual computed values before constructing Agent call; spawned agent cannot expand shell variables from its parent context:

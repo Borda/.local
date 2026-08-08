@@ -26,14 +26,16 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 DATE=$(date +%Y-%m-%d)  # timeout: 3000
 mkdir -p .temp .reports/research  # timeout: 3000
 # Anti-overwrite counter-suffix (quality-gates.md §Output Routing) — same rule as SKILL.md Step 3
-CODEBASE_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-codebase-$BRANCH-$DATE")  # timeout: 5000
-PLAN_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-plan-$BRANCH-$DATE")  # timeout: 5000
+CODEBASE_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-codebase-$BRANCH-$DATE")  # timeout: 5000
+PLAN_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-plan-$BRANCH-$DATE")  # timeout: 5000
 # Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
 echo "$PWD/$PLAN_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```
 <!-- same branch/date pattern as Step 2a block -->
 
 ### Step P2: Codebase analysis
+
+> **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 Call `Agent(subagent_type="foundry:solution-architect", prompt=...)`:
 
