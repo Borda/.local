@@ -440,7 +440,7 @@ Before applying fix, critically evaluate reproduction test(s):
 If issue found: revise test(s) before applying fix. Flawed reproduction = fix validated against wrong criteria.
 
 ```bash
-# Compaction contract — boundary 1: after reproduction, before edit (compaction-contract.md §Lifecycle)
+# boundary 1: after reproduction, before edit (compaction-contract.md)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
 IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
@@ -521,7 +521,7 @@ Make minimal change to fix root cause:
 4. If existing tests break: fix has side effects — reconsider approach
 
 ```bash
-# Compaction contract — boundary 2: after fix applied, before review stack (compaction-contract.md §Lifecycle)
+# boundary 2: after fix applied, before review stack (compaction-contract.md)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-fix-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
 IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""

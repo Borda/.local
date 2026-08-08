@@ -211,7 +211,7 @@ File-parsed value takes priority over health monitor value; use file-parsed valu
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary: after J3 agents complete, before J4 validation (compaction-contract.md §Lifecycle)
+# boundary: after J3 agents complete, before J4 validation (compaction-contract.md)
 IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/judge-run-dir-${CSID}" 2>/dev/null || _RUN_DIR=""
 IFS= read -r _PROG_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || _PROG_PATH=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/judge-keep-items-${CSID}" 2>/dev/null || _KEEP=""
@@ -272,7 +272,7 @@ fi
 **`CODEX_STATUS=available`**: invoke adversarial review on top 3 critical/high gaps from J2 and J3. Example (replace `<top finding N>` with actual findings):
 
 ```text
-# codex:codex-rescue = dispatchable adversarial agent; codex:adversarial-review is user-only (/codex:adversarial-review slash command)
+# codex:codex-rescue = dispatchable adversarial agent; codex:adversarial-review is user-only (/codex:adversarial-review)
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of run program: check <top finding 1>, <top finding 2>, and <top finding 3> in the program.md. Read-only: do not apply fixes.")
 ```
 

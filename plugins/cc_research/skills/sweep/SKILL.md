@@ -90,7 +90,7 @@ Extract flags:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Extract --out unquoted path token (mirrors --keep idiom at :107-111; --out value unquoted, not quoted)
+# extract --out unquoted path token (mirrors --keep idiom at :107-111)
 OUT=""
 if [[ "$ARGUMENTS" =~ --out[[:space:]]+([^[:space:]]+) ]]; then
     OUT="${BASH_REMATCH[1]}"
@@ -165,7 +165,7 @@ sweep: plan → <output path> ✓
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 1: after S2 plan written (compaction-contract.md §Lifecycle)
+# boundary 1: after S2 plan written (compaction-contract.md)
 IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
@@ -209,7 +209,7 @@ Repeat up to `MAX_REFINE` times:
      - **Refresh compaction contract now** — fixes for this iteration applied, so contract can truthfully assert them. Substitute literal `REFINE_ITER`, `NO_FIXES_ITER`, `VERDICT`, `JUDGE_REPORT` values tracked (fill-in template like judge-report tokens, not verbatim-run block — counters are prose loop state, not shell vars):
 
        ```bash
-       # WHY: without a post-fix refresh a compaction here resumes from boundary-1 (pre-loop) → re-judges from iteration 1. Placed AFTER fixes so "fixes applied through iteration N" is true.
+       # WHY: no post-fix refresh → compaction here resumes boundary-1 (pre-loop), re-judges from iter 1. Placed after fixes so "applied through iteration N" holds.
        export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
        IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
        python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:sweep" "judge+refinement loop (S3, iteration <REFINE_ITER>/<MAX_REFINE> — fixes applied)" "n/a" "program-path=${_OUT}, refine-iter=<REFINE_ITER>, no-fixes-iter=<NO_FIXES_ITER>, last-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>" "re-judge ${_OUT} (it carries the fixes applied through iteration <REFINE_ITER>) → continue loop; do NOT reset REFINE_ITER. Exit on APPROVED/BLOCKED or REFINE_ITER==MAX_REFINE."
@@ -224,7 +224,7 @@ Substitute literal `VERDICT` and `JUDGE_REPORT` values tracked by the loop (fill
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 2: after S3 judge loop settles verdict (compaction-contract.md §Lifecycle)
+# boundary 2: after S3 judge loop settles verdict (compaction-contract.md)
 IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"

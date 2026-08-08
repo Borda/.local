@@ -55,7 +55,7 @@ OUTPUT_DIR:       .experiments/kaggle/
 CELL_MARK:        "# %%"
 MD_CELL_MARK:     "# %% [markdown]"
 COMPETITORS_DIR:  resources/competitors/  # optional user-project path, not shipped in plugin — Step 1 reads if present
-# NOTE: documentation-only — not referenced as shell vars across separate Bash() calls (state doesn't persist); keep values in sync with literal use sites (Steps 1, 3, 4).
+# NOTE: doc-only — not shell vars across Bash() calls (state doesn't persist); keep synced with literal use sites (Steps 1,3,4)
 ```
 
 </constants>
@@ -259,7 +259,7 @@ Write `<OUTFILE>`. Return only:
 **Synchronous spawn note**: `foundry:sw-engineer` spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 poll-based monitoring unreachable mid-call. After Agent() returns, check agent's output under `.experiments/kaggle/`; missing or empty → treat as timed out, surface with ⏱ marker — never silently omit.
 
 ```bash
-# Compaction contract — boundary: after Step 3 notebook generated (compaction-contract.md §Lifecycle)
+# boundary: after Step 3 notebook generated (compaction-contract.md)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _COMPETITION < "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || _COMPETITION=""
 IFS= read -r _INF < "${TMPDIR:-/tmp}/kaggle-inference-only-${CSID}" 2>/dev/null || _INF="false"

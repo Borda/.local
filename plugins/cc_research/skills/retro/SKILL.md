@@ -84,7 +84,7 @@ echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id-${CSID}"  # persist for T3 (v
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 RUN_ID="${RUN_ID_ARG:-$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/find_run_id.py" .experiments/state 2>/dev/null)}"  # loads: find_run_id.py
-# T-G2: find_run_id.py errors suppressed by 2>/dev/null; surface empty case to avoid double-slash path
+# T-G2: find_run_id.py errors suppressed 2>/dev/null; empty case surfaced to avoid double-slash path
 [ -z "$RUN_ID" ] && { echo "! Failed to resolve run ID — no completed run found or bin/find_run_id.py unavailable; check research plugin install."; exit 1; }
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}"

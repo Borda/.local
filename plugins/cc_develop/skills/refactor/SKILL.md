@@ -316,7 +316,7 @@ IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || 
 Continue to Step 3 only when `TEAM_MODE=false`.
 
 ```bash
-# Compaction contract — boundary 1: after coverage audit, before characterization tests (compaction-contract.md §Lifecycle)
+# boundary 1: after coverage audit, before characterization tests (compaction-contract.md)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
 IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
@@ -431,7 +431,7 @@ After each change-test pair: re-read counter from temp file, increment, write ba
 - **Dead code removal**: remove unused imports, unreachable branches, commented-out code; scan `_`-prefixed functions with no call sites; flag public methods absent from `__init__.py` exports
 
 ```bash
-# Compaction contract — boundary 2: after refactor edits, before review stack (compaction-contract.md §Lifecycle)
+# boundary 2: after refactor edits, before review stack (compaction-contract.md)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-refactor-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
 IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""

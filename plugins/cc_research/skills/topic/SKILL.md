@@ -113,7 +113,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date +%Y-%m-%d)  # timeout: 3000
 mkdir -p .temp .reports/research  # timeout: 3000
-# Anti-overwrite counter-suffix (quality-gates.md §Output Routing) — resolved by bin/resolve-anti-overwrite-path.py.
+# anti-overwrite counter-suffix (quality-gates.md §Output Routing) — resolved by resolve-anti-overwrite-path.py
 # Step 3's report path is resolved HERE, not at Step 3: the hook gate below must exist from the
 # moment the run is committed to producing a report, not from the moment it remembers to.
 AGENT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-agent-$BRANCH-$DATE")  # timeout: 5000
@@ -143,7 +143,7 @@ Use Grep tool to search codebase for existing related code:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary: after Step 2 literature gathered (compaction-contract.md §Lifecycle)
+# boundary: after Step 2 literature gathered (compaction-contract.md)
 IFS= read -r _AGENT_OUT < "${TMPDIR:-/tmp}/topic-agent-out-${CSID}" 2>/dev/null || _AGENT_OUT=""
 IFS= read -r _BRANCH < "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || _BRANCH=""
 IFS= read -r _DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || _DATE=""
@@ -219,7 +219,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # Reload from Step 2a bash block (Check 41: fresh shell per call)
 IFS= read -r BRANCH < "${TMPDIR:-/tmp}/topic-branch-${CSID}" 2>/dev/null || BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
 IFS= read -r DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || DATE=$(date +%Y-%m-%d)
-# Report path (anti-overwrite counter-suffix per quality-gates.md) resolved at Step 2a — reuse it
+# report path (anti-overwrite suffix, quality-gates.md) resolved at Step 2a — reuse
 # verbatim; re-resolving here would drift from the path the hook gate is watching
 IFS= read -r REPORT_OUT < "${TMPDIR:-/tmp}/topic-report-out-${CSID}" 2>/dev/null || REPORT_OUT=""
 if [ -z "$REPORT_OUT" ]; then

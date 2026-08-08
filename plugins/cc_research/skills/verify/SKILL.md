@@ -90,7 +90,7 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 3000
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
 mkdir -p .reports/research
 BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done
-# Persist for V3/V4/V5 (each Bash call = fresh shell) — pointer file (verify-latest-tag) lets each shell rehydrate this tag; epoch suffix distinguishes concurrent runs on same branch/day.
+# persist for V3/V4/V5 (fresh shell each Bash call) — verify-latest-tag lets each shell rehydrate; epoch suffix distinguishes concurrent runs same branch/day
 _VTAG="${BRANCH}-${DATE}-$(date +%s)"
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}"
 echo "$OUT"     > "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}"

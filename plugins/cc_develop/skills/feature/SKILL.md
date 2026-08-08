@@ -224,7 +224,7 @@ Gather full context before writing any code:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# strip flags first — mirrors debug/SKILL.md:154-156; feature's CLEAN_ARGS omits --issue/--plan/--keep, can't reuse it here
+# strip flags first — mirrors debug/SKILL.md:154-156; CLEAN_ARGS omits --issue/--plan/--keep here
 ARGUMENTS_FOR_ISSUE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--challenge|--team|--worktree|--no-codemap|--codemap|--semble|--accept-no-plan|--issue[= ]?[^ ]+|--repo[= ]?[^ ]+|--plan[= ]?[^ ]+|--keep[[:space:]]+"[^"]*"//g' | xargs)
 if [[ "$ARGUMENTS_FOR_ISSUE_DETECT" =~ ^#?[0-9]+$ ]]; then
   python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_issue_fetch_wrap.py" feature "$ARGUMENTS"  # timeout: 6000
@@ -369,7 +369,7 @@ Parse result:
 - **No findings / all refuted** → proceed.
 
 ```bash
-# Compaction contract — boundary 1: after scope analysis, before demo/edit (compaction-contract.md §Lifecycle)
+# boundary 1: after scope analysis, before demo/edit (compaction-contract.md)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
 IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
@@ -523,13 +523,13 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
 After each cycle, refresh compaction contract so a mid-loop compaction resumes TDD loop instead of restarting Step 2 demo:
 
 ```bash
-# WHY: boundary-1 contract (Step 1) says "next: Step 2 demo"; without this a mid-Step-3 compaction restarts the demo. Redo is idempotent but wastes agent spawns + test runs. checkpoint.md already lists completed steps for resume.
+# WHY: boundary-1 (Step 1) says next=Step 2 demo; skip this, mid-Step-3 compaction restarts demo — idempotent but wastes spawns+tests. checkpoint.md lists completed steps for resume.
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
 IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
 IFS= read -r _PLAN_FILE < "${TMPDIR:-/tmp}/dev-plan-file-${CSID}" 2>/dev/null || _PLAN_FILE=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/dev-feature-keep-items-${CSID}" 2>/dev/null || _KEEP=""
-# tracked mods AND untracked new files — new TDD test/module files are untracked until staged; git diff alone drops them
+# tracked mods AND untracked new files — new TDD files untracked until staged; git diff alone drops them
 _CHANGED=$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u | tr '\n' ' ' | sed 's/ *$//')
 _PRESERVE="dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD, plan-file=${_PLAN_FILE:-none}, checkpoint=$_DEV_DIR/checkpoint.md"
 [ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
@@ -548,7 +548,7 @@ Repeat until all feature tests pass and Step 2 demo passes.
 If Step 2 produced example script: promote into formal pytest test now that API is stable. Delete script once test in place.
 
 ```bash
-# Compaction contract — boundary 2: after TDD loop, before review stack (compaction-contract.md §Lifecycle)
+# boundary 2: after TDD loop, before review stack (compaction-contract.md)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _DEV_DIR < "${TMPDIR:-/tmp}/dev-feature-dev-dir-${CSID}" 2>/dev/null || _DEV_DIR=""
 IFS= read -r _PYTEST_CMD < "${TMPDIR:-/tmp}/dev-pytest-cmd-${CSID}" 2>/dev/null || _PYTEST_CMD=""
