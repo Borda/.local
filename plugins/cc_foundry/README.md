@@ -353,22 +353,22 @@ ______________________________________________________________________
 
 ### `/foundry:profile`
 
-Buckets session clock time from existing `~/.claude/logs/{timings,invocations}.jsonl` into local-tool, agent-spawn, Skill, AskUserQuestion idle, main-loop reasoning residual. Pure log read — no instrumentation, no LLM calls, no skill edits.
+Buckets session **clock time** from `~/.claude/logs/{timings,invocations}.jsonl` into local-tool, agent-spawn, Skill, AskUserQuestion idle, main-loop reasoning residual, **and** session **tokens/cost** from Claude Code transcripts (`~/.claude/projects/**`, main-loop + subagent files) into main vs subagent spend by model tier — merged into one report. Pure log/transcript read — no instrumentation, no LLM calls, no skill edits.
 
 ```text
-/foundry:profile                          # last 24h, top 5 slowest calls
+/foundry:profile                          # last 24h, top 5 slowest calls + cost ranking
 /foundry:profile --since 7d               # last 7 days
-/foundry:profile --session-id 9c1bded7    # drill one session
+/foundry:profile --session-id 9c1bded7    # drill one session: clock breakdown + cost/agent-roster/cache-rebuild detail
 /foundry:profile --top-n 20               # 20 longest single calls
 ```
 
-**Covers**: per-session breakdown (local% / agent% / skill% / reasoning% / idle), per-skill rollup (runs, total, mean, median, p90), top-N longest single calls, headline split over window.
+**Covers**: per-session clock breakdown (local% / agent% / skill% / reasoning% / idle), per-skill clock rollup (runs, total, mean, median, p90), top-N longest single calls, headline split over window; `## Tokens & cost` section — sessions ranked by cost (main $ / subagent $ / total $), per-command rollup, or (with `--session-id`) cost by main/sidechain × model tier, agent roster, top cache-rebuild calls, cold-start share. Subagent spend is read directly from each session's `subagents/agent-*.jsonl` transcripts, not inferred.
 
-**Not for**: token/cost accounting (`model` field null in current logs); per-line Python perf (use `foundry:perf-optimizer`); known failure diagnosis (use `/foundry:investigate`).
+**Not for**: per-line Python perf (use `foundry:perf-optimizer`); known failure diagnosis (use `/foundry:investigate`); a real billing statement (prices are public list rates, not effective plan rates).
 
-Reads JSONL logs foundry `task-log.js` hook already writes — answers "where did wall clock go in `/oss:resolve`?" and similar. Background agents (`run_in_background=true`) with spawn-only false-zero `duration_ms` recovered by joining matching `started→completed` pair in `invocations.jsonl`.
+Reads JSONL logs foundry `task-log.js` hook already writes for the clock side (`bin/timing_analyzer.py`) and Claude Code transcripts for the cost side (`bin/cost_analyzer.py`) — answers "where did wall clock go in `/oss:resolve`?" and "what did this session cost?" alike. Background agents (`run_in_background=true`) with spawn-only false-zero `duration_ms` recovered by joining matching `started→completed` pair in `invocations.jsonl`. The cost side is best-effort: if no transcripts fall in the window, the `## Tokens & cost` section is omitted and the clock report still ships.
 
-**Auto-invokes when (MAYBE):** user asks where wall-clock time goes, why skill slow, what dominates session runtime; "where does time go", "why so slow", "profile last session", "clock breakdown", "session timing".
+**Auto-invokes when (MAYBE):** user asks where wall-clock time or tokens/cost go, why a skill is slow or expensive, what dominates session runtime or spend; "where does time go", "why so slow", "what did this cost", "token spend", "profile last session", "clock breakdown", "session timing", "which skill burns tokens".
 
 ______________________________________________________________________
 
@@ -859,32 +859,34 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 
 ### Python `bin/` script tests
 
-| File                              | Script                       | Tests | Covered                                                                                                    |
-| --------------------------------- | ---------------------------- | ----- | ---------------------------------------------------------------------------------------------------------- |
-| `test_check_routing_links.py`     | `check_routing_links.py`     | 42    | Computed path resolution, orphan-risk detection (R2), bin-ref integrity (R3), security path guard          |
-| `test_symlink_with_guard.py`      | `symlink_with_guard.py`      | 35    | Create/update/remove symlinks, guard against stale links, unconditional purge of `~/.claude/skills/` links |
-| `test_extract_code_blocks.py`     | `extract_code_blocks.py`     | 30    | Fence parsing, lang normalisation, heuristic code/prose classification, token filtering                    |
-| `test_check_bash_persistence.py`  | `check_bash_persistence.py`  | 28    | Cross-block variable reference detection, env-var filtering, multi-block files                             |
-| `test_find_polluter.py`           | `find_polluter.py`           | 24    | Safe/unsafe node-id validation, isolation test runner, bisect loop                                         |
-| `test_check_cli_flag_drift.py`    | `check_cli_flag_drift.py`    | 24    | AST flag extraction, invocation-scoped matching, REMAINDER passthrough, no-exec guarantee                  |
-| `test_verify_perm.py`             | `verify_perm.py`             | 21    | Settings allow-entry detection, missing/malformed JSON, CLI exit codes                                     |
-| `test_check_orphaned_bin.py`      | `check_orphaned_bin.py`      | 21    | Orphaned bin/ script detection, consumer-reference parsing, multi-plugin scan                              |
-| `test_jq_write.py`                | `jq_write.py`                | 18    | Arg parsing, JSON path writes, merge semantics                                                             |
-| `test_resolve_shared_path.py`     | `resolve_shared_path.py`     | 18    | Plugin/subdir validation, path traversal rejection, tier-1/2/3 resolution cascade                          |
-| `test_health_sentinel.py`         | `health_sentinel.py`         | 18    | Sentinel creation, age computation, stale detection, new-file polling                                      |
-| `test_check_fence_symmetry.py`    | `check_fence_symmetry.py`    | 17    | Unclosed fences, nested/interleaved fences, multi-file scan                                                |
-| `test_check_codex.py`             | `check_codex.py`             | 17    | `installed_plugins.json` manifest parsing, codex key presence, malformed JSON                              |
-| `test_make_run_dir.py`            | `make_run_dir.py`            | 16    | Portability invariants (no `/tmp` literals, `stdout.reconfigure`, shebang), timestamp format               |
-| `test_check_spawn_prompt_vars.py` | `check_spawn_prompt_vars.py` | 16    | `$VAR` in markdown code blocks, caller-substituted-var whitelist, multi-file scan                          |
-| `test_trim_plugin_tables.py`      | `trim_plugin_tables.py`      | 15    | Cell padding normalization, separator-row alignment colons, fenced-code-block skip, multi-file CLI         |
-| `test_check_tag_symmetry.py`      | `check_tag_symmetry.py`      | 14    | Empty/whitespace XML blocks, unbalanced open/close tags, multi-file scan                                   |
-| `test_resolve_skill_subdir.py`    | `resolve_skill_subdir.py`    | 11    | Tier-1/2/3 subdir resolution cascade, local-override flag, fallback ordering                               |
-| `test_purge_plugin_cache.py`      | `purge_plugin_cache.py`      | 17    | Report-vs-apply contract, seven deletion guards, `--expect-count` abort, argument rejection                |
-| `test_resolve_memory_dir.py`      | `resolve_memory_dir.py`      | 10    | Path slugification, `PROJECT_ROOT` override, git fallback, missing-git fallback                            |
-| `test_resolve_plugin_root.py`     | `resolve_plugin_root.py`     | 9     | Registry lookup, cache-scan fallback, orphaned-version skip, security gates (cache-dir + manifest-name)    |
-| `test_session_age_files.py`       | `session_age_files.py`       | 8     | File listing, age computation, glob filtering, missing-dir handling                                        |
-| `test_get_plugin_install_path.py` | `get_plugin_install_path.py` | 7     | Registry lookup, multiple-entry tie-breaking, missing plugin exit code                                     |
-| `test_c33_dir_resolution.py`      | _(C33 dir-resolution logic)_ | 4     | Latest-version selection, older-version exclusion, no-cache fallback                                       |
+| File                              | Script                       | Tests | Covered                                                                                                                                                                          |
+| --------------------------------- | ---------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_check_routing_links.py`     | `check_routing_links.py`     | 42    | Computed path resolution, orphan-risk detection (R2), bin-ref integrity (R3), security path guard                                                                                |
+| `test_symlink_with_guard.py`      | `symlink_with_guard.py`      | 35    | Create/update/remove symlinks, guard against stale links, unconditional purge of `~/.claude/skills/` links                                                                       |
+| `test_extract_code_blocks.py`     | `extract_code_blocks.py`     | 30    | Fence parsing, lang normalisation, heuristic code/prose classification, token filtering                                                                                          |
+| `test_check_bash_persistence.py`  | `check_bash_persistence.py`  | 28    | Cross-block variable reference detection, env-var filtering, multi-block files                                                                                                   |
+| `test_find_polluter.py`           | `find_polluter.py`           | 24    | Safe/unsafe node-id validation, isolation test runner, bisect loop                                                                                                               |
+| `test_check_cli_flag_drift.py`    | `check_cli_flag_drift.py`    | 24    | AST flag extraction, invocation-scoped matching, REMAINDER passthrough, no-exec guarantee                                                                                        |
+| `test_verify_perm.py`             | `verify_perm.py`             | 21    | Settings allow-entry detection, missing/malformed JSON, CLI exit codes                                                                                                           |
+| `test_check_orphaned_bin.py`      | `check_orphaned_bin.py`      | 21    | Orphaned bin/ script detection, consumer-reference parsing, multi-plugin scan                                                                                                    |
+| `test_cost_analyzer.py`           | `cost_analyzer.py`           | 21    | Message-id dedupe (3x-inflation guard), tier/cost pricing, main/sidechain bucketing, subagent-transcript merge, session discovery no-double-count, CLI session-id + window modes |
+| `test_jq_write.py`                | `jq_write.py`                | 18    | Arg parsing, JSON path writes, merge semantics                                                                                                                                   |
+| `test_resolve_shared_path.py`     | `resolve_shared_path.py`     | 18    | Plugin/subdir validation, path traversal rejection, tier-1/2/3 resolution cascade                                                                                                |
+| `test_health_sentinel.py`         | `health_sentinel.py`         | 18    | Sentinel creation, age computation, stale detection, new-file polling                                                                                                            |
+| `test_check_fence_symmetry.py`    | `check_fence_symmetry.py`    | 17    | Unclosed fences, nested/interleaved fences, multi-file scan                                                                                                                      |
+| `test_check_codex.py`             | `check_codex.py`             | 17    | `installed_plugins.json` manifest parsing, codex key presence, malformed JSON                                                                                                    |
+| `test_make_run_dir.py`            | `make_run_dir.py`            | 16    | Portability invariants (no `/tmp` literals, `stdout.reconfigure`, shebang), timestamp format                                                                                     |
+| `test_check_spawn_prompt_vars.py` | `check_spawn_prompt_vars.py` | 16    | `$VAR` in markdown code blocks, caller-substituted-var whitelist, multi-file scan                                                                                                |
+| `test_trim_plugin_tables.py`      | `trim_plugin_tables.py`      | 15    | Cell padding normalization, separator-row alignment colons, fenced-code-block skip, multi-file CLI                                                                               |
+| `test_check_tag_symmetry.py`      | `check_tag_symmetry.py`      | 14    | Empty/whitespace XML blocks, unbalanced open/close tags, multi-file scan                                                                                                         |
+| `test_resolve_skill_subdir.py`    | `resolve_skill_subdir.py`    | 11    | Tier-1/2/3 subdir resolution cascade, local-override flag, fallback ordering                                                                                                     |
+| `test_purge_plugin_cache.py`      | `purge_plugin_cache.py`      | 17    | Report-vs-apply contract, seven deletion guards, `--expect-count` abort, argument rejection                                                                                      |
+| `test_resolve_memory_dir.py`      | `resolve_memory_dir.py`      | 10    | Path slugification, `PROJECT_ROOT` override, git fallback, missing-git fallback                                                                                                  |
+| `test_resolve_plugin_root.py`     | `resolve_plugin_root.py`     | 9     | Registry lookup, cache-scan fallback, orphaned-version skip, security gates (cache-dir + manifest-name)                                                                          |
+| `test_session_age_files.py`       | `session_age_files.py`       | 8     | File listing, age computation, glob filtering, missing-dir handling                                                                                                              |
+| `test_get_plugin_install_path.py` | `get_plugin_install_path.py` | 7     | Registry lookup, multiple-entry tie-breaking, missing plugin exit code                                                                                                           |
+| `test_classify_resolver_sites.py` | `classify_resolver_sites.py` | 5     | Directory scan for extractable/non-extractable resolver sites, CLI report + `--list-extractable` — maintainer-only, ad hoc invocation, not wired into any skill                  |
+| `test_c33_dir_resolution.py`      | _(C33 dir-resolution logic)_ | 4     | Latest-version selection, older-version exclusion, no-cache fallback                                                                                                             |
 
 CI runs full test suite on every push to `main` and on PRs touching `plugins/` (see `.github/workflows/ci-tests.yml`).
 

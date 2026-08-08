@@ -20,8 +20,8 @@ are a different, already-solved pattern -- several already cache themselves via 
 compare unlike things.
 
 Usage:
-    python debugging/classify_resolver_sites.py plugins/cc_foundry
-    python debugging/classify_resolver_sites.py plugins/cc_foundry --list-extractable
+    python "${CLAUDE_PLUGIN_ROOT}/bin/classify_resolver_sites.py" plugins/cc_foundry
+    python "${CLAUDE_PLUGIN_ROOT}/bin/classify_resolver_sites.py" plugins/cc_foundry --list-extractable
 """
 
 from __future__ import annotations

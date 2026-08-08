@@ -61,7 +61,7 @@ ignore-words-list = "derails"
 skip = "./site,./.git"  # MkDocs build output + git internals — generated, not source
 
 [tool.pytest]
-ini_options.testpaths = [ "benchmarks", "debugging", "plugins" ]
+ini_options.testpaths = [ "benchmarks", "plugins" ]
 ini_options.norecursedirs = [
   "*.egg",
   ".*",

@@ -80,6 +80,7 @@ Applies to **every code-touching agent**, not `foundry:sw-engineer` alone. Train
 - No `import *` — always explicit imports
 - No global mutable state — use dependency injection
 - `__all__` in `__init__.py` to define public API surface
+- Never `__all__` in private module (`_foo.py`) — filename already marks whole module internal; `__all__` there fakes a public surface on something that has none
 - Prefer composition over deep inheritance
 
 ## Structured Data — never a bare dict
