@@ -1,7 +1,7 @@
 ---
 name: linting-expert
 description: 'Python static analysis — ruff, mypy, pre-commit, lint/type fixes, type annotations. NOT for CI topology (oss:cicd-steward), test logic (foundry:qa-specialist), non-style implementation (foundry:sw-engineer), docstrings (foundry:doc-scribe). TRIGGER: "is this clean", "lint issues", "check types", "add type hints". SKIP: stdlib-only; linting not needed.'
-tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch
+tools: Read, Write, Edit, Bash, Grep, WebFetch
 model: haiku
 effort: medium
 memory: project
@@ -25,7 +25,7 @@ Use for configuring ruff rules, mypy strictness, pre-commit hooks, fixing lint/t
 
 </routing_boundaries>
 
-<!-- Routing: workflow always runs both ruff and mypy; pre-commit configuration only loaded when scope explicitly requests it. -->
+<!-- Routing: workflow always runs both ruff and mypy; pre-commit configuration is gated below — loaded via cat only when scope explicitly requests it. -->
 
 <ruff_config>
 
@@ -154,86 +154,9 @@ mypy "$mypy_target"
 
 <precommit_config>
 
-## pre-commit — enforce at commit time
-
-```yaml
-# .pre-commit-config.yaml
-repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: <CURRENT> # run `pre-commit autoupdate` to set; verify version at pypi.org/project/ruff
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: <CURRENT> # run `pre-commit autoupdate` to set; verify version at pypi.org/project/mypy
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML]  # Update versions when upgrading ruff/mypy — these are pinned for reproducibility
-
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: <CURRENT> # run `pre-commit autoupdate` to set
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-toml
-      - id: check-merge-conflict
-      - id: debug-statements
-      - id: check-added-large-files
-        args: [--maxkb=1000]
-```
-
-```bash
-pre-commit install
-pre-commit run --all-files
-pre-commit autoupdate      # run regularly
-```
-
-> **Tip**: Enable pre-commit.ci to auto-run + auto-fix hooks on every PR without local setup burden.
+For pre-commit configuration and version-pinning workflow (`.pre-commit-config.yaml` setup, `rev:` placeholder discipline, `pre-commit autoupdate`, version verification against pypi.org/GitHub releases): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/references/linting-expert/precommit-patterns.md"` via the Bash tool. Skip for ruff-only or mypy-only tasks.
 
 </precommit_config>
-
-<pre_commit_versioning>
-
-### Version Pinning
-
-Two contexts; apply correct one:
-
-**Live project config** (`.pre-commit-config.yaml` exists + in use):
-
-- Run `pre-commit autoupdate` — fetches latest release tag for every hook
-- Don't manually look up versions or use `pip install --upgrade` to determine rev
-- Commit result of `pre-commit autoupdate` directly; don't modify revs it sets
-
-**Template / starter file** (creating new config for others to copy):
-
-- Use `<CURRENT>` as rev placeholder — NEVER real version string like `v0.5.0`
-- Add autoupdate comment on same line:
-  ```yaml
-  rev: <CURRENT>  # run `pre-commit autoupdate` to set; verify release at the hook's repo
-  ```
-
-**New live project config** (creating `.pre-commit-config.yaml` for first time for actual use):
-
-- Create minimal config with placeholder revs, then immediately run `pre-commit autoupdate` to populate real versions
-- Don't manually write version strings; autoupdate sets them correctly from start
-- To update single hook: `pre-commit autoupdate --repo <repo-url>`
-
-Run `pre-commit autoupdate` as part of regular dependency updates (e.g., monthly or when upgrading other deps).
-
-### Version Verification
-
-After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, mypy) and hook repo's GitHub releases (pre-commit-hooks). Don't check only GitHub releases for ruff/mypy — pypi.org reflects published package version. Use WebFetch to verify hook versions against pypi.org or GitHub releases when `pre-commit autoupdate` output is ambiguous (e.g., rev updated but release page not yet reflected in pypi metadata).
-
-Cache version lookups: store result in session variable, reuse; avoid re-fetching same URL.
-
-### Prohibited Patterns
-
-- `rev: latest` — not a valid git ref; autoupdate never writes it; treat as placeholder mistake
-
-</pre_commit_versioning>
 
 <pytorch_migration>
 

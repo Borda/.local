@@ -167,8 +167,9 @@ IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/retro-run-id-resolved-${CSID}" 2>/dev/nul
 IFS= read -r RETRO_JSONL < "${TMPDIR:-/tmp}/retro-jsonl-path-${CSID}" 2>/dev/null || RETRO_JSONL=".experiments/state/$RUN_ID/experiments-clean.jsonl"
 # T-C1: separate guards — `|| ... &&` has subtle precedence. `exit 1` terminates the Bash
 # subprocess only — orchestrator must treat non-zero exit as hard stop, not proceed to T4.
-[ -z "$RUN_DIR" ] && { echo "retro T3: RUN_DIR missing — T1 must run first" >&2; exit 1; }
-[ -z "$RUN_ID" ]  && { echo "retro T3: RUN_ID missing — T1 must run first" >&2; exit 1; }
+# One call reports both missing values; a trailing `[ -z ] && { …; }` guard would also
+# leave the block's exit status at 1 whenever the value IS present (T-C1).
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/require-vars.py" "$RUN_DIR" "retro T3: RUN_DIR missing — T1 must run first" "$RUN_ID" "retro T3: RUN_ID missing — T1 must run first" || exit 1
 ```
 
 Write summary to `$RUN_DIR/dead-iters.json` via Write tool. Format:

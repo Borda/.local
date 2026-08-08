@@ -67,7 +67,7 @@ Use for dataset collection from external sources, paginated API completeness, DV
 [ ] T.Normalize (torchvision) placed AFTER T.ToTensor — Normalize expects a Tensor, not a PIL Image; wrong order raises TypeError or silently corrupts data
 [ ] NLP augmentation (nlpaug, textattack, EDA): applied before split? Augmented versions of test samples in train split — same contamination as image augmentation; augment train-only after split
 [ ] Albumentations: verify `additional_targets` don't cause val transforms to receive training augmentations; check `Compose(is_check_shapes=...)` not masking split contamination
-[ ] DataLoader config verified — see `<dataloader_patterns>` in sidecar `ml-pipeline-patterns.md` (path resolved at workflow start via `_RESEARCH_AGENT_DIR`)
+[ ] DataLoader config verified — see `<dataloader_patterns>` in sidecar `ml-pipeline-patterns.md` (loaded on demand via `bin/load-agent-reference.py`)
 [ ] If oversampling (SMOTE/ADASYN/RandomOverSampler): applied after split on train-only subset; test set contains only real original samples; post-resample train split uses stratify
 [ ] Cross-validation folds properly isolated
 [ ] When using torch random_split: both Subsets reference the same dataset object — setting .dataset.transform on one overwrites the other; create separate Dataset instances per split instead
@@ -87,13 +87,13 @@ Before training, audit dataset:
 
 </core_principles>
 
-> **Sidecar reference files** (loaded conditionally by workflow — resolve agent dir via the
-> shared `Resolve agent dir` preamble below, which sets `$_RESEARCH_AGENT_DIR`):
-> - `${_RESEARCH_AGENT_DIR}/ml-pipeline-patterns.md` — split strategies, class imbalance, DataLoader patterns (pipeline-audit mode)
-> - `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — DVC, Polars, HuggingFace, 3D volumetric patterns (acquisition mode)
+> **Sidecar reference files** (loaded on demand by workflow — `bin/load-agent-reference.py`
+> resolves the sidecar dir per call: source tree first, plugin cache second):
+> - `ml-pipeline-patterns.md` — split strategies, class imbalance, DataLoader patterns (pipeline-audit mode)
+> - `storage-patterns.md` — DVC, Polars, HuggingFace, 3D volumetric patterns (acquisition mode)
 >
-> **Resolve agent dir** (shared preamble — both acquisition and pipeline-audit modes call this; safe to invoke once per agent run; idempotent):
-> `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/data-steward"; [ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/references/data-steward" -type d 2>/dev/null | head -1)`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop.
+> **Load a sidecar fragment** (both acquisition and pipeline-audit modes call this; idempotent):
+> `"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward <fragment.md> "<degraded-msg>"`. If the sidecar dir resolves nowhere the script prints `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and exits non-zero — stop there. A missing individual fragment is not fatal: the script emits the caller's `<degraded-msg>` in its place.
 
 <data_contracts>
 
@@ -219,13 +219,10 @@ _FOUNDRY_AVAILABLE=$({ find ~/.claude/plugins/cache -maxdepth 5 -path "*/foundry
 
 ## Mode: acquisition
 
-Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then load `storage-patterns.md` — storage and loading patterns for this mode:
+Load `storage-patterns.md` — storage and loading patterns for this mode. The script resolves the sidecar dir itself and stops the run on resolution failure:
 
-```bash
-_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/data-steward"
-[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/references/data-steward" -type d 2>/dev/null | head -1)
-[ -d "$_RESEARCH_AGENT_DIR" ] || { echo "! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)"; exit 1; }
-cat "$_RESEARCH_AGENT_DIR/storage-patterns.md" 2>/dev/null || echo "⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only."
+```python
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward storage-patterns.md "⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only." || exit 1
 ```
 
 1. **Identify sources** — review data requirements: note which sources have known URLs (handle directly) vs unknown URLs or HTML pages (delegate to `foundry:web-explorer`); document expected volume and completeness signal (pagination mechanism, `total_count` field)
@@ -242,13 +239,10 @@ cat "$_RESEARCH_AGENT_DIR/storage-patterns.md" 2>/dev/null || echo "⚠ storage-
 
 ## Mode: pipeline-audit
 
-Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then load `ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode:
+Load `ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode. The script resolves the sidecar dir itself and stops the run on resolution failure:
 
-```bash
-_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/data-steward"
-[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/references/data-steward" -type d 2>/dev/null | head -1)
-[ -d "$_RESEARCH_AGENT_DIR" ] || { echo "! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)"; exit 1; }
-cat "$_RESEARCH_AGENT_DIR/ml-pipeline-patterns.md" 2>/dev/null || echo "⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only."
+```python
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/load-agent-reference.py" data-steward ml-pipeline-patterns.md "⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only." || exit 1
 ```
 
 1. **Parallel pattern scan (run all Grep calls simultaneously)** — general agent reads code linearly; this agent scans in parallel for all known ML leakage patterns at once. Launch six Grep calls together — independent:

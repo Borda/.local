@@ -84,6 +84,27 @@ AI/ML researcher bridging theory and practice. Reads papers critically, implemen
 
 </research_procedures>
 
+<codemap_context>
+
+Codemap pre-flight — run if `codemap-py query` available + index exists; skip Grep/Read enumeration for symbols codemap already covers (requires `codemap-py` plugin). Own copy — self-contained, no cross-plugin reference.
+
+```bash
+PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    codemap-py query --timeout 5 central --top 5 2>/dev/null  # blast-radius baseline; always run
+    if [ -n "$TARGET_MODULE" ]; then
+        codemap-py query --timeout 5 rdeps "$TARGET_MODULE" 2>/dev/null
+        [ -n "$TARGET_FN" ] && codemap-py query --timeout 5 fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests 2>/dev/null
+        [ -n "$TARGET_FN" ] && codemap-py query --timeout 5 symbol --with-imports "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    fi
+fi
+```
+
+**Codemap-first protocol**: (1) **Skill-first** — consult the query output above before any Grep/Glob/Read aimed at imports, callers, or symbol contracts for something already listed there — this applies to code-implementation tasks (reproducing a paper's method inside an existing codebase), not to paper/literature analysis, which has no codebase target. (2) **Bounded call budget** — symbol not covered above → up to 3 additional `codemap-py query` calls this task. (3) **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`) — that result is final for its direction, no follow-up Grep/Read/query to re-confirm it. `codemap-py` not found or index missing: block above produces no output — proceed with normal file-read behaviour, no protocol applies.
+
+</codemap_context>
+
 <output_format>
 
 When summarizing paper or method:
@@ -174,7 +195,7 @@ First-order papers not requiring fetch include widely known works such as BERT a
 
 <workflow>
 
-1. Gather context: read codebase to understand task, framework, constraints, existing implementations. For ML-domain tasks (paper analysis, model adaptation, training, evaluation): read `${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/scientist/ml-concepts.md` — covers evaluation pitfalls, architectural patterns, foundation-model adaptation, paper implementation, computer-vision metrics, framework agnosticism, LLM evaluation, experiment tracking; if file not found, continue without it.
+1. Gather context: when task targets an existing codebase (implementing into, or modifying, prior code — not greenfield paper analysis), run codemap pre-flight (see `<codemap_context>`) before Grep/Read enumeration of imports/callers/symbol contracts. Read codebase to understand task, framework, constraints, existing implementations. For ML-domain tasks (paper analysis, model adaptation, training, evaluation): read `${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/references/scientist/ml-concepts.md` — covers evaluation pitfalls, architectural patterns, foundation-model adaptation, paper implementation, computer-vision metrics, framework agnosticism, LLM evaluation, experiment tracking; if file not found, continue without it.
 2. Literature search: find 3-5 relevant papers, verify links, cluster by approach, identify strongest baseline. Use WebSearch to find paper PDFs/abstracts not in context; use WebFetch to download specific URLs from search results (arXiv HTML, Papers With Code, Semantic Scholar).
 3. Deep analysis: for top candidates — extract method details, check reproducibility, assess compute requirements
 4. Experiment design: state hypothesis, define variables and controls, set success criteria, plan ablations, estimate compute

@@ -153,6 +153,57 @@ def test_written_report_passes_through(tmp_path: Path, profile_run: tuple[Path, 
     assert _run(tmp_path, _ask_payload(cwd=cwd)) == {}
 
 
+def _write_transcript(tmp_path: Path, assistant_text: str) -> Path:
+    """Write a minimal two-row JSONL transcript: a human user turn then one assistant text block."""
+    rows = [
+        {"type": "user", "message": {"content": [{"type": "text", "text": "go"}]}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": assistant_text}]}},
+    ]
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return transcript
+
+
+def test_report_written_with_table_in_reply_has_no_reminder(
+    tmp_path: Path, profile_run: tuple[Path, Path, str]
+) -> None:
+    """Table already printed this turn → allow with no additionalContext nudge."""
+    report_dir, _, cwd = profile_run
+    (report_dir / "report.md").write_text("---\nTitle: profile\n---\n", encoding="utf-8")
+    transcript = _write_transcript(
+        tmp_path, "| Field | Value |\n| --- | --- |\n| Title | x |\n| Since | y |\n| Top N | z |\n"
+    )
+
+    assert _run(tmp_path, _ask_payload(cwd=cwd, transcript_path=str(transcript))) == {}
+
+
+def test_report_written_without_table_in_reply_gets_reminder(
+    tmp_path: Path, profile_run: tuple[Path, Path, str]
+) -> None:
+    """Raw YAML fields printed instead of a table → nudge naming Step 4b."""
+    report_dir, _, cwd = profile_run
+    (report_dir / "report.md").write_text("---\nTitle: profile\n---\n", encoding="utf-8")
+    transcript = _write_transcript(tmp_path, "Title: profile\nSince: 24h\n")
+
+    result = _run(tmp_path, _ask_payload(cwd=cwd, transcript_path=str(transcript)))
+
+    hook_output = result.get("hookSpecificOutput", {})
+    assert hook_output.get("permissionDecision") == "allow"
+    assert "Step 4b" in hook_output.get("additionalContext", "")
+
+
+def test_report_written_unreadable_transcript_has_no_reminder(
+    tmp_path: Path, profile_run: tuple[Path, Path, str]
+) -> None:
+    """transcript_path pointing at a nonexistent file can't be read → fail open, no false nudge."""
+    report_dir, _, cwd = profile_run
+    (report_dir / "report.md").write_text("---\nTitle: profile\n---\n", encoding="utf-8")
+
+    result = _run(tmp_path, _ask_payload(cwd=cwd, transcript_path=str(tmp_path / "missing.jsonl")))
+
+    assert result == {}
+
+
 def test_absolute_sentinel_path_resolves(tmp_path: Path, profile_run: tuple[Path, Path, str]) -> None:
     """An absolute REPORT_DIR value is honoured as-is, independent of the payload cwd."""
     report_dir, sentinel, _ = profile_run

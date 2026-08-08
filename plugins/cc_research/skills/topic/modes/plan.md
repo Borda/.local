@@ -24,13 +24,10 @@ Before spawning in Steps P2–P3, pre-compute output path components:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date +%Y-%m-%d)  # timeout: 3000
-# Anti-overwrite: resolve counter-suffix before each spawn (quality-gates.md rule)
-CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE.md"
-_N=2; while [ -e "$CODEBASE_OUT" ]; do CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
 mkdir -p .temp .reports/research  # timeout: 3000
-# Step P3 plan report — same anti-overwrite rule as SKILL.md Step 3 (quality-gates.md)
-_PBASE=".reports/research/topic-plan-$BRANCH-$DATE.md"; PLAN_OUT="$_PBASE"; _PN=2
-while [ -f "$PLAN_OUT" ]; do PLAN_OUT="${_PBASE%.md}-${_PN}.md"; _PN=$((_PN+1)); done  # timeout: 5000
+# Anti-overwrite counter-suffix (quality-gates.md §Output Routing) — same rule as SKILL.md Step 3
+CODEBASE_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-codebase-$BRANCH-$DATE")  # timeout: 5000
+PLAN_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-plan-$BRANCH-$DATE")  # timeout: 5000
 # Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
 echo "$PWD/$PLAN_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```

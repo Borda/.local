@@ -58,7 +58,7 @@ NEW_REF=$(echo "$ARGUMENTS" | awk '{print $3}')
 echo "$ARGUMENTS" | grep -q -- '--dry-run'            && DRY_RUN="true"  || DRY_RUN="false"
 echo "$ARGUMENTS" | grep -q -- '--remove-if-no-callers' && REMOVE_IF_ZERO="true" || REMOVE_IF_ZERO="false"
 
-# POSIX sed — avoids PCRE lookbehind, works on macOS BSD sed
+# POSIX sed, not PCRE — works on macOS BSD sed
 SINCE_VER=$(echo "$ARGUMENTS" | sed -n 's/.*--since \([^ ]*\).*/\1/p' || echo "")
 REMOVED_IN_VER=$(echo "$ARGUMENTS" | sed -n 's/.*--removed-in \([^ ]*\).*/\1/p' || echo "")
 
@@ -67,14 +67,12 @@ case "$SUBCOMMAND" in
     *) printf "Usage: /codemap-py:rename-refs symbol <old> <new> [flags] | module <old_path> <new_path> [--dry-run]\n" >&2; exit 1 ;;
 esac
 
-# OLD_REF/NEW_REF reach git mv unvalidated downstream — reject empty or flag-shaped values
-# now, at the boundary, rather than letting e.g. an omitted NEW_REF derive a destructive
-# `git mv <file> src/.py` target, or a flag like --deprecate land in the NEW_REF position.
+# reject empty/flag-shaped OLD_REF/NEW_REF here — unvalidated reaches git mv, risks destructive target
 [ -n "$OLD_REF" ] && [ -n "$NEW_REF" ] || { printf "! Usage: /codemap-py:rename-refs %s <old> <new> [flags] — old or new ref missing\n" "$SUBCOMMAND" >&2; exit 1; }
 case "$OLD_REF" in --*) printf "! OLD_REF '%s' looks like a flag, not a target — check argument order\n" "$OLD_REF" >&2; exit 1 ;; esac
 case "$NEW_REF" in --*) printf "! NEW_REF '%s' looks like a flag, not a target — check argument order\n" "$NEW_REF" >&2; exit 1 ;; esac
 
-# conflicting flags — --deprecate creates alias, --remove-if-no-callers deletes; incompatible
+# --deprecate (alias) + --remove-if-no-callers (delete) conflict
 echo "$ARGUMENTS" | grep -q -- '--deprecate' && [ "$REMOVE_IF_ZERO" = "true" ] && { printf "⚠ conflicting flags: --deprecate creates alias, --remove-if-no-callers deletes target; these are incompatible\n" >&2; rm -f "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVE_IF_ZERO-${CSID}"; exit 1; }
 
 printf '%s\n' "$SUBCOMMAND"     > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-SUBCOMMAND-${CSID}"
@@ -85,7 +83,6 @@ printf '%s\n' "$REMOVE_IF_ZERO" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-RE
 printf '%s\n' "$SINCE_VER"      > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-SINCE_VER-${CSID}"
 printf '%s\n' "$REMOVED_IN_VER" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVED_IN_VER-${CSID}"
 
-# bare names for grep
 OLD_NAME="${OLD_REF##*::}"; [ "$SUBCOMMAND" = "module" ] && OLD_NAME="${OLD_REF##*.}"
 NEW_NAME="${NEW_REF##*::}"; [ "$SUBCOMMAND" = "module" ] && NEW_NAME="${NEW_REF##*.}"
 printf '%s\n' "$OLD_NAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_NAME-${CSID}"
@@ -99,7 +96,7 @@ Parse `--deprecate` — bare flag or carrying a decorator value:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 PARSE_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/parse_deprecate_args.py" --arguments="$ARGUMENTS" 2>"${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-parse-deprecate-err-${CSID}") || { _PARSE_RC=$?; printf "! parse_deprecate_args.py failed (exit %d): %s\n" "$_PARSE_RC" "$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-parse-deprecate-err-${CSID}" 2>/dev/null)" >&2; exit 1; }
-FLAG_FILE=$(printf '%s\n' "$PARSE_OUT" | sed -n 1p)   # pid-qualified path printed by the script (SEC-M7)
+FLAG_FILE=$(printf '%s\n' "$PARSE_OUT" | sed -n 1p)   # pid-qualified path (SEC-M7)
 DEC_FILE=$(printf '%s\n' "$PARSE_OUT" | sed -n 2p)
 [ -n "$FLAG_FILE" ] || { printf "! parse_deprecate_args.py returned no paths\n" >&2; exit 1; }
 IFS= read -r DEPRECATE < "$FLAG_FILE" 2>/dev/null || DEPRECATE="false"
@@ -116,7 +113,6 @@ Unsupported-flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-# stderr to tempfile; eval sees KEY=VAL pairs only
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/resolve_index_env.py" \
     --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
 IFS= read -r PROJ < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-${CSID}" 2>/dev/null || PROJ=""
@@ -124,7 +120,7 @@ IFS= read -r INDEX < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}"
 [ -n "$PROJ" ] || { printf "! resolve_index_env.py failed — check Python availability and CLAUDE_PLUGIN_ROOT\n"; exit 1; }
 [ -n "$INDEX" ] || { echo "! index not found — run /codemap-py:scan-codebase first"; exit 1; }
 SMOKE_JSON=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
-# jq absent → abort; stale index produces missed call sites
+# jq required — else stale index misses callers
 command -v jq >/dev/null 2>&1 || { printf "! jq not found — required for rename-refs index validation; install via brew install jq or apt-get install jq\n"; exit 1; }
 STALE=$(echo "$SMOKE_JSON" | jq -r '.stale // "unknown"' 2>/dev/null || echo "unknown")
 ```
@@ -178,8 +174,7 @@ SYM_QNAME=$(echo "$FIND_SYMBOL_JSON" | jq -r '.matches[0].qualified_name // ""' 
 printf '%s\n' "$SYM_MODULE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-sym-module-${CSID}"
 printf '%s\n' "$SYM_QNAME"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-sym-qname-${CSID}"
 [ -n "$SYM_MODULE" ] && [ -n "$SYM_QNAME" ] || { printf "! could not extract module/qualified_name from find-symbol result\n" >&2; exit 1; }
-# Step 4c reads OLD_MODULE_PATH — wire the real module here so it never falls back to
-# re-deriving from OLD_REF (which cannot carry the module for a symbol rename; see 4c).
+# wire OLD_MODULE_PATH here for 4c — OLD_REF can't carry module for symbol rename, don't re-derive
 printf '%s\n' "$SYM_MODULE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}"
 RDEPS_JSON=$("$SQ" --timeout 20 fn-rdeps "$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-sym-module-${CSID}")::$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-sym-qname-${CSID}")")
 RDEP_COUNT=$(echo "$RDEPS_JSON" | jq -r '.count // 0' 2>/dev/null || echo "0")
@@ -207,7 +202,7 @@ RDEP_COUNT=$(echo "$RDEPS_JSON" | jq -r '.imported_by | length' 2>/dev/null || e
 EXHAUSTIVE=$(echo "$RDEPS_JSON" | jq -r '.index.query_complete // .index.exhaustive // false' 2>/dev/null || echo "false")
 printf '%s\n' "$RDEP_COUNT"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rdep-count-${CSID}"
 printf '%s\n' "$EXHAUSTIVE"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-EXHAUSTIVE-${CSID}"
-# Safety: --remove-if-no-callers honored only when explicitly passed AND exhaustive
+# --remove-if-no-callers needs explicit pass AND exhaustive
 IFS= read -r REMOVE_IF_ZERO_ARG < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVE_IF_ZERO-${CSID}" 2>/dev/null || REMOVE_IF_ZERO_ARG="false"
 [ "$REMOVE_IF_ZERO_ARG" = "true" ] && [ "$EXHAUSTIVE" != "true" ] && printf '%s\n' "false" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVE_IF_ZERO-${CSID}"
 ```
@@ -330,7 +325,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_NAME < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_NAME-${CSID}" 2>/dev/null || OLD_NAME=""
 IFS= read -r FIND_SYMBOL_JSON < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-find-symbol-json-${CSID}" 2>/dev/null || FIND_SYMBOL_JSON="{}"
-# scope to pkg tree — avoid same-named symbol false positives
+# scope to pkg tree — avoids same-name false positives
 OLD_FILE_PATH=$(echo "$FIND_SYMBOL_JSON" | jq -r '.matches[0].path // "."' 2>/dev/null || echo ".")
 PKG_DIR=$(dirname "$OLD_FILE_PATH")
 printf '%s\n' "$PKG_DIR" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-pkg-dir-${CSID}"
@@ -385,12 +380,9 @@ Module-level import fix (whole-file scope, once per file):
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_NAME < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_NAME-${CSID}" 2>/dev/null || OLD_NAME=""
-# Written unconditionally by Step 2 for both subcommands (symbol: from find-symbol's
-# .matches[0].module; module: OLD_REF itself) — never re-derived here. A symbol OLD_REF
-# can never contain the module (module-qualified form is rejected by find-symbol), so
-# re-deriving from it here previously assigned the symbol name where the module belonged.
+# OLD_MODULE_PATH set by Step 2 only — symbol OLD_REF can't carry module; re-deriving here previously put symbol name where module belonged (bug)
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-# escape dots — must match literally, not any-char
+# dots literal, not any-char
 _OLD_MODULE_GREP=$(printf '%s' "$OLD_MODULE_PATH" | sed 's/\./\\./g')
 _OLD_BASENAME_GREP=$(printf '%s' "${OLD_MODULE_PATH##*.}" | sed 's/\./\\./g')
 grep -n "from ${_OLD_MODULE_GREP} import .*\b${OLD_NAME}\b\|from .*\\.${_OLD_BASENAME_GREP} import .*\b${OLD_NAME}\b\|^import .*\b${OLD_NAME}\b" "<file>"
@@ -405,9 +397,9 @@ Edit each matched import line. Verify `from <module>` clause references expected
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_NAME < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_NAME-${CSID}" 2>/dev/null || OLD_NAME=""
-# fully-qualified module prefix avoids false positives on same bare name in unrelated packages
+# full module prefix — avoids false positive on same bare name elsewhere
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-# pattern matches bare name anywhere; verify module before editing
+# matches bare name anywhere — verify module before edit
 grep -rn ":func:\`[^']*$OLD_NAME[^']*\`\|:class:\`[^']*$OLD_NAME[^']*\`\|:meth:\`[^']*$OLD_NAME[^']*\`\|:mod:\`[^']*$OLD_NAME[^']*\`\|:attr:\`[^']*$OLD_NAME[^']*\`" --include="*.py" --include="*.rst" .
 ```
 
@@ -464,7 +456,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 git rev-parse --is-inside-work-tree 2>/dev/null || { printf "⚠ not a git repo — cannot use git mv; rename file manually\n" >&2; exit 1; }
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-# prefer index path — avoids dotted-path conversion errors on src/ layouts
+# index path preferred — avoids dotted-path errors on src/ layouts
 IFS= read -r SMOKE_INDEX < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || SMOKE_INDEX=""
 INDEX_PATH=""
 if [ -n "$SMOKE_INDEX" ] && command -v jq >/dev/null 2>&1; then
@@ -473,13 +465,10 @@ fi
 if [ -n "$INDEX_PATH" ]; then
     old_file_path="$INDEX_PATH"
 else
-    # dotted-path conversion: may be wrong for src/ layouts; verify before git mv
+    # dotted-path conversion may be wrong for src/ layouts — verify before git mv
     old_file_path=$(echo "$OLD_MODULE_PATH" | tr '.' '/').py
 fi
-# MED-15: package dir — checked directly on old_file_path's basename, not inferred from
-# file non-existence. The index-preferred branch above resolves old_file_path to a REAL
-# file whenever the index has it (including __init__.py itself for a package rename),
-# so a non-existence-based guard never fires on the branch it is most needed for.
+# MED-15: check basename, not non-existence — index branch resolves real path (incl. __init__.py), so non-existence guard never fires where needed
 case "$old_file_path" in
     */__init__.py|__init__.py)
         printf "! %s resolves to a package __init__.py (%s) — package directory rename (git mv) is out of scope for this skill; use 'git mv %s %s' directly\n" \
@@ -506,23 +495,20 @@ _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/nul
 IFS= read -r old_file_path < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-old-file-path-${CSID}" 2>/dev/null || old_file_path=""
 IFS= read -r NEW_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-NEW_REF-${CSID}" 2>/dev/null || NEW_MODULE_PATH=""
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-# same strategy as old_file_path: index path preferred; avoids src/-layout tr mismatch
+# same as old_file_path — index path preferred, avoids src/ tr mismatch
 IFS= read -r SMOKE_INDEX < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-${CSID}" 2>/dev/null || SMOKE_INDEX=""
 new_file_path=""
 if [ -n "$SMOKE_INDEX" ] && command -v jq >/dev/null 2>&1; then
     new_file_path=$(jq -r --arg m "$NEW_MODULE_PATH" '.modules[] | select(.name == $m) | .path' "$SMOKE_INDEX" 2>/dev/null || echo "")
 fi
 if [ -z "$new_file_path" ]; then
-    # fallback: dotted-to-path; src/ layouts: use old_file_path for correct prefix.
-    # Bash suffix-strip (%), not sed — a sed pattern built from a ≥2-dot module path
-    # (e.g. "a/b") collides with sed's own "/" delimiter and silently drops the prefix.
+    # fallback dotted→path, src/ prefix from old_file_path — bash % strip not sed, multi-dot path would collide w/ sed's "/" delim
     _OLD_MODULE_DIR=$(echo "${OLD_MODULE_PATH%.*}" | tr '.' '/')
     _OLD_DIRNAME=$(dirname "$old_file_path")
     _OLD_PREFIX="${_OLD_DIRNAME%"$_OLD_MODULE_DIR"}"
     new_file_path="${_OLD_PREFIX}$(echo "$NEW_MODULE_PATH" | tr '.' '/').py"
 fi
-# Validate the derived target before any destructive git operation — an empty NEW_REF or
-# one that collided with an existing path must never silently reach git mv.
+# validate target before git mv — empty/colliding NEW_REF must never reach it silently
 if [ -z "$new_file_path" ] || [ "$new_file_path" = "$old_file_path" ]; then
     printf "! Invalid rename target derived from NEW_REF='%s' — got empty or unchanged path\n" "$NEW_MODULE_PATH" >&2
     exit 1
@@ -541,7 +527,7 @@ git mv "$old_file_path" "$new_file_path" || { printf "! git mv failed: %s -> %s\
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-# escape dots — match literally, not any-char
+# dots literal, not any-char
 _OLD_MODULE_GREP=$(printf '%s' "$OLD_MODULE_PATH" | sed 's/\./\\./g')
 grep -rn "^import ${_OLD_MODULE_GREP}\b\|^import ${_OLD_MODULE_GREP} as " --include="*.py" .
 ```
@@ -555,7 +541,7 @@ Edit each: `import mypackage.old_name` → `import mypackage.new_name`.
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-# escape dots — match literally, not any-char
+# dots literal, not any-char
 _OLD_MODULE_GREP=$(printf '%s' "$OLD_MODULE_PATH" | sed 's/\./\\./g')
 grep -rn "^from ${_OLD_MODULE_GREP} import\|^from ${_OLD_MODULE_GREP} as " --include="*.py" .
 ```
@@ -569,8 +555,8 @@ Edit each: `from mypackage.old_name import` → `from mypackage.new_name import`
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-OLD_BASENAME="${OLD_MODULE_PATH##*.}"  # last component of dotted path
-# restrict to same package dir; avoids false positives on same-named modules elsewhere
+OLD_BASENAME="${OLD_MODULE_PATH##*.}"
+# restrict to pkg dir — avoids false positives elsewhere
 OLD_PKG_DIR=$(echo "${OLD_MODULE_PATH%.*}" | tr '.' '/')
 grep -rn "from \.*[^.]*\.${OLD_BASENAME} import\|from \.${OLD_BASENAME} import\|from \.${OLD_BASENAME} as " --include="__init__.py" "${OLD_PKG_DIR:-.}" 2>/dev/null
 ```
@@ -584,7 +570,7 @@ Edit each: `from .old_name import` → `from .new_name import`. Verify match in 
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
-# full dotted path, not OLD_BASENAME; avoids false positives on common names like 'utils'
+# full path, not OLD_BASENAME — avoids false positives on names like 'utils'
 grep -rn "${OLD_MODULE_PATH}" pyproject.toml setup.cfg 2>/dev/null
 ```
 
@@ -598,7 +584,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 IFS= read -r OLD_MODULE_PATH < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}" 2>/dev/null || OLD_MODULE_PATH=""
 OLD_BASENAME="${OLD_MODULE_PATH##*.}"
-# full dotted path first to narrow scope; fall back to basename only when no full-path match
+# full path first to narrow scope, fallback to basename if no match
 grep -rn ":mod:\`[^']*${OLD_MODULE_PATH}[^']*\`" --include="*.py" --include="*.rst" . 2>/dev/null || \
 grep -rn ":mod:\`[^']*${OLD_BASENAME}[^']*\`" --include="*.py" --include="*.rst" .
 ```
@@ -612,12 +598,12 @@ Edit each `:mod:` reference to new module path. For basename-only matches, verif
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 SQ=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/locate_scan_query.py" 2>/dev/null || echo "scan-query")
-# --incremental re-parses changed files only; sufficient post-rename
+# --incremental — re-parses changed files only, sufficient here
 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/scan-index" --incremental --timeout 360
 _scan_rc=$?
 if [ "$_scan_rc" -ne 0 ]; then
     printf "! scan-index --incremental failed — verification may be incomplete; run /codemap-py:scan-codebase for full rebuild\n"
-    # don't skip — stale index results are advisory
+    # don't skip — stale results are advisory only
 fi
 IFS= read -r OLD_REF < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_REF-${CSID}" 2>/dev/null || OLD_REF=""
 "$SQ" --timeout 20 find-symbol "$OLD_REF" --limit 0  # timeout: 25000

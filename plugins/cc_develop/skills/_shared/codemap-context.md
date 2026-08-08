@@ -25,7 +25,9 @@ Extends contract core map with develop's dimension queries:
 - `undocumented` — docstring gaps (doc-scribe)
 - `symbol --with-imports` — contract reading without re-reading file (all agents)
 
-Results returned: prepend `## Structural Context (codemap-py)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap-py` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap-py: codemap-py unavailable or index missing — context reduced to central --top 5" `), then proceed.
+Results returned: prepend `## Structural Context (codemap-py)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output, followed by this **codemap-first protocol** (own copy — self-contained, no cross-plugin reference): (1) **Skill-first** — use the block above before any Grep/Glob/Read aimed at imports, callers, or symbol contracts for a symbol already listed there. (2) **Bounded call budget** — symbol not listed → up to 3 additional `codemap-py query` calls this task. (3) **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`) — that result is final for its direction, no follow-up Grep/Read/query to re-confirm it. `codemap-py` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap-py: codemap-py unavailable or index missing — context reduced to central --top 5" `), omit the protocol paragraph, then proceed.
+
+Note: `foundry:sw-engineer` also carries its own `<codemap_context>` pre-flight (workflow step 00) that runs independently of this wrapper — the protocol above governs the query output this wrapper hands the agent inline; sw-engineer's own step 00 governs what it queries itself on spawn regardless of caller.
 
 ## Extended scan — multi-file / API changes (develop batch producer)
 
@@ -55,6 +57,8 @@ codemap-py query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage
 > - `doc-scribe` — read `undocumented` + `xrefs --broken` first; skip docstring-scan reads on listed symbols
 > - `sw-engineer` — read `rdeps` first (importers per changed module); `fn-rdeps`/`fn-blast` only when a concrete `module::fn` qname is known (dimension queries above)
 > - `challenger` — unchanged; always reads source directly
+>
+> **Bounded call budget + hard stop** (mirrors `review/SKILL.md` Step 1 spawn-prompt block — update both together): symbol not covered by the pre-flight batch above → up to 3 additional `codemap-py query` calls this review pass. Any result carrying `query_complete: true` (or legacy `exhaustive: true`) is final for that direction — no follow-up Grep/Read/query to re-confirm it.
 
 ## Review→resolve pre-flight cache (persisted artifact)
 

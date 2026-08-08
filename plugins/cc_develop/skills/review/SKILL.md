@@ -31,11 +31,9 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
 ```bash
 TOKEN="$ARGUMENTS"
 if [[ "$TOKEN" =~ ^[0-9]+$ ]] && [ ! -e "$TOKEN" ]; then
-    # bare positive integer, no extension, no existing path
     echo "PR number detected — checking oss plugin availability"
     [ -f "$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review/SKILL.md 2>/dev/null | head -1)" ] && OSS_AVAILABLE=true || OSS_AVAILABLE=false  # timeout: 5000
 elif [ -f "$TOKEN" ]; then
-    # valid path, even if numeric (e.g. 42.py)
     OSS_AVAILABLE=skip
 elif [[ "$TOKEN" =~ ^#[0-9]+$ ]] && [ ! -e "$TOKEN" ]; then
     echo "PR number detected — checking oss plugin availability"
@@ -80,8 +78,10 @@ Preserve at boundary 2: final report path.
 ## Agent Resolution
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+echo "$_DEV_SHARED" > "${TMPDIR:-/tmp}/dev-shared-${CSID}"  # cold resolve — every later block warm-reads this
 # loads: compaction-contract.md
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
@@ -89,7 +89,8 @@ cat "$_DEV_SHARED/agent-resolution.md"
 Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/task-hygiene.md"
 ```
@@ -109,23 +110,22 @@ Strip flags from `$ARGUMENTS` before using as path:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Extract --keep quoted value (compaction-contract.md §keep: semantics)
+# --keep quoted value (compaction-contract.md §keep: semantics)
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
 echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-review-keep-items-${CSID}"
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+# stale contract cleanup (compaction-contract.md §Lifecycle)
 rm -f .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" --skill review --write-files "$ARGUMENTS"
-# values → ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap}-${CSID} + legacy paths
-# CLEAN_ARGS → ${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}
+# writes ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap,clean-args}-${CSID} + legacy paths
 IFS= read -r REVIEW_ARGS < "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || REVIEW_ARGS="$ARGUMENTS"
-# Strip --keep "<items>" so it does not leak into target path used by find/git diff
+# strip --keep so it doesn't leak into find/git diff target path
 REVIEW_ARGS=$(echo "$REVIEW_ARGS" | sed -E 's/ *--keep +"[^"]+"//' | xargs 2>/dev/null || echo "$REVIEW_ARGS")
 IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/dev-review-challenge-enabled-${CSID}" 2>/dev/null || CHALLENGE_ENABLED="true"
 IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-review-challenge-forced-${CSID}" 2>/dev/null || CHALLENGE_FORCED="false"  # --challenge: force Agent 7 even on small diffs
@@ -148,7 +148,8 @@ IFS= read -r WORKTREE_ENABLED < "${TMPDIR:-/tmp}/dev-review-worktree-${CSID}" 2>
 ```
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/worktree-isolation.md"
 ```
@@ -156,23 +157,18 @@ cat "$_DEV_SHARED/worktree-isolation.md"
 `WORKTREE_ENABLED=true` → follow §Enter (base off HEAD, `EnterWorktree(path=…)`). **Read-only skill** — obey §Deliverable: `$RUN_DIR` (`.temp/`) handoffs stay in the worktree, but `$REPORT_DIR` (the review report) is written to the **main tree** (`$_ORIG_ROOT`, wired at Step 2) so its printed path + follow-up gate stay valid. Reviews committed HEAD state — uncommitted working-tree changes are not visible. Else skip — run in main tree.
 
 ```bash
-# normalize CODEMAP_RAW → true/false; strict exits on unavailability  # timeout: 5000
+# CODEMAP_RAW → true/false; strict exits on unavailability  # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"   # re-derive — bash state lost between Bash() calls
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
-RESOLVE_EXIT=$?
-if [ "$RESOLVE_EXIT" -ne 0 ]; then
-    [ "$CODEMAP_RAW" = "strict" ] && exit 1
-    CODEMAP_ENABLED=false
-fi
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}
+# round-trips one sentinel: raw flag in, resolved value out
+CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_codemap_gate.py" review) || exit 1
 # codemap: integrated-via-shared
 ```
 
 > loads: codemap-gates.md
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
@@ -185,10 +181,8 @@ If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. DMI s
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r SEMBLE_ENABLED < "${TMPDIR:-/tmp}/dev-review-semble-enabled-${CSID}" 2>/dev/null || SEMBLE_ENABLED="false"
 if [ "$SEMBLE_ENABLED" = "true" ]; then
-    # can't verify semble MCP in bash — must check in LLM context
-    # if mcp__semble__search not available in your tools:
-    #   echo "! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from 'semble[mcp]' semble"
-    #   exit 1
+    # bash can't check MCP availability — LLM verifies. If mcp__semble__search absent:
+    # echo "! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from 'semble[mcp]' semble"; exit 1
     echo "⚠ --semble enabled: verify mcp__semble__search is available in your tools before proceeding; if absent, abort with error above"
 fi
 ```
@@ -219,7 +213,7 @@ NON_PY_WARNINGS=""
 git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
 git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
 if [ -z "$REVIEW_ARGS" ]; then
-    # diff-mode only — explicit tests/ path in REVIEW_ARGS is a deliberate user request, never warned
+    # diff-mode only — explicit tests/ path in REVIEW_ARGS is deliberate, never warned
     _PY_DIFF=$(git diff --name-only HEAD 2>/dev/null | grep '\.py$')
     [ -n "$_PY_DIFF" ] && ! echo "$_PY_DIFF" | grep -qv '^tests/' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ diff contains only test files (tests/) — no src/ changes; review may be uninformative\n"
 fi
@@ -233,7 +227,7 @@ Filter to Python files only. No Python files → exit early (DMI skill — prose
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r REVIEW_ARGS < "${TMPDIR:-/tmp}/dev-review-clean-args-${CSID}" 2>/dev/null || REVIEW_ARGS="$ARGUMENTS"   # re-derive — bash state lost between Bash() calls
-# re-derive NON_PY_WARNINGS (assigned in a prior block; lost in this fresh shell)
+# re-derive NON_PY_WARNINGS — lost between Bash() calls
 NON_PY_WARNINGS=""
 git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
 git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
@@ -277,13 +271,10 @@ codemap_available=false
 IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     codemap_available=true
-    # RUN_DIR not yet created (Step 2); stage here, copy to $RUN_DIR/codemap-context.md after mkdir
-    # codemap-py query on PATH guaranteed — codemap-resolve confirmed it
+    # RUN_DIR not made yet (Step 2) — stage here, copy after mkdir. codemap-py on PATH guaranteed (codemap_resolve.py confirmed)
     CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md-${CSID}"
     BATCH_REQ="${TMPDIR:-/tmp}/dev-review-codemap-batch.json-${CSID}"
-    # build_codemap_batch.py derives changed modules from git diff (src-layout mapping,
-    # dir fallback) and writes one batch request: central + 5 pre-flight queries per
-    # module — one codemap-py query process, one shared coverage block, instead of N×5 spawns
+    # derives changed modules from diff, batches central + 5 pre-flight queries/module — one query process, not N×5 spawns
     python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/build_codemap_batch.py" "$BATCH_REQ"  # timeout: 5000
     {
         echo "## Structural Context (codemap-py)"
@@ -292,8 +283,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
         codemap-py query --timeout 20 batch "$BATCH_REQ" 2>/dev/null
         echo
         echo "### Change-set blast radius (diff-impact)"
-        # function-level context the module batch cannot provide: fn-rdeps per changed
-        # symbol (line-range mapped, methods included), unioned test-impact, risk tiers
+        # fn-level context batch can't give: fn-rdeps per symbol (line-range, methods), unioned test-impact, risk tiers
         codemap-py query --timeout 15 diff-impact 2>/dev/null
     } > "$CODEMAP_CONTEXT_STAGE"
 fi
@@ -308,6 +298,8 @@ Codemap context propagation in Step 3:
   <content of $RUN_DIR/codemap-context.md>
 
   Read this section first. The results are a single `batch` JSON array: each entry has `cmd` (the query) and `result` (its payload), keyed by `index`; one shared `index` coverage block covers the whole batch. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken` entries, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when a query's `result` is empty for a symbol you need or when verifying a specific finding.
+
+  **Bounded call budget**: symbol not covered by the batch above → up to 3 additional `codemap-py query` calls this review pass. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
 
   Per-agent priority (skip redundant reads for symbols the listed query already covers):
   - qa-specialist (Agent 2): `uncovered` + `mock-rdeps` first
@@ -336,7 +328,7 @@ RUN_DIR=".temp/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR"  # timeout: 5000
 # persisted for agents — hand-retyping drops leading dot (stray temp/review/ dirs)
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}"
-# Deliverable → main tree (worktree-isolation.md §Deliverable): --worktree writes the orig-root sentinel at §Enter; absent → pwd. Keeps the report + follow-up path reachable outside the worktree. RUN_DIR above stays worktree-local (ephemeral handoffs).
+# REPORT_DIR: orig-root sentinel (worktree §Enter) or pwd — stays reachable outside worktree. RUN_DIR stays worktree-local.
 IFS= read -r _REPORT_BASE < "${TMPDIR:-/tmp}/dev-review-orig-root-${CSID}" 2>/dev/null || _REPORT_BASE="$(pwd)"
 [ -n "$_REPORT_BASE" ] || _REPORT_BASE="$(pwd)"
 REPORT_DIR="$_REPORT_BASE/.reports/review/$TIMESTAMP"
@@ -390,7 +382,8 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 **File-based handoff**:
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)   # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""   # re-derive — bash state lost between Bash() calls
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/file-handoff-protocol.md"
 ```
@@ -510,7 +503,7 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 **Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. If agent returns partial results or errors, use Read tool on `$RUN_DIR/<agent-name>.md` for details. Mark agents that returned empty or error with ⏱ in final report. Never silently omit agents that **failed** (returned error/partial) — they must appear with ⏱ marker. Agents that are **not spawned** (skipped due to mode flags, docs-only, CHORE mode) may be absent from RUN_DIR; consolidator "skip missing" applies only to legitimately-not-spawned agents.
 
 ```bash
-# Compaction contract — boundary 1: after fan-out, before consolidation (compaction-contract.md §Lifecycle)
+# compaction boundary 1 (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || _RUN_DIR=""
 IFS= read -r _REPORT_DIR < "${TMPDIR:-/tmp}/dev-review-report-dir-${CSID}" 2>/dev/null || _REPORT_DIR=""
@@ -533,7 +526,7 @@ mkdir -p .temp/state  # timeout: 5000
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)   # re-derive — bash state lost between Bash() calls
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""   # re-derive — bash state lost between Bash() calls
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR="$RUN_DIR"
 if [ ! -f "$_DEV_SHARED/cross-validation-protocol.md" ]; then
@@ -584,7 +577,7 @@ TaskUpdate "Step 5b: Print report header" → `in_progress`.
 **MANDATORY, not optional narration** — the consolidator's returned JSON envelope is a routing signal only; it is never printed to the user and never satisfies this step. Perform, in this exact order, in this same turn, before any other Step 5/6 text: (1) read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–15, up to and including closing `---`) via the Read tool; (2) render its fields as a two-column Markdown table (`Field | Value`, one row per key, file order) per quality-gates.md §Report File Format's Universal terminal-print rule — never print the raw `---`-delimited block; (3) append `→ saved to $REPORT_DIR/review-report.md`; (4) TaskUpdate "Step 5b: Print report header" → `completed` — only after the table has actually appeared in this response, never before. Report file already contains the fields — no separate prepend needed. Omit `╔═╗` Re:Anchor box (the table IS the reply header).
 
 ```bash
-# Compaction contract — boundary 2: after consolidation, before follow-up (compaction-contract.md §Lifecycle)
+# compaction boundary 2 (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/dev-review-run-dir-${CSID}" 2>/dev/null || _RUN_DIR=""
 IFS= read -r _REPORT_DIR < "${TMPDIR:-/tmp}/dev-review-report-dir-${CSID}" 2>/dev/null || _REPORT_DIR=""
@@ -615,7 +608,8 @@ After consolidating, identify tasks Codex can implement directly — not style v
 - Any task where accurate description requires guessing
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codex-delegation.md"
 ```

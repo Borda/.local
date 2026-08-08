@@ -39,6 +39,20 @@ MANIFEST: list[dict[str, object]] = [
         ],
     },
     {
+        # Table-format detector consumed by all six enforce-*-header.js
+        # hooks. Each caller requires it in a try/catch and fails open, so a
+        # standalone plugin install missing its copy never breaks the
+        # existing file-existence gate — but a stale copy would silently
+        # drift the detection logic (MIN_TABLE_ROWS, boundary detection)
+        # across plugins, so it still belongs in MANIFEST.
+        "canonical": "plugins/cc_foundry/hooks/report-header-table.js",
+        "copies": [
+            "plugins/cc_oss/hooks/report-header-table.js",
+            "plugins/cc_develop/hooks/report-header-table.js",
+            "plugins/cc_research/hooks/report-header-table.js",
+        ],
+    },
+    {
         # Every plugin ships the blueprint auto-allow hook so a standalone
         # install (e.g. cc_oss alone) still covers its own SKILL.md idioms.
         "canonical": "plugins/cc_foundry/hooks/sentinel-read-allow.js",

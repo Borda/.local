@@ -55,6 +55,7 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 <!-- loads: checks-index.md -->
 <!-- loads: checks-security.md -->
 ```bash
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/checks-index.md" "$AUDIT_TPL/checks-security.md"

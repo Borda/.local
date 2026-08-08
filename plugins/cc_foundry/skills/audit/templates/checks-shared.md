@@ -200,13 +200,9 @@ Block count across all .md files in scope. NxN similarity analysis is expensive 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
-# Patterns go straight to `find`, never into a variable: zsh applies neither word-splitting nor
-# filename generation to an unquoted $VAR, so a var holding six space-separated globs would be
-# read as one literal string and match nothing.
+# patterns go straight to find, never a variable — zsh doesn't word-split/glob unquoted $VAR, would read as one literal string
 if [ "$LOCAL_MODE" = "true" ]; then
-    # The two `! -path "*/<dir>/*/*"` guards keep those sweeps one level deep, matching the flat
-    # globs this replaced: agent sidecar fragments live in references/<parent>/ (deliberately
-    # outside the agent tree) and rules/_full/ holds long-form bodies of the rule stubs beside it.
+    # ! -path guards keep sweep one level deep, matching flat globs replaced — sidecar fragments live in references/<parent>/ (outside agent tree), rules/_full/ holds long-form rule bodies
     find plugins \( \
         -path "*/skills/*/SKILL.md" -o \
         -path "*/skills/*/modes/*.md" -o \
@@ -223,8 +219,7 @@ while IFS= read -r f; do # timeout: 5000
     [ -f "$f" ] || continue
     name="${f#plugins/}"
     name="${name#.claude/}"
-    # No `|| echo 0` fallback: on zero matches grep -c already prints 0 and *also* exits 1, so the
-    # fallback appended a second 0 and the arithmetic below aborted on "0\n0".
+    # no || echo 0 — grep -c prints 0 AND exits 1 on no match, fallback would double-fire, "0\n0" aborts arithmetic
     blocks=$(grep -c '^\`\`\`' "$f" 2>/dev/null) || blocks=0
     blocks=$(( blocks / 2 ))
     printf "%-55s %d\n" "$name" "$blocks"
@@ -246,6 +241,8 @@ For 17a (step-level prose overlap, ≥40% consecutive steps): flag pair, name ca
 
 Plugin skill and agent files must not contain bare `plugins/<name>/` paths as primary references. Resolve in source tree but break post-install where `plugins/` absent. Install-path resolution pattern (cache + fallback) mandatory.
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check C32: Hardcoded source-tree paths ===\n"
 # C32 inherently scans plugin source tree — LOCAL mode only
 if [ "$LOCAL_MODE" != "true" ]; then

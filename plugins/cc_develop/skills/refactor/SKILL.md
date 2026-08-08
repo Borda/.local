@@ -44,8 +44,10 @@ Preserve at boundary 2: dev-dir, changed files list, test outcomes.
 ## Agent Resolution
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+echo "$_DEV_SHARED" > "${TMPDIR:-/tmp}/dev-shared-${CSID}"  # cold resolve — every later block warm-reads this
 # loads: compaction-contract.md
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
@@ -53,7 +55,8 @@ cat "$_DEV_SHARED/agent-resolution.md"
 Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/task-hygiene.md"
 ```
@@ -61,7 +64,8 @@ cat "$_DEV_SHARED/task-hygiene.md"
 ## Project Detection
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/runner-detection.md"
 ```
@@ -70,7 +74,8 @@ Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill sta
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to inform Step 1 scope analysis. Skip redundant codebase exploration for already-classified files. Store plan path as `PLAN_FILE`.
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
@@ -107,7 +112,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_parse_args.py" \
 
 Downstream blocks read back, e.g. `IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false`.
 
-**Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap-resolve`. Uses skill-specific temp file (`dev-refactor-codemap-raw-${CSID}`) to avoid reading stale values from prior feature/debug runs:
+**Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap_resolve.py`. Uses skill-specific temp file (`dev-refactor-codemap-raw-${CSID}`) to avoid reading stale values from prior feature/debug runs:
 
 ```bash
 # timeout: 5000
@@ -133,7 +138,8 @@ IFS= read -r WORKTREE_ENABLED < "${TMPDIR:-/tmp}/dev-refactor-worktree-${CSID}" 
 ```
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/worktree-isolation.md"
 ```
@@ -145,26 +151,15 @@ cat "$_DEV_SHARED/worktree-isolation.md"
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-refactor-codemap-raw-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
-RESOLVE_EXIT=$?
-if [ "$RESOLVE_EXIT" -ne 0 ]; then
-    if [ "$CODEMAP_RAW" = "strict" ]; then
-        echo "! codemap-py unavailable but --codemap (strict) passed — aborting"
-        exit 1
-    fi
-    # auto/off: soft degrade — continues without codemap-py
-    echo "⚠ codemap-py unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
-    CODEMAP_ENABLED=false
-fi
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled-${CSID}
+CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_codemap_gate.py" refactor) || exit 1
 # codemap: integrated-via-shared
 ```
 
 > loads: codemap-gates.md
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
@@ -173,7 +168,8 @@ Follow Gate A and Gate B.
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
@@ -192,7 +188,8 @@ find <target> -name '*.py' -exec wc -l {} + 2>/dev/null | tail -1
 **If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**:
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-context.md"
 ```
@@ -224,7 +221,8 @@ Spawn **foundry:sw-engineer** agent to analyze code and identify:
 - **Complexity smell**: directory or cross-module scope — flag it; consider team mode
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/premise-grounding.md"
 ```
@@ -235,7 +233,8 @@ cat "$_DEV_SHARED/premise-grounding.md"
 **Scope gate**: if target spans 3+ modules OR 5+ files OR goal mentions any public-API rename — flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/plan-inline.md"
 ```
@@ -305,48 +304,14 @@ If audit incomplete: re-examine before Step 3. Gaps found mid-refactoring (Step 
 <!-- Only active when --team flag passed (~10% of invocations) -->
 **Team mode branch** — if `TEAM_MODE=true`: Steps 1–2 complete solo (teammates need scope + coverage context). Spawn both teammates now; skip Steps 3–5, proceed to Final Report after results received.
 
-When `TEAM_MODE=true`:
-
-Compute run directory and create health sentinel:
+> loads: team-mode.md — gated; ~90% of runs (`--team` absent) skip the load entirely
 
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_run=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/setup_worktree.py" --sentinel refactor-team-check)
-TS=$(echo "$_run" | head -1)
-RUN_DIR=$(echo "$_run" | tail -1)
-RUN_DIR_LITERAL="$RUN_DIR"
-echo "$TS" > ${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}
-echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}
-trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT  # tmpdir-exempt: sentinel written by setup_worktree.py's _sentinel_dir(), which resolves ${TMPDIR:-/tmp} semantics — $TS run-timestamp already provides uniqueness in place of a CSID suffix
+IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false
+[ "$TEAM_MODE" = "true" ] && cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/skills/refactor/modes/team-mode.md"
 ```
-
-**IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
-
-**Note on `model=` assignments**: `model=opus`/`model=sonnet` in spawn prompts below are advisory hints — effective only when actual foundry agents installed. When falling back to `general-purpose` (foundry absent), prompt-prepend `model=` does not reliably override agent-resolution fallback tier; effective model set by `agent-resolution.md`'s fallback table, not spawn prompt. Intentional — sonnet sufficient for qa-specialist characterization-test task and opus for sw-engineer refactor implementation; on fallback, expect tier degradation noted in Final Report.
-
-Serialize teammates — qa-specialist writes and gates characterization tests against **pre-refactor** source first, then sw-engineer applies refactor. Spawning sw-engineer first inverts safety net: characterization tests would be written against already-mutated code, so any behaviour change refactor introduces becomes undetectable (tests pin new behaviour instead of original). Mirrors solo Step 3 gate (`GATE OK: all characterization tests pass on unmodified code`).
-
-**Step T1 — Spawn foundry:qa-specialist (model=sonnet) against the pre-refactor source and wait for completion**. Prompt: "You are a foundry:qa-specialist teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: write characterization tests (Step 3) to build a safety net BEFORE any refactor — test the CURRENT (unmodified, pre-refactor) source and assert its existing behaviour. Scope constraint: only create/edit files under `tests/`. Do NOT edit source files. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-qa-specialist.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
-
-**Gate T1 — characterization tests must pass on unmodified code before spawning sw-engineer**. Run qa-specialist's tests (`$PYTEST_CMD <char_test_file> -v`; check exit via persisted-exit pattern in Step 3). Exit 0 → safety net green; proceed to T2. Exit ≠ 0 (including 5 — no tests collected) → no valid safety net; do NOT refactor. Invoke `AskUserQuestion` — (a) re-spawn qa-specialist with corrected assertions/path (recommended) · (b) proceed without safety net (record acceptance in `checkpoint.md`) · (c) abort.
-
-**Step T2 — Only after Gate T1 is green, spawn foundry:sw-engineer (model=opus) to apply the refactor**. Prompt: "You are a foundry:sw-engineer teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: apply the refactoring steps (Steps 4–5: change with safety net, review). Scope constraint: only edit source files (not under `tests/`) — do NOT modify the characterization tests in `$RUN_DIR_LITERAL/refactor-qa-specialist.md`'s test file. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>, safety_net: $RUN_DIR_LITERAL/refactor-qa-specialist.md}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-sw-engineer.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
-
-**Gate T2 — re-run the same characterization tests against the post-refactor source**. Green→green proves refactor preserved behaviour. Any test now failing means refactor changed observable behaviour — surface with ⚠ and do NOT accept refactor until reconciled (fix source, or confirm behaviour change intended and update test deliberately).
-
-Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files the spawn block persisted):
-
-```bash
-# timeout: 5000
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r TS < "${TMPDIR:-/tmp}/dev-refactor-team-ts-${CSID}" 2>/dev/null || TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-refactor-run-dir-${CSID}" 2>/dev/null || RUN_DIR=".temp/develop/$TS"
-```
-
-Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn (tmpdir-exempt: sentinel written by setup_worktree.py's _sentinel_dir(), which resolves ${TMPDIR:-/tmp} semantics — $TS run-timestamp already provides uniqueness in place of a CSID suffix); every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
-
-After both complete: read their output files from `$RUN_DIR/`, synthesize outputs, run quality stack, produce Final Report. Exit — do not continue to Steps 3–5.
 
 Continue to Step 3 only when `TEAM_MODE=false`.
 
@@ -517,13 +482,15 @@ Full review of refactored code. **Loop** — review -> targeted refactoring (ret
 
 ```bash
 # timeout: 5000
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)   # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""   # re-derive — bash state lost between Bash() calls
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 [ -f "$_DEV_SHARED/quality-stack.md" ] || echo "⚠ quality-stack.md missing from this plugin's _shared — broken install; quality stack skipped"
 ```
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 _SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
 cat "$_DEV_SHARED/quality-stack.md"

@@ -201,6 +201,8 @@ fi
 
 > `undocumented` lists symbols missing docstrings — replaces step 1 Grep/Read scan for doc gaps. `xrefs --broken` surfaces stale cross-references. Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset.
 
+**Bounded call budget**: symbol/module not covered above → up to 3 additional `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
+
 </codemap_context>
 
 <workflow>

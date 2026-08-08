@@ -57,11 +57,10 @@ Preserve: cache-dir (.cache/gh), target # (CLEAN_ARGS), synthesized report path,
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # loads: compaction-contract.md
-# Cold-start fallback:
+# cold-start fallback
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
-# Empty _OSS_SHARED → resolve_shared_path.py failed (missing python/script or oss plugin);
-# downstream `[ -f "$_OSS_SHARED/..." ]` paths silently expand, Step 7 fails after full analysis.
-# --reply: hard fail; non-reply: degrade gracefully.
+# empty _OSS_SHARED → resolve_shared_path.py failed (no python/script/oss plugin) — downstream `[ -f ... ]` silently expands, Step7 fails after full analysis
+# --reply: hard fail; non-reply: degrade gracefully
 if [ -z "$_OSS_SHARED" ]; then
     if [ "$REPLY_MODE" = "true" ]; then
         echo "! BLOCKED — could not resolve _OSS_SHARED (oss plugin missing, python unavailable, or resolve_shared_path.py absent); --reply mode requires it"
@@ -70,9 +69,13 @@ if [ -z "$_OSS_SHARED" ]; then
         echo "⚠ _OSS_SHARED empty — oss plugin shared dir unresolved; continuing with degraded functionality (--reply will fail in this run)"
     fi
 fi
-# Persist $_OSS_SHARED — fresh shell loses vars (Check 41)
+# persist $_OSS_SHARED (Check 41)
 # loads: terminal-summaries.md (ships in this plugin's _shared); consumed by modes/thread.md, modes/vitality.md, modes/ecosystem.md
 echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}"
+# cold-resolve skill dir once; thread.md/vitality.md warm-read this sentinel, skip re-globbing (Check 41)
+_OSS_ANALYSE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/analyse 2>/dev/null)  # timeout: 5000
+[ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
+echo "$_OSS_ANALYSE" > "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}"
 ```
 > loads: oss-shared-resolver.md
 
@@ -80,31 +83,15 @@ echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}"
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Extract --keep value before CLEAN_ARGS cleaning (compaction-contract.md §keep: semantics)
-KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/analyse-keep-items-${CSID}"  # timeout: 5000
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+# flags: --reply, --quick (vitality fast-path: skips codex review + adversarial rework; ignored for N/ecosystem), --keep
+# shared flag/--keep parser (C5; also resolve/review SKILL.md)
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse-skill-flags.py" --flags reply,quick "$ARGUMENTS")"  # timeout: 5000
+REPLY_MODE="$FLAG_REPLY"
+QUICK_MODE="$FLAG_QUICK"
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/analyse-keep-items-${CSID}"  # timeout: 5000 (compaction-contract.md §keep: semantics)
+# stale contract, crashed prior run (compaction-contract.md §Lifecycle)
 rm -f .temp/state/skill-contract.md  # timeout: 5000
-REPLY_MODE=false
-QUICK_MODE=false
-CLEAN_ARGS=$ARGUMENTS
-# Anchored token match, not substring — substring falsely fires on `--reply-later`, repo names with `--reply-bot`.
-if [[ " $ARGUMENTS " == *" --reply "* ]]; then
-    REPLY_MODE=true
-    CLEAN_ARGS=$(echo "$CLEAN_ARGS" | sed -E 's/(^| )--reply($| )/\1\2/')
-fi
-# --quick: vitality-only fast path — skips codex review + adversarial rework loop, fewer spawns. Silently ignored for N/ecosystem modes.
-if [[ " $ARGUMENTS " == *" --quick "* ]]; then
-    QUICK_MODE=true
-    CLEAN_ARGS=$(echo "$CLEAN_ARGS" | sed -E 's/(^| )--quick($| )/\1\2/')
-fi
-# Strip --keep and its quoted value — consumed above
-CLEAN_ARGS=$(echo "$CLEAN_ARGS" | sed 's/ --keep "[^"]*"//g')
-CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
-# Persist REPLY_MODE + QUICK_MODE + CLEAN_ARGS — fresh shell loses vars (Check 41)
+# persist REPLY_MODE/QUICK_MODE/CLEAN_ARGS (Check 41)
 echo "$REPLY_MODE" > "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}"
 echo "$QUICK_MODE" > "${TMPDIR:-/tmp}/analyse-quick-mode-${CSID}"
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" # timeout: 5000
@@ -112,7 +99,7 @@ echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" # timeout: 500
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload CLEAN_ARGS — fresh shell (Check 41)
+# reload CLEAN_ARGS (Check 41)
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 CLEAN_ARGS="${CLEAN_ARGS#\#}"
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}"
@@ -122,11 +109,11 @@ echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}"
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload CLEAN_ARGS — fresh shell (Check 41)
+# reload CLEAN_ARGS (Check 41)
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 DIRECT_PATH_MODE=false
 REPORT_FILE=""
-# *.md check must not intercept vitality/ecosystem; also reject plan/todo files
+# .md check must skip vitality/ecosystem; also reject plan/todo files
 if [[ "$CLEAN_ARGS" == *.md ]] && [[ "$CLEAN_ARGS" != vitality* ]] && [[ "$CLEAN_ARGS" != ecosystem* ]]; then
     if [[ "$CLEAN_ARGS" == .plans/* ]] || [[ "$CLEAN_ARGS" == *todo_*.md ]]; then
         echo "! Invalid report path: '$CLEAN_ARGS' — plan/todo files are not valid report paths."
@@ -136,10 +123,10 @@ if [[ "$CLEAN_ARGS" == *.md ]] && [[ "$CLEAN_ARGS" != vitality* ]] && [[ "$CLEAN
     DIRECT_PATH_MODE=true
     REPORT_FILE="$CLEAN_ARGS"
 fi
-# Persist DIRECT_PATH_MODE + REPORT_FILE — fresh shell loses vars (Check 41)
+# persist DIRECT_PATH_MODE/REPORT_FILE (Check 41)
 echo "$DIRECT_PATH_MODE" > "${TMPDIR:-/tmp}/analyse-direct-path-mode-${CSID}"
 echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" # timeout: 5000
-# Persist TODAY — repeated `date +%Y-%m-%d` may roll over midnight, producing mismatched cache/report paths
+# persist TODAY — repeated `date +%Y-%m-%d` may roll over midnight, mismatching cache/report paths
 _TODAY_FILE="${TMPDIR:-/tmp}/analyse-today-${CSID}"
 if [ -f "$_TODAY_FILE" ]; then
     IFS= read -r TODAY < "$_TODAY_FILE" 2>/dev/null || TODAY=""
@@ -153,7 +140,7 @@ fi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload CLEAN_ARGS — fresh shell (Check 41)
+# reload CLEAN_ARGS (Check 41)
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 GH_OWNER=""
 GH_REPO=""
@@ -199,7 +186,7 @@ if [[ "$CLEAN_ARGS" == vitality* ]]; then
     GH_REPO=$(echo "$VITALITY_REPO" | cut -d'/' -f2)  # timeout: 5000
     CLEAN_ARGS="vitality"  # normalise for mode dispatch
 fi
-# Persist $CLEAN_ARGS, $GH_OWNER, $GH_REPO — fresh shell loses vars (Check 41); vitality.md reloads these
+# persist CLEAN_ARGS/GH_OWNER/GH_REPO (Check 41); vitality.md reloads
 echo "${CLEAN_ARGS:-}" > "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}"
 echo "${GH_OWNER:-}" > "${TMPDIR:-/tmp}/analyse-gh-owner-${CSID}"
 echo "${GH_REPO:-}" > "${TMPDIR:-/tmp}/analyse-gh-repo-${CSID}"
@@ -218,12 +205,11 @@ Skip when `REPLY_MODE=false` and `DIRECT_PATH_MODE=false`.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload vars — fresh shell (Check 41)
+# reload vars (Check 41)
 IFS= read -r REPLY_MODE < "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}" 2>/dev/null || REPLY_MODE="false"
 IFS= read -r DIRECT_PATH_MODE < "${TMPDIR:-/tmp}/analyse-direct-path-mode-${CSID}" 2>/dev/null || DIRECT_PATH_MODE="false"
 IFS= read -r REPORT_FILE < "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" 2>/dev/null || REPORT_FILE=""
-# Both aborts drop the sentinel: a leftover path to a report that will never be written would make
-# enforce-analyse-header.js deny the follow-up question the user needs after the error (Step 6a note).
+# both aborts drop the sentinel — leftover path to a never-written report would make enforce-analyse-header.js deny the Step6a follow-up question
 if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "false" ]; then
     echo "! Error: report path '$REPORT_FILE' passed without --reply."
     echo "  Re-run as: /oss:analyse $REPORT_FILE --reply"
@@ -250,7 +236,7 @@ When `REPLY_MODE=true`, check if fresh report already exists before any API call
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload vars — fresh shell (Check 41)
+# reload vars (Check 41)
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
 # Numeric mode only — vitality/ecosystem set REPORT_FILE in their mode files; DIRECT_PATH_MODE already set above.
@@ -266,7 +252,7 @@ if [ -f "$REPORT_FILE" ]; then
     REPORT_MTIME=$(stat -f %m "$REPORT_FILE" 2>/dev/null || stat -c %Y "$REPORT_FILE")  # timeout: 5000
     FAST_PATH_TENTATIVE=true  # drift check deferred to Step 4 — type must be known first
 fi
-# Persist — fresh shell loses vars (Check 41)
+# persist (Check 41)
 echo "$DRIFT" > "${TMPDIR:-/tmp}/analyse-drift-${CSID}"
 echo "$FAST_PATH" > "${TMPDIR:-/tmp}/analyse-fast-path-${CSID}"
 echo "$FAST_PATH_TENTATIVE" > "${TMPDIR:-/tmp}/analyse-fast-path-tentative-${CSID}"
@@ -282,19 +268,19 @@ Check local cache before API calls — prevents redundant fetches, avoids GitHub
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload vars — fresh shell (Check 41)
+# reload vars (Check 41)
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
 CACHE_DIR=".cache/gh"
-# Repo slug in key prevents cross-repo cache poisoning (same issue# different repo)
+# repo slug in key prevents cross-repo cache poisoning (same issue#, diff repo)
 _CACHE_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
 if [ -z "$_CACHE_REPO" ]; then
-    # No stable repo ID — disable caching; fallback key risks cross-repo collision
+    # no stable repo ID — disable caching, fallback key risks cross-repo collision
     CACHE_FILE=""
 else
     CACHE_FILE="$CACHE_DIR/$_CACHE_REPO-$CLEAN_ARGS-$TODAY.json"
 fi
-# Persist $CACHE_FILE — fresh shell (Check 41)
+# persist CACHE_FILE (Check 41)
 echo "${CACHE_FILE:-}" > "${TMPDIR:-/tmp}/analyse-cache-file-${CSID}"
 mkdir -p "$CACHE_DIR" # timeout: 5000
 # Thread mode requires git+GitHub context for {owner}/{repo} substitution
@@ -316,7 +302,7 @@ fi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload drift state — fresh shell (Check 41)
+# reload drift state (Check 41)
 IFS= read -r DRIFT < "${TMPDIR:-/tmp}/analyse-drift-${CSID}" 2>/dev/null || DRIFT="false"
 IFS= read -r FAST_PATH < "${TMPDIR:-/tmp}/analyse-fast-path-${CSID}" 2>/dev/null || FAST_PATH="false"
 IFS= read -r FAST_PATH_TENTATIVE < "${TMPDIR:-/tmp}/analyse-fast-path-tentative-${CSID}" 2>/dev/null || FAST_PATH_TENTATIVE="false"
@@ -345,7 +331,7 @@ UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload vars — fresh shell (Check 41)
+# reload vars (Check 41)
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 IFS= read -r CACHE_FILE < "${TMPDIR:-/tmp}/analyse-cache-file-${CSID}" 2>/dev/null || CACHE_FILE=""
 [ -n "$ITEM" ] && [ -n "$CACHE_FILE" ] && jq -n \
@@ -372,7 +358,7 @@ Cache miss:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload drift state — fresh shell (Check 41)
+# reload drift state (Check 41)
 IFS= read -r DRIFT < "${TMPDIR:-/tmp}/analyse-drift-${CSID}" 2>/dev/null || DRIFT="false"
 IFS= read -r FAST_PATH_TENTATIVE < "${TMPDIR:-/tmp}/analyse-fast-path-tentative-${CSID}" 2>/dev/null || FAST_PATH_TENTATIVE="false"
 IFS= read -r REPORT_MTIME < "${TMPDIR:-/tmp}/analyse-report-mtime-${CSID}" 2>/dev/null || REPORT_MTIME="0"
@@ -410,7 +396,7 @@ Read and execute the mode file from `${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/skill
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary: after gather/fetch (Step 5), before synthesis gate (compaction-contract.md §Lifecycle)
+# boundary: post-gather/fetch (Step5), pre-synthesis gate (compaction-contract.md §Lifecycle)
 IFS= read -r _CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || _CLEAN_ARGS=""
 IFS= read -r _REPORT_FILE < "${TMPDIR:-/tmp}/analyse-report-file-${CSID}" 2>/dev/null || _REPORT_FILE="pending"
 IFS= read -r _REPLY_MODE < "${TMPDIR:-/tmp}/analyse-reply-mode-${CSID}" 2>/dev/null || _REPLY_MODE="false"
@@ -459,14 +445,14 @@ Invoke `AskUserQuestion`. Options depend on mode:
 End response with `## Confidence` block per CLAUDE.md output standards.
 
 ```bash
-rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Step 7: Draft contributor reply (only when --reply, thread mode only)
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload vars — fresh shell (Check 41)
+# reload vars (Check 41)
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
@@ -476,7 +462,7 @@ Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (St
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload _OSS_SHARED — fresh shell (Check 41)
+# reload _OSS_SHARED (Check 41)
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/shepherd-reply-protocol.md"  # timeout: 5000
 ```
@@ -502,7 +488,7 @@ If `DRIFT=true`: append `[analysis refreshed — new activity since last report]
 End response with `## Confidence` block per CLAUDE.md — always **absolute last thing**.
 
 ```bash
-rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

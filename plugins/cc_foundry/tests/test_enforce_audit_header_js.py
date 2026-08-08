@@ -167,6 +167,57 @@ def test_written_aggregate_passes_through(tmp_path: Path, audit_run: tuple[Path,
     assert _run(tmp_path, _gate_payload(cwd=cwd)) == {}
 
 
+def _write_transcript(tmp_path: Path, assistant_text: str) -> Path:
+    """Write a minimal two-row JSONL transcript: a human user turn then one assistant text block."""
+    rows = [
+        {"type": "user", "message": {"content": [{"type": "text", "text": "go"}]}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": assistant_text}]}},
+    ]
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return transcript
+
+
+def test_aggregate_written_with_table_in_reply_has_no_reminder(
+    tmp_path: Path, audit_run: tuple[Path, Path, str]
+) -> None:
+    """Table already printed this turn → allow with no additionalContext nudge."""
+    run_dir, _, cwd = audit_run
+    (run_dir / "summary.jsonl").write_text('{"file":"a.md","sev":"high"}\n', encoding="utf-8")
+    transcript = _write_transcript(
+        tmp_path, "| Field | Value |\n| --- | --- |\n| Title | x |\n| Scope | y |\n| Outcome | z |\n"
+    )
+
+    assert _run(tmp_path, _gate_payload(cwd=cwd, transcript_path=str(transcript))) == {}
+
+
+def test_aggregate_written_without_table_in_reply_gets_reminder(
+    tmp_path: Path, audit_run: tuple[Path, Path, str]
+) -> None:
+    """Raw YAML fields printed instead of a table → nudge naming Step 11b."""
+    run_dir, _, cwd = audit_run
+    (run_dir / "summary.jsonl").write_text('{"file":"a.md","sev":"high"}\n', encoding="utf-8")
+    transcript = _write_transcript(tmp_path, "Title: audit\nOutcome: NEEDS_ATTENTION\n")
+
+    result = _run(tmp_path, _gate_payload(cwd=cwd, transcript_path=str(transcript)))
+
+    hook_output = result.get("hookSpecificOutput", {})
+    assert hook_output.get("permissionDecision") == "allow"
+    assert "Step 11b" in hook_output.get("additionalContext", "")
+
+
+def test_aggregate_written_unreadable_transcript_has_no_reminder(
+    tmp_path: Path, audit_run: tuple[Path, Path, str]
+) -> None:
+    """transcript_path pointing at a nonexistent file can't be read → fail open, no false nudge."""
+    run_dir, _, cwd = audit_run
+    (run_dir / "summary.jsonl").write_text('{"file":"a.md","sev":"high"}\n', encoding="utf-8")
+
+    result = _run(tmp_path, _gate_payload(cwd=cwd, transcript_path=str(tmp_path / "missing.jsonl")))
+
+    assert result == {}
+
+
 def test_absolute_sentinel_path_resolves(tmp_path: Path, audit_run: tuple[Path, Path, str]) -> None:
     """An absolute run-dir value is honoured as-is, independent of the payload cwd."""
     run_dir, sentinel, _ = audit_run

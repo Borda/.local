@@ -10,7 +10,7 @@
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload $GH_OWNER, $GH_REPO — fresh shell loses vars set in analyse/SKILL.md (Check 41)
+# reload GH_OWNER/GH_REPO (Check 41, set by analyse/SKILL.md)
 IFS= read -r GH_OWNER < "${TMPDIR:-/tmp}/analyse-gh-owner-${CSID}" 2>/dev/null || GH_OWNER=""
 IFS= read -r GH_REPO < "${TMPDIR:-/tmp}/analyse-gh-repo-${CSID}" 2>/dev/null || GH_REPO=""
 mkdir -p .reports/analyse/vitality  # timeout: 5000
@@ -21,7 +21,7 @@ PARTIAL_A=".reports/analyse/vitality/partial-A-${GH_OWNER}-${GH_REPO}-${RUN_TS}.
 PARTIAL_B=".reports/analyse/vitality/partial-B-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
 PARTIAL_C=".reports/analyse/vitality/partial-C-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
 SCORES_FILE=".reports/analyse/vitality/scores-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
-# Persist for later blocks in this file (Check 41)
+# persist (Check 41)
 echo "$GH_OWNER" > "${TMPDIR:-/tmp}/vitality-gh-owner-${CSID}"
 echo "$GH_REPO" > "${TMPDIR:-/tmp}/vitality-gh-repo-${CSID}"
 echo "$DATA_FILE" > "${TMPDIR:-/tmp}/vitality-data-file-${CSID}"
@@ -52,7 +52,7 @@ Spawn all 3 `oss:repo-warden` agents simultaneously in single response:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload vars — fresh shell (Check 41)
+# reload vars (Check 41)
 IFS= read -r GH_OWNER < "${TMPDIR:-/tmp}/vitality-gh-owner-${CSID}" 2>/dev/null || GH_OWNER=""
 IFS= read -r GH_REPO < "${TMPDIR:-/tmp}/vitality-gh-repo-${CSID}" 2>/dev/null || GH_REPO=""
 IFS= read -r RUN_TS < "${TMPDIR:-/tmp}/vitality-run-ts-${CSID}" 2>/dev/null || RUN_TS=""
@@ -82,7 +82,7 @@ echo "$SCORING_FILE" > "${TMPDIR:-/tmp}/vitality-scoring-file-${CSID}"  # persis
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload vars — fresh shell (Check 41)
+# reload vars (Check 41)
 IFS= read -r PARTIAL_A < "${TMPDIR:-/tmp}/vitality-partial-a-${CSID}" 2>/dev/null || PARTIAL_A=""
 IFS= read -r PARTIAL_B < "${TMPDIR:-/tmp}/vitality-partial-b-${CSID}" 2>/dev/null || PARTIAL_B=""
 IFS= read -r PARTIAL_C < "${TMPDIR:-/tmp}/vitality-partial-c-${CSID}" 2>/dev/null || PARTIAL_C=""
@@ -96,7 +96,7 @@ Extract variables from `$SCORES_FILE` for use in Steps 4–7:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload $SCORES_FILE — fresh shell (Check 41)
+# reload SCORES_FILE (Check 41)
 IFS= read -r SCORES_FILE < "${TMPDIR:-/tmp}/vitality-scores-file-${CSID}" 2>/dev/null || SCORES_FILE=""
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/extract_vitality_vars.py" "$SCORES_FILE")"  # timeout: 5000
 echo "[vitality] scorer complete: health=${HEALTH_SCORE_PCT}% conf=${OVERALL_CONFIDENCE} passes=${TOTAL_PASSES}"
@@ -108,28 +108,28 @@ TaskUpdate "Step 3 Assemble Scores" completed.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload $GH_OWNER, $GH_REPO — fresh shell (Check 41); an empty pair would name a report the gate below cannot find
+# reload GH_OWNER/GH_REPO (Check 41) — empty pair names an unfindable report
 IFS= read -r GH_OWNER < "${TMPDIR:-/tmp}/vitality-gh-owner-${CSID}" 2>/dev/null || GH_OWNER=""
 IFS= read -r GH_REPO < "${TMPDIR:-/tmp}/vitality-gh-repo-${CSID}" 2>/dev/null || GH_REPO=""
 REPORT_TIMESTAMP=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
 REPORT_FILE=".reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-${REPORT_TIMESTAMP}.md"
-# Sentinel rewritten here, before the report exists — enforce-analyse-header.js gates SKILL.md Step 6a on this path
+# sentinel rewritten before report exists — gates SKILL.md Step6a (enforce-analyse-header.js)
 echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file-${CSID}"  # timeout: 5000
 
-# Provenance metadata — embedded for self-complete, deterministic output
+# provenance metadata — self-complete, deterministic output
 _VER_FILE=$(ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/.claude-plugin/plugin.json 2>/dev/null | sort | tail -1)  # timeout: 5000
 [ -z "$_VER_FILE" ] && _VER_FILE="plugins/cc_oss/.claude-plugin/plugin.json"
 SKILL_VERSION=$(jq -r '.version // "unknown"' "$_VER_FILE" 2>/dev/null || echo "unknown")  # timeout: 5000
 
 REPORT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")  # timeout: 5000
 
-# Codex check here — agents list in frontmatter must be accurate at write time
+# codex check — frontmatter agents list must be accurate at write time
 find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
 
-# --quick: reload from Step 1 flag parse (fresh shell). Quick mode skips Steps 5 + 6 (codex review + adversarial loop).
+# --quick: reload from Step1 flag parse (Check 41) — skips Steps 5+6 (codex review, adversarial loop)
 IFS= read -r QUICK_MODE < "${TMPDIR:-/tmp}/analyse-quick-mode-${CSID}" 2>/dev/null || QUICK_MODE="false"
 
-# Build agents list for frontmatter — reflects actual contributors
+# agents list for frontmatter — reflects actual contributors
 if [ "$QUICK_MODE" = "true" ]; then
     REPORT_AGENTS_YAML="  - oss:analyse (orchestrator, --quick: core scoring only)"
 else
@@ -145,7 +145,9 @@ fi
 Resolve template path (installed cache first, source tree fallback):
 
 ```bash
-_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# reload _OSS_ANALYSE (Check 41; cold-resolved once by parent analyse/SKILL.md)
+IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev/null || _OSS_ANALYSE="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/analyse 2>/dev/null)"
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 ```
@@ -153,7 +155,9 @@ REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 **Structural signals (optional, codemap)** — populate the template's `### Structural Constraints` block from index-wide data:
 
 ```bash
-_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# reload _OSS_ANALYSE (Check 41)
+IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev/null || _OSS_ANALYSE="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/analyse 2>/dev/null)"
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 cat "$_OSS_ANALYSE/modes/codemap-signals.md"  # timeout: 5000
 ```
@@ -161,9 +165,10 @@ cat "$_OSS_ANALYSE/modes/codemap-signals.md"  # timeout: 5000
 Run its **Detect** block (loaded above), then **Signal B** (open-PR conflict/duplicate candidates) and **Signal C** (Structural Constraints). Signal B fetches changed-file lists for open PRs (bounded by `PR_FILES_CAP`), does pairwise file overlap, and — when `CM_ENABLED=true` — adds `coupled`-based hidden-conflict pairs; surface `PRSET_CANDIDATES` pairs in report. Signal C uses parsed `central[]` / `collision_count` / `degraded` / `stale` to fill template's `### Structural Constraints` bullets. `CM_ENABLED=false`: Signal B still runs direct file-overlap layer (no codemap needed); Signal C fills Structural Constraints block with single "structural index unavailable" bullet — never leave empty, never block.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 mkdir -p .reports/analyse/vitality  # timeout: 5000
-# Reload _OSS_ANALYSE/REPORT_TPL (Check 41: fresh shell)
-_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+# reload _OSS_ANALYSE/REPORT_TPL (Check 41)
+IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev/null || _OSS_ANALYSE="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/analyse 2>/dev/null)"
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 cat "$REPORT_TPL"  # timeout: 5000
@@ -183,7 +188,8 @@ IFS= read -r QUICK_MODE < "${TMPDIR:-/tmp}/analyse-quick-mode-${CSID}" 2>/dev/nu
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+# reload _OSS_ANALYSE (Check 41)
+IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev/null || _OSS_ANALYSE="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/analyse 2>/dev/null)"
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
 REWORK_ITER=0
@@ -199,7 +205,9 @@ cat "$_OSS_ANALYSE/modes/vitality-codex-review.md"  # timeout: 5000
 Execute its steps (Step 5), then:
 
 ```bash
-_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# reload _OSS_ANALYSE (Check 41)
+IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev/null || _OSS_ANALYSE="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/analyse 2>/dev/null)"
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 cat "$_OSS_ANALYSE/modes/vitality-adversarial-rework.md"  # timeout: 5000
 ```
@@ -213,7 +221,7 @@ Execute its steps (Step 6) — each returns here to the next in sequence.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload _OSS_SHARED (Check 41: fresh shell; set by parent analyse/SKILL.md)
+# reload _OSS_SHARED (Check 41; set by parent analyse/SKILL.md)
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/terminal-summaries.md"  # timeout: 5000
 ```

@@ -457,6 +457,8 @@ Note: `agents/` and `skills/` lazy-loaded — never flag for token overhead.
 
 Skip if `LOCAL_MODE != true` (no git history accessible).
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check 39: Plugin version freeze ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check 39 skipped in non-local mode\n"

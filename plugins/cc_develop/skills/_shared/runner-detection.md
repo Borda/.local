@@ -39,3 +39,16 @@ IFS= read -r TEST_CMD   < "${TMPDIR:-/tmp}/dev-test-cmd-${CSID}"   2>/dev/null |
 ```
 
 Guard on emptiness before running — never let an unresolved command reach the shell.
+
+## Language preflight gate
+
+> Applied by `feature` and `fix` only — the skills that hard-require pytest and abort on a non-Python repo. Other loaders of this file (`debug`, `refactor`) skip this section; they do not gate on repo language.
+
+```bash
+# timeout: 5000
+if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; then
+    NON_PY=$(ls package.json Cargo.toml go.mod 2>/dev/null | head -1)
+fi
+```
+
+If `NON_PY` non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.

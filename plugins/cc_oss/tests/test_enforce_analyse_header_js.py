@@ -155,6 +155,54 @@ def test_written_report_passes_through(tmp_path: Path, repo: Path, analyse_run: 
     assert _run(tmp_path, _ask_payload(cwd=str(repo))) == {}
 
 
+def _write_transcript(tmp_path: Path, assistant_text: str) -> Path:
+    """Write a minimal two-row JSONL transcript: a human user turn then one assistant text block."""
+    rows = [
+        {"type": "user", "message": {"content": [{"type": "text", "text": "go"}]}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": assistant_text}]}},
+    ]
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return transcript
+
+
+def test_report_written_with_table_in_reply_has_no_reminder(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """Table already printed this turn → allow with no additionalContext nudge."""
+    report = repo / MODE_REPORTS["thread"]
+    report.parent.mkdir(parents=True)
+    report.write_text("---\nTitle: oss:analyse — thread\n---\n", encoding="utf-8")
+    transcript = _write_transcript(
+        tmp_path, "| Field | Value |\n| --- | --- |\n| Title | x |\n| Date | y |\n| Scope | z |\n"
+    )
+
+    assert _run(tmp_path, _ask_payload(cwd=str(repo), transcript_path=str(transcript))) == {}
+
+
+def test_report_written_without_table_in_reply_gets_reminder(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """Raw YAML fields printed instead of a table → nudge naming oss:analyse."""
+    report = repo / MODE_REPORTS["thread"]
+    report.parent.mkdir(parents=True)
+    report.write_text("---\nTitle: oss:analyse — thread\n---\n", encoding="utf-8")
+    transcript = _write_transcript(tmp_path, "Title: oss:analyse — thread\nDate: 2026-08-08\n")
+
+    result = _run(tmp_path, _ask_payload(cwd=str(repo), transcript_path=str(transcript)))
+
+    hook_output = result.get("hookSpecificOutput", {})
+    assert hook_output.get("permissionDecision") == "allow"
+    assert "oss:analyse" in hook_output.get("additionalContext", "")
+
+
+def test_report_written_unreadable_transcript_has_no_reminder(tmp_path: Path, repo: Path, analyse_run: Path) -> None:
+    """transcript_path pointing at a nonexistent file can't be read → fail open, no false nudge."""
+    report = repo / MODE_REPORTS["thread"]
+    report.parent.mkdir(parents=True)
+    report.write_text("---\nTitle: oss:analyse — thread\n---\n", encoding="utf-8")
+
+    result = _run(tmp_path, _ask_payload(cwd=str(repo), transcript_path=str(tmp_path / "missing.jsonl")))
+
+    assert result == {}
+
+
 def test_absolute_sentinel_path_ignores_cwd(tmp_path: Path, repo: Path) -> None:
     """An absolute report path is honoured as-is, independent of the payload cwd."""
     absolute = repo / MODE_REPORTS["vitality"]

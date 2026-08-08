@@ -299,7 +299,7 @@ mkdir -p ~/.claude/rules  # timeout: 5000
 **Phase 1 — Remove obsolete foundry-managed symlinks** (file/dir removed from current plugin version, or dangling target):
 
 ```bash
-# re-resolve — Bash state not persistent across steps; use installed cache path, not local fallback
+# re-resolve — state doesn't persist across steps; use installed cache path, not local fallback
 PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_plugin_root.py" --plugin-name foundry 2>/dev/null)  # timeout: 15000
 [ -z "$PLUGIN_ROOT" ] && { printf "! setup Phase 1 — could not resolve PLUGIN_ROOT; run claude plugin install foundry@borda-ai-rig first\n"; exit 1; }
 python "$PLUGIN_ROOT/bin/symlink_with_guard.py" cleanup --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
@@ -319,7 +319,7 @@ Cleanup also purges two dest dirs unconditionally — both skills and agents are
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 mapfile -t LINK_CONFLICTS < <(python "$PLUGIN_ROOT/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
-printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-setup-conflicts-${CSID}.txt"  # timeout: 3000; persist for Phase 4; Bash calls don't share state
+printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-setup-conflicts-${CSID}.txt"  # timeout: 3000 — persist for Phase 4, calls don't share state
 ```
 
 The `scan` mode walks the same two patterns (rules `*.md`, `TEAM_PROTOCOL.md`) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink failing the same ownership proof Phase 1 uses. Each line names the *destination* file: `rules/foundry-<name>.md → <target>` · `rules/foundry-<name>.md  (real file)` · `TEAM_PROTOCOL.md → <target>`.
@@ -359,7 +359,6 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 mapfile -t LINK_CONFLICTS < ${TMPDIR:-/tmp}/foundry-setup-conflicts-${CSID}.txt 2>/dev/null || LINK_CONFLICTS=()
 mapfile -t APPROVED_CONFLICT_ENTRIES < ${TMPDIR:-/tmp}/foundry-setup-approved-${CSID}.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
 
-# is identifier in APPROVED_CONFLICT_ENTRIES?
 _approved() {
     local needle="$1"
     for e in "${APPROVED_CONFLICT_ENTRIES[@]:-}"; do
@@ -367,7 +366,6 @@ _approved() {
     done
     return 1
 }
-# is this dest listed as conflict in Phase 2?
 _in_conflicts() {
     local needle="$1"
     for c in "${LINK_CONFLICTS[@]:-}"; do
@@ -378,9 +376,7 @@ _in_conflicts() {
 }
 
 for src in "$PLUGIN_ROOT/rules/"*.md; do
-    # `foundry-` prefix must match _RULE_PREFIX in symlink_with_guard.py — the scan
-    # output and this loop key on the same destination name or Phase 3's answers
-    # apply to the wrong file
+    # foundry- prefix must match _RULE_PREFIX in symlink_with_guard.py — scan output and this loop key on same dest name, else Phase 3 answers apply to wrong file
     base="foundry-$(basename "$src")"
     dest="$HOME/.claude/rules/$base"
     if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
@@ -401,9 +397,7 @@ else
     unlink "$dest" 2>/dev/null || true; ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" "$dest"  # timeout: 5000
     echo "  linked: TEAM_PROTOCOL.md"
 fi
-# NO skills loop — deliberate. A SKILL.md dir under ~/.claude/skills/ becomes a
-# user-level skill and shadows CC's bundled skill of that name; _shared excluded too
-# (own-plugin resolver, no global path). Phase 1 purges any leftover link.
+# NO skills loop — deliberate: SKILL.md dir under ~/.claude/skills/ becomes user-level skill, shadows CC's bundled skill; _shared excluded too (own-plugin resolver). Phase 1 purges leftover links
 ```
 
 ## Step 11: Purge orphaned plugin cache versions

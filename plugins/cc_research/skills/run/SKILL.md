@@ -109,8 +109,10 @@ Clear at R1 start (stale prior run) and after R6/R7 campaign completion.
 
 ```bash
 # loads: compaction-contract.md
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+echo "$_RESEARCH_SHARED" > "${TMPDIR:-/tmp}/research-shared-${CSID}"  # cold resolve — every later site reads this sentinel instead of re-running python
 cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
 
@@ -175,21 +177,16 @@ After clarification extraction, remaining non-flag tokens (not starting `--`) ar
 ```
 
 ```bash
-# Extract --keep quoted value (compaction-contract.md §keep semantics)
-KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .temp/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/research-run-keep-items-${CSID}"  # persist for Phase 8 contract write
+# runs under bash — zsh never populates ${BASH_REMATCH[1]}, so --keep "..." was silently resolving empty
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" research-run "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for Phase 8
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`, `--keep`.
 ```bash
 # loads: unsupported-flag-protocol.md
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```
 
@@ -198,22 +195,16 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_RAW=auto
-[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
-[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-resolve" "$CODEMAP_RAW")
-if [ $? -ne 0 ]; then
-    [ "$CODEMAP_RAW" = "strict" ] && { echo "! BLOCKED — --codemap (strict) but codemap unavailable; run /codemap-py:scan-codebase or install codemap plugin"; exit 1; }
-    CODEMAP_ENABLED=false
-fi
-echo "$CODEMAP_ENABLED" > "${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}"
+# writes true/false to research-run-codemap-enabled-${CSID}; strict mode exits 1 (already printed ! BLOCKED) if unavailable
+CODEMAP_RAW=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-flag.py" research-run "$ARGUMENTS") || exit 1
 ```
 
 > loads: codemap-gates.md
 
 When `CODEMAP_RAW` ≠ `off`:
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/codemap-gates.md"
 ```
 Follow Gate A and Gate B.
@@ -298,7 +289,8 @@ Run all checks before touching code. Fail fast with clear message:
 **`--codex-delegation` warning** (non-blocking): `codex-delegation.md` ships inside this plugin's own `skills/_shared/`, so R7 needs no other plugin installed. Verify it resolves:
 
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 [ -f "$_RESEARCH_SHARED/codex-delegation.md" ] || echo "⚠ codex-delegation.md not found under $_RESEARCH_SHARED — R7 Codex delegation will be skipped; reinstall the research plugin."
 ```
 
@@ -374,7 +366,7 @@ Then proceed to R5.
 eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"  # timeout: 3000
 COMMIT_SENTINEL="${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # tmpdir-exempt: user-shell-boundary
 touch "$COMMIT_SENTINEL"  # timeout: 3000
-# trap not effective across Bash calls — commit protection handled by commit-guard.js hook (foundry-owned; see caveat below)
+# trap doesn't survive across Bash calls — commit-guard.js hook (foundry-owned) handles protection instead
 ```
 
 > **Dependency — `commit-guard.js` (requires `foundry` plugin)**: the commit-sentinel dance above (touch at R5, re-touch each phase, `rm` at cleanup) is enforced by foundry's `commit-guard.js` `PreToolUse` hook. That hook ships with the `foundry` plugin only — research does not bundle it. **Standalone install (foundry absent): the sentinel touches become inert and `git commit` proceeds unguarded.** The sentinel logic is still safe to run (touch/`rm` on a temp file are harmless no-ops without the hook); it simply provides no protection. If you rely on atomic-commit guarding during `research:run`, install `foundry`.
@@ -414,13 +406,12 @@ For each iteration `i` from 1 to `max_iterations`:
 
 **Command execution rules** (apply to ALL phases running external commands):
 
-1. **No compound commands**: Never `cd /path && command`. Always two separate Bash calls — CWD persists between calls.
-2. **Use Bash tool `timeout` parameter**: Never shell `timeout` wrapper. Pass `timeout: <ms>` on Bash tool call itself.
-3. **No inline multi-line Python**: Python logic >3 lines → write to `.experiments/state/<run-id>/scripts/script-<i>.py` via Write tool, execute with `python <path>` or `uv run python <path>`. Two triggers Claude Code always flags: (a) `=([0-9.]+)` inside `-c "..."` (false Zsh substitution); (b) multi-line `-c "..."` with `#`-prefixed comment lines. Writing to file sidesteps both.
-4. **No Zsh constructs**: Never use `=()`, `<()`, `>()` in Bash commands — even inside quoted strings; Claude Code scans raw command text.
-5. **Local exploratory scripts writing to real files** (scanning config combos, patching JSON, temp overrides): write to `.experiments/state/<run-id>/scripts/`, run locally with `python <path>`. Legitimately modify project files — NOT in Docker sandbox.
-6. **Docker sandbox** (when available — see Phase 2a): Phases 4–6 route `metric_cmd`/`guard_cmd` through Docker when `compute: docker`. Phase 2a: read-only hypothesis scripts in sandbox. Scripts writing to project files always run locally.
-7. **One change per iteration**: Never batch-loop over config variants/combos in single Bash/Python call. Each variant = one campaign iteration — loop/measure/compare is campaign framework's job, not ideation agent's.
+1. **Use Bash tool `timeout` parameter**: Never shell `timeout` wrapper. Pass `timeout: <ms>` on Bash tool call itself. (Compound commands are already barred globally — see `claude-config.md` §Directory Navigation Commands.)
+2. **No inline multi-line Python**: Python logic >3 lines → write to `.experiments/state/<run-id>/scripts/script-<i>.py` via Write tool, execute with `python <path>` or `uv run python <path>`. Two triggers Claude Code always flags: (a) `=([0-9.]+)` inside `-c "..."` (false Zsh substitution); (b) multi-line `-c "..."` with `#`-prefixed comment lines. Writing to file sidesteps both.
+3. **No Zsh constructs**: Never use `=()`, `<()`, `>()` in Bash commands — even inside quoted strings; Claude Code scans raw command text.
+4. **Local exploratory scripts writing to real files** (scanning config combos, patching JSON, temp overrides): write to `.experiments/state/<run-id>/scripts/`, run locally with `python <path>`. Legitimately modify project files — NOT in Docker sandbox.
+5. **Docker sandbox** (when available — see Phase 2a): Phases 4–6 route `metric_cmd`/`guard_cmd` through Docker when `compute: docker`. Phase 2a: read-only hypothesis scripts in sandbox. Scripts writing to project files always run locally.
+6. **One change per iteration**: Never batch-loop over config variants/combos in single Bash/Python call. Each variant = one campaign iteration — loop/measure/compare is campaign framework's job, not ideation agent's.
 
 #### Phase 0 — Print header
 
@@ -449,10 +440,13 @@ fi
 
 **Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled-${CSID}`):
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/codemap-context.md"
 ```
 Execute its block. Leave `TARGET_MODULE`/`TARGET_FN` empty for the global `central` blast-radius baseline, or set `TARGET_MODULE` to the module the experiment edits (from `## Config`) for importer/coverage queries. Append output to `context-${I}.md` under a `## Structural Context (codemap-py)` heading so the Phase 2 ideation agent sees blast-radius before proposing edits.
+
+Codemap output non-empty: also append this **codemap-first protocol** directly below it in `context-${I}.md` (own copy — self-contained, no cross-plugin reference), so the Phase 2 spawn prompt's "read `context-<i>.md`" instruction carries it to the ideation agent: (1) **Skill-first** — use the Structural Context above before any Grep/Glob/Read aimed at imports, callers, or test coverage for a symbol already listed there. (2) **Bounded call budget** — symbol not listed → up to 3 additional `codemap-py query` calls this iteration. (3) **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`) — that result is final for its direction, no follow-up Grep/Read/query to re-confirm it. Codemap output empty: omit this paragraph — Phase 2 agent proceeds with normal file-read behaviour.
 
 Prepend header block to `context-<i>.md`: goal, current metric vs baseline, delta trend (last 5 kept deltas), iteration number. Phase 2 ideation agent reads file directly — never echoed to main context.
 
@@ -520,7 +514,7 @@ cat "$CLAUDE_SKILL_DIR/modes/codex-copilot.md"  # timeout: 5000
 Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentinel TTL set in R5 setup. Slug computation unavoidably re-run (bash state lost between tool calls); path pattern identical to R5 setup block above:
 
 ```bash
-# Refresh sentinel — bash state lost between calls; re-source slug (same form as R5 setup)
+# refresh sentinel — bash state lost between calls, re-source slug (R5 form)
 eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"  # timeout: 3000
 touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000  # tmpdir-exempt: user-shell-boundary
 ```
@@ -653,7 +647,7 @@ Print iteration summary:
 TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 
 ```bash
-# Compaction contract — overwrite each iteration; always reflects latest in-progress state (compaction-contract.md §Lifecycle)
+# compaction contract — overwritten each iteration, always latest state (compaction-contract.md §Lifecycle)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _RUN_ID < "${TMPDIR:-/tmp}/research-run-id-${CSID}" 2>/dev/null || _RUN_ID=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/research-run-keep-items-${CSID}" 2>/dev/null || _KEEP=""
@@ -662,14 +656,7 @@ _ITER=$(jq -r '.iteration // 0' "$_STATE_JSON" 2>/dev/null || echo "?")
 _BEST=$(jq -r '.best_metric // "?"' "$_STATE_JSON" 2>/dev/null || echo "?")
 _PROG=$(jq -r '.program_file // ""' "$_STATE_JSON" 2>/dev/null || echo "")
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .temp/state  # timeout: 5000
-{
-    echo "## Active Skill Contract"
-    echo "- skill: research:run · phase: iteration-loop (after iter ${_ITER})"
-    echo "- run-dir: .experiments/${_RUN_ID}"
-    echo "- preserve: state-json=${_STATE_JSON}, program=${_PROG}, iter=${_ITER}, best-metric=${_BEST}${_KEEP_APPEND}"
-    echo "- next: continue R5 from iter $(( _ITER + 1 )) or proceed to R6 when loop done"
-} > .temp/state/skill-contract.md  # timeout: 5000
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:run" "iteration-loop (after iter ${_ITER})" ".experiments/${_RUN_ID}" "state-json=${_STATE_JSON}, program=${_PROG}, iter=${_ITER}, best-metric=${_BEST}${_KEEP_APPEND}" "continue R5 from iter $(( _ITER + 1 )) or proceed to R6 when loop done"  # timeout: 5000
 ```
 
 #### Phase 9 — Progress checks
@@ -683,15 +670,14 @@ mkdir -p .temp/state  # timeout: 5000
 **After campaign loop completes** (outside per-iteration loop):
 
 ```bash
-# Fresh shell — $COMMIT_SENTINEL from R5 setup is gone; re-derive the path before rm
-# (matches the Phase 4 re-derivation) or the cleanup is a silent no-op on "".
+# fresh shell — $COMMIT_SENTINEL gone, re-derive path before rm or cleanup is a silent no-op on ""
 eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/git_slugs.sh")"  # timeout: 3000
 rm -f "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000  (best-effort; commit-guard.js owns lifecycle)  # tmpdir-exempt: user-shell-boundary
 ```
 
 ### Step R6: Results report
 
-Pre-compute branch before writing: `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')`
+Pre-compute branch before writing: `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` — deliberate second slug form, report paths only; commit sentinels use `git_slugs.sh`/`BRANCH_SLUG` (SENTINEL_SLUG_FORMULA). Not a bypass — retracted audit finding.
 
 ```bash
 mkdir -p .reports/research  # timeout: 3000
@@ -715,7 +701,8 @@ Skip R7 if `CODEX_DELEGATION_AVAILABLE=false` (warning already printed at R2 —
 Inspect applied changes (`git diff <baseline_commit>...<best_commit> --stat`), identify tasks Codex can complete (comments on non-obvious changes, docstrings for modified functions, test coverage).
 
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # re-derive — bash state lost between Bash() calls
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41) — bash state lost between Bash() calls
 cat "$_RESEARCH_SHARED/codex-delegation.md"  # timeout: 5000
 ```
 

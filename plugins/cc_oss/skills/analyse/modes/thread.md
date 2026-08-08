@@ -56,9 +56,9 @@ else # discussion
         }
       }
     }' -f owner='{owner}' -f repo='{repo}' -F number=$NUMBER
-    # If query returns null → print "⚠ Discussions not enabled or #N not found" and stop
-    # Pagination: if comments.pageInfo.hasNextPage is true, paginate using `after: "<endCursor>"` until hasNextPage is false.
-    # Cap at 200 total comments; if thread exceeds 200, note in Summary: "⚠ Thread has >200 comments — analysis based on first 200."
+    # null result → print "⚠ Discussions not enabled or #N not found", stop
+    # paginate: `after: "<endCursor>"` while pageInfo.hasNextPage=true
+    # cap 200 comments; if exceeded, note in Summary: "⚠ Thread has >200 comments — analysis based on first 200."
     # After complete: write cache (see SKILL.md Cache layer write pattern)
 
 fi
@@ -163,7 +163,9 @@ Skip for PRs (their diffs already name live files). Optional structural signal �
 > loads: codemap-signals.md
 
 ```bash
-_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+# reload _OSS_ANALYSE (Check 41; cold-resolved once by parent analyse/SKILL.md)
+IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev/null || _OSS_ANALYSE="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/analyse 2>/dev/null)"
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/cc_oss/skills/analyse"
 cat "$_OSS_ANALYSE/modes/codemap-signals.md"  # timeout: 5000
 ```
@@ -277,12 +279,12 @@ _Legend: ✅ present · ⚠️ partial · ❌ missing · 🔵 N/A_
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload NUMBER + TODAY — fresh shell (Check 41)
+# reload NUMBER/TODAY (Check 41)
 IFS= read -r NUMBER < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || NUMBER=""
 IFS= read -r TODAY < "${TMPDIR:-/tmp}/analyse-today-${CSID}" 2>/dev/null || TODAY=$(date +%Y-%m-%d)
 mkdir -p .reports/analyse/thread  # timeout: 5000
 REPORT_FILE=".reports/analyse/thread/output-analyse-thread-$NUMBER-$TODAY.md"
-# Sentinel rewritten here, before the report exists — enforce-analyse-header.js gates SKILL.md Step 6a on this path
+# sentinel rewritten before report exists — gates SKILL.md Step6a (enforce-analyse-header.js)
 echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file-${CSID}"  # timeout: 5000
 echo "[analyse] report → $REPORT_FILE"
 ```
@@ -293,7 +295,7 @@ Write full report to `$REPORT_FILE` (echoed above) using Write tool — **do not
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Reload _OSS_SHARED (Check 41: fresh shell)
+# reload _OSS_SHARED (Check 41)
 IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/analyse-oss-shared-${CSID}" 2>/dev/null || _OSS_SHARED=""
 cat "$_OSS_SHARED/terminal-summaries.md"  # timeout: 5000
 ```

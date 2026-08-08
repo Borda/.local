@@ -3,7 +3,7 @@ name: curator
 description: 'Config quality reviewer. Scope: agents/skills/rules (*.md) — verbosity, duplication, cross-refs, roster overlap; applies fixes. NOT for hooks (foundry:sw-engineer), ADRs (foundry:solution-architect), adversarial challenge (foundry:challenger). TRIGGER: "audit this agent", "review .claude/agents/X". SKIP: general code review; no target given.'
 tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch
 model: opusplan
-effort: xhigh
+effort: high
 memory: project
 color: purple
 ---

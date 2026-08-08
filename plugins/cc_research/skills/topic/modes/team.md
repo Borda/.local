@@ -42,13 +42,12 @@ Lead synthesizes by reading teammate file paths from delta messages. Pre-compute
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"  # timeout: 3000
 SPAWN_DATE="$(date -u +%Y-%m-%d)"  # timeout: 3000
-# Anti-overwrite per teammate: resolve counter-suffix before each spawn
-# For teammate N with name TNAME: _TOUT=".temp/output-research-$TNAME-$SPAWN_BRANCH-$SPAWN_DATE.md"; _TN=2; while [ -e "$_TOUT" ]; do _TOUT=".temp/output-research-$TNAME-$SPAWN_BRANCH-$SPAWN_DATE-$_TN.md"; _TN=$((_TN+1)); done  # timeout: 5000
-# Substitute resolved path (not template) into each teammate spawn prompt
 mkdir -p .temp .reports/research  # timeout: 3000
+# Anti-overwrite per teammate: run this once per teammate before its spawn, with TNAME set to
+# that teammate's name, and substitute the resolved path (not the template) into its prompt:
+#   _TOUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-$TNAME-$SPAWN_BRANCH-$SPAWN_DATE")  # timeout: 5000
 # Consolidator report path — same anti-overwrite rule as SKILL.md Step 3 (quality-gates.md)
-_RBASE=".reports/research/topic-$SPAWN_BRANCH-$SPAWN_DATE.md"; REPORT_OUT="$_RBASE"; _RN=2
-while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${_RBASE%.md}-${_RN}.md"; _RN=$((_RN+1)); done  # timeout: 5000
+REPORT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$SPAWN_BRANCH-$SPAWN_DATE")  # timeout: 5000
 # Absolute path — hooks/enforce-topic-header.js reads this to gate the follow-up question
 echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 ```

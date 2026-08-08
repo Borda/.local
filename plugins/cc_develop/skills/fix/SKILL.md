@@ -36,8 +36,10 @@ Preserve at boundary 2: dev-dir, changed files list, test outcomes, regression t
 ## Agent Resolution
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+echo "$_DEV_SHARED" > "${TMPDIR:-/tmp}/dev-shared-${CSID}"  # cold resolve — every later block warm-reads this
 # loads: compaction-contract.md
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
@@ -45,7 +47,8 @@ cat "$_DEV_SHARED/agent-resolution.md"
 Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/task-hygiene.md"
 ```
@@ -53,27 +56,20 @@ cat "$_DEV_SHARED/task-hygiene.md"
 ## Project Detection
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/runner-detection.md"
 ```
 Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
-**Language preflight gate**: after runner-detection.md, check project type:
-
-```bash
-# timeout: 5000
-if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; then
-    NON_PY=$(ls package.json Cargo.toml go.mod 2>/dev/null | head -1)
-fi
-```
-
-If `NON_PY` non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
+**Language preflight gate**: apply §Language preflight gate from `runner-detection.md` (loaded above) — sets `NON_PY` and runs the abort/continue question.
 
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
@@ -133,34 +129,28 @@ IFS= read -r WORKTREE_ENABLED < "${TMPDIR:-/tmp}/dev-fix-worktree-${CSID}" 2>/de
 ```
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/worktree-isolation.md"
 ```
 
 `WORKTREE_ENABLED=true` → follow §Enter (call `EnterWorktree`, warm-start codemap). Else skip — run in main tree. Remember the branch for §Exit at Final Report.
 
-**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-fix-codemap-${CSID}` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
+**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-fix-codemap-${CSID}` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap_resolve.py`:
 
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-fix-codemap-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW" 2>&1)
-RESOLVE_EXIT=$?
-if [ "$RESOLVE_EXIT" -ne 0 ]; then
-    echo "$CODEMAP_ENABLED" >&2  # surface error msg (e.g. strict-mode abort) to caller
-    [ "$CODEMAP_RAW" = "strict" ] && exit 1
-    CODEMAP_ENABLED=false
-fi
-echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-fix-codemap-enabled-${CSID}
+CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_codemap_gate.py" fix) || exit 1
 # codemap: integrated-via-shared
 ```
 
 > loads: codemap-gates.md
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
@@ -171,7 +161,8 @@ Follow Gate A and Gate B.
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/preflight-helpers.md"
 ```
@@ -182,65 +173,16 @@ Execute codemap + semble preflight if respective flags set.
 
 **If `TEAM_MODE=true`**: execute team workflow now — do not proceed to Step 1.
 
-Root cause unclear after initial triage, OR bug spans 3+ modules and user accepted "Proceed anyway" at scope gate: use this path.
-
-**Coordination:**
-
-**Note on `model=` assignments**: `model=opus` in prompts below is an advisory hint — effective only when actual foundry agents installed. When falling back to `general-purpose` (foundry absent), prompt-prepend `model=` does not reliably override agent-resolution fallback tier; effective model set by `agent-resolution.md`'s fallback table, not spawn prompt.
-
-1. Lead broadcasts current evidence: `{bug: <description>, traceback: <key lines>}`
-2. Spawn **foundry:sw-engineer x 2 (model=opus)** — each investigates a distinct root-cause hypothesis (A, B) independently. `_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null); [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"; cat "$_DEV_SHARED/preflight-helpers.md"` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`. If user wants a third independent investigation, re-invoke with a narrower hypothesis spec rather than auto-scaling here.
-3. Each teammate investigates independently — claims hypothesis; returns full output to file (file-based handoff protocol).
-4. Lead facilitates cross-challenge between competing analyses.
-5. Lead synthesizes consensus root cause, then proceeds with Steps 2-4 (regression test, fix, review loop) alone.
-
-Compute run directory and create health sentinel:
+> loads: team-mode.md — gated; ~90% of runs (`--team` absent) skip the load entirely
 
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_run_out=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/setup_worktree.py" --sentinel fix-team-check)
-TS=$(echo "$_run_out" | head -1)
-RUN_DIR=$(echo "$_run_out" | tail -1)
-FIX_TEAM_DIR="$RUN_DIR"
-RUN_DIR_LITERAL="$RUN_DIR"
-echo "$TS" > ${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}
-echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}
-trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT  # sentinel dir resolved by setup_worktree.py's _sentinel_dir() — TMPDIR when set, else system temp dir; matches this expression
+IFS= read -r TEAM_MODE < "${TMPDIR:-/tmp}/dev-team-mode-${CSID}" 2>/dev/null || TEAM_MODE=false
+[ "$TEAM_MODE" = "true" ] && cat "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/skills/fix/modes/team-mode.md"
 ```
 
-Spawn 2 teammates in parallel using Agent() tool:
-
-**IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in prompt strings. `<TS_LITERAL>`, `<_DEV_SHARED_LITERAL>`, and `<ARGUMENTS_LITERAL>` in prompt text below are placeholders — substitute actual computed values before constructing Agent call; spawned agent cannot expand shell variables from its parent context:
-
-```bash
-# timeout: 5000
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r TS < "${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}" 2>/dev/null || TS=""                                 # re-derive — bash state lost between Bash() calls
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
-[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
-_SPAWN_DEV_SHARED="$_DEV_SHARED"
-_SPAWN_TS="$TS"
-_SPAWN_ARGS="$ARGUMENTS"
-IFS= read -r _SPAWN_RUN_DIR < "${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}" 2>/dev/null || _SPAWN_RUN_DIR=".temp/develop/$TS"
-```
-
-**Teammate 1 — foundry:sw-engineer (model=opus) — hypothesis A**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, `$_SPAWN_ARGS`, and `$_SPAWN_RUN_DIR` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Read <_DEV_SHARED_LITERAL>/preflight-helpers.md §Team Spawn Template. Bug: <ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to <RUN_DIR_LITERAL>/fix-hypothesis-A-<TS_LITERAL>.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
-
-**Teammate 2 — foundry:sw-engineer (model=opus) — hypothesis B**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, `$_SPAWN_ARGS`, and `$_SPAWN_RUN_DIR` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Read <_DEV_SHARED_LITERAL>/preflight-helpers.md §Team Spawn Template. Bug: <ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to <RUN_DIR_LITERAL>/fix-hypothesis-B-<TS_LITERAL>.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
-
-Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files spawn block persisted):
-
-```bash
-# timeout: 5000
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r TS < "${TMPDIR:-/tmp}/dev-fix-team-ts-${CSID}" 2>/dev/null || TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/dev-fix-run-dir-${CSID}" 2>/dev/null || RUN_DIR=".temp/develop/$TS"
-```
-
-Every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` (sentinel dir resolved by setup_worktree.py's `_sentinel_dir()` — TMPDIR when set, else system temp dir; matches this expression) — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `$RUN_DIR/fix-hypothesis-*.md`; surface with ⏱; never omit.
-
-After both teammates complete: read their output files from `$RUN_DIR/`, synthesize consensus root cause, facilitate cross-challenge between competing analyses. Lead then proceeds alone with Steps 2-4 (regression test, fix, review loop).
+`TEAM_MODE=true` → execute the loaded protocol now, then continue at Step 2 (regression test). `TEAM_MODE=false` → nothing was loaded; skip to Step 1.
 
 ## Step 1: Understand the problem
 
@@ -251,12 +193,7 @@ Gather all available context about bug:
 ```bash
 # timeout: 6000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r REPO_NAME < "${TMPDIR:-/tmp}/dev-upstream-${CSID}" 2>/dev/null || REPO_NAME=""
-if [ -n "$REPO_NAME" ]; then
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null
-else
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null
-fi
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_issue_fetch_wrap.py" fix "$ARGUMENTS"
 ```
 
 **Cross-repo adaptation** (when `REPO_NAME` set) — issue was filed against a different codebase. After fetching issue, analysis must:
@@ -304,7 +241,8 @@ echo "$TARGET_QUALIFIED" > "${TMPDIR:-/tmp}/dev-fix-target-qualified-${CSID}"
 **If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**:
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-context.md"
 ```
@@ -360,7 +298,8 @@ If root cause not definitively established after analysis, surface assumptions b
 > 2. [assumption about affected scope] -> Correct me now or I'll proceed with these.
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/premise-grounding.md"
 ```
@@ -369,7 +308,8 @@ cat "$_DEV_SHARED/premise-grounding.md"
 **Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/plan-inline.md"
 ```
@@ -638,7 +578,8 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 **After 3 cycles**: if substantive issues remain, stop — surface to user before proceeding.
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 _SHARED="$_DEV_SHARED"  # quality-stack.md loads its siblings from $_SHARED — this plugin's own _shared
 cat "$_DEV_SHARED/quality-stack.md"

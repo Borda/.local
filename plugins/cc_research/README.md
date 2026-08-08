@@ -803,11 +803,12 @@ Setup (before running `--colab`):
 
 **Hooks** register automatically from `hooks/hooks.json` when the plugin is enabled — no `settings.json` edits needed:
 
-| Hook                      | Event                            | Behaviour                                                                                                                                                                                                            |
-| ------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent-router.js`         | `PreToolUse` (`Agent`)           | Reroutes `Agent()` calls when the requested agent is not installed: exact match → semantic match → `general-purpose`.                                                                                                |
-| `sentinel-read-allow.js`  | `PreToolUse` (`Bash`)            | Auto-allows the pre-canned TMPDIR sentinel-read and `$(date +FMT)` idioms inside read-only commands, so skill bash blocks stop raising "Contains expansion" prompts. Everything else falls through to normal checks. |
-| `enforce-topic-header.js` | `PreToolUse` (`AskUserQuestion`) | Denies `/research:topic`'s follow-up question until its report file exists under `.reports/research/`, so the report header always reaches the terminal first. Silent unless a topic run is in flight.               |
+| Hook                      | Event                            | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-router.js`         | `PreToolUse` (`Agent`)           | Reroutes `Agent()` calls when the requested agent is not installed: exact match → semantic match → `general-purpose`.                                                                                                                                                                                                                                                                                                             |
+| `sentinel-read-allow.js`  | `PreToolUse` (`Bash`)            | Auto-allows the pre-canned TMPDIR sentinel-read and `$(date +FMT)` idioms inside read-only commands, so skill bash blocks stop raising "Contains expansion" prompts. Everything else falls through to normal checks.                                                                                                                                                                                                              |
+| `enforce-topic-header.js` | `PreToolUse` (`AskUserQuestion`) | Denies `/research:topic`'s follow-up question until its report file exists under `.reports/research/`, so the report header always reaches the terminal first. Silent unless a topic run is in flight. Once the report exists, additionally nudges (never blocks) via `additionalContext` when the reply never rendered the header as a table — see `report-header-table.js`.                                                     |
+| `report-header-table.js`  | (shared module, not a hook)      | Byte-identical copy of the cc_foundry canonical (propagated via `propagate_shared.py`); reads the session transcript to check whether the assistant's own reply, since the last human turn, rendered the report's `---` header as a `\| Field \| Value \|` table (or the documented `·`-fallback line) — catches the PR #1303 incident (raw YAML fields printed instead of a table) that the file-existence gate alone could not. |
 
 ### Artifact layout
 
@@ -851,7 +852,7 @@ Run `/research:plan "<goal>"` first — writes `program.md` to project root by d
 
 **A question is blocked with "research:topic report gate"**
 
-`enforce-topic-header.js` denied an `AskUserQuestion` call because the report file under `.reports/research/` does not exist — the topic run reached its follow-up question without writing a report, so no report header could have been printed. Write the report to that exact path and render its `---` header as the two-column terminal table; the question then goes through. The gate deactivates two hours after a run resolves its report path, so an aborted run never blocks later questions permanently.
+`enforce-topic-header.js` denied an `AskUserQuestion` call because the report file under `.reports/research/` does not exist — the topic run reached its follow-up question without writing a report, so no report header could have been printed. Write the report to that exact path and render its `---` header as the two-column terminal table; the question then goes through. The gate deactivates two hours after a run resolves its report path, so an aborted run never blocks later questions permanently. Once the report exists, the hook also checks (via `report-header-table.js`) whether the printed reply actually rendered the header as a table — a missing table never blocks the question, but rides along as an `additionalContext` reminder.
 
 **"Metric command failed or produced no numeric output" during judge or run**
 
@@ -899,7 +900,7 @@ Version bumps per project policy: new capability → minor bump; fixes, wording,
 - `git_slugs.sh` — emit sourceable `REPO_SLUG`/`BRANCH_SLUG` for `research:run` commit-sentinel path (falls back to `no-repo`/`detached` sentinels outside repo or on detached HEAD).
 - `docker_sandbox_run.py` — `--mode explore|verify`: sandboxed metric + script execution under `python:3.11-slim` (verify mode rejects shell metacharacters + destructive binaries that could wipe read-write `.experiments` mount).
 - `check_output_within_root.py` — verify candidate output path stays within project root.
-- `codemap-resolve` — resolve `CODEMAP_ENABLED` (`auto`/`strict`/`off` → `true`/`false`), record index currency.
+- `codemap_resolve.py` — resolve `CODEMAP_ENABLED` (`auto`/`strict`/`off` → `true`/`false`), record index currency.
 - `compute_effect_size.py` — rank-biserial correlation effect size for retro signed-rank result (reads JSON on stdin).
 - `find_run_id.py` — locate latest completed run id under state-dir base.
 - `read_state_field.py` — read dotted-path field from JSON state file.

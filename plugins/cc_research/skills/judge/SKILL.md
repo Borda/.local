@@ -31,8 +31,10 @@ Clear at J1 start (stale prior run) and at end of J6 after terminal summary prin
 **Agent resolution**: load and follow the protocol below. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
 ```bash
 # loads: compaction-contract.md
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+echo "$_RESEARCH_SHARED" > "${TMPDIR:-/tmp}/research-shared-${CSID}"  # cold resolve — every later site reads this sentinel instead of re-running python
 cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
 
@@ -59,21 +61,15 @@ ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespac
 ```
 
 ```bash
-# Extract --keep quoted value (compaction-contract.md §keep semantics)
-KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .temp/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/judge-keep-items-${CSID}"  # persist for J3 contract write
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" judge "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for J3
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--skip-validation`, `--keep`.
 ```bash
 # loads: unsupported-flag-protocol.md
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```
 
@@ -171,12 +167,7 @@ fi
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PROGRAM_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || PROGRAM_PATH=""  # re-hydrate (Check 41: fresh shell — persisted in J3 pre-spawn block)
-_SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null) || _SCOPE_COUNT=0  # timeout: 5000  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
-_STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
-SPAWN_ARCHITECT=false
-if [ "${_SCOPE_COUNT:-0}" -gt 1 ] || [ "$_STRATEGY" = "arch" ] || grep -qiE "cross.domain|multi.system|distributed|multiple.*component|pipeline.*stage" "$PROGRAM_PATH" 2>/dev/null; then
-    SPAWN_ARCHITECT=true
-fi
+SPAWN_ARCHITECT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/detect-complexity.py" "$PROGRAM_PATH")  # timeout: 5000
 ```
 
 When `SPAWN_ARCHITECT=false`: skip architect spawn; J5b precedence step 0 sets `methodology_rating="sound"` (scientist review still covers scientific rigor); record `architect: skipped (narrow scope)` in J6 summary.
@@ -186,7 +177,8 @@ When `SPAWN_ARCHITECT=true`: spawn `foundry:solution-architect` via `Agent(subag
 > `$J3_ARCH_PROMPT` template externalized — load and follow protocol below § J3_ARCH_PROMPT (one load supplies both J3 templates).
 
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/judge-j3-prompts.md"
 ```
 
@@ -222,14 +214,7 @@ IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/judge-run-dir-${CSID}" 2>/dev/null || _
 IFS= read -r _PROG_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || _PROG_PATH=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/judge-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .temp/state  # timeout: 5000
-{
-    echo "## Active Skill Contract"
-    echo "- skill: research:judge · phase: validation-verdict (after J3 review agents complete)"
-    echo "- run-dir: ${_RUN_DIR}"
-    echo "- preserve: run-dir=${_RUN_DIR}, program=${_PROG_PATH}, methodology=${_RUN_DIR}/methodology.md, scientific-review=${_RUN_DIR}/scientific-review.md${_KEEP_APPEND}"
-    echo "- next: J4 local validation → J5 Codex review → J6 verdict and report"
-} > .temp/state/skill-contract.md  # timeout: 5000
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:judge" "validation-verdict (after J3 review agents complete)" "${_RUN_DIR}" "run-dir=${_RUN_DIR}, program=${_PROG_PATH}, methodology=${_RUN_DIR}/methodology.md, scientific-review=${_RUN_DIR}/scientific-review.md${_KEEP_APPEND}" "J4 local validation → J5 Codex review → J6 verdict and report"  # timeout: 5000
 ```
 
 ## Step J4: Local validation
@@ -265,12 +250,7 @@ Record validation results for J6 report.
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PROGRAM_PATH < "${TMPDIR:-/tmp}/judge-program-path-${CSID}" 2>/dev/null || PROGRAM_PATH=""  # re-hydrate (Check 41: fresh shell)
-_SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null) || _SCOPE_COUNT=0  # timeout: 5000  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
-_STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
-J5A_COMPLEX=false
-if [ "${_SCOPE_COUNT:-0}" -gt 1 ] || [ "$_STRATEGY" = "arch" ] || grep -qiE "cross.domain|multi.system|distributed|multiple.*component|pipeline.*stage" "$PROGRAM_PATH" 2>/dev/null; then
-    J5A_COMPLEX=true
-fi
+J5A_COMPLEX=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/detect-complexity.py" "$PROGRAM_PATH")  # timeout: 5000 — same gate as J3; must stay identical, hence the shared script
 ```
 
 `J5A_COMPLEX=false` → print `note: simple program (single scope file, single-phase strategy) — Codex adversarial pass skipped by complexity gate`, record `codex: skipped (complexity gate)` in J6 summary, continue to J5b. `J5A_COMPLEX=true` → proceed below.

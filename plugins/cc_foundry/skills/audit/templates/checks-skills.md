@@ -19,6 +19,8 @@ IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/de
 **Step 1 — Read calibrate domain table**: Load calibrate `skills.md` via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof), extract registered target list under `### Domain table`. Build registered-targets set.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 CALIB_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local) 2>/dev/null || echo "plugins/cc_foundry/skills/calibrate/modes")  # timeout: 5000
 cat "$CALIB_MODES/skills.md"  # timeout: 5000
 ```
@@ -40,6 +42,8 @@ Mode is calibratable when ALL three signals present:
 **Step 5 — Read agents domain table**: Load calibrate `agents.md` via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof), extract all agent names from `### Domain table`. Build registered-agent-names set.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 CALIB_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local) 2>/dev/null || echo "plugins/cc_foundry/skills/calibrate/modes")  # timeout: 5000
 cat "$CALIB_MODES/agents.md"  # timeout: 5000
 ```
@@ -123,8 +127,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 [ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 23b: # timeout: comment without shell enforcement ===\n"
-# Exempt: python — timeout enforced by --timeout default inside script
-# (colon in timeout: distinguishes comment from command)
+# python exempt — --timeout default enforces internally; colon separates comment from real timeout cmd
 find "$_ROOT" \( -path "*/skills/*/SKILL.md" -o -path "*/agents/*.md" -o -path "*/rules/*.md" \) \
   -exec grep -Hn '# timeout: [0-9]' {} + 2>/dev/null |
   grep -v '^Binary' |
@@ -300,7 +303,9 @@ Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depe
 **Step 1 — Map skills to owning plugin:**
 
 ```bash
-# cross-plugin dispatch meaningful only against plugin source tree; .claude/skills/ has no plugin-prefixed structure
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+# needs plugin source tree — .claude/skills/ has no plugin-prefixed structure
 if [ "$LOCAL_MODE" != "true" ]; then
     echo "[Check 28 Step 1] Skipped in non-local mode (no plugin source tree)"
 else
@@ -315,6 +320,8 @@ fi
 **Step 2 — Collect cross-plugin dispatches per skill:**
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 if [ "$LOCAL_MODE" != "true" ]; then
     echo "[Check 28 Step 2] Skipped in non-local mode (no plugin source tree)"
 else
@@ -358,15 +365,17 @@ Skills may reference other plugins' skills in `<notes>`, follow-up chains, and p
 **Step — Scan for unguarded prose cross-plugin references**:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check 28c: Cross-plugin prose refs ===\n"
-# Cross-plugin prose-ref analysis only meaningful against plugin source tree
+# needs plugin source tree
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check 28c skipped in non-local mode (no plugin source tree)\n"
 else
     for f in plugins/*/skills/*/SKILL.md; do
       [ -f "$f" ] || continue
       skill_plugin=$(echo "$f" | cut -d/ -f2)
-      # Find refs to other plugins in prose (backtick-wrapped /plugin:skill or /plugin:skill in plain text)
+      # match backtick-wrapped or plain /plugin:skill refs
       matches=$(grep -nE '`/[a-z]+:[a-z]|/oss:|/develop:|/research:|/codemap:|/codemap-py:|/foundry:' "$f" 2>/dev/null |
         grep -v "subagent_type\|#.*requires\|requires.*plugin\|plugin.*installed\|if.*plugin" |
         grep -v "$(echo "$skill_plugin" | sed 's/[^a-z]//g'):" || true)
@@ -400,7 +409,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 [ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 printf "=== Check 30a: Pipe exit code capture ===\n"
-# Find | tail or | head followed by $? assignment within 3 lines — tail/head always exit 0
+# tail/head always exit 0 — $? after them ≠ upstream cmd's exit
 find "$_ROOT" -path "*/skills/*" -name "*.md" -exec grep -Hn '| tail\b\|| head\b' {} + 2>/dev/null |
   grep -v 'PIPESTATUS\|pipefail\|#.*tail\|#.*head' |
   grep -v '^Binary' &&
@@ -532,7 +541,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 [ "$LOCAL_MODE" = "true" ] && _ROOT="plugins" || _ROOT=".claude"
 found=0
-# Process substitution, not a pipe: a piped `while` runs in a subshell and `found` would not survive it.
+# process substitution, not pipe — piped while runs in subshell, found wouldn't survive
 while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     skill_name=$(basename "$(dirname "$f")")
@@ -574,12 +583,10 @@ while IFS= read -r f; do  # timeout: 5000
     [ -f "$f" ] || continue
     skill=$(basename "$(dirname "$f")")
     fm=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null)
-    # effort: required, no default
     echo "$fm" | grep -q '^effort:' || {
         printf "⚠ 31a: %s — missing effort: field (required; no default)\n" "$skill"
         found=1
     }
-    # when_to_use: deprecated — merge into description: then strip
     echo "$fm" | grep -q '^when_to_use:' && {
         printf "⚠ 31a: %s — when_to_use: present (deprecated; merge content into description: then remove)\n" "$skill"
         found=1
@@ -630,8 +637,7 @@ while IFS= read -r f; do  # timeout: 5000
         printf "✓ C35: %s — references agent-spawn-protocol.md\n" "$skill"
         continue
     fi
-    # `|| echo 0` would append a second 0: on zero matches grep -c prints 0 *and* exits 1, and the
-    # "0\n0" then breaks the numeric tests below — which is the common case here, not the rare one.
+    # grep -c prints 0 AND exits 1 on no match — || echo 0 double-fires, "0\n0" breaks numeric tests below
     has_sentinel=$(grep -c 'LAUNCH_AT\|touch /tmp/' "$f" 2>/dev/null) || has_sentinel=0
     has_poll=$(grep -c 'find.*-newer.*-type f.*wc -l\|MONITOR_INTERVAL' "$f" 2>/dev/null) || has_poll=0
     has_cutoff=$(grep -c 'HARD_CUTOFF\|timed.out\|15 min\|900' "$f" 2>/dev/null) || has_cutoff=0
@@ -716,10 +722,8 @@ printf "=== Check 32c: Dead rule files ===\n"
 found=0
 while IFS= read -r rule_file; do  # timeout: 5000
     [ -f "$rule_file" ] || continue
-    # Extract paths: list from frontmatter
     paths_block=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$rule_file" 2>/dev/null | awk '/^paths:/{p=1;next} p && /^[^ ]/{p=0} p{print}')
     [ -z "$paths_block" ] && continue  # no paths: — global rule, always active, skip
-    # Check each glob pattern against project files
     matched=0
     while IFS= read -r pat_line; do
         pat=$(echo "$pat_line" | sed "s/^ *- *'//;s/'$//;s/^ *- *//")
@@ -744,6 +748,8 @@ Auto-fix: remove `paths:` to make the rule global, or delete the file if rule is
 `bin/` scripts that exist in the plugin source tree but are not referenced by any `.md` file in that plugin (SKILL.md, agents, rules, modes, templates, _shared) are unreachable at runtime. Common cause: script authored as scaffolding but never wired into its caller SKILL.md.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check 32d: Orphaned bin/ scripts ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check 32d skipped in non-local mode (no plugin source tree)\n"
@@ -772,11 +778,13 @@ bin/ scripts sharing structural patterns (≥ 0.8 similarity after normalizing i
 Skip in non-local mode (no source tree). Skip when fewer than 2 non-private bin/ Python scripts exist.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check 32e: bin/ script cross-similarity ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check 32e skipped in non-local mode (no plugin source tree)\n"
 else
-    # newline-delimited scalar, not an array — `mapfile` is a bash builtin with no zsh equivalent (see checks-shared.md Check 45's note)
+    # newline-delimited scalar, not array — mapfile has no zsh equivalent (see checks-shared Check 45)
     _C32E_SCRIPTS=$(find plugins -path '*/bin/*.py' -not -name '_*.py' 2>/dev/null | sort)  # timeout: 5000
     _C32E_N=$(printf '%s' "$_C32E_SCRIPTS" | grep -c '^')
     if [ "$_C32E_N" -lt 2 ]; then
@@ -799,6 +807,8 @@ Auto-fix: no — merge requires semantic review of both scripts and all callers;
 Detects the "extraction done but inline twin survived" topology: `modes/<name>.md` is referenced from `SKILL.md` AND its body is also present inline in `SKILL.md`. Complements Check 32a (which catches unreferenced mode files — the inverse polarity).
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check 32f: mode-file body shadowed in SKILL.md ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check 32f skipped in non-local mode (no plugin source tree)\n"
@@ -811,7 +821,7 @@ else
         for mode_file in "$modes_dir"/*.md; do
             basename_mode=$(basename "$mode_file")
             grep -qF "$basename_mode" "$skill_md" || continue
-            # `|| echo 0` would append a second 0 (grep -c prints 0 and exits 1 on zero matches).
+            # grep -c prints 0 AND exits 1 on no match — || echo 0 would double-fire
             mode_lines=$(grep -c -v '^[[:space:]]*$\|^#' "$mode_file" 2>/dev/null) || mode_lines=0
             [ "$mode_lines" -lt 20 ] && continue
             overlap=$(grep -Fxf <(grep -v '^[[:space:]]*$\|^#' "$mode_file") "$skill_md" 2>/dev/null | wc -l | tr -d ' ')
@@ -859,6 +869,8 @@ Auto-fix: run `/distill memory` or extract to `modes/` + replace inline block wi
 
 ## Check 33 — Code block duplication (NxN similarity matrix)
 
+<!-- policy-sibling: plugins/cc_foundry/skills/audit/modes/efficiency.md (Phase B2 Table 2 — same Gate/Score spec) -->
+
 Full-spectrum detection of duplicate or near-duplicate fenced code blocks across all .md files (SKILL.md, agents, rules, templates, modes) — any language (bash, python, sh, perl, ruby, js, etc.). Produces NxN pairwise similarity matrix to surface extraction candidates: 33a within-file (same block 3+ times — bin/ script or helper function candidate); 33b cross-file NxN (same block in 3+ .md files — shared bin/ script candidate).
 
 **Check 33a — Within-file repetition**: delegate to Phase A foundry:curator (has full file context). Curator prompt must include:
@@ -870,10 +882,12 @@ Full-spectrum detection of duplicate or near-duplicate fenced code blocks across
 **Phase 1 — Bash quick scan** (known duplication hotspots):
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 if [ "$LOCAL_MODE" = "true" ]; then
     _C33_DIR="plugins/"
 else
-    # latest foundry version dir — avoids scanning all cached versions × all plugins
+    # latest foundry version dir — skip other cached versions
     _C33_DIR=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/ 2>/dev/null | head -1)
     _C33_DIR="${_C33_DIR:-.claude/}"
 fi
@@ -913,14 +927,14 @@ printf "✓: Check 33b Phase 1 complete\n"  # timeout: 5000
 >
 > **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what it does functionally (not how) — e.g. 'resolves `_shared/` path from plugin cache', 'detects codex plugin availability', 'emits boilerplate-duplication counts'. Syntactic line-intersection alone is blind to conditional-inversion and variable renaming — purpose grouping catches duplicates that normalization misses.
 >
-> **Step 2 — Purpose clusters**: group blocks with equivalent purpose. This is the primary grouping. Singletons omitted. Assign cluster ID `C<n>`.
+> **Step 2 — Purpose clusters**: group blocks with equivalent purpose. This is the primary grouping. Singletons omitted. Assign cluster ID `C<n>`. **Computational equivalence gate (mandatory before finalizing)**: purpose-wording similarity is necessary but not sufficient — verify cluster members target the same output namespace (e.g. `.reports/audit/*` vs `.reports/research/*` are different namespaces even when both "write a report file"), same inputs, and same side-effect semantics before merging; split into separate clusters when destinations/inputs differ structurally despite similar wording, and never propose renaming/redirecting one site's output to match another's without this equivalence evidence stated in the row.
 >
 > **Step 3 — Syntactic similarity (secondary)**: within each cluster, normalize: strip `#` comment lines → replace path segments / slugs / numeric literals with `<STR>` → **replace ALL argument/parameter values (flag values, option strings, concrete command arguments) with `<ARG>`** — e.g. `CODEX_AVAILABLE=$(find ~/.claude/plugins/cache -name "codex*" -type d ...)` and `FOUNDRY_AVAILABLE=$(find ~/.claude/plugins/cache -name "foundry*" -type d ...)` both normalize to `<VAR>=$(find ~/.claude/plugins/cache -name "<ARG>" -type d ...)`. Compute `sim(A,B) = 2 × |lines(A_norm) ∩ lines(B_norm)| / (|A| + |B|)`. Record max-sim per cluster. Mark **DUPLICATE** when max-sim ≥ 0.90.
 >
 > Write Table 1 and Table 2 to `$RUN_DIR/similarity-check33.md` using the Write tool.
 > Table 1 format: `| Cluster | Block IDs | Files | Lang | Lines each | Purpose | Max-sim | Duplicate? |`
 > Table 2 format: `| Cluster | ParamSlots | Tokens | Gate | Score | Verdict | Differs-by | Recommended extraction |`
-> Where: **ParamSlots** = count of distinct `<ARG>` slots after normalization; **Tokens** = estimated token count of block; **Gate** = `G1:P/F · G2:P/F · G3:P/F` (all must pass or Verdict = SKIP) — G1 (Size): block > 100 tokens; G2 (Independence): no branch on prior LLM decision that cannot become explicit arg; G3 (Identity): has computational meaning outside orchestration prose (high CallerScopeDeps = G3 fail indicator); **Score** = sum of applicable positive-dimension weights when gate passes — Testable (deterministic I/O, writable pytest/shellcheck test) +2 · Reuse (same logic in 2+ .md files) +2 · Token drain (block > 300 tokens) +2 · Lintable (shellcheck/ruff applicable) +1 · Run frequency (executes >1× per skill invocation) +1 · Standalone debuggable (runnable with no SKILL.md context) +1; **Verdict** = HOLD (any gate fail) · LOW (0–1) · MEDIUM (2–3) · HIGH (≥4); **Differs-by** = concrete `<ARG>` slot values varying across instances (become CLI parameters in extracted script).
+> Where: **ParamSlots** = count of distinct `<ARG>` slots after normalization; **Tokens** = estimated token count of block; **Gate** = `G1:P/F · G2:P/F · G3:P/F` (all must pass or Verdict = HOLD) — G1 (Size OR execution cost): block > 100 tokens, **or** block launches an external interpreter process (subprocess/heredoc/`-c` — python/node/perl/ruby/etc) **and** occurs ≥3× in cluster (repeated process-fork cost is real even when each instance is token-small — a tiny `python -c "..."` one-liner repeated 84× must not gate out on size alone); G2 (Independence): no branch on prior LLM decision that cannot become explicit arg; G3 (Identity): has computational meaning outside orchestration prose (high CallerScopeDeps = G3 fail indicator); **Score** = sum of applicable positive-dimension weights when gate passes — Testable (deterministic I/O, writable pytest/shellcheck test) +2 · Reuse (same logic in 2+ .md files) +2 · Token drain (block > 300 tokens) +2 · Process overhead (external interpreter launched ≥3× in cluster) +2 · Lintable (shellcheck/ruff applicable) +1 · Run frequency (executes >1× per skill invocation) +1 · Standalone debuggable (runnable with no SKILL.md context) +1; **Verdict** = HOLD (any gate fail) · LOW (0–1) · MEDIUM (2–3) · HIGH (≥4); **Differs-by** = concrete `<ARG>` slot values varying across instances (become CLI parameters in extracted script).
 > Return ONLY: `{\"status\":\"done\",\"file\":\"$RUN_DIR/similarity-check33.md\",\"clusters\":N,\"duplicates\":N,\"similar\":N,\"findings\":N,\"confidence\":0.N}`"
 
 Severity: **medium** for actionable extraction candidates (mode-dispatch, _shared resolution, multi-file python clusters); **low/info** for known intentional replications (unsupported-flag-check, health-monitoring constants — per-plugin resilience by design per `plugins/CLAUDE.md`).
@@ -949,8 +963,7 @@ Scan all SKILL.md files in scope. For each file, count the total number of `AskU
 ```bash
 printf "=== Check 38: AskUserQuestion cap ===\n"
 for f in $(find . -path "*/skills/*/SKILL.md" 2>/dev/null | sort); do
-    # `|| echo 0` would append a second 0 (grep -c prints 0 and exits 1 on zero matches) — and most
-    # SKILL.md files have no AskUserQuestion at all, so this fired on the majority of the corpus.
+    # grep -c prints 0 AND exits 1 on no match — || echo 0 double-fires; most files have none, so this hit the majority
     count=$(grep -c "AskUserQuestion" "$f" 2>/dev/null) || count=0
     if [ "$count" -gt 8 ]; then
         printf "C38-HIGH: %d AskUserQuestion calls in %s — review for >4-per-branch\n" "$count" "$f"

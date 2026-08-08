@@ -43,8 +43,10 @@ Clear at Step 1 start (stale prior run) and at follow-up gate (terminal action).
 
 ```bash
 # loads: compaction-contract.md
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+echo "$_RESEARCH_SHARED" > "${TMPDIR:-/tmp}/research-shared-${CSID}"  # cold resolve — every later site reads this sentinel instead of re-running python
 cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
 
@@ -69,20 +71,14 @@ Read current project before searching, extract constraints:
 **Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): load and follow the protocol below. Supported flags for this skill: `--team`, `--keep`.
 ```bash
 # loads: unsupported-flag-protocol.md
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read of the Agent Resolution cold resolve (Check 41)
 cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```
 
 ```bash
-# Extract --keep quoted value (compaction-contract.md §keep semantics)
-KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .temp/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/topic-keep-items-${CSID}"  # persist for Step 2 contract write
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" topic "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for Step 2
 ```
 
 ```bash
@@ -116,14 +112,12 @@ Pre-compute output paths before searching:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date +%Y-%m-%d)  # timeout: 3000
-# Anti-overwrite: resolve counter-suffix (quality-gates.md rule)
-AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE.md"
-_N=2; while [ -e "$AGENT_OUT" ]; do AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
 mkdir -p .temp .reports/research  # timeout: 3000
-# Step 3 report path resolved here, not at Step 3 — the hook gate below must exist from the
-# moment the run is committed to producing a report, not from the moment it remembers to
-BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; _RN=2
-while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${_RN}.md"; _RN=$((_RN+1)); done  # timeout: 5000
+# Anti-overwrite counter-suffix (quality-gates.md §Output Routing) — resolved by bin/resolve-anti-overwrite-path.py.
+# Step 3's report path is resolved HERE, not at Step 3: the hook gate below must exist from the
+# moment the run is committed to producing a report, not from the moment it remembers to.
+AGENT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .temp "output-research-agent-$BRANCH-$DATE")  # timeout: 5000
+REPORT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$BRANCH-$DATE")  # timeout: 5000
 echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch-${CSID}"
 echo "$DATE" > "${TMPDIR:-/tmp}/topic-date-${CSID}"
 echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out-${CSID}"
@@ -154,14 +148,7 @@ IFS= read -r _DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || _DATE="
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/topic-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 IFS= read -r _REPORT_OUT < "${TMPDIR:-/tmp}/topic-report-out-${CSID}" 2>/dev/null || _REPORT_OUT=".reports/research/topic-${_BRANCH}-${_DATE}.md"
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .temp/state  # timeout: 5000
-{
-    echo "## Active Skill Contract"
-    echo "- skill: research:topic · phase: synthesis (after Step 2 literature gathered)"
-    echo "- run-dir: n/a"
-    echo "- preserve: agent-out=${_AGENT_OUT}, report-out=${_REPORT_OUT}, branch=${_BRANCH}${_KEEP_APPEND}"
-    echo "- next: Step 3 synthesize agent findings into report → follow-up gate"
-} > .temp/state/skill-contract.md  # timeout: 5000
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:topic" "synthesis (after Step 2 literature gathered)" "n/a" "agent-out=${_AGENT_OUT}, report-out=${_REPORT_OUT}, branch=${_BRANCH}${_KEEP_APPEND}" "Step 3 synthesize agent findings into report → follow-up gate"  # timeout: 5000
 ```
 
 ## Step 3: Report
@@ -234,8 +221,7 @@ IFS= read -r DATE < "${TMPDIR:-/tmp}/topic-date-${CSID}" 2>/dev/null || DATE=$(d
 # verbatim; re-resolving here would drift from the path the hook gate is watching
 IFS= read -r REPORT_OUT < "${TMPDIR:-/tmp}/topic-report-out-${CSID}" 2>/dev/null || REPORT_OUT=""
 if [ -z "$REPORT_OUT" ]; then
-    BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; COUNT=2
-    while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
+    REPORT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve-anti-overwrite-path.py" .reports/research "topic-$BRANCH-$DATE")  # timeout: 5000
     echo "$REPORT_OUT" > "${TMPDIR:-/tmp}/topic-report-out-${CSID}"
     echo "$PWD/$REPORT_OUT" > "${TMPDIR:-/tmp}/research-topic-report-file-${CSID}"
 fi

@@ -79,8 +79,8 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 _OSS_RESOLVE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/resolve 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/cc_oss/skills/resolve"
-echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}"  # persist for later blocks (Check 41)
-echo "$_OSS_RESOLVE" > "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}"  # persist for later blocks (Check 41)
+echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}"  # cross-block (Check 41)
+echo "$_OSS_RESOLVE" > "${TMPDIR:-/tmp}/resolve-oss-resolve-${CSID}"
 cat "$_OSS_SHARED/agent-resolution.md"  # timeout: 5000
 ```
 
@@ -119,25 +119,22 @@ gh missing or not authenticated → script exits 1 (error printed above; eval sk
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Extract --keep value before parse-resolve-args.py runs (compaction-contract.md §keep: semantics)
-KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}"  # timeout: 5000
-# --worktree (opt-in): isolate the whole run in a git worktree off HEAD before Step 4 checkout (worktree-isolation.md §resolve)
-case " $ARGUMENTS " in *" --worktree "*) WT_ENABLED=true;; *) WT_ENABLED=false;; esac
+# --worktree/--keep: worktree off HEAD pre-Step4 checkout (worktree-isolation.md §resolve)
+# shared flag/--keep parser (C5; also analyse/review SKILL.md)
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse-skill-flags.py" --flags worktree "$ARGUMENTS")"  # timeout: 5000
+WT_ENABLED="$FLAG_WORKTREE"
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}"  # timeout: 5000 (compaction-contract.md §keep: semantics)
 echo "$WT_ENABLED" > "${TMPDIR:-/tmp}/oss-resolve-worktree-${CSID}"  # timeout: 5000
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+# stale contract, crashed prior run (compaction-contract.md §Lifecycle)
 rm -f .temp/state/skill-contract.md  # timeout: 5000
 ```
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)
+# codemap: auto-on if installed; --no-codemap off; --codemap strict (stop if missing)
 # loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
 _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_codemap.py"
-# parse codemap flags here — this block is their first use, before parse-resolve-args runs
+# codemap flags parsed here first, before parse-resolve-args
 CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_FORCE_OFF=true
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_STRICT=true
@@ -162,7 +159,7 @@ Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step
 When `$ARGUMENTS` empty:
 
 ```bash
-# written by /review to .reports/review/ (oss lineage) or by codex review to .reports/codex/review/ (codex lineage)
+# oss lineage → .reports/review/; codex lineage → .reports/codex/review/
 REVIEW_FILE=$(ls -t .reports/review/*/review-report.md .reports/codex/review/*/review-notes.md 2>/dev/null | head -1)
 if [ -z "$REVIEW_FILE" ]; then
     echo "No review output found in .reports/review/ or .reports/codex/review/ — run /review <PR#> first, or provide a PR number"
@@ -192,10 +189,9 @@ Parse $ARGUMENTS:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 [ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" ] || { echo "Error: parse-resolve-args.py not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
-# parse-resolve-args.py does not handle codemap/keep flags — strip before passing (flags already parsed above)  # timeout: 3000
+# no codemap/keep flags in parse-resolve-args.py — strip before passing (parsed above)  # timeout: 3000
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--no-codemap//g; s/ --codemap / /g; s/--worktree//g' | sed 's/--keep "[^"]*"//g' | xargs)
-# Defence-in-depth: validate every output line is plain VAR=value (no metacharacters) before sourcing.
-# parse-resolve-args.py uses shlex.quote but this guards against future regressions or a tampered binary.
+# defence-in-depth: validate VAR=value, no metachars, before sourcing — guards regression/tampered binary
 tmpenv=$(mktemp)  # timeout: 3000
 trap 'rm -f "$tmpenv"' EXIT INT TERM
 python "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" "$ARGUMENTS" >"$tmpenv"  # timeout: 5000
@@ -205,7 +201,7 @@ if grep -qvE "^[A-Z_][A-Z0-9_]*=([A-Za-z0-9_./:#@+-]*|'[^']*')$" "$tmpenv"; then
     exit 1
 fi
 . "$tmpenv"
-# sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
+# sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS ('#' stripped, comment-dispatch only)
 echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}"  # timeout: 3000
 ```
 
@@ -359,7 +355,7 @@ AskUserQuestion: "Commit mode for selected items:"
   (d) Stage only — no commits; stay staged on PR branch (⚠ cannot cleanly restore to $SAVED_BRANCH after Step 11; governs Step 8 action-item commits only — the Steps 5–7 merge commit is unconditional and always created)
 ```
 
-**ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** Never merge this menu with Q4; these are commit MODES (how to commit), not item SCOPE (which items). Do not pull Q4 bulk-action options into this menu. Option (b) By topic group is a commit mode and must appear — do not drop it. LLMs tend to drop option (d) — do not omit it either.
+**ESSENTIAL — all 4 options mandatory, never emit fewer than 4** (empirically motivated: LLMs tend to drop (b) By topic group and (d) Stage only — both must appear every time). Distinct menu from Q4, never merge or pull Q4's bulk-action options in — this menu sets commit MODE (how to commit), Q4 sets item SCOPE (which items).
 
 Set `COMMIT_MODE`:
 - (a) → `each`
@@ -424,7 +420,7 @@ command -v gh >/dev/null 2>&1 || { echo "! BLOCKED — gh CLI required; install:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# local-first (no network); network fallback; hard-fail if neither resolves
+# local-first; network fallback; hard-fail if neither
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')  # timeout: 3000
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')  # timeout: 6000
 [ -z "$DEFAULT_BRANCH" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }
@@ -433,9 +429,7 @@ if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     echo "⛔ PR HEAD ref ($PR_HEAD_REF) equals default branch — refusing to check out and commit on default branch"
     exit 1
 fi
-# Step 3b records HEAD_REF/BASE_REF/IS_FORK at model level only — no shell binding exists on the pr-mode
-# path. Bind them here and persist: the post-checkout assertion below, Step 10's push gate, and
-# conflict-resolution.md all read them from later fresh shells.
+# Step3b: model-level only, no shell binding — bind+persist here; read by post-checkout assert, Step10 push gate, conflict-resolution.md
 HEAD_REF="$PR_HEAD_REF"
 BASE_REF=$(gh pr view "<PR#>" --json baseRefName --jq .baseRefName 2>/dev/null)  # timeout: 6000
 [ -n "$BASE_REF" ] || BASE_REF="$DEFAULT_BRANCH"
@@ -445,17 +439,14 @@ echo "$BASE_REF" > "${TMPDIR:-/tmp}/resolve-base-ref-${CSID}"
 echo "$IS_CROSS_REPO" > "${TMPDIR:-/tmp}/resolve-is-cross-repo-${CSID}"
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
 echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}"
-# SHA-first checkout guard: skip if already at PR head. Avoids worktree conflict — gh pr checkout
-# creates pr-N-slug alias when branch active in another worktree.
+# SHA-first: skip if at PR head — avoids worktree conflict (gh pr checkout aliases pr-N-slug if branch active elsewhere)
 PR_HEAD_OID=$(gh pr view "<PR#>" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
 LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)  # timeout: 3000
-# diagnostic trace for reflog forensics (cf. investigate report 2026-06-13T11-00-00Z: pr195 alias when state opaque)
+# reflog trace (cf. investigate 2026-06-13T11-00-00Z: pr195 alias, opaque state)
 >&2 echo "→ Step 4 state: SAVED_BRANCH=$SAVED_BRANCH PR_HEAD_REF=$PR_HEAD_REF PR_HEAD_OID=${PR_HEAD_OID:-<empty>} LOCAL_SHA=${LOCAL_SHA:-<empty>}"
 if [ -n "$PR_HEAD_OID" ] && [ "$LOCAL_SHA" = "$PR_HEAD_OID" ]; then
     echo "→ Already at PR head ($LOCAL_SHA) — skipping gh pr checkout"
-    # SHA matches but caller may be on different branch name pointing at same OID
-    # (e.g. prior gh pr checkout left pr<N> alias). Force-align to PR_HEAD_REF so
-    # Step 8 commits + Step 10 push land on correct branch.
+    # SHA match, diff branch (e.g. pr<N> alias) — force-align to PR_HEAD_REF so Step8/10 land correct branch
     CURRENT=$(git branch --show-current 2>/dev/null)
     if [ -n "$PR_HEAD_REF" ] && [ "$CURRENT" != "$PR_HEAD_REF" ]; then
         echo "→ Re-aligning local branch: $CURRENT → $PR_HEAD_REF (same SHA $LOCAL_SHA)"
@@ -464,10 +455,8 @@ if [ -n "$PR_HEAD_OID" ] && [ "$LOCAL_SHA" = "$PR_HEAD_OID" ]; then
             || { echo "⛔ Cannot switch to $PR_HEAD_REF — aborting (branch active in another worktree?)"; exit 1; }
     fi
 else
-    # Hard-exit on checkout failure — silent failure leaves git on caller's branch while
-    # $HEAD_REF is set, causing Step 8 commits to land on wrong branch.
-    # --branch "$PR_HEAD_REF": without it, gh CLI v2.93+ falls back to pr<N> alias on name
-    # collision → Step 10 push creates unrelated remote branch (CRITICAL bug pyDeprecate 2026-06-13T08:33Z).
+    # hard-exit on failure — else HEAD_REF set but git stuck on caller branch, Step8 commits land wrong branch
+    # --branch required: w/o it gh CLI v2.93+ falls back to pr<N> alias on collision → Step10 push makes unrelated branch (CRITICAL bug pyDeprecate 2026-06-13T08:33Z)
     gh pr checkout <PR#> --branch "$PR_HEAD_REF" \
         || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # timeout: 15000
 fi
@@ -477,7 +466,7 @@ fi
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Check 41: fresh shell — both gates below are dead code without these
+# fresh shell (Check 41) — else gates below dead code
 IFS= read -r HEAD_REF < "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}" 2>/dev/null || HEAD_REF=""
 IFS= read -r IS_CROSS_REPO < "${TMPDIR:-/tmp}/resolve-is-cross-repo-${CSID}" 2>/dev/null || IS_CROSS_REPO=""
 [ -n "$HEAD_REF" ] && [ -n "$IS_CROSS_REPO" ] || { echo "⛔ Step 4 verify: HEAD_REF/IS_CROSS_REPO sentinels missing — checkout state unverifiable, aborting before Step 8 can commit"; exit 1; }
@@ -485,9 +474,7 @@ PR_HEAD_REF="$HEAD_REF"
 git remote -v | grep '(fetch)' | head -10 # timeout: 3000
 git status  # timeout: 3000
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)  # timeout: 3000
-# Same-repo rule: local branch MUST equal PR_HEAD_REF — no aliases.
-# gh CLI silently falls back to pr<N> on same-name collision; --branch above prevents it,
-# but assert here as hard gate.
+# same-repo: branch must equal PR_HEAD_REF, no alias — gh falls back to pr<N> on collision; assert as hard gate
 if [ "$IS_CROSS_REPO" = "false" ] && [ "$CURRENT_BRANCH" != "$PR_HEAD_REF" ]; then
     echo "⛔ SAME-REPO RULE VIOLATION: on '$CURRENT_BRANCH' but PR headRefName='$PR_HEAD_REF' — branch alias (pr<N>) created instead of using original branch. Aborting to prevent push to wrong branch."
     exit 1
@@ -508,8 +495,8 @@ else
     PR_REF="#$PR_NUMBER"
 fi
 echo "$PR_REF" > "${TMPDIR:-/tmp}/resolve-pr-ref-${CSID}"  # timeout: 3000
-echo "$FORK_REMOTE" > "${TMPDIR:-/tmp}/resolve-fork-remote-${CSID}"  # Step 10's push gate reads it back
-# soft-verify — gh pr checkout layouts vary across versions
+echo "$FORK_REMOTE" > "${TMPDIR:-/tmp}/resolve-fork-remote-${CSID}"  # read by Step10 push gate
+# soft-verify — layouts vary across gh versions
 git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
     || echo "⚠ Remote $FORK_REMOTE not registered — Step 10 will add it before push" # timeout: 3000
 ```
@@ -557,7 +544,7 @@ TaskUpdate(task_id=TASK_IMPL, status="in_progress")
 **Soft cap: 8 Codex dispatches per session** — Codex-specific. Skip this cap entirely when `--agent <name>` is set and the resolved agent is not `codex:codex-rescue` (other implementation agents have no per-session dispatch ceiling here):
 
 ```bash
-# computed here (resolved fully in action-item-dispatch.md) to branch on cap threshold
+# computed here for cap-threshold branch (full resolve in action-item-dispatch.md)
 _RESOLVE_IMPL_AGENT="codex:codex-rescue"
 [[ "$ARGUMENTS" == *"--agent "* ]] && _RESOLVE_IMPL_AGENT=$(echo "$ARGUMENTS" | sed -n 's/.*--agent \([^ ]*\).*/\1/p')
 if [ "$_RESOLVE_IMPL_AGENT" = "codex:codex-rescue" ] && [ "$(echo "$SELECTED_ITEMS" | wc -w)" -gt 8 ]; then
@@ -591,10 +578,10 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
     _IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/${_PROJ}.json"
     CODEMAP_CACHE_DIR=".temp/resolve/codemap-context"  # resolve-owned; stable across the run
     mkdir -p "$CODEMAP_CACHE_DIR"  # timeout: 3000
-    # review persists its pre-flight batch blob to .temp/review/<ts>/codemap-context.md
+    # review's pre-flight blob: .temp/review/<ts>/codemap-context.md
     _REVIEW_CTX=$(ls -t .temp/review/*/codemap-context.md 2>/dev/null | head -1)
     if [ -n "$_REVIEW_CTX" ] && [ -f "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py" ]; then
-        # the .md wraps one `codemap-py query batch` JSON array under markdown headers — extract it
+        # .md wraps codemap-py query batch JSON under md headers — extract
         _BATCH_JSON="${TMPDIR:-/tmp}/resolve-review-batch-${CSID}.json"
         sed -n '/^{/,$p' "$_REVIEW_CTX" | head -1 > "$_BATCH_JSON" 2>/dev/null || true
         if [ -s "$_BATCH_JSON" ] && [ -f "$_IDX_FILE" ]; then
@@ -627,7 +614,7 @@ TaskUpdate(task_id=TASK_IMPL, status="completed")
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 1: after implementation loop, before lint gate (compaction-contract.md §Lifecycle)
+# boundary1: post-impl loop, pre-lint gate (compaction-contract.md §Lifecycle)
 IFS= read -r _PR_NUMBER < "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || _PR_NUMBER="n/a"
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="pr=${_PR_NUMBER}, items-implemented; next: lint/push/report"
@@ -675,8 +662,7 @@ TaskUpdate(task_id=TASK_CLOSE, status="in_progress")
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Check 41: fresh shell. Unbound here, every value the authorization gate below is required to
-# surface resolves empty — the user would be asked to approve a push whose scope was never shown.
+# fresh shell (Check 41) — unbound here → auth gate shows empty push scope
 IFS= read -r FORK_REMOTE < "${TMPDIR:-/tmp}/resolve-fork-remote-${CSID}" 2>/dev/null || FORK_REMOTE=""
 IFS= read -r HEAD_REF < "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}" 2>/dev/null || HEAD_REF=""
 IFS= read -r BASE_REF < "${TMPDIR:-/tmp}/resolve-base-ref-${CSID}" 2>/dev/null || BASE_REF=""
@@ -684,7 +670,7 @@ IFS= read -r BASE_REF < "${TMPDIR:-/tmp}/resolve-base-ref-${CSID}" 2>/dev/null |
 if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
     REPO_NAME=$(git remote get-url origin | sed 's|.*/||' | sed 's|\.git$||')
     ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")
-    # mirror SSH vs HTTPS — SSH-only contributors have no HTTPS credentials; hardcoding HTTPS breaks push silently
+    # mirror SSH/HTTPS — SSH-only lacks HTTPS creds; hardcoding breaks push silently
     if [[ "$ORIGIN_URL" == git@* ]]; then
         FORK_URL="git@github.com:$FORK_REMOTE/$REPO_NAME.git"
     else
@@ -725,7 +711,7 @@ Push rejected → fallback:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r FORK_REMOTE < "${TMPDIR:-/tmp}/resolve-fork-remote-${CSID}" 2>/dev/null || FORK_REMOTE=""
 IFS= read -r HEAD_REF < "${TMPDIR:-/tmp}/resolve-head-ref-${CSID}" 2>/dev/null || HEAD_REF=""
-# an empty refspec here would push to an unintended ref
+# empty refspec → push to wrong ref
 [ -n "$FORK_REMOTE" ] && [ -n "$HEAD_REF" ] || { echo "⛔ Step 10 fallback: FORK_REMOTE/HEAD_REF unresolved — refusing explicit-refspec push"; exit 1; }
 git push "$FORK_REMOTE" HEAD:"$HEAD_REF" # timeout: 30000
 ```
@@ -740,7 +726,7 @@ gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messa
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 2: before final report write (compaction-contract.md §Lifecycle)
+# boundary2: pre-final-report write (compaction-contract.md §Lifecycle)
 IFS= read -r _PR_NUMBER < "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || _PR_NUMBER="n/a"
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/resolve-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _PRESERVE="pr=${_PR_NUMBER}, final-report=pending-write"
@@ -782,7 +768,7 @@ Omit section when `--no-challenge`.
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r SAVED_BRANCH < "${TMPDIR:-/tmp}/resolve-saved-branch-${CSID}" 2>/dev/null || SAVED_BRANCH=""
-# skip restore when COMMIT_MODE=stage — staged changes would be lost
+# stage mode: skip restore, else staged work lost
 if [ "$COMMIT_MODE" = "stage" ]; then
     echo "⚠ COMMIT_MODE=stage: changes are staged on $(git branch --show-current) — restore to $SAVED_BRANCH skipped to preserve staged work. Run: git stash && git switch $SAVED_BRANCH && git stash pop (on PR branch) when ready."
 elif [ -n "$SAVED_BRANCH" ]; then
@@ -800,7 +786,7 @@ TaskUpdate(task_id=TASK_CLOSE, status="completed")
 Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Skip.
 
 ```bash
-rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Step 12: Comment dispatch + Codex review loop
@@ -814,7 +800,7 @@ cat "$_OSS_RESOLVE/modes/comment-dispatch.md"  # timeout: 5000
 Execute its steps (loaded above).
 
 ```bash
-rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

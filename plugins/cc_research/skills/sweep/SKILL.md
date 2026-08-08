@@ -35,8 +35,10 @@ Clear at S1 start (stale prior run) and after S5 pipeline completes.
 
 ```bash
 # loads: compaction-contract.md
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+echo "$_RESEARCH_SHARED" > "${TMPDIR:-/tmp}/research-shared-${CSID}"  # cold resolve — every later site (including the judge/run steps this skill runs inline) reads this sentinel
 cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
 
@@ -50,7 +52,8 @@ Triggered by `sweep "goal" [--flags]`. Non-interactive end-to-end: auto-plan →
 
 `_RESEARCH_SHARED` does NOT survive the Agent Resolution block — each Bash call is a fresh shell — so re-resolve it here alongside `_RESEARCH_SKILLS`, and again in every later block that loads a skill file:
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 _RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
 [ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills"
 ```
@@ -110,21 +113,15 @@ echo "${OUT:-program.md}" > "${TMPDIR:-/tmp}/sweep-out-path-${CSID}"  # persist 
 ```
 
 ```bash
-# Extract --keep quoted value (compaction-contract.md §keep semantics)
-KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
-rm -f .temp/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}"  # persist for S2/S3 contract writes
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/extract-keep-flag.py" sweep "$ARGUMENTS"  # timeout: 5000 — parses --keep, clears a stale contract, persists for S2/S3
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--skip-validation`, `--out`, `--keep`.
 ```bash
 # loads: unsupported-flag-protocol.md
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```
 
@@ -142,7 +139,8 @@ If extracted `<goal>` starts with `--`, treat as flag misparse — stop with `! 
 First, load plan mode step definitions below, then execute steps **P-P1, P-P2, P-P2b and P-P3** from the same file (P-P0 skipped — `<goal>` always text string) with overrides:
 
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 _RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
 [ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills"
 cat "$_RESEARCH_SKILLS/plan/SKILL.md"
@@ -171,14 +169,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .temp/state  # timeout: 5000
-{
-    echo "## Active Skill Contract"
-    echo "- skill: research:sweep · phase: judge-gate (after S2 plan written)"
-    echo "- run-dir: n/a"
-    echo "- preserve: program-path=${_OUT}${_KEEP_APPEND}"
-    echo "- next: S3 judge+refinement loop against ${_OUT}"
-} > .temp/state/skill-contract.md  # timeout: 5000
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:sweep" "judge-gate (after S2 plan written)" "n/a" "program-path=${_OUT}${_KEEP_APPEND}" "S3 judge+refinement loop against ${_OUT}"  # timeout: 5000
 ```
 
 ### Step S3: Judge + refinement loop
@@ -186,7 +177,8 @@ mkdir -p .temp/state  # timeout: 5000
 Load judge mode step definitions — `$_RESEARCH_SKILLS` from S2 is gone (fresh shell per Bash call), so re-resolve it here rather than dereferencing it bare:
 
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 _RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
 [ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills"
 cat "$_RESEARCH_SKILLS/judge/SKILL.md"
@@ -220,14 +212,7 @@ Repeat up to `MAX_REFINE` times:
        # WHY: without a post-fix refresh a compaction here resumes from boundary-1 (pre-loop) → re-judges from iteration 1. Placed AFTER fixes so "fixes applied through iteration N" is true.
        export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
        IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
-       mkdir -p .temp/state  # timeout: 5000
-       {
-           echo "## Active Skill Contract"
-           echo "- skill: research:sweep · phase: judge+refinement loop (S3, iteration <REFINE_ITER>/<MAX_REFINE> — fixes applied)"
-           echo "- run-dir: n/a"
-           echo "- preserve: program-path=${_OUT}, refine-iter=<REFINE_ITER>, no-fixes-iter=<NO_FIXES_ITER>, last-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>"
-           echo "- next: re-judge ${_OUT} (it carries the fixes applied through iteration <REFINE_ITER>) → continue loop; do NOT reset REFINE_ITER. Exit on APPROVED/BLOCKED or REFINE_ITER==MAX_REFINE."
-       } > .temp/state/skill-contract.md
+       "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:sweep" "judge+refinement loop (S3, iteration <REFINE_ITER>/<MAX_REFINE> — fixes applied)" "n/a" "program-path=${_OUT}, refine-iter=<REFINE_ITER>, no-fixes-iter=<NO_FIXES_ITER>, last-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>" "re-judge ${_OUT} (it carries the fixes applied through iteration <REFINE_ITER>) → continue loop; do NOT reset REFINE_ITER. Exit on APPROVED/BLOCKED or REFINE_ITER==MAX_REFINE."
        ```
 
      - Continue next iteration (loop item 1 will re-judge).
@@ -243,14 +228,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _OUT < "${TMPDIR:-/tmp}/sweep-out-path-${CSID}" 2>/dev/null || _OUT="program.md"
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/sweep-keep-items-${CSID}" 2>/dev/null || _KEEP=""
 _KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
-mkdir -p .temp/state  # timeout: 5000
-{
-    echo "## Active Skill Contract"
-    echo "- skill: research:sweep · phase: run-gate (after S3 judge+refinement)"
-    echo "- run-dir: n/a"
-    echo "- preserve: program-path=${_OUT}, judge-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>${_KEEP_APPEND}"
-    echo "- next: S4 gate on verdict → S5 run program if approved"
-} > .temp/state/skill-contract.md  # timeout: 5000
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/write-skill-contract.py" "research:sweep" "run-gate (after S3 judge+refinement)" "n/a" "program-path=${_OUT}, judge-verdict=<VERDICT>, judge-report=<JUDGE_REPORT>${_KEEP_APPEND}" "S4 gate on verdict → S5 run program if approved"  # timeout: 5000
 ```
 
 > A `<VERDICT>` or `<JUDGE_REPORT>` placeholder surviving verbatim into the written contract means substitution was skipped — treat the resumed verdict as unsettled and re-judge; never read it as `approved`.
@@ -278,7 +256,8 @@ Fix the issues above in <program path>, then:
 Load run mode step definitions — re-resolve rather than dereferencing the S2/S3 variable, which died with its shell:
 
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 _RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
 [ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/skills"
 cat "$_RESEARCH_SKILLS/run/SKILL.md"

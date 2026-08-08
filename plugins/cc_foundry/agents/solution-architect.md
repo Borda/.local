@@ -93,6 +93,8 @@ fi
 
 > Use output for Coupling Analysis (fan-in/fan-out) and API Surface Audit — codemap is ground truth, more accurate than Grep (catches aliased imports, star re-exports). Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset.
 
+**Bounded call budget**: module/symbol not covered above → up to 3 additional `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
+
 </codemap_context>
 
 ## Cohesion Check

@@ -233,16 +233,13 @@ Read ${TMPDIR:-/tmp}/myplugin-resolve-index-${CSID}. If empty: print ✗ and sto
 **Anti-patterns — data output:**
 
 ```bash
-# ✗ eval for data — fragile; shlex discipline required;
-#   vars die at next Bash tool call anyway
+# ✗ eval for data — fragile, needs shlex discipline; vars die at next Bash call anyway
 eval "$(python resolve.py ...)"
 
 # ✗ tab-delimited read — vars die at next Bash tool call
 IFS=$'\t' read -r PROJ INDEX < <(python resolve.py ...)
 
-# non-atomic anti-pattern (separate concern): two calls may see different state
-# even with TMPDIR routing, one invocation writes both files
-# ✗ two calls — non-atomic
+# ✗ non-atomic — two calls may see different state; one invocation should write both files
 PROJ=$(python resolve.py --field proj)
 INDEX=$(python resolve.py --field index)
 ```
@@ -259,9 +256,7 @@ Every bin/ executable called from a SKILL.md with a `# timeout: N` comment must 
 # ✓ — Claude Code kills Bash tool after N ms; annotation is correct
 RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/<script>.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
 
-# ✗ — timeout S inside $() is redundant with # timeout: N and adds risk:
-#     (1) not in allow list — future permission prompt
-#     (2) same threshold; adds only subprocess fork overhead
+# ✗ timeout S inside $() redundant with # timeout: N — not allow-listed (permission prompt), same threshold + fork overhead
 RESULT=$(timeout 5 "${CLAUDE_PLUGIN_ROOT}/bin/<script>.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
 ```
 

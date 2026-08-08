@@ -23,6 +23,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
   - `--adversarial` (alias: `--challenge`) — adversarial review of all agents + skills in scope using `foundry:challenger` (Phase A) + Codex adversarial pass (Phase B); surfaces issues beyond standard per-file audit; see **Mode: adversarial**. Mutually exclusive with `--upgrade` only; combinable with `--efficiency`.
   - `--efficiency` — cost and efficiency sweep: model tier validation, token bloat detection, unbounded spawn patterns, cross-file boilerplate duplication, missing model declarations, bin/ extraction candidates (Check 33). Generates prioritized cost-reduction plan with estimated savings. Detection only — run `/distill executables` to act on extraction candidates. Skip to **Mode: efficiency**. Mutually exclusive with `--upgrade` only; combinable with `--adversarial`.
   - `--skip-gate` — suppress follow-up gate (for automation pipelines)
+  - `--fast` — widen fan-out from `MAX_BATCHES` to `MAX_BATCHES_FAST`, trading tokens for wall-clock. **Not free**: each extra agent costs ~120,851 tok of fixed overhead regardless of how little work it does (see `<constants>`). Use when latency matters more than cost; omit by default. Combinable with every other flag.
 
   **Legacy positional tokens** (`fix`, `upgrade`, `adversarial`, `challenge`, `ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`fix medium` removed — run `/audit` and pick fix level from gate, or pass `--upgrade` / `--adversarial` as flags."
 
@@ -50,8 +51,23 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 <constants>
 
 BATCH_SIZE_MIN=5       # minimum files per batch; ensures curator gets sufficient context per spawn
-MAX_BATCHES=10         # total batch cap; EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total / MAX_BATCHES))
+MAX_BATCHES=4          # total batch cap; EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total / MAX_BATCHES))
+MAX_BATCHES_FAST=10    # only when --fast: trades ~120K tok/agent for wall-clock (see Fan-out cost model)
 ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention
+AGENT_CALL_BUDGET=55   # target tool-calls per spawned agent; above ~60 agents stall mid-task without returning an envelope
+
+<!-- Fan-out cost model — measured 2026-08-07 over 10 subagent runs; full data in
+     .plans/active/todo_agent-cost-model-and-fanout-design.md
+
+     fixed cost  ~120,851 tok per agent spawned
+     marginal    ~1,647 tok per tool call  ->  one agent costs ~73 calls of work to exist
+     stall       agents <=57 calls returned a clean envelope 5/5;
+                 agents 87-142 calls stalled mid-task 3/5, losing their envelope
+
+     Consequence: fan-out buys WALL-CLOCK, not tokens. At MAX_BATCHES=10 the fixed
+     cost alone is ~1.2M tok before any auditing happens. Default to the minimum
+     number of batches that keeps each agent near AGENT_CALL_BUDGET; use --fast
+     only when latency matters more than cost. -->
 
 </constants>
 
@@ -104,10 +120,12 @@ ADVERSARIAL_MODE=false; [[ " $ARGUMENTS " == *" --adversarial "* ]] && ADVERSARI
 EFFICIENCY_MODE=false;  [[ " $ARGUMENTS " == *" --efficiency "* ]]  && EFFICIENCY_MODE=true
 UPGRADE_MODE=false;     [[ " $ARGUMENTS " == *" --upgrade "* ]]     && UPGRADE_MODE=true
 SKIP_GATE=false;        [[ " $ARGUMENTS " == *" --skip-gate "* ]]   && SKIP_GATE=true
+FAST_MODE=false;        [[ " $ARGUMENTS " == *" --fast "* ]]         && FAST_MODE=true
 ARGUMENTS=" $ARGUMENTS "
 ARGUMENTS="${ARGUMENTS// --local / }"; ARGUMENTS="${ARGUMENTS// --adversarial / }"
 ARGUMENTS="${ARGUMENTS// --efficiency / }"; ARGUMENTS="${ARGUMENTS// --upgrade / }"
 ARGUMENTS="${ARGUMENTS// --skip-gate / }"; ARGUMENTS="${ARGUMENTS// --challenge / }"
+ARGUMENTS="${ARGUMENTS// --fast / }"
 ARGUMENTS=$(echo "$ARGUMENTS" | tr -s ' '); ARGUMENTS="${ARGUMENTS# }"; ARGUMENTS="${ARGUMENTS% }"
 
 if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFFICIENCY_MODE" = "true" ]; }; then
@@ -224,6 +242,28 @@ Use `churn-signal.json` (`commit_types`, `top_churn`, `recurring_hint`) to: (1) 
 
 Enumerate everything in scope with built-in tools. Run all Glob calls in parallel.
 
+**Plugin layout resolution** (`--local`/`plugins` scope — multi-plugin source tree, mandatory before the fixed-pattern Globs below): don't assume every plugin uses `skills/`+`agents/` — a plugin can override the convention in its own manifest (e.g. `plugins/codemap-py/.claude-plugin/plugin.json` declares `"skills": "./claude-skills/"`, not `./skills/`; a fixed `*/skills/*/SKILL.md` glob silently never matches it). Resolve each plugin's real dir names first:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+if [ "$LOCAL_MODE" = "true" ]; then
+  for pj in plugins/*/.claude-plugin/plugin.json; do
+    [ -f "$pj" ] || continue
+    plugin_name=$(basename "$(dirname "$(dirname "$pj")")")
+    python3 -c "
+import json
+d = json.load(open('$pj'))
+skills = (d.get('skills') or './skills/').strip('./')
+agents = (d.get('agents') or './agents/').strip('./')
+print(f'PLUGIN_LAYOUT: $plugin_name | skills={skills} | agents={agents}')
+" 2>/dev/null || echo "PLUGIN_LAYOUT: $plugin_name | skills=skills | agents=agents"
+  done
+fi
+```
+
+For every `PLUGIN_LAYOUT:` line, use its `skills=`/`agents=` value (not the hardcoded `skills`/`agents` names) when Globbing that plugin below — e.g. `codemap-py` prints `skills=claude-skills`, so Glob `claude-skills/*/SKILL.md` under `plugins/codemap-py/`, not `skills/*/SKILL.md`. Plugins with no manifest override resolve to the same `skills`/`agents` names the fixed patterns below already assume — no behavior change for them. **`codex-skills/`-style dirs for non-Claude-Code runtimes are intentionally excluded** — only the manifest-declared path is authoritative, since a heuristic `*skill*` name match would also sweep in skill dirs meant for a different agent runtime and produce false-positive findings against Claude Code's frontmatter schema.
+
 **Source selection by `LOCAL_MODE`**:
 - **`LOCAL_MODE=false` (default — user setup)**: `.claude/` primary; `plugins/` skipped. Installed/active config only.
 - **`LOCAL_MODE=true` (--local — project source)**: `plugins/` primary; `.claude/` secondary for rules/hooks/settings only.
@@ -237,13 +277,32 @@ Enumerate everything in scope with built-in tools. Run all Glob calls in paralle
 - **Hooks**: Glob tool, pattern `hooks/*`, path `.claude/`
 
 **With `--local` (`LOCAL_MODE=true`)**:
-- **Agents (source — primary)**: Glob tool, pattern `*/agents/*.md`, path `plugins/`
-- **Skills (source — primary)**: Glob tool, pattern `*/skills/*/SKILL.md`, path `plugins/`
+- **Agents (source — primary)**: for each `PLUGIN_LAYOUT:` line above, Glob tool pattern `<agents-dir>/*.md`, path `plugins/<plugin_name>/`
+- **Skills (source — primary)**: for each `PLUGIN_LAYOUT:` line above, Glob tool pattern `<skills-dir>/*/SKILL.md`, path `plugins/<plugin_name>/`
 - **Agents (project-local — secondary)**: Glob tool, pattern `agents/*.md`, path `.claude/`
 - **Skills (project-local — secondary)**: Glob tool, pattern `skills/*/SKILL.md`, path `.claude/`
 - **Rules / Settings / Hooks**: same as without `--local` (`.claude/`)
 
 Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name in both `plugins/` and `.claude/`, prefer plugin source — skip `.claude/` duplicate. Record full paths — Step 3 cross-reference checks depend on current inventory. If MEMORY.md not updated since last agent/skill added/removed, run live disk scan, not cached roster. Stale inventory = primary cause of false-negative cross-reference findings.
+
+**Coverage reconciliation** (`--local`/`plugins` scope only — mandatory, not optional): a plugin contributing zero files to the inventory is invisible to every downstream check and must never pass as a silent clean sweep — same failure shape as a check that always no-ops: absence of findings misread as absence of problems. The base set for this comparison is **every directory under `plugins/`**, not just the ones that produced a `PLUGIN_LAYOUT:` line above — a plugin with a missing or malformed `plugin.json` contributes no `PLUGIN_LAYOUT:` line either, and comparing against that subset would make it invisible all over again:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+mkdir -p "${TMPDIR:-/tmp}/audit-state-${CSID}"
+find plugins -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | sed 's|plugins/||' | sort > "${TMPDIR:-/tmp}/audit-state-${CSID}/all-plugins"
+```
+
+After inventory is built (model-context comparison — inventory already in context, not re-read from disk): compare every name in `all-plugins` against plugin names actually present in the inventory. For each plugin with zero inventory entries, print and persist in the **same** bash call (re-export `CSID` here too — a later call starts a fresh shell and an unexported `$CSID` silently writes to the wrong sentinel path):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+: > "${TMPDIR:-/tmp}/audit-state-${CSID}/unscanned-plugins"
+# for each zero-contribution plugin found above:
+printf "⚠ UNSCANNED: %s — no files matched scope globs\n" "<plugin>" | tee -a "${TMPDIR:-/tmp}/audit-state-${CSID}/unscanned-plugins"
+```
+
+Step 11 reads this sentinel and surfaces it as a top-level report section — a zero-coverage plugin must never produce a green summary.
 
 **Scope filtering for Step 2** (applies on top of `LOCAL_MODE`):
 - `agents` scope — collect agents from active source (`.claude/agents/` or `plugins/*/agents/` per `LOCAL_MODE`); skip skills, rules, hooks
@@ -258,7 +317,7 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 
 **Setup scope**: when `$SCOPE` is `setup`, also collect `${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/skills/setup/SKILL.md` for Step 3 foundry:curator spawn — only per-file spawn in setup scope. Checks I1–I3 (from `checks-install.md`) run in Step 4 against `~/.claude/` to validate post-install user state.
 
-**`plugins <name>` scope**: verify `plugins/<name>/` exists — abort `! BREAKING: plugins/<name>/ not found` if absent. Collect `plugins/<name>/skills/setup/SKILL.md` for Step 3 plus all agents/skills in that plugin. **`plugins` (no name)**: iterate all subdirs under `plugins/` with `agents/` or `skills/` dir.
+**`plugins <name>` scope**: verify `plugins/<name>/` exists — abort `! BREAKING: plugins/<name>/ not found` if absent. Collect `plugins/<name>/skills/setup/SKILL.md` for Step 3 plus all agents/skills in that plugin. **`plugins` (no name)**: iterate every subdir under `plugins/` — do not filter by literal `agents/`/`skills/` dir presence; PLUGIN_LAYOUT resolution above already covers plugins declaring a non-standard skills/agents path via their own manifest.
 
 ## Step 3: Per-file audit via foundry:curator
 
@@ -266,7 +325,14 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 
 **Hard rule — no pre-reading**: Never call Read on agent/skill file before spawning foundry:curator. Spawned agent does the reading. Orchestrator reads only returned JSON envelope. Pre-reading 41 KB files into main context = defeats delegation + causes context overflow at scale.
 
-**Batching rule**: Always apply the grouping algorithm. Compute `EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total_files / MAX_BATCHES))` before grouping — caps total batches at `MAX_BATCHES` while guaranteeing `BATCH_SIZE_MIN` files per batch for adequate curator context. Group files into batches of up to `EFFECTIVE_BATCH`. Never spawn one agent per file. Total files ≤ `EFFECTIVE_BATCH` → one batch containing all files.
+**Batching rule**: Always apply the grouping algorithm. Compute `EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total_files / MAX_BATCHES))` before grouping — caps total batches at `MAX_BATCHES` while guaranteeing `BATCH_SIZE_MIN` files per batch for adequate curator context. Group files into batches of up to `EFFECTIVE_BATCH`. Never spawn one agent per file. Total files ≤ `EFFECTIVE_BATCH` → one batch containing all files. Use `MAX_BATCHES_FAST` in place of `MAX_BATCHES` **only** when `--fast` was passed.
+
+**Spawn-count gate — apply before spawning anything**: every agent costs ~120,851 tok just to exist, i.e. ~73 tool-calls' worth of work (see `<constants>`). So **spawn the fewest agents that keep each one near `AGENT_CALL_BUDGET`**, not the most the cap allows. Two consequences, both mandatory:
+
+- **Gate on Layer-1 signal.** Step 1b already ran ~10 deterministic checkers at zero LLM cost, and its results are authoritative for their classes. A file with no Layer-1 finding and no judgment-bearing content (no `Agent()` dispatch, no cross-file contract, no model/tool declaration) does **not** need a curator. Audit it by the static pass alone and say so in the report. Spawning a curator to re-confirm a clean mechanical result is the single most common waste in this skill.
+- **State the trade in the report.** Record agents spawned and the reason for that count. If `--fast` widened the fan-out, say that it bought wall-clock at roughly 120K tok per extra agent — never present the fast path as free.
+
+**Budget line — include verbatim in every spawn prompt**: `If you approach your budget, stop cleanly and return the envelope with "partial": true and an accurate account of what you finished.` Measured: agents at ≤57 calls returned a clean envelope 5/5; agents at 87–142 calls stalled mid-task 3/5 and returned a progress fragment instead, forcing the orchestrator to reconstruct their state from disk.
 
 **Grouping algorithm**: (1) sort by plugin origin (`plugins/<name>/` prefix); (2) assign each plugin's files to batches, fill to `EFFECTIVE_BATCH` before next — keeps same-plugin files together; (3) remaining files (`.claude/` and mixed) fill open slots. Grouping plugin-first, not strictly ordered — unconnected files assigned randomly to reach `EFFECTIVE_BATCH`.
 
@@ -309,6 +375,8 @@ After spawns complete: short summaries in context; use to identify files with fi
 ## Steps 4–5b: System-wide checks, aggregate, low-confidence remediation
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 AUDIT_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit modes $( [ "$LOCAL_MODE" = true ] && echo "--local" )) || { printf "! BREAKING: audit/modes not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
 cat "$AUDIT_MODES/steps-4-5-7.md"
 ```
@@ -339,8 +407,9 @@ Execute §Step 7 of `steps-4-5-7.md` (loaded above in Steps 4–5b) — emits re
 Runs **only** when the user picked a fix option (a–c) from the Step 7 follow-up gate. Resolve the modes dir, load `fix.md`, then execute it inline — it carries Step 8 (delegate fixes to subagents), Step 9 (codex cross-file check), and Step 10 (re-audit + convergence loop), then returns here to Step 11:
 
 ```bash
-AUDIT_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit modes $( [ "$LOCAL_MODE" = true ] && echo "--local" )) || { printf "! BREAKING: audit/modes not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
-cat "$AUDIT_MODES/fix.md"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_mode.py" audit modes fix.md $( [ "$LOCAL_MODE" = true ] && echo "--local" )  # timeout: 5000
 ```
 
 > loads: modes/fix.md
@@ -351,12 +420,15 @@ Execute Steps 8–10 loaded above inline (state on disk in `summary.jsonl`, `$RU
 <!-- loads: report-template.md -->
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/audit-state-${CSID}/run-dir" 2>/dev/null || RUN_DIR=""
 cat "$AUDIT_TPL/report-template.md"
 ```
 
 **Step 11a — assemble and persist** — assemble the complete audit report following the template and instructions loaded above, then **Write it to `$RUN_DIR/report.md`** using the Write tool. Set the template's `Path:` field to that same real path. This Write is mandatory, not optional: the terminal step below reads the header back from this file, and the report is the run's only durable artifact once the session ends. Skipping it leaves `Path:` pointing at a file that was never created.
+
+**Unscanned-plugin surfacing** (`--local`/`plugins` scope only): before assembling, read `${TMPDIR:-/tmp}/audit-state-${CSID}/unscanned-plugins` (sentinel from Step 2 coverage reconciliation). Non-empty → include an `### Unscanned Plugins` section in the report immediately after `### Files Audited`, listing every `⚠ UNSCANNED: <plugin>` line verbatim; this makes zero-coverage plugins visible in the durable artifact, not just the transient terminal output. Empty or missing → omit the section.
 
 **Step 11b — terminal output** — per quality-gates.md universal rule: read the `---` header block from the top of `$RUN_DIR/report.md` (all fields from opening `---` up to and including closing `---`) and render as a two-column Markdown table (`Field | Value`, one row per key, file order) as the FIRST content of the reply — never print the raw `---`-delimited block. Then print `→ $RUN_DIR/report.md`. Then executive summary. Omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers — the table IS the reply header).
 
@@ -372,6 +444,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/../modes/upgrade.md"
 ```
@@ -384,6 +457,7 @@ Execute the mode loaded above.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/../modes/adversarial.md"
 ```
@@ -396,6 +470,7 @@ Execute the mode loaded above.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state-${CSID}/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 cat "$AUDIT_TPL/../modes/efficiency.md"
 ```

@@ -42,8 +42,7 @@ Terminal path: end of Step 6 (report + follow-up gate complete).
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
-_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")  # timeout: 5000
-cat "$_FS/task-hygiene.md"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_shared_doc.py" foundry skills/_shared task-hygiene.md  # timeout: 5000
 ```
 
 **Task tracking**: TaskCreate tasks for Gather, Hypothesise, Probe, Report; mark in_progress/completed as you go.

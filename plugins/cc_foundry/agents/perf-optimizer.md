@@ -222,6 +222,8 @@ fi
 
 > `fixture-graph` output shows `scope` per fixture. Fixtures with `scope: "function"` that hold expensive objects (model weights, DB connections) and appear in many test files → scope upgrade candidates; add as "Additional best practice (not a defect)". Always run `fixture-rdeps` first — high usage + function scope + mutable state = isolation risk; flag mutation risk explicitly when rdep count > 20. `fn-blast` gives caller count before recommending signature changes; high blast radius = higher-severity change.
 
+**Bounded call budget**: module/fixture not covered above → up to 3 additional `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
+
 </codemap_context>
 
 <workflow>

@@ -1,4 +1,4 @@
-<!-- file: classify-truth-check.md — consumers: release/SKILL.md (Classify each change + Truth check phases) -->
+<!-- file: classify-truth-check.md — consumers: release/SKILL.md (Classify each change + Truth check + Breaking-change classification phases; loaded once, all three phases read from that single load) -->
 
 ## Classify each change
 

@@ -64,15 +64,9 @@ cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-CODEMAP_RAW=auto
-[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
-[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-resolve" "$CODEMAP_RAW")
-if [ $? -ne 0 ]; then
-    [ "$CODEMAP_RAW" = "strict" ] && { echo "! BLOCKED — --codemap (strict) but codemap unavailable; run /codemap-py:scan-codebase or install codemap plugin"; exit 1; }
-    CODEMAP_ENABLED=false
-fi
-echo "$CODEMAP_ENABLED" > "${TMPDIR:-/tmp}/research-verify-codemap-enabled-${CSID}"
+# Prints the resolved mode and writes true/false to research-verify-codemap-enabled-${CSID};
+# exits 1 (already reporting `! BLOCKED`) when --codemap is strict but codemap is unavailable.
+CODEMAP_RAW=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-flag.py" research-verify "$ARGUMENTS") || exit 1
 ```
 
 > loads: codemap-gates.md
@@ -107,9 +101,9 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
 IFS= read -r OUT < "${TMPDIR:-/tmp}/verify-${_VTAG}-out-${CSID}" 2>/dev/null || OUT=""
-# T-C1: separate guards — `|| ... &&` has subtle precedence.
-[ -z "$RUN_DIR" ] && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
-[ -z "$OUT" ]      && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
+# T-C1: one call reports every empty value at once. A trailing `[ -z "$X" ] && { …; }`
+# guard also leaves the whole block's exit status at 1 whenever the value IS present.
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/require-vars.py" "$RUN_DIR" "verify: state files missing — V1 must run first" "$OUT" "verify: state files missing — V1 must run first" || exit 1
 ```
 
 ### Step V2: Resolve codebase scope
@@ -149,11 +143,9 @@ echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}"
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r _VTAG < "${TMPDIR:-/tmp}/verify-latest-tag-${CSID}" 2>/dev/null || _VTAG=""
-IFS= read -r V2_STATUS < "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}" 2>/dev/null || V2_STATUS="ok"
-if [ "$V2_STATUS" = "failed" ]; then
-    echo "verify V3: dimension validation failed in V2 — skipping V3."
-    exit 1
-fi
+# Default ok = fail open: V2 may legitimately not have written a status yet. Any value other
+# than `ok` closes the gate, so an unrecognised status is treated as a failure, not a pass.
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/gate-on-sentinel.py" "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status-${CSID}" ok ok "verify V3: dimension validation failed in V2 — skipping V3." || exit 1
 ```
 
 ### Step V3: Five-dimension audit via scientist
@@ -166,6 +158,8 @@ _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolv
 cat "$_RESEARCH_SHARED/codemap-context.md"
 ```
 Execute its block (leave `TARGET_MODULE`/`TARGET_FN` empty for `central` baseline, or set `TARGET_MODULE` to key module from `scope_files`). Prepend output to scientist prompt under `## Structural Context (codemap-py)` heading so architecture (N) and eval (E) dimensions reference real import/coverage structure instead of re-reading every file.
+
+Codemap output non-empty: prepend this **codemap-first protocol** to the same heading (own copy — self-contained, no cross-plugin reference): (1) **Skill-first** — use the Structural Context above for import/caller/coverage questions before any supplementary Grep on the same target; this does NOT relax the mandatory "Read each file listed in Codebase scope files" instruction below — formula (F) and hyperparameter (H) fidelity require the actual file contents, codemap cannot substitute for that line-level comparison. (2) **Bounded call budget** — up to 5 additional `codemap-py query` calls this audit (raised from the plugin default of 3: a verify pass spans up to 100 scope files across 5 dimensions, wider surface than a single-file edit). (3) **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`) — that result is final for its direction, no follow-up Grep/query to re-confirm it. Codemap output empty: omit this paragraph — scientist proceeds with the full-file-read protocol below unchanged.
 
 <!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is declared as a reference constant but is NOT enforceable within the skill — Agent() has no timeout parameter. After Agent() returns, apply the single timeout policy declared in `<constants>`: check `$RUN_DIR/audit-raw.md`; if absent or empty, set `fidelity = null`, `status = TIMED_OUT`, mark ⏱ in report; if present, parse normally. Same limitation as research:topic. -->
 

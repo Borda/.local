@@ -24,6 +24,14 @@ Path:       → .reports/audit/<timestamp>/report.md
 - **Settings**: settings.json
 - **Communication** (if in scope): communication.md, quality-gates.md, TEAM_PROTOCOL.md, file-handoff-protocol.md
 
+### Unscanned Plugins
+
+> Omit section entirely when the `unscanned-plugins` sentinel is empty (`--local`/`plugins` scope only — see SKILL.md Step 2 coverage reconciliation).
+
+⚠ UNSCANNED: codemap-py — no files matched scope globs
+
+**A non-empty section here means the sweep above is incomplete for that plugin** — its findings count of zero is not "clean", it is "not checked". Re-run after confirming the plugin's `.claude-plugin/plugin.json` `skills`/`agents` fields resolve correctly.
+
 ### Security Findings
 
 > Omit section entirely when no security findings present.

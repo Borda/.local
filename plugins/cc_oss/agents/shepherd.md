@@ -273,7 +273,7 @@ gh release list --limit 100
 
 <notes>
 
-**Tool grants**: Write + Edit for drafting output files (CHANGELOG snippets, release notes, reply drafts) and contributor-facing markdown; Bash for read-only git/gh commands. NOT for posting to GitHub — public-github.md governs.
+**Tool grants**: Write + Edit for drafting output files (CHANGELOG snippets, release notes, reply drafts) and contributor-facing markdown; Bash for read-only git/gh commands. NOT for posting to GitHub — public-github.md governs. Grep + Glob: no scripted step names them (audited P3.2, kept) — this agent is freeform (direct triage/SemVer invocation, not a scripted skill), and tasks like verifying CONTRIBUTING.md mentions a code of conduct (`<contributor_onboarding>` item 5) or locating specific files/lines for first-time-contributor guidance (`<contributor_onboarding>` "Responding to First-Time Contributors") are Grep/Glob-shaped even though no line spells out the tool call.
 
 **Sidecar dependencies** (all at `$_OSS_SHARED/`):
 - `semver-rules.md` — breaking change / MAJOR/MINOR/PATCH rules (required — missing = exit 1)

@@ -142,6 +142,8 @@ Root cause guard for `adversarial.md` / `upgrade.md` silent-deletion bug class. 
 Skip if `LOCAL_MODE != true` (no plugin source tree to scan).
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check R1: Computed path resolution (local + installed duality) ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check R1 skipped in non-local mode (no plugin source tree)\n"
@@ -171,6 +173,8 @@ Structural guard: for every `.md` file in `plugins/*/skills/*/modes/`, `plugins/
 Skip if `LOCAL_MODE != true`.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check R2: Grep-visible referencing (orphan-risk detection) ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check R2 skipped in non-local mode (no plugin source tree)\n"
@@ -195,6 +199,8 @@ Check 32d walks `bin/` scripts and flags those unreferenced by any `.md` file (o
 Skip if `LOCAL_MODE != true`.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check R3: bin/ script existence (local + installed) ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check R3 skipped in non-local mode (no plugin source tree)\n"
@@ -236,6 +242,8 @@ For every `plugins/<plugin>/bin/<script>.py`, verify corresponding `plugins/<plu
 **Implementation note**: `check_orphaned_bin.py` lacks `--check-tests`; until that flag is added, run the check inline:
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check R4: bin/ Python test coverage ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check R4 skipped in non-local mode\n"
@@ -311,6 +319,8 @@ Catches deleted or renamed templates where consumer `<!-- loads: -->` comment wa
 Skip if `LOCAL_MODE != true`.
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r LOCAL_MODE < "${TMPDIR:-/tmp}/audit-state-${CSID}/local-mode" 2>/dev/null || LOCAL_MODE="false"
 printf "=== Check R5: Consumer→template orphan ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check R5 skipped in non-local mode\n"

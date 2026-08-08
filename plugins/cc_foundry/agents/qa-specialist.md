@@ -276,6 +276,8 @@ fi
 
 > `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure. After implementation change, prefer targeted test selection over a full-suite rerun: signal to the orchestrator "run /codemap-py:test-impact <module::changed_function> to select only the statically affected test files" (requires `codemap-py` plugin) — qa-specialist has no Skill tool and cannot invoke it directly.
 
+**Bounded call budget**: module/fixture not covered above → up to 3 additional `codemap-py query` calls this task. **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up Grep/Read/query to re-confirm it.
+
 </codemap_context>
 
 <workflow>

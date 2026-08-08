@@ -103,6 +103,8 @@ Scope: per plugin — compare blocks within same plugin only (cross-plugin overl
 
 **Primary signal: functional purpose, not syntactic similarity.** Syntactic line-intersection is blind to conditional-inversion and variable renaming — two blocks implementing same logic written differently have low syntactic overlap but identical purpose. Group by purpose first; use syntactic overlap only as secondary confirmation and DUPLICATE label.
 
+<!-- policy-sibling: plugins/cc_foundry/skills/audit/templates/checks-skills.md (Check 33b Phase 2 — same Gate/Score spec) -->
+
 Spawn **foundry:curator** per plugin with this prompt:
 
 > Enumerate every fenced code block (` ```bash `, ` ```python `, ` ```sh `, etc.) in all `.md` files under `plugins/<name>/` — including `modes/`, `templates/`, and `_shared/` subdirs. Assign each a block ID: `<plugin-abbrev>-<skill-slug>-B<n>` (e.g. `fnd-audit-B3`, `fnd-audit-modes-efficiency-B2`). Record: ID, source file, start line, language, line count, total lines across cluster.
@@ -110,6 +112,8 @@ Spawn **foundry:curator** per plugin with this prompt:
 > **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what the block does functionally (not how) — e.g., "resolves `_shared/` path from plugin cache", "detects codex plugin availability", "sets LOCAL_MODE-aware glob vars", "emits boilerplate-duplication counts". Same wording of different goal = different cluster. Different wording of same goal = same cluster.
 >
 > **Step 2 — Purpose clusters**: group blocks with equivalent purpose into clusters. This is the primary grouping. Singletons omitted. Assign cluster ID `C<n>`.
+>
+> **Step 2a — Computational equivalence gate (mandatory before finalizing any cluster)**: purpose-statement wording similarity is necessary but not sufficient — two blocks that *sound* alike can compute different things. Before finalizing a cluster (and before proposing any "site B bypasses/duplicates site A" relationship), verify: (a) same output destination *namespace* — `.reports/audit/*` and `.reports/research/*` are different namespaces even when both blocks "write a report file"; (b) same input parameters/env vars consumed; (c) same side-effect semantics (write vs read vs delete). If members target structurally different destinations or inputs despite similar wording, split into separate clusters — do not merge. Any auto-fix proposal that would rename/redirect one site's output to match another's requires this equivalence evidence stated in the cluster row; omit the auto-fix suggestion (report the cluster only) when evidence is inconclusive.
 >
 > **Step 3 — Syntactic similarity (secondary)**: for each cluster, normalize each member block: strip `#` comment lines → collapse whitespace → replace path segments / slugs / numeric literals with `<STR>` → **replace ALL concrete argument/parameter values** (flag values after `--flag`, option strings, RHS of variable assignments `FOO="val"`) with `<ARG>`; keep structural tokens. Compute `sim(A,B) = 2 × |lines(A_norm) ∩ lines(B_norm)| / (|A| + |B|)`. Record max-sim within cluster. Mark cluster **DUPLICATE** if max-sim ≥ 0.90 (blocks are near-identical, not just same-purpose).
 >
@@ -122,14 +126,15 @@ Spawn **foundry:curator** per plugin with this prompt:
 > **Table 2 — Extraction scoring**: for each cluster, apply gate then score:
 > - **ParamSlots**: count of distinct `<ARG>` placeholder slots after normalization = how many CLI parameters the extracted script would need.
 > - **Tokens**: estimated token count of one block instance.
-> - **Gate** = `G1:P/F · G2:P/F · G3:P/F` — all must pass or Verdict = SKIP:
->   - G1 (Size): block > 100 tokens — else overhead ≥ savings
+> - **Gate** = `G1:P/F · G2:P/F · G3:P/F` — all must pass or Verdict = HOLD:
+>   - G1 (Size OR execution cost): block > 100 tokens (payload cost), **OR** block launches an external interpreter process (subprocess/heredoc/`-c` invocation of python/node/perl/ruby/etc) **and** occurs ≥3× in cluster (execution cost — N forked interpreters is real overhead even when each instance is token-small; a tiny `python -c "..."` one-liner repeated 84× must not gate out on size alone)
 >   - G2 (Independence): no branch on prior LLM decision that cannot become explicit arg
 >   - G3 (Identity): has computational meaning outside orchestration prose (high env-var coupling = G3 fail)
 > - **Score** = sum of applicable positive-dimension weights when gate passes:
 >   - Testable (deterministic I/O, writable pytest/shellcheck test) +2
 >   - Reuse (same logic in 2+ .md files) +2
 >   - Token drain (block > 300 tokens) +2
+>   - Process overhead (external interpreter launched ≥3× in cluster — extraction collapses N process forks into 1 script invocation) +2
 >   - Lintable (shellcheck/ruff directly applicable) +1
 >   - Run frequency (executes >1× per skill invocation) +1
 >   - Standalone debuggable (runnable with no SKILL.md context) +1

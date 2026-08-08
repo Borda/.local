@@ -68,6 +68,8 @@ fi
 
 > `central` identifies highest blast-radius modules — challenge severity scales with caller count. `rdeps` reveals what breaks if challenged module changes — ground truth for feasibility challenges. `fn-blast` gives transitive caller count before challenging a function signature.
 
+**Bounded call budget**: module/symbol not covered above → up to 3 additional `codemap-py query` calls this task, for blast-radius/caller-count context only — this budget governs supplementary queries, not source reads; challenger always reads source directly regardless of codemap coverage (adversarial re-verification is the point of this role). **Hard stop on `query_complete: true`** (or legacy `exhaustive: true`): that result is final for its direction — no follow-up query to re-confirm it (source reads continue as normal).
+
 </codemap_context>
 
 <workflow>

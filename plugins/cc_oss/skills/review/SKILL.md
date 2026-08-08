@@ -60,9 +60,9 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # loads: oss-shared-resolver.md
 # loads: review-section-taxonomy.md
 # loads: compaction-contract.md
-# cold-start fallback (sets $_OSS_SHARED) — run first:
+# cold-start fallback (sets $_OSS_SHARED)
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
-# --reply requires $_OSS_SHARED (Step 8 reads shepherd-reply-protocol.md); non-reply flows degrade gracefully
+# --reply needs $_OSS_SHARED (Step8 shepherd-reply-protocol.md); else degrades gracefully
 if [ ! -d "$_OSS_SHARED" ]; then
     if [[ "$ARGUMENTS" == *--reply* ]]; then
         echo "⛔ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — --reply requires oss plugin shared dir; verify oss plugin installed"
@@ -71,13 +71,13 @@ if [ ! -d "$_OSS_SHARED" ]; then
         echo "⚠ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — continuing with degraded functionality (oss skill-specific shared helpers unavailable; --reply mode will not work in this run)"
     fi
 fi
-echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/review-oss-shared-${CSID}"  # persist for later blocks (Check 41)
+echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/review-oss-shared-${CSID}"  # cross-block (Check 41)
 [ -d "$_OSS_SHARED" ] && cat "$_OSS_SHARED/agent-resolution.md"  # timeout: 5000
 
 REVIEW_SKILL_DIR="${CLAUDE_PLUGIN_ROOT:-}/skills/review"
 [ -d "$REVIEW_SKILL_DIR" ] || REVIEW_SKILL_DIR=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review 2>/dev/null | head -1)
 [ -z "$REVIEW_SKILL_DIR" ] && REVIEW_SKILL_DIR="plugins/cc_oss/skills/review"
-echo "$REVIEW_SKILL_DIR" > "${TMPDIR:-/tmp}/review-skill-dir-${CSID}"  # persist for later blocks (Check 41)
+echo "$REVIEW_SKILL_DIR" > "${TMPDIR:-/tmp}/review-skill-dir-${CSID}"  # cross-block (Check 41)
 ```
 
 Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`, `oss:cicd-steward`. <!-- Inline fallback (if unreadable): all → general-purpose. -->
@@ -98,7 +98,7 @@ Create these tasks **before** starting Step 1 (in order, all at once):
 
 ## Step 0: Parse flags and content-type pre-classification
 
-Parse `$ARGUMENTS` flags first (applied directly — no subprocess) — this sets `CLEAN_ARGS`, the mode flags, and `DIRECT_PATH_MODE` **before** any step below references them (the pre-classification and Step 1 both read them):
+Parse `$ARGUMENTS` flags first (via `bin/parse-skill-flags.py`, C5) — this sets `CLEAN_ARGS`, the mode flags, and `DIRECT_PATH_MODE` **before** any step below references them (the pre-classification and Step 1 both read them):
 
 | Flag | Variable | Present | Absent |
 | --- | --- | --- | --- |
@@ -114,26 +114,17 @@ Parse `$ARGUMENTS` flags first (applied directly — no subprocess) — this set
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Extract --keep quoted value before unknown-flag scan in Step 1 (compaction-contract.md §keep: semantics)
-KEEP_ITEMS=""
-if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
-    KEEP_ITEMS="${BASH_REMATCH[1]}"
-fi
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+# parses --reply/--no-challenge/--semble/--worktree/--keep; codemap flags detected-only, re-derived independently below
+# shared flag/--keep parser (C5; also resolve/analyse SKILL.md)
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse-skill-flags.py" --flags reply,no-challenge,no-codemap,codemap,semble,worktree "$ARGUMENTS")"  # timeout: 5000
+REPLY_MODE="$FLAG_REPLY"
+SEMBLE_ENABLED="$FLAG_SEMBLE"
+WT_ENABLED="$FLAG_WORKTREE"
+[ "$FLAG_NO_CHALLENGE" = "true" ] && CHALLENGE_ENABLED=false || CHALLENGE_ENABLED=true
+# stale contract, crashed prior run (compaction-contract.md §Lifecycle)
 rm -f .temp/state/skill-contract.md  # timeout: 5000
 
-# Anchored token flags (resolve/SKILL.md:129 case-match idiom) — table above was never executed as bash before this fix
-case " $ARGUMENTS " in *" --reply "*) REPLY_MODE=true;; *) REPLY_MODE=false;; esac
-case " $ARGUMENTS " in *" --no-challenge "*) CHALLENGE_ENABLED=false;; *) CHALLENGE_ENABLED=true;; esac
-case " $ARGUMENTS " in *" --semble "*) SEMBLE_ENABLED=true;; *) SEMBLE_ENABLED=false;; esac
-case " $ARGUMENTS " in *" --worktree "*) WT_ENABLED=true;; *) WT_ENABLED=false;; esac
-
-CLEAN_ARGS=$(echo "$ARGUMENTS" | sed -E 's/--keep "[^"]*"//g; s/--(reply|no-challenge|no-codemap|codemap|semble|worktree)\b//g; s/[[:space:]]+/ /g')
-CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
-CLEAN_ARGS="${CLEAN_ARGS%"${CLEAN_ARGS##*[![:space:]]}"}"
-CLEAN_ARGS="${CLEAN_ARGS#\#}"
-
-# Consolidated flags sentinel (oss-review-mode-flags-* idiom) — CHALLENGE_ENABLED excluded: scope-detection.md:34-38 truncates this file, so it gets its own
+# flags sentinel; CHALLENGE_ENABLED kept separate — scope-detection.md:34-38 truncates this file
 {
     echo "REPLY_MODE=$REPLY_MODE"
     echo "WT_ENABLED=$WT_ENABLED"
@@ -151,12 +142,11 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 DIRECT_PATH_MODE=false
 if [[ "$CLEAN_ARGS" == *.md ]]; then
-    # reject plan files — shepherd must not draft replies from plan content
+    # reject plan files — no replies drafted from plan content
     if [[ "$CLEAN_ARGS" == .plans/* ]] || [[ "$CLEAN_ARGS" == *todo_*.md ]]; then
         echo "Error: plan files cannot be used as review report input. Pass a review report from .reports/review/<timestamp>/review-report.md or a PR number."
         exit 1
     fi
-    # required markers: ## Summary, verdict:, or APPROVED|NEEDS_WORK|REQUEST_CHANGES
     if [ -f "$CLEAN_ARGS" ] && grep -qE '(^## Summary|^verdict:|APPROVED|NEEDS_WORK|REQUEST_CHANGES)' "$CLEAN_ARGS" 2>/dev/null; then  # timeout: 5000
         DIRECT_PATH_MODE=true
         REVIEW_FILE="$CLEAN_ARGS"
@@ -182,9 +172,7 @@ PR_TYPE="CODE"
 DOCS_TYPING_MODE=false; TESTS_CI_MODE=false
 if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
     _CHANGED=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # timeout: 6000
-    # No `|| echo 0` on any of these: grep -c already prints 0, and exits 1 when it does — the
-    # fallback would append a second 0, so the capture becomes "0\n0" exactly when the count is 0,
-    # making every `-eq 0` test below error out precisely when it should be true.
+    # no `|| echo 0`: grep -c already prints 0 & exits 1 — fallback would double it to "0\n0", breaking `-eq 0` tests below
     _PY_LOGIC_COUNT=$(echo "$_CHANGED" | grep -E '\.py$' | grep -cvE '(test_|_test\.py|conftest\.py|\.pyi$)' 2>/dev/null)
     _ALL_COUNT=$(echo "$_CHANGED" | grep -c . 2>/dev/null)
     _DOC_COUNT=$(echo "$_CHANGED" | grep -cE '\.(md|rst|txt|ipynb)$' 2>/dev/null)
@@ -199,7 +187,7 @@ if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
     fi
     echo "→ PR_TYPE=$PR_TYPE (_py_logic=$_PY_LOGIC_COUNT, _all=$_ALL_COUNT)"
 fi
-# Persist PR_TYPE + mode flags — fresh shell loses vars (Check 41); challenge-skip block + Steps 2/5 reload
+# persist PR_TYPE/mode flags (Check 41) — reloaded by challenge-skip, Steps 2/5
 {
     echo "PR_TYPE=$PR_TYPE"
     echo "DOCS_TYPING_MODE=$DOCS_TYPING_MODE"
@@ -212,7 +200,7 @@ fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
 IFS= read -r CHALLENGE_ENABLED < "${TMPDIR:-/tmp}/oss-review-challenge-enabled-${CSID}" 2>/dev/null; [ "$CHALLENGE_ENABLED" = "false" ] || CHALLENGE_ENABLED=true
-# Reload PR_TYPE — fresh shell (Check 41)
+# reload PR_TYPE (Check 41)
 [ -f "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}-${CSID}"
 if [ "$PR_TYPE" = "DOCS_TYPING" ] || [ "$PR_TYPE" = "TESTS_CI" ]; then
     CHALLENGE_ENABLED=false
@@ -238,7 +226,7 @@ Flags, `CLEAN_ARGS`, and `DIRECT_PATH_MODE` were parsed in Step 0 — reuse thos
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
 _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/detect_codemap.py"
-# parse codemap flags here — this block is their only use (resolve/SKILL.md:141-143 idiom)
+# codemap flags parsed here only (resolve/SKILL.md:141-143 idiom)
 CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_FORCE_OFF=true
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_STRICT=true
@@ -281,13 +269,12 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
         echo "Error: PR number required. Usage: /oss:review <PR number> [--reply] [--no-challenge]"
         exit 1
     fi
-    # Run all four in parallel:
-    CHANGED_FILES=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # cache for reuse in codemap block # timeout: 6000
+    # four in parallel:
+    CHANGED_FILES=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # reused by codemap block # timeout: 6000
     gh pr view $CLEAN_ARGS                                            # timeout: 6000
     gh pr checks $CLEAN_ARGS                                          # timeout: 15000
     gh pr view $CLEAN_ARGS --json reviews,labels,milestone            # timeout: 6000
-    # scope-detection.md + the SCOPE block are separate fresh shells — without these three sentinels
-    # they run on empty inputs (file-scope guard aborts the review; FIX→REFACTOR override never fires)
+    # scope-detection.md/SCOPE block run in fresh shells — w/o these sentinels: empty inputs, file-scope guard aborts, FIX→REFACTOR override never fires
     PR_LABELS=$(gh pr view $CLEAN_ARGS --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null)  # timeout: 6000
     PR_TITLE=$(gh pr view $CLEAN_ARGS --json title --jq .title 2>/dev/null)                            # timeout: 6000
     printf '%s\n' "$CHANGED_FILES" > "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}"
@@ -333,17 +320,16 @@ Assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) ca
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
-# rehydrate Step-1 inputs (Check 41: fresh shell) — PY_FILES lived in scope-detection.md's shell
+# rehydrate Step1 inputs (Check 41) — PY_FILES lived in scope-detection.md's shell
 CHANGED_FILES=$(cat "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}" 2>/dev/null)
 PY_FILES=$(echo "$CHANGED_FILES" | grep '\.py$' || true)
 IFS= read -r PR_LABELS < "${TMPDIR:-/tmp}/oss-review-pr-labels-${CSID}" 2>/dev/null || PR_LABELS=""
 IFS= read -r PR_TITLE < "${TMPDIR:-/tmp}/oss-review-pr-title-${CSID}" 2>/dev/null || PR_TITLE=""
-# for classification heuristic
 PY_FILE_COUNT=$(echo "$PY_FILES" | grep -c . 2>/dev/null)
-# PY_LOC_DELTA = total churn, NOT net delta — pure renames produce >0 even with net 0; label/keyword override handles this
+# PY_LOC_DELTA = total churn, not net — renames give >0 at net 0; label/keyword override handles it
 PY_LOC_DELTA=$(gh pr diff $CLEAN_ARGS 2>/dev/null | grep -E '^[+-][^+-]' | grep -vE '^[+-]{3}' | wc -l | tr -d ' ')  # timeout: 6000
 
-# new public API surface: added lines in src/**/__init__.py
+# new API surface: added lines in __init__.py
 NEW_API_LINES=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -c '^+[^+]')  # no `|| echo 0` — see PR_TYPE block # timeout: 6000
 
 # pure config/deps changes (no .py logic changes)
@@ -352,7 +338,7 @@ NON_CONFIG_PY=$(echo "$PY_FILES" | grep -vE '(pyproject\.toml|setup\.cfg|setup\.
 SCOPE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/classify_pr_scope.py" --py-files "$PY_FILE_COUNT" --loc-delta "$PY_LOC_DELTA" --new-api-lines "$NEW_API_LINES" --labels "$PR_LABELS" --title "$PR_TITLE" 2>/dev/null)  # timeout: 10000
 echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$NEW_API_LINES)"
 
-# persist — Step 2 EXPECTED_FILE is in a separate bash block
+# persist — Step2 EXPECTED_FILE runs in separate block
 echo "$CHANGED_FILES" | grep -qE '(^|/)(requirements.*\.txt|pyproject\.toml|package.*\.json|Pipfile|poetry\.lock|setup\.cfg|.*\.lock)$' && CHORE_DEPS=true || CHORE_DEPS=false
 _REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${CLEAN_ARGS}-${CSID}"
 {
@@ -410,9 +396,9 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".temp/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR" # timeout: 5000
-# persisted so agents resolve via cat; hand-typing caused leading-dot drops → stray temp/review/ dirs
+# persisted for cat resolve — hand-typing caused leading-dot drops → stray temp/review/ dirs
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"
-# Deliverable → main tree (worktree-isolation.md §review): --worktree writes the orig-root sentinel at §Enter; absent → pwd. Keeps the report + follow-up path reachable outside the worktree. RUN_DIR above stays worktree-local.
+# deliverable → main tree (worktree-isolation.md §review): --worktree sets orig-root at §Enter, else pwd — report stays reachable outside worktree; RUN_DIR stays worktree-local
 IFS= read -r _REPORT_BASE < "${TMPDIR:-/tmp}/oss-review-orig-root-${CSID}" 2>/dev/null || _REPORT_BASE="$(pwd)"
 [ -n "$_REPORT_BASE" ] || _REPORT_BASE="$(pwd)"
 REPORT_DIR="$_REPORT_BASE/.reports/review/$TIMESTAMP"
@@ -468,7 +454,7 @@ fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 REVIEW_CHECKPOINT="${TMPDIR:-/tmp}/review-check-$(date +%s)-${CSID}"
 touch "$REVIEW_CHECKPOINT"
-# poll block (separate bash invocation) reads it back
+# read back by poll block (separate invocation)
 echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}"
 ```
 
@@ -482,8 +468,7 @@ Write expected paths to file (Bash arrays don't persist across tool invocations)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # restore — each SKILL.md bash block runs in fresh shell
 IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || RUN_DIR=""
-# unbound RUN_DIR makes EXPECTED_FILE "/.expected-files" — unwritable, so the §6 health monitor
-# would poll an empty list and never detect a stall
+# unbound RUN_DIR → EXPECTED_FILE="/.expected-files" (unwritable) — §6 monitor polls empty list, misses stalls
 [ -n "$RUN_DIR" ] || { echo "! BLOCKED — run-dir sentinel empty; agent health monitoring cannot be armed"; exit 1; }
 IFS= read -r _PR_TAG < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || _PR_TAG="unknown"
 _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${_PR_TAG}-${CSID}"
@@ -495,7 +480,7 @@ IFS= read -r CODEX_AVAILABLE < "${TMPDIR:-/tmp}/oss-review-codex-available-${CSI
 
 POLL_START=$(date +%s)
 EXPECTED_FILE="$RUN_DIR/.expected-files"
-: >"$EXPECTED_FILE"  # truncate / create empty
+: >"$EXPECTED_FILE"
 
 # Step 0 simplified modes — short-circuit full agent lineup
 if [ "${DOCS_TYPING_MODE:-false}" = "true" ]; then
@@ -531,7 +516,7 @@ ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 1: after fan-out, before consolidation (compaction-contract.md §Lifecycle)
+# boundary1: post-fanout, pre-consolidation (compaction-contract.md §Lifecycle)
 IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || _RUN_DIR=""
 IFS= read -r _PR_TAG < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || _PR_TAG="unknown"
 IFS= read -r _REPORT_DIR < "${TMPDIR:-/tmp}/oss-review-report-dir-${CSID}" 2>/dev/null || _REPORT_DIR=""
@@ -556,7 +541,7 @@ Step 3a/3b may run concurrently with still-executing Step 2 agents — issue in 
 ```bash
 TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}') # timeout: 6000
 
-# Shallow-clone guard: git merge-base fails silently on shallow clones.
+# shallow-clone guard — merge-base fails silently on shallow clones
 IS_SHALLOW=$(git rev-parse --is-shallow-repository 2>/dev/null || echo "unknown")
 if [ "$IS_SHALLOW" = "true" ]; then
     echo "⚠ Shallow clone detected — running: git fetch --unshallow to enable merge-base checks"
@@ -572,7 +557,7 @@ PR_BASE=$(git merge-base HEAD "origin/${TRUNK:-main}" 2>/dev/null || echo "origi
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
-# rate-limit guard: on HTTP 429, retry once after 10s; if still limited, log and continue
+# rate-limit guard: on 429, retry once after 10s, else log+continue
 CHANGED_EXPORTS=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep "^[-+]" | grep -v "^[-+][-+]" | grep -oP '\w+' | sort -u) # timeout: 6000
 for export in $CHANGED_EXPORTS; do
     echo "=== $export ==="
@@ -655,17 +640,15 @@ TaskUpdate "Step 5b: Print report header" → `in_progress`.
 1. Read `$REPORT_DIR/review-report.md` (Read tool).
 2. Extract every field from the opening `---` up to and including the closing `---` — `Title:`, `Date:`, `PR Type:`, `Scope:`, `Focus:`, `Agents:`, `CI:`, `Outcome:`, `Summary:`, `Confidence:`, `Next steps:`, `Path:`.
 3. Render those 12 fields as a two-column Markdown table (`Field | Value`, one row per key, file order) per quality-gates.md §Report File Format's Universal terminal-print rule — never print the raw `---`-delimited block. Append `→ saved to $REPORT_DIR/review-report.md`.
-4. TaskUpdate "Step 5b: Print report header" → `completed` — only after the table has actually appeared in this response, never before.
+4. TaskUpdate "Step 5b: Print report header" → `completed` (only once the table has actually appeared in this response).
 
 This table IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule); omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers — the box would shadow the table). Never emit both a box header and this table. **Historical note**: an earlier revision of this step printed the raw `---`-delimited block verbatim inside a ` ```text ` fence to dodge markdown misparsing the literal `---` (leading `---` read as YAML frontmatter, closing `---` under `Path:` read as a setext heading) — that predates quality-gates.md's table rule and is superseded by it: converting to a table drops the raw `---` delimiters entirely, so the misparse risk the fence was guarding against does not arise. Render all 12 fields verbatim as table rows; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading, and still mark the task `completed` (the fallback line satisfies the step).
 
-**Known failure mode this guards against**: a prior run spawned the consolidator, received its one-liner, and jumped straight to Step 7's `AskUserQuestion` + confidence block — skipping this print entirely, even though `AskUserQuestion` itself (a hard tool call) fired correctly. The task above exists so this step is exactly as trackable as the tool calls around it — do not treat "Step 5: Consolidate findings" completing as covering this step; they are separate tasks for this reason.
-
-**Hook-enforced**: `hooks/enforce-review-header.js` (PreToolUse on `AskUserQuestion`) denies Step 7a's call while `$REPORT_DIR/review-report.md` is missing or empty. A denial reading `oss:review report gate` means Step 5 never produced the report — spawn the consolidator, print the header, then re-issue the question. The hook cannot see whether the print happened, only whether the report exists; the task above remains the check for the print itself.
+**Why this step is enforced twice over** (empirically motivated — a prior run genuinely skipped it): a prior run spawned the consolidator, received its one-liner, and jumped straight to Step 7's `AskUserQuestion` + confidence block — skipping this print entirely, even though `AskUserQuestion` itself (a hard tool call) fired correctly; do not treat "Step 5: Consolidate findings" completing as covering this step, they are separate tasks for that reason. **Runtime backstop**: `hooks/enforce-review-header.js` (PreToolUse on `AskUserQuestion`) denies Step 7a's call while `$REPORT_DIR/review-report.md` is missing or empty — a denial reading `oss:review report gate` means Step 5 never produced the report; spawn the consolidator, print the header, then re-issue the question. The hook can't see whether the print happened, only whether the report exists — the task above remains the actual check for the print itself.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 2: after consolidation, before --reply (compaction-contract.md §Lifecycle)
+# boundary2: post-consolidation, pre-reply (compaction-contract.md §Lifecycle)
 IFS= read -r _PR_TAG < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || _PR_TAG="unknown"
 IFS= read -r _REPORT_DIR < "${TMPDIR:-/tmp}/oss-review-report-dir-${CSID}" 2>/dev/null || _REPORT_DIR=""
 IFS= read -r _RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}" 2>/dev/null || _RUN_DIR=""
@@ -723,7 +706,7 @@ Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't
 End with `## Confidence` block per CLAUDE.md output standards.
 
 ```bash
-rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 <!-- Steps 5–7 defined in Step 5 (consolidate), Step 6 (Codex delegation), Step 7 (reply gate) blocks above — numbered sequentially from Step 1; Step 4 (cross-validate) precedes them; no gap: 4→5→6→7→8 -->
@@ -758,7 +741,7 @@ grep -qE '^\| *Importance *\| *Confidence *\| *File *\| *Line' "$REPLY_OUT" && e
 End with `## Confidence` block per CLAUDE.md. Always last thing, regardless of `--reply`.
 
 ```bash
-rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

@@ -168,10 +168,10 @@ Route by domain to foreground challenge agent:
 
 Set `DOMAIN_CHALLENGER` from routing table: architecture/API/coupling/default → `foundry:challenger`; code logic/correctness/edge-cases → `foundry:sw-engineer`; test coverage/assertions/regressions → `foundry:qa-specialist`. Use agent-resolution.md fallback if foundry absent.
 
-Group items by `DOMAIN_CHALLENGER`, preserving each item's original priority-order position within its group (stable partition — needed later so Phase 3's merge plan also respects each specialist's internal commit order). One combined challenge call per domain group, covering ALL that group's items:
+Group items by `DOMAIN_CHALLENGER`, preserving each item's original priority-order position within its group (stable partition — needed later so Phase 3's merge plan also respects each specialist's internal commit order). One combined challenge call per domain group, covering ALL that group's items. Derive `<domain>` per group as a short kebab-case slug from the group's shared theme (e.g. `logic`, `tests`, `docs-api`) — reused below both as the spawn-prompt lead (task-lifecycle.md §Fleet-view description: unique-first — FleetView shows only the leading chars of the prompt, so identical boilerplate across groups renders indistinguishable rows) and as the output filename suffix:
 
 ```text
-Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Two-part challenge for these review items.
+Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="<domain>: two-part challenge for these review items.
 Part 1 — for each, does the stated problem actually exist in the code as described?
 The reviewer's assertion is itself an unproven claim, not evidence — 'reads like X' != 'is X'.
 When a finding asserts a fact reading the referenced file alone can't settle (a name/identifier/version/count is wrong, non-standard, or inconsistent — license names, API/symbol names, version numbers, spec IDs), verify it via WebFetch/WebSearch against the actual authoritative source for that claim (the specific project/library/spec it names — not a generic registry) before ruling VALID. Source unreachable or inconclusive → REJECT with evidence_rationale stating what couldn't be verified; never default VALID on the reviewer's word alone.

@@ -133,6 +133,51 @@ def test_written_report_passes_through(tmp_path: Path, review_run: tuple[Path, P
     assert _run(tmp_path, _ask_payload()) == {}
 
 
+def _write_transcript(tmp_path: Path, assistant_text: str) -> Path:
+    """Write a minimal two-row JSONL transcript: a human user turn then one assistant text block."""
+    rows = [
+        {"type": "user", "message": {"content": [{"type": "text", "text": "go"}]}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": assistant_text}]}},
+    ]
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return transcript
+
+
+def test_report_written_with_table_in_reply_has_no_reminder(tmp_path: Path, review_run: tuple[Path, Path]) -> None:
+    """Table already printed this turn → allow with no additionalContext nudge."""
+    report_dir, _ = review_run
+    (report_dir / "review-report.md").write_text("---\nTitle: oss-review\n---\n", encoding="utf-8")
+    transcript = _write_transcript(
+        tmp_path, "| Field | Value |\n| --- | --- |\n| Title | x |\n| PR | #1 |\n| Date | y |\n"
+    )
+
+    assert _run(tmp_path, _ask_payload(transcript_path=str(transcript))) == {}
+
+
+def test_report_written_without_table_in_reply_gets_reminder(tmp_path: Path, review_run: tuple[Path, Path]) -> None:
+    """The PR #1303 incident, reproduced: raw YAML fields printed instead of a table → nudge to redo Step 5b."""
+    report_dir, _ = review_run
+    (report_dir / "review-report.md").write_text("---\nTitle: oss-review\n---\n", encoding="utf-8")
+    transcript = _write_transcript(tmp_path, "Title: oss-review\nPR: #1303\nDate: 2026-08-08\n")
+
+    result = _run(tmp_path, _ask_payload(transcript_path=str(transcript)))
+
+    hook_output = result.get("hookSpecificOutput", {})
+    assert hook_output.get("permissionDecision") == "allow"
+    assert "Step 5b" in hook_output.get("additionalContext", "")
+
+
+def test_report_written_unreadable_transcript_has_no_reminder(tmp_path: Path, review_run: tuple[Path, Path]) -> None:
+    """transcript_path pointing at a nonexistent file can't be read → fail open, no false nudge."""
+    report_dir, _ = review_run
+    (report_dir / "review-report.md").write_text("---\nTitle: oss-review\n---\n", encoding="utf-8")
+
+    result = _run(tmp_path, _ask_payload(transcript_path=str(tmp_path / "missing.jsonl")))
+
+    assert result == {}
+
+
 def test_trailing_slash_tmpdir_resolves_sentinel(tmp_path: Path, review_run: tuple[Path, Path]) -> None:
     """macOS exports TMPDIR with a trailing slash — the sentinel must still resolve."""
     assert _denial_reason(_run(tmp_path, _ask_payload(), tmpdir_suffix="/")) is not None

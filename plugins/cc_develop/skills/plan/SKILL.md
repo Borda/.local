@@ -3,7 +3,7 @@ name: plan
 description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/. TRIGGER when: user wants to understand scope and risks before implementation; phrases: \"plan this\", \"scope out X\", \"what would it take to Y\", \"analyse before we start\". SKIP when: user already knows what to build and wants code immediately (use `/develop:feature` or `/develop:fix` directly); `.claude/` config planning (use `/foundry:manage`)."
 argument-hint: "<goal> [--no-challenge] [--codemap] [--no-codemap] [--semble] [--max-depth <N>]"
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
 
@@ -24,8 +24,10 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 ## Agent Resolution
 
 ```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
+echo "$_DEV_SHARED" > "${TMPDIR:-/tmp}/dev-shared-${CSID}"  # cold resolve — every later block warm-reads this
 cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
@@ -34,7 +36,8 @@ Contains: foundry check + fallback table. If foundry not installed: substitute e
 **Checkpoint**: plan single-pass — `.plans/active/<slug>` file existence = implicit resume signal. No `.developments/` checkpoint needed; if interrupted, re-run `/develop:plan` to regenerate (no code changes made).
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/task-hygiene.md"
 ```
@@ -66,25 +69,15 @@ Downstream blocks recover namespace then read back, e.g. `IFS= read -r PLAN_NS <
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
-[ -n "$PLAN_NS" ] || { echo "! PLAN_NS empty — dev-plan-ns-current not found; re-run /develop:plan"; exit 1; }
-IFS= read -r CODEMAP_RAW < "$PLAN_NS/codemap-raw" 2>/dev/null || CODEMAP_RAW=auto
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/codemap-resolve" "$CODEMAP_RAW")
-RESOLVE_EXIT=$?
-if [ "$RESOLVE_EXIT" -ne 0 ]; then
-    if [ "$CODEMAP_RAW" = "strict" ]; then
-        echo "! BLOCKED — codemap unavailable but --codemap (strict) passed; run /codemap-py:scan-codebase or install codemap plugin"
-        exit 1
-    fi
-    CODEMAP_ENABLED=false
-fi
-echo "$CODEMAP_ENABLED" > "$PLAN_NS/codemap-enabled"
+# resolves PLAN_NS itself — plan keeps its flags in a run-namespace dir, not TMPDIR sentinels
+CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_codemap_gate.py" plan) || exit 1
 ```
 
 > loads: codemap-gates.md
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""  # timeout: 5000
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
 cat "$_DEV_SHARED/codemap-gates.md"
 ```
@@ -98,7 +91,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r PLAN_NS < "${TMPDIR:-/tmp}/dev-plan-ns-current-${CSID}" 2>/dev/null || PLAN_NS=""
 IFS= read -r SEMBLE_ENABLED < "$PLAN_NS/semble-enabled" 2>/dev/null || SEMBLE_ENABLED=false
 if [ "$SEMBLE_ENABLED" = "true" ]; then
-    _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+    IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
     [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
     cat "$_DEV_SHARED/preflight-helpers.md"
 else
@@ -143,7 +136,7 @@ IFS= read -r CODEMAP_ENABLED < "$PLAN_NS/codemap-enabled" 2>/dev/null || CODEMAP
 IFS= read -r SEMBLE_ENABLED  < "$PLAN_NS/semble-enabled"  2>/dev/null || SEMBLE_ENABLED=false
 echo "CODEMAP_ENABLED=$CODEMAP_ENABLED SEMBLE_ENABLED=$SEMBLE_ENABLED"
 if [ "$CODEMAP_ENABLED" = "true" ] || [ "$SEMBLE_ENABLED" = "true" ]; then
-    _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/dev_shared_resolve.py" 2>/dev/null)
+    IFS= read -r _DEV_SHARED < "${TMPDIR:-/tmp}/dev-shared-${CSID}" 2>/dev/null || _DEV_SHARED=""
     [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/cc_develop/skills/_shared"
     cat "$_DEV_SHARED/codemap-context.md"
 else

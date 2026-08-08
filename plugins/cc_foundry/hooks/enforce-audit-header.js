@@ -274,7 +274,28 @@ if (require.main === module) {
       if (!sentinel) process.exit(0);
 
       const reason = denyReason(sentinel, data.tool_input, data.cwd, Date.now());
-      if (!reason) process.exit(0);
+      if (!reason) {
+        // Additive nudge, not a deny — see report-header-table.js for why a
+        // missing table rides as additionalContext instead of blocking.
+        try {
+          const { assistantTextSinceLastUserTurn, hasHeaderTable, tableReminder } = require("./report-header-table.js");
+          const text = assistantTextSinceLastUserTurn(data.transcript_path);
+          if (text && !hasHeaderTable(text)) {
+            process.stdout.write(
+              JSON.stringify({
+                hookSpecificOutput: {
+                  hookEventName: "PreToolUse",
+                  permissionDecision: "allow",
+                  additionalContext: tableReminder("foundry:audit", "Step 11b (terminal output)"),
+                },
+              }),
+            );
+          }
+        } catch (_) {
+          // Missing/broken copy of the shared detector — fall through to plain allow.
+        }
+        process.exit(0);
+      }
 
       process.stdout.write(
         JSON.stringify({

@@ -270,7 +270,7 @@ Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skil
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
 Run `cat "<MANAGE_TPL>/skill-scaffold.md"` via the Bash tool (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
-Run `cat "<_FOUNDRY_SHARED>/bin-authoring-guide.md"` via the Bash tool (substitute resolved `$_FOUNDRY_SHARED` value from bash block above — echoed as `"Shared dir: <path>"`) and follow it — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file; skill checks exit code only; never `eval` stdout.
+Run `cat "<_FOUNDRY_SHARED>/bin-authoring-guide.md"` via the Bash tool (substitute resolved `$_FOUNDRY_SHARED` value from bash block above — echoed as `"Shared dir: <path>"`) and follow it — before writing any fenced code block in the new SKILL.md, apply the extraction gate (write a bin/ script instead if verdict is MEDIUM or HIGH), the §Prose over Code check, and §Script Output Routing for any multi-value bin/ script.
 Scaffold `.claude/skills/<name>/SKILL.md` with:
 - Frontmatter: name=<name>, description=<description>; add other fields per schema and scaffold guidance
 - Body: rich workflow scaffold derived from the description, following all content rules in the scaffold template
@@ -366,7 +366,7 @@ Rules:
 - Preserve frontmatter fields (name, description, tools, model, color) unless the change explicitly targets them
 - Preserve XML tags (<role>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the agent's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: run `cat "<_FS_VAL>/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file; never `eval` stdout.
+- If the change adds any fenced code block: run `cat "<_FS_VAL>/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the §Prose over Code check and §Script Output Routing for any multi-value bin/ script (both defined in the guide just loaded).
 - After editing: verify XML tag balance, step numbering, cross-ref validity
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -393,7 +393,7 @@ Rules:
 - Preserve frontmatter fields (name, description, argument-hint, disable-model-invocation, allowed-tools)
 - Preserve XML tags (<objective>, <inputs>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the skill's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: run `cat "<_FS_VAL>/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>-${CSID}` file; never `eval` stdout.
+- If the change adds any fenced code block: run `cat "<_FS_VAL>/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the §Prose over Code check and §Script Output Routing for any multi-value bin/ script (both defined in the guide just loaded).
 - After editing: verify XML tag balance, step numbering, workflow gate completeness
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -631,65 +631,13 @@ Return ONLY: {"status":"done","files_updated":N}
 
 ### Rename occurrence validation (rename mode only)
 
-After cross-reference propagation, scan for remaining occurrences using word-boundary matching to reduce noise from short or common names:
-
 ```bash
-rg --fixed-strings -n '\b<old-name>\b' plugins/ .claude/ README.md docs/ 2>/dev/null \
-  || grep -rn "\b<old-name>\b" plugins/ .claude/ README.md docs/ 2>/dev/null \
-  | grep -v ".git/" | grep -v "__pycache__"  # timeout: 10000
+# loads: rename-validation.md
+MANAGE_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" manage modes 2>/dev/null || echo "plugins/cc_foundry/skills/manage/modes")  # timeout: 5000
+cat "$MANAGE_MODES/rename-validation.md"
 ```
 
-Grep returns **zero hits**: report "✓ No remaining occurrences of `<old-name>` found." and proceed.
-
-**Large hit set gate** — hits exceed 50: invoke `AskUserQuestion` before classifying: "Found N occurrences of `<old-name>` — this name may be too generic for safe automated classification. Proceed with classification or abort?" Options: (a) Proceed · (b) Abort. On abort: stop and report to user.
-
-Hits within limit: read a 5-line context window (2 lines before + matched line + 2 lines after) for every hit using the Read tool, assign each hit a stable integer `id` (1…N). Then spawn a **`haiku`-model** `Agent` to classify in batches of ≤30 hits — pass `model="haiku"` explicitly. Before spawning, resolve the entity's canonical surface forms from the rename context: slash-command form (`` `/foundry:<old-name>` `` or `` `/<old-name>` ``), `subagent_type` value, file-path pattern (`.claude/agents/<old-name>.md`, `.claude/skills/<old-name>/`). Include these in the prompt as `<entity_context>`.
-
-Haiku agent prompt (one spawn per batch of ≤30 hits):
-
-```
-Classify grep hits for a rename: `<old-name>` → `<new-name>` (type: <agent|skill|rule|hook>).
-Canonical surface forms for this entity: <entity_context>
-
-For each hit output exactly one JSON object per line (no prose):
-{"id":<N>,"file":"...","line":<N>,"verdict":"genuine"|"false_positive"|"ambiguous","reason":"one sentence"}
-
-Classification rules — word match alone is NOT sufficient; read context:
-- genuine: matches a canonical surface form; clearly names this specific entity (slash-command, subagent_type, NOT-for/TRIGGER cross-ref, dispatch directive, README table row)
-- false_positive: generic English word used differently, unrelated comment, example string, sentence where the word means something else entirely
-- ambiguous: context too short, name too generic, or evidence conflicts
-
-Hits:
---- HIT {id} ---
-file: {file}
-line: {line}
-context:
-  {line-2}: ...
-  {line-1}: ...
-> {line}:   <matched line>
-  {line+1}: ...
-  {line+2}: ...
-```
-
-**JSON parse fallback**: returned output contains malformed JSON or missing `id` fields → retry once with the parse error appended to the prompt. On second failure, mark all unresolved hits `"ambiguous"` and escalate to the user.
-
-Collect all batch results. Classify each hit:
-
-- **Genuine reference** → Apply Edit tool fix targeting the exact token at the classified line — do NOT use `replace_all: true` on the whole file; replace only the specific occurrence on that line.
-- **False positive** → Skip; log haiku's reason.
-- **Ambiguous** → Collect for user escalation.
-
-After all haiku fixes applied and all user-resolved fixes applied, run one final grep to confirm:
-
-```bash
-rg --fixed-strings -n '\b<old-name>\b' plugins/ .claude/ README.md docs/ 2>/dev/null \
-  || grep -rn "\b<old-name>\b" plugins/ .claude/ README.md docs/ 2>/dev/null \
-  | grep -v ".git/" | grep -v "__pycache__"  # timeout: 10000
-```
-
-Remaining hits must exactly equal the documented false-positive set (by file+line). Any remaining hit not in the false-positive list is an unresolved genuine reference — loop through classification once more for those, or flag in Step 10 as requiring manual review.
-
-Collect ambiguous hits and invoke `AskUserQuestion` — show file + 5-line context per hit, ask: "Is this a real reference to `<old-name>` that should be updated, or a false positive?" Batch max 4 per call; loop if more. Apply user-confirmed fixes before the final grep.
+Execute the mode loaded above.
 
 ## Step 6: Update MEMORY.md roster (auto-memory)
 

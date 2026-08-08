@@ -85,17 +85,17 @@ Triggered by `fortify` or `fortify <run-id|program.md>`.
 Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`, `--keep "<items>"`.
 
 ```bash
-# Extract --keep quoted value (compaction-contract.md §keep semantics)
+# --keep value (compaction-contract.md §keep)
 KEEP_ITEMS=""
 if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
     KEEP_ITEMS="${BASH_REMATCH[1]}"
 fi
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+# stale contract cleanup (compaction-contract.md §Lifecycle)
 rm -f .temp/state/skill-contract.md  # timeout: 5000
-echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/fortify-keep-items-${CSID}"  # persist for F2/F4 contract writes
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/fortify-keep-items-${CSID}"  # for F2/F4 contract
 
-# Extract --venue value; empty means "no --venue" and F6 skips entirely — no default venue, so the F6 skip rule is what actually executes
+# empty = no --venue → F6 skip rule fires; no default venue
 VENUE=""
 if [[ "$ARGUMENTS" =~ --venue[[:space:]]+([^[:space:]]+) ]]; then
     VENUE="${BASH_REMATCH[1]}"
@@ -104,7 +104,7 @@ case "$VENUE" in
   ""|CVPR|NeurIPS|ICML|workshop) ;;
   *) echo "fortify: invalid --venue '$VENUE' — valid: CVPR, NeurIPS, ICML, workshop"; exit 2 ;;
 esac
-echo "$VENUE" > "${TMPDIR:-/tmp}/fortify-venue-${CSID}"  # persist for F6 (Check 41: fresh shell)
+echo "$VENUE" > "${TMPDIR:-/tmp}/fortify-venue-${CSID}"  # for F6 (Check 41)
 ```
 
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--venue`, `--max-ablations`, `--skip-run`, `--keep`.
@@ -137,26 +137,26 @@ FORTIFY_DIR_BASE="${FORTIFY_DIR_BASE:-.experiments}"
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # default (Check 41)
 _ARG1=$(echo "$ARGUMENTS" | awk '{print $1}')
 if [ -n "$_ARG1" ] && [ "${_ARG1#-}" = "$_ARG1" ] && [ ! -f "$_ARG1" ] && [ -d "$STATE_DIR_BASE/$_ARG1" ]; then
   RUN_ID="$_ARG1"
 elif [ -n "$_ARG1" ] && [ -f "$_ARG1" ]; then
-  # program.md path — find latest completed run matching program_file  <!-- loads: find_run_id.py -->
+  # program.md path  <!-- loads: find_run_id.py -->
   RUN_ID=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/find_run_id.py" "$STATE_DIR_BASE" --match-program "$_ARG1" 2>/dev/null)
 else
   RUN_ID=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/find_run_id.py" "$STATE_DIR_BASE" 2>/dev/null)
 fi
 [ -z "$RUN_ID" ] && { echo "fortify: No completed run found. Run /research:run first."; exit 1; }
-echo "$RUN_ID" > "${TMPDIR:-/tmp}/fortify-run-id-${CSID}"  # persist for later blocks (Check 41: fresh shell)
+echo "$RUN_ID" > "${TMPDIR:-/tmp}/fortify-run-id-${CSID}"  # for later blocks (Check 41)
 ```
 
 **Source `metric_cmd`/`guard_cmd` from the campaign** — env override first, then source-run `state.json` `.config`; fail closed if neither present (a defaulted `git diff --stat HEAD` guard always exits 0 → no-op that never catches regressions):
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
-IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # re-hydrate from F1 (Check 41)
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # default (Check 41)
+IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # reload (Check 41)
 STATE_JSON="$STATE_DIR_BASE/$RUN_ID/state.json"
 METRIC_CMD="${METRIC_CMD:-$(jq -r '.config.metric_cmd // empty' "$STATE_JSON" 2>/dev/null)}"
 GUARD_CMD="${GUARD_CMD:-$(jq -r '.config.guard_cmd // empty' "$STATE_JSON" 2>/dev/null)}"
@@ -165,36 +165,35 @@ if [ -z "$METRIC_CMD" ] || [ -z "$GUARD_CMD" ]; then
   echo "Re-run /research:run to regenerate state.json, or set METRIC_CMD/GUARD_CMD in the environment."
   exit 1
 fi
-# `echo` not `printf '%s'`: the 4d/4e re-hydrates use `IFS= read -r VAR < f || VAR=""`, and `read` returns non-zero
-# on a file with no trailing newline — the `||` branch then wipes the value it just read, hard-BLOCKing every run.
-echo "$METRIC_CMD" > "${TMPDIR:-/tmp}/fortify-metric-cmd-${CSID}"  # persist for 4d (Check 41: fresh shell)
-echo "$GUARD_CMD" > "${TMPDIR:-/tmp}/fortify-guard-cmd-${CSID}"    # persist for 4e (Check 41: fresh shell)
+# echo not printf — 4d/4e reload via `read -r VAR<f||VAR=""`; no trailing newline → read fails → || wipes value → false BLOCK
+echo "$METRIC_CMD" > "${TMPDIR:-/tmp}/fortify-metric-cmd-${CSID}"  # for 4d (Check 41)
+echo "$GUARD_CMD" > "${TMPDIR:-/tmp}/fortify-guard-cmd-${CSID}"    # for 4e (Check 41)
 ```
 
 **Guard: judge approval required.** Judge skill writes verdict to `.reports/research/judge-<branch>-<date>.md` — scan for APPROVED verdict line:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
-IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # re-hydrate from F1 (Check 41)
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # default (Check 41)
+IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # reload (Check 41)
 JUDGE_VERDICT_FILE=$(ls -t .reports/research/judge-*.md 2>/dev/null | head -1)  # timeout: 5000
 if [ -z "$JUDGE_VERDICT_FILE" ]; then
   echo "fortify: BLOCKED — no judge verdict found in .reports/research/."
   echo "Ablation studies require an approved baseline. Run: /research:judge <program.md>"
   exit 1
 fi
-JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//' | sed 's/[[:space:]]*$//')  # strip trailing only; preserve internal spaces (e.g. "NEEDS REVISION")
+JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//' | sed 's/[[:space:]]*$//')  # trailing strip only — keep internal spaces ("NEEDS REVISION")
 
 PROGRAM_FILE=$(grep -iE '^[*]*(Program(_file)?|Program file)[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
-# F-02 guard: empty PROGRAM_FILE means verdict lacks program metadata — cannot verify applicability
+# F-02: empty PROGRAM_FILE — no program metadata, can't verify
 if [ -z "$PROGRAM_FILE" ]; then
     echo "fortify: BLOCKED — judge verdict missing Program: field; cannot verify verdict applies to current experiment."
     echo "Re-run: /research:judge <program.md> to generate a fresh verdict with required metadata."
     exit 1
 fi
-# Use explicit run-specific state.json path (resolved during F1 input resolution) — never CWD-relative
+# explicit state.json path — never CWD-relative
 STATE_PROGRAM=$(jq -r '.program_file // ""' "$STATE_DIR_BASE/$RUN_ID/state.json" 2>/dev/null)
-# Normalize both to absolute paths before comparing: judge report may store a relative program path while state.json stores absolute (run does realpath) — a raw string compare would false-BLOCK a matching program
+# realpath both — judge report may be relative, state.json absolute; raw compare would false-BLOCK
 _PF_ABS=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
 _SP_ABS=$(realpath "$STATE_PROGRAM" 2>/dev/null || echo "$STATE_PROGRAM")
 if [ -n "$STATE_PROGRAM" ] && [ -n "$PROGRAM_FILE" ] && [ "$_PF_ABS" != "$_SP_ABS" ]; then
@@ -206,22 +205,18 @@ if [ -n "$PROGRAM_FILE" ] && [ ! -f "$PROGRAM_FILE" ]; then
     printf "! BLOCKED — program file %s referenced by judge verdict not found on disk\n" "$PROGRAM_FILE"
     exit 1
 fi
-echo "$PROGRAM_FILE" > "${TMPDIR:-/tmp}/fortify-program-file-${CSID}"  # persist for F6 reviewer-Q&A block (Check 41)
-echo "$JUDGE_VERDICT" > "${TMPDIR:-/tmp}/fortify-judge-verdict-${CSID}"  # persist for the gate block below (Check 41: fresh shell) — `echo` not `printf`, so the trailing newline keeps `read` exit 0
+echo "$PROGRAM_FILE" > "${TMPDIR:-/tmp}/fortify-program-file-${CSID}"  # for F6 (Check 41)
+echo "$JUDGE_VERDICT" > "${TMPDIR:-/tmp}/fortify-judge-verdict-${CSID}"  # for gate block; echo not printf — newline keeps read exit 0 (Check 41)
 ```
 
 Verify `JUDGE_VERDICT == "APPROVED"`. The program cross-match above guarantees the verdict was issued for the current experiment — fortify cannot ablate against a different program's verdict. Apply explicit bash gate — prose alone never halts execution:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r JUDGE_VERDICT < "${TMPDIR:-/tmp}/fortify-judge-verdict-${CSID}" 2>/dev/null || JUDGE_VERDICT=""  # re-hydrate from the scan block above (Check 41: fresh shell)
-JUDGE_VERDICT="${JUDGE_VERDICT:-REJECTED}"  # fail closed only when the scan genuinely produced nothing
-if [ "$JUDGE_VERDICT" != "APPROVED" ]; then
-    echo "fortify: BLOCKED — no APPROVED judge verdict found for this program."
-    echo "Judge verdict: $JUDGE_VERDICT — stopping before implementation (F1–F7)."
-    echo "Ablation studies require an approved baseline. Run: /research:judge <program.md>"
-    exit 1
-fi
+# REJECTED default = fail closed; gate appends actual verdict itself, message never interpolates it
+_GATE_MSG="fortify: BLOCKED — no APPROVED judge verdict found for this program; stopping before implementation (F1–F7).
+Ablation studies require an approved baseline. Run: /research:judge <program.md>"
+"${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/gate-on-sentinel.py" "${TMPDIR:-/tmp}/fortify-judge-verdict-${CSID}" APPROVED REJECTED "$_GATE_MSG" || exit 1
 ```
 
 > Note: do NOT infer from `methodology.md` alone — `methodology_rating: sound` is one input to verdict, not verdict itself. Only `## Verdict` line in judge output file is authoritative.
@@ -237,7 +232,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 FORTIFY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/make_run_dir.py" "fortify" ".experiments" 2>/dev/null)  # timeout: 5000
 [ -z "$FORTIFY_DIR" ] && { echo "! make_run_dir.py failed — ensure research plugin installed"; exit 1; }
 mkdir -p "$FORTIFY_DIR"
-echo "$FORTIFY_DIR" > "${TMPDIR:-/tmp}/fortify-dir-${CSID}"  # persist run dir for F2/F4-loop/F6 blocks (Check 41: make_run_dir non-idempotent)
+echo "$FORTIFY_DIR" > "${TMPDIR:-/tmp}/fortify-dir-${CSID}"  # for F2/F4-loop/F6; make_run_dir non-idempotent (Check 41)
 WORKTREE_BASE="$FORTIFY_DIR/worktrees"
 mkdir -p "$WORKTREE_BASE"
 STATE_DIR="${STATE_DIR_BASE:-.experiments/state}/fortify-$(basename "$FORTIFY_DIR")"
@@ -257,9 +252,9 @@ Before building the prompt, substitute all bash variables into a single concrete
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
-IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # re-hydrate from F1 (Check 41)
-IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # re-hydrate from F1 (Check 41)
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # default (Check 41)
+IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # reload (Check 41)
+IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # reload (Check 41)
 EXPERIMENTS_PATH="$STATE_DIR_BASE/$RUN_ID/experiments.jsonl"
 DIARY_PATH="$STATE_DIR_BASE/$RUN_ID/diary.md"
 F2_PROMPT="Act as an ML ablation study designer.
@@ -295,7 +290,7 @@ Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations 
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 1: after F2 scientist completes, candidates ready (compaction-contract.md §Lifecycle)
+# boundary 1: F2 done, candidates ready (compaction-contract.md §Lifecycle)
 IFS= read -r _RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || _RUN_ID=""
 IFS= read -r _FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || _FORTIFY_DIR=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/fortify-keep-items-${CSID}" 2>/dev/null || _KEEP=""
@@ -340,24 +335,23 @@ Run each variant **sequentially** — parallel worktrees would conflict.
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 ORIG_DIR="$(pwd)"  # timeout: 3000
-echo "$ORIG_DIR" > "${TMPDIR:-/tmp}/fortify-orig-dir-${CSID}"  # persist for 4f cleanup cd (Check 41: fresh shell)
+echo "$ORIG_DIR" > "${TMPDIR:-/tmp}/fortify-orig-dir-${CSID}"  # for 4f cleanup cd (Check 41)
 WORKTREE_PATHS_FILE=$(mktemp -t fortify-XXXX) || { echo "! BLOCKED — mktemp failed (tmpfs full or permission denied); cannot create cleanup accumulator. Aborting."; exit 1; }  # timeout: 3000
 echo "$WORKTREE_PATHS_FILE" > "${TMPDIR:-/tmp}/fortify-paths-ptr-${CSID}"
-echo 1 > "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}"  # 1-based line cursor into variants.jsonl — the loop's only identity across fences (Check 41: fresh shell)
+echo 1 > "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}"  # 1-based cursor — loop's only identity across fences (Check 41)
 
-STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
-IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # re-hydrate from F1 (Check 41)
-best_commit=$(jq -r '.best_commit // empty' "$STATE_DIR_BASE/$RUN_ID/state.json" 2>/dev/null)  # source from state.json — never assigned before this point
-echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-source-best-commit-${CSID}"  # persist raw value (Check 41: fresh shell)
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # default (Check 41)
+IFS= read -r RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || RUN_ID=""  # reload (Check 41)
+best_commit=$(jq -r '.best_commit // empty' "$STATE_DIR_BASE/$RUN_ID/state.json" 2>/dev/null)
+echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-source-best-commit-${CSID}"  # raw value (Check 41)
 
-# F-04: validate best_commit is a concrete SHA — `git worktree add` with a branch tip
-# would advance the branch and pollute shared history on subsequent `git revert`.
+# F-04: must be concrete SHA — branch tip would advance + pollute history on later revert
 if ! best_commit_sha=$(git rev-parse --verify "$best_commit^{commit}" 2>/dev/null); then
     echo "! BLOCKED — best_commit '$best_commit' does not resolve to a commit. Re-run source experiment or correct state.json."
     exit 1
 fi
-best_commit="$best_commit_sha"  # downstream `git worktree add` always sees a SHA → detached HEAD
-echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-best-commit-${CSID}"  # persist for 4a worktree-add (Check 41: fresh shell)
+best_commit="$best_commit_sha"  # worktree add always sees a SHA → detached HEAD
+echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-best-commit-${CSID}"  # for 4a worktree-add (Check 41)
 ```
 
 **On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. Interrupt cleanup is manual by necessity — a shell `trap` cannot survive the Bash call that registers it (see 4a-register), so the accumulator file is the durable record of what needs removing; re-run the post-loop sweep block below to drain it.
@@ -368,7 +362,7 @@ echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-best-commit-${CSID}"  # persist f
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # re-hydrate (Check 41: fresh shell)
+IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # reload (Check 41)
 IFS= read -r _VIDX < "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}" 2>/dev/null || _VIDX=1
 _TOTAL=$(grep -c . "$FORTIFY_DIR/variants.jsonl" 2>/dev/null) || _TOTAL=0  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches, and the 2>/dev/null below then hides the resulting bad-number error
 if [ "$_VIDX" -gt "$_TOTAL" ] 2>/dev/null; then
@@ -376,14 +370,13 @@ if [ "$_VIDX" -gt "$_TOTAL" ] 2>/dev/null; then
     exit 0
 fi
 _RAW_NAME=$(sed -n "${_VIDX}p" "$FORTIFY_DIR/variants.jsonl" 2>/dev/null | jq -r '.variant_name // empty' 2>/dev/null)
-# No invented fallback: an unreadable spec means variants.jsonl is malformed, and a synthesized name would
-# collapse every iteration onto one worktree path while still reporting a complete run.
+# no invented fallback — synthesized name would collapse every iteration onto one worktree path
 if [ -z "$_RAW_NAME" ] || [ "$_RAW_NAME" = "null" ]; then
     echo "! BLOCKED — variants.jsonl line ${_VIDX} has no readable .variant_name; check F3 output. Halting F4."
     exit 1
 fi
 VARIANT_NAME="variant-$(echo "$_RAW_NAME" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
-echo "$VARIANT_NAME" > "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}"  # persist for 4a–4f blocks this iteration (Check 41: fresh shell)
+echo "$VARIANT_NAME" > "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}"  # for 4a–4f this iteration (Check 41)
 echo "→ variant ${_VIDX}/${_TOTAL}: $VARIANT_NAME"
 ```
 
@@ -392,17 +385,13 @@ echo "→ variant ${_VIDX}/${_TOTAL}: $VARIANT_NAME"
 **4a-guard. Resume guard — skip variants already recorded terminal in `results.jsonl`:**
 
 ```bash
-# WHY: on mid-loop auto-compact + resume the F4 loop restarts from variant 1; without this guard each
-# already-completed ablation (a full training run) re-executes. results.jsonl is the resume ledger.
-# Match the un-prefixed name (4g/delta convention) tolerant of an optional "variant-" prefix; skip only
-# NON-timeout terminal statuses so a transient timeout still retries on resume.
+# resume guard — w/o it, compact+resume re-runs completed ablations. Non-timeout terminal only; timeout still retries.
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # re-hydrate (Check 41: fresh shell)
+IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # reload (Check 41)
 _VN_RAW="${VARIANT_NAME#variant-}"
 IFS= read -r _FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || _FORTIFY_DIR=""; _RESULTS="$_FORTIFY_DIR/results.jsonl"
 if [ -f "$_RESULTS" ] && grep -E "\"variant\":\"(variant-)?$_VN_RAW\"" "$_RESULTS" 2>/dev/null | grep -qE '"status":"(completed|revert-conflict|revert-missing|metric-failed)"'; then
-    # `continue` would be a no-op here — this fence has no enclosing loop (the F4 loop is orchestrated, not shell).
-    # Advance the cursor ourselves and signal the orchestrator with a token, so the skip is real rather than printed.
+    # no shell loop here (F4 is orchestrated) — advance cursor + emit token so skip is real, not just printed
     IFS= read -r _VIDX < "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}" 2>/dev/null || _VIDX=1
     echo "$((_VIDX + 1))" > "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}"
     echo "→ $_VN_RAW already terminal (non-timeout) in results.jsonl — skipping (resume)"
@@ -416,21 +405,21 @@ fi
 **4a. Create isolated worktree at best_commit:**
 
 ```bash
-# Re-hydrate WORKTREE_BASE/VARIANT_NAME/best_commit inline (Check 41: fresh shell; inline keeps `git` as first token for allow-list match; CSID inlined per-substitution — same reason)
+# inline: `git` stays first token (allow-list match); CSID inlined, same reason (Check 41)
 git worktree add "$(cat "${TMPDIR:-/tmp}/fortify-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)" "$(cat "${TMPDIR:-/tmp}/fortify-best-commit-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)"  # timeout: 15000
 ```
 
 **4a-register. Record the worktree path in the cleanup accumulator** immediately after creation:
 
 ```bash
-# Reload (Check 41: shell var lost between Bash calls)
+# reload — shell var dies between Bash calls (Check 41)
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r WORKTREE_PATHS_FILE < "${TMPDIR:-/tmp}/fortify-paths-ptr-${CSID}" 2>/dev/null || WORKTREE_PATHS_FILE=""
 [ -z "$WORKTREE_PATHS_FILE" ] && WORKTREE_PATHS_FILE="${TMPDIR:-/tmp}/fortify-worktree-paths-fallback-${CSID}"
-IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""; WORKTREE_BASE="$FORTIFY_DIR/worktrees"  # re-hydrate (Check 41: fresh shell)
-IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # re-hydrate (Check 41: fresh shell)
+IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""; WORKTREE_BASE="$FORTIFY_DIR/worktrees"  # reload (Check 41)
+IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # reload (Check 41)
 WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/$VARIANT_NAME}"
-echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"  # accumulator file persists across Bash calls; array vars do not
+echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"  # file persists across Bash calls; array vars don't
 ```
 
 **No `trap` here — deliberate.** A `trap ... EXIT` registered in this fence fires when *this block* ends, moments after `git worktree add` created the worktree: it would delete the worktree the loop is about to use, 4b's `cd` would fail, and 4c's `git revert` would then execute in the **main working tree** — the exact outcome the worktree-isolation invariant exists to prevent. Trap disposition is per-process and cannot outlive its own Bash call, so it can neither cover a later interrupt nor survive to the next block. Cleanup is therefore explicit: 4f per variant (happy path), plus the post-loop sweep and `git worktree prune` below (interrupted or skipped variants). The accumulator is pre-created via `mktemp` before the loop; `mktemp` ensures collision-free naming across concurrent invocations.
@@ -438,7 +427,7 @@ echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"  # accumulator file persists acr
 **4b. Navigate into worktree** (two separate Bash calls — cd first, then command):
 
 ```bash
-# Re-hydrate WORKTREE_BASE/VARIANT_NAME inline (Check 41: fresh shell; inline keeps `cd` as first token; CSID inlined per-substitution — same reason)
+# inline: `cd` stays first token; CSID inlined, same reason (Check 41)
 cd "$(cat "${TMPDIR:-/tmp}/fortify-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)"  # timeout: 3000
 ```
 
@@ -462,20 +451,20 @@ For `no-<component>` variant: revert component's commits.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # re-hydrate (Check 41: fresh shell)
-IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # re-hydrate (Check 41: fresh shell)
+IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # reload (Check 41)
+IFS= read -r VARIANT_NAME < "${TMPDIR:-/tmp}/fortify-variant-name-${CSID}" 2>/dev/null || VARIANT_NAME=""  # reload (Check 41)
 REVERT_COMMITS_RAW=$(jq -r --arg vn "$VARIANT_NAME" 'select(.variant_name==$vn) | .revert_commits[]' "$FORTIFY_DIR/variants.jsonl" 2>/dev/null | tr '\n' ' ')  # timeout: 5000
-# `continue` would be a no-op — no enclosing shell loop; emit the skip token instead so 4d/4e are genuinely bypassed
+# no shell loop — emit skip token so 4d/4e are genuinely bypassed
 [ -z "$REVERT_COMMITS_RAW" ] && { echo "⚠ No revert_commits for $VARIANT_NAME — skipping"; echo '{"variant":"'$VARIANT_NAME'","status":"revert-missing"}' >> "$FORTIFY_DIR/results.jsonl"; echo "FORTIFY_SKIP_VARIANT=1"; exit 0; }
-# Sort newest-first for conflict-free revert (portable awk reverse — tac not on macOS)
+# newest-first, portable awk reverse — no tac on macOS
 REVERT_COMMITS_SORTED=$(echo "$REVERT_COMMITS_RAW" | tr ' ' '\n' | awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}' | tr '\n' ' ')
-echo "$REVERT_COMMITS_SORTED" > "${TMPDIR:-/tmp}/fortify-revert-sorted-${CSID}"  # persist for git-revert block (Check 41: fresh shell)
+echo "$REVERT_COMMITS_SORTED" > "${TMPDIR:-/tmp}/fortify-revert-sorted-${CSID}"  # for git-revert (Check 41)
 ```
 
 **Bash call 2 — apply revert** (separated so first-token allow-list matches `git`):
 
 ```bash
-# Re-hydrate REVERT_COMMITS_SORTED inline (Check 41: fresh shell; unquoted for multi-SHA word-splitting; inline keeps `git` first token; CSID inlined per-substitution — same reason)
+# inline, unquoted (multi-SHA word-split); `git` stays first token (Check 41)
 git revert $(cat "${TMPDIR:-/tmp}/fortify-revert-sorted-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null) --no-edit  # timeout: 15000
 ```
 
@@ -487,9 +476,9 @@ If revert produces merge conflicts: append `{"variant":"<name>","status":"revert
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r METRIC_CMD < "${TMPDIR:-/tmp}/fortify-metric-cmd-${CSID}" 2>/dev/null || METRIC_CMD=""  # re-hydrate from F1 (Check 41: fresh shell)
+IFS= read -r METRIC_CMD < "${TMPDIR:-/tmp}/fortify-metric-cmd-${CSID}" 2>/dev/null || METRIC_CMD=""  # reload (Check 41)
 [ -z "$METRIC_CMD" ] && { echo "fortify: BLOCKED — metric_cmd not initialized in F1"; exit 1; }
-$METRIC_CMD  # timeout: 360000  (sourced from state.json .config.metric_cmd in F1)
+$METRIC_CMD  # timeout: 360000 (state.json .config.metric_cmd)
 METRIC_EXIT=$?
 ```
 
@@ -499,9 +488,9 @@ Parse stdout for numeric metric value. If command fails or no numeric output: re
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r GUARD_CMD < "${TMPDIR:-/tmp}/fortify-guard-cmd-${CSID}" 2>/dev/null || GUARD_CMD=""  # re-hydrate from F1 (Check 41: fresh shell)
+IFS= read -r GUARD_CMD < "${TMPDIR:-/tmp}/fortify-guard-cmd-${CSID}" 2>/dev/null || GUARD_CMD=""  # reload (Check 41)
 [ -z "$GUARD_CMD" ] && { echo "fortify: BLOCKED — guard_cmd not initialized in F1"; exit 1; }
-$GUARD_CMD  # timeout: 360000  (sourced from state.json .config.guard_cmd in F1)
+$GUARD_CMD  # timeout: 360000 (state.json .config.guard_cmd)
 GUARD_EXIT=$?
 ```
 
@@ -510,12 +499,12 @@ Record guard result: `"pass"` (exit 0) or `"fail"` (non-zero).
 **4f. Cleanup worktree (INVARIANT — must execute even if 4c/4d/4e fail):**
 
 ```bash
-# Re-hydrate ORIG_DIR inline (Check 41: fresh shell; inline keeps `cd` as first token; CSID inlined per-substitution — same reason)
+# inline: `cd` stays first token; CSID inlined, same reason (Check 41)
 cd "$(cat "${TMPDIR:-/tmp}/fortify-orig-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)"  # timeout: 3000
 ```
 
 ```bash
-# Re-hydrate WORKTREE_BASE/VARIANT_NAME inline (Check 41: fresh shell; inline keeps `git` as first token; CSID inlined per-substitution — same reason)
+# inline: `git` stays first token; CSID inlined, same reason (Check 41)
 git worktree remove --force "$(cat "${TMPDIR:-/tmp}/fortify-dir-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name-${CLAUDE_CODE_SESSION_ID:-$PPID}" 2>/dev/null)"  # timeout: 15000
 ```
 
@@ -540,7 +529,7 @@ After all variants processed (4a-init printed `FORTIFY_LOOP_DONE=1`) — sweep a
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r WORKTREE_PATHS_FILE < "${TMPDIR:-/tmp}/fortify-paths-ptr-${CSID}" 2>/dev/null || WORKTREE_PATHS_FILE=""
-# Replaces the removed 4a-trap: same accumulator, but read at a point where the worktrees are genuinely finished with
+# replaces removed 4a-trap — same accumulator, read once worktrees are finished
 if [ -n "$WORKTREE_PATHS_FILE" ] && [ -f "$WORKTREE_PATHS_FILE" ]; then
     while IFS= read -r _wt; do
         [ -n "$_wt" ] && [ -d "$_wt" ] && git worktree remove --force "$_wt" 2>/dev/null
@@ -556,7 +545,7 @@ git worktree prune  # timeout: 15000
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-# Compaction contract — boundary 2: after F4 all variants complete (compaction-contract.md §Lifecycle)
+# boundary 2: F4 all variants complete (compaction-contract.md §Lifecycle)
 IFS= read -r _RUN_ID < "${TMPDIR:-/tmp}/fortify-run-id-${CSID}" 2>/dev/null || _RUN_ID=""
 IFS= read -r _FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || _FORTIFY_DIR=""
 IFS= read -r _KEEP < "${TMPDIR:-/tmp}/fortify-keep-items-${CSID}" 2>/dev/null || _KEEP=""
@@ -630,10 +619,10 @@ Before building the prompt, substitute all bash variables into a single concrete
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS= read -r VENUE < "${TMPDIR:-/tmp}/fortify-venue-${CSID}" 2>/dev/null || VENUE=""  # re-hydrate the F1 --venue parse (Check 41: fresh shell)
+IFS= read -r VENUE < "${TMPDIR:-/tmp}/fortify-venue-${CSID}" 2>/dev/null || VENUE=""  # reload F1 --venue parse (Check 41)
 [ -z "$VENUE" ] && { echo "fortify: F6 skipped — no --venue flag"; exit 0; }  # no default venue: an unset flag must skip, not silently review at workshop bar
-IFS= read -r PROGRAM_FILE < "${TMPDIR:-/tmp}/fortify-program-file-${CSID}" 2>/dev/null || PROGRAM_FILE=""  # re-hydrate from F1 (Check 41: fresh shell)
-IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # re-hydrate from F1 (Check 41: fresh shell)
+IFS= read -r PROGRAM_FILE < "${TMPDIR:-/tmp}/fortify-program-file-${CSID}" 2>/dev/null || PROGRAM_FILE=""  # reload (Check 41)
+IFS= read -r FORTIFY_DIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || FORTIFY_DIR=""  # reload (Check 41)
 [ -z "$PROGRAM_FILE" ] && { echo "! fortify: BLOCKED — PROGRAM_FILE not set; re-invoke from F1"; exit 1; }  # absolute path resolved in F1
 F6_PROMPT="Act as a peer reviewer for ${VENUE}.
 
@@ -740,7 +729,7 @@ Full artifacts: <FORTIFY_DIR>/
 ## Step F8: Terminal summary
 
 ```bash
-rm -f .temp/state/skill-contract.md  # clear contract — fortify complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+rm -f .temp/state/skill-contract.md  # contract done (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 Print compact terminal summary:

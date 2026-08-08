@@ -43,8 +43,7 @@ Terminal path: Step 6 option (a) approval — suggest breakdown and stop.
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
-_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")  # timeout: 5000
-cat "$_FS/task-hygiene.md"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_shared_doc.py" foundry skills/_shared task-hygiene.md  # timeout: 5000
 ```
 
 **Task tracking**: Before Step 1, create TaskCreate entries for all 6 steps (context scan, clarifying questions, build tree, save tree, tree review, present + gate). Then print session plan to user:
@@ -409,8 +408,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
 Resolve the modes dir, then read and execute `breakdown.md` — it carries distillation mode (Steps D1–D4) and action plan mode (Steps B1–B3):
 
 ```bash
-BRAINSTORM_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_skill_subdir.py" brainstorm modes) || { printf "! BREAKING: brainstorm/modes not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
-cat "$BRAINSTORM_MODES/breakdown.md"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_mode.py" brainstorm modes breakdown.md  # timeout: 5000
 ```
 
 > loads: modes/breakdown.md
