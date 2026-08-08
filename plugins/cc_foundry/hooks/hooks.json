@@ -25,6 +25,14 @@
             "type": "command"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/batch-nudge.js\"",
+            "type": "command"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -62,6 +70,14 @@
           {
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-log.js\"",
             "statusMessage": "Logging tool",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/batch-nudge.js\"",
             "type": "command"
           }
         ]
@@ -227,6 +243,14 @@
         "hooks": [
           {
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/commit-guard.js\"",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/batch-nudge.js\"",
             "type": "command"
           }
         ]
