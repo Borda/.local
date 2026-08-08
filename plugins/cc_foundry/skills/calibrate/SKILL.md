@@ -94,8 +94,7 @@ Terminal paths: end of Step 5 (no-apply path) and end of Step 6 (apply path).
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication — duplicated; plugin cannot self-locate
-_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")  # timeout: 5000
-cat "$_FS/task-hygiene.md"
+cat "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")/task-hygiene.md"
 ```
 
 **Task tracking**: create tasks at start of execution (Step 1) for each phase that will run:

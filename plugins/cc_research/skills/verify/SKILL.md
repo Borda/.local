@@ -54,8 +54,10 @@ From paper content, extract:
 **Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--scope`, `--program`, `--strict`, `--dim`, `--codemap`, `--no-codemap`.
 ```bash
 # loads: unsupported-flag-protocol.md
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed"; exit 1; }
+echo "$_RESEARCH_SHARED" > "${TMPDIR:-/tmp}/research-shared-${CSID}"  # cold resolve — every later site reads this sentinel instead of re-running python
 cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```
 
@@ -73,7 +75,8 @@ CODEMAP_RAW=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/codemap-fla
 
 When `CODEMAP_RAW` ≠ `off`:
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/codemap-gates.md"
 ```
 Follow Gate A and Gate B.
@@ -156,7 +159,8 @@ Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt
 
 **Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-verify-codemap-enabled-${CSID}`):
 ```bash
-_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _RESEARCH_SHARED < "${TMPDIR:-/tmp}/research-shared-${CSID}" 2>/dev/null || _RESEARCH_SHARED=""  # warm read (Check 41)
 cat "$_RESEARCH_SHARED/codemap-context.md"
 ```
 Execute its block (leave `TARGET_MODULE`/`TARGET_FN` empty for `central` baseline, or set `TARGET_MODULE` to key module from `scope_files`). Prepend output to scientist prompt under `## Structural Context (codemap-py)` heading so architecture (N) and eval (E) dimensions reference real import/coverage structure instead of re-reading every file.

@@ -13,6 +13,12 @@ paths:
 - Every public function/class/module needs docstring; at least one `Examples` section per public function
   - Omit only when user **explicitly says skip examples** (e.g., "no examples needed", "skip the Examples section")
   - Brevity request or "minimal" docstring does NOT qualify
+- **Docstrings only where Python binds them**: module (first statement), function, class, method. A triple-quoted string trailing a module- or class-level variable is not a docstring — Python attaches it to nothing, `__doc__` stays unset. Use a `#:` comment directly above the assignment instead (Sphinx `autodoc` reads it as the attribute doc):
+
+  ```python
+  #: Per-directory memo of the (width, extension) pair that last matched.
+  _FRAME_LAYOUT_HINTS: dict[Path, tuple[int, str]] = {}
+  ```
 
 ## Deprecation
 
@@ -29,7 +35,6 @@ Use `pyDeprecate`, never `warnings.warn`. Import from `deprecate` (not `pyDeprec
 - Check the installed version before writing the code (`deprecate.__version__`); the API differs across versions and training memory is not evidence (§Library API Awareness). Below v0.6.0 with upgrading blocked, `deprecated_class`/`deprecated_instance` don't exist — ask before upgrading, never upgrade silently.
 
 <!-- verified: 2026-04-06 against pyDeprecate 0.6.x; re-verify if upgraded past 0.6.x -->
-
 
 ## Python Version Policy
 
