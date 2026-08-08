@@ -1,6 +1,6 @@
 # 🏭 foundry — Claude Code Plugin
 
-OSS Claude Code config: 10 specialist agents, 11 skills, event-driven hooks, self-improvement loop for professional AI-assisted development.
+OSS Claude Code config: 10 specialist agents, 12 skills, event-driven hooks, self-improvement loop for professional AI-assisted development.
 
 > OSS workflows: also install `oss` plugin (`/oss:review`, `/oss:release`, ...). Development: install `develop` (`/develop:feature`, `/develop:fix`, ...). ML research: install `research` (`/research:run`, `/research:topic`, ...).
 
@@ -24,6 +24,7 @@ ______________________________________________________________________
   - [`/foundry:profile`](#foundryprofile)
   - [`/foundry:distill`](#foundrydistill)
   - [`/foundry:session`](#foundrysession)
+  - [`/foundry:carryover`](#foundrycarryover)
   - [`/foundry:create`](#foundrycreate)
   - [`/foundry:humanizer`](#foundryhumanizer)
 - [Agents reference](#agents-reference)
@@ -417,6 +418,28 @@ Items stored in project-scoped memory (`~/.claude/projects/<slug>/memory/session
 
 **Automatic parking** (no command needed): new top-level request sent before answering Claude's prior clarifying question, or deferral like "let's come back to that" — Claude parks open item automatically so not lost to context compaction.
 
+`dump` and `restore` are **not** modes of `/foundry:session` — that is `/foundry:carryover`. `session` is `context: fork`, so it cannot read the conversation history a carryover is composed from; its fallback "which mode?" question names `/foundry:carryover` for anyone who guesses `session dump`.
+
+______________________________________________________________________
+
+### `/foundry:carryover`
+
+Handover document across a context reset. `dump` composes goal, decisions + why, lessons, standing instructions, a files-touched table and an artifacts table from the live conversation, writes it to `.claude/state/carryover/<slug>.md`, and ends by printing `/clear` as the last line of the reply. The `carryover-restore.js` hook injects that document back on the other side, so restore costs nothing.
+
+```text
+/foundry:carryover dump [name]      # write the handover doc, then print /clear
+/foundry:carryover restore [name]   # print a stored carryover back into context (named, or latest)
+/foundry:carryover list             # slug / age / consumed table
+```
+
+**Auto-invokes when:** user says "dump the session", "session dump", "handover before clear", "save state before clearing", "carry this over".
+
+Runs **inline, not forked** — the conversation history is the authoritative source for what changed and why. Implementation detail (diffs, tool output, exploration transcript, abandoned approaches) is dropped on purpose.
+
+The hook auto-restores only an **unconsumed** carryover **under 30 minutes old**, so an old dump never ambushes an unrelated session; anything outside that window is reachable via `restore`, which has no age gate. Over ~8000 chars the hook injects `## Goal` + files table + `## Next step` + a pointer instead of the whole doc. Docs older than 14 days list as `⚠ stale`; older than 30 days are swept during `list`.
+
+**Not** the parking lot (`/foundry:session`) and **not** auto-compact survival (the skill contract in `.temp/state/skill-contract.md`, per `rules/compaction.md`) — all three are distinguished in a boundary table in both skills.
+
 ______________________________________________________________________
 
 ### `/foundry:create`
@@ -757,7 +780,7 @@ plugins/cc_foundry/
 │   └── permissions-deny.json    deny-list merged by /foundry:setup
 ├── agents/                      10 specialist agent files (flat — a nested `agents/<x>/y.md` would register as a dispatchable `foundry:<x>:y` agent)
 ├── references/                  agent sidecar fragments (`references/<agent>/*.md`), `cat`-loaded on demand; deliberately outside `agents/` so they are never scanned as agents
-├── skills/                      11 skill directories (audit, brainstorm, calibrate, create, distill, humanizer, investigate, manage, profile, session, setup)
+├── skills/                      12 skill directories (audit, brainstorm, calibrate, carryover, create, distill, humanizer, investigate, manage, profile, session, setup)
 ├── rules/                       13 rule files symlinked to ~/.claude/rules/foundry-*.md by /foundry:setup (+ 10 on-demand bodies in rules/_full/)
 ├── CLAUDE.src.md                workflow rules; /foundry:setup Step 10 copies → ~/.claude/CLAUDE.md
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol
@@ -773,6 +796,7 @@ plugins/cc_foundry/
     ├── agent-router.js          PreToolUse Agent hook; 3-tier routing fallback (worktree → cache → local)
     ├── commit-guard.js          PreToolUse Bash guard; git commit is prompt-discipline only, not hook-gated; git push --force blocked unconditionally on any branch, regular push gated by a sentinel requiring AskUserQuestion each time (no auto-arm)
     ├── sentinel-read-allow.js   PreToolUse Bash; auto-allows blueprint idioms ($(cat "${TMPDIR:-/tmp}/…") sentinel reads, $(date -u +FMT) stamps, substitution-free `IFS= read -r VAR < sentinel` form) when every segment is read-only — kills "Contains expansion" prompts for pre-canned skill code; everything else falls through to normal permission checks; propagated to all sibling plugins
+    ├── carryover-restore.js     SessionStart matcher `clear`; reads `<cwd>/.claude/state/carryover/LATEST` from the hook payload's own `cwd`, and injects that carryover doc as raw stdout (the documented SessionStart context channel) when it is unconsumed and under 30 min old — then marks it consumed and unlinks the pointer so a second `/clear` never re-injects; over ~8000 chars only `## Goal` + files table + `## Next step` + a `/carryover restore` pointer go in; every other path is a silent exit 0, so it can never block a session start
     ├── md-compress.js           normalizes markdown whitespace/table-padding in place on Edit
     ├── batch-nudge.js           PreToolUse/PostToolUse/UserPromptSubmit; tracks a streak of sequential batchable calls (Read/Grep/Glob, read-only Bash prefixes) separated by model-round-trip-sized gaps (≥1.5s); at streak 4, nudges via PostToolUse exit 2 (stderr feedback, never blocks — PreToolUse always exits 0)
     ├── enforce-audit-header.js  PreToolUse AskUserQuestion; denies `/foundry:audit`'s follow-up gate until Step 5 has written `$RUN_DIR/summary.jsonl`, so the fix-level question is never asked from an ad-hoc summary; recognises the gate by its fixed option labels, so `! BREAKING` acknowledgments and flag prompts pass through; silent unless an audit run is in flight; once the aggregate exists, additionally nudges (never blocks) via `additionalContext` if the reply never rendered the report header as a table — see `report-header-table.js`

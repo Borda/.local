@@ -20,6 +20,8 @@ Block format and placement rule: see `compaction-contract.md`.
 
 Hook rides auto-compact (85% context threshold) — no manual trigger. Compaction timing best-effort; only verbatim survival of *whatever contract exists* is deterministic.
 
+> Manual sibling: `/foundry:carryover dump` before an explicit `/clear`. Contract = automatic, in-flight skill phase state, `.temp/state/skill-contract.md`; carryover = explicit, plan/decisions/lessons/files table, `.claude/state/carryover/`. Different trigger, different payload — never substitutes for the other.
+
 ### `keep:` semantics
 
 Skills accepting `[--keep "<items>"]` append user's string verbatim to contract's `preserve:` line at Step 0. Free-form text; skill documents it in `argument-hint`. Optional per-invocation user preserve list — see skill-specific `<compaction>` block for details.

@@ -1,6 +1,6 @@
 ---
 name: session
-description: 'Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks "what was I working on", "any pending items", "what''s in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only).'
+description: 'Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks "what was I working on", "any pending items", "what''s in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only); `dump`/`restore` are not modes here — that is `foundry:carryover`, which runs inline and can read conversation history.'
 argument-hint: "resume | archive <text> | summary"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 effort: low
@@ -60,10 +60,10 @@ If `MODE` matches:
 
 **Unsupported flag check** — after extracting mode token, scan `$ARGUMENTS` for remaining `--<token>` patterns. If found: print `! Unknown flag(s): \`--<token>\`. Supported modes: resume, archive, summary.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
 
-Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
+Otherwise (empty, unrecognized, misspelled — including `dump`/`restore`, which are not modes here): use `AskUserQuestion`:
 
 > "Which session mode did you want?"
-> Options: (a) `resume` — list all open parked items, (b) `archive <name>` — close a parked item by name, (c) `summary` — compact digest of this session's work
+> Options: (a) `resume` — list all open parked items, (b) `archive <name>` — close a parked item by name, (c) `summary` — compact digest of this session's work, (d) none of these — I want `/carryover dump` or `/carryover restore` instead (full handover doc across a `/clear`, not a parked item)
 
 ## Step 1 / Mode: resume (list pending items)
 
@@ -276,6 +276,14 @@ Follow-up gate (`AskUserQuestion`):
 <notes>
 
 **`context: fork`** — reads/writes files only; fork avoids polluting parent context with file listings and session state.
+
+**Three session-state mechanisms — they do not overlap.** `dump`/`restore` are not modes of this skill: a forked run sees no conversation history, so it cannot compose a carryover. That work lives entirely in `foundry:carryover`; the fallback question above is the only place this skill mentions it, as a pointer for anyone who guesses `session dump`.
+
+| Mechanism | Survives | Trigger | Store |
+| --- | --- | --- | --- |
+| Parked items (`session`) | open loops, deferred ideas | automatic, behavioral | `session-context.md` `## Parked items` |
+| Skill contract (`compaction.md`) | in-flight skill phase state | auto-compact at 85% | `.temp/state/skill-contract.md` |
+| Carryover (`carryover`) | plan, decisions, lessons, files table | explicit `dump` before `/clear` | `.claude/state/carryover/` |
 
 **Automatic parking behavior (core behavioral rule — no command needed)**
 

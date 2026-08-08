@@ -9,7 +9,7 @@
 #   clear    — teardown instead of install: uninstall this marketplace's Claude plugins
 #              + the Codex Rig and Codemap plugins, and strip the managed block from $CODEX_HOME/AGENTS.md
 #              (a timestamped backup is kept). Honors claude/codex scoping (default: both sides).
-#              Leaves marketplace registrations and external plugins (caveman/ponytail/openai-codex) in place.
+#              Leaves marketplace registrations and external plugins (caveman/openai-codex) in place.
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
 #   --no-codex-global-agents — skip Codex Rig's managed block in $CODEX_HOME/AGENTS.md
@@ -67,7 +67,7 @@ if [[ -n "$CODEX_REF" ]] && ! $SYNC_CODEX; then
 fi
 
 PLUGINS=(foundry oss develop research codemap-py)
-EXTERNAL_PLUGINS=(codex@openai-codex caveman@caveman ponytail@ponytail)
+EXTERNAL_PLUGINS=(codex@openai-codex caveman@caveman)
 MARKETPLACE=$(jq -r '.name' .claude-plugin/marketplace.json)
 SETTINGS="$HOME/.claude/settings.json"
 KNOWN_MARKETPLACES="$HOME/.claude/plugins/known_marketplaces.json"
@@ -168,12 +168,30 @@ if $CLEAN; then
 fi
 
 echo "Refreshing external plugin marketplaces..."
-claude plugin marketplace add openai/codex-plugin-cc 2>/dev/null && echo "  ✓ openai-codex refreshed" || echo "  ⚠ openai-codex refresh failed (offline?)"
-claude plugin marketplace add JuliusBrussee/caveman   2>/dev/null && echo "  ✓ caveman refreshed"      || echo "  ⚠ caveman refresh failed (offline?)"
-claude plugin marketplace add DietrichGebert/ponytail 2>/dev/null && echo "  ✓ ponytail refreshed"     || echo "  ⚠ ponytail refresh failed (offline?)"
+# `add` alone is idempotent and does not refresh an already-registered marketplace's
+# manifest — installed plugin versions stayed pinned to first-registration state
+# (openai-codex sat on v1.0.1 for months while upstream shipped 1.0.4/1.0.5). `add`
+# first only bootstraps a fresh machine; `update` performs the actual refresh.
+claude plugin marketplace add openai/codex-plugin-cc 2>/dev/null || true
+OPENAI_CODEX_OK=false
+claude plugin marketplace update openai-codex 2>/dev/null && { echo "  ✓ openai-codex refreshed"; OPENAI_CODEX_OK=true; } || echo "  ⚠ openai-codex refresh failed (offline?)"
+claude plugin marketplace add JuliusBrussee/caveman 2>/dev/null || true
+CAVEMAN_OK=false
+claude plugin marketplace update caveman 2>/dev/null && { echo "  ✓ caveman refreshed"; CAVEMAN_OK=true; } || echo "  ⚠ caveman refresh failed (offline?)"
 
 echo "Updating external plugins..."
+# Skip uninstall/reinstall when this plugin's marketplace refresh failed (offline) —
+# otherwise a network blip uninstalls a working plugin and leaves it uninstalled.
 for p in "${EXTERNAL_PLUGINS[@]}"; do
+    case "$p" in
+        codex@openai-codex)  mkt_ok=$OPENAI_CODEX_OK ;;
+        caveman@caveman)     mkt_ok=$CAVEMAN_OK ;;
+        *)                   mkt_ok=false ;;
+    esac
+    if [[ "$mkt_ok" != "true" ]]; then
+        echo "  – skipping $p reinstall, marketplace refresh failed"
+        continue
+    fi
     claude plugin uninstall "$p" 2>/dev/null && echo "  ✓ uninstalled $p" || echo "  – $p not installed, skipping"
     if claude plugin install "$p"; then
         print_claude_plugin_identity "$p"

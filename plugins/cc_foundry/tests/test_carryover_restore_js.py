@@ -1,0 +1,288 @@
+"""Subprocess tests for ``hooks/carryover-restore.js``.
+
+The hook fires on ``SessionStart`` with matcher ``clear``.  It reads
+``<cwd>/.claude/state/carryover/LATEST`` — resolving ``cwd`` from the hook
+payload, never ``process.cwd()`` — and injects the carryover document that
+pointer names back into the fresh session as raw stdout.
+
+Behavioural areas covered:
+
+* **Silence by default** — no pointer, no ``cwd``, wrong event, wrong
+  source, blank pointer, traversal pointer, malformed stdin: every one of
+  them exits 0 with empty stdout.  A hook that blocks session start is
+  worse than a hook that does nothing.
+* **Gates** — a document is injected only while it is unconsumed *and*
+  younger than 30 minutes.
+* **Consumption** — a successful injection rewrites ``consumed: true`` and
+  unlinks the pointer, so a second ``/clear`` re-injects nothing.
+* **Size guard** — above ~8000 chars only ``## Goal``, the files table,
+  ``## Next step`` and a ``/carryover restore`` pointer are injected.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+HOOK = "carryover-restore.js"
+
+pytestmark = pytest.mark.skipif(
+    subprocess.run(["node", "--version"], capture_output=True, timeout=5).returncode != 0,
+    reason="requires node on PATH",
+)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _iso(minutes_ago: float = 0) -> str:
+    """Return a UTC ISO8601 stamp *minutes_ago* minutes in the past."""
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def write_carryover(
+    project: Path,
+    slug: str = "plan-x",
+    *,
+    consumed: str = "false",
+    created: str | None = None,
+    filler: str = "",
+    pointer: str | None = None,
+) -> Path:
+    """Create a carryover doc plus its ``LATEST`` pointer under *project*.
+
+    Args:
+        project: Directory standing in for the hook payload's ``cwd``.
+        slug: Carryover slug — also the document's basename.
+        consumed: Raw value written to the ``consumed`` frontmatter field.
+        created: ISO8601 stamp; defaults to now.
+        filler: Extra body text appended under ``## Decisions``, used to
+            push the document past the size guard.
+        pointer: Contents of ``LATEST``; defaults to *slug*.
+
+    Returns:
+        Path of the carryover document.
+    """
+    carry_dir = project / ".claude" / "state" / "carryover"
+    carry_dir.mkdir(parents=True, exist_ok=True)
+    (carry_dir / "LATEST").write_text(f"{slug if pointer is None else pointer}\n", encoding="utf8")
+    doc = carry_dir / f"{slug}.md"
+    doc.write_text(
+        "\n".join(
+            [
+                "---",
+                f"slug: {slug}",
+                f"created: {created or _iso()}",
+                f"consumed: {consumed}",
+                "branch: main",
+                "---",
+                "",
+                "## Goal",
+                "ship the carryover mechanism",
+                "",
+                "## Decisions",
+                "- inline skill — why: a fork sees no conversation history",
+                filler,
+                "",
+                "## Files touched",
+                "",
+                "| File | Change | State | Ref |",
+                "| --- | --- | --- | --- |",
+                "| `carryover-restore.js` | added SessionStart hook | done | +150/-0 |",
+                "",
+                "## Next step",
+                "run the pytest suite",
+                "",
+            ]
+        ),
+        encoding="utf8",
+    )
+    return doc
+
+
+def payload(project: Path | None, **overrides) -> dict:
+    """Build a SessionStart:clear hook payload for *project*."""
+    data: dict = {"hook_event_name": "SessionStart", "source": "clear"}
+    if project is not None:
+        data["cwd"] = str(project)
+    data.update(overrides)
+    return data
+
+
+# ── Silence by default ────────────────────────────────────────────────────────
+
+
+def test_no_pointer_is_silent(run_hook, tmp_path: Path) -> None:
+    (tmp_path / ".claude" / "state" / "carryover").mkdir(parents=True)
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_missing_cwd_is_silent(run_hook) -> None:
+    result = run_hook(HOOK, payload(None))
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_other_event_is_silent(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path)
+    result = run_hook(HOOK, payload(tmp_path, hook_event_name="SessionEnd"))
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_other_source_is_silent(run_hook, tmp_path: Path) -> None:
+    """``matcher: clear`` filters in production; the in-code gate is a second line."""
+    write_carryover(tmp_path)
+    result = run_hook(HOOK, payload(tmp_path, source="startup"))
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_absent_source_still_injects(run_hook, tmp_path: Path) -> None:
+    """Source gate is lenient — a payload without the field must not silently no-op."""
+    write_carryover(tmp_path)
+    data = payload(tmp_path)
+    del data["source"]
+    result = run_hook(HOOK, data)
+    assert "[carryover] restored" in result.stdout
+
+
+def test_blank_pointer_is_silent(run_hook, tmp_path: Path) -> None:
+    """``/carryover restore`` empties LATEST rather than deleting it."""
+    write_carryover(tmp_path, pointer="")
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_traversal_pointer_is_silent(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path, pointer="../../../etc/passwd")
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_pointer_to_missing_doc_is_silent(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path, pointer="does-not-exist")
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_malformed_stdin_is_silent() -> None:
+    """Bypasses ``run_hook`` deliberately — it JSON-encodes its payload."""
+    hook_path = Path(__file__).resolve().parent.parent / "hooks" / HOOK
+    result = subprocess.run(
+        ["node", str(hook_path)],
+        input="not json at all",
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+# ── Gates ─────────────────────────────────────────────────────────────────────
+
+
+def test_consumed_doc_is_silent(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path, consumed="true")
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.stdout == ""
+
+
+def test_expired_doc_is_silent(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path, created=_iso(minutes_ago=31))
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.stdout == ""
+
+
+def test_doc_just_inside_window_injects(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path, created=_iso(minutes_ago=29))
+    result = run_hook(HOOK, payload(tmp_path))
+    assert "[carryover] restored" in result.stdout
+
+
+def test_unparseable_created_is_silent(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path, created="whenever")
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.stdout == ""
+
+
+# ── Injection content ─────────────────────────────────────────────────────────
+
+
+def test_fresh_doc_injects_full_body(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path)
+    out = run_hook(HOOK, payload(tmp_path)).stdout
+    assert "[carryover] restored from `plan-x`" in out
+    assert "branch main" in out
+    assert "## Decisions" in out
+    assert "## Files touched" in out
+    assert "run the pytest suite" in out
+
+
+def test_injection_strips_frontmatter(run_hook, tmp_path: Path) -> None:
+    write_carryover(tmp_path)
+    out = run_hook(HOOK, payload(tmp_path)).stdout
+    assert "slug: plan-x" not in out
+    assert "consumed:" not in out
+
+
+def test_oversized_doc_injects_head_only(run_hook, tmp_path: Path) -> None:
+    filler = "- filler decision line, repeated for bulk\n" * 220
+    write_carryover(tmp_path, slug="big-x", filler=filler)
+    out = run_hook(HOOK, payload(tmp_path)).stdout
+    assert "filler decision line" not in out
+    assert "## Goal" in out
+    assert "## Files touched" in out
+    assert "## Next step" in out
+    assert "/carryover restore big-x" in out
+
+
+# ── Consumption ───────────────────────────────────────────────────────────────
+
+
+def test_injection_marks_consumed_and_clears_pointer(run_hook, tmp_path: Path) -> None:
+    doc = write_carryover(tmp_path)
+    run_hook(HOOK, payload(tmp_path))
+    assert "consumed: true" in doc.read_text(encoding="utf8")
+    assert not (tmp_path / ".claude" / "state" / "carryover" / "LATEST").exists()
+
+
+def test_second_clear_is_idempotent(run_hook, tmp_path: Path) -> None:
+    doc = write_carryover(tmp_path)
+    first = run_hook(HOOK, payload(tmp_path))
+    second = run_hook(HOOK, payload(tmp_path))
+    assert "[carryover] restored" in first.stdout
+    assert second.stdout == ""
+    assert "consumed: true" in doc.read_text(encoding="utf8")
+
+
+def test_consumption_rewrites_only_the_flag(run_hook, tmp_path: Path) -> None:
+    """The rewrite must round-trip the doc — closing ``---`` delimiter and body intact."""
+    doc = write_carryover(tmp_path)
+    before = doc.read_text(encoding="utf8")
+    run_hook(HOOK, payload(tmp_path))
+    after = doc.read_text(encoding="utf8")
+    assert after == before.replace("consumed: false", "consumed: true", 1)
+    assert after.split("\n")[5] == "---"
+
+
+# ── Registration ──────────────────────────────────────────────────────────────
+
+
+def test_hook_is_registered_with_clear_matcher() -> None:
+    """``agent-router.js`` has an unregistered SessionStart branch — this one must not."""
+    hooks_json = Path(__file__).resolve().parent.parent / "hooks" / "hooks.json"
+    entries = json.loads(hooks_json.read_text(encoding="utf8"))["hooks"]["SessionStart"]
+    matching = [entry for entry in entries if any(HOOK in hook.get("command", "") for hook in entry.get("hooks", []))]
+    assert len(matching) == 1
+    assert matching[0].get("matcher") == "clear"
