@@ -57,6 +57,7 @@ import shlex
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from collections.abc import Callable, Mapping
@@ -83,6 +84,7 @@ from _utilities import TASKS_BENCH_FILE as TASKS_FILE  # noqa: E402
 from _utilities import fmt_time, fmt_tok  # noqa: E402
 from _utilities import gt_is_pending  # noqa: E402
 from _utilities import make_progress, parse_result_usage, stream_claude  # noqa: E402
+from mutation_isolation import IsolatedMutationCell, MutationCleanupError  # noqa: E402
 from provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
@@ -365,6 +367,8 @@ class BenchRun:
         patch_pass: Patch tasks only — True when the failing test passed after the
             agent's diff was applied in a sandbox; None for non-patch tasks or when
             no diff could be extracted from the agent output.
+        mutation_evidence: Patch-task lifecycle evidence, including an action or
+            cleanup failure, retained separately from the semantic test result.
         self_consistency: True when the task's ground truth is derived from the same
             scan-query index the codemap arm queries (uncovered / broken-xref counts).
             Such runs are still scored but excluded from headline accuracy aggregates
@@ -412,6 +416,7 @@ class BenchRun:
     codemap_methods: list[str] = field(default_factory=list)
     codemap_not_covered: list[str] = field(default_factory=list)
     patch_pass: bool | None = None  # patch tasks only: True if failing test passed after applying the agent diff
+    mutation_evidence: dict[str, Any] = field(default_factory=dict)
     self_consistency: bool = False  # ground truth derived from the queried index; excluded from headline accuracy
     repo_sha: str = "unknown"  # provenance: repo HEAD when the run executed (git rev-parse; "unknown" on failure)
     index_sha: str = "unknown"  # provenance: fingerprint of the index head-meta (see _index_sha)
@@ -3393,7 +3398,9 @@ class PatchSandbox:
     def __init__(self, repo_path: str | Path, task: dict) -> None:
         self.repo_path = Path(repo_path)
         self.task = task
-        self._worktree = Path("/tmp") / f"patch-bench-{task['id']}"
+        self._worktree: Path | None = None
+        self._worktree_active = False
+        self.last_mutation_evidence: dict[str, Any] = {}
 
     def _test_argv(self) -> list[str]:
         """Build the pytest argv from the task's test_command or failing_test."""
@@ -3425,22 +3432,23 @@ class PatchSandbox:
         if not commit:
             raise SandboxError(f"task {self.task['id']}: missing pre_fix_commit")
 
-        # Pre-clean any stale worktree from a crashed prior run.
-        self._cleanup()
-        try:
+        cell = IsolatedMutationCell(self._allocate_worktree, self._cleanup)
+
+        def evaluate(worktree: Path) -> bool:
             create = subprocess.run(
-                ["git", "-C", str(self.repo_path), "worktree", "add", "--detach", str(self._worktree), commit],
+                ["git", "-C", str(self.repo_path), "worktree", "add", "--detach", str(worktree), commit],
                 capture_output=True,
                 text=True,
                 timeout=120,
             )
             if create.returncode != 0:
                 raise SandboxError(f"task {self.task['id']}: worktree add failed at {commit}: {create.stderr.strip()}")
+            self._worktree_active = True
 
             # Verify the test fails at the pre-fix commit before applying the patch.
             baseline = subprocess.run(
                 [*self._test_argv(), "--timeout=60", "-q"],
-                cwd=str(self._worktree),
+                cwd=str(worktree),
                 capture_output=True,
                 text=True,
                 timeout=600,
@@ -3450,10 +3458,10 @@ class PatchSandbox:
                 return False
 
             # Apply the diff. Prefer `git apply` (respects a/ b/ prefixes); fall back to patch -p1.
-            patch_file = self._worktree / ".patch-bench.diff"
+            patch_file = worktree / ".patch-bench.diff"
             patch_file.write_text(diff_text)
             applied = subprocess.run(
-                ["git", "-C", str(self._worktree), "apply", "--reject", "--whitespace=nowarn", str(patch_file)],
+                ["git", "-C", str(worktree), "apply", "--reject", "--whitespace=nowarn", str(patch_file)],
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -3461,7 +3469,7 @@ class PatchSandbox:
             if applied.returncode != 0:
                 fallback = subprocess.run(
                     ["patch", "-p1", "-i", str(patch_file)],
-                    cwd=str(self._worktree),
+                    cwd=str(worktree),
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -3472,30 +3480,61 @@ class PatchSandbox:
 
             test = subprocess.run(
                 [*self._test_argv(), "--timeout=60", "-q"],
-                cwd=str(self._worktree),
+                cwd=str(worktree),
                 capture_output=True,
                 text=True,
                 timeout=600,
             )
             return test.returncode == 0
+
+        try:
+            return cell.run(evaluate)
         except subprocess.TimeoutExpired:
             return False
+        except MutationCleanupError as exc:
+            raise SandboxError(f"task {self.task['id']}: {exc}") from exc
         finally:
-            self._cleanup()
+            evidence = cell.last_evidence
+            self.last_mutation_evidence = {
+                "worktree": str(evidence.worktree) if evidence.worktree is not None else None,
+                "action_error": evidence.action_error,
+                "cleanup_error": evidence.cleanup_error,
+                "restored": evidence.restored,
+            }
 
-    def _cleanup(self) -> None:
-        """Remove the temp worktree; never raise (best-effort teardown)."""
-        if not self._worktree.exists():
-            return
-        try:
-            subprocess.run(
-                ["git", "-C", str(self.repo_path), "worktree", "remove", "--force", str(self._worktree)],
+    def _allocate_worktree(self) -> Path:
+        """Allocate a unique private worktree path for one attempt or retry."""
+        root = Path(tempfile.mkdtemp(prefix=f"patch-bench-{self.task['id']}-"))
+        self._worktree = root / "repo"
+        self._worktree_active = False
+        return self._worktree
+
+    def _cleanup(self, worktree: Path) -> None:
+        """Restore and remove one private worktree or raise with cleanup evidence."""
+        if self._worktree_active:
+            reset = subprocess.run(
+                ["git", "-C", str(worktree), "reset", "--hard", "HEAD"],
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
-        except (subprocess.SubprocessError, OSError):
-            pass
+            if reset.returncode != 0:
+                raise SandboxError(f"task {self.task['id']}: worktree reset failed: {reset.stderr.strip()}")
+            remove = subprocess.run(
+                ["git", "-C", str(self.repo_path), "worktree", "remove", str(worktree)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if remove.returncode != 0:
+                raise SandboxError(f"task {self.task['id']}: worktree remove failed: {remove.stderr.strip()}")
+            self._worktree_active = False
+        if worktree.exists():
+            raise SandboxError(f"task {self.task['id']}: worktree remains after cleanup")
+        try:
+            worktree.parent.rmdir()
+        except OSError as exc:
+            raise SandboxError(f"task {self.task['id']}: worktree parent cleanup failed") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -4520,11 +4559,13 @@ class _StructuralRunLoop:
         if task["id"] in self.patch_ids and task.get("scoreable") is not False and run.success:
             diff_text = _extract_diff(run.output_text)
             if diff_text is not None:
+                sandbox = PatchSandbox(self.repo_path, task)
                 try:
-                    run.patch_pass = PatchSandbox(self.repo_path, task).run(diff_text)
+                    run.patch_pass = sandbox.run(diff_text)
                 except SandboxError as exc:
                     run.error = run.error or f"sandbox_error: {exc}"
                     run.patch_pass = None
+                run.mutation_evidence = sandbox.last_mutation_evidence
             else:
                 # No diff block in output — agent produced prose only; scores as a fail.
                 run.patch_pass = False

@@ -94,11 +94,18 @@ def index_contract(
     if not isinstance(expected, dict):
         raise ValueError(f"active manifest has no index contract: {manifest_path}")
     raw_sha = expected.get("raw_sha256")
+    semantic_sha = expected.get("semantic_sha256")
     scan_version = expected.get("scan_version")
     if not isinstance(raw_sha, str) or len(raw_sha) != 64 or any(char not in "0123456789abcdef" for char in raw_sha):
         raise ValueError("active index contract requires a 64-character raw_sha256")
     if not isinstance(scan_version, int) or isinstance(scan_version, bool):
         raise ValueError("active index contract requires an integer scan_version")
+    if semantic_sha is not None and (
+        not isinstance(semantic_sha, str)
+        or len(semantic_sha) != 64
+        or any(char not in "0123456789abcdef" for char in semantic_sha)
+    ):
+        raise ValueError("active index semantic_sha256 must be a 64-character digest")
 
     if methodology_path is not None:
         methodology = _load_json(methodology_path)
@@ -139,6 +146,7 @@ def verify_index(
     index_path: Path,
     manifest_path: Path,
     *,
+    source_root: Path | None = None,
     methodology_path: Path | None = None,
     schema_path: Path | None = None,
     require_hash: bool = False,
@@ -155,6 +163,15 @@ def verify_index(
         )
     if not isinstance(payload.get("modules"), list):
         raise ValueError("index schema mismatch: modules must be a list")
+    if expected.get("semantic_sha256") is not None:
+        runtime_root = source_root or Path(str(payload.get("scan_root", "")))
+        if not runtime_root:
+            raise ValueError("semantic index verification requires source_root or index scan_root")
+        actual_semantic_sha256 = semantic_index_sha256(payload, runtime_root)
+        if actual_semantic_sha256 != expected["semantic_sha256"]:
+            raise ValueError(
+                f"index semantic SHA-256 mismatch: expected {expected['semantic_sha256']}, got {actual_semantic_sha256}"
+            )
     if require_hash:
         actual_sha = hashlib.sha256(index_path.read_bytes()).hexdigest()
         if actual_sha != expected["raw_sha256"]:
@@ -172,6 +189,19 @@ def _replace_root(value: Any, source_root: str, locked_root: str) -> Any:
     return value
 
 
+def semantic_index_sha256(payload: dict[str, Any], source_root: Path) -> str:
+    """Return the graph identity after removing location and scan-time metadata.
+
+    The persisted index retains its runtime paths because the query process uses
+    them. The semantic lock intentionally excludes only the scanner's root and
+    timestamp metadata and replaces embedded runtime-root prefixes, so a graph
+    change still changes this digest.
+    """
+    semantic_payload = {key: value for key, value in payload.items() if key not in {"scan_root", "scanned_at"}}
+    normalized = _replace_root(semantic_payload, str(source_root.resolve()), "<runtime-root>")
+    return hashlib.sha256(json.dumps(normalized, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def prepare_index(
     index_path: Path,
     source_root: Path,
@@ -180,9 +210,8 @@ def prepare_index(
     methodology_path: Path | None = None,
     schema_path: Path | None = None,
 ) -> str:
-    """Normalize one new scan and atomically install it only on an exact hash match."""
+    """Normalize one new scan and atomically install it only on a locked identity match."""
     expected = index_contract(manifest_path, methodology_path=methodology_path, schema_path=schema_path)
-    locked_root = str(expected["scan_root"])
     payload = _load_json(index_path)
     if payload.get("scan_version") != expected["scan_version"]:
         raise ValueError(
@@ -191,15 +220,22 @@ def prepare_index(
         )
     if not isinstance(payload.get("modules"), list):
         raise ValueError("fresh index schema mismatch: modules must be a list")
-    payload = _replace_root(payload, str(source_root.resolve()), locked_root)
-    payload.update(
-        project=expected["project"],
-        scan_root=locked_root,
-        scanned_at=expected["scanned_at"],
-    )
+    runtime_root = source_root.resolve()
+    semantic_sha256 = expected.get("semantic_sha256")
+    if semantic_sha256 is not None:
+        payload.update(project=expected["project"], scan_root=str(runtime_root), scanned_at=expected["scanned_at"])
+        actual_semantic_sha256 = semantic_index_sha256(payload, runtime_root)
+        if actual_semantic_sha256 != semantic_sha256:
+            raise ValueError(
+                f"normalized index semantic SHA-256 mismatch: expected {semantic_sha256}, got {actual_semantic_sha256}"
+            )
+    else:
+        locked_root = str(expected["scan_root"])
+        payload = _replace_root(payload, str(runtime_root), locked_root)
+        payload.update(project=expected["project"], scan_root=locked_root, scanned_at=expected["scanned_at"])
     normalized = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     digest = hashlib.sha256(normalized).hexdigest()
-    if digest != expected["raw_sha256"]:
+    if semantic_sha256 is None and digest != expected["raw_sha256"]:
         raise ValueError(f"normalized index SHA-256 mismatch: expected {expected['raw_sha256']}, got {digest}")
 
     with tempfile.NamedTemporaryFile(dir=index_path.parent, prefix=f".{index_path.name}.", delete=False) as handle:
@@ -270,6 +306,7 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         verify_index(
             index_path,
             manifest_path,
+            source_root=source_root,
             methodology_path=methodology_path,
             schema_path=schema_path,
             require_hash=require_hash,

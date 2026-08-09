@@ -1992,8 +1992,8 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             flags += ["--mcp-config", cls._semble_mcp_config_path(), "--strict-mcp-config"]
         return flags
 
-    @staticmethod
-    def _subprocess_env(arm: str = "") -> dict[str, str]:
+    @classmethod
+    def _subprocess_env(cls, arm: str = "") -> dict[str, str]:
         """Return os.environ augmented with codemap PATH and the benchmark's build opt-out.
 
         Plugin bin/ directories are not reliably added to PATH in ``claude -p`` mode, so the
@@ -2003,15 +2003,33 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         window — the benchmark builds the index out of band (review N2 / H-3). A genuinely
         missing index then fails loudly instead of being silently rebuilt mid-task.
 
+        ``CLAUDE_PLUGIN_ROOT`` is also exported for the codemap-consuming arms, pointed at the
+        same deterministic fixture passed via ``--plugin-dir``. The ``claude`` CLI does not
+        reliably propagate this var into a Skill's Bash execution context in headless ``-p``
+        mode; without it, ``query-code/SKILL.md``'s ``${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}``
+        fallback resolves to a relative path that doesn't exist in the copied sandbox repo, and
+        the agent burns calls on ``find``/``which``/``printenv`` hunting for the binary instead
+        (confirmed: 15/15 Claude C_strict cells hit this, 0/16 Codex — Codex's adapter resolves
+        via an explicit ``CODEMAP_BIN`` env var instead of an implicit CLI-propagated one). If the
+        CLI does set it correctly for a given invocation, this value is simply overridden per-Skill
+        and is a no-op.
+
         Args:
-            arm: Benchmark arm; only ``codemap`` / ``combined`` receive the build opt-out.
+            arm: Benchmark arm; only ``codemap`` / ``combined`` / ``B_auto`` / ``C_strict``
+                receive the build opt-out and CLAUDE_PLUGIN_ROOT — never ``A_plain``/``plain``,
+                whose contract is "Codemap is absent and inaccessible"; leaking availability
+                there would break treatment isolation.
 
         Returns:
-            A copy of the process environment with PATH (and, for structural arms, the opt-out).
+            A copy of the process environment with PATH (and, for structural arms, the opt-out
+            and CLAUDE_PLUGIN_ROOT).
         """
         env = codemap_bin_on_path(os.environ.copy())
         if arm in ("codemap", "combined", "B_auto", "C_strict"):
             env["SCAN_NO_AUTOBUILD"] = "1"
+            plugin_dir = cls._codemap_plugin_dir()
+            if plugin_dir:
+                env["CLAUDE_PLUGIN_ROOT"] = plugin_dir
         return env
 
     def _stream_events(
@@ -3044,7 +3062,6 @@ class Benchmark:
         self._write_tool_log(result)
         style = _FAIL_STYLE if not result.success else _ARM_STYLE.get(arm, "")
         print_fn(_Text(_run_line(run_n, total_runs, task, model_short, arm, result), style=style))
-        self._save_snapshot(metadata)
         return result
 
     def run(self, metadata: dict) -> list[BenchmarkRun]:
@@ -3070,6 +3087,10 @@ class Benchmark:
                 progress.remove_task(sub)
                 progress.advance(outer)
                 self.results.append(result)
+                # snapshot after append, not inside _run_single — a snapshot taken before
+                # append always lags self.results by one entry, silently dropping the
+                # last-iterated task (BA-16, last in tasks-agentic.json) from every output JSON
+                self._save_snapshot(metadata)
         return self.results
 
     def _write_tool_log(self, result: BenchmarkRun) -> None:

@@ -18,6 +18,7 @@ BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-bench.json"
 CODEX_RUNNER_PATH = BENCHMARKS_DIR / "run-codex-structural.py"
 CODEX_QUERY_SKILL_PATH = BENCHMARKS_DIR.parent / "plugins" / "codemap-py" / "codex-skills" / "query-code" / "SKILL.md"
+CLAUDE_QUERY_SKILL_PATH = BENCHMARKS_DIR.parent / "plugins" / "codemap-py" / "claude-skills" / "query-code" / "SKILL.md"
 
 
 @pytest.fixture(scope="module")
@@ -301,6 +302,19 @@ def test_distinct_independent_oracle_tasks_allow_repository_reads_after_required
         prompt = task_by_id[task_id]["prompt"].lower()
         assert "independent ast oracle" in prompt
         assert "codemap" in prompt
+
+
+def test_query_skills_require_with_imports_for_source_requests_that_name_imports() -> None:
+    """Prevent source-with-imports tasks from falling back to redundant repository reads."""
+    task_by_id = {task["id"]: task for task in core.load_task_suite(SUITE_PATH)}
+
+    for task_id in ("SE-01", "SE-02"):
+        assert "import" in task_by_id[task_id]["prompt"].lower()
+
+    for skill_path in (CODEX_QUERY_SKILL_PATH, CLAUDE_QUERY_SKILL_PATH):
+        skill = skill_path.read_text(encoding="utf-8")
+        assert "symbol <name> --with-imports" in skill
+        assert "query_complete" in skill
 
 
 def test_uncovered_task_prompts_and_views_match_the_independent_ast_oracle() -> None:

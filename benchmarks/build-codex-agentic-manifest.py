@@ -23,7 +23,7 @@ TASKS_PATH = BENCHMARKS / "suites" / "tasks-agentic.json"
 OUTPUT_MANIFEST = MANIFESTS / "codex-agentic.json"
 OUTPUT_HUMAN_MANIFEST = MANIFESTS / "codex-agentic.md"
 EXPERIMENT_ID = "codex-agentic"
-EXPERIMENT_REVISION = "codex-agentic-protocol-evidence-separation-2026-08-05"
+EXPERIMENT_REVISION = "codex-agentic-skill-imports-guidance-2026-08-09"
 sys.path.insert(0, str(BENCHMARKS))
 from agentic_contracts import AGENTIC_ARMS, DEFAULT_REPETITIONS, materialize_agentic_prompt  # noqa: E402
 from provider_parity_contracts import canonical_task_hash, semantic_suite_hash  # noqa: E402

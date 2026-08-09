@@ -707,6 +707,8 @@ Retrieve function or class source by name instead of reading full file — drama
 
 `symbol` accepts bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. `find-symbol` and `symbol` cap results at 20 default — pass `--limit 0` to retrieve all matches before counting or ranking.
 
+When a source request names module imports, use `symbol <name> --with-imports`; `query_complete: true` confirms index coverage but does not add optional fields.
+
 Every `symbol` result includes `"stale": bool` and `"stale_reason": string | null`. When `stale: true`, index line range no longer matches current file — fall back to `Read(<path>)` instead. Common reasons: `"file deleted"`, `"line range past EOF"`, `"symbol name not in slice header"` (function moved or renamed since last scan). `path` field always valid even when `stale: true`.
 
 > **! BREAKING (path output)**: legitimate "no path exists" result now returns `{"path": null, "reason": "no-import-path"}` at exit 0 — former `"error": "No import path found."` key gone. Genuine failures (unknown module) still use non-zero `"error"` contract — consumers can finally distinguish "no path" from "query failed". Anything branching on old `error` key for no-path case must read `reason` (or test `path === null`) instead.

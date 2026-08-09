@@ -24,7 +24,7 @@ BENCHMARKS = ROOT / "benchmarks"
 OUTPUT_MANIFEST = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 POLICY_SEED = BENCHMARKS / "policy" / "provider-parity-methodology.json"
 POLICY_SEED_SHA256 = "1e5b1cad389513db9402ca2da39f58c1ff9b7cb36b0fdc4a23ce03886e12f1f1"
-EXPERIMENT_REVISION = "provider-parity-shared-structural-and-agentic-protocol-evidence-methodology-2026-08-05"
+EXPERIMENT_REVISION = "provider-parity-skill-imports-guidance-2026-08-09"
 TASKS_BENCH = "benchmarks/suites/tasks-bench.json"
 TASKS_AGENTIC = "benchmarks/suites/tasks-agentic.json"
 CANONICAL_TARGET = (Path(os.sep) / "tmp" / "codemap-provider-parity-pl-2.6.5").resolve()
@@ -38,6 +38,7 @@ INDEX_LOCK = {
     "path": str(CANONICAL_TARGET / ".cache/codemap/codemap-provider-parity-pl-2.6.5.json"),
     "project": "codemap-provider-parity-pl-2.6.5",
     "raw_sha256": "3c5840893e9c939baa61a6c5ce95994ff69ffe4a67d225aeb412c73deb61e0c1",
+    "semantic_sha256": "4086690e2b7bed8ff4fc95ed37606228caa236200ccad2e9d8c5dfb9dda1062e",
     "scan_root": str(CANONICAL_TARGET),
     "scan_version": 13,
     "scanned_at": "2026-08-06T09:04:54.432797+00:00",

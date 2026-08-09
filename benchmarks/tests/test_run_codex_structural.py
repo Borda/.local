@@ -1042,6 +1042,30 @@ def test_result_rows_show_gross_input_while_telemetry_retains_cache_detail(
     assert persisted["fresh_input_tokens"] == 40
 
 
+def test_result_rows_expose_query_conformance_and_cohort(script_run_codex: Any) -> None:
+    """Console progress must not disguise a diagnostic query mismatch as a clean treatment."""
+    row = script_run_codex._format_result_row(
+        status="✓",
+        task_id="SE-01",
+        repetition=1,
+        arm="C_skill_required",
+        input_tokens=120,
+        cached_input_tokens=80,
+        fresh_tokens=40,
+        output_tokens=1,
+        elapsed_s=1.0,
+        quality="1.000",
+        adherence=True,
+        codemap_used=True,
+        query_conformance=False,
+        headline_eligible=False,
+    )
+
+    assert "treatment:✓" in row
+    assert "query:✗" in row
+    assert "cohort:D" in row
+
+
 def test_parser_marks_malformed_and_missing_terminal_streams_incomplete(script_run_codex: Any) -> None:
     """Invalid or unterminated JSONL cannot become a complete benchmark cell."""
     malformed = script_run_codex.parse_codex_jsonl('{"type":"turn.completed"}\nnot-json')
@@ -3399,6 +3423,8 @@ def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run
     assert "treatment: ✓ assigned arm followed, ✗ assigned arm not followed" in legend
     assert "codemap-used: ✓ Codemap call observed; ✗ no Codemap call (expected for A_plain)" in legend
     assert "or required use missed (B/C)" in legend
+    assert "query: ✓ exact expected query; ✗ mismatch; — not applicable" in legend
+    assert "cohort: H headline; D diagnostic" in legend
     assert (
         "input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)"
         in legend
@@ -5214,6 +5240,37 @@ def test_diff_impact_admission_requires_exact_status_and_post_stage_bytes(
             script_run_codex._validate_locked_runtime(repo, index, "A_plain", manifest, admission)
 
     script_run_codex._validate_locked_runtime(repo, index, "A_plain", manifest)
+
+
+def test_diff_impact_contamination_persists_stage_and_worktree_evidence(script_run_codex: Any, tmp_path: Path) -> None:
+    """A DI rejection retains enough evidence to diagnose the mutated stage."""
+    repo, index, manifest, task = _make_locked_diff_impact_repo(tmp_path)
+    task["prompt"] = "Inspect the staged change."
+    stager = script_run_codex._diff_impact_stager(repo, task)
+    assert stager is not None
+
+    def transport(_command: list[str], **_kwargs: Any) -> str:
+        (repo / "module.py").write_text("BASE\nSTAGED\nTAMPERED\n", encoding="utf-8")
+        return _completed_stream()
+
+    with stager:
+        admission = script_run_codex._capture_diff_impact_stage(repo, task)
+        runner = script_run_codex.CodexRunner(
+            "fixture",
+            repo,
+            index_path=index,
+            manifest_path=manifest,
+            transport=transport,
+        )
+        result = runner.run(task, "A_plain", diff_impact_stage=admission)
+
+    assert result.contaminated is True
+    assert result.stage_evidence == {
+        "stage": task["stage"],
+        "changed_paths": ["module.py"],
+        "expected_status": {"module.py": " M"},
+        "observed_status": {"module.py": " M"},
+    }
 
 
 @pytest.mark.parametrize(

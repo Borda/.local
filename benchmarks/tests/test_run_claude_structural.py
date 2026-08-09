@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -64,6 +65,56 @@ def _se_task(start_line: int = 100, qname: str = "Trainer.fit") -> dict:
             "end_line": start_line + 10,
             "module": "lightning.pytorch.trainer",
         },
+    }
+
+
+def test_patch_sandbox_recreates_a_unique_worktree_for_each_retry(
+    script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The existing Claude patch boundary consumes the shared isolated-cell lifecycle."""
+    roots: list[Path] = []
+    test_calls = 0
+
+    def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+        root = tmp_path / f"attempt-{len(roots)}"
+        root.mkdir()
+        roots.append(root)
+        return str(root)
+
+    def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+        nonlocal test_calls
+        if "worktree" in command and "add" in command:
+            Path(command[-2]).mkdir()
+        elif command[:1] == ["pytest"]:
+            test_calls += 1
+            return SimpleNamespace(returncode=1 if test_calls % 2 else 0, stderr="")
+        elif "worktree" in command and "remove" in command:
+            worktree = Path(command[-1])
+            for path in worktree.iterdir():
+                path.unlink()
+            worktree.rmdir()
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
+    monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+    sandbox = script_run_bench.PatchSandbox(
+        tmp_path,
+        {
+            "id": "PT-fixture",
+            "pre_fix_commit": "a" * 40,
+            "test_command": "pytest tests/test_fixture.py::test_fix -x",
+        },
+    )
+
+    assert sandbox.run("diff --git a/a.py b/a.py\n") is True
+    assert sandbox.run("diff --git a/a.py b/a.py\n") is True
+    assert len(roots) == 2
+    assert all(not root.exists() for root in roots)
+    assert sandbox.last_mutation_evidence == {
+        "worktree": str(roots[-1] / "repo"),
+        "action_error": None,
+        "cleanup_error": None,
+        "restored": True,
     }
 
 

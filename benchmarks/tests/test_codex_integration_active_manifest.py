@@ -77,7 +77,7 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     }
     human = builder["_human_bytes"](human_manifest, "0" * 64).decode("utf-8")
 
-    assert builder["EXPERIMENT_REVISION"] == "codex-integration-prospective-locked-query-components-2026-08-04"
+    assert builder["EXPERIMENT_REVISION"] == "codex-integration-skill-imports-guidance-2026-08-09"
     assert arms["B_direct_required"]["requirement"] == (
         "Run at least one successful compact direct query in its own native command item containing exactly "
         '"$CODEMAP_BIN" query --compact <subcommand> [arguments]; '
@@ -222,7 +222,7 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     assert manifest["package_roster"] == ["codemap-py", "codex-rig"]
     assert manifest["experiment_id"] == "codex-integration-v1"
     assert manifest["schema_version"] == "codex-integration-manifest-v2"
-    assert manifest["experiment_revision"] == "codex-integration-prospective-locked-query-components-2026-08-04"
+    assert manifest["experiment_revision"] == "codex-integration-skill-imports-guidance-2026-08-09"
     assert manifest["preregistered_cells"]["arms"] == [
         "A_plain",
         "B_direct_required",

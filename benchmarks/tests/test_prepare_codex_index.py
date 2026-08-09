@@ -87,6 +87,71 @@ def test_prepare_index_rewrites_only_environment_metadata_to_exact_locked_bytes(
     assert index_path.read_bytes() == locked_bytes
 
 
+def test_semantic_index_identity_is_stable_across_runtime_roots(tmp_path: Path) -> None:
+    """Equivalent scans keep one semantic identity without sharing a runtime path."""
+    module = _load_script()
+    first_root = tmp_path / "first" / "target"
+    second_root = tmp_path / "second" / "target"
+    payload = {
+        "scan_version": 13,
+        "scanned_at": "different-runtime-times-are-not-graph-identity",
+        "scan_root": str(first_root),
+        "modules": [{"file": f"{first_root}/src/demo.py", "imports": [f"{first_root}/src/helper.py"]}],
+    }
+    second_payload = json.loads(json.dumps(payload).replace(str(first_root), str(second_root)))
+
+    assert module.semantic_index_sha256(payload, first_root) == module.semantic_index_sha256(
+        second_payload, second_root
+    )
+    assert payload["scan_root"] != second_payload["scan_root"]
+
+
+def test_prepare_index_uses_semantic_lock_without_rewriting_runtime_root(tmp_path: Path) -> None:
+    """A prospective lock accepts equivalent scans at distinct roots and keeps each queryable path."""
+    module = _load_script()
+    first_root = tmp_path / "first" / "target"
+    second_root = tmp_path / "second" / "target"
+    first_root.mkdir(parents=True)
+    second_root.mkdir(parents=True)
+    first_index = tmp_path / "first-index.json"
+    second_index = tmp_path / "second-index.json"
+    payload = {
+        "scan_version": 13,
+        "scanned_at": "runtime-time",
+        "project": "fixture",
+        "scan_root": str(first_root),
+        "modules": [{"file": f"{first_root}/src/demo.py", "imports": [f"{first_root}/src/helper.py"]}],
+    }
+    first_index.write_text(json.dumps(payload), encoding="utf-8")
+    second_payload = json.loads(json.dumps(payload).replace(str(first_root), str(second_root)))
+    second_index.write_text(json.dumps(second_payload), encoding="utf-8")
+    semantic_sha256 = module.semantic_index_sha256(payload, first_root)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "index": {
+                    "raw_sha256": "0" * 64,
+                    "semantic_sha256": semantic_sha256,
+                    "scan_version": 13,
+                    "scan_root": "<runtime-root>",
+                    "project": "fixture",
+                    "scanned_at": "locked-time",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    module.prepare_index(first_index, first_root, manifest)
+    module.prepare_index(second_index, second_root, manifest)
+
+    assert json.loads(first_index.read_text(encoding="utf-8"))["scan_root"] == str(first_root)
+    assert json.loads(second_index.read_text(encoding="utf-8"))["scan_root"] == str(second_root)
+    assert module.verify_index(first_index, manifest, source_root=first_root) is None
+    assert module.verify_index(second_index, manifest, source_root=second_root) is None
+
+
 def test_prepare_index_preserves_fresh_scan_when_normalized_graph_does_not_match(tmp_path: Path) -> None:
     """Metadata normalization must never conceal a changed graph or scanner result."""
     module = _load_script()

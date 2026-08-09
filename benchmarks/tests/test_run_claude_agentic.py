@@ -2790,6 +2790,23 @@ class TestSubprocessEnv:
         env = script_run_agentic.ModelRunner._subprocess_env(arm)
         assert "SCAN_NO_AUTOBUILD" not in env
 
+    @pytest.mark.parametrize("arm", ["codemap", "combined", "B_auto", "C_strict"])
+    def test_claude_plugin_root_set_for_codemap_arms(self, script_run_agentic: Any, arm: str) -> None:
+        """CLAUDE_PLUGIN_ROOT is exported for codemap-consuming arms, pointed at the repo fixture.
+
+        Without this, the Skill's ``${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}`` fallback resolves
+        to a relative path absent from the benchmark's copied sandbox repo, and the agent burns
+        calls hunting for the binary instead of querying it.
+        """
+        env = script_run_agentic.ModelRunner._subprocess_env(arm)
+        assert env.get("CLAUDE_PLUGIN_ROOT") == script_run_agentic.ModelRunner._codemap_plugin_dir()
+
+    @pytest.mark.parametrize("arm", ["plain", "A_plain", "semble", ""])
+    def test_claude_plugin_root_absent_for_non_codemap_arms(self, script_run_agentic: Any, arm: str) -> None:
+        """A_plain's contract is codemap absent and inaccessible — leaking the var would break isolation."""
+        env = script_run_agentic.ModelRunner._subprocess_env(arm)
+        assert "CLAUDE_PLUGIN_ROOT" not in env
+
 
 # ===========================================================================
 # _seed_index_cache — index present in fix-task sandbox (review H-3)

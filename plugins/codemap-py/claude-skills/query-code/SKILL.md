@@ -34,7 +34,7 @@ Direction matters: "affected if X changes" means reverse dependencies.
 | shortest import chain | `path <from> <to>` |
 | production centrality / highest in-degree | `central --top N --exclude-tests` |
 | internal-import coupling (not centrality) | `coupled --top N` |
-| symbol source or module symbols | `symbol <name> [--with-imports]` · `symbols <module>` |
+| symbol source including module imports or module symbols | `symbol <name> --with-imports` · `symbols <module>` |
 | regex symbol search | `find-symbol <pattern>` |
 | direct production callers | `fn-rdeps <module::symbol> --exclude-tests` |
 | callers plus test-module importers | `fn-rdeps <module::symbol> --exclude-tests`, then `rdeps <module>` |
@@ -57,6 +57,8 @@ qualified class method such as `MyClass.method`; `module::symbol` belongs to
 qualified extension method (for example, `symbol MyClass.add_feature`), not a
 nearby `symbol MyClass` or `symbols <module>` listing unless the user requests
 that broader scope.
+
+When a source request names imports, use `symbol <name> --with-imports`; `query_complete: true` confirms index coverage, not that optional fields were requested.
 
 Use `codemap-py query --help` only when needed.
 

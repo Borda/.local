@@ -281,6 +281,8 @@ _OUTPUT_LEGEND = (
     "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
     "  codemap-used: ✓ Codemap call observed; ✗ no Codemap call "
     "(expected for A_plain) or required use missed (B/C)\n"
+    "  query: ✓ exact expected query; ✗ mismatch; — not applicable\n"
+    "  cohort: H headline; D diagnostic\n"
     "  input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)\n"
     "END LEGEND"
 )
@@ -307,17 +309,25 @@ def _format_result_row(
     quality: str,
     adherence: bool,
     codemap_used: bool,
+    query_conformance: bool | None = None,
+    headline_eligible: bool | None = None,
 ) -> str:
     """Format one result with stable columns and shared human-readable units."""
     del cached_input_tokens, fresh_tokens
     adherence_mark = "✓" if adherence else "✗"
     codemap_used_mark = "✓" if codemap_used else "✗"
+    query_status = ""
+    if query_conformance is not None:
+        query_mark = "✓" if query_conformance else "✗"
+        cohort = "" if headline_eligible is None else ("  cohort:H" if headline_eligible else "  cohort:D")
+        query_status = f"  query:{query_mark}{cohort}"
     display_arm = _DISPLAY_ARM_LABELS.get(arm, arm)
     return (
         f"{status}  {task_id:<5}  rep={repetition}  {display_arm:<{_DISPLAY_ARM_COLUMN_WIDTH}}"
         f"  in={fmt_tok(input_tokens):>6}"
         f"  out={fmt_tok(output_tokens):>5}  time={fmt_time(elapsed_s):>5}"
         f"  quality={quality:>5}  treatment:{adherence_mark}  codemap-used:{codemap_used_mark}"
+        f"{query_status}"
     )
 
 
@@ -545,6 +555,21 @@ class DiffImpactStageAdmission:
     repo_sha: str
     statuses: tuple[tuple[str, str], ...]
     file_sha256: tuple[tuple[str, str], ...]
+
+
+def _diff_impact_stage_evidence(
+    repo_path: Path, task: Mapping[str, Any], admission: DiffImpactStageAdmission
+) -> dict[str, Any]:
+    """Return the admitted and observed DI state retained with a contaminated cell."""
+    stage = task.get("stage")
+    if not isinstance(stage, list):
+        raise ValueError("canonical Codex DI evidence requires a declared diff-impact stage")
+    return {
+        "stage": stage,
+        "changed_paths": [relative_path for relative_path, _ in admission.file_sha256],
+        "expected_status": dict(admission.statuses),
+        "observed_status": _git_porcelain_status(repo_path),
+    }
 
 
 def _git_porcelain_status(repo_path: Path) -> dict[str, str]:
@@ -3108,6 +3133,7 @@ class CodexRun:
     incomplete: bool = False
     extraction_failed: bool = False
     contaminated: bool = False
+    stage_evidence: dict[str, Any] = field(default_factory=dict)
     error: str = ""
     error_type: str = ""
     output_text: str = ""
@@ -4129,6 +4155,8 @@ class CodexRunner:
         )
         run.parity_arm = arm
         run.cell_wall_clock_limit_s = self.timeout
+        if diff_impact_stage is not None:
+            run.stage_evidence = _diff_impact_stage_evidence(self.repo_path, task, diff_impact_stage)
         run.capability_strata = capability_strata(_raw_task(task))
         run.arm_contract_hash = _arm_contract_hash(arm)
         raw_hash = _raw_task_hash(task)
@@ -4217,6 +4245,8 @@ class CodexRunner:
                             _validate_coordination_root(home.coordination_path)
                     except ValueError as exc:
                         postflight_error = str(exc)
+                        if diff_impact_stage is not None:
+                            run.stage_evidence = _diff_impact_stage_evidence(self.repo_path, task, diff_impact_stage)
                         parsed.completed = False
                         parsed.incomplete = True
                         parsed.error = f"runtime contamination: {postflight_error}"
@@ -5118,6 +5148,8 @@ def main(
                                 quality=quality,
                                 adherence=run.treatment_adherence,
                                 codemap_used=run.codemap_calls > 0,
+                                query_conformance=run.locked_query_conformance,
+                                headline_eligible=run.headline_eligible_v1,
                             ),
                         )
                     )
