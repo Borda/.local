@@ -1,4 +1,35 @@
-"""Build the canonical role-aware prompt used by live route calibration."""
+"""Build deterministic role-aware prompts for live calibration experiments.
+
+## Purpose
+
+keep live model-route prompts, task fingerprints, and role context reproducible across calibration runs.
+The shared builders ensure baseline, candidate, and scorer components use byte-for-byte equivalent prompt inputs before comparing observations.
+
+## Scope
+
+constructs and hashes local prompt data; it neither calls a model nor reads or writes calibration artifacts.
+It resolves source or installed-plugin role instructions and validates the layout boundary needed by the prompt builders.
+
+## Usage
+
+import ``build_prompt`` and related hash helpers from the live calibration runner rather than reproducing prompt assembly.
+Pass the same case, candidate list, task contract, and registered role context to every caller that must share a calibration prompt identity.
+
+## Used by
+
+``run_live_ab.py`` and tests that verify route-specific prompt identity.
+The static calibration runner and behavioral scorer also reuse these builders when validating task and prompt digests.
+
+## Outputs
+
+returns one canonical prompt plus stable SHA-256 values that make observations attributable to the exact task and role context.
+The resulting digests can be stored with observations and compared later to detect changed instructions, fixtures, or task contracts.
+
+## Failure
+
+missing role cards, invalid layout selection, or malformed task fields raise local validation errors before any paid model request is attempted.
+Callers should treat these preflight failures as evidence that the calibration inputs need repair, not as model-quality observations.
+"""
 
 from __future__ import annotations
 

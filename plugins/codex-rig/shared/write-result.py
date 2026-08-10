@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Write canonical Codex result JSON with shared confidence checks."""
+"""Write canonical Codex Rig result JSON with shared confidence invariants.
+
+## Purpose
+
+Normalize a workflow's outcome, checks, findings, and confidence recovery into a result candidate that the validator can reconcile with evidence. The writer is the single place where CLI metadata becomes the canonical result JSON shape consumed by later validation.
+
+## Scope
+
+It validates supplied CLI metadata and writes JSON only; it does not run gates, inspect source, or promote a candidate to final output. Gate status and confidence-recovery fields are checked against the supplied ``gates.json`` before the candidate is created.
+
+## Usage
+
+Invoke the CLI after gates and notes exist, then pass the candidate to ``validate-artifacts.py`` before renaming it to ``result.json``. Provide canonical gate IDs in ``--checks-run`` and ``--checks-failed`` plus metadata JSON containing confidence gaps, closures, recovery evidence, actions, and remaining limits.
+
+## Used by
+
+Artifact-producing workflow skills and result-schema acceptance tests use this writer. Their downstream validators rely on the writer's enum values and list normalization rather than reparsing workflow-specific command-line conventions.
+
+## Outputs
+
+It writes a deterministic candidate JSON with enum-validated status, check lists, findings, and metadata supplied by the completed workflow. The payload includes ``status``, ``checks_run``, ``checks_failed``, finding counts, final confidence, recommendations/follow-up lists, ``artifact_path``, and the supplied metadata.
+
+## Failure
+
+Invalid enum value, malformed metadata, missing confidence closure, or contradictory gate evidence exits non-zero before a candidate exists. In particular, a pass with failed gates or critical findings, a timeout without a failed check, and a confidence status inconsistent with its numeric band are rejected at write time.
+"""
 
 from __future__ import annotations
 
@@ -239,7 +264,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     status = ResultStatus(args.status)
     validate_confidence_metadata(metadata, args.confidence, status, checks_failed)
 
-    return {
+    payload = {
         "status": status.value,
         "checks_run": checks_run,
         "checks_failed": checks_failed,
@@ -251,10 +276,12 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         },
         "confidence": args.confidence,
         "artifact_path": args.artifact_path,
-        "recommendations": parse_items(args.recommendations),
-        "follow_up": parse_items(args.follow_up),
         "metadata": metadata,
     }
+    if metadata.get("review_status") != "unavailable":
+        payload["recommendations"] = parse_items(args.recommendations)
+        payload["follow_up"] = parse_items(args.follow_up)
+    return payload
 
 
 def parse_args() -> argparse.Namespace:

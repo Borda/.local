@@ -33,9 +33,9 @@ reuse the path through a shell variable; shell variables do not persist across t
 ### 02: Normalize the analysis mode
 
 - `local`: code, local diff/reports, pasted text.
-- `github`: live issue/PR/discussion metadata.
+- `github`: live issue/release/repository metadata through `github_read.py`; use only its audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`) or an explicit read-only GraphQL query for Discussions. PR collection uses `collect_pr.py` only. Prefer `gh`; use the public HTTPS fallback only as a final public REST fallback.
 - `report`: `.reports/**` or `.reports/codex/**` artifact.
-- `ecosystem`: downstream/API/dependency impact; current external claims need live web/`gh` evidence.
+- `ecosystem`: downstream/API/dependency impact; current external claims need live web evidence. Do not invoke `gh` outside `github_read.py`.
 
 Unsupported/ambiguous mode => fail with usage note, unless pasted evidence supports `local`.
 

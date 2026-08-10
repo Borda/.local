@@ -41,6 +41,8 @@ Use the supplied `range`; when absent, run `git describe --tags --abbrev=0` as a
 Retain that literal release range in workflow state, run `git log --oneline <release-range>` as argv, and write stdout
 to `<run-directory>/commits.txt`. Record range or log collection failure instead of treating empty output as success.
 
+When current GitHub release metadata is required, use `python PLUGIN_ROOT/shared/github_read.py --out <run-directory>/github-release.json -- gh release view <tag-or-url> --json <fields>`. It prefers `gh`; a public `api.github.com` fallback is allowed only for public REST resources and cannot supply private release evidence. Never invoke `gh` directly.
+
 Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `commit` scope for the retained release range into
 `<run-directory>/range`. Collection failure is evidence gap, not empty release.
 

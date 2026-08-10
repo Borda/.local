@@ -1,4 +1,29 @@
-"""Observe Codex Rig shim lifecycle filesystem evidence without writes."""
+"""Observe bounded filesystem evidence for the Codex Rig shim lifecycle.
+
+## Purpose
+
+Collect identity-checked state needed to diagnose shims without trusting symlinks, unbounded files, or mutable path traversal. Descriptor-relative reads let later planning compare the objects that were actually observed with the objects used during mutation.
+
+## Scope
+
+Opens and reads local filesystem objects only; it never changes a target, lock, journal, or managed instruction file. It owns the bridge from filesystem descriptors to immutable observations, while lifecycle parsing and operation planning remain separate.
+
+## Usage
+
+Import ``observe_filesystem``-style helpers through the manager rather than running this internal module directly. Supply canonical roots and package expectations from the manager so every observation is constrained to the intended installation.
+
+## Used by
+
+``manage_role_agents.py`` and the approval/transaction safety chain consume these observation helpers. Planning and approval use their records as the evidence boundary before any write is authorized.
+
+## Outputs
+
+Returns immutable observations for roots, locks, namespaces, targets, state, and journals with their verified identities. Each record carries enough metadata for callers to detect replacement, link traversal, stale state, and recovery residue.
+
+## Failure
+
+Unsafe paths, links, oversized reads, descriptor mismatches, or unreadable local state raise ``ObservationError`` before planning can begin. The manager must report the observation failure and withhold mutation rather than downgrade it to a warning.
+"""
 
 from __future__ import annotations
 

@@ -25,11 +25,15 @@ def load_collector() -> ModuleType:
     specification = importlib.util.spec_from_file_location("codex_rig_collect_pr", COLLECTOR)
     assert specification is not None and specification.loader is not None
     module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
+    sys.path.insert(0, str(COLLECTOR.parent))
+    try:
+        specification.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
     return module
 
 
-def pr_payload() -> dict[str, Any]:
+def pr_payload(*, state: str = "OPEN") -> dict[str, Any]:
     """Return one complete same-repository PR metadata fixture."""
     return {
         "number": 17,
@@ -43,7 +47,7 @@ def pr_payload() -> dict[str, Any]:
         "headRepository": {"nameWithOwner": "Borda/AI-Rig"},
         "headRepositoryOwner": {"login": "Borda"},
         "isCrossRepository": False,
-        "state": "OPEN",
+        "state": state,
         "isDraft": False,
         "reviewDecision": "CHANGES_REQUESTED",
         "mergeable": "MERGEABLE",
@@ -86,10 +90,21 @@ def threads_payload(*, paginated: bool = False) -> dict[str, Any]:
 class FakeRunner:
     """Return deterministic process results while recording exact argv calls."""
 
-    def __init__(self, *, paginated: bool = False, statistics_unavailable: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        paginated: bool = False,
+        statistics_unavailable: bool = False,
+        current_base_oid: str = BASE_OID,
+        pr_state: str = "OPEN",
+        named_head_ref_missing: bool = False,
+    ) -> None:
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
         self.paginated = paginated
         self.statistics_unavailable = statistics_unavailable
+        self.current_base_oid = current_base_oid
+        self.pr_state = pr_state
+        self.named_head_ref_missing = named_head_ref_missing
 
     def __call__(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         """Simulate the Git, GitHub CLI, and remote-selector commands."""
@@ -102,7 +117,7 @@ class FakeRunner:
         elif argv[:3] == ["git", "status", "--short"]:
             stdout = b" M local.txt\n"
         elif argv[:3] == ["gh", "pr", "view"]:
-            stdout = json.dumps(pr_payload()).encode()
+            stdout = json.dumps(pr_payload(state=self.pr_state)).encode()
         elif argv[:3] == ["gh", "api", "graphql"]:
             stdout = json.dumps(threads_payload(paginated=self.paginated)).encode()
         elif argv[:3] == ["gh", "pr", "diff"]:
@@ -121,11 +136,19 @@ class FakeRunner:
             else:
                 stdout = b'{"remote":"origin","remote_url":"https://github.com/Borda/AI-Rig.git"}\n'
         elif argv[:3] == ["git", "fetch", "--no-tags"]:
+            if self.named_head_ref_missing and "portable-pr" in argv[-1]:
+                return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"missing branch")
             stdout = b""
         elif argv[:2] == ["git", "rev-parse"]:
             reference = argv[2]
-            stdout = (HEAD_OID if "portable-pr" in reference or reference == "HEAD" else BASE_OID).encode() + b"\n"
+            stdout = (
+                HEAD_OID
+                if "portable-pr" in reference or "/pull/" in reference or reference == "HEAD"
+                else self.current_base_oid
+            ).encode() + b"\n"
         elif argv[:3] == ["gh", "pr", "checkout"]:
+            stdout = b"checked out\n"
+        elif argv[:3] == ["git", "checkout", "--detach"]:
             stdout = b"checked out\n"
         elif argv[:3] == ["git", "branch", "--show-current"]:
             stdout = b"portable-pr\n"
@@ -159,6 +182,7 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
         "files.txt",
         "numstat.txt",
         "online-review-summary.json",
+        "pr-target.txt",
         "pr-routing.json",
         "pr.json",
         "review-threads.json",
@@ -168,6 +192,7 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
         "unresolved-review-threads.json",
         "untracked.txt",
     }
+    assert (output / "pr-target.txt").read_text(encoding="utf-8") == "17\n"
     assert (output / "files.txt").read_text(encoding="utf-8") == "a.py\nb.py\n"
     assert json.loads((output / "online-review-summary.json").read_text()) == {
         "review_thread_count": 3,
@@ -243,6 +268,98 @@ def test_collect_pr_checkout_writes_verified_fetch_and_checkout_artifacts(
     assert all("--force" not in argument for argv, _ in runner.calls for argument in argv)
 
 
+def test_collect_pr_records_target_branch_divergence_without_rejecting_verified_pr_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Allow an advanced target branch while still requiring the exact PR head."""
+    module = load_collector()
+    runner = FakeRunner(current_base_oid="c" * 40, pr_state="MERGED")
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
+
+    assert result == 0
+    target = json.loads((output / "target-branch.json").read_text())
+    assert target["local_head"] == "c" * 40
+    assert target["expected_base_oid"] == BASE_OID
+    assert target["base_matches_pr_metadata"] is False
+    assert target["base_relation"] == "advanced-or-diverged"
+    assert json.loads((output / "local-checkout.json").read_text())["head_matches_pr"] is True
+
+
+def test_collect_pr_rejects_open_pr_target_branch_divergence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep merge-review evidence coherent when an open PR target advances mid-collection."""
+    module = load_collector()
+    runner = FakeRunner(current_base_oid="c" * 40)
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
+
+    assert result == 2
+    assert (output / "pr-error.txt").read_text().startswith("target-branch-oid-mismatch:")
+
+
+def test_collect_pr_rejects_unknown_pr_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail closed instead of treating an unrecognized GitHub state as historical evidence."""
+    module = load_collector()
+    runner = FakeRunner(pr_state="UNKNOWN")
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
+
+    assert result == 2
+    assert (output / "pr-error.txt").read_text(encoding="utf-8") == "unsupported-pr-state\n"
+
+
+def test_collect_pr_preserves_checkout_started_state_after_checkout_command_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Retain conservative local-state evidence if checkout may already have changed files."""
+    module = load_collector()
+    success_runner = FakeRunner()
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] == ["gh", "pr", "checkout"]:
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"checkout failed")
+        return success_runner(argv, **kwargs)
+
+    configure_collector(monkeypatch, module, success_runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5, run=runner)
+
+    assert result == 2
+    assert json.loads((output / "checkout-state.json").read_text()) == {
+        "status": "checkout-command-started",
+        "local_state": "changed-or-unknown",
+    }
+
+
+def test_collect_pr_checks_out_merged_pr_when_its_named_head_branch_is_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Use GitHub's pull ref and exact SHA check when a historical source branch is deleted."""
+    module = load_collector()
+    runner = FakeRunner(pr_state="MERGED", named_head_ref_missing=True)
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
+
+    assert result == 0
+    routing = json.loads((output / "pr-routing.json").read_text())
+    assert routing["pr_state"] == "MERGED"
+    head_fetch = json.loads((output / "pr-head-fetch.json").read_text())
+    assert head_fetch["status"] == "fetched"
+    checkout = json.loads((output / "local-checkout.json").read_text())
+    assert checkout["head_matches_pr"] is True
+    assert checkout["command"] == "git checkout --detach refs/remotes/origin/pull/17/head"
+    assert not any(argv[:3] == ["git", "fetch", "--no-tags"] and "portable-pr" in argv[-1] for argv, _ in runner.calls)
+
+
 def test_collect_pr_timeout_is_bounded_and_records_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Convert a stalled external command into the stable collection failure contract."""
     module = load_collector()
@@ -260,6 +377,169 @@ def test_collect_pr_timeout_is_bounded_and_records_failure(tmp_path: Path, monke
 
     assert result == 2
     assert (output / "pr-error.txt").read_text(encoding="utf-8") == "command-timeout:gh-pr-view\n"
+
+
+def test_collect_pr_removes_terminal_failure_markers_after_successful_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ensure a successful retry cannot be mistaken for the previous unavailable review."""
+    module = load_collector()
+    success_runner = FakeRunner()
+    attempts = 0
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        nonlocal attempts
+        if argv[:3] == ["gh", "pr", "view"] and attempts == 0:
+            attempts += 1
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"error connecting to api.github.com")
+        return success_runner(argv, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
+    output = tmp_path / "pr"
+
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 2
+    assert (output / "pr-error.txt").is_file()
+    assert (output / "command-failure.json").is_file()
+
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 0
+    assert not (output / "pr-error.txt").exists()
+    assert not (output / "command-failure.json").exists()
+    assert (output / "pr.json").is_file()
+
+
+def test_collect_pr_removes_stale_diagnostic_before_nondiagnostic_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ensure a later parse failure cannot retain a stale GitHub failure classifier."""
+    module = load_collector()
+    attempts = 0
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        nonlocal attempts
+        if argv[:3] == ["git", "status", "--short"]:
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+        if argv[:3] == ["gh", "pr", "view"]:
+            if attempts == 0:
+                attempts += 1
+                return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"error connecting to api.github.com")
+            return subprocess.CompletedProcess(argv, 0, stdout=b"not-json", stderr=b"")
+        raise AssertionError(f"unexpected command: {argv}")
+
+    monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
+    output = tmp_path / "pr"
+
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 2
+    assert (output / "command-failure.json").is_file()
+
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner) == 2
+    assert (output / "pr-error.txt").read_text(encoding="utf-8") == "invalid-json:pr-view\n"
+    assert not (output / "command-failure.json").exists()
+
+
+def test_collect_pr_failure_clears_prior_source_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent a terminal collection failure from retaining a successful attempt's PR evidence."""
+    module = load_collector()
+    output = tmp_path / "pr"
+    monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
+
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=FakeRunner()) == 0
+    assert (output / "pr.json").is_file()
+    assert (output / "diff.patch").is_file()
+
+    def failing_runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] == ["git", "status", "--short"]:
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+        if argv[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
+        raise AssertionError(f"unexpected command: {argv}")
+
+    assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=failing_runner) == 2
+    assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-network:gh-pr-view\n"
+    assert not any((output / filename).exists() for filename in module.COLLECTOR_EVIDENCE_ARTIFACTS)
+
+
+@pytest.mark.parametrize(
+    ("argv", "label"),
+    [
+        (["gh", "pr", "merge", "17", "--merge"], "gh-pr-merge"),
+        (["gh", "auth", "status"], "gh-auth-status"),
+        (
+            [
+                "gh",
+                "api",
+                "graphql",
+                "-f",
+                "owner=Borda",
+                "-f",
+                "name=AI-Rig",
+                "-F",
+                "number=17",
+                "-f",
+                "query=mutation { closePullRequest(input: {}) { pullRequest { id } } }",
+            ],
+            "gh-review-threads",
+        ),
+    ],
+)
+def test_run_rejects_non_read_only_gh_command(argv: list[str], label: str) -> None:
+    """Reject a GitHub CLI command outside the shared read-only boundary."""
+    module = load_collector()
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+
+    with pytest.raises(module.CollectionError, match=f"unsafe-gh-command:{label}"):
+        module._run(runner, argv, 5, label)
+
+    assert calls == []
+
+
+def test_run_preserves_classified_gh_failure_details() -> None:
+    """Record a transport failure without exposing credentials."""
+    module = load_collector()
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(
+            argv,
+            1,
+            stdout=b"",
+            stderr=b"error connecting to api.github.com with ghp_exampletoken\n",
+        )
+
+    with pytest.raises(module.CollectionError, match="github-network:gh-pr-view") as error:
+        module._run(runner, ["gh", "pr", "view", "17", "--json", module.PR_FIELDS], 5, "gh-pr-view")
+
+    assert error.value.diagnostics == {"exit_code": 1, "failure_class": "github-network", "label": "gh-pr-view"}
+
+
+def test_collect_pr_writes_classified_opaque_failure_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Publish actionable, credential-safe evidence when GitHub collection fails."""
+    module = load_collector()
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] == ["git", "status", "--short"]:
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+        return subprocess.CompletedProcess(
+            argv,
+            1,
+            stdout=b"",
+            stderr=b"error connecting to api.github.com using github_pat_exampletoken\n",
+        )
+
+    monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=runner)
+
+    assert result == 2
+    assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-network:gh-pr-view\n"
+    assert json.loads((output / "command-failure.json").read_text(encoding="utf-8")) == {
+        "exit_code": 1,
+        "failure_class": "github-network",
+        "label": "gh-pr-view",
+    }
 
 
 def test_collect_pr_does_not_ship_a_shell_compatibility_wrapper() -> None:

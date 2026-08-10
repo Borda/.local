@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Validate the Codex Rig role-card-injected package contract and payload closure."""
+"""Validate Codex Rig's packaged role-card contract and publication payload.
+
+## Purpose
+
+Ensure a generated manifest and shipped files form an installable, safe, internally consistent plugin release. It checks both the declared roster and the publication payload so local validation catches omissions and accidental private material before handoff.
+
+## Scope
+
+Checks local payload semantics and publication exclusions; it does not write a manifest, upload artifacts, or publish remotely. Manifest generation remains the responsibility of ``build_package.py``, allowing this script to act as a read-only release gate.
+
+## Usage
+
+Run ``python scripts/validate_package.py`` after ``build_package.py --check`` and before a release handoff. A maintainer should resolve the named local failure and rerun the gate before treating the package as deliverable.
+
+## Used by
+
+Release/develop gates and package validation acceptance tests invoke this validator. These callers rely on its non-zero exit status to block a package whose generated or shipped contents do not match the public contract.
+
+## Outputs
+
+Prints a passed validation confirmation after manifest, role, skill, and publication-payload checks all agree. The message identifies the validated package root, while the subprocess and semantic checks remain visible through their exit status.
+
+## Failure
+
+Stale manifest, missing required asset, leaked private material, malformed version data, or invalid package semantics exits non-zero with a local reason. Validation intentionally stops before publication when any one of these checks cannot establish a safe package boundary.
+"""
 
 from __future__ import annotations
 

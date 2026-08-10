@@ -1,4 +1,29 @@
-"""Derive immutable shim operation candidates without filesystem access."""
+"""Derive immutable candidate shim operations from validated evidence.
+
+## Purpose
+
+Separate pure mutation planning from filesystem access so the proposed shim change can be reviewed and cryptographically bound. Its operation list is the narrow contract between lifecycle evidence and the transaction executor.
+
+## Scope
+
+Validates roster/state/observations and builds operation values in memory; it performs no writes or subprocess calls. It does not approve a plan or inspect live paths, so callers must obtain fresh observations before invoking it.
+
+## Usage
+
+Import ``build_candidate`` after lifecycle observation, then bind it with the approval module before transaction execution. Keep the returned canonical bytes and digest attached to the same observation set through the approval step.
+
+## Used by
+
+``manage_role_agents.py``, approval binding, and shim planning acceptance tests call this planner. The manager presents its candidate to the user, while the transaction module executes only the separately bound operations.
+
+## Outputs
+
+Returns a ``CandidatePlan`` with canonical operation order, state transitions, and a digest suitable for immutable approval binding. The plan records expected before/after identities so execution can verify every role target instead of applying a best-effort diff.
+
+## Failure
+
+Inconsistent state, unsupported version ordering, duplicate targets, or invalid roster data raises ``CandidateError`` and stops planning. No caller may reinterpret a partial operation list as safe because the digest is produced only for a fully validated candidate.
+"""
 
 from __future__ import annotations
 

@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
-"""codemap_adapter.py — lazy public-CLI probe for optional codemap-py structural context.
+"""Probe optional codemap-py structural context through its public CLI/JSON surface.
 
-Consumes ONLY the public `codemap-py` CLI/JSON surface (`doctor --json`, `query <subcommand>`) —
-never codemap-py cache internals, source-tree paths, or a cross-plugin Python import. Absence or
-incompatibility is non-fatal: callers fall back to Codex Rig's own bounded file inspection. See
-`codemap-contract.md` (this directory) for the persist-once rule and the category-to-query map.
+## Purpose
 
-Usage:
-    python codemap_adapter.py probe [--timeout SECONDS]
-    python codemap_adapter.py context --category {analysis,develop,review,audit} [--target QNAME]
-        [--root PATH] [--out PATH] [--timeout SECONDS]
+Add one bounded structural-context observation to a Codex Rig workflow without coupling to codemap-py internals or source paths. The adapter records both interpreter health and category-specific query completeness so downstream decisions can distinguish healthy context from degraded context.
+
+## Scope
+
+It calls only ``codemap-py doctor --json`` and public query commands; absence or incompatibility is non-fatal and callers retain local inspection. ``CODEMAP_BIN`` is accepted only when it names an absolute, non-symlink executable, and every subprocess is bounded by the requested timeout.
+
+## Usage
+
+Run ``python codemap_adapter.py probe`` or ``python codemap_adapter.py context --category {analysis,develop,review,audit}`` and persist the result once per workflow. The context form accepts an optional dotted target, repository root, timeout, and ``--out`` path; it always prints the same JSON payload that it writes.
+
+## Used by
+
+The ``analyse``, ``develop``, ``audit``, and ``code-review`` skills consume these observations; see the adjacent ``codemap-contract.md`` for the category/query mapping. The module is also exercised by portable helper tests that verify status reduction and the public CLI contract.
+
+## Outputs
+
+It returns or writes one versioned JSON probe/context payload whose status makes an unavailable optional integration explicit. Context payloads contain ``protocol_version``, category, target, probe details, and one outcome record per mapped query, while ``probe`` emits only the probe record.
+
+## Failure
+
+Launcher absence, unsupported output, timeout, or malformed JSON is classified in the probe/context status rather than blocking the primary workflow. An unknown category still raises ``ValueError`` because it is invalid caller input, whereas a failed optional query is represented in the JSON outcome and the CLI exits successfully.
 """
 
 from __future__ import annotations

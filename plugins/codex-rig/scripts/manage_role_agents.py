@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Diagnose and manage the complete Codex Rig user-agent shim roster."""
+"""Diagnose and explicitly manage the complete Codex Rig user-agent shim roster.
+
+## Purpose
+
+Coordinate safe read-only diagnosis and, only after approval, transactional installation, refresh, or removal of role shims. It is the narrow public boundary that turns a requested lifecycle action into evidence, an approval prompt, and an auditable transaction.
+
+## Scope
+
+Is the public lifecycle orchestrator; pure planning, observation, approval, journals, and filesystem primitives stay in focused sibling modules. It owns action routing and result reporting, but does not duplicate their validation or low-level safety rules.
+
+## Usage
+
+Run the documented ``agent-shims`` command path for one requested action and inspect its structured result before any follow-up. Diagnostic actions remain read-only; mutation actions require the manager's explicit approval path and digest revalidation.
+
+## Used by
+
+The agent-shims skill, optional session-start health reporting, and lifecycle acceptance tests call this orchestrator. These callers use its stable action names and structured output to distinguish diagnosis, approval requirements, completion, and recovery.
+
+## Outputs
+
+Emits structured diagnosis, mutation plans, approval requirements, and post-transaction recovery state for a single requested action. The output preserves enough local identity and classified status for a human or follow-up command to make the next decision without hidden retries.
+
+## Failure
+
+Unsupported platform, missing active package, unsafe filesystem evidence, denied approval, or transaction drift exits with a classified local failure and no hidden retry. A recovery-required result is reported as an explicit incomplete outcome rather than being mistaken for successful installation or removal.
+"""
 
 from __future__ import annotations
 

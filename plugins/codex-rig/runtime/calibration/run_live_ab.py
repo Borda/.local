@@ -1,5 +1,36 @@
 #!/usr/bin/env python3
-"""Run explicit paid paired Codex model-route calibration campaigns."""
+"""Run explicitly authorized paired live-model calibration campaigns.
+
+## Purpose
+
+gather comparable live observations for supported model routes while recording inputs, usage, cost normalization, and gate outcomes.
+Each campaign pairs baseline and candidate executions against the same task contract so route comparisons remain attributable to the selected model and effort settings.
+
+## Scope
+
+performs the opt-in paid model execution and isolated workspace setup; static calibration remains in ``run.py``.
+It snapshots the role instructions and calibration inputs used by the campaign, then delegates response execution without changing plugin source files.
+
+## Usage
+
+invoke its documented CLI only after explicit authorization for a live campaign and inspect the emitted campaign artifact.
+Provide the required case, task, route-policy, and output paths, and select routes or campaign counts only within the acceptance policy.
+
+## Used by
+
+maintainers performing live route calibration; never by ordinary skill execution or package installation.
+The resulting observations are later consumed by ``score_behavioral.py`` and the static calibration checks when live evidence is available.
+
+## Outputs
+
+creates an isolated campaign directory with input snapshots, model observations, token/cost data, and gate results for later scoring.
+Campaign files retain enough prompt, task-contract, pairing, latency, and usage metadata to reproduce scoring without rerunning paid calls.
+
+## Failure
+
+missing explicit subscription authorization, invalid response shape, command timeout, or a failed gate stops that campaign with preserved diagnostics.
+The runner refuses CI and API-key execution paths, and operational failures remain recorded as campaign evidence rather than being converted into successful observations.
+"""
 
 from __future__ import annotations
 

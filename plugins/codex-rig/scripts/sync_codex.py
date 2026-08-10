@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Install, refresh, or remove managed Codex plugins without POSIX shell dependencies."""
+"""Install, refresh, or remove managed Codex plugins through native platform commands.
+
+## Purpose
+
+Provide portable local Codex plugin synchronization while preserving explicit action selection and bounded command output. It reconciles the configured marketplace and managed plugin set so local Codex state can be restored predictably.
+
+## Scope
+
+Manages the configured local plugin set only; it neither edits GitHub state nor substitutes for a marketplace publication workflow. The script may invoke native local Codex commands, but it does not decide release contents or alter remote repositories.
+
+## Usage
+
+Invoke from the ``sync`` skill with one selected action, or call ``sync_codex`` in its focused tests. The default action installs or refreshes the managed set, while the clear action removes that local configuration according to the command contract.
+
+## Used by
+
+Codex Rig's sync workflow and cross-platform synchronization tests call this synchronizer. The workflow consumes the structured result to report marketplace/ref state and to distinguish optional cleanup from required command failures.
+
+## Outputs
+
+Writes a structured status describing the resolved marketplace/package state and any local Codex command results. Status fields retain command outcomes and configured references so callers can explain what changed without parsing unbounded subprocess output.
+
+## Failure
+
+Malformed registry data, unavailable executable, unsafe Windows command shape, or failed required subprocess returns a typed sync failure. Required failures stop the action and are not converted into partial success, while explicitly optional cleanup may be represented as a bounded non-success result.
+"""
 
 from __future__ import annotations
 

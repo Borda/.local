@@ -292,12 +292,22 @@
     },
     {
       "expected_findings": [
-        "pr-preflight-blocker-table-missing",
-        "source-findings-overclaimed",
-        "pr-collection-blocker-evidence-missing"
+        "review-unavailable-status-missing",
+        "merge-decision-emitted-without-review",
+        "pr-collection-recovery-table-missing"
       ],
-      "id": "code-review-pr-preflight-blocker-table",
-      "prompt": "Assess a PR review where gh pr view fails before checkout, the final needs-more-work summary has no findings/action table, and it implies source findings despite no source review having occurred.",
+      "id": "code-review-pr-review-unavailable-contract",
+      "prompt": "Assess a PR review where T0 gh pr view fails before checkout, but the output recommends needs-more-work, implies a merge decision, and puts the collection failure in Review Findings and Merge Blocks instead of declaring review unavailable, source findings not assessed, and a separate PR Evidence Collection Recovery table.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "github-cli-read-only-guard-missing",
+        "github-failure-diagnostic-missing",
+        "github-credential-output-exposed"
+      ],
+      "id": "code-review-pr-collector-github-safety",
+      "prompt": "Assess a GitHub reader that blocks gh issue view and gh release view, invokes gh api with arbitrary user-provided arguments, may submit GraphQL mutations, runs gh auth status, falls back by reading an authentication token, reduces every non-zero GitHub CLI result to command-failed, and writes any GitHub CLI stdout, stderr, or credential state into its report.",
       "target": "code-review"
     },
     {

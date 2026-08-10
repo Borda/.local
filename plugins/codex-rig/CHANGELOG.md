@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- Add `shared/github_read.py` as the plugin-wide GitHub data boundary: authenticated `gh` is primary; only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`) are permitted; REST API calls are GET-only; and GraphQL accepts queries but rejects mutations.
+- Route PR collection through that shared boundary while retaining `gh pr diff` and local-only `gh pr checkout` for PR workflow completeness.
+- Add a last-resort unauthenticated `urllib` GET fallback restricted to public `https://api.github.com/repos/...` resources; it never reads tokens/keychain state and private-only evidence still fails closed.
+- Keep GitHub CLI diagnostics credential-opaque: never run `gh auth` or persist CLI stdout/stderr on failure; artifacts retain only command label, failure class, and exit code.
+- Clear prior collector evidence and terminal failure markers before each retry so attempts never mix source evidence; keep rate-limit recovery user-timed because opaque artifacts intentionally retain no server interval.
+- Report failed PR collection as `PR Review Availability: unavailable`, with no source finding or merge decision, rather than misclassifying an unperformed review as `needs-more-work`.
+- Make the unavailable-result writer omit normal recommendations and follow-up fields, preserve conservative `checkout-state.json` evidence when a local checkout command fails, and validate that end-to-end artifact branch.
+- Keep assessed merge-review and remediation strictly open-PR-only: an advanced or diverged base remains fail-closed for open PRs, while merged or closed PRs may be collected only as raw diagnostic evidence through GitHub's pull ref, exact SHA verification, and detached local checkout.
+- Bound production `gh` command memory use with spooled output buffers, reject oversized responses before exposing them to callers, and keep calibration fixtures aligned with the stricter result and PR-identity contracts.
+- Keep Codex marketplace refresh/install as its explicit non-`gh` lifecycle exception because it manages local Codex plugins rather than GitHub data reads.
+
 ## 0.4.8
 
 - Require every `code-review` `needs-more-work` result to include a validated `Review Findings and Merge Blocks` table with the affected area, exact pre-merge change, evidence, and actionable status; reproduce that table in the final review summary.

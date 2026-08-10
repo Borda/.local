@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Validate common Codex skill artifacts."""
+"""Validate common Codex Rig workflow artifacts and result invariants.
+
+## Purpose
+
+Reject incomplete, contradictory, or confidence-unsupported workflow output before it can be presented as a completed result. Validation ties the candidate result to the gates, required notes, and skill-specific evidence that justify its status and confidence.
+
+## Scope
+
+It reads local artifact files, gate records, and result JSON; it does not execute gates, review code, or mutate source data. Requirements vary by skill, with PR remediation additionally checking review intake, scope selection, workplan, resolution tables, identity, and merge evidence.
+
+## Usage
+
+Run ``python validate-artifacts.py --skill <id> --out <directory> --result <candidate.json>`` before promoting a result. The result path may be a candidate or final JSON, but the output directory must contain the canonical gate and section artifacts required for the selected skill.
+
+## Used by
+
+Develop, remediate, and review artifact workflows plus artifact-contract acceptance tests use this validator. The validator is the final local contract check before a workflow reports completion, not a substitute for running the checks whose records it validates.
+
+## Outputs
+
+It prints a passed validation confirmation or raises a precise contract error that names the missing or contradictory evidence. Errors use stable prefixes such as ``missing-gates-json``, ``gate-check-id-set-mismatch``, and skill-specific ``code-remediate-*`` codes so callers can route recovery.
+
+## Failure
+
+Malformed JSON, absent required notes/gates, inconsistent confidence metadata, or outcome/gate disagreement exits non-zero and prevents promotion. A structurally valid but incomplete artifact is therefore still rejected; validation does not silently downgrade missing evidence to a warning.
+"""
 
 from __future__ import annotations
 
@@ -784,6 +809,8 @@ def _validate_code_remediate_pr_identity(
     """Reconcile authoritative PR remote, base OID, and checkout head evidence."""
     if routing.get("base_identity_source") != "pr_url":
         raise SystemExit("code-remediate-pr-routing-base-identity-not-authoritative")
+    if routing.get("pr_state") != "OPEN":
+        raise SystemExit("code-remediate-pr-state-not-open")
     expected_identity = remote_selection.get("expected")
     if not isinstance(expected_identity, dict):
         raise SystemExit("code-remediate-pr-remote-selection-expected-missing")
@@ -799,7 +826,13 @@ def _validate_code_remediate_pr_identity(
     local_base = target_branch.get("local_head")
     if not expected_base or expected_base != routing.get("base_oid"):
         raise SystemExit("code-remediate-pr-target-branch-expected-oid-missing")
-    if not local_base or local_base != expected_base or target_branch.get("base_matches_pr_metadata") is not True:
+    if (
+        not local_base
+        or local_base != expected_base
+        or target_branch.get("base_matches_pr_metadata") is not (local_base == expected_base)
+        or target_branch.get("base_relation")
+        != ("matches-pr-metadata" if local_base == expected_base else "advanced-or-diverged")
+    ):
         raise SystemExit("code-remediate-pr-target-branch-oid-mismatch")
     if checkout.get("pr_url") != routing.get("pr_url"):
         raise SystemExit("code-remediate-pr-local-checkout-url-mismatch")

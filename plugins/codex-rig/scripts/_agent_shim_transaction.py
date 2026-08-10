@@ -1,4 +1,29 @@
-"""Execute and roll back already-approved Codex Rig shim transactions."""
+"""Execute or roll back a previously approved Codex Rig shim transaction.
+
+## Purpose
+
+Apply the exact approved operation plan while checkpointing journal state so partial failures can be verified and restored. The executor is the only sibling module that sequences approved filesystem changes across prepare, mutation, commit, and cleanup.
+
+## Scope
+
+Owns transactional sequencing and rollback; it relies on separate modules for observation, planning, approval, journals, and POSIX I/O. It must not create a new plan or broaden an approved target set while a transaction is in progress.
+
+## Usage
+
+Call only from the explicit manager mutation flow after approval-digest revalidation; never invoke as an independent CLI. Pass the manager's approved plan and journal context unchanged so the executor can compare live identities at each checkpoint.
+
+## Used by
+
+``manage_role_agents.py`` and transaction failure/rollback acceptance tests call this executor. The manager remains responsible for user approval and for reporting any recovery state returned by this layer.
+
+## Outputs
+
+Advances a validated journal through prepare/apply/commit/cleanup states, returning remaining recovery evidence when rollback is required. Successful completion records durable committed state, while interruption preserves the journal and exact residue needed for a later recovery action.
+
+## Failure
+
+Checkpoint failure, identity drift, write error, or journal inconsistency triggers verified rollback or a typed transaction error; no best-effort overwrite occurs. If rollback cannot establish the expected identities, the caller receives recovery-required evidence instead of a success result.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,36 @@
 #!/usr/bin/env python3
-"""Run Codex calibration checks and write the calibration result artifact."""
+"""Run Codex Rig static and behavioral calibration, then write its result artifact.
+
+## Purpose
+
+detect routing, skill-contract, and calibration-fixture drift before a plugin release or behavior-changing workflow edit.
+It combines static checks with optional behavioral evidence so maintainers can see both contract failures and the confidence limits of the available observations.
+
+## Scope
+
+validates shipped files and local observations under a selected layout; it does not invoke GitHub or live models.
+The run may execute local helper and self-test commands, but paid model collection is a separate explicit workflow handled by ``run_live_ab.py``.
+
+## Usage
+
+run ``python runtime/calibration/run.py --layout plugin`` from the plugin root after changing skills, agents, or calibration data.
+Use the source layout when checking a repository checkout and the plugin layout when validating files as they will be installed and packaged.
+
+## Used by
+
+release/develop verification workflows, package maintainers, and calibration acceptance tests.
+Its result is also consumed by release-readiness decisions that require named checks, artifact paths, and explicit confidence gaps.
+
+## Outputs
+
+writes a timestamped ``result.json`` containing check status, findings, behavioral metrics, confidence, and explicit confidence limits.
+The same report directory records check logs, leak findings, recommendations, and self-test artifacts needed to explain a failed result.
+
+## Failure
+
+contract drift produces named failed checks and a non-zero result; absent optional live observations lower confidence rather than fabricating evidence.
+Malformed inputs, missing shipped assets, or failed local gates are preserved in the report so maintainers can distinguish a real regression from incomplete evidence.
+"""
 
 from __future__ import annotations
 
@@ -130,6 +161,7 @@ class Paths:
     create_run: Path
     codemap_adapter: Path
     collect_diff: Path
+    github_read: Path | None
     collect_pr: Path
     select_git_remote: Path
     sync_manifest: Path
@@ -194,6 +226,7 @@ class Paths:
             create_run=shared_dir / "create_run.py",
             codemap_adapter=shared_dir / "codemap_adapter.py",
             collect_diff=shared_dir / ("collect_diff.py" if layout == "plugin" else "collect-diff.sh"),
+            github_read=shared_dir / "github_read.py" if layout == "plugin" else None,
             collect_pr=shared_dir / ("collect_pr.py" if layout == "plugin" else "collect-pr.sh"),
             select_git_remote=shared_dir / "select-git-remote.py",
             sync_manifest=asset_root / ("package-manifest.json" if layout == "plugin" else "sync-manifest.json"),
@@ -714,7 +747,7 @@ def check_core_configs(run: CalibrationRun) -> None:
         "validate-artifacts.py",
     )
     helper_names += (
-        ("create_run.py", "run_gates.py", "collect_diff.py", "collect_pr.py", "codemap_adapter.py")
+        ("create_run.py", "run_gates.py", "collect_diff.py", "github_read.py", "collect_pr.py", "codemap_adapter.py")
         if run.paths.layout == "plugin"
         else ("run-gates.sh", "collect-diff.sh", "collect-pr.sh")
     )
@@ -989,6 +1022,8 @@ def check_shared_scripts(run: CalibrationRun) -> None:
     if run.paths.layout == "plugin":
         cli_paths["create-run"] = run.paths.create_run
         cli_paths["codemap-adapter"] = run.paths.codemap_adapter
+        assert run.paths.github_read is not None
+        cli_paths["github-read"] = run.paths.github_read
     if run.paths.codex_harness.exists():
         if run.paths.layout == "source":
             cli_paths["codex-harness"] = run.paths.codex_harness
@@ -1191,6 +1226,10 @@ def run_selftests(run: CalibrationRun) -> None:
         result = run_command([sys.executable, "-m", "py_compile", run.paths.collect_pr])
         if result.returncode != 0:
             run.fail_and_leak("shared-script-selftests", "selftest-syntax:collect-pr")
+    if run.paths.github_read is not None and is_executable(run.paths.github_read):
+        result = run_command([sys.executable, "-m", "py_compile", run.paths.github_read])
+        if result.returncode != 0:
+            run.fail_and_leak("shared-script-selftests", "selftest-syntax:github-read")
     if run.paths.select_git_remote.exists():
         selftest_select_git_remote(run, selftest_dir)
     if run.paths.live_ab_runner.exists() and run.paths.live_route_policy.exists():
@@ -1821,6 +1860,7 @@ def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
         "base_identity_source": "pr_url",
         "base_host": "github.com",
         "base_repo": "owner/repo",
+        "pr_state": "OPEN",
         "base_oid": "base-oid",
         "head_oid": "head-oid",
         "pr_url": "https://github.com/owner/repo/pull/1",
@@ -1836,6 +1876,7 @@ def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
         "expected_base_oid": "base-oid",
         "local_head": "base-oid",
         "base_matches_pr_metadata": True,
+        "base_relation": "matches-pr-metadata",
     }
     checkout = {
         "pr_url": "https://github.com/owner/repo/pull/1",
@@ -1844,6 +1885,7 @@ def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
     }
     module._validate_code_remediate_pr_identity(routing, remote, target, checkout)
     mutations = (
+        (routing, "pr_state", "MERGED"),
         (remote, "expected", {"host": "github.com", "repository": "other/repo"}),
         (target, "local_head", "wrong-base"),
         (checkout, "local_head", "wrong-head"),
@@ -1901,8 +1943,11 @@ def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None
     newer = fixture / "2026-01-02T00-00-00Z"
     older.mkdir(parents=True, exist_ok=True)
     newer.mkdir(parents=True, exist_ok=True)
+    assessed_result = (
+        json.dumps({"metadata": {"scope": "pr", "review_decision": {"recommendation": "accept-as-is"}}}) + "\n"
+    )
     for directory in (older, newer):
-        (directory / "result.json").write_text("{}\n", encoding="utf-8")
+        (directory / "result.json").write_text(assessed_result, encoding="utf-8")
         (directory / "pr.json").write_text(
             '{"number": 123, "url": "https://github.com/example/repo/pull/123"}\n',
             encoding="utf-8",
@@ -1922,7 +1967,7 @@ def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None
     legacy = compatibility_root / ".reports" / "codex" / "review" / "2026-01-02T00-00-00Z"
     for directory in (current, legacy):
         directory.mkdir(parents=True)
-        (directory / "result.json").write_text("{}\n", encoding="utf-8")
+        (directory / "result.json").write_text(assessed_result, encoding="utf-8")
         (directory / "pr.json").write_text(
             '{"number": 321, "url": "https://github.com/example/repo/pull/321"}\n',
             encoding="utf-8",

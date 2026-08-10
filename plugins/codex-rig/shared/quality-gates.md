@@ -70,7 +70,7 @@ Configured agents require:
 - Use `python PLUGIN_ROOT/shared/run_gates.py` to execute the five checks consistently.
 - Use executable `PLUGIN_ROOT/shared/write-result.py` to write canonical JSON result payloads.
 - Use `python PLUGIN_ROOT/shared/collect_diff.py` to collect scope-aware git diff artifacts consistently.
-- Use `python PLUGIN_ROOT/shared/collect_pr.py --checkout` for PR diff, metadata, comments/reviews/threads, unresolved threads, target/PR refresh where possible, local checkout evidence.
+- `github_read.py` is the plugin-wide GitHub data boundary. Use it for all issue/release/repository reads and an explicit GraphQL query for Discussions; use `collect_pr.py --checkout` for complete PR evidence. Never invoke `gh` directly. The broker prefers authenticated `gh` but never inspects credentials; it permits only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`), REST GET, and GraphQL query argv, and persists no CLI failure output. Its public `api.github.com` fallback is unauthenticated and cannot replace private-only evidence, so complete PR collection fails closed if its review-thread query cannot run. `gh pr checkout` changes only the local checkout. Codex marketplace install/refresh remains a separately authorized lifecycle operation.
 - PR checkout/update artifacts never record `git`/`gh` `--force`; force needs stop-and-ask confirmation with overwrite-risk rationale first.
 - Use `PLUGIN_ROOT/shared/validate-artifacts.py` to validate common report, ledger, gate-log, and result JSON artifacts.
 - Use `PLUGIN_ROOT/shared/severity-map.md` to map findings to severity levels.

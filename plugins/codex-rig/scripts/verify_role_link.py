@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Verify and emit one role card from the currently enabled Codex Rig package."""
+"""Verify and emit one role card from the currently enabled Codex Rig package.
+
+## Purpose
+
+Let a thin user-agent shim resolve only a verified active package and role-card payload. The executable rechecks package and executable identity at the point of use so a generated link cannot blindly trust stale paths.
+
+## Scope
+
+Reads local Codex/plugin state with bounded descriptor checks; it never installs a plugin, mutates shims, or contacts GitHub. Its output contract is limited to one selected role card and the identity data needed by the calling shim.
+
+## Usage
+
+Generated role shims invoke this executable with their role identity; maintainers normally use ``agent-shims`` instead. The role argument must come from the generated allowlist, and the executable must be selected through the local discovery checks before the card is emitted.
+
+## Used by
+
+Generated thin shims, the shim manager, and installed-package link tests invoke this verifier. A shim uses the result to continue with the verified role-card payload, while the manager and tests use the same protocol to detect package drift.
+
+## Outputs
+
+Prints the selected verified role card and enough stable identity data for the calling shim to continue safely. Output is bounded and separated by a fixed protocol marker so callers can reject truncation or unexpected extra data.
+
+## Failure
+
+Absent/changed executable, invalid role ID, package identity mismatch, oversized output, or failed local Codex discovery raises ``RoleUnavailable``. The failure protocol gives the shim a safe unavailable result instead of returning a card whose provenance was not established.
+"""
 
 from __future__ import annotations
 

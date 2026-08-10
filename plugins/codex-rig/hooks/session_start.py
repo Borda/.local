@@ -1,5 +1,36 @@
 #!/usr/bin/env python3
-"""Report Codex Rig shim health at session start without lifecycle writes."""
+"""Emit a bounded read-only Codex Rig shim-health message at session start.
+
+## Purpose
+
+give an installed Codex session an actionable indication of managed role-shim health before normal work begins.
+It turns the packaged doctor result into a short startup message so an operator can recognize degraded setup without opening diagnostic files first.
+
+## Scope
+
+parses hook input and invokes the diagnostic surface only; it never installs, repairs, removes, or otherwise changes shims.
+The doctor subprocess is bounded by input, output, and time limits, and the hook validates that it is running from the active installed plugin root.
+
+## Usage
+
+the plugin hook runner executes this file with its JSON event on standard input; invoke ``python session_start.py`` only for local diagnosis.
+Set ``PLUGIN_ROOT`` to the installed plugin directory when reproducing the hook locally, and provide a ``SessionStart`` event envelope on standard input.
+
+## Used by
+
+the optional ``SessionStart`` hook declared by Codex Rig and the session-start acceptance tests.
+It is the presentation boundary between hook lifecycle events and ``manage_role_agents.py doctor``; callers should not depend on its internal helper functions.
+
+## Outputs
+
+prints a bounded JSON-compatible hook response that is informative but does not reveal private filesystem or credential details.
+Healthy diagnostics produce a continue response without a system warning, while degraded or blocked checks include a sanitized reason and the safe status command.
+
+## Failure
+
+malformed input, unavailable plugin state, or a diagnostic error becomes a concise health warning so session startup remains non-blocking.
+The handler returns a successful process status for these expected failures, allowing the host session to continue while directing the operator to the doctor command.
+"""
 
 from __future__ import annotations
 

@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.4.7`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.5.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -21,6 +21,7 @@ The plugin is complete for the capabilities Codex can currently install and veri
 
 - Codex CLI with plugin support
 - Python 3.10+
+- GitHub CLI (`gh`) installed and authenticated for complete PR review, checkout, and private evidence; public metadata fallback remains limited
 - Public GitHub access for install or marketplace refresh
 - Windows, macOS, or Linux for workflows, package verification, sync, and read-only diagnostics
 - A POSIX local filesystem only for authenticated legacy agent-shim cleanup
@@ -212,7 +213,7 @@ Confidence is evidence-backed:
 
 ## PR review-to-remediation
 
-`$codex-rig:code-review #123` collects current PR metadata, diff, comments, reviews, threads, and target-branch evidence before producing a structured review artifact. It performs mandatory QA/challenge passes for broad or high-risk diffs and conditionally triggers architecture, security, CI, docs, data, performance, research, or web evidence. Every PR result other than `accept-as-is` must include a validated findings/action table with each finding or operational blocker, required change, evidence, and status; the final review summary reproduces that table. If PR collection fails before source review, the terminal summary still shows the evidence-collection blocker and explicitly marks source findings as not assessed.
+`$codex-rig:code-review #123` collects current PR metadata, diff, comments, reviews, threads, and target-branch evidence before producing a structured review artifact. It performs mandatory QA/challenge passes for broad or high-risk diffs and conditionally triggers architecture, security, CI, docs, data, performance, research, or web evidence. `shared/github_read.py` is the sole GitHub data transport: it prefers authenticated `gh` but never reads credentials; permits only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`), REST GET, and GraphQL query operations; and retains no CLI failure output. Its public `api.github.com` fallback is unauthenticated and cannot replace private review evidence. `collect_pr.py` delegates PR reads to that broker but fails closed because complete review-thread evidence requires `gh`; it records whether the refreshed current base differs from the PR's recorded base SHA while still requiring an exact verified PR-head checkout. It can gather raw historical evidence for merged or closed PRs by fetching GitHub's pull ref, verifying the exact expected head SHA, and using a detached local Git checkout, but code-review merge decisions and code-remediate remain OPEN-only. `gh pr checkout` is used only for open-PR local checkout and never mutates GitHub. Codex marketplace install/refresh remains an explicit non-`gh` lifecycle operation. Every assessed non-approval PR result must include a validated findings/action table with each finding or operational blocker, required change, evidence, and status; the final review summary reproduces that table. If PR collection fails before source review, report `PR Review Availability: unavailable`, `Source findings: not assessed`, `Merge decision: not made`, and only the failure class and exit code in `## PR Evidence Collection Recovery`; do not emit `needs-more-work` or a findings/merge-block table. When an attempted checkout leaves `checkout-state.json`, say that local state may have changed and require inspection before retrying. Authentication recovery remains a user-owned, out-of-band `gh` operation.
 
 `$codex-rig:code-remediate #123 +review` finds the newest matching review artifact, refreshes PR evidence, updates the local PR checkout, records merge-conflict risk, and presents a resolution table before editing. Selected findings are grouped by root cause and assigned a primary owner, verifier, expected closure evidence, and context pack. The workflow never pushes, comments, merges, or publishes remotely.
 

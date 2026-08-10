@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Generate deterministic Codex Rig thin-role shim bytes."""
+"""Generate deterministic thin role-shim bytes from the installed Codex Rig package.
+
+## Purpose
+
+Derive role configuration that points at verified installed role cards without duplicating their behavioral contract. Deterministic generation gives the manager and link verifier identical bytes and hashes for the same package inputs.
+
+## Scope
+
+Validates package inputs and generates roster/shim values; mutation of a user's agent directory is delegated to the manager transaction flow. It reads package assets and emits in-memory records, so it cannot install, repair, or remove a user's files by itself.
+
+## Usage
+
+Invoke through ``manage_role_agents.py`` or import generation helpers in reproducibility tests; it is not a general installation command. Call generation only after package identity and role-card inputs have been resolved to the active package root.
+
+## Used by
+
+Shim planning, role-link verification, and generated-role acceptance tests call these generation helpers. The planner consumes the roster for operation selection, while the link verifier uses the generated payload contract to validate one role at startup.
+
+## Outputs
+
+Returns immutable generated role/roster records, content hashes, and canonical shim payload bytes for a verified package version. The records include the package and role identities needed to bind a shim to the exact card it will request later.
+
+## Failure
+
+Bad identifiers, invalid frontmatter, malformed manifests, path escape, or oversized input raises a local validation error without writing user files. Callers must treat this as a generation failure and avoid presenting the incomplete roster for approval.
+"""
 
 from __future__ import annotations
 

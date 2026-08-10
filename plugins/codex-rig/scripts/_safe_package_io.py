@@ -1,4 +1,29 @@
-"""Read installed package inputs through bounded no-link filesystem handles."""
+"""Read installed package content through bounded, no-link filesystem handles.
+
+## Purpose
+
+Prevent package validation from following unsafe links or accepting unstable filesystem objects. The module provides the descriptor-level guarantees required before manifest hashes can be treated as package identity.
+
+## Scope
+
+Provides platform-specific safe reads and inventories; package semantics and manifest comparisons live in ``_package_identity.py``. It is limited to bounded regular-file access and does not decide which files a package is allowed to contain.
+
+## Usage
+
+Import ``read_safe_file`` or ``inventory_package_files`` from package-identity code rather than calling this internal module directly. Callers should treat the returned bytes and identity metadata as one observation and rerun the read if they need a new snapshot.
+
+## Used by
+
+Installed-package verification and its cross-platform safety tests call these safe I/O helpers. The identity layer relies on their inventory to detect unlisted payload files and to hash files without following replacement links.
+
+## Outputs
+
+Returns bounded ``SafeFile`` values and a deterministic regular-file inventory with the identity facts needed by manifest validation. Entries include canonical relative paths and descriptor metadata so callers can detect changes between opening and reading.
+
+## Failure
+
+Path escape, symlink, reparse point, descriptor mismatch, unsupported object type, or size limit violation raises ``SafePackageIOError``. This is intentionally fail-closed: package validation must report the unsafe object instead of hashing or skipping it.
+"""
 
 from __future__ import annotations
 

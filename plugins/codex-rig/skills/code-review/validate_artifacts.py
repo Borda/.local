@@ -1,5 +1,36 @@
 #!/usr/bin/env python3
-"""Validate review-skill artifacts for multi-axis specialist evidence."""
+"""Validate code-review artifacts for multi-axis evidence and merge-decision integrity.
+
+## Purpose
+
+ensure a review recommendation is traceable to scope, specialist routing, gates, findings, and the required action table.
+It gives the code-review workflow a mechanical final check that connects the decision to the evidence files and specialist outputs it claims to use.
+
+## Scope
+
+reads a completed local review artifact and rejects contract violations; it neither collects GitHub data nor performs a source-code review itself.
+Validation covers both normal reviewed results and explicitly unavailable-review results, including path containment and provenance checks for referenced files.
+
+## Usage
+
+run this validator from the code-review workflow after all evidence and draft result files have been written.
+Provide the review output directory and candidate ``result.json`` through the CLI, together with the project root when provenance needs the local agent configuration.
+
+## Used by
+
+the ``code-review`` skill's terminal validation gate and review-artifact contract tests.
+Maintainers can also run it while diagnosing an incomplete artifact, but it is not a replacement for collecting the diff, remote review data, or specialist analysis.
+
+## Outputs
+
+accepts a coherent review artifact or emits an explicit contract failure for missing routing, source evidence, decision rationale, or action-table cells.
+Successful validation returns a zero exit status, while failures identify the violated contract so the workflow can stop before presenting a merge recommendation.
+
+## Failure
+
+untriaged specialist output, unsupported recommendation, inconsistent PR evidence, or a non-accept decision without merge blocks exits non-zero.
+It also rejects artifacts that reference files outside the review output directory or claim unavailable source evidence while retaining forbidden review artifacts.
+"""
 
 from __future__ import annotations
 
@@ -44,6 +75,61 @@ ALL_MANIFEST_ROLES = {
 INDEPENDENT_PASS_TIERS = {"BROAD", "HIGH_RISK"}
 VALID_MODES = {"spawned", "substituted"}
 TRANSIENT_RETRY_ERRORS = {"rate_limited", "timeout", "transport_error"}
+UNAVAILABLE_NOTE_LINES = (
+    "PR Review Availability: unavailable",
+    "Source findings: not assessed",
+    "Merge decision: not made",
+)
+UNAVAILABLE_RECOVERY_HEADERS = ("Operational area", "Recovery action", "Evidence", "Status")
+UNAVAILABLE_RESULT_KEYS = {
+    "status",
+    "checks_run",
+    "checks_failed",
+    "findings",
+    "confidence",
+    "artifact_path",
+    "metadata",
+}
+UNAVAILABLE_METADATA_KEYS = {
+    "scope",
+    "risk_tier",
+    "review_status",
+    "collection_failure",
+    "confidence_gaps",
+    "confidence_gap_closures",
+    "confidence_recovery",
+}
+UNAVAILABLE_FORBIDDEN_ARTIFACTS = {
+    "comments.json",
+    "diff.patch",
+    "diffstat.txt",
+    "files.txt",
+    "local-checkout.json",
+    "numstat.txt",
+    "online-review-summary.json",
+    "pr-head-fetch.json",
+    "pr-routing.json",
+    "pr.json",
+    "remote-selection.json",
+    "remote-selection-error.txt",
+    "remote.txt",
+    "review-threads.raw.json",
+    "review-threads.json",
+    "reviews.json",
+    "specialist-manifest.json",
+    "target-branch.json",
+    "unresolved-review-threads.json",
+    "untracked.txt",
+}
+UNAVAILABLE_CONFIDENCE_GAP = "PR source evidence was unavailable; no source review or merge decision was made."
+UNAVAILABLE_RECOVERY_ACTIONS = {
+    "retry": "Retry the unchanged collector later; no review or merge decision was made.",
+    "auth": "Repair local gh access privately, verify repository access, then retry.",
+    "install": "Install or repair gh locally, then retry.",
+    "identity": "Confirm the canonical PR URL and repository identity, then retry.",
+    "report": "Stop and report this Codex Rig collector failure with sanitized artifacts.",
+}
+CHECKOUT_STATE_RECOVERY_SUFFIX = " Inspect the local checkout state before retrying."
 
 
 def _agent_string_setting(path: Path, key: str) -> str:
@@ -345,6 +431,147 @@ def _validate_action_table(notes_path: Path, result: dict[str, Any], metadata: d
         reported_count = sum(value for value in findings.values() if isinstance(value, int) and value >= 0)
         if len(action_rows) < reported_count:
             raise SystemExit("review-findings-action-table-incomplete")
+
+
+def _validate_unavailable_result(out_dir: Path, result: dict[str, Any], metadata: dict[str, Any], scope: str) -> None:
+    """Validate a terminal PR-collection process failure without inventing a review outcome."""
+    if scope != "pr":
+        raise SystemExit("unavailable-review-non-pr-scope")
+    if result.get("status") != "fail":
+        raise SystemExit("unavailable-review-status-must-fail")
+    if "review_decision" in metadata:
+        raise SystemExit("unavailable-review-must-not-have-decision")
+    unexpected_result_keys = sorted(set(result) - UNAVAILABLE_RESULT_KEYS)
+    if unexpected_result_keys:
+        raise SystemExit("unavailable-review-unexpected-result-fields:" + ",".join(unexpected_result_keys))
+    unexpected_metadata_keys = sorted(set(metadata) - UNAVAILABLE_METADATA_KEYS)
+    if unexpected_metadata_keys:
+        raise SystemExit("unavailable-review-unexpected-metadata-fields:" + ",".join(unexpected_metadata_keys))
+    forbidden = sorted(
+        path.name
+        for path in out_dir.iterdir()
+        if path.name in UNAVAILABLE_FORBIDDEN_ARTIFACTS or path.name.startswith("specialist-")
+    )
+    if forbidden:
+        raise SystemExit("unavailable-review-has-source-evidence:" + ",".join(forbidden))
+    target_path = out_dir / "pr-target.txt"
+    target = target_path.read_text(encoding="utf-8").strip() if target_path.is_file() else ""
+    if not target or any(character.isspace() for character in target):
+        raise SystemExit("unavailable-review-missing-pr-target")
+    checkout_state_path = out_dir / "checkout-state.json"
+    checkout_state: dict[str, object] | None = None
+    if checkout_state_path.is_file():
+        checkout_state = _load_json(checkout_state_path)
+        if checkout_state not in (
+            {"status": "checkout-command-started", "local_state": "changed-or-unknown"},
+            {"status": "checkout-command-succeeded-unverified", "local_state": "changed-or-unknown"},
+        ):
+            raise SystemExit("unavailable-review-invalid-checkout-state")
+    findings = result.get("findings")
+    expected_finding_levels = {"critical", "high", "medium", "low"}
+    if (
+        not isinstance(findings, dict)
+        or set(findings) != expected_finding_levels
+        or any(findings[level] != 0 for level in expected_finding_levels)
+    ):
+        raise SystemExit("unavailable-review-must-not-have-findings")
+
+    failure = metadata.get("collection_failure")
+    if not isinstance(failure, dict):
+        raise SystemExit("unavailable-review-missing-collection-failure")
+    code = failure.get("code")
+    artifact = failure.get("artifact")
+    if (
+        not isinstance(code, str)
+        or not re.fullmatch(r"[a-z][a-z0-9-]*(?::[A-Za-z0-9._-]+){0,2}", code)
+        or artifact != "pr-error.txt"
+    ):
+        raise SystemExit("unavailable-review-invalid-collection-failure")
+    error_path = out_dir / artifact
+    if not error_path.is_file() or error_path.read_text(encoding="utf-8").strip() != code:
+        raise SystemExit("unavailable-review-failure-artifact-mismatch")
+
+    notes_path = out_dir / "review-notes.md"
+    notes = notes_path.read_text(encoding="utf-8")
+    heading = "## PR Evidence Collection Recovery"
+    intro, separator, recovery_body = notes.partition(heading)
+    expected_intro = "# " + UNAVAILABLE_NOTE_LINES[0] + "\n\n" + "\n\n".join(UNAVAILABLE_NOTE_LINES[1:])
+    if not separator or intro.strip() != expected_intro:
+        raise SystemExit("unavailable-review-notes-must-be-operational-only")
+    if "## " in recovery_body:
+        raise SystemExit("unavailable-review-has-assessed-section")
+    if any(line.strip() and not line.strip().startswith("|") for line in recovery_body.splitlines()):
+        raise SystemExit("unavailable-review-recovery-must-be-table-only")
+    rows = [_table_cells(line) for line in recovery_body.splitlines() if line.strip().startswith("|")]
+    if not rows:
+        raise SystemExit("unavailable-review-missing-recovery-table")
+    if len(rows) < 3 or any(row is None or len(row) != len(UNAVAILABLE_RECOVERY_HEADERS) for row in rows):
+        raise SystemExit("unavailable-review-invalid-recovery-table")
+    if tuple(rows[0]) != UNAVAILABLE_RECOVERY_HEADERS or not all(re.fullmatch(r":?-{3,}:?", cell) for cell in rows[1]):
+        raise SystemExit("unavailable-review-recovery-table-header-mismatch")
+    action_rows = rows[2:]
+    if (
+        len(action_rows) != 1
+        or any(not cell for cell in action_rows[0])
+        or action_rows[0][0] != "PR evidence collection"
+    ):
+        raise SystemExit("unavailable-review-recovery-table-row-invalid")
+    category = code.split(":", maxsplit=1)[0]
+    action_key = (
+        "retry"
+        if category in {"github-network", "github-rate-limit", "command-timeout"}
+        else "auth"
+        if category in {"github-auth", "github-permission"}
+        else "install"
+        if code == "missing-command:gh"
+        else "identity"
+        if category == "github-not-found"
+        else "report"
+    )
+    recovery_action = UNAVAILABLE_RECOVERY_ACTIONS[action_key]
+    if checkout_state is not None:
+        recovery_action += CHECKOUT_STATE_RECOVERY_SUFFIX
+    expected_row = [
+        "PR evidence collection",
+        recovery_action,
+        f"`pr-error.txt`: `{code}`",
+        "Required verification",
+    ]
+    if action_rows[0] != expected_row:
+        raise SystemExit("unavailable-review-recovery-table-must-be-canonical")
+    if metadata.get("confidence_gaps") != [UNAVAILABLE_CONFIDENCE_GAP]:
+        raise SystemExit("unavailable-review-confidence-gaps-must-be-canonical")
+    expected_closure_rationale = (
+        "A local checkout command may have changed state, but no verified source bundle was produced."
+        if checkout_state is not None
+        else "No local checkout or source bundle was produced."
+    )
+    if metadata.get("confidence_gap_closures") != [
+        {
+            "gap": UNAVAILABLE_CONFIDENCE_GAP,
+            "status": "unresolved",
+            "rationale": expected_closure_rationale,
+        }
+    ]:
+        raise SystemExit("unavailable-review-confidence-closures-must-be-canonical")
+    expected_recovery = {
+        "initial_confidence": 0.9,
+        "final_confidence": 0.9,
+        "status": "fair",
+        "evidence": [
+            "The classified collection failure and conservative checkout-state evidence were retained."
+            if checkout_state is not None
+            else "The classified collection failure was retained."
+        ],
+        "recovery_actions": ["Stopped before source review."],
+        "remaining_limits": [
+            "PR correctness was not assessed; inspect local checkout state before retrying."
+            if checkout_state is not None
+            else "PR correctness was not assessed."
+        ],
+    }
+    if metadata.get("confidence_recovery") != expected_recovery:
+        raise SystemExit("unavailable-review-confidence-recovery-must-be-canonical")
 
 
 def _validate_confidence_gaps(result: dict[str, Any], metadata: dict[str, Any]) -> None:
@@ -677,6 +904,15 @@ def _validate_result(
     if risk_tier not in {"TRIVIAL", "LOCAL", "BROAD", "HIGH_RISK"}:
         raise SystemExit(f"invalid-risk-tier:{risk_tier!r}")
 
+    review_status = metadata.get("review_status")
+    if review_status == "unavailable":
+        _validate_unavailable_result(out_dir, result, metadata, scope)
+        _validate_confidence_gaps(result, metadata)
+        _validate_confidence_recovery(result, metadata)
+        return
+    if review_status is not None:
+        raise SystemExit(f"invalid-review-status:{review_status!r}")
+
     notes_path = out_dir / "review-notes.md"
     _require_notes_sections(notes_path)
     _validate_review_decision(metadata)
@@ -708,6 +944,8 @@ def _validate_result(
         checkout = _load_json(out_dir / "local-checkout.json")
         if routing.get("base_identity_source") != "pr_url":
             raise SystemExit("pr-routing-base-identity-not-authoritative")
+        if routing.get("pr_state") != "OPEN":
+            raise SystemExit("pr-state-not-open-for-merge-review")
         expected_identity = remote_selection.get("expected")
         if not isinstance(expected_identity, dict):
             raise SystemExit("pr-remote-selection-expected-missing")
@@ -731,7 +969,13 @@ def _validate_result(
         local_base = target_branch.get("local_head")
         if not expected_base or expected_base != routing.get("base_oid"):
             raise SystemExit("pr-target-branch-expected-oid-missing")
-        if not local_base or local_base != expected_base or target_branch.get("base_matches_pr_metadata") is not True:
+        if (
+            not local_base
+            or local_base != expected_base
+            or target_branch.get("base_matches_pr_metadata") is not (local_base == expected_base)
+            or target_branch.get("base_relation")
+            != ("matches-pr-metadata" if local_base == expected_base else "advanced-or-diverged")
+        ):
             raise SystemExit("pr-target-branch-oid-mismatch")
         if checkout.get("status") != "checked-out":
             raise SystemExit("pr-local-checkout-not-checked-out")

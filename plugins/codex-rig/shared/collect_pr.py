@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Collect authoritative GitHub pull-request evidence without requiring Bash."""
+"""Collect authoritative pull-request evidence and an optional verified local checkout.
+
+## Purpose
+
+Assemble the PR-specific metadata, review threads, patch, Git target/head evidence, and local checkout required before a source review. The bundle makes the authoritative base repository and exact PR head explicit before any reviewer inspects source.
+
+## Scope
+
+It orchestrates one PR evidence recipe and writes its artifact bundle; every GitHub read delegates to ``github_read.py`` and remote mutation is forbidden. With ``--checkout``, it additionally selects the matching local remote, fetches the target/head evidence, and records checkout identity without using forced Git operations.
+
+## Usage
+
+Run ``python collect_pr.py --target <number-or-url> --out <directory> [--checkout]`` from code-review or code-remediate PR mode. Reusing an output directory is supported because the collector removes its own prior evidence before starting a new attempt.
+
+## Used by
+
+The PR code-review/remediation workflows and collector acceptance tests use this module; it is not a general issue or discussion reader. Its review-thread GraphQL query is intentionally limited to the PR identified by the fetched ``pr.json`` payload.
+
+## Outputs
+
+It writes PR metadata, threads, diff/stat files, routing, target/head checks, optional checkout evidence, and classified terminal failure markers. A successful bundle includes files such as ``pr.json``, ``review-threads.json``, ``diff.patch``, ``pr-routing.json``, and checkout identity records when checkout was requested.
+
+## Failure
+
+Missing tools, unsafe GitHub command, failed authenticated evidence, invalid PR data, or checkout mismatch returns ``2`` and blocks source review. On a terminal ``CollectionError``, source-evidence artifacts from the current or prior attempt are cleared, ``pr-error.txt`` is written, and command diagnostics are retained separately when available.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +38,39 @@ from pathlib import Path
 from typing import Any
 
 
+# Keep this executable helper importable when pytest discovers it as a module.
+SHARED_DIRECTORY = Path(__file__).resolve().parent
+if str(SHARED_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SHARED_DIRECTORY))
+
+from github_read import GitHubReadError, run_gh_read  # noqa: E402
+
+
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+VALID_PR_STATES = frozenset({"OPEN", "MERGED", "CLOSED"})
+COLLECTOR_EVIDENCE_ARTIFACTS = (
+    "comments.json",
+    "checkout-state.json",
+    "diff.patch",
+    "diffstat.txt",
+    "files.txt",
+    "local-checkout.json",
+    "numstat.txt",
+    "online-review-summary.json",
+    "pr-head-fetch.json",
+    "pr-routing.json",
+    "pr.json",
+    "remote-selection-error.txt",
+    "remote-selection.json",
+    "remote.txt",
+    "review-threads.raw.json",
+    "review-threads.json",
+    "reviews.json",
+    "status.txt",
+    "target-branch.json",
+    "unresolved-review-threads.json",
+    "untracked.txt",
+)
 PR_FIELDS = (
     "number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid,"
     "headRepository,headRepositoryOwner,isCrossRepository,state,isDraft,"
@@ -42,6 +99,11 @@ RunCommand = Callable[..., subprocess.CompletedProcess[bytes]]
 class CollectionError(RuntimeError):
     """Carry one stable bounded collection failure code."""
 
+    def __init__(self, code: str, *, diagnostics: dict[str, Any] | None = None) -> None:
+        """Initialize a stable code with optional credential-opaque metadata."""
+        super().__init__(code)
+        self.diagnostics = diagnostics
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the portable PR collector command line."""
@@ -58,6 +120,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _run(run: RunCommand, argv: list[str], timeout: int, label: str, *, input_bytes: bytes | None = None) -> bytes:
     """Run one argv-only command and return bounded stdout bytes."""
+    if argv and argv[0] == "gh":
+        if input_bytes is not None:
+            raise CollectionError(f"unsafe-gh-command:{label}")
+        try:
+            return run_gh_read(run, argv, timeout=timeout, label=label)
+        except GitHubReadError as error:
+            raise CollectionError(str(error), diagnostics=error.diagnostics) from error
     try:
         completed = run(
             argv,
@@ -72,10 +141,18 @@ def _run(run: RunCommand, argv: list[str], timeout: int, label: str, *, input_by
         raise CollectionError(f"command-timeout:{label}") from error
     except OSError as error:
         raise CollectionError(f"command-unavailable:{label}") from error
-    if completed.returncode != 0:
-        raise CollectionError(f"command-failed:{label}")
     if len(completed.stdout) > MAX_OUTPUT_BYTES or len(completed.stderr) > MAX_OUTPUT_BYTES:
         raise CollectionError(f"command-output-oversized:{label}")
+    if completed.returncode != 0:
+        failure_class = "command-failed"
+        raise CollectionError(
+            f"{failure_class}:{label}",
+            diagnostics={
+                "exit_code": completed.returncode,
+                "failure_class": failure_class,
+                "label": label,
+            },
+        )
     return completed.stdout
 
 
@@ -165,6 +242,9 @@ def _review_artifacts(
         "top_level_comment_count": len(comments),
         "review_count": len(reviews),
     }
+    pr_state = payload.get("state")
+    if pr_state not in VALID_PR_STATES:
+        raise CollectionError("unsupported-pr-state")
     head_repo = _head_repository(payload)
     routing = {
         "base_repo": base_repo,
@@ -172,6 +252,7 @@ def _review_artifacts(
         "base_identity_source": "pr_url",
         "pr_number": payload.get("number"),
         "pr_url": payload.get("url"),
+        "pr_state": pr_state,
         "base_ref": payload.get("baseRefName"),
         "base_oid": payload.get("baseRefOid"),
         "head_ref": payload.get("headRefName"),
@@ -252,14 +333,20 @@ def _checkout(
         "local_head": base_local,
         "expected_base_oid": base_oid,
         "base_matches_pr_metadata": base_local == base_oid,
+        "base_relation": "matches-pr-metadata" if base_local == base_oid else "advanced-or-diverged",
         "command": f"git fetch --no-tags {remote_name} {base_ref}:{base_remote_ref}",
-        "source_policy": "target branch is refreshed before PR conflict or review-item resolution",
+        "source_policy": "target branch is refreshed before PR conflict or review-item resolution; historical PRs may record divergence from the PR's saved base SHA",
     }
     _write_json(output / "target-branch.json", target)
-    if base_local != base_oid:
+    if routing.get("pr_state") == "OPEN" and base_local != base_oid:
         raise CollectionError(f"target-branch-oid-mismatch:{base_local}:{base_oid}")
 
-    if routing.get("same_repo") is True and isinstance(head_ref, str) and head_ref:
+    if (
+        routing.get("same_repo") is True
+        and routing.get("pr_state") == "OPEN"
+        and isinstance(head_ref, str)
+        and head_ref
+    ):
         head_remote_ref = f"refs/remotes/{remote_name}/{head_ref}"
         _run(
             run,
@@ -282,12 +369,38 @@ def _checkout(
         _write_json(output / "pr-head-fetch.json", head)
         if head_local != head_oid:
             raise CollectionError(f"pr-head-oid-mismatch:{head_local}:{head_oid}")
+    elif routing.get("pr_state") != "OPEN" and isinstance(number, int):
+        historical_head_ref = f"refs/remotes/{remote_name}/pull/{number}/head"
+        _run(
+            run,
+            ["git", "fetch", "--no-tags", remote_name, f"refs/pull/{number}/head:{historical_head_ref}"],
+            timeout,
+            "historical-pr-head-fetch",
+        )
+        head_local = (
+            _run(run, ["git", "rev-parse", historical_head_ref], timeout, "historical-pr-head-rev-parse")
+            .decode()
+            .strip()
+        )
+        head = {
+            "status": "fetched",
+            "remote": remote_name,
+            "head_ref": historical_head_ref,
+            "local_head": head_local,
+            "expected_head_oid": head_oid,
+            "head_matches_pr_metadata": head_local == head_oid,
+            "command": f"git fetch --no-tags {remote_name} refs/pull/{number}/head:{historical_head_ref}",
+            "source_policy": "historical PR head is refreshed from GitHub's pull ref and verified against metadata before detached local checkout",
+        }
+        _write_json(output / "pr-head-fetch.json", head)
+        if head_local != head_oid:
+            raise CollectionError(f"historical-pr-head-oid-mismatch:{head_local}:{head_oid}")
     else:
         _write_json(
             output / "pr-head-fetch.json",
             {
                 "status": "skipped",
-                "same_repo": False,
+                "same_repo": routing.get("same_repo"),
                 "head_ref": head_ref,
                 "reason": "cross-repository PR head is refreshed by gh pr checkout",
             },
@@ -301,7 +414,21 @@ def _checkout(
     )
     if dirty.strip():
         raise CollectionError("dirty-tracked-worktree-before-pr-checkout")
-    _run(run, ["gh", "pr", "checkout", url], timeout, "gh-pr-checkout")
+    # gh can update local refs or the worktree before it reports an error, so preserve conservative state first.
+    _write_json(
+        output / "checkout-state.json",
+        {"status": "checkout-command-started", "local_state": "changed-or-unknown"},
+    )
+    checkout_argv = ["gh", "pr", "checkout", url]
+    if routing.get("pr_state") != "OPEN" and isinstance(number, int):
+        checkout_argv = ["git", "checkout", "--detach", f"refs/remotes/{remote_name}/pull/{number}/head"]
+    routing["local_checkout_command"] = " ".join(checkout_argv)
+    _write_json(output / "pr-routing.json", routing)
+    _run(run, checkout_argv, timeout, "local-pr-checkout")
+    _write_json(
+        output / "checkout-state.json",
+        {"status": "checkout-command-succeeded-unverified", "local_state": "changed-or-unknown"},
+    )
     branch = _run(run, ["git", "branch", "--show-current"], timeout, "checkout-branch").decode().strip()
     local_head = _run(run, ["git", "rev-parse", "HEAD"], timeout, "checkout-head").decode().strip()
     matches = local_head == head_oid
@@ -315,7 +442,7 @@ def _checkout(
             "local_head": local_head,
             "expected_head": head_oid,
             "head_matches_pr": matches,
-            "command": f"gh pr checkout {url}",
+            "command": " ".join(checkout_argv),
             "target_branch_artifact": "target-branch.json",
             "pr_head_fetch_artifact": "pr-head-fetch.json",
             "force_policy": "no --force was used; ask the user before any forced checkout",
@@ -324,6 +451,12 @@ def _checkout(
     )
     if not matches:
         raise CollectionError("local-checkout-head-mismatch")
+
+
+def _clear_collector_artifacts(output: Path) -> None:
+    """Remove this collector's prior evidence so one output directory never mixes attempts."""
+    for filename in (*COLLECTOR_EVIDENCE_ARTIFACTS, "command-failure.json", "pr-error.txt"):
+        (output / filename).unlink(missing_ok=True)
 
 
 def collect_pr(
@@ -336,6 +469,8 @@ def collect_pr(
 ) -> int:
     """Collect one PR context pack and optionally update its verified checkout."""
     output.mkdir(parents=True, exist_ok=True)
+    _clear_collector_artifacts(output)
+    (output / "pr-target.txt").write_text(f"{target.strip() or 'current-branch-pr'}\n", encoding="utf-8")
     command_runner = subprocess.run if run is None else run
     try:
         for command in ("git", "gh"):
@@ -417,6 +552,15 @@ def collect_pr(
             _checkout(command_runner, timeout_seconds, output, payload, routing, selector)
         return 0
     except CollectionError as error:
+        # Terminal failures must contain no source evidence from a prior or partial attempt.
+        checkout_state = (
+            (output / "checkout-state.json").read_bytes() if (output / "checkout-state.json").is_file() else None
+        )
+        _clear_collector_artifacts(output)
+        if checkout_state is not None:
+            (output / "checkout-state.json").write_bytes(checkout_state)
+        if error.diagnostics is not None:
+            _write_json(output / "command-failure.json", error.diagnostics)
         (output / "pr-error.txt").write_text(f"{error}\n", encoding="utf-8")
         return 2
 

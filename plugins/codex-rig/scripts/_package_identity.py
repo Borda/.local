@@ -1,4 +1,29 @@
-"""Verify one complete installed Codex Rig package without lifecycle writes."""
+"""Verify an installed Codex Rig package against its deterministic manifest.
+
+## Purpose
+
+Establish package identity, payload closure, hashes, and expected modes before an installed helper trusts its own assets. The verification result is the package-level anchor for role-card and script integrity checks.
+
+## Scope
+
+Reads local package data through safe I/O and performs no installation, refresh, or lifecycle mutation. It compares the manifest to the complete regular-file payload, leaving package creation and command execution to its callers.
+
+## Usage
+
+Import ``verify_package`` from package build/validation and installed helper startup paths. Call it against the package root that will actually supply assets, then retain the returned identity facts while consuming those assets.
+
+## Used by
+
+``build_package.py``, installed role-link verification, and package identity tests call this verifier. These callers use the same contract both before shipping a package and before trusting one selected by local Codex discovery.
+
+## Outputs
+
+Returns a ``PackageIdentity`` with manifest records and verified root facts that callers can bind to their subsequent operation. The records expose canonical version, file hashes, modes, and root identity without authorizing any mutation.
+
+## Failure
+
+Malformed manifests, unexpected files, links, hashes, modes, or references raise ``PackageIdentityError`` and fail closed. Consumers must stop startup or release validation on this error because an unverified package may contain substituted runtime content.
+"""
 
 from __future__ import annotations
 

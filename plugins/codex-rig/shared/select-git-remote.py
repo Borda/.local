@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Select a local Git remote that matches an authoritative repository URL."""
+"""Select the local Git remote matching an authoritative repository URL.
+
+## Purpose
+
+Prevent PR workflows from fetching or checking out against a similarly named fork instead of the PR's actual base repository. Selection is based on normalized host and owner/repository identity, not on the conventional name ``origin`` alone.
+
+## Scope
+
+It parses local remote URLs and returns a deterministic match; it does not alter remotes, fetch refs, or call GitHub. SSH/scp-style, HTTPS, repository, and pull-request URLs are reduced to the same two-part identity, while malformed URLs are retained in the rejected-candidate details.
+
+## Usage
+
+Run ``python select-git-remote.py --expected-url <url> --cwd <repository>`` through ``collect_pr.py`` with the canonical PR URL and local repository context. Use ``--identity-only`` when only normalized base-repository identity is needed and no local Git remote lookup should occur.
+
+## Used by
+
+Pull-request evidence collection and remote-selection acceptance tests use this selector. ``collect_pr.py`` consumes the chosen remote before recording target and head checkout evidence, so the selection is part of the PR identity chain.
+
+## Outputs
+
+It emits a JSON-compatible selected remote record including the expected identity and all local candidates considered. When multiple exact matches exist, ``origin`` wins the deterministic ordering; the payload still lists every matching name and URL for auditability.
+
+## Failure
+
+Malformed authoritative URL or no exact match exits non-zero so PR collection does not use a guessed fork. Multiple exact matches are not treated as an error: the deterministic selector prefers ``origin`` and reports every matching candidate for auditability.
+"""
 
 from __future__ import annotations
 
