@@ -25,6 +25,8 @@ REQUIRED_SECTIONS = (
 )
 REQUIRED_ROLES = {"qa-specialist", "challenger"}
 VALID_RECOMMENDATIONS = {"accept-as-is", "minor-changes", "needs-more-work", "reject", "not-aligned"}
+ACTION_TABLE_SECTION = "Review Findings and Merge Blocks"
+ACTION_TABLE_HEADERS = ("Finding / area", "Required change", "Evidence", "Status")
 ALL_MANIFEST_ROLES = {
     "qa-specialist",
     "challenger",
@@ -293,6 +295,56 @@ def _validate_review_decision(metadata: dict[str, Any]) -> None:
         value = decision.get(key)
         if not isinstance(value, str) or not value.strip():
             raise SystemExit(f"review-decision-missing-{key}")
+
+
+def _table_cells(line: str) -> list[str] | None:
+    """Return one complete Markdown table row, preserving its cell content."""
+    normalized = line.strip()
+    if not normalized.startswith("|") or not normalized.endswith("|"):
+        return None
+    return [cell.replace(r"\|", "|").strip() for cell in re.split(r"(?<!\\)\|", normalized[1:-1])]
+
+
+def _action_table_rows(notes_text: str) -> list[list[str]]:
+    """Extract the canonical review findings and merge blocks table rows."""
+    section = re.search(
+        rf"^## {re.escape(ACTION_TABLE_SECTION)}\\s*$\\n(?P<body>.*?)(?=^## |\\Z)",
+        notes_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    if section is None:
+        raise SystemExit("review-missing-findings-action-table")
+    rows = [_table_cells(line) for line in section.group("body").splitlines() if line.strip().startswith("|")]
+    if len(rows) < 3 or any(row is None or len(row) != len(ACTION_TABLE_HEADERS) for row in rows):
+        raise SystemExit("review-invalid-findings-action-table")
+    return [row for row in rows if row is not None]
+
+
+def _validate_action_table(notes_path: Path, result: dict[str, Any], metadata: dict[str, Any], scope: str) -> None:
+    """Require actionable, evidence-backed rows for non-approval review outcomes."""
+    decision = metadata["review_decision"]
+    recommendation = decision["recommendation"]
+    if recommendation == "accept-as-is" or (scope != "pr" and recommendation != "needs-more-work"):
+        return
+
+    rows = _action_table_rows(notes_path.read_text(encoding="utf-8"))
+    if tuple(rows[0]) != ACTION_TABLE_HEADERS:
+        raise SystemExit("review-findings-action-table-header-mismatch")
+    if not all(re.fullmatch(r":?-{3,}:?", cell) for cell in rows[1]):
+        raise SystemExit("review-findings-action-table-divider-invalid")
+    action_rows = rows[2:]
+    if not action_rows:
+        raise SystemExit("review-findings-action-table-empty")
+    for index, row in enumerate(action_rows, start=1):
+        if not all(row):
+            raise SystemExit(f"review-findings-action-table-cell-empty:{index}")
+        if row[3].casefold() == "implemented":
+            raise SystemExit(f"review-findings-action-table-status-closed:{index}")
+    findings = result.get("findings")
+    if isinstance(findings, dict):
+        reported_count = sum(value for value in findings.values() if isinstance(value, int) and value >= 0)
+        if len(action_rows) < reported_count:
+            raise SystemExit("review-findings-action-table-incomplete")
 
 
 def _validate_confidence_gaps(result: dict[str, Any], metadata: dict[str, Any]) -> None:
@@ -628,6 +680,7 @@ def _validate_result(
     notes_path = out_dir / "review-notes.md"
     _require_notes_sections(notes_path)
     _validate_review_decision(metadata)
+    _validate_action_table(notes_path, result, metadata, scope)
     _validate_confidence_gaps(result, metadata)
     _validate_confidence_recovery(result, metadata)
     if scope == "pr":

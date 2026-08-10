@@ -4,7 +4,7 @@
       "goal": "Catch blocking findings in working tree changes",
       "id": "code-review-001",
       "skill": "code-review",
-      "success": "severity mapping and gate result are present"
+      "success": "severity mapping, gate result, and findings/action table are present for every non-accept-as-is PR decision, including preflight blockers with source findings marked not assessed"
     },
     {
       "goal": "Implement minimal change and verify checks",

@@ -60,7 +60,9 @@ Classify diff; write `<run-directory>/scope.txt`:
 
 For `scope=pr`, review evidence includes `pr.json`, `pr-routing.json`, `remote-selection.json`, `target-branch.json`, `local-checkout.json`, comments, reviews, review threads, unresolved review threads, and `online-review-summary.json`. Selected remote must match base repository from PR URL; fetched base/head OIDs must exactly match PR metadata. `pr-routing.json` and `local-checkout.json` must include `force_policy` proving no automatic forced checkout. Treat unresolved online threads/comments as candidate findings until triaged valid, duplicate, stale, out-of-scope, or already fixed.
 
-If `files.txt` and `untracked.txt` are empty with no explicit target, fail before gates. If `scope=pr` and `pr-error.txt` exists, fail with captured reason.
+If `files.txt` and `untracked.txt` are empty with no explicit target, fail before gates. If `scope=pr` and `pr-error.txt` exists, fail with captured reason and do not begin T1/T2 source review.
+
+**Terminal review-blocked output gate:** A PR collection failure still needs the `Review Findings and Merge Blocks` table in the final chat. State `Source findings: not assessed — T0 PR evidence collection failed`; never describe the collection failure as a code finding. Then render the exact table shape below with a `PR evidence collection` row: required change is the concrete recovery action, evidence is `<run-directory>/pr-error.txt`, and status is `Required verification`. Keep the recommendation as `needs-more-work (review blocked)`, name the artifact path, and stop. Do not claim a source review, CI result, or merge decision when the required local checkout/evidence bundle was not produced.
 
 **Structural context (optional)**: after the diff is collected, also probe codemap-py once for changed-symbol blast
 radius: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review --out <run-directory>/codemap-context.json`.
@@ -143,6 +145,7 @@ Required sections:
 - `Specialist Passes`
 - `Specialist Manifest`
 - `Findings`
+- `Review Findings and Merge Blocks` when `Recommendation` is `needs-more-work`, or for any non-`accept-as-is` PR decision
 - `No-Finding Residual Risks`
 - `Confidence Gaps`
 - `Confidence Calibration`
@@ -174,6 +177,14 @@ Use exactly one recommendation:
 - `Required next work`: pre-merge work or `none`
 - `Confidence`: score plus key gaps
 
+For every non-`accept-as-is` PR decision, and for any `needs-more-work` decision in another scope, add a `## Review Findings and Merge Blocks` section immediately after `Decision Summary`. It is the canonical pre-merge handoff and must use this exact Markdown header and column order:
+
+| Finding / area | Required change | Evidence | Status |
+| --- | --- | --- | --- |
+| Finding ID/title and owning area, or an operational blocker | Concrete action that closes the finding or decision condition | File, command, gate, review thread, or other observed evidence | Required, Minor change, Verify, Implemented; verify, Required verification, Reject, or Not aligned |
+
+Include one non-empty row for every reported finding, unresolved blocker, failed or missing gate, and required verification. The first cell names the finding ID/title or clearly states the operational area. `Status` must make clear whether the row is required, minor, verification-only, rejected, or not aligned; `Implemented` alone is not an open action. Do not collapse distinct findings into a generic row. This table is mandatory evidence: a non-`accept-as-is` PR artifact, or any `needs-more-work` artifact, fails validation when it is missing, malformed, empty, or contains a non-actionable status. The terminal review-blocked output gate above applies before a review artifact can exist.
+
 ### 10: Run confidence calibration and recovery before any user-facing output
 
 Before final chat/`result.json`, write `Confidence Calibration` in `review-notes.md`; mirror in `CODE_REVIEW_METADATA.confidence_recovery`.
@@ -199,7 +210,7 @@ Confidence must be honest/objectively verifiable. Never raise it to pass a gate;
 
 Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with `CODE_REVIEW_METADATA` and `FOLLOW_UP`; run review-specific validator before shared validator for `code-review`; promote only candidate accepted by both.
 
-`CODE_REVIEW_METADATA.specialist_passes` mirrors every triggered `specialist-manifest.json` entry; `review_run_id`/`review_input_sha256` mirror top-level values. `CODE_REVIEW_METADATA.scope` matches normalized scope. `CODE_REVIEW_METADATA.review_decision` mirrors `Decision Summary` recommendation, summary, rationale. `CODE_REVIEW_METADATA.confidence_recovery` mirrors `Confidence Calibration` and includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REVIEW_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` and matching evidence/rationale.
+`CODE_REVIEW_METADATA.specialist_passes` mirrors every triggered `specialist-manifest.json` entry; `review_run_id`/`review_input_sha256` mirror top-level values. `CODE_REVIEW_METADATA.scope` matches normalized scope. `CODE_REVIEW_METADATA.review_decision` mirrors `Decision Summary` recommendation, summary, rationale. Every non-`accept-as-is` PR, and every `needs-more-work` result in another scope, carries the validated canonical `Review Findings and Merge Blocks` table in `review-notes.md`. `CODE_REVIEW_METADATA.confidence_recovery` mirrors `Confidence Calibration` and includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REVIEW_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` and matching evidence/rationale.
 
 ## Fail-fast Rules
 
@@ -224,12 +235,14 @@ Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with 
 19. Shared confidence policy violation from `../../shared/quality-gates.md` => fail.
 20. Spawned specialist lacks validated parent/child rollout provenance, hashes, or exact output binding => fail.
 21. More than two attempts or retry after non-transient outcome => fail.
+22. A non-`accept-as-is` PR or `needs-more-work` result is missing a complete actionable `Review Findings and Merge Blocks` table => fail.
+23. A terminal PR collection failure omits the findings/action table or does not explicitly mark source findings `not assessed` => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: T0 files, risk tier, local changed-file inspection, simplicity/readability/reproducibility inspection, project docstring-style detection, docstring/comment policy inspection for changed code, PR target-branch refresh/checkout evidence when relevant, specialist manifest/notes, structured decision summary, confidence calibration/recovery, PR online-review triage, severity map, `git diff --check`.
+- `review`: T0 files, risk tier, local changed-file inspection, simplicity/readability/reproducibility inspection, project docstring-style detection, docstring/comment policy inspection for changed code, PR target-branch refresh/checkout evidence when relevant, specialist manifest/notes, structured decision summary, non-approval PR findings/action table including terminal PR collection failures, confidence calibration/recovery, PR online-review triage, severity map, `git diff --check`.
 
 Conditional checks:
 
@@ -241,13 +254,13 @@ Conditional checks:
 Update calibration when review routing, severity discipline, decision vocabulary, or output shape changes:
 
 - benchmark patterns: `code-review`
-- behavioral cases: false blocker, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage, missing project docstring-style detection, missing code self-documentation, long code blocks, deep branching, docstrings masking poor structure, low-confidence recovery loop, objective confidence evidence
+- behavioral cases: false blocker, non-approval PR findings/action table missing a reported finding, missing `needs-more-work` table, terminal PR collection failure without table or `not assessed` source findings, malformed table row, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage, missing project docstring-style detection, missing code self-documentation, long code blocks, deep branching, docstrings masking poor structure, low-confidence recovery loop, objective confidence evidence
 - PR routing cases: target-branch refresh required, local checkout required, stale local PR branch, raw-file snapshot rejection
 
 ## Output Contract
 
 Use shared gate schema from `../../shared/quality-gates.md`.
 
-Final chat starts compact `Review Decision Summary`: recommendation, blockers, required next work, confidence/material limits, artifact path. Keep full routing, recovery, closure evidence in artifact, not chat. Recommendation must be `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
+Final chat starts compact `Review Decision Summary`: recommendation, blockers, required next work, confidence/material limits, artifact path. For every non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table in the chat output; it is the decision handoff, not optional detail. A terminal output also states `Source findings: not assessed` and does not invent source findings. Keep full routing, recovery, closure evidence in artifact, not chat. Recommendation must be `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
 Minimum artifact payload template: `result-template.json`.

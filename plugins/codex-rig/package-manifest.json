@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "434cc417ecb653683f8f057b2e2703263e9ae6d86614ecaaa954803aed168079"
+      "sha256": "44e011a55071cbf67eb11b1c7a6b68c03d06f2d56800e18a4b385c6a2cf73254"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "2049729e5f99b192a86e5ea54b84a462a7bd23e8995b63bc945826d8736b64ad"
+      "sha256": "810e92d6d927327ef7be60983eee8628cb7118ee25c9e492fb76d388efb505c3"
     },
     {
       "mode": "0644",
@@ -42,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "c8113064663c3dd60bcd31c81de6bcc6f8ecc162248ffb52fde3c3938a9da768"
+      "sha256": "54579784a09d233a031b5ba9c208216679986f7dd786687a951da600b140419b"
     },
     {
       "mode": "0644",
@@ -157,17 +157,17 @@
     {
       "mode": "0644",
       "path": "runtime/calibration/behavioral-cases.json",
-      "sha256": "c1f0bf2f5f71e291da68077a412529ef2adf97c28e35df5f6bd2258ffff08204"
+      "sha256": "059898661dc9185f8e8e82bf52385fffb1e8c58d19bae28ec2499275b3ca7c59"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/behavioral-observations.jsonl",
-      "sha256": "53896ad9dfee6163346951d343eacf3aae7203742872bdca32c08ae225e87c0b"
+      "sha256": "98759cb48dd97cc285cf969f0b50a0e1c0e3a94d9ce214d19db71780fa67a02a"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/benchmarks.json",
-      "sha256": "680b3ea17c682d836d27662646250118b10a234d3cd2303b9d21c68bb43841ee"
+      "sha256": "6543f634aba1a9d1b5d3564345564dd0dfd1948f38336a1570454d164f7534bc"
     },
     {
       "mode": "0644",
@@ -217,7 +217,7 @@
     {
       "mode": "0755",
       "path": "runtime/calibration/run.py",
-      "sha256": "dbe26c4b6c3ea4b4f6328e9f4d09c17ca70161bea5c96623f62e052a82ce3dbe"
+      "sha256": "40cb0e033066e67143dcea1d81f753ab18554840bfdce1d24a3c37755909cb78"
     },
     {
       "mode": "0755",
@@ -232,7 +232,7 @@
     {
       "mode": "0644",
       "path": "runtime/calibration/tasks.json",
-      "sha256": "425dda8b2b116095a6bca2ea8efe81507b7fc5d8986733ca36605478953dea62"
+      "sha256": "ba82a331808502b09f34acadc0eeb83fc34e27946cb35539c735f5ebffe638b0"
     },
     {
       "mode": "0644",
@@ -457,7 +457,7 @@
     {
       "mode": "0644",
       "path": "skills/code-review/SKILL.md",
-      "sha256": "9cc87a9fc481fe9a8de4a4c216f7a10cd52371ec256e892b3e71007f02af1307"
+      "sha256": "7828a495181a6775781c28f8fb72d4a1018235c21fc70b72b2ce83d9d28fae45"
     },
     {
       "mode": "0644",
@@ -467,7 +467,7 @@
     {
       "mode": "0755",
       "path": "skills/code-review/validate_artifacts.py",
-      "sha256": "7a25101f7088bf2ad2a4bca1f8fc84930e2fb216ed30b34c7c8427ba394375c1"
+      "sha256": "6f5ed5c96492fcceb9f9f7527f418068a81ead5ae6d246c4a1d6049fbcfe2e79"
     },
     {
       "mode": "0644",
@@ -958,5 +958,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.4.7"
+  "version": "0.4.8"
 }

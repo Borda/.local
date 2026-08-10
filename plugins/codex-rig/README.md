@@ -212,7 +212,7 @@ Confidence is evidence-backed:
 
 ## PR review-to-remediation
 
-`$codex-rig:code-review #123` collects current PR metadata, diff, comments, reviews, threads, and target-branch evidence before producing a structured review artifact. It performs mandatory QA/challenge passes for broad or high-risk diffs and conditionally triggers architecture, security, CI, docs, data, performance, research, or web evidence.
+`$codex-rig:code-review #123` collects current PR metadata, diff, comments, reviews, threads, and target-branch evidence before producing a structured review artifact. It performs mandatory QA/challenge passes for broad or high-risk diffs and conditionally triggers architecture, security, CI, docs, data, performance, research, or web evidence. Every PR result other than `accept-as-is` must include a validated findings/action table with each finding or operational blocker, required change, evidence, and status; the final review summary reproduces that table. If PR collection fails before source review, the terminal summary still shows the evidence-collection blocker and explicitly marks source findings as not assessed.
 
 `$codex-rig:code-remediate #123 +review` finds the newest matching review artifact, refreshes PR evidence, updates the local PR checkout, records merge-conflict risk, and presents a resolution table before editing. Selected findings are grouped by root cause and assigned a primary owner, verifier, expected closure evidence, and context pack. The workflow never pushes, comments, merges, or publishes remotely.
 

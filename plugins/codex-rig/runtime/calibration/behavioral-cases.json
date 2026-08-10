@@ -282,6 +282,36 @@
     },
     {
       "expected_findings": [
+        "merge-blocker-table-missing",
+        "merge-condition-evidence-unstructured",
+        "needs-more-work-output-gate-missing"
+      ],
+      "id": "code-review-needs-more-work-blocker-table",
+      "prompt": "Assess a code review that recommends needs-more-work because coverage and CI evidence are missing, but reports only a prose summary instead of an area, required change, evidence, and status table for each merge condition.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "pr-preflight-blocker-table-missing",
+        "source-findings-overclaimed",
+        "pr-collection-blocker-evidence-missing"
+      ],
+      "id": "code-review-pr-preflight-blocker-table",
+      "prompt": "Assess a PR review where gh pr view fails before checkout, the final needs-more-work summary has no findings/action table, and it implies source findings despite no source review having occurred.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "nonapproval-pr-findings-table-missing",
+        "reported-finding-not-tabulated",
+        "decision-action-evidence-missing"
+      ],
+      "id": "code-review-pr-nonapproval-findings-table",
+      "prompt": "Assess a PR review that reports a medium regression and recommends minor-changes, but gives no findings/action table linking that finding to its required change and evidence.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
         "confidence-not-acceptable",
         "confidence-recovery-loop-missing",
         "objective-confidence-evidence-missing",

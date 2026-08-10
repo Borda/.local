@@ -1773,6 +1773,40 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
     child_rollout.write_text("".join(json.dumps(row) + "\n" for row in child_rows), encoding="utf-8")
     if run_command(command).returncode == 0:
         run.fail_and_leak("shared-script-selftests", "selftest-fail-open:review-validator-role-model")
+    manifest["passes"][0]["attempts"][0]["model"] = DEFAULT_MODEL
+    child_rows[2]["payload"]["model"] = DEFAULT_MODEL
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    child_rollout.write_text("".join(json.dumps(row) + "\n" for row in child_rows), encoding="utf-8")
+    metadata["review_decision"] = {
+        "recommendation": "needs-more-work",
+        "summary": "Coverage evidence is missing.",
+        "rationale": "The remaining verification blocks merge.",
+    }
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "fail",
+                "checks_failed": ["tests"],
+                "confidence": 0.95,
+                "findings": {"critical": 0, "high": 1, "medium": 0, "low": 0},
+                "metadata": metadata,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if run_command(command).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:review-validator-missing-merge-blocker-table")
+    with (out / "review-notes.md").open("a", encoding="utf-8") as handle:
+        handle.write(
+            "\n## Review Findings and Merge Blocks\n\n"
+            "| Finding / area | Required change | Evidence | Status |\n"
+            "| --- | --- | --- | --- |\n"
+            "| Test coverage | Add coverage for the changed error path. | tests gate failed | Required |\n"
+        )
+    if run_command(command).returncode != 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:review-validator-merge-blocker-table")
 
 
 def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
