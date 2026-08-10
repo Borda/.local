@@ -125,6 +125,48 @@ RECURRENCE_CASE_CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
         ),
     ),
 }
+MODEL_STALL_CASE_CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "model-stall-advisory-escalation": (
+        "delegation-lead",
+        (
+            "reasoning-progress-not-assessed",
+            "model-stall-escalation-required",
+            "stall-ledger-missing",
+        ),
+    ),
+    "model-stall-human-handoff": (
+        "delegation-lead",
+        (
+            "post-escalation-human-handoff-required",
+            "model-stall-handoff-evidence-missing",
+            "next-step-proposal-missing",
+        ),
+    ),
+    "model-stall-progress-without-closure": (
+        "delegation-lead",
+        (
+            "closure-condition-not-recorded",
+            "evidence-backed-attempt-escalation-required",
+            "progress-without-closure-ledger-missing",
+        ),
+    ),
+    "model-stall-user-directed-progress": (
+        "delegation-lead",
+        (
+            "user-directed-progress-misclassified",
+            "false-advisory-escalation",
+            "user-decision-evidence-missing",
+        ),
+    ),
+    "model-stall-advisory-route-safety": (
+        "delegation-lead",
+        (
+            "advisory-read-only-sandbox-unverified",
+            "advisory-mutation-fence-missing",
+            "human-handoff-required-when-route-unavailable",
+        ),
+    ),
+}
 
 
 @dataclass(slots=True)
@@ -787,6 +829,7 @@ def check_fixed_task_and_behavioral_rosters(run: CalibrationRun) -> None:
         if missing_targets:
             raise ValueError(f"behavioral skill targets missing: {missing_targets}")
         validate_recurrence_case_contract(cases_payload)
+        validate_model_stall_case_contract(cases_payload)
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         run.fail_and_leak("fixed-task-set", f"fixed-task-roster-invalid:{exc}")
         return
@@ -811,6 +854,26 @@ def validate_recurrence_case_contract(cases_payload: dict[str, Any]) -> None:
             raise ValueError(f"recurrence case target mismatch: {case_id}")
         if case.get("expected_findings") != list(expected_findings):
             raise ValueError(f"recurrence case findings mismatch: {case_id}")
+
+
+def validate_model_stall_case_contract(cases_payload: dict[str, Any]) -> None:
+    """Require calibration coverage for advisory and human stall escalation."""
+    cases = cases_payload.get("cases")
+    if not isinstance(cases, list):
+        raise ValueError("behavioral cases must be a list")
+    stall_cases = {
+        case.get("id"): case
+        for case in cases
+        if isinstance(case, dict) and isinstance(case.get("id"), str) and case["id"].startswith("model-stall-")
+    }
+    if set(stall_cases) != set(MODEL_STALL_CASE_CONTRACT):
+        raise ValueError("model stall behavioral case roster mismatch")
+    for case_id, (expected_target, expected_findings) in MODEL_STALL_CASE_CONTRACT.items():
+        case = stall_cases[case_id]
+        if case.get("target") != expected_target:
+            raise ValueError(f"model stall case target mismatch: {case_id}")
+        if case.get("expected_findings") != list(expected_findings):
+            raise ValueError(f"model stall case findings mismatch: {case_id}")
 
 
 def find_misplaced_packaged_recurrence_policy_links(

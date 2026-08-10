@@ -35,6 +35,12 @@ Apply this policy to every same or plausibly shared obstacle, including one that
 - Occurrence 3 stops all attempts. Ask the human for next steps and include attempted actions, current hypotheses/evidence, and the shared obstacle across differing symptoms.
 - Reset the count only when evidence falsifies the shared cause or a material external-state change occurs. Record the reset and its evidence.
 
+### Reasoning-progress escalation policy
+
+Apply this separately to a stalled workstream. A work cycle records its objective, operation/hypothesis, observed output, and next decision. Material progress means new falsifiable evidence, a decision-changing scope/root-cause narrowing, an acceptance-check status change, or a user-directed decision; repeated equivalent actions, rewording, elapsed time, token count, and confidence claims do not qualify. A closure condition is the unchanged result that ends the workstream: a passing acceptance check, resolved decision, or user-approved scope. Two cycles without material progress, or three evidence-backed attempts that leave one closure condition unmet, require the owner to persist `reasoning-progress.json` and validate it with `python PLUGIN_ROOT/shared/escalation_ledger.py --ledger <run-directory>/reasoning-progress.json` before any further cycle. The ledger records objective; closure condition; operations/hypotheses; outputs/evidence; why each attempt lacked progress or closure; current model/effort when observable; state changes; and recurrence count.
+
+Pause and request exactly one permitted higher-capability advisory pass: first a supported reasoning-effort increase, otherwise the next valid model tier. The advisor route is valid only when the observed sandbox is `read-only`; it diagnoses, proposes one bounded recovery action and stop condition, but makes no state changes or acceptance claim. If the read-only route is unavailable or unverified, go directly to the human. The parent may run that one action. If the action makes no material progress or leaves the closure condition unmet, stop and ask the human with the ledger, advisory evidence, current hypotheses, rejected alternatives, and one recommended next step with alternatives. This never resets or weakens the repeated-obstacle policy; the closure-attempt count resets only when its condition is fulfilled or materially replaced by recorded user direction or external-state evidence; Luna never escalates bounded support to Sol, and Sol remains architecture/security-only.
+
 ## Coordination Discipline
 
 - Keep live plan for multi-step work, update as task changes shape. Use as session task ledger.
@@ -213,7 +219,7 @@ Parent agent responsibilities:
 
 ### Model escalation policy
 
-Use Codex Rig's `delegation-lead` role card plus the packaged role trigger/skip boundaries as the detailed routing source. Prefer lowest-cost capable role: Luna for coordination + bounded support domains, Terra for implementation/runtime/testing + final executable verification, Sol only for solution architecture or security. Luna support roles hand executable verification, release-blocking, API/runtime-changing ownership to appropriate Terra/Sol owner. Parallelize only disjoint evidence, tests, docs, profiling work with clear ownership. Every delegated workstream must pass the packaged `shared/specialist-orchestration.md` handover gate before parent acceptance.
+Use Codex Rig's `delegation-lead` role card plus the packaged role trigger/skip boundaries as the detailed routing source. Prefer lowest-cost capable role: Luna for coordination + bounded support domains, Terra for implementation/runtime/testing + final executable verification, Sol only for solution architecture or security. Luna support roles hand executable verification, release-blocking, API/runtime-changing ownership to appropriate Terra/Sol owner. Observed reasoning-progress stalls permit one advisory capability escalation only under the packaged `shared/specialist-orchestration.md` protocol. Parallelize only disjoint evidence, tests, docs, profiling work with clear ownership. Every delegated workstream must pass the packaged handover gate before parent acceptance.
 
 ______________________________________________________________________
 

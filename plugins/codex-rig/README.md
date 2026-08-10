@@ -188,6 +188,8 @@ Use delegation only when two or more disjoint workstreams can proceed without du
 
 Select the smallest capable tier from current task evidence: escalate only for a mandatory boundary or observed lower-tier insufficiency, de-escalate only after an evidenced scope split leaves bounded support, and never change tiers on cost alone. The canonical policy is [`shared/specialist-orchestration.md`](shared/specialist-orchestration.md#delegation-lead-and-model-routing).
 
+Two consecutive work cycles without material progress, or three evidence-backed attempts that leave the same closure condition unmet, trigger a persisted and validated `reasoning-progress.json` stall ledger and one advisory escalation: a supported higher reasoning effort first, then the next permitted tier. The advisor supplies a bounded recovery action and stop condition but makes no changes; its route is valid only when the observed sandbox is `read-only`. If no safe route exists or that one action still fails to close the condition, Codex Rig stops and asks the user with consolidated evidence, hypotheses, rejected alternatives, and a recommended next step. This guardrail is distinct from, and never resets, the repeated-obstacle policy.
+
 The delegation lead returns one handover. Executable acceptance, runtime/API changes, release-blocking decisions, and security/architecture conclusions remain parent- or appropriate Terra/Sol-owned. Narrow work stays in the parent when handoff cost would exceed its value.
 
 ## Quality gates and artifacts

@@ -49,6 +49,18 @@ Only recurrence-lifecycle owners link this policy directly: the `develop`, `code
 skills plus the `delegation-lead` role. Other skills use their own linear or bounded iteration contracts, and leaf
 specialists leave recurrence counting to their caller. They must not duplicate this link.
 
+## Reasoning-Progress Escalation
+
+Apply this separately to a workstream whose decision process is stalled. It detects missing material progress, not an agent's prose style, elapsed time, token count, or a difficult task.
+
+- A work cycle records one objective, chosen operation or hypothesis, observed output, and resulting next decision. Lifecycle owners persist this state as `<run-directory>/reasoning-progress.json` and run `python PLUGIN_ROOT/shared/escalation_ledger.py --ledger <run-directory>/reasoning-progress.json` before starting another cycle after either trigger. A failing validation stops the workstream; it cannot be bypassed by another retry.
+- Material progress is new falsifiable evidence, a scope or root-cause narrowing that changes the next decision, an acceptance-check status change, or a user-directed decision. Rephrasing, repeating a semantically equivalent action, and an unsupported confidence change are not progress.
+- A closure condition is the unchanged outcome that ends the workstream: a passing acceptance check, resolved decision, or user-approved scope. Each resolution attempt records its closure condition and falsifiable result.
+- Either signal requires a stall ledger: two consecutive cycles without material progress, or three sequential evidence-backed resolution attempts that leave the same closure condition unmet. Record the objective; closure condition; operations and hypotheses; observed outputs/evidence; why each attempt lacked progress or closure; current model and effort when observable; state changes; and active recurrence count.
+- Pause the stalled workstream and request exactly one higher-capability advisory pass when a permitted route exists. Prefer one supported reasoning-effort step; otherwise use the next applicable model tier under the canonical routing boundaries. The advisory pass is valid only when its observed sandbox is `read-only`; it receives only the ledger and necessary context, diagnoses the stall, proposes one bounded recovery action plus a stop condition, and does not make state changes or claim acceptance. Missing or unverified read-only routing makes the advisory route unavailable.
+- The parent may run the one proposed bounded recovery action. If the advisory route is unavailable, its recommendation is unsafe or unsupported, or the recovery action has no material progress or leaves the same closure condition unmet, stop and ask the human. The handoff includes the ledger, advisory output and route fidelity, current hypotheses, rejected alternatives, and one recommended next step with alternatives.
+- An advisory pass, its recommendation, and a recovery action never reset the repeated-obstacle count or substitute for root-cause evidence. A closure-attempt count resets only when its condition is fulfilled or materially replaced by recorded user direction or external-state evidence. The recurrence policy can still require an earlier human handoff.
+
 ## Evidence Rules
 
 - Code claims: file/line refs. Current external: live primary source or stale/unverified caveat. Root cause: evidence, falsification, rejected alternative. Metric: baseline, guard, comparison. Release: SemVer plus changelog/migration evidence.

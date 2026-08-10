@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+- Detect two consecutive work cycles with no material progress and require a ledger rather than subjective model-stall judgments.
+- Escalate after three evidence-backed attempts when they still leave one closure condition unmet, so incremental progress cannot conceal an unresolved task.
+- Escalate once for higher-capability advice under existing model/authority boundaries, permit one bounded recovery action, then stop for a user decision when progress still does not occur.
+- Keep advisory escalation distinct from repeated-obstacle handling: it never resets recurrence counts, bypasses root-cause evidence, transfers acceptance authority, or routes bounded support to Sol.
+- Persist and validate the bounded escalation ledger before any post-trigger cycle; reject incomplete state, repeated retries, and unsuccessful recovery without a human handoff.
+- Require an observed read-only sandbox and no state changes for advice-only routing; unverified or unavailable routes now hand off directly to the user.
+- Calibrate advisory escalation, post-escalation user handoff, user-directed material progress, and advisor-route safety with scored fixture observations.
+
 ## 0.5.1
 
 - Classify a refreshed target branch as `advanced` when the PR-recorded base remains its ancestor, then continue reviewing the exact verified PR head; only genuine target divergence remains a collection failure.

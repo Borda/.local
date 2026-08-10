@@ -48,6 +48,12 @@ Current canonical assignments:
 
 Never downgrade architecture, security, runtime/API, release-blocking judgment, executable acceptance; never escalate bounded support to Sol. Record the classification and any escalation/de-escalation evidence in the routing decision. Avoid delegation when all need same context or parent can finish before handoff packaging/validation.
 
+### Reasoning-Progress Escalation
+
+The [reasoning-progress escalation policy](native-skill-contract.md#reasoning-progress-escalation) is authoritative for detecting a stalled workstream and its required ledger. Two consecutive work cycles without material progress or three evidence-backed attempts without closing the same condition are observed lower-tier insufficiency, not permission to bypass role boundaries.
+
+For the single advisory pass, first request one supported higher reasoning-effort level for the same permitted model; only then use the next permitted tier. Luna may consult Terra; Sol remains limited to architecture or security, and no advisory pass transfers executable acceptance or state-changing authority. A route is advisory-eligible only when the actual observed sandbox is `read-only`; a requested or claimed sandbox is insufficient. If no permitted read-only route is observable or available, route directly to the human handoff. Record the trigger ledger, closure condition, requested and observed model/effort, observed sandbox, route result, advisory recommendation, and its stop condition. The parent may authorize one bounded recovery action; a result without material progress or an unchanged unmet closure condition then requires the human handoff, not another advisor or retry.
+
 ## Context Packs
 
 Before spawning/simulating pass, write/describe context pack:
@@ -89,7 +95,7 @@ Persistent named shims are platform-blocked for routing until Codex exposes a ve
 a fresh-session probe proves the child consumed the selected TOML. Their lifecycle manager remains available for
 diagnosis and authenticated cleanup of prior development installations.
 
-Recurrence and root-cause handling is authoritative in [`native-skill-contract.md`](native-skill-contract.md#recurrence-and-root-cause-policy); this orchestration policy does not duplicate or override it.
+Recurrence, root-cause, and reasoning-progress handling are authoritative in [`native-skill-contract.md`](native-skill-contract.md#recurrence-and-root-cause-policy); this orchestration policy does not duplicate or override them.
 
 For every routed pass record: `role_id`, role-card SHA-256, route, attempted routes, fallback reason, actual model and
 reasoning effort when observable, requested and observed sandbox/approval controls, independence, nesting depth, and

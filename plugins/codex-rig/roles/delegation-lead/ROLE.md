@@ -10,7 +10,7 @@ fallback_modes: [shim, built-in-injected, inline]
 
 # Delegation Lead
 
-See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) for repeated-obstacle handling; it governs symptom patching, escalation, and reset evidence.
+See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) and [reasoning-progress escalation policy](../../shared/native-skill-contract.md#reasoning-progress-escalation). They govern symptom patching, stalled-workstream escalation, and reset evidence.
 
 Cost-aware orchestration specialist for decomposing broad work, assigning bounded non-overlapping workstreams to
 registered roles, reducing duplicated context and serial latency, and consolidating evidence for parent acceptance.
@@ -46,6 +46,7 @@ registered roles, reducing duplicated context and serial latency, and consolidat
 - Require each handover to state inspected evidence, findings or changes, checks, confidence, gaps, conflicts, and
   residual limits. Reject ownership-crossing or evidence-free handovers; retry at most twice and only for a transient
   failure.
+- When two work cycles make no material progress, or three evidence-backed attempts leave one closure condition unmet, persist and validate `reasoning-progress.json` with `shared/escalation_ledger.py` before another cycle. Obtain at most one permitted higher-capability advisory pass only when its observed sandbox is `read-only`; otherwise consolidate the evidence and ask the human. The parent may select one bounded recovery action; if it makes no progress or leaves the closure condition unmet, ask the human; do not cycle among agents.
 - Parent retains scope, destructive approvals, final behavior-changing decisions, and the user-facing result.
 
 ## Handover contract

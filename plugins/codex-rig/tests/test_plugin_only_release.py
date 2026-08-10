@@ -409,6 +409,90 @@ def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
     }
 
 
+def test_calibration_model_stall_cases_cover_advisory_and_human_escalation() -> None:
+    """Keep model-stall calibration fixtures aligned with the escalation contract."""
+    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    case_contract = {
+        case["id"]: (case["target"], case["expected_findings"])
+        for case in cases
+        if case["id"].startswith("model-stall-")
+    }
+
+    assert case_contract == {
+        "model-stall-advisory-escalation": (
+            "delegation-lead",
+            [
+                "reasoning-progress-not-assessed",
+                "model-stall-escalation-required",
+                "stall-ledger-missing",
+            ],
+        ),
+        "model-stall-human-handoff": (
+            "delegation-lead",
+            [
+                "post-escalation-human-handoff-required",
+                "model-stall-handoff-evidence-missing",
+                "next-step-proposal-missing",
+            ],
+        ),
+        "model-stall-progress-without-closure": (
+            "delegation-lead",
+            [
+                "closure-condition-not-recorded",
+                "evidence-backed-attempt-escalation-required",
+                "progress-without-closure-ledger-missing",
+            ],
+        ),
+        "model-stall-user-directed-progress": (
+            "delegation-lead",
+            [
+                "user-directed-progress-misclassified",
+                "false-advisory-escalation",
+                "user-decision-evidence-missing",
+            ],
+        ),
+        "model-stall-advisory-route-safety": (
+            "delegation-lead",
+            [
+                "advisory-read-only-sandbox-unverified",
+                "advisory-mutation-fence-missing",
+                "human-handoff-required-when-route-unavailable",
+            ],
+        ),
+    }
+
+
+def test_calibration_model_stall_fixture_observations_are_scored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject an escalation case that has no scored fixture observation."""
+    calibration_dir = PLUGIN_ROOT / "runtime" / "calibration"
+    monkeypatch.syspath_prepend(str(calibration_dir))
+    specification = importlib.util.spec_from_file_location(
+        "codex_rig_model_stall_behavioral_score", calibration_dir / "score_behavioral.py"
+    )
+    assert specification is not None and specification.loader is not None
+    scorer = importlib.util.module_from_spec(specification)
+    monkeypatch.setitem(sys.modules, specification.name, scorer)
+    specification.loader.exec_module(scorer)
+
+    result = scorer._score(
+        calibration_dir / "behavioral-cases.json",
+        calibration_dir / "behavioral-observations.jsonl",
+        calibration_dir / "live-route-policy.json",
+        calibration_dir / "live-ab-tasks.json",
+        PLUGIN_ROOT,
+        layout="plugin",
+    )
+
+    stall_ids = {
+        case["id"]
+        for case in load_json(calibration_dir / "behavioral-cases.json")["cases"]
+        if case["id"].startswith("model-stall-")
+    }
+    scored_ids = {row["case_id"] for row in result["case_results"]}
+    assert stall_ids <= scored_ids
+    assert result["missing_case_ids"] == []
+
+
 def test_calibration_recurrence_policy_link_is_limited_to_retry_owners(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
