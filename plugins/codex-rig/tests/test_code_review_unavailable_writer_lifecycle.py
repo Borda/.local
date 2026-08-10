@@ -14,7 +14,7 @@ WRITE_RESULT = PLUGIN_ROOT / "shared" / "write-result.py"
 REVIEW_VALIDATOR = PLUGIN_ROOT / "skills" / "code-review" / "validate_artifacts.py"
 GATE_IDS = ("lint", "format", "types", "tests", "review")
 COLLECTION_FAILURE = "github-network:gh-pr-view"
-CONFIDENCE_GAP = "PR source evidence was unavailable; no source review or merge decision was made."
+CONFIDENCE_GAP = "Core PR source verification did not complete; no source review or merge decision was made."
 
 
 def _load_validator() -> object:
@@ -38,11 +38,9 @@ def _write_unavailable_pr_evidence(run_dir: Path) -> dict[str, object]:
         "# PR Review Availability: unavailable\n\n"
         "Source findings: not assessed\n\n"
         "Merge decision: not made\n\n"
-        "## PR Evidence Collection Recovery\n\n"
-        "| Operational area | Recovery action | Evidence | Status |\n"
-        "| --- | --- | --- | --- |\n"
-        "| PR evidence collection | Retry the unchanged collector later; no review or merge decision was made. "
-        "| `pr-error.txt`: `github-network:gh-pr-view` | Required verification |\n",
+        "Process diagnostic: `github-network:gh-pr-view`. This is a workflow/integration failure, not a PR finding or merge block.\n\n"
+        "Recovery: Retry the unchanged collector later; no review or merge decision was made.\n\n"
+        "Evidence: `pr-error.txt`.\n",
         encoding="utf-8",
     )
     return {
@@ -55,14 +53,16 @@ def _write_unavailable_pr_evidence(run_dir: Path) -> dict[str, object]:
             {
                 "gap": CONFIDENCE_GAP,
                 "status": "unresolved",
-                "rationale": "No local checkout or source bundle was produced.",
+                "rationale": "Core source verification did not complete; retained collection artifacts may be partial and were not assessed.",
             }
         ],
         "confidence_recovery": {
             "initial_confidence": 0.9,
             "final_confidence": 0.9,
             "status": "fair",
-            "evidence": ["The classified collection failure was retained."],
+            "evidence": [
+                "The classified collection failure and any current-attempt collector artifacts were retained."
+            ],
             "recovery_actions": ["Stopped before source review."],
             "remaining_limits": ["PR correctness was not assessed."],
         },

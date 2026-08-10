@@ -23,7 +23,7 @@ It writes PR metadata, threads, diff/stat files, routing, target/head checks, op
 
 ## Failure
 
-Missing tools, unsafe GitHub command, failed authenticated evidence, invalid PR data, or checkout mismatch returns ``2`` and blocks source review. On a terminal ``CollectionError``, source-evidence artifacts from the current or prior attempt are cleared, ``pr-error.txt`` is written, and command diagnostics are retained separately when available.
+Missing tools, unsafe core GitHub reads, invalid PR identity, or checkout mismatch returns ``2`` and blocks source review. Review-thread collection is supplemental: its failure is recorded and lowers downstream confidence without blocking exact local source review. Each attempt clears prior collector artifacts before starting, then retains current-attempt evidence and diagnostics if a later core step fails.
 """
 
 from __future__ import annotations
@@ -64,6 +64,8 @@ COLLECTOR_EVIDENCE_ARTIFACTS = (
     "remote-selection.json",
     "remote.txt",
     "review-threads.raw.json",
+    "review-threads-command-failure.json",
+    "review-threads-error.txt",
     "review-threads.json",
     "reviews.json",
     "status.txt",
@@ -72,7 +74,7 @@ COLLECTOR_EVIDENCE_ARTIFACTS = (
     "untracked.txt",
 )
 PR_FIELDS = (
-    "number,title,url,author,baseRefName,baseRefOid,headRefName,headRefOid,"
+    "number,title,body,url,author,baseRefName,baseRefOid,headRefName,headRefOid,"
     "headRepository,headRepositoryOwner,isCrossRepository,state,isDraft,"
     "reviewDecision,mergeable,comments,reviews,files"
 )
@@ -188,6 +190,46 @@ def _derived_diff_output(
         return f"unavailable:{error}\n".encode()
 
 
+def _optional_command_output(run: RunCommand, argv: list[str], timeout: int, label: str) -> bytes:
+    """Return derived command output while keeping an unsupported statistic non-terminal."""
+    try:
+        return _run(run, argv, timeout, label)
+    except CollectionError as error:
+        if str(error) != f"command-failed:{label}":
+            raise
+        return f"unavailable:{error}\n".encode()
+
+
+def _git_is_ancestor(run: RunCommand, timeout: int, ancestor: str, descendant: str) -> bool:
+    """Return whether one verified Git commit is an ancestor of another."""
+    argv = ["git", "merge-base", "--is-ancestor", ancestor, descendant]
+    try:
+        completed = run(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            shell=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise CollectionError("command-timeout:target-branch-ancestry") from error
+    except OSError as error:
+        raise CollectionError("command-unavailable:target-branch-ancestry") from error
+    if len(completed.stdout) > MAX_OUTPUT_BYTES or len(completed.stderr) > MAX_OUTPUT_BYTES:
+        raise CollectionError("command-output-oversized:target-branch-ancestry")
+    if completed.returncode in {0, 1}:
+        return completed.returncode == 0
+    raise CollectionError(
+        "command-failed:target-branch-ancestry",
+        diagnostics={
+            "exit_code": completed.returncode,
+            "failure_class": "command-failed",
+            "label": "target-branch-ancestry",
+        },
+    )
+
+
 def _head_repository(payload: dict[str, Any]) -> str:
     """Normalize GitHub's head-repository object variants."""
     value = payload.get("headRepository")
@@ -206,15 +248,8 @@ def _head_repository(payload: dict[str, Any]) -> str:
     return f"{owner}/{name}" if isinstance(owner, str) and isinstance(name, str) else ""
 
 
-def _review_artifacts(
-    payload: dict[str, Any],
-    thread_payload: dict[str, Any],
-    output: Path,
-    *,
-    base_repo: str,
-    base_host: str,
-) -> dict[str, Any]:
-    """Validate online evidence and emit normalized review artifacts."""
+def _review_threads(thread_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return one complete normalized review-thread page."""
     try:
         container = thread_payload["data"]["repository"]["pullRequest"]["reviewThreads"]
         threads = container.get("nodes") or []
@@ -225,16 +260,33 @@ def _review_artifacts(
         raise CollectionError("invalid-json:review-threads")
     if page_info.get("hasNextPage"):
         raise CollectionError("review-thread-pagination-incomplete")
+    return [item for item in threads if isinstance(item, dict)]
+
+
+def _review_artifacts(
+    payload: dict[str, Any],
+    threads: list[dict[str, Any]],
+    output: Path,
+    *,
+    base_repo: str,
+    base_host: str,
+    thread_error: str | None,
+) -> dict[str, Any]:
+    """Validate core metadata and emit normalized online-review artifacts."""
     comments = payload.get("comments") or []
     reviews = payload.get("reviews") or []
     files = payload.get("files") or []
     if not isinstance(comments, list) or not isinstance(reviews, list) or not isinstance(files, list):
         raise CollectionError("invalid-json:pr-view")
+    if not isinstance(payload.get("body"), str):
+        raise CollectionError("missing-pr-description")
     file_names = sorted(item["path"] for item in files if isinstance(item, dict) and isinstance(item.get("path"), str))
     unresolved = [item for item in threads if isinstance(item, dict) and item.get("isResolved") is False]
     active = [item for item in unresolved if item.get("isOutdated") is not True]
     outdated = [item for item in unresolved if item.get("isOutdated") is True]
     summary = {
+        "review_threads_status": "unavailable" if thread_error else "available",
+        "review_threads_error": thread_error,
         "review_thread_count": len(threads),
         "unresolved_review_thread_count": len(unresolved),
         "active_unresolved_review_thread_count": len(active),
@@ -261,9 +313,9 @@ def _review_artifacts(
         "is_cross_repository": bool(payload.get("isCrossRepository")),
         "same_repo": bool(head_repo and base_repo and head_repo.casefold() == base_repo.casefold()),
         "local_checkout_required": True,
-        "local_checkout_command": f"gh pr checkout {payload.get('url')}",
+        "local_checkout_command": f"gh pr checkout {payload.get('number')}",
         "force_policy": "never pass --force to git or gh automatically; stop and ask the user first",
-        "source_policy": "inspect local checkout; use gh only for PR metadata, diff, and review-thread evidence",
+        "source_policy": "inspect the exact local checkout and derive its diff locally; use gh for PR metadata and supplemental review evidence",
     }
     (output / "files.txt").write_text("".join(f"{name}\n" for name in file_names), encoding="utf-8")
     _write_json(output / "comments.json", comments)
@@ -297,7 +349,7 @@ def _checkout(
     payload: dict[str, Any],
     routing: dict[str, Any],
     selector: Path,
-) -> None:
+) -> dict[str, Any]:
     """Fetch verified target/head refs and update the local PR checkout without force."""
     url = routing.get("pr_url")
     number = routing.get("pr_number")
@@ -324,6 +376,9 @@ def _checkout(
         "target-branch-fetch",
     )
     base_local = _run(run, ["git", "rev-parse", base_remote_ref], timeout, "target-branch-rev-parse").decode().strip()
+    base_matches = base_local == base_oid
+    base_is_ancestor = base_matches or _git_is_ancestor(run, timeout, base_oid, base_local)
+    base_relation = "matches-pr-metadata" if base_matches else "advanced" if base_is_ancestor else "diverged"
     target = {
         "status": "fetched",
         "remote": remote_name,
@@ -332,14 +387,15 @@ def _checkout(
         "remote_ref": base_remote_ref,
         "local_head": base_local,
         "expected_base_oid": base_oid,
-        "base_matches_pr_metadata": base_local == base_oid,
-        "base_relation": "matches-pr-metadata" if base_local == base_oid else "advanced-or-diverged",
+        "base_matches_pr_metadata": base_matches,
+        "expected_base_is_ancestor": base_is_ancestor,
+        "base_relation": base_relation,
         "command": f"git fetch --no-tags {remote_name} {base_ref}:{base_remote_ref}",
-        "source_policy": "target branch is refreshed before PR conflict or review-item resolution; historical PRs may record divergence from the PR's saved base SHA",
+        "source_policy": "target branch is refreshed before review; advancement from the PR-recorded base is review context, while divergence fails an open-PR review",
     }
     _write_json(output / "target-branch.json", target)
-    if routing.get("pr_state") == "OPEN" and base_local != base_oid:
-        raise CollectionError(f"target-branch-oid-mismatch:{base_local}:{base_oid}")
+    if routing.get("pr_state") == "OPEN" and not base_is_ancestor:
+        raise CollectionError(f"target-branch-diverged:{base_local}:{base_oid}")
 
     if (
         routing.get("same_repo") is True
@@ -414,43 +470,54 @@ def _checkout(
     )
     if dirty.strip():
         raise CollectionError("dirty-tracked-worktree-before-pr-checkout")
-    # gh can update local refs or the worktree before it reports an error, so preserve conservative state first.
-    _write_json(
-        output / "checkout-state.json",
-        {"status": "checkout-command-started", "local_state": "changed-or-unknown"},
-    )
-    checkout_argv = ["gh", "pr", "checkout", url]
+    checkout_argv = ["gh", "pr", "checkout", str(number)]
     if routing.get("pr_state") != "OPEN" and isinstance(number, int):
         checkout_argv = ["git", "checkout", "--detach", f"refs/remotes/{remote_name}/pull/{number}/head"]
     routing["local_checkout_command"] = " ".join(checkout_argv)
     _write_json(output / "pr-routing.json", routing)
-    _run(run, checkout_argv, timeout, "local-pr-checkout")
-    _write_json(
-        output / "checkout-state.json",
-        {"status": "checkout-command-succeeded-unverified", "local_state": "changed-or-unknown"},
-    )
+    current_head = _run(run, ["git", "rev-parse", "HEAD"], timeout, "pre-checkout-head").decode().strip()
+    checkout_command = "not-run: already at expected PR head"
+    if current_head != head_oid:
+        # gh may alter refs or the worktree before returning an error; retain conservative state first.
+        _write_json(
+            output / "checkout-state.json",
+            {"status": "checkout-command-started", "local_state": "changed-or-unknown"},
+        )
+        _run(run, checkout_argv, timeout, "local-pr-checkout")
+        checkout_command = " ".join(checkout_argv)
+        _write_json(
+            output / "checkout-state.json",
+            {"status": "checkout-command-succeeded-unverified", "local_state": "changed-or-unknown"},
+        )
     branch = _run(run, ["git", "branch", "--show-current"], timeout, "checkout-branch").decode().strip()
     local_head = _run(run, ["git", "rev-parse", "HEAD"], timeout, "checkout-head").decode().strip()
     matches = local_head == head_oid
-    _write_json(
-        output / "local-checkout.json",
-        {
-            "status": "checked-out",
-            "pr_number": number,
-            "pr_url": url,
-            "local_branch": branch,
-            "local_head": local_head,
-            "expected_head": head_oid,
-            "head_matches_pr": matches,
-            "command": " ".join(checkout_argv),
-            "target_branch_artifact": "target-branch.json",
-            "pr_head_fetch_artifact": "pr-head-fetch.json",
-            "force_policy": "no --force was used; ask the user before any forced checkout",
-            "source_policy": "local checkout is authoritative for code inspection and edits",
-        },
-    )
+    checkout_evidence = {
+        "status": "checked-out",
+        "pr_number": number,
+        "pr_url": url,
+        "local_branch": branch,
+        "local_head": local_head,
+        "expected_head": head_oid,
+        "head_matches_pr": matches,
+        "command": checkout_command,
+        "target_branch_artifact": "target-branch.json",
+        "pr_head_fetch_artifact": "pr-head-fetch.json",
+        "diff_source": "verified-local-checkout",
+        "diff_base_oid": base_oid,
+        "diff_head_oid": head_oid,
+        "diff_command": f"git diff --binary {base_oid}...{head_oid} --",
+        "force_policy": "no --force was used; ask the user before any forced checkout",
+        "source_policy": "local checkout is authoritative for code inspection and edits",
+    }
+    _write_json(output / "local-checkout.json", checkout_evidence)
     if not matches:
         raise CollectionError("local-checkout-head-mismatch")
+    _write_json(
+        output / "checkout-state.json",
+        {"status": "checkout-verified", "local_state": "exact-pr-head", "local_head": local_head},
+    )
+    return checkout_evidence
 
 
 def _clear_collector_artifacts(output: Path) -> None:
@@ -501,64 +568,94 @@ def collect_pr(
         if not isinstance(base_repo, str) or "/" not in base_repo or not isinstance(base_host, str):
             raise CollectionError("invalid-pr-base-url")
         owner, repository = base_repo.split("/", 1)
-        threads_bytes = _run(
-            command_runner,
-            [
-                "gh",
-                "api",
-                "graphql",
-                "-f",
-                f"owner={owner}",
-                "-f",
-                f"name={repository}",
-                "-F",
-                f"number={number}",
-                "-f",
-                f"query={GRAPHQL_QUERY}",
-            ],
-            timeout_seconds,
-            "gh-review-threads",
-        )
-        (output / "review-threads.raw.json").write_bytes(threads_bytes)
-        diff = _run(command_runner, ["gh", "pr", "diff", *pr_args], timeout_seconds, "gh-pr-diff")
-        (output / "diff.patch").write_bytes(diff)
+        threads: list[dict[str, Any]] = []
+        thread_error: str | None = None
+        try:
+            threads_bytes = _run(
+                command_runner,
+                [
+                    "gh",
+                    "api",
+                    "graphql",
+                    "-f",
+                    f"owner={owner}",
+                    "-f",
+                    f"name={repository}",
+                    "-F",
+                    f"number={number}",
+                    "-f",
+                    f"query={GRAPHQL_QUERY}",
+                ],
+                timeout_seconds,
+                "gh-review-threads",
+            )
+            thread_payload = _json(threads_bytes, "review-threads")
+            (output / "review-threads.raw.json").write_bytes(threads_bytes)
+            threads = _review_threads(thread_payload)
+        except CollectionError as error:
+            thread_error = str(error)
+            (output / "review-threads-error.txt").write_text(f"{thread_error}\n", encoding="utf-8")
+            if error.diagnostics is not None:
+                _write_json(output / "review-threads-command-failure.json", error.diagnostics)
         routing = _review_artifacts(
             payload,
-            _json(threads_bytes, "review-threads"),
+            threads,
             output,
             base_repo=base_repo,
             base_host=base_host,
-        )
-        (output / "diffstat.txt").write_bytes(
-            _derived_diff_output(
-                command_runner,
-                ["git", "apply", "--stat"],
-                timeout_seconds,
-                "diff-stat",
-                diff,
-            )
-        )
-        (output / "numstat.txt").write_bytes(
-            _derived_diff_output(
-                command_runner,
-                ["git", "apply", "--numstat"],
-                timeout_seconds,
-                "diff-numstat",
-                diff,
-            )
+            thread_error=thread_error,
         )
         (output / "untracked.txt").write_bytes(b"")
         if checkout:
-            _checkout(command_runner, timeout_seconds, output, payload, routing, selector)
+            checkout_evidence = _checkout(command_runner, timeout_seconds, output, payload, routing, selector)
+            revision_range = f"{checkout_evidence['diff_base_oid']}...{checkout_evidence['diff_head_oid']}"
+            diff = _run(
+                command_runner,
+                ["git", "diff", "--binary", revision_range, "--"],
+                timeout_seconds,
+                "local-pr-diff",
+            )
+            (output / "diff.patch").write_bytes(diff)
+            (output / "diffstat.txt").write_bytes(
+                _optional_command_output(
+                    command_runner,
+                    ["git", "diff", "--stat", revision_range, "--"],
+                    timeout_seconds,
+                    "diff-stat",
+                )
+            )
+            (output / "numstat.txt").write_bytes(
+                _optional_command_output(
+                    command_runner,
+                    ["git", "diff", "--numstat", revision_range, "--"],
+                    timeout_seconds,
+                    "diff-numstat",
+                )
+            )
+        else:
+            diff = _run(command_runner, ["gh", "pr", "diff", *pr_args], timeout_seconds, "gh-pr-diff")
+            (output / "diff.patch").write_bytes(diff)
+            (output / "diffstat.txt").write_bytes(
+                _derived_diff_output(
+                    command_runner,
+                    ["git", "apply", "--stat"],
+                    timeout_seconds,
+                    "diff-stat",
+                    diff,
+                )
+            )
+            (output / "numstat.txt").write_bytes(
+                _derived_diff_output(
+                    command_runner,
+                    ["git", "apply", "--numstat"],
+                    timeout_seconds,
+                    "diff-numstat",
+                    diff,
+                )
+            )
         return 0
     except CollectionError as error:
-        # Terminal failures must contain no source evidence from a prior or partial attempt.
-        checkout_state = (
-            (output / "checkout-state.json").read_bytes() if (output / "checkout-state.json").is_file() else None
-        )
-        _clear_collector_artifacts(output)
-        if checkout_state is not None:
-            (output / "checkout-state.json").write_bytes(checkout_state)
+        # Prior-attempt evidence was cleared at entry; retain this attempt for recovery and diagnosis.
         if error.diagnostics is not None:
             _write_json(output / "command-failure.json", error.diagnostics)
         (output / "pr-error.txt").write_text(f"{error}\n", encoding="utf-8")

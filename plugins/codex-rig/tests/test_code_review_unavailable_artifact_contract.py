@@ -63,20 +63,18 @@ def _write_unavailable_artifact(
     recovery_action = "Retry the unchanged collector later; no review or merge decision was made."
     if checkout_started:
         recovery_action += " Inspect the local checkout state before retrying."
-    notes = (
-        """# PR Review Availability: unavailable
+    notes = f"""# PR Review Availability: unavailable
 
 Source findings: not assessed
 
 Merge decision: not made
 
-## PR Evidence Collection Recovery
+Process diagnostic: `github-network:gh-pr-view`. This is a workflow/integration failure, not a PR finding or merge block.
 
-| Operational area | Recovery action | Evidence | Status |
-| --- | --- | --- | --- |
+Recovery: {recovery_action}
+
+Evidence: `pr-error.txt`.
 """
-        + f"| PR evidence collection | {recovery_action} | `pr-error.txt`: `github-network:gh-pr-view` | Required verification |\n"
-    )
     if finding_table:
         notes += """
 ## Review Findings and Merge Blocks
@@ -92,15 +90,17 @@ Merge decision: not made
         "risk_tier": "HIGH_RISK",
         "review_status": "unavailable",
         "collection_failure": {"code": "github-network:gh-pr-view", "artifact": "pr-error.txt"},
-        "confidence_gaps": ["PR source evidence was unavailable; no source review or merge decision was made."],
+        "confidence_gaps": [
+            "Core PR source verification did not complete; no source review or merge decision was made."
+        ],
         "confidence_gap_closures": [
             {
-                "gap": "PR source evidence was unavailable; no source review or merge decision was made.",
+                "gap": "Core PR source verification did not complete; no source review or merge decision was made.",
                 "status": "unresolved",
                 "rationale": (
                     "A local checkout command may have changed state, but no verified source bundle was produced."
                     if checkout_started
-                    else "No local checkout or source bundle was produced."
+                    else "Core source verification did not complete; retained collection artifacts may be partial and were not assessed."
                 ),
             }
         ],
@@ -111,7 +111,7 @@ Merge decision: not made
             "evidence": [
                 "The classified collection failure and conservative checkout-state evidence were retained."
                 if checkout_started
-                else "The classified collection failure was retained."
+                else "The classified collection failure and any current-attempt collector artifacts were retained."
             ],
             "recovery_actions": ["Stopped before source review."],
             "remaining_limits": [
@@ -190,11 +190,20 @@ def test_unavailable_pr_artifact_rejects_assessed_review_content(
         review_validator._validate_result(tmp_path, result_path, tmp_path, "thread", tmp_path)
 
 
-def test_unavailable_pr_artifact_rejects_stale_source_evidence(tmp_path: Path) -> None:
-    """Reject a terminal diagnostic that coexists with any PR source artifact."""
+def test_unavailable_pr_artifact_retains_current_attempt_evidence_without_assessing_it(tmp_path: Path) -> None:
+    """Allow diagnostic evidence from the failed attempt without inventing source findings."""
     review_validator = _load_module(REVIEW_VALIDATOR_PATH, "code_review_validator")
     result_path = _write_unavailable_artifact(tmp_path)
-    (tmp_path / "diff.patch").write_text("stale source review evidence\n", encoding="utf-8")
+    (tmp_path / "pr.json").write_text(json.dumps({"number": 123, "body": "Contributor intent"}), encoding="utf-8")
+    (tmp_path / "diff.patch").write_text("partial current-attempt evidence\n", encoding="utf-8")
 
-    with pytest.raises(SystemExit, match="unavailable-review-has-source-evidence"):
+    review_validator._validate_result(tmp_path, result_path, tmp_path, "thread", tmp_path)
+
+
+def test_unavailable_pr_artifact_rejects_process_diagnostic_table(tmp_path: Path) -> None:
+    """Keep workflow failures out of the PR findings/action-table visual language."""
+    review_validator = _load_module(REVIEW_VALIDATOR_PATH, "code_review_validator")
+    result_path = _write_unavailable_artifact(tmp_path, extra_notes="\n| Area | Recovery |\n| --- | --- |\n")
+
+    with pytest.raises(SystemExit, match="unavailable-review-process-table-forbidden"):
         review_validator._validate_result(tmp_path, result_path, tmp_path, "thread", tmp_path)

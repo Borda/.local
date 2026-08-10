@@ -99,6 +99,7 @@ CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS = {
     "resolved how",
     "evidence",
 }
+PR_THREAD_CONFIDENCE_GAP = "PR review-thread resolution status was unavailable; online review triage may be incomplete."
 
 SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
     "analyse": {"files": {}},
@@ -173,6 +174,15 @@ def _load_json(path: Path) -> dict[str, Any]:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise SystemExit(f"expected-json-object:{path}")
+    return payload
+
+
+def _load_json_list(path: Path) -> list[Any]:
+    """Load one required JSON array artifact."""
+    with path.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, list):
+        raise SystemExit(f"expected-json-array:{path}")
     return payload
 
 
@@ -826,12 +836,14 @@ def _validate_code_remediate_pr_identity(
     local_base = target_branch.get("local_head")
     if not expected_base or expected_base != routing.get("base_oid"):
         raise SystemExit("code-remediate-pr-target-branch-expected-oid-missing")
+    base_matches = local_base == expected_base
+    base_is_ancestor = target_branch.get("expected_base_is_ancestor") is True
+    expected_relation = "matches-pr-metadata" if base_matches else "advanced" if base_is_ancestor else "diverged"
     if (
         not local_base
-        or local_base != expected_base
-        or target_branch.get("base_matches_pr_metadata") is not (local_base == expected_base)
-        or target_branch.get("base_relation")
-        != ("matches-pr-metadata" if local_base == expected_base else "advanced-or-diverged")
+        or target_branch.get("base_matches_pr_metadata") is not base_matches
+        or target_branch.get("base_relation") != expected_relation
+        or not base_is_ancestor
     ):
         raise SystemExit("code-remediate-pr-target-branch-oid-mismatch")
     if checkout.get("pr_url") != routing.get("pr_url"):
@@ -840,6 +852,14 @@ def _validate_code_remediate_pr_identity(
         raise SystemExit("code-remediate-pr-local-checkout-expected-head-missing")
     if checkout.get("local_head") != checkout.get("expected_head"):
         raise SystemExit("code-remediate-pr-local-checkout-oid-mismatch")
+    expected_diff_command = f"git diff --binary {routing.get('base_oid')}...{routing.get('head_oid')} --"
+    if (
+        checkout.get("diff_source") != "verified-local-checkout"
+        or checkout.get("diff_base_oid") != routing.get("base_oid")
+        or checkout.get("diff_head_oid") != routing.get("head_oid")
+        or checkout.get("diff_command") != expected_diff_command
+    ):
+        raise SystemExit("code-remediate-pr-local-diff-provenance-invalid")
 
 
 def _validate_code_remediate_merge_resolution(
@@ -977,15 +997,21 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 if not (pr_dir / filename).exists():
                     raise SystemExit(f"missing-code-remediate-pr-artifact:{filename}")
             routing = _load_json(pr_dir / "pr-routing.json")
+            pr_payload = _load_json(pr_dir / "pr.json")
             remote_selection = _load_json(pr_dir / "remote-selection.json")
             target_branch = _load_json(pr_dir / "target-branch.json")
             checkout = _load_json(pr_dir / "local-checkout.json")
+            online_summary = _load_json(pr_dir / "online-review-summary.json")
+            if not isinstance(pr_payload.get("body"), str):
+                raise SystemExit("code-remediate-pr-description-missing")
             if routing.get("local_checkout_required") is not True:
                 raise SystemExit("code-remediate-pr-routing-local-checkout-not-required")
             if "--force" in str(routing.get("local_checkout_command", "")):
                 raise SystemExit("code-remediate-pr-routing-force-checkout-forbidden")
             if "force_policy" not in routing:
                 raise SystemExit("code-remediate-pr-routing-force-policy-missing")
+            if routing.get("local_checkout_command") != f"gh pr checkout {routing.get('pr_number')}":
+                raise SystemExit("code-remediate-pr-routing-checkout-command-must-use-number")
             if target_branch.get("status") != "fetched":
                 raise SystemExit("code-remediate-pr-target-branch-not-fetched")
             if checkout.get("status") != "checked-out":
@@ -997,6 +1023,29 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
             if checkout.get("head_matches_pr") is not True:
                 raise SystemExit("code-remediate-pr-local-checkout-head-mismatch")
             _validate_code_remediate_pr_identity(routing, remote_selection, target_branch, checkout)
+            thread_status = online_summary.get("review_threads_status")
+            thread_error = online_summary.get("review_threads_error")
+            if thread_status == "available":
+                if thread_error is not None or (pr_dir / "review-threads-error.txt").exists():
+                    raise SystemExit("code-remediate-pr-review-thread-status-contradiction")
+            elif thread_status == "unavailable":
+                error_path = pr_dir / "review-threads-error.txt"
+                if not isinstance(thread_error, str) or not error_path.is_file():
+                    raise SystemExit("code-remediate-pr-review-thread-error-missing")
+                if error_path.read_text(encoding="utf-8").strip() != thread_error:
+                    raise SystemExit("code-remediate-pr-review-thread-error-mismatch")
+                if _load_json_list(pr_dir / "review-threads.json") or _load_json_list(
+                    pr_dir / "unresolved-review-threads.json"
+                ):
+                    raise SystemExit("code-remediate-pr-review-thread-unavailable-must-be-empty")
+                confidence_gaps = metadata.get("confidence_gaps")
+                if not isinstance(confidence_gaps, list) or PR_THREAD_CONFIDENCE_GAP not in confidence_gaps:
+                    raise SystemExit("code-remediate-pr-review-thread-confidence-gap-missing")
+                action_items = (out_dir / "action-items.md").read_text(encoding="utf-8").casefold()
+                if "review-thread" not in action_items or "unavailable" not in action_items:
+                    raise SystemExit("code-remediate-pr-review-thread-triage-gap-missing")
+            else:
+                raise SystemExit("code-remediate-pr-review-thread-status-invalid")
             _validate_code_remediate_merge_resolution(metadata, pr_dir, target_branch)
             if (pr_dir / "head-files").exists():
                 raise SystemExit("code-remediate-pr-raw-head-file-snapshots-forbidden")

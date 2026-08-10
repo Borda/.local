@@ -1863,6 +1863,7 @@ def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
         "pr_state": "OPEN",
         "base_oid": "base-oid",
         "head_oid": "head-oid",
+        "pr_number": 1,
         "pr_url": "https://github.com/owner/repo/pull/1",
     }
     remote = {
@@ -1876,14 +1877,38 @@ def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
         "expected_base_oid": "base-oid",
         "local_head": "base-oid",
         "base_matches_pr_metadata": True,
+        "expected_base_is_ancestor": True,
         "base_relation": "matches-pr-metadata",
     }
     checkout = {
         "pr_url": "https://github.com/owner/repo/pull/1",
         "expected_head": "head-oid",
         "local_head": "head-oid",
+        "diff_source": "verified-local-checkout",
+        "diff_base_oid": "base-oid",
+        "diff_head_oid": "head-oid",
+        "diff_command": "git diff --binary base-oid...head-oid --",
     }
     module._validate_code_remediate_pr_identity(routing, remote, target, checkout)
+    advanced_target = {
+        **target,
+        "local_head": "new-base-oid",
+        "base_matches_pr_metadata": False,
+        "expected_base_is_ancestor": True,
+        "base_relation": "advanced",
+    }
+    module._validate_code_remediate_pr_identity(routing, remote, advanced_target, checkout)
+    diverged_target = {
+        **advanced_target,
+        "expected_base_is_ancestor": False,
+        "base_relation": "diverged",
+    }
+    try:
+        module._validate_code_remediate_pr_identity(routing, remote, diverged_target, checkout)
+    except SystemExit:
+        pass
+    else:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:code-remediate-pr-target-divergence")
     mutations = (
         (routing, "pr_state", "MERGED"),
         (remote, "expected", {"host": "github.com", "repository": "other/repo"}),

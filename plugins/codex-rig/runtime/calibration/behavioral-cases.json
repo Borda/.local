@@ -294,10 +294,31 @@
       "expected_findings": [
         "review-unavailable-status-missing",
         "merge-decision-emitted-without-review",
-        "pr-collection-recovery-table-missing"
+        "process-failure-misclassified-in-findings-table"
       ],
       "id": "code-review-pr-review-unavailable-contract",
-      "prompt": "Assess a PR review where T0 gh pr view fails before checkout, but the output recommends needs-more-work, implies a merge decision, and puts the collection failure in Review Findings and Merge Blocks instead of declaring review unavailable, source findings not assessed, and a separate PR Evidence Collection Recovery table.",
+      "prompt": "Assess a PR review where core T0 metadata fails before checkout, but the output recommends needs-more-work, implies a merge decision, and puts the integration failure in a Markdown table instead of declaring review unavailable, source findings not assessed, merge decision not made, and using plain process diagnostic/recovery/evidence prose.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "supplemental-thread-failure-blocks-source-review",
+        "fork-checkout-fallback-missing",
+        "verified-local-diff-missing",
+        "pr-description-not-retained"
+      ],
+      "id": "code-review-pr-supplemental-fallback",
+      "prompt": "Assess an open fork PR collector where PR identity, title, body, base/head SHAs, and local repository are available, but GraphQL review-thread collection fails. The workflow deletes metadata, never runs numbered gh pr checkout or reuses an exact local head, never derives git diff from the verified checkout, and declares the PR review unavailable.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "target-advance-false-blocker",
+        "verified-pr-head-review-skipped",
+        "operational-state-misclassified-as-pr-finding"
+      ],
+      "id": "code-review-pr-target-advance-false-blocker",
+      "prompt": "Assess an open PR workflow where the matching fetched target branch is a verified descendant of the PR-recorded base and the local checkout exactly matches the PR head, but the reviewer declares the review unavailable and lists target advancement as a PR merge blocker instead of reviewing source.",
       "target": "code-review"
     },
     {

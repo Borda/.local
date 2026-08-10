@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+
+- Classify a refreshed target branch as `advanced` when the PR-recorded base remains its ancestor, then continue reviewing the exact verified PR head; only genuine target divergence remains a collection failure.
+- Validate the same ancestry evidence in code-review and PR code-remediation artifacts so target advancement is operational context, never a PR finding or false merge blocker.
+- Restore the intended PR evidence hierarchy: retain PR title/body and current-attempt diagnostics, use numbered fork-aware checkout or exact-HEAD reuse, and derive the authoritative review patch from the verified local checkout.
+- Degrade unavailable GraphQL review-thread resolution status to explicit empty artifacts plus a confidence gap instead of aborting source review; keep core identity, target, checkout, and local-diff failures terminal.
+- Report terminal collection failures as plain process diagnostic/recovery/evidence prose with source findings not assessed and no merge decision; forbid all Markdown tables so integration failures cannot look like PR issues.
+
 ## 0.5.0
 
 - Add `shared/github_read.py` as the plugin-wide GitHub data boundary: authenticated `gh` is primary; only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`) are permitted; REST API calls are GET-only; and GraphQL accepts queries but rejects mutations.

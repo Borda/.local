@@ -33,20 +33,21 @@ def load_collector() -> ModuleType:
     return module
 
 
-def pr_payload(*, state: str = "OPEN") -> dict[str, Any]:
+def pr_payload(*, state: str = "OPEN", cross_repository: bool = False) -> dict[str, Any]:
     """Return one complete same-repository PR metadata fixture."""
     return {
         "number": 17,
         "title": "Portable collector",
+        "body": "Fix checkpoint resume behavior described by the contributor.",
         "url": "https://github.com/Borda/AI-Rig/pull/17",
         "author": {"login": "contributor"},
         "baseRefName": "main",
         "baseRefOid": BASE_OID,
         "headRefName": "portable-pr",
         "headRefOid": HEAD_OID,
-        "headRepository": {"nameWithOwner": "Borda/AI-Rig"},
-        "headRepositoryOwner": {"login": "Borda"},
-        "isCrossRepository": False,
+        "headRepository": {"nameWithOwner": "contributor/AI-Rig" if cross_repository else "Borda/AI-Rig"},
+        "headRepositoryOwner": {"login": "contributor" if cross_repository else "Borda"},
+        "isCrossRepository": cross_repository,
         "state": state,
         "isDraft": False,
         "reviewDecision": "CHANGES_REQUESTED",
@@ -96,15 +97,23 @@ class FakeRunner:
         paginated: bool = False,
         statistics_unavailable: bool = False,
         current_base_oid: str = BASE_OID,
+        recorded_base_is_ancestor: bool = True,
         pr_state: str = "OPEN",
         named_head_ref_missing: bool = False,
+        review_threads_failure: bool = False,
+        current_head_oid: str = "d" * 40,
+        cross_repository: bool = False,
     ) -> None:
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
         self.paginated = paginated
         self.statistics_unavailable = statistics_unavailable
         self.current_base_oid = current_base_oid
+        self.recorded_base_is_ancestor = recorded_base_is_ancestor
         self.pr_state = pr_state
         self.named_head_ref_missing = named_head_ref_missing
+        self.review_threads_failure = review_threads_failure
+        self.local_head_oid = current_head_oid
+        self.cross_repository = cross_repository
 
     def __call__(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         """Simulate the Git, GitHub CLI, and remote-selector commands."""
@@ -117,11 +126,23 @@ class FakeRunner:
         elif argv[:3] == ["git", "status", "--short"]:
             stdout = b" M local.txt\n"
         elif argv[:3] == ["gh", "pr", "view"]:
-            stdout = json.dumps(pr_payload(state=self.pr_state)).encode()
+            stdout = json.dumps(pr_payload(state=self.pr_state, cross_repository=self.cross_repository)).encode()
         elif argv[:3] == ["gh", "api", "graphql"]:
+            if self.review_threads_failure:
+                return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
             stdout = json.dumps(threads_payload(paginated=self.paginated)).encode()
         elif argv[:3] == ["gh", "pr", "diff"]:
             stdout = b"diff --git a/a.py b/a.py\n"
+        elif argv[:2] == ["git", "diff"] and "--binary" in argv:
+            stdout = b"diff --git a/a.py b/a.py\n"
+        elif argv[:2] == ["git", "diff"] and "--stat" in argv:
+            if self.statistics_unavailable:
+                return subprocess.CompletedProcess(argv, 128, stdout=b"", stderr=b"binary patch has no stat\n")
+            stdout = b" a.py | 1 +\n"
+        elif argv[:2] == ["git", "diff"] and "--numstat" in argv:
+            if self.statistics_unavailable:
+                return subprocess.CompletedProcess(argv, 128, stdout=b"", stderr=b"binary patch has no numstat\n")
+            stdout = b"1\t0\ta.py\n"
         elif argv[:2] == ["git", "apply"] and "--stat" in argv:
             if self.statistics_unavailable:
                 return subprocess.CompletedProcess(argv, 128, stdout=b"", stderr=b"binary patch has no stat\n")
@@ -142,13 +163,22 @@ class FakeRunner:
         elif argv[:2] == ["git", "rev-parse"]:
             reference = argv[2]
             stdout = (
-                HEAD_OID
-                if "portable-pr" in reference or "/pull/" in reference or reference == "HEAD"
-                else self.current_base_oid
+                HEAD_OID if "portable-pr" in reference or "/pull/" in reference else self.current_base_oid
             ).encode() + b"\n"
+            if reference == "HEAD":
+                stdout = f"{self.local_head_oid}\n".encode()
+        elif argv[:3] == ["git", "merge-base", "--is-ancestor"]:
+            return subprocess.CompletedProcess(
+                argv,
+                0 if self.recorded_base_is_ancestor else 1,
+                stdout=b"",
+                stderr=b"",
+            )
         elif argv[:3] == ["gh", "pr", "checkout"]:
+            self.local_head_oid = HEAD_OID
             stdout = b"checked out\n"
         elif argv[:3] == ["git", "checkout", "--detach"]:
+            self.local_head_oid = HEAD_OID
             stdout = b"checked out\n"
         elif argv[:3] == ["git", "branch", "--show-current"]:
             stdout = b"portable-pr\n"
@@ -195,6 +225,8 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
     assert (output / "pr-target.txt").read_text(encoding="utf-8") == "17\n"
     assert (output / "files.txt").read_text(encoding="utf-8") == "a.py\nb.py\n"
     assert json.loads((output / "online-review-summary.json").read_text()) == {
+        "review_threads_status": "available",
+        "review_threads_error": None,
         "review_thread_count": 3,
         "unresolved_review_thread_count": 2,
         "active_unresolved_review_thread_count": 1,
@@ -205,14 +237,15 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
     routing = json.loads((output / "pr-routing.json").read_text())
     assert routing["base_repo"] == "Borda/AI-Rig"
     assert routing["same_repo"] is True
-    assert routing["local_checkout_command"] == "gh pr checkout https://github.com/Borda/AI-Rig/pull/17"
+    assert routing["local_checkout_command"] == "gh pr checkout 17"
+    assert json.loads((output / "pr.json").read_text())["body"].startswith("Fix checkpoint")
     assert all(call[1]["timeout"] == 5 for call in runner.calls)
 
 
-def test_collect_pr_refuses_incomplete_review_thread_pagination(
+def test_collect_pr_degrades_incomplete_review_thread_pagination(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fail closed when the GraphQL response omits later review-thread pages."""
+    """Keep source review available while recording incomplete supplemental thread evidence."""
     module = load_collector()
     runner = FakeRunner(paginated=True)
     configure_collector(monkeypatch, module, runner)
@@ -220,8 +253,15 @@ def test_collect_pr_refuses_incomplete_review_thread_pagination(
 
     result = module.collect_pr(target="", output=output, checkout=False, timeout_seconds=5)
 
-    assert result == 2
-    assert (output / "pr-error.txt").read_text(encoding="utf-8") == "review-thread-pagination-incomplete\n"
+    assert result == 0
+    assert not (output / "pr-error.txt").exists()
+    assert (output / "review-threads-error.txt").read_text(encoding="utf-8") == (
+        "review-thread-pagination-incomplete\n"
+    )
+    summary = json.loads((output / "online-review-summary.json").read_text())
+    assert summary["review_threads_status"] == "unavailable"
+    assert summary["review_threads_error"] == "review-thread-pagination-incomplete"
+    assert json.loads((output / "review-threads.json").read_text()) == []
 
 
 def test_collect_pr_records_unavailable_diff_statistics_without_failing(
@@ -243,6 +283,49 @@ def test_collect_pr_records_unavailable_diff_statistics_without_failing(
     assert not (output / "pr-error.txt").exists()
 
 
+def test_collect_pr_uses_verified_local_diff_when_review_thread_fetch_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recover a fork-style PR from supplemental integration failure through exact local source."""
+    module = load_collector()
+    runner = FakeRunner(review_threads_failure=True, cross_repository=True)
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
+
+    assert result == 0, (output / "pr-error.txt").read_text() if (output / "pr-error.txt").exists() else ""
+    assert json.loads((output / "pr.json").read_text())["body"].startswith("Fix checkpoint")
+    assert (output / "review-threads-error.txt").read_text() == "github-network:gh-review-threads\n"
+    assert (output / "diff.patch").read_bytes() == b"diff --git a/a.py b/a.py\n"
+    assert any(argv == ["gh", "pr", "checkout", "17"] for argv, _ in runner.calls)
+    assert any(argv == ["git", "diff", "--binary", f"{BASE_OID}...{HEAD_OID}", "--"] for argv, _ in runner.calls)
+    assert not any(argv[:3] == ["gh", "pr", "diff"] for argv, _ in runner.calls)
+    checkout = json.loads((output / "local-checkout.json").read_text())
+    assert checkout["diff_source"] == "verified-local-checkout"
+    assert checkout["diff_base_oid"] == BASE_OID
+    assert checkout["diff_head_oid"] == HEAD_OID
+
+
+def test_collect_pr_reuses_already_exact_pr_head_for_local_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Avoid a fragile checkout call when the current fork branch already matches PR metadata."""
+    module = load_collector()
+    runner = FakeRunner(current_head_oid=HEAD_OID, cross_repository=True)
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
+
+    assert result == 0
+    assert not any(argv[:3] == ["gh", "pr", "checkout"] for argv, _ in runner.calls)
+    checkout = json.loads((output / "local-checkout.json").read_text())
+    assert checkout["command"] == "not-run: already at expected PR head"
+    assert checkout["head_matches_pr"] is True
+    assert (output / "diff.patch").read_bytes() == b"diff --git a/a.py b/a.py\n"
+
+
 def test_collect_pr_checkout_writes_verified_fetch_and_checkout_artifacts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -258,12 +341,16 @@ def test_collect_pr_checkout_writes_verified_fetch_and_checkout_artifacts(
     target = json.loads((output / "target-branch.json").read_text())
     assert target["local_head"] == BASE_OID
     assert target["base_matches_pr_metadata"] is True
+    assert target["expected_base_is_ancestor"] is True
+    assert target["base_relation"] == "matches-pr-metadata"
     head = json.loads((output / "pr-head-fetch.json").read_text())
     assert head["local_head"] == HEAD_OID
     assert head["head_matches_pr_metadata"] is True
     checkout = json.loads((output / "local-checkout.json").read_text())
     assert checkout["local_head"] == HEAD_OID
     assert checkout["head_matches_pr"] is True
+    assert checkout["command"] == "gh pr checkout 17"
+    assert checkout["diff_source"] == "verified-local-checkout"
     assert "no --force was used" in checkout["force_policy"]
     assert all("--force" not in argument for argv, _ in runner.calls for argument in argv)
 
@@ -271,9 +358,9 @@ def test_collect_pr_checkout_writes_verified_fetch_and_checkout_artifacts(
 def test_collect_pr_records_target_branch_divergence_without_rejecting_verified_pr_head(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Allow an advanced target branch while still requiring the exact PR head."""
+    """Allow historical target divergence while still requiring the exact PR head."""
     module = load_collector()
-    runner = FakeRunner(current_base_oid="c" * 40, pr_state="MERGED")
+    runner = FakeRunner(current_base_oid="c" * 40, recorded_base_is_ancestor=False, pr_state="MERGED")
     configure_collector(monkeypatch, module, runner)
     output = tmp_path / "pr"
 
@@ -284,12 +371,15 @@ def test_collect_pr_records_target_branch_divergence_without_rejecting_verified_
     assert target["local_head"] == "c" * 40
     assert target["expected_base_oid"] == BASE_OID
     assert target["base_matches_pr_metadata"] is False
-    assert target["base_relation"] == "advanced-or-diverged"
+    assert target["expected_base_is_ancestor"] is False
+    assert target["base_relation"] == "diverged"
     assert json.loads((output / "local-checkout.json").read_text())["head_matches_pr"] is True
 
 
-def test_collect_pr_rejects_open_pr_target_branch_divergence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep merge-review evidence coherent when an open PR target advances mid-collection."""
+def test_collect_pr_accepts_open_pr_when_target_advanced_from_recorded_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep reviewing an exact PR head after its target branch advances."""
     module = load_collector()
     runner = FakeRunner(current_base_oid="c" * 40)
     configure_collector(monkeypatch, module, runner)
@@ -297,8 +387,43 @@ def test_collect_pr_rejects_open_pr_target_branch_divergence(tmp_path: Path, mon
 
     result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
 
+    assert result == 0, (output / "pr-error.txt").read_text() if (output / "pr-error.txt").exists() else ""
+    target = json.loads((output / "target-branch.json").read_text())
+    assert target["base_relation"] == "advanced"
+    assert target["expected_base_is_ancestor"] is True
+    assert json.loads((output / "local-checkout.json").read_text())["head_matches_pr"] is True
+
+
+def test_collect_pr_rejects_open_pr_when_target_diverged_from_recorded_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail closed when the fetched target no longer descends from the recorded base."""
+    module = load_collector()
+    runner = FakeRunner(current_base_oid="c" * 40, recorded_base_is_ancestor=False)
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5)
+
     assert result == 2
-    assert (output / "pr-error.txt").read_text().startswith("target-branch-oid-mismatch:")
+    assert (output / "pr-error.txt").read_text().startswith("target-branch-diverged:")
+
+
+def test_git_ancestry_probe_rejects_unverifiable_commits() -> None:
+    """Keep a Git ancestry error distinct from a proven target divergence."""
+    module = load_collector()
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(argv, 128, stdout=b"", stderr=b"unknown revision")
+
+    with pytest.raises(module.CollectionError, match="command-failed:target-branch-ancestry") as error:
+        module._git_is_ancestor(runner, 5, BASE_OID, "c" * 40)
+
+    assert error.value.diagnostics == {
+        "exit_code": 128,
+        "failure_class": "command-failed",
+        "label": "target-branch-ancestry",
+    }
 
 
 def test_collect_pr_rejects_unknown_pr_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -336,6 +461,9 @@ def test_collect_pr_preserves_checkout_started_state_after_checkout_command_fail
         "status": "checkout-command-started",
         "local_state": "changed-or-unknown",
     }
+    assert (output / "pr.json").is_file()
+    assert (output / "comments.json").is_file()
+    assert (output / "review-threads.json").is_file()
 
 
 def test_collect_pr_checks_out_merged_pr_when_its_named_head_branch_is_deleted(
@@ -436,8 +564,10 @@ def test_collect_pr_removes_stale_diagnostic_before_nondiagnostic_failure(
     assert not (output / "command-failure.json").exists()
 
 
-def test_collect_pr_failure_clears_prior_source_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Prevent a terminal collection failure from retaining a successful attempt's PR evidence."""
+def test_collect_pr_failure_clears_prior_attempt_before_retaining_current_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent stale source evidence while retaining diagnostics produced by the failed attempt."""
     module = load_collector()
     output = tmp_path / "pr"
     monkeypatch.setattr(module.shutil, "which", lambda command: f"/fixture/{command}")
@@ -455,7 +585,8 @@ def test_collect_pr_failure_clears_prior_source_evidence(tmp_path: Path, monkeyp
 
     assert module.collect_pr(target="17", output=output, checkout=False, timeout_seconds=5, run=failing_runner) == 2
     assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-network:gh-pr-view\n"
-    assert not any((output / filename).exists() for filename in module.COLLECTOR_EVIDENCE_ARTIFACTS)
+    retained = {filename for filename in module.COLLECTOR_EVIDENCE_ARTIFACTS if (output / filename).exists()}
+    assert retained == {"status.txt"}
 
 
 @pytest.mark.parametrize(
