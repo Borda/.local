@@ -161,9 +161,12 @@ echo "${CONTRIBUTORS_FILE:-}" > "${TMPDIR:-/tmp}/release-contributors-${CSID}"
 [ -n "$CHANGELOG_FILE_FROM_A" ] && echo "${CHANGELOG_FILE_FROM_A}" > "${TMPDIR:-/tmp}/release-changelog-file-${CSID}"
 ADDED=$(echo "$ENVELOPE_A" | jq -r '.added // 0' 2>/dev/null)
 FLAGGED=$(echo "$ENVELOPE_A" | jq -r '.flagged // 0' 2>/dev/null)
+SCOPE_FLAGGED=$(echo "$ENVELOPE_A" | jq -r '.scope_flagged // 0' 2>/dev/null)
 COUNT=$(echo "$ENVELOPE_B" | jq -r '.count // 0' 2>/dev/null)
-echo "Phases 5–6 delegated: $ADDED changelog entries added, $FLAGGED flagged; $COUNT contributors extracted."  # timeout: 5000
+echo "Phases 5–6 delegated: $ADDED changelog entries added, $FLAGGED flagged, $SCOPE_FLAGGED scope-flagged (non-PR branch merge); $COUNT contributors extracted."  # timeout: 5000
 ```
+
+`$SCOPE_FLAGGED` > 0 → read the "Scope check" section of `$CHANGELOG_AUDIT_FILE`; every row there (critical = already-released commit landed a second time, medium = unreviewed branch merge) must reach the Findings summary table in `audit`/`prepare` modes — see `templates/audit-checks.md` Output, "Changelog scope" row — never left inside the audit file only. This is the check the reviewer needs surfaced before approving the PR, not something to bury in a report nobody opens.
 
 `notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: estimate commit count with `git rev-list --count ${RANGE:-${LAST_TAG:-HEAD~20}..HEAD} 2>/dev/null`. If >50, delegate to `foundry:sw-engineer` subagent same as prepare mode — inline gather with >50 commits causes context flood. Define `GATHER_FILE` before spawning so envelope-validation block above can resolve the path:
 
@@ -410,7 +413,9 @@ For each `CROSS_CYCLE_MATCH` targeting `$CHANGELOG_FILE` (from Gather changes' c
 
 If missing: create `CHANGELOG.md`; populate with `# Changelog` header and `## [Unreleased]` from Classify.
 
-Always report: "N items added, M flagged for review." This phase owns CHANGELOG-format classification; Write release draft reads from it — does NOT copy. DRAFT.md uses different format.
+**Scope check** (same rule as delegated Agent A — see `modes/changelog-audit-prompt.md`): `git log $RANGE --merges --pretty='%H %P %s'`, keep rows whose subject doesn't match `merge pull request #[0-9]+|\(#[0-9]+\)` — a raw branch merge landed inside `$RANGE`, not a real PR merge. Diff each such commit's two parents to list what it pulled in; any pulled-in commit already shipped in a prior CHANGELOG section is `critical` — it's about to appear a second time in the wrong release under this PR by accident. Report as its own line, never folded into the add/flag count silently.
+
+Always report: "N items added, M flagged for review, K scope-flagged (non-PR branch merge)." This phase owns CHANGELOG-format classification; Write release draft reads from it — does NOT copy. DRAFT.md uses different format.
 
 ## Extract contributors
 

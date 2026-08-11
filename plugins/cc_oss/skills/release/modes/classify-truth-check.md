@@ -8,6 +8,8 @@
 
 **PR accumulation**: list ALL contributing PR numbers for net-surviving entry. **Same category only** — two PRs merge under one bullet only when both classify into SAME section. Later PR fixing bug in same-range feature = own 🔧 Fixed entry. **Trivial-fix exception**: fix or doc tweak with no standalone user-visible effect folds into parent Added bullet. When in doubt: separate entries safer
 
+**Commit-label distrust**: `fix:`/`feat:`/etc. type prefix and subject line are self-reported by the author, not verified — a commit titled `fix: progress bar` can in fact reintroduce a feature, and a mislabeled subject slips through unnoticed more often than a mislabeled body trailer. Classify from the actual diff (files touched, symbols added/changed, net behavior at HEAD), never from the type prefix or subject text alone — treat both as a hint to check, not a verdict.
+
 **SHA tracking (for provenance)**: alongside PR numbers, also retain the full 40-char commit sha(s) contributing to each net-surviving entry — already visible in context from Gather changes' `git log $RANGE --no-merges --format="--- %H%n%B"` output. Needed downstream by the Provenance record step (`release-draft-template.md` "Post-write bookkeeping"), which derives each sha's content-stable `git patch-id --stable` for the actual store key — a bullet folding N squashed commits keeps all N shas, each mapped to that one bullet's final text once written.
 
 Section order (fixed): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed → 🗑️ Deprecated → ❌ Removed → 🔧 Fixed → 🔒 Security → 🔄 Reverted

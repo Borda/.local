@@ -1,5 +1,5 @@
 <!-- oss:release Mode: audit — executed via: cat "$SKILL_DIR/modes/audit.md"; execute -->
-<!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT -->
+<!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $SOURCE_TAG_REF, $CHERRY_PICK_SUBJECTS -->
 
 **Trigger**: `/release audit [version]`
 
@@ -9,7 +9,21 @@
 # LAST_TAG, REPO_ROOT, SKILL_DIR from Shared setup above
 # audit mode: REST = optional version token (not range); RANGE defaults to LAST_TAG..HEAD
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r SOURCE_TAG_REF < "${TMPDIR:-/tmp}/release-setup-${CSID}/SOURCE_TAG_REF" 2>/dev/null || SOURCE_TAG_REF=""
+IFS= read -r CHERRY_PICK_SUBJECTS < "${TMPDIR:-/tmp}/release-setup-${CSID}/CHERRY_PICK_SUBJECTS" 2>/dev/null || CHERRY_PICK_SUBJECTS=""
+RELEASE_MODE="linear"; PENDING_CHERRY_PICKS=0
+[ -n "$SOURCE_TAG_REF" ] && RELEASE_MODE="stable-branch" && PENDING_CHERRY_PICKS=$(printf '%s\n' "$CHERRY_PICK_SUBJECTS" | grep -c . 2>/dev/null || echo 0)
+echo "release mode: $RELEASE_MODE (source=$SOURCE_TAG_REF, pending=$PENDING_CHERRY_PICKS)"
 ```
+
+### Phase 0: Release-model guardrail
+
+`$RELEASE_MODE=stable-branch` (i.e. `$SOURCE_TAG_REF` non-empty) → HEAD does not descend from develop/main's tip; commits merged there after `$LAST_TAG` are **expected** to be absent from this branch unless their subject matches `$CHERRY_PICK_SUBJECTS`. Never diff this branch against `develop`/`main`/any non-ancestor branch and report the gap as blocking "drift" — that comparison assumes a linear model this branch isn't using. A PR or commit missing from HEAD in this mode is normal, not evidence of an accidental cut, and must never by itself produce a `critical`/`BLOCKED` finding.
+
+The only legitimate cherry-pick-mode red flag is a **Truth check** hit (`modes/classify-truth-check.md`, run inside the Phase 1 gather subagent): a symbol referenced by an in-range commit (docstring, import, call site) but not defined anywhere in HEAD. That is a real dangling-reference bug — scope the finding to that specific commit/PR only. It is evidence that one commit is incomplete, never evidence that the whole selective cut was accidental — don't generalize a single dangling reference into a branch-wide divergence verdict.
+
+`$RELEASE_MODE=linear` → this branch is a direct descendant of the branch it was cut from; standard fast-forward/ancestor expectations apply, and unexpected missing commits are worth investigating as `NEEDS_ATTENTION` (not automatically `BLOCKED` — confirm with the user before treating a gap as unintentional; branches get selectively rebased or filtered for reasons a diff alone can't show).
 
 ### Phase 1: Gather and explore changes
 
@@ -76,7 +90,9 @@ REVIEW_FILE=$(ls -t .reports/review/*/review-report.md .reports/codex/review/*/r
 
 ### Phase 2: Readiness checks
 
-Execute all checks from `templates/audit-checks.md`. Checks cover: version consistency across manifests, docs/CHANGELOG alignment, open blocking issues, dependency CVE scan, unreleased commits since last tag.
+Execute all checks from `templates/audit-checks.md`. Checks cover: version consistency across manifests, docs/CHANGELOG alignment, open blocking issues, dependency CVE scan, unreleased commits since last tag, changelog scope (commits landed via a non-PR branch merge inside `$RANGE` — catches an unrelated already-released commit re-appearing in this release's section by accident, see Audit changelog's Scope check in `SKILL.md`).
+
+Every `critical` row from the Scope check (already-released commit landed a second time) → add to the Findings summary table below, `severity: critical` — this is the check that must be visible to the reviewer before the PR merges, not something the audit file alone carries.
 
 ```bash
 cat "$SKILL_DIR/templates/audit-checks.md"  # timeout: 5000

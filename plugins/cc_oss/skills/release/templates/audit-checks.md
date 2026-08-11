@@ -74,6 +74,7 @@ repo: [repo-name]
 date: [YYYY-MM-DD]
 version: [version or "next"]
 range: [range]
+mode: [linear | stable-branch (cherry-pick)]
 commits: [N non-merge commits]
 verdict: [READY | NEEDS_ATTENTION | BLOCKED]
 ---
@@ -81,18 +82,20 @@ verdict: [READY | NEEDS_ATTENTION | BLOCKED]
 ## Release Readiness — [repo] [version or "next release"]
 Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 
-| Check                 | Status | Detail |
-|-----------------------|--------|--------|
-| Working tree          | ✓ Clean / ⚠ N files | [filenames if dirty] |
-| CI (last 5 runs)      | ✓ Passing / ✗ N failing | [failing job names] |
-| Blocking issues       | ✓ None / ✗ N open | [#N title] |
-| Open PRs (main)       | ✓ None / ⚠ N open | [PR titles] |
-| README aligned        | ✓ / ⚠ Review needed | [reason if flagged] |
-| CHANGELOG entry       | ✓ Present / ✗ Missing | [section name or "add [Unreleased]"] |
-| Version consistent    | ✓ / ⚠ Mismatch | [files and values] |
-| Dependency CVEs       | ✓ Clean / ⚠ N vulns | [package names] |
-| Scheduled removals    | ✓ All removed / ✗ N still present | [symbol names with `remove_in` version] |
-| Doc proportionality   | ✓ / ⚠ N features undertreated | [feature names — no dedicated section / no example / thin coverage] |
+| Check            | Status | Detail |
+|------------------|--------|--------|
+| Release mode     | Linear / Stable-branch (cherry-pick) | [N pending cherry-pick subjects, or "—" if linear — informational only, never blocking by itself] |
+| Working tree     | ✓ Clean / ⚠ N files | [filenames if dirty] |
+| CI (last 5 runs) | ✓ Passing / ✗ N failing | [failing job names] |
+| Blocking issues  | ✓ None / ✗ N open | [#N title] |
+| Open PRs (main)  | ✓ None / ⚠ N open | [PR titles] |
+| README aligned   | ✓ / ⚠ Review needed | [reason if flagged] |
+| CHANGELOG entry  | ✓ Present / ✗ Missing | [section name or "add [Unreleased]"] |
+| Changelog scope  | ✓ Clean / ✗ N flagged | [sha + non-PR merge sha, or "already released in <section>"] |
+| Version consistent  | ✓ / ⚠ Mismatch | [files and values] |
+| Dependency CVEs     | ✓ Clean / ⚠ N vulns | [package names] |
+| Scheduled removals  | ✓ All removed / ✗ N still present | [symbol names with `remove_in` version] |
+| Doc proportionality | ✓ / ⚠ N features undertreated | [feature names — no dedicated section / no example / thin coverage] |
 | Upstream review verdict | ✓ None blocking / ✗ Blocking | [review report path + outcome, Phase 1b] |
 | Codex adversarial audit | ✓ Clean / ⚠ N findings / — skipped (codex unavailable) | [finding summary, Phase 2a] |
 
