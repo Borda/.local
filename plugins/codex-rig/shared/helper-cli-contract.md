@@ -11,7 +11,7 @@ contains it. Before creating or changing an invocation, run the relevant package
 - `python PLUGIN_ROOT/shared/github_read.py --help`
 - `python PLUGIN_ROOT/shared/collect_pr.py --help`
 - `python PLUGIN_ROOT/shared/escalation_ledger.py --help`
-- `python PLUGIN_ROOT/shared/codemap_adapter.py --help` — optional structural-context probe; see `codemap-contract.md`
+- `python PLUGIN_ROOT/shared/codemap_adapter.py --help` — optional structural-context probe; `context` accepts the closed `--query-kind` vocabulary (`skip`, `central`, `callers`, `blast`, `dependencies`, `test-impact`, `coupling`, `standard`); see `codemap-contract.md`
 - `python PLUGIN_ROOT/runtime/calibration/run.py --help`
 - `python PLUGIN_ROOT/runtime/calibration/run_live_ab.py --help`
 - `python PLUGIN_ROOT/runtime/calibration/score_behavioral.py --help`

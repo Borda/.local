@@ -25,6 +25,10 @@ In plugin Markdown files, write prose annotations, notes, and load directives as
 
 Comments in procedural code explain only WHY: non-obvious constraints, workarounds, incidents, or safety rationale. Comments in example or pattern code may also explain expected output, motivation, or when to apply the pattern.
 
+## Benchmark Isolation
+
+Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not shipped plugin content. Use neutral generic examples in Skills, templates, and user-facing docs; retain the generalized contract in production regressions without copying benchmark fixtures.
+
 ## Installability
 
 Every file must work after `claude plugin install <name>@borda-ai-rig`; assume only the installed plugin path, never the source tree. Do not hardcode sibling-plugin paths, `plugins/<name>/` directories, or absolute user or temporary paths; use `~/`, `$(git rev-parse --show-toplevel)`, or `$CLAUDE_PLUGIN_ROOT` as appropriate.

@@ -70,12 +70,7 @@ For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code
 
 No fan-out for one small measured change with stable metric/guard. Never let specialist change metric/guard scripts unless explicitly in `scope_files` and measurement-integrity risk recorded.
 
-**Structural context (optional)**: when `scope_files` resolves to a Python module/symbol, also probe codemap-py once
-for callers, coupling, and test impact before the first iteration: `python PLUGIN_ROOT/shared/codemap_adapter.py
-context --category develop --target <qname> --out <run-directory>/codemap-context.json`. Per
-`../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the hypothesis above.
-Persist the result once here, before step 04 applies any change; any triggered specialist consumes
-`<run-directory>/codemap-context.json`, never a fresh query.
+**Structural context (optional)**: when `scope_files` resolves to a Python module/symbol, select one task-neutral route and probe codemap-py once before the first iteration: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category develop --query-kind <kind> [--target <qname>] --out <run-directory>/codemap-context.json`. Use `skip` for an exact localized optimization with no unresolved structural fact, the matching single route (`central`, `callers`, `blast`, `dependencies`, `test-impact`, or `coupling`) for one unresolved fact, and `standard` for broad or unknown scope. Map direct, all, or production caller questions to `callers`; use `blast` only for explicitly transitive caller questions. An explicit user or tool request for structural evidence overrides `skip`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the hypothesis above. Persist the result once here, before step 04 applies any change; any triggered specialist consumes `<run-directory>/codemap-context.json`, never a fresh query.
 
 Initialize machine-readable iteration log:
 

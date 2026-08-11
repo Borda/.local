@@ -16,6 +16,8 @@ Answer structural Python questions with the unified `codemap-py query` CLI.
 NOT for: rebuilding the index (use `/codemap-py:scan-codebase`), renaming symbols (use `/codemap-py:rename-refs`), or which tests cover or are affected by a change (use `/codemap-py:test-impact`).
 </objective>
 
+Skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, import, or source-slice fact remains unresolved. An explicit structural query or tool requirement overrides this skip; otherwise choose the smallest complete query.
+
 <workflow>
 
 ## Choose the smallest complete query set
@@ -51,12 +53,9 @@ For caller requests, use `fn-rdeps <module::symbol> --exclude-tests` for direct,
 
 For requests for test modules that directly import a module, use `rdeps <module>` and filter/report test modules; reserve `test-impact <target>` for transitive affected-test selection.
 
-`symbol <name>` accepts a bare function name such as `authenticate` or a
-qualified class method such as `MyClass.method`; `module::symbol` belongs to
-`fn-*` call-graph queries. For feature scaffolding, query the requested
-qualified extension method (for example, `symbol MyClass.add_feature`), not a
-nearby `symbol MyClass` or `symbols <module>` listing unless the user requests
-that broader scope.
+`symbol <name>` accepts a bare function name such as `authenticate` or a qualified class method such as `MyClass.method`; `module::symbol` belongs to `fn-*` call-graph queries. When chaining a `symbol` result into `fn-*`, compose its returned `module` and `qualified_name` exactly as `<module>::<qualified_name>`; for example, `mypackage.module::MyClass.method`. For feature scaffolding, query the requested qualified extension method (for example, `symbol MyClass.add_feature`), not a nearby `symbol MyClass` or `symbols <module>` listing unless the user requests that broader scope.
+
+For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to find same-name implementation/override candidates. Name matching is candidate discovery only, not proof of inheritance; inspect each source to verify ancestry and package boundaries before treating it as an override.
 
 When a source request names imports, use `symbol <name> --with-imports`; `query_complete: true` confirms index coverage, not that optional fields were requested.
 

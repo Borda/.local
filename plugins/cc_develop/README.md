@@ -59,6 +59,8 @@ With `develop`, each workflow enforces discipline rigorous engineer applies manu
 - **plan**: scope complexity, identify blast radius, agent feasibility review before committing
 - **review**: six specialist agents — architecture, tests, performance, docs, lint, API design — against local diff. No GitHub PR needed
 
+When Codemap is enabled, `fix` selects a route before retrieval: a fully localized file-and-symbol edit can use the explicit zero-query path, while unresolved callers, dependencies, blast radius, imports, or source scope receive only the matching compact query.
+
 ______________________________________________________________________
 
 ## 📦 Install

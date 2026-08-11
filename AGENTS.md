@@ -10,6 +10,10 @@ Simplicity and reliability come first. Understand the affected flow and root cau
 
 Verification is part of implementation. Work is not complete until relevant checks pass and failures, residual risks, and deliberately deferred scope are reported accurately.
 
+## Benchmark Isolation
+
+Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not production content. Never copy them into shipped plugins, Skills, templates, or user-facing docs; use neutral generic examples and encode the generalized contract in a regression test instead.
+
 ## Focused Delegation
 
 Use the lowest-cost capable subagent for small, well-defined support work when the task splits into independent bounded workstreams and the expected time or cost saving exceeds coordination overhead. Give each subagent narrow file or evidence ownership, only the context it needs, and explicit acceptance gates; parallelize disjoint work and never assign duplicate investigation or overlapping edits.

@@ -103,6 +103,7 @@ with a "requires vN+ index" message (upgrade path: re-run auto-build or `scan-co
 `query_complete`/`exhaustive`, `not_covered`, `degraded`, and `confidence` are consumed.
 
 **Caveats**:
+- Skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, import, or source-slice fact remains unresolved. An explicit structural query or tool requirement overrides this skip; otherwise choose the smallest complete query.
 - Auto-builds/refreshes a missing or stale index unless `SCAN_NO_AUTOBUILD=1` is set, in which case
   a missing index is a hard refusal (exit non-zero) rather than a silent skip.
 - Direction matters: `rdeps` = callers/blast-radius, `deps` = forward imports — swapping them is the

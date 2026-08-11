@@ -2,6 +2,11 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.29.0
+
+- Route direct callers and same-name implementation candidates to task-fit compact queries, while requiring source verification for inheritance claims.
+- Skip structural retrieval for fully localized edits with no unresolved graph or source-slice fact, while preserving explicit tool requirements and the smallest relevant query for uncertain scope.
+
 ## 0.28.8
 
 - Repair structural query routing for multi-query diff-impact evidence and broken Sphinx cross-references while preserving compact managed-run evidence boundaries.

@@ -1,8 +1,8 @@
 # 🗂️ codemap-py — Claude Code Plugin
 
-> **Every `/develop:fix`, `/develop:refactor`, `/oss:review` run gets blast-radius context automatic — you do nothing.**
+> **`/develop:fix`, `/develop:refactor`, and `/oss:review` retrieve structural context when callers, dependencies, or blast radius remain unresolved.**
 
-codemap-py builds structural index of Python project — import graph, blast-radius scores, function call graph — injects context into existing `/develop` and `/oss` skills. Nothing to wire yourself; invisible infrastructure from first install. Ask Claude fix `auth.py` — agent already knows which 38 other modules import it before touching single line.
+codemap-py builds a structural index of a Python project—its import graph, blast-radius scores, and function call graph—and integrates with existing `/develop` and `/oss` skills. Nothing to wire yourself: installed guidance provides an explicit zero-query route for an already-localized edit with no unresolved structural fact, and maps callers, dependencies, importers, source slices, or test impact to the smallest relevant query.
 
 Nothing to wire — other skills pick the index up automatically. Direct querying via `/codemap-py:query-code` also available for manual exploration.
 
@@ -38,11 +38,11 @@ ______________________________________________________________________
 
 ## 🤔 What is codemap-py?
 
-Claude Code plugin for Python projects. Pre-builds structural index — who imports whom, which modules widest blast radius, how functions call each other — injects context into `/develop` and `/oss` skills doing real code work. Index built once; currency gates at skill-invocation time detect stale state auto (covers `git pull`, branch switches, uncommitted edits), prompt refresh when needed. Every skill invocation starts with structural awareness in hand.
+Claude Code plugin for Python projects. Pre-builds a structural index—who imports whom, which modules have the widest blast radius, and how functions call each other—for `/develop` and `/oss` skills doing real code work. Currency gates at skill-invocation time detect stale state automatically (covering branch switches and uncommitted edits) and prompt for refresh when needed. The integration contract exposes an executable skip route for localized work and task-fit routes for unresolved structural questions.
 
 Without codemap-py, every session starts blind: agent gropes through codebase with Glob and Grep, burns 20–30 tool calls just understanding structure before real work. On 200-module project those calls still miss blast-radius risks and import cycles structural scan surfaces instant.
 
-codemap-py fix: scan once, every code-touching skill benefits auto — wiring into `/develop` and `/oss` already ships pre-built, nothing to inject yourself.
+codemap-py fix: scan once, then let `/develop` and `/oss` use the index selectively. A known file-and-symbol edit can proceed directly; a change with uncertain callers, importers, dependencies, test impact, or source scope receives compact structural context before implementation.
 
 ______________________________________________________________________
 
@@ -207,7 +207,7 @@ Benchmarks above measure **discovery phase** — enumerating callers, assessing 
 | `fix_single` (FS-01–FS-04)      | Single-file bug fix            | Validates archive/restore isolation; `EarlyStopping`/`ModelCheckpoint` guards | Diff keyword recall (`erec`)                        |
 | `fix_multicaller` (FM-01–FM-03) | Signature change + all callers | codemap-py `fn-rdeps` enumerates callers before editing; plain arm must grep  | Diff keyword recall (`erec`) + file recall (`rrec`) |
 
-**FM-03 (`Strategy.setup`) = decisive test**: adding `verbose: bool = False` to base-class `setup` method requires updating 6 subclass overrides in `ddp.py`, `fsdp.py`, `deepspeed.py`, `model_parallel.py`, `single_xla.py`, `xla.py`. Codemap-py arm runs `scan-query fn-rdeps lightning.pytorch.strategies.strategy::Strategy.setup` before any edit, gets complete override list in one call. Plain arm must grep `def setup`, read candidate files. Missing overrides = silent `super().setup()` signature mismatch at runtime. File recall (`rrec`) captures whether right files actually changed.
+`fn-rdeps` reports incoming call edges for a qualified symbol; it does not enumerate subclass overrides. For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to find same-name implementation/override candidates, then inspect each source to verify ancestry and package boundaries. Name matching is candidate discovery only, not proof of inheritance.
 
 Only public Claude Code plugin benchmark measuring edit-phase caller coverage — not just structural discovery.
 
@@ -697,7 +697,7 @@ Work with any v2 or v3 index.
 
 #### Symbol-level queries
 
-Retrieve function or class source by name instead of reading full file — dramatic fewer tokens than whole files — 91–95% reduction for targeted method lookups on large files (benchmark: pytorch-lightning `Trainer.fit`, 1 790 tokens with imports vs 19 824 tokens full file).
+Retrieve function or class source by name instead of reading the full file — about 91% fewer tokens in the displayed large-file method lookup (1,790 tokens with imports versus 19,824 for the full file).
 
 | Subcommand                       | What it answers                                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -705,7 +705,9 @@ Retrieve function or class source by name instead of reading full file — drama
 | `symbols <module>`               | All symbols in module with type and line range                                                                           |
 | `find-symbol <pattern>`          | Regex search across all symbol qualified_names in index                                                                  |
 
-`symbol` accepts bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. `find-symbol` and `symbol` cap results at 20 default — pass `--limit 0` to retrieve all matches before counting or ranking.
+`symbol` accepts bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. To chain a `symbol` result into a function-level query, compose its returned `module` and `qualified_name` exactly as `<module>::<qualified_name>`; for example, use `mypackage.module::MyClass.method`, not the bare method suffix. `find-symbol` and `symbol` cap results at 20 default — pass `--limit 0` to retrieve all matches before counting or ranking.
+
+For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to find same-name implementation/override candidates. Name matching is candidate discovery only, not proof of inheritance; inspect each source to verify ancestry and package boundaries before treating it as an override.
 
 When a source request names module imports, use `symbol <name> --with-imports`; `query_complete: true` confirms index coverage but does not add optional fields.
 

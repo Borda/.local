@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.5.1`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.7.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -15,7 +15,7 @@ The plugin is complete for the capabilities Codex can currently install and veri
 - **Cold PR review and remediation:** `$code-review #123` and `$code-remediate #123 +review` preserve current PR evidence and local merge context.
 - **Calibration:** fixed and behavioral checks measure recall, precision, confidence accuracy, routing leaks, and stale assumptions.
 - **Safe legacy cleanup:** authenticated, exact-plan removal exists for thin shims created during pre-release development.
-- **Optional codemap-py structural context:** nine workflows probe the public codemap-py CLI once per run for callers, coupling, diff impact, or undocumented surface, and fall back to bounded file inspection when it is absent.
+- **Optional codemap-py structural context:** the `develop`, `investigate`, and `optimize` workflows select a task-neutral route and probe the public codemap-py CLI once per run for only the required structural fact, or record a zero-query decision for a localized edit; they persist one artifact and fall back to bounded file inspection when Codemap is absent.
 
 ## Requirements
 
@@ -135,9 +135,9 @@ Every workflow defines an input contract, fail-fast rules, required gates, artif
 
 ## Optional codemap-py structural context
 
-`analyse`, `audit`, `code-review`, `code-remediate`, `develop`, `investigate`, `optimize`, `release`, and `research` each probe the [codemap-py](https://github.com/Borda/AI-Rig/tree/main/plugins/codemap-py) plugin once at a bounded decision point via `shared/codemap_adapter.py` and persist the result to the run artifact — specialists consume that artifact, never a fresh query. The adapter reads only the public `codemap-py doctor --json`/`query` CLI surface, never codemap-py's cache internals, source paths, or a cross-plugin Python import.
+`develop`, `investigate`, and `optimize` select a route and probe the [codemap-py](https://github.com/Borda/AI-Rig/tree/main/plugins/codemap-py) plugin once at a bounded decision point via `shared/codemap_adapter.py`, then persist the result to the run artifact — specialists consume that artifact, never a fresh query. An exact localized edit with no unresolved structural fact uses `skip`; one unresolved fact uses the matching single route; broad or unknown scope uses the legacy `standard` batch; an explicit structural request overrides `skip`. The other workflows retain their existing category-specific standard behavior or recorded not-applicable status. The adapter reads only the public `codemap-py doctor --json`/`query` CLI surface, never codemap-py's cache internals, source paths, or a cross-plugin Python import.
 
-The adapter reports one named status: `available`, `absent`, `stale`, `incompatible`, or `degraded`. Absence and incompatibility are non-fatal — the workflow falls back to its normal bounded file inspection. `manage`, `sync`, `agent-shims`, `calibrate`, and `kaggle` stay not-applicable with a recorded behavioral reason (no Python call-graph subject); see `shared/codemap-contract.md` for the full protocol, category-to-query map, and not-applicable rationale. Repository sync installs Codemap alongside Codex Rig, but Codex Rig retains zero runtime dependency on it: packaging, skill discovery, and startup still work when Codemap is absent or incompatible.
+The adapter reports one named status: `available`, `absent`, `stale`, `incompatible`, `degraded`, or `skipped`. `skipped` means the workflow deliberately selected zero Codemap subprocesses; it is not structural evidence. Absence and incompatibility are non-fatal — the workflow falls back to its normal bounded file inspection. `manage`, `sync`, `agent-shims`, `calibrate`, and `kaggle` stay not-applicable with a recorded behavioral reason (no Python call-graph subject); see `shared/codemap-contract.md` for the full protocol, adaptive route vocabulary, category-to-query map, and not-applicable rationale. Repository sync installs Codemap alongside Codex Rig, but Codex Rig retains zero runtime dependency on it: packaging, skill discovery, and startup still work when Codemap is absent or incompatible.
 
 ## Specialist role cards
 

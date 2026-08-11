@@ -22,6 +22,10 @@ Never hard-wrap prose in any Markdown file — one physical line per prose parag
 
 **Code block comments**: procedural code (steps an agent/skill executes) — comments explain WHY only (non-obvious constraint, workaround, incident ref, safety rationale), never WHAT/HOW; remove self-documenting comments. Example/pattern code (illustrates a pattern, not executed directly) — comments may also document expected output, motivation, or when to apply. Self-documenting-comment examples: `AUTHORING.md` §Markdown No-Wrap.
 
+## Benchmark Isolation
+
+Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not shipped plugin content. Use neutral generic examples in Skills, templates, and user-facing docs; retain the generalized contract in production regressions without copying benchmark fixtures.
+
 ## GitHub Reference Scoping — `#N` and `@name`
 
 <!-- policy-sibling: plugins/cc_foundry/rules/git-commit.md, plugins/cc_foundry/rules/_full/git-commit.md, plugins/cc_oss/skills/_shared/shepherd-voice.md — same GH #/@ scoping policy restated for each consumer's own context. Editing this section → grep repo for `policy-sibling` to find every copy, update in lockstep (rationale + precedent: §Policy Duplication Marker below). -->

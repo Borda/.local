@@ -11,7 +11,7 @@ It calls only ``codemap-py doctor --json`` and public query commands; absence or
 
 ## Usage
 
-Run ``python codemap_adapter.py probe`` or ``python codemap_adapter.py context --category {analysis,develop,review,audit}`` and persist the result once per workflow. The context form accepts an optional dotted target, repository root, timeout, and ``--out`` path; it always prints the same JSON payload that it writes.
+Run ``python codemap_adapter.py probe`` or ``python codemap_adapter.py context --category {analysis,develop,review,audit}`` and persist the result once per workflow. The context form accepts an optional dotted target, ``--query-kind`` (skip, one compact fact, or standard), repository root, timeout, and ``--out`` path; it always prints the same JSON payload that it writes.
 
 ## Used by
 
@@ -19,7 +19,7 @@ The ``analyse``, ``develop``, ``audit``, and ``code-review`` skills consume thes
 
 ## Outputs
 
-It returns or writes one versioned JSON probe/context payload whose status makes an unavailable optional integration explicit. Context payloads contain ``protocol_version``, category, target, probe details, and one outcome record per mapped query, while ``probe`` emits only the probe record.
+It returns or writes one versioned JSON probe/context payload whose status makes an unavailable optional integration explicit. Context payloads contain ``protocol_version``, ``artifact_schema_version``, category, query kind, target, probe details, and one outcome record per mapped query, while ``probe`` emits only the probe record. A ``skip`` context records status ``skipped`` without resolving or running Codemap.
 
 ## Failure
 
@@ -39,11 +39,13 @@ from typing import Any
 
 
 PROTOCOL_VERSION = "codemap-py.integration.v1"
+ARTIFACT_SCHEMA_VERSION = 2
 STATUS_AVAILABLE = "available"
 STATUS_ABSENT = "absent"
 STATUS_STALE = "stale"
 STATUS_INCOMPATIBLE = "incompatible"
 STATUS_DEGRADED = "degraded"
+STATUS_SKIPPED = "skipped"
 _DEFAULT_TIMEOUT = 15.0
 _EXIT_NOT_INDEXED = 3
 _WINDOWS_EXECUTABLE_SUFFIXES = {".bat", ".cmd", ".com", ".exe"}
@@ -77,6 +79,27 @@ CATEGORY_QUERIES: dict[str, tuple[QuerySpec, ...]] = {
         QuerySpec("undocumented", requires_target=False, extra_args=("--all",)),
         QuerySpec("dead-modules", requires_target=False),
     ),
+}
+
+
+QUERY_KINDS = (
+    "skip",
+    "central",
+    "callers",
+    "blast",
+    "dependencies",
+    "test-impact",
+    "coupling",
+    "standard",
+)
+
+_FACT_QUERY_SPECS: dict[str, QuerySpec] = {
+    "central": QuerySpec("central", requires_target=False, extra_args=("--top", "5")),
+    "callers": QuerySpec("fn-rdeps", requires_target=True, extra_args=("--exclude-tests",)),
+    "blast": QuerySpec("fn-blast", requires_target=True),
+    "dependencies": QuerySpec("rdeps", requires_target=True),
+    "test-impact": QuerySpec("test-impact", requires_target=True),
+    "coupling": QuerySpec("coupled", requires_target=False),
 }
 
 
@@ -149,10 +172,12 @@ class QueryOutcome:
 
 @dataclass(frozen=True)
 class StructuralContext:
-    """Persist-once structural-context evidence for one workflow decision point."""
+    """Persist-once structural-context evidence for one workflow decision point and route."""
 
     protocol_version: str
+    artifact_schema_version: int
     category: str
+    query_kind: str
     target: str | None
     status: str
     probe: ProbeResult
@@ -162,7 +187,9 @@ class StructuralContext:
         """Return the JSON shape written once to a run artifact."""
         return {
             "protocol_version": self.protocol_version,
+            "artifact_schema_version": self.artifact_schema_version,
             "category": self.category,
+            "query_kind": self.query_kind,
             "target": self.target,
             "status": self.status,
             "probe": self.probe.to_dict(),
@@ -308,6 +335,8 @@ def _reduce_status(probe: ProbeResult, queries: tuple[QueryOutcome, ...]) -> str
     if any(outcome.stale for outcome in queries):
         return STATUS_STALE
     succeeded = [outcome for outcome in queries if outcome.error is None]
+    if any(outcome.error == "target required, none supplied" for outcome in queries):
+        return STATUS_DEGRADED
     if not succeeded:
         return STATUS_INCOMPATIBLE
     fully_clean = all(
@@ -318,32 +347,80 @@ def _reduce_status(probe: ProbeResult, queries: tuple[QueryOutcome, ...]) -> str
     return STATUS_DEGRADED
 
 
+def _normalized_fact_target(query_kind: str, target: str | None) -> str | None:
+    """Return the one target form required by a compact fact route, without guessing malformed input."""
+    if query_kind in {"central", "coupling"}:
+        return None
+    if target is None:
+        return None
+    normalized = target.strip()
+    if not normalized or normalized.count("::") > 1:
+        return None
+    module, separator, symbol = normalized.partition("::")
+    if query_kind in {"callers", "blast"}:
+        return normalized if separator and module and symbol else None
+    if separator and (not module or not symbol):
+        return None
+    if not separator:
+        return normalized
+    if query_kind == "dependencies":
+        return module
+    return normalized
+
+
+def _query_plan(category: str, query_kind: str, target: str | None) -> tuple[tuple[QuerySpec, ...], str | None]:
+    """Return the bounded query plan while retaining the legacy category batch for `standard`."""
+    specs = CATEGORY_QUERIES.get(category)
+    if specs is None:
+        known = ", ".join(sorted(CATEGORY_QUERIES))
+        raise ValueError(f"unknown category {category!r}; expected one of: {known}")
+    if query_kind not in QUERY_KINDS:
+        known_kinds = ", ".join(QUERY_KINDS)
+        raise ValueError(f"unknown query kind {query_kind!r}; expected one of: {known_kinds}")
+    if query_kind == "standard":
+        return specs, target
+    if query_kind == "skip":
+        return (), target
+    return (_FACT_QUERY_SPECS[query_kind],), _normalized_fact_target(query_kind, target)
+
+
 def gather_structural_context(
     category: str,
     target: str | None = None,
     root: Path | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
+    query_kind: str = "standard",
 ) -> StructuralContext:
-    """Probe once and run a category's mapped queries once; never re-query per child.
+    """Record a skip, one fact query, or a category's legacy standard query batch.
 
     Examples:
         >>> ctx = gather_structural_context("develop", target="pkg.mod")
         >>> ctx.protocol_version
         'codemap-py.integration.v1'
     """
-    specs = CATEGORY_QUERIES.get(category)
-    if specs is None:
-        known = ", ".join(sorted(CATEGORY_QUERIES))
-        raise ValueError(f"unknown category {category!r}; expected one of: {known}")
+    specs, query_target = _query_plan(category, query_kind, target)
+    if query_kind == "skip":
+        probe = ProbeResult(STATUS_SKIPPED, "query kind skip: no Codemap subprocess requested", None, None)
+        return StructuralContext(
+            protocol_version=PROTOCOL_VERSION,
+            artifact_schema_version=ARTIFACT_SCHEMA_VERSION,
+            category=category,
+            query_kind=query_kind,
+            target=target,
+            status=STATUS_SKIPPED,
+            probe=probe,
+        )
     resolution = _resolve_codemap_executable()
     probe = _probe_codemap(resolution, timeout)
     queries: tuple[QueryOutcome, ...] = ()
     if probe.status == STATUS_AVAILABLE and resolution.launcher is not None:
-        queries = tuple(_run_one_query(resolution.launcher, spec, target, root, timeout) for spec in specs)
+        queries = tuple(_run_one_query(resolution.launcher, spec, query_target, root, timeout) for spec in specs)
     status = _reduce_status(probe, queries)
     return StructuralContext(
         protocol_version=PROTOCOL_VERSION,
+        artifact_schema_version=ARTIFACT_SCHEMA_VERSION,
         category=category,
+        query_kind=query_kind,
         target=target,
         status=status,
         probe=probe,
@@ -370,6 +447,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
     context_parser = sub.add_parser("context", help="Gather one category's structural-context evidence.")
     context_parser.add_argument("--category", required=True, choices=sorted(CATEGORY_QUERIES))
+    context_parser.add_argument(
+        "--query-kind",
+        default="standard",
+        choices=QUERY_KINDS,
+        help="Bound Codemap work: skip, one fact route, or the legacy standard category batch.",
+    )
     context_parser.add_argument("--target", default=None, help="Dotted module or module::symbol qname.")
     context_parser.add_argument("--root", type=Path, default=None)
     context_parser.add_argument("--out", type=Path, default=None, help="Also persist JSON to this run-artifact path.")
@@ -389,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
         target=arguments.target,
         root=arguments.root,
         timeout=arguments.timeout,
+        query_kind=arguments.query_kind,
     )
     _write_output(context.to_dict(), arguments.out)
     return 0

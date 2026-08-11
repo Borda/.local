@@ -71,6 +71,33 @@ _SYMBOL_TARGET_GRAMMAR_SNIPPETS = (
     "`symbol myclass.add_feature`",
     "not a nearby `symbol myclass` or `symbols <module>` listing",
 )
+_SYMBOL_TO_CALL_GRAPH_CHAINING_SNIPPETS = (
+    "qualified_name",
+    "<module>::<qualified_name>",
+    "mypackage.module::myclass.method",
+)
+_OVERRIDE_CANDIDATE_SNIPPETS = (
+    "find-symbol '<classsuffix>\\.<method>$' --exclude-tests --limit 0",
+    "same-name implementation/override candidates",
+    "name matching is candidate discovery only, not proof of inheritance",
+    "verify ancestry and package boundaries",
+)
+_LOCALIZED_EDIT_ROUTING_SNIPPETS = (
+    "exact file",
+    "symbol",
+    "localized",
+    "skip codemap",
+    "caller",
+    "dependency",
+    "blast radius",
+    "test impact",
+    "import",
+    "source slice",
+    "explicit structural",
+    "tool requirement",
+    "override",
+    "smallest complete query",
+)
 
 
 def _direct_caller_routing_violations(skill_text: str) -> list[str]:
@@ -248,6 +275,24 @@ def test_query_code_routes_centrality_and_transitive_blast_to_supported_commands
     assert all(snippet not in skill_text for snippet in _QUERY_CODE_FORBIDDEN_SNIPPETS)
 
 
+@pytest.mark.parametrize(
+    "contract_path",
+    (
+        _CLAUDE_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CODEX_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CAPABILITY_CONTRACT,
+    ),
+    ids=("claude", "codex", "shared-contract"),
+)
+def test_query_code_skips_fully_localized_edits_but_preserves_explicit_structural_routing(
+    contract_path: Path,
+) -> None:
+    """Avoid retrieval with no unresolved fact while preserving explicit and structural demand."""
+    skill_text = " ".join(contract_path.read_text(encoding="utf-8").lower().replace("-", " ").split())
+
+    assert all(snippet in skill_text for snippet in _LOCALIZED_EDIT_ROUTING_SNIPPETS)
+
+
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
 def test_query_code_routes_ambiguous_caller_requests_to_direct_production_callers(runtime_dir: Path) -> None:
     """Prevent `fn-blast` for direct caller requests phrased as a blast radius or every caller."""
@@ -298,3 +343,28 @@ def test_query_code_preserves_symbol_target_grammar_for_feature_scaffolding(runt
     skill_text = " ".join(skill_path.read_text(encoding="utf-8").lower().split())
 
     assert all(snippet in skill_text for snippet in _SYMBOL_TARGET_GRAMMAR_SNIPPETS)
+
+
+@pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
+def test_query_code_composes_symbol_results_for_function_call_queries(runtime_dir: Path) -> None:
+    """Prevent a bare method suffix from wasting a call-graph query before the canonical target is retried."""
+    skill_text = " ".join((runtime_dir / "query-code" / "SKILL.md").read_text(encoding="utf-8").lower().split())
+
+    assert all(snippet in skill_text for snippet in _SYMBOL_TO_CALL_GRAPH_CHAINING_SNIPPETS)
+
+
+@pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
+def test_query_code_qualifies_override_candidates_as_name_matches(runtime_dir: Path) -> None:
+    """Require complete same-name candidate discovery plus explicit inheritance verification."""
+    skill_text = " ".join((runtime_dir / "query-code" / "SKILL.md").read_text(encoding="utf-8").lower().split())
+
+    assert all(snippet in skill_text for snippet in _OVERRIDE_CANDIDATE_SNIPPETS)
+
+
+def test_readme_does_not_claim_fn_rdeps_returns_override_lists() -> None:
+    """Keep README call-graph semantics distinct from same-name override candidate discovery."""
+    readme_text = " ".join((_PLUGIN_ROOT / "README.md").read_text(encoding="utf-8").lower().split())
+
+    assert "fn-rdeps` reports incoming call edges" in readme_text
+    assert "complete override list in one call" not in readme_text
+    assert all(snippet in readme_text for snippet in _OVERRIDE_CANDIDATE_SNIPPETS)

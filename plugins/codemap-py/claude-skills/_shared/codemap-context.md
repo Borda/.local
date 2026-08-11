@@ -1,14 +1,14 @@
 <!-- file: codemap-context.md — consumers: develop/oss/foundry/research wrappers (plugins/cc_*/skills/_shared/codemap-context.md) reference this contract by installed-plugin cache path; provider→consumer wiring is the codemap-py.integration.v1 managed-block protocol -->
 
-# Codemap context contract — v2
+# Codemap context contract — v3
 
 Plugin-agnostic structural-context contract. Consumer plugins (develop, oss, any) reference this file — never copy it. Wrappers add only per-agent query maps + flag surfaces + plugin-local batch/cache paths; query mechanics, evidence-line contract, completeness/staleness semantics, batch pre-flight, effort tiers live here once.
 
-> Contract version `v2` is the context-contract doc version — bump it when the query set or evidence contract changes. The provider→consumer wiring itself uses the `codemap-py.integration.v1` managed-block protocol (see `shared/integration-contract.md`), independent of this doc version.
+> Contract version `v3` is the context-contract doc version — bump it when the query set or evidence contract changes. The provider→consumer wiring itself uses the `codemap-py.integration.v1` managed-block protocol (see `shared/integration-contract.md`), independent of this doc version.
 
 ## Target derivation — pluggable (consumer supplies)
 
-`TARGET_MODULE` (dotted) + `TARGET_FN` (bare name) are **consumer-supplied inputs** — contract doesn't derive them. Consumer wrapper/SKILL sets them from `$ARGUMENTS`, review diff, or finding before reading this file:
+`TARGET_MODULE` (dotted), `TARGET_FN` (bare name), and `CODEMAP_QUERY_KIND` are **consumer-supplied inputs** — contract doesn't derive them. Consumer wrapper/SKILL sets them from `$ARGUMENTS`, review diff, or finding before reading this file. `CODEMAP_QUERY_KIND=skip` is the executable zero-query route for a fully localized edit. The safe adaptive vocabulary is `skip`, `central`, `callers`, `blast`, `dependencies`, `test-impact`, `coupling`, and `standard`; an unset or unknown value preserves the legacy `standard` batch.
 
 - explicit `module.path` or `module.path::function` in args → split into `TARGET_MODULE` / `TARGET_FN`
 - module-only known → set `TARGET_MODULE`, leave `TARGET_FN` empty
@@ -22,6 +22,8 @@ Normalize file path to dotted module: strip leading `./` and `src/`, strip trail
 - `fn-rdeps <mod>::<fn> --exclude-tests` — direct callers of function; benchmarked 94k vs 1M+ tokens, +40pp accuracy; run first when symbol known.
 - `fn-blast <mod>::<fn>` — transitive caller impact (depth > 1).
 - `rdeps <mod>` — reverse module dependencies; run when only module (no function) known.
+- `test-impact <mod | mod::fn>` — transitive affected-test selection for a known changed target.
+- `coupled` — internal co-change coupling; does not take a target.
 - `symbol --with-imports <fn>` — read symbol's contract without re-reading file (all agents).
 
 > Consumer wrappers extend this map with per-agent dimensions (test gaps, doc gaps, mock coverage, etc.). Keep additions in wrapper — not here.
@@ -33,7 +35,8 @@ Reference bash for single-target run. Consumers may inline it or call plugin-loc
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+_CM_ROUTE="${CODEMAP_QUERY_KIND:-standard}"
+if [ "$_CM_ROUTE" != "skip" ] && command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     if [ "${SCAN_NO_AUTOBUILD:-0}" != "1" ]; then
         scan-index --incremental 2>/dev/null || true   # refresh SHA-changed files only; never full-build mid-task
     fi
@@ -49,11 +52,21 @@ if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
                case "$out" in *'"query_complete":false'*|*'"query_complete": false'*|*'"exhaustive":false'*|*'"exhaustive": false'*) _CM_NONEXH=1;; esac ;;
         esac
     }
-    _cq central --top 5
-    [ -n "$TARGET_FN" ]     && _cq fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests
-    [ -n "$TARGET_FN" ]     && _cq fn-blast "${TARGET_MODULE}::${TARGET_FN}"
-    [ -z "$TARGET_FN" ] && [ -n "$TARGET_MODULE" ] && _cq rdeps "$TARGET_MODULE"
-    [ -n "$TARGET_FN" ]     && _cq symbol --with-imports "$TARGET_FN"
+    case "$_CM_ROUTE" in
+        central) _cq central --top 5 ;;
+        callers) [ -n "$TARGET_MODULE" ] && [ -n "$TARGET_FN" ] && _cq fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests ;;
+        blast) [ -n "$TARGET_MODULE" ] && [ -n "$TARGET_FN" ] && _cq fn-blast "${TARGET_MODULE}::${TARGET_FN}" ;;
+        dependencies) [ -n "$TARGET_MODULE" ] && _cq rdeps "$TARGET_MODULE" ;;
+        test-impact) _CM_TARGET="${TARGET_QUALIFIED:-$TARGET_MODULE}"; [ -n "$_CM_TARGET" ] && _cq test-impact "$_CM_TARGET" ;;
+        coupling) _cq coupled ;;
+        *)
+            _cq central --top 5
+            [ -n "$TARGET_FN" ] && _cq fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests
+            [ -n "$TARGET_FN" ] && _cq fn-blast "${TARGET_MODULE}::${TARGET_FN}"
+            [ -z "$TARGET_FN" ] && [ -n "$TARGET_MODULE" ] && _cq rdeps "$TARGET_MODULE"
+            [ -n "$TARGET_FN" ] && _cq symbol --with-imports "$TARGET_FN"
+            ;;
+    esac
     _IDX_MTIME=$(date -r "${_IDX}/${PROJ}.json" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "?")
     if [ "$_CM_STALE" -eq 1 ]; then _CM_COMPL="stale"
     elif [ "$_CM_NONEXH" -eq 1 ]; then _CM_COMPL="partial"
@@ -105,7 +118,9 @@ When `method=index-lookup` + `confidence=exact`: result authoritative, skip veri
 
 Scale query set to task blast-radius; more queries cost more tokens.
 
-- **quick** (single-symbol edit, known target): `central --top 3` + `fn-rdeps`. Skip transitive walk.
+Set `CODEMAP_QUERY_KIND=skip` and skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, or coupling fact remains unresolved. An explicit structural query or tool requirement overrides this skip; otherwise set the kind for the smallest complete query.
+
+- **quick** (one unresolved structural fact): run only `central`, `callers`, `blast`, `dependencies`, `test-impact`, or `coupling` as matches that fact. Do not add centrality or a transitive walk by default.
 - **standard** (feature/fix touching one module): add `fn-blast` + `symbol --with-imports`; add wrapper's per-agent dimensions.
 - **deep** (multi-module / public-API change): run per-affected-module reverse-dependency batch (below), tier blast radius.
 

@@ -288,6 +288,147 @@ def test_gather_context_available_when_all_queries_clean(monkeypatch: pytest.Mon
     assert len(context.queries) == 3  # rdeps, coupled, test-impact
 
 
+def test_skip_route_persists_auditable_context_without_resolving_codemap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A localized edit records its skip decision without spawning Codemap work."""
+    adapter = load_adapter()
+
+    def unexpected_resolution() -> object:
+        raise AssertionError("skip must not resolve a Codemap launcher")
+
+    monkeypatch.setattr(adapter, "_resolve_codemap_executable", unexpected_resolution)
+
+    context = adapter.gather_structural_context("develop", target="pkg.mod::edit", query_kind="skip")
+
+    assert context.query_kind == "skip"
+    assert context.status == adapter.STATUS_SKIPPED
+    assert context.probe.status == adapter.STATUS_SKIPPED
+    assert context.queries == ()
+
+
+@pytest.mark.parametrize(
+    ("query_kind", "target", "expected_target", "expected_query"),
+    [
+        ("central", "pkg.mod::edit", "pkg.mod::edit", ["central", "--top", "5"]),
+        ("callers", "pkg.mod::edit", "pkg.mod::edit", ["fn-rdeps", "pkg.mod::edit", "--exclude-tests"]),
+        ("blast", "pkg.mod::edit", "pkg.mod::edit", ["fn-blast", "pkg.mod::edit"]),
+        ("dependencies", "pkg.mod::edit", "pkg.mod::edit", ["rdeps", "pkg.mod"]),
+        ("test-impact", "pkg.mod::edit", "pkg.mod::edit", ["test-impact", "pkg.mod::edit"]),
+        ("coupling", "pkg.mod::edit", "pkg.mod::edit", ["coupled"]),
+    ],
+)
+def test_fact_routes_run_doctor_and_exactly_one_compact_query(
+    monkeypatch: pytest.MonkeyPatch,
+    query_kind: str,
+    target: str,
+    expected_target: str | None,
+    expected_query: list[str],
+) -> None:
+    """Each explicit fact route bounds Codemap work to one doctor and one compact query."""
+    adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
+    )
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        commands.append(argv)
+        return (0, _HEALTHY_DOCTOR, None) if argv[1] == "doctor" else (0, _CLEAN_QUERY, None)
+
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("develop", target=target, query_kind=query_kind)
+
+    assert context.status == adapter.STATUS_AVAILABLE
+    assert context.query_kind == query_kind
+    assert context.target == expected_target
+    assert commands == [[launcher, "doctor", "--json"], [launcher, "query", "--compact", *expected_query]]
+    assert len(context.queries) == 1
+
+
+def test_fact_route_without_target_records_bounded_error_after_doctor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fact route with no target does not guess or execute a query subprocess."""
+    adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
+    )
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        commands.append(argv)
+        return 0, _HEALTHY_DOCTOR, None
+
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("develop", query_kind="callers")
+
+    assert context.status == adapter.STATUS_DEGRADED
+    assert commands == [[launcher, "doctor", "--json"]]
+    assert context.queries[0].error == "target required, none supplied"
+
+
+@pytest.mark.parametrize(
+    ("query_kind", "target"),
+    [
+        ("callers", None),
+        ("callers", "pkg.mod"),
+        ("callers", "pkg.mod::"),
+        ("callers", "pkg.mod::edit::nested"),
+        ("blast", None),
+        ("blast", "pkg.mod"),
+        ("blast", "::edit"),
+        ("dependencies", None),
+        ("dependencies", "pkg.mod::"),
+        ("dependencies", "pkg.mod::edit::nested"),
+        ("test-impact", None),
+        ("test-impact", "::edit"),
+    ],
+)
+def test_fact_routes_degrade_without_query_for_missing_or_malformed_target(
+    monkeypatch: pytest.MonkeyPatch, query_kind: str, target: str | None
+) -> None:
+    """Required compact facts never infer missing, incomplete, or module-only symbol targets."""
+    adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
+    )
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        commands.append(argv)
+        return 0, _HEALTHY_DOCTOR, None
+
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("develop", target=target, query_kind=query_kind)
+
+    assert context.status == adapter.STATUS_DEGRADED
+    assert context.target == target
+    assert commands == [[launcher, "doctor", "--json"]]
+    assert context.queries[0].error == "target required, none supplied"
+
+
+def test_invalid_query_kind_fails_before_launcher_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject invalid routes at the public API boundary before optional work starts."""
+    adapter = load_adapter()
+
+    def unexpected_resolution() -> object:
+        raise AssertionError("invalid query kind must fail before resolving Codemap")
+
+    monkeypatch.setattr(adapter, "_resolve_codemap_executable", unexpected_resolution)
+
+    with pytest.raises(ValueError, match="unknown query kind"):
+        adapter.gather_structural_context("develop", query_kind="not-a-route")
+
+
 def test_gather_context_degraded_when_not_covered_present(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Report `degraded` when a query returns non-exhaustive completeness metadata."""
     _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _DEGRADED_QUERY, 0))
@@ -359,8 +500,40 @@ def test_cli_context_persists_json_to_out_path(monkeypatch: pytest.MonkeyPatch, 
     assert stdout_payload == file_payload
     assert stdout_payload["status"] == "available"
     assert stdout_payload["protocol_version"] == "codemap-py.integration.v1"
+    assert stdout_payload["artifact_schema_version"] == 2
+    assert stdout_payload["query_kind"] == "standard"
     expected_launcher = str(tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
     assert os.path.normcase(stdout_payload["probe"]["launcher"]) == os.path.normcase(expected_launcher)
+
+
+def test_cli_skip_route_persists_without_codemap_on_path(tmp_path: Path) -> None:
+    """The public CLI records an explicit skip even when no Codemap launcher can resolve."""
+    out_path = tmp_path / "run" / "codemap-context.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ADAPTER_PATH),
+            "context",
+            "--category",
+            "develop",
+            "--query-kind",
+            "skip",
+            "--out",
+            str(out_path),
+        ],
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, PATH=str(tmp_path)),
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload == json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["query_kind"] == "skip"
+    assert payload["status"] == "skipped"
+    assert payload["probe"]["launcher"] is None
+    assert payload["queries"] == []
 
 
 def test_cli_probe_absent_exits_zero_and_reports_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

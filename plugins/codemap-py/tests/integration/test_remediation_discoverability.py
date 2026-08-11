@@ -40,7 +40,7 @@ def test_codex_query_skill_is_compact_required_and_oriented_to_the_smallest_comp
     assert len(skill_text.encode("utf-8")) <= 2500
     assert all(
         phrase in skill_text
-        for phrase in ("smallest complete query set", "query --compact", 'cat "$CODEMAP_SKILL_FILE"')
+        for phrase in ("smallest complete query set", "query --compact", "Run each compact query alone")
     )
     assert "make one query" not in skill_text
     assert "Maximum: three Codemap calls" not in skill_text

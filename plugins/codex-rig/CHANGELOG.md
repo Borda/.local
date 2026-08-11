@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- Add task-neutral adaptive Codemap routing to the shared structural-context adapter: localized edits can record a zero-query `skip`, one unresolved structural fact selects one compact query, and broad or unknown scope retains the legacy `standard` batch.
+- Persist `query_kind` and `artifact_schema_version: 2` while retaining the provider protocol `codemap-py.integration.v1`; add truthful `skipped` status and explicit target normalization rules.
+- Keep Codemap optional and persist each decision once so specialist passes consume one artifact without re-querying.
+
 ## 0.6.1
 
 - Ground the `kaggle` workflow through the authenticated Kaggle CLI: probe availability and credentials separately from rules acceptance, then read the real file listing, leaderboard range, and sample submission instead of a login-walled competition page.

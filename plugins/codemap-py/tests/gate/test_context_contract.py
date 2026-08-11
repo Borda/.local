@@ -15,6 +15,7 @@ a lone codemap install has no develop/oss tree next to it).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -32,6 +33,7 @@ _CACHE_PATTERN = "ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap-py/*/claud
 _SOURCE_FALLBACK = "plugins/codemap-py/claude-skills/_shared"
 
 _DEVELOP_CONTEXT = _PLUGINS_DIR / "cc_develop" / "skills" / "_shared" / "codemap-context.md"
+_DEVELOP_FIX = _PLUGINS_DIR / "cc_develop" / "skills" / "fix" / "SKILL.md"
 _DEVELOP_GATES = _PLUGINS_DIR / "cc_develop" / "skills" / "_shared" / "codemap-gates.md"
 _OSS_GATES = _PLUGINS_DIR / "cc_oss" / "skills" / "_shared" / "codemap-gates.md"
 
@@ -42,7 +44,7 @@ class TestContextContract:
     def test_has_version_header(self):
         """Contract header carries an explicit version string feeding the injection version check."""
         text = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
-        assert "# Codemap context contract — v2" in text
+        assert "# Codemap context contract — v3" in text
 
     def test_declares_cross_plugin_consumers(self):
         """Consumer header names the managed-block contract and wrapper consumers."""
@@ -79,6 +81,107 @@ class TestContextContract:
         assert "codemap_evidence:" in text
         for state in ("exhaustive", "partial", "stale", "unknown"):
             assert state in text
+
+    def test_routes_localized_edits_only_when_a_structural_fact_remains(self):
+        """A known local edit skips retrieval unless a fact or explicit requirement still needs it."""
+        text = " ".join(_CONTEXT_CONTRACT.read_text(encoding="utf-8").lower().replace("-", " ").split())
+
+        for phrase in ("exact file", "symbol", "localized", "skip codemap"):
+            assert phrase in text
+        for fact in ("caller", "dependency", "blast radius", "test impact"):
+            assert fact in text
+        for override in ("explicit structural", "tool requirement", "override"):
+            assert override in text
+        assert "smallest complete query" in text
+
+    def test_adaptive_routes_exclude_unscoped_symbol_lookup(self):
+        """Quick routes must not turn a module-qualified target into an ambiguous bare symbol query."""
+        text = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
+        derivation = text.split("## Target derivation", 1)[1].split("## Core query map", 1)[0]
+        batch = text.split('case "$_CM_ROUTE" in', 1)[1].split("    esac", 1)[0]
+        standard = batch.split("        *)", 1)[1]
+
+        for route in ("skip", "central", "callers", "blast", "dependencies", "test-impact", "coupling", "standard"):
+            assert f"`{route}`" in derivation
+        assert "`imports`" not in derivation
+        assert "`source`" not in derivation
+        assert "imports)" not in batch
+        assert "source)" not in batch
+        assert "symbol --with-imports" in standard
+
+    @pytest.mark.parametrize(
+        ("query_kind", "expected_queries"),
+        (
+            pytest.param("skip", [], id="localized-skip"),
+            pytest.param(
+                "callers",
+                ["--timeout 5 fn-rdeps package.module::target --exclude-tests"],
+                id="direct-callers",
+            ),
+            pytest.param(
+                "test-impact",
+                ["--timeout 5 test-impact package.module::target"],
+                id="targeted-test-impact",
+            ),
+            pytest.param(
+                "coupling",
+                ["--timeout 5 coupled"],
+                id="targetless-coupling",
+            ),
+            pytest.param(
+                "imports",
+                [
+                    "--timeout 5 central --top 5",
+                    "--timeout 5 fn-rdeps package.module::target --exclude-tests",
+                    "--timeout 5 fn-blast package.module::target",
+                    "--timeout 5 symbol --with-imports target",
+                ],
+                id="removed-symbol-route-falls-back-to-standard",
+            ),
+        ),
+    )
+    def test_batch_preflight_executes_only_the_selected_route(
+        self,
+        tmp_path: Path,
+        query_kind: str,
+        expected_queries: list[str],
+    ) -> None:
+        """The executable guard must skip retrieval or issue only the mapped compact query."""
+        contract = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
+        batch = contract.split("## Batch pre-flight pattern", 1)[1].split("```bash", 1)[1].split("```", 1)[0]
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        trace = tmp_path / "queries.txt"
+
+        scripts = {
+            "git": '#!/bin/sh\nprintf "%s\\n" "$FAKE_REPO"\n',
+            "scan-index": "#!/bin/sh\nexit 0\n",
+            "scan-query": (
+                '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TRACE"\nprintf \'%s\\n\' \'{"query_complete":true}\'\n'
+            ),
+        }
+        for name, body in scripts.items():
+            path = bin_dir / name
+            path.write_text(body, encoding="utf-8")
+            path.chmod(0o755)
+
+        index_dir = tmp_path / ".cache" / "codemap"
+        index_dir.mkdir(parents=True)
+        (index_dir / f"{tmp_path.name}.json").write_text("{}\n", encoding="utf-8")
+        env = os.environ | {
+            "CODEMAP_QUERY_KIND": query_kind,
+            "FAKE_REPO": str(tmp_path),
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "TARGET_FN": "target",
+            "TARGET_MODULE": "package.module",
+            "TARGET_QUALIFIED": "package.module::target",
+            "TRACE": str(trace),
+        }
+
+        subprocess.run(["bash", "-c", batch], cwd=tmp_path, env=env, check=True, capture_output=True, text=True)
+
+        queries = trace.read_text(encoding="utf-8").splitlines() if trace.exists() else []
+        assert queries == expected_queries
 
     def test_block_reference_target_matches_contract(self):
         """The managed block identifies the shipped integration contract."""
@@ -141,6 +244,20 @@ class TestDevelopWrapper:
         text = _DEVELOP_CONTEXT.read_text(encoding="utf-8")
         assert "Fallback when codemap plugin absent" in text
         assert "Never break load." in text
+
+    def test_fix_consumer_selects_the_shared_zero_or_task_fit_query_route(self) -> None:
+        """The production fix workflow must classify retrieval before loading the shared batch."""
+        wrapper = _DEVELOP_CONTEXT.read_text(encoding="utf-8")
+        fix = _DEVELOP_FIX.read_text(encoding="utf-8")
+
+        assert "CODEMAP_QUERY_KIND" in wrapper
+        assert "CODEMAP_QUERY_KIND=skip" in wrapper
+        for marker in ("CODEMAP_QUERY_KIND", "exact file/symbol", "explicit structural/tool request", '"standard"'):
+            assert marker in fix
+
+        route_guidance = fix.split("**Codemap route and target derivation**", 1)[1].split("```bash", 1)[0]
+        assert "`imports`" not in route_guidance
+        assert "`source`" not in route_guidance
 
     @pytest.mark.parametrize(
         "surface",

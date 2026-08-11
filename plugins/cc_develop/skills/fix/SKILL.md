@@ -217,11 +217,12 @@ else
 fi
 ```
 
-**Codemap target derivation** — set `TARGET_MODULE`/`TARGET_FN` before loading `codemap-context.md` so its caller-impact queries (`fn-rdeps`, `fn-blast`) fire instead of only `central` baseline. User may pass explicit suspect as `module.path::function`:
+**Codemap route and target derivation** — resolve `CODEMAP_QUERY_KIND` before loading `codemap-context.md`. Use `skip` when the request supplies the exact file/symbol for a localized edit and no caller, dependency, blast-radius, test-impact, or coupling fact remains unresolved. Use `callers`, `blast`, `dependencies`, `test-impact`, `coupling`, or `central` for one matching unresolved fact; use `standard` when the affected surface is not yet bounded or needs symbol/import context. An explicit structural/tool request overrides `skip`. User may pass an explicit suspect as `module.path::function`:
 
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+CODEMAP_QUERY_KIND=""  # REPLACE with the route decision above before running; empty fails safe to standard
 if [[ "$ARGUMENTS" == *"::"* ]]; then
     _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
     TARGET_MODULE="${_QNAME%%::*}"
@@ -232,7 +233,12 @@ else
     TARGET_FN=""                         # suspect unknown until Step 1 — auto-derive below
     TARGET_QUALIFIED=""
 fi
-export TARGET_MODULE TARGET_FN TARGET_QUALIFIED
+if [ -z "$CODEMAP_QUERY_KIND" ]; then
+    CODEMAP_QUERY_KIND="standard"
+    echo "! CODEMAP_QUERY_KIND unresolved — using standard structural context"
+fi
+export CODEMAP_QUERY_KIND TARGET_MODULE TARGET_FN TARGET_QUALIFIED
+echo "$CODEMAP_QUERY_KIND" > "${TMPDIR:-/tmp}/dev-fix-codemap-query-kind-${CSID}"
 echo "$TARGET_MODULE"    > "${TMPDIR:-/tmp}/dev-fix-target-module-${CSID}"
 echo "$TARGET_FN"        > "${TMPDIR:-/tmp}/dev-fix-target-fn-${CSID}"
 echo "$TARGET_QUALIFIED" > "${TMPDIR:-/tmp}/dev-fix-target-qualified-${CSID}"

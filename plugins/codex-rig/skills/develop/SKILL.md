@@ -48,11 +48,7 @@ Modes:
 
 Define narrowest reversible change, owners, acceptance. For 3+ steps/design tradeoffs, update plan before edit.
 
-**Structural context (optional)**: once a target module/symbol is scoped, also probe codemap-py once for callers,
-coupling, and test impact before implementation: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category
-develop --target <qname> --out <run-directory>/codemap-context.json`. Per `../../shared/codemap-contract.md`,
-absence/incompatibility is non-fatal — continue with the routing above. Persist the result once here, before step 05
-implementation; step 06 specialist fan-out consumes `<run-directory>/codemap-context.json`, never a fresh query.
+**Structural context (optional)**: select one task-neutral route at the decision point, then invoke the adapter once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category develop --query-kind <kind> [--target <qname>] --out <run-directory>/codemap-context.json`. Use `skip` for an exact localized edit with no unresolved structural fact, the matching single route (`central`, `callers`, `blast`, `dependencies`, `test-impact`, or `coupling`) for one unresolved fact, and `standard` for broad or unknown scope. Map direct, all, or production caller questions to `callers`; use `blast` only for explicitly transitive caller questions. An explicit user or tool request for structural evidence overrides `skip`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the routing above. Persist the result once here, before step 05 implementation; step 06 specialist fan-out consumes `<run-directory>/codemap-context.json`, never a fresh query.
 
 ### 04: Run the anti-rationalization gate before editing
 
