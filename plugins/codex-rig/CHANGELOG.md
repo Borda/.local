@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1
+
+- Ground the `kaggle` workflow through the authenticated Kaggle CLI: probe availability and credentials separately from rules acceptance, then read the real file listing, leaderboard range, and sample submission instead of a login-walled competition page.
+- Rank CLI evidence above the fetched page for file names, data schema, and submission format while the page stays authoritative for problem narrative and metric definition.
+- Offer installation and token setup instead of failing when the CLI is absent or unauthorized, and record degraded grounding as a residual limit.
+- Fail any run that downloads a full competition or dataset archive without first listing file sizes and asking.
+
 ## 0.6.0
 
 - Detect two consecutive work cycles with no material progress and require a ledger rather than subjective model-stall judgments.

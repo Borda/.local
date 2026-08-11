@@ -519,7 +519,7 @@ ______________________________________________________________________
 
 ### `/research:kaggle` — Kaggle competition notebook
 
-Generates Kaggle competition notebook as Jupytext `# %%` Python script (compatible with VS Code Jupyter, JupyterLab, `jupytext --to notebook`). Distills competition context from Kaggle API or URL, asks for missing facts via grounding protocol, generates structured notebook via `foundry:sw-engineer`. Tuned to win — leakage-safe CV, metric-aligned modeling — as much as to teach: small single-purpose cells, each carrying a why.
+Generates Kaggle competition notebook as Jupytext `# %%` Python script (compatible with VS Code Jupyter, JupyterLab, `jupytext --to notebook`). Distills competition context from the authenticated `kaggle` CLI or the competition URL, asks for missing facts via grounding protocol, generates structured notebook via `foundry:sw-engineer`. Tuned to win — leakage-safe CV, metric-aligned modeling — as much as to teach: small single-purpose cells, each carrying a why.
 
 **Invocation**:
 
@@ -553,7 +553,9 @@ Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + Dat
 - Commented-out hyperparameter alternatives for every tunable value
 - `del` + `gc.collect()` + `time.sleep(9)` for GPU memory management
 
-**Grounding protocol**: all competition-specific facts (input modality, eval metric, submission format) must come from fetched URL, user answer, or past notebook. Skill asks via `AskUserQuestion` for ungroundable required facts — never hallucinates competition details.
+**Kaggle CLI grounding**: competition pages are login-walled, so the skill probes for an authenticated `kaggle` CLI first (`kaggle competitions list -p 1` — needs credentials, not rules acceptance). When ready it reads the real file listing, leaderboard range, and `sample_submission.csv` header instead of guessing schema; CLI facts outrank the fetched page for file names, data schema, and submission format. CLI missing or unauthorized → the skill offers `pip install kaggle` and prints token setup steps (kaggle.com/settings → `~/.kaggle/kaggle.json`, `chmod 600`), never installs or authorizes unasked, and falls back to URL/user facts. Listing files needs no competition entry; rules acceptance gates downloads, and the CLI cannot accept rules — a `403` sends the user to the competition rules page. Downloads land in `.experiments/kaggle/data/<slug>/`; only `sample_submission.csv` and small metadata files are fetched automatically, the full archive is gated behind `AskUserQuestion` with sizes shown. Notebook path constants stay Kaggle-runtime paths regardless of local downloads.
+
+**Grounding protocol**: all competition-specific facts (input modality, eval metric, submission format) must come from the Kaggle CLI, fetched URL, user answer, or past notebook. Skill asks via `AskUserQuestion` for ungroundable required facts — never hallucinates competition details.
 
 **Bare-`#` heading-spacer check**: Step 4 verify mechanically greps the generated file for bare `#`/`##`/... lines used as spacers inside markdown cells (renders as an empty heading + oversized margin in Jupyter/Kaggle, not whitespace) and auto-fixes them to true blank lines — prose-only compliance with the style rule proved insufficient in practice.
 

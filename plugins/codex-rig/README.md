@@ -123,7 +123,7 @@ Codex Rig installs 14 skills: 13 work workflows plus the legacy shim manager.
 | `code-review`    | Review a local diff or GitHub PR across mandatory and risk-triggered specialist axes.                               |
 | `develop`        | Run the linear plan-build-verify implementation loop with measurable acceptance gates.                              |
 | `investigate`    | Debug code and narrow unknown failures to an evidence-backed root cause before implementation.                      |
-| `kaggle`         | Create or extend grounded Jupytext Kaggle notebooks across common ML modalities and stages.                         |
+| `kaggle`         | Create or extend grounded Jupytext Kaggle notebooks, grounding schema via the authenticated `kaggle` CLI.           |
 | `manage`         | Safely create, update, or remove Codex skills, agent configuration, and related references.                         |
 | `optimize`       | Measure first, change one bounded variable, remeasure, and reject regressions.                                      |
 | `release`        | Assess SemVer, changelog, migration, packaging, and release readiness.                                              |

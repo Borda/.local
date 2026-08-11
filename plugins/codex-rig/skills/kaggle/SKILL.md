@@ -1,6 +1,6 @@
 ---
 name: kaggle
-description: "Build/extend grounded Kaggle Jupytext notebooks for training, EDA, inference, or resume workflows."
+description: "Build/extend grounded Kaggle Jupytext notebooks for training, EDA, inference, or resume workflows, grounding schema and submission format through the authenticated kaggle CLI."
 ---
 
 # Kaggle
@@ -38,10 +38,30 @@ Create `.reports/codex/kaggle/<timestamp>/` and keep the active plan current. Re
 
 ### 02: Gather evidence before choosing an approach
 
+Prefer the authenticated `kaggle` CLI over the competition page for anything the CLI can read. Competition pages are login-walled and often return partial content; the CLI reads real file names, sizes, and the actual sample submission.
+
+**CLI probe.** `command -v kaggle`, then `kaggle competitions list -p 1` — succeeds only with valid credentials, and needs no rules acceptance, so it separates an auth failure from a rules failure. Record the resulting state in `profile.md` as `ready`, `unauthorized`, or `absent`. Absence is never fatal: fall back to the page and user-supplied facts, and record the degraded grounding as a residual limit.
+
+- `absent` — offer `pip install kaggle` and ask before installing.
+- `unauthorized` — instruct the user to create a token at `https://www.kaggle.com/settings` (API → Create New Token), place it at `~/.kaggle/kaggle.json` with `chmod 600`, or export `KAGGLE_USERNAME`/`KAGGLE_KEY`. Never fabricate or request a pasted token.
+
+**Credential secrecy — hard constraint.** The token value never enters this run's context, any artifact, or any delegated agent's prompt. Forbidden regardless of who asks: reading `~/.kaggle/kaggle.json` by any tool, `cat`/`head`/`grep`/`jq` on it, `kaggle config view`, `env | grep KAGGLE`, echoing `$KAGGLE_KEY`/`$KAGGLE_API_TOKEN`, quoting a pasted token back, or writing any of it into a notebook cell, `profile.md`, gate log, or result artifact. The `kaggle` binary reads credentials from the environment on its own — the workflow needs the CLI to work, never the secret's value. Verify auth by exit code alone (`kaggle competitions list -p 1 >/dev/null 2>&1`), never by inspecting the file. A token pasted into chat is compromised: do not repeat it, and tell the user to rotate it.
+
+**CLI queries.** Competition slug is positional; `-v` means CSV output, not verbose. Read `kaggle competitions --help` or `kaggle datasets --help` for anything beyond these — the flag surface shifts between CLI releases, so never invent one.
+
+- `kaggle competitions files <slug> -v --page-size 200` — file names and sizes.
+- `kaggle competitions leaderboard <slug> -s -v` — achievable score range for the metric.
+- `kaggle competitions download <slug> -f sample_submission.csv -p .experiments/kaggle/data/<slug>/ -q` — the real submission header. Single-file downloads may arrive zipped; unzip before reading.
+- `kaggle datasets list -s "<term>" -v` / `kaggle datasets files <owner>/<name> -v` / `kaggle datasets download <owner>/<name> --unzip` — only when the competition permits external data.
+
+File listing works without joining the competition; rules acceptance gates downloads. On a `403` or any "accept the rules" error, direct the user to `https://www.kaggle.com/competitions/<slug>/rules` — the CLI cannot accept them — and treat the affected facts as ungrounded until confirmed. A `404` instead means a malformed slug: `kaggle competitions list -v` returns full URLs in `ref`, so pass only the last path segment, and verify with `kaggle competitions list -s "<term>" -v`.
+
+Never download the full competition archive unprompted — list files with sizes first and ask. Local downloads do not change notebook path constants; `PATH_DATASET` stays the Kaggle-runtime path unless the user states the notebook runs locally.
+
 Inspect in parallel where available:
 
 - `.temp/kaggle-style-distill.md` for local notebook style.
-- The requested competition page. Browse the exact page when a URL is supplied; quote only short supporting text and record access failures.
+- The requested competition page for problem narrative and metric definition — the parts the CLI does not expose. Browse the exact page when a URL is supplied; quote only short supporting text and record access failures.
 - The resume file and `.experiments/kaggle/*.py` for established local structure.
 - `resources/competitors/**/*.{ipynb,py}` for comparable preprocessing, model, augmentation, and submission patterns.
 - Local data dictionaries, sample submission files, schemas, and directory listings supplied by the user.
@@ -56,6 +76,8 @@ Write a source-backed table in `profile.md`:
 | evaluation metric and direction | — | — |
 | data schema and paths | — | — |
 | submission schema | — | — |
+
+Cite `kaggle competitions files`, `kaggle competitions download`, or `kaggle datasets files` by name as the source when the CLI supplied a row. CLI evidence outranks the fetched page for file names, data schema, and submission format; the page stays authoritative for problem narrative and metric definition.
 
 Never invent competition-specific columns, paths, labels, metrics, or submission formats. Ask for missing input modality, metric, and submission format before generation. If the user elects to continue without them, use conspicuous placeholders and list every placeholder as an unresolved limit.
 
@@ -116,12 +138,13 @@ Follow `../../shared/helper-cli-contract.md` and inspect helper `--help` before 
 1. Missing or unsafe competition slug => fail before writing.
 2. Conflicting modes or missing resume path => fail before writing.
 3. Unknown input modality, metric, or submission format without explicit placeholder approval => stop and ask.
-4. Competition-specific claim without a cited user, local, or fetched source => fail the grounding gate.
+4. Competition-specific claim without a cited user, local, fetched, or `kaggle` CLI source => fail the grounding gate.
 5. Referenced composition, section contract, or style file missing or unreadable => fail before generation.
 6. Generated output missing required sections, containing forbidden sections, or failing cell-marker checks => fail.
 7. Claimed runtime success without executed evidence => fail review.
 8. Missing `profile.md`, gate evidence, or validated result artifact => fail.
-9. A required main-path notebook action (data load, sample display, chart, lens, training, inference, or submission validation) guarded by `try`/`except`, `if`/`else`, or a silent skip => fail. Assert its preconditions immediately before the action and let unexpected errors stop the notebook.
+9. Full competition or dataset archive downloaded without listing file sizes and asking first => fail.
+10. A required main-path notebook action (data load, sample display, chart, lens, training, inference, or submission validation) guarded by `try`/`except`, `if`/`else`, or a silent skip => fail. Assert its preconditions immediately before the action and let unexpected errors stop the notebook.
 
 ## Quality Gates
 

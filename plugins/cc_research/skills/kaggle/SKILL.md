@@ -1,6 +1,6 @@
 ---
 name: kaggle
-description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following the user's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells, small single-purpose cells each carrying a why. Tuned to win (leakage-safe CV, metric-aligned modeling) as much as to teach. Writes output to .experiments/kaggle/<name>.py. Requires foundry plugin (foundry:sw-engineer, no fallback)."
+description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following the user's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells, small single-purpose cells each carrying a why. Grounds data schema and submission format through the authenticated `kaggle` CLI (file listing, sample submission, leaderboard) rather than the login-walled competition page. Tuned to win (leakage-safe CV, metric-aligned modeling) as much as to teach. Writes output to .experiments/kaggle/<name>.py. Requires foundry plugin (foundry:sw-engineer, no fallback)."
 argument-hint: "<competition-name> [<url-or-description>] [--type classification|regression|segmentation|detection|tabular] [--eda-only] [--inference-only] [--offline-setup] [--resume <existing.py>] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, WebSearch, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 disable-model-invocation: true
@@ -52,6 +52,7 @@ Output: `.experiments/kaggle/<competition-name>.py`
 
 ```yaml
 OUTPUT_DIR:       .experiments/kaggle/
+DATA_DIR:         .experiments/kaggle/data/<competition>/  # kaggle CLI downloads land here, gitignored
 CELL_MARK:        "# %%"
 MD_CELL_MARK:     "# %% [markdown]"
 COMPETITORS_DIR:  resources/competitors/  # optional user-project path, not shipped in plugin — Step 1 reads if present
@@ -124,10 +125,81 @@ echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/kaggle-keep-items-${CSID}"  # persist 
 2. `--resume`: read existing script (`Read` tool)
 3. Scan `.experiments/kaggle/` (`Glob` pattern `*.py`) for prior scripts; read first 30 lines of each — find similar past competitions, use as structural reference
 4. Check `resources/competitors/` for `.ipynb`/`.py` files — found: read each, summarise approach (model choice, preprocessing, feature engineering, augmentation). Use findings to inform detection method and domain-specific preprocessing decisions in Step 2.
+5. **Kaggle CLI probe** (below) — authoritative source for file listing, data schema, submission format. CLI complements WebFetch, never replaces it: CLI gives files/schema/leaderboard, page gives problem narrative and metric prose.
+
+### Kaggle CLI grounding
+
+Competition pages are login-walled; `WebFetch` returns partial or blocked content on many of them. Anyone requesting a competition notebook has a Kaggle account, so the CLI is the reliable path — real file names, sizes, actual `sample_submission.csv` header, no guessed schema.
+
+Probe availability and auth in one block. CLI absence never aborts the skill — degrade to WebFetch/user facts:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r COMPETITION_NAME < "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || COMPETITION_NAME=""
+KAGGLE_CLI="absent"
+if command -v kaggle >/dev/null 2>&1; then
+    # `competitions list` needs credentials but no rules acceptance — separates auth failure from rules failure
+    if kaggle competitions list -p 1 >/dev/null 2>&1; then KAGGLE_CLI="ready"; else KAGGLE_CLI="unauthorized"; fi
+fi
+echo "$KAGGLE_CLI" > "${TMPDIR:-/tmp}/kaggle-cli-state-${CSID}"
+echo "kaggle CLI: $KAGGLE_CLI · slug: ${COMPETITION_NAME:-<unset>}"  # timeout: 30000
+```
+
+Branch on `$KAGGLE_CLI`:
+
+| State | Action |
+| --- | --- |
+| `ready` | Run the grounding queries below |
+| `absent` | Offer install — `AskUserQuestion`: (a) skip, ground from URL/user facts · (b) `pip install kaggle` then re-probe. Never install without asking |
+| `unauthorized` | Print the credential instructions below, `AskUserQuestion`: (a) skip · (b) user sets up token, then re-probe |
+
+**Credential secrecy — hard constraint.** The token never enters this session's context, and never a subagent's or Codex's. Forbidden regardless of who asks or why: reading `~/.kaggle/kaggle.json` (any tool), `cat`/`head`/`grep`/`jq` on it, `kaggle config view`, `env | grep KAGGLE`, echoing `$KAGGLE_KEY`/`$KAGGLE_API_TOKEN`, quoting a pasted token back, or writing any of it into a notebook cell, log, run artifact, or spawn prompt. Credentials are consumed by the `kaggle` binary from the environment — the skill needs the CLI to work, never the secret's value. Verify auth only by exit code (`kaggle competitions list -p 1 >/dev/null 2>&1`), never by inspecting the file. If a user pastes a token into chat, do not repeat it and tell them to rotate it at kaggle.com/settings. `.claude/settings.json` deny-lists the common read paths, but the deny list is a backstop, not the rule — no alternate command form is permitted either.
+
+**Credential instructions** (print verbatim; the user does this, the skill never fabricates, reads, or echoes a token):
+
+> 1. Open <https://www.kaggle.com/settings> → **API** → **Create New Token** — downloads `kaggle.json`.
+> 2. `mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/ && chmod 600 ~/.kaggle/kaggle.json`
+> 3. Env-var alternative: `export KAGGLE_USERNAME=<user> KAGGLE_KEY=<key>` (newer CLI builds also accept `KAGGLE_API_TOKEN`; `kaggle --version` tells which build is installed).
+
+**Grounding queries** — read-only, cheap, run when `ready`. Competition slug is positional; `-v` is CSV output, not verbose. Anything beyond the commands below: read `kaggle competitions --help` / `kaggle datasets --help` rather than guessing flags — the surface shifts between CLI releases.
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r COMPETITION_NAME < "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || COMPETITION_NAME=""
+KAGGLE_SLUG="${KAGGLE_SLUG:-$COMPETITION_NAME}"   # override when notebook slug differs from competition slug
+echo "=== files ==="; kaggle competitions files "$KAGGLE_SLUG" -v --page-size 200
+echo "=== leaderboard head ==="; kaggle competitions leaderboard "$KAGGLE_SLUG" -s -v 2>/dev/null | head -10  # timeout: 60000
+```
+
+File listing works without joining the competition (verified against a competition with `userHasEntered=False`); rules acceptance gates **downloads**. A `403` or any "accept the rules" error means the user must open `https://www.kaggle.com/competitions/<slug>/rules` and click **I Understand and Accept** — the CLI cannot accept them. Treat the affected facts as ungrounded until they confirm.
+
+A `404` here almost always means a malformed slug, not a missing competition: `kaggle competitions list -v` returns full URLs in the `ref` column, so take the last path segment (`arc-prize-2026-arc-agi-2`, never `https://www.kaggle.com/competitions/...`). Confirm with `kaggle competitions list -s "<search term>" -v`.
+
+**Grounding download** — sample submission and any small metadata file only. Size threshold: `sample_submission.csv` plus files under ~10 MB from the listing:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r COMPETITION_NAME < "${TMPDIR:-/tmp}/kaggle-competition-name-${CSID}" 2>/dev/null || COMPETITION_NAME=""
+KAGGLE_SLUG="${KAGGLE_SLUG:-$COMPETITION_NAME}"
+KAGGLE_DATA=".experiments/kaggle/data/${COMPETITION_NAME}"
+mkdir -p "$KAGGLE_DATA"
+kaggle competitions download "$KAGGLE_SLUG" -f sample_submission.csv -p "$KAGGLE_DATA" -q  # timeout: 120000
+head -3 "$KAGGLE_DATA"/sample_submission.csv 2>/dev/null || echo "no sample_submission.csv in this competition"
+```
+
+Single-file downloads may arrive zipped — unzip into `$KAGGLE_DATA` before reading the header.
+
+**Full-data gate** — never pull the whole archive unprompted; competition data reaches hundreds of GB and the user may want only the notebook. Show the listing with sizes, then `AskUserQuestion`: (a) skip — notebook targets Kaggle-runtime paths (`/kaggle/input/<slug>/`) · (b) download all (state total size from the listing in the option description). On (b): `kaggle competitions download "$KAGGLE_SLUG" -p "$KAGGLE_DATA"`; `-f <name>` fetches one large file instead.
+
+Data downloaded locally does not change the notebook's path constants: `PATH_DATASET` stays the Kaggle-runtime path unless the user says the notebook runs locally.
+
+**Related-dataset lookup** (optional, when the competition allows external data): `kaggle datasets list -s "<term>" -v`, then `kaggle datasets files <owner>/<name> -v` and `kaggle datasets download <owner>/<name> -p "$KAGGLE_DATA" --unzip`. Same gate applies — list before downloading.
 
 **Grounding protocol — mandatory before Step 2:**
 
-Build fact table. Each fact needs source: `[fetched]`, `[user]`, `[past-notebook:<file>]`, or `[inferred-from:<fact>]`. Never mark fact `[inferred]` without citing prior fact it derives from.
+Build fact table. Each fact needs source: `[kaggle-cli:<command>]`, `[fetched]`, `[user]`, `[past-notebook:<file>]`, or `[inferred-from:<fact>]`. Never mark fact `[inferred]` without citing prior fact it derives from.
+
+`[kaggle-cli:*]` outranks `[fetched]` for file names, data schema, and submission format — the CLI reads the real artifact, the page describes it. Keep `[fetched]` for problem narrative and metric definition.
 
 | Fact | Value | Source |
 | --- | --- | --- |
@@ -144,6 +216,8 @@ After building fact table, count facts still marked `?` or `[inferred]` without 
 - `input_modality` — cannot generate Dataset class
 - `eval_metric` — cannot choose torchmetric
 - `submission format` — cannot generate Submission section
+
+When the CLI is `ready`, resolve `data schema`, `submission format`, and often `input_modality` from the file listing and the downloaded `sample_submission.csv` header before asking anything — questions are for what the CLI cannot answer.
 
 Invoke `AskUserQuestion` with up to 4 questions covering all unknown required facts. Never guess or hallucinate competition-specific details (column names, file paths, data schema). State "unknown — will use placeholder" if user skips.
 
