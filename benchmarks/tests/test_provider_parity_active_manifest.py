@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from benchmarks import provider_parity_contracts as core
+from benchmarks._bench_common import provider_parity_contracts as core
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -156,16 +156,23 @@ def test_authored_benchmark_files_use_complete_experiment_revision_names() -> No
 
 
 def test_codex_manifest_uses_generic_task_selection_contract() -> None:
-    """Codex selection is task/family based rather than diagnostic-mode based."""
+    """Codex selection is task/family based with stage-native execution metadata."""
     manifest = _load(CODEX_MANIFEST)
     selection = manifest["task_selection"]
 
     assert selection["selector_option"] == "--tasks"
     assert selection["separator"] == ","
-    assert selection["study_mode"] == "selected_tasks"
+    assert selection["stage_order"] == ["structural", "readcrop", "fix-single", "fix-multi"]
+    assert selection["default_total_cells"] == 204
+    assert len(selection["allowed_task_ids"]) == 68
+    assert "study_mode" not in selection
+    assert "repetitions" not in selection
+    assert "arms" not in selection
     assert selection["nonpoolable"] is True
     assert selection["resolution_policy"]["exact_id_first"] is True
     assert selection["resolution_policy"]["deduplicate"].startswith("selector tokens")
+    assert selection["aggregate_execution_scope"]["approval_option"] == "--paid-approval"
+    assert selection["aggregate_execution_scope"]["dry_run_marker"] == "SCOPE"
     assert "post_fix_diagnostic" not in manifest
 
 
@@ -435,12 +442,12 @@ def test_methodology_manifest_locks_luna_high_and_exact_implementation_identitie
         "strict_config": True,
     }
     assert implementation["artifact_sha256"] == {
-        "agentic_contracts": _sha256(BENCHMARKS / "agentic_contracts.py"),
+        "agentic_contracts": _sha256(BENCHMARKS / "_bench_common" / "agentic_contracts.py"),
         "claude_query_skill": _sha256(ROOT / "plugins/codemap-py/claude-skills/query-code/SKILL.md"),
         "codemap_graph": _sha256(ROOT / "plugins/codemap-py/src/codemap_py/graph.py"),
         "codemap_query": _sha256(ROOT / "plugins/codemap-py/src/codemap_py/query.py"),
         "codex_query_skill": _sha256(ROOT / "plugins/codemap-py/codex-skills/query-code/SKILL.md"),
-        "provider_parity_contracts": _sha256(BENCHMARKS / "provider_parity_contracts.py"),
+        "provider_parity_contracts": _sha256(BENCHMARKS / "_bench_common" / "provider_parity_contracts.py"),
         "run_all": _sha256(BENCHMARKS / "run-all.sh"),
         "run_claude_agentic": _sha256(BENCHMARKS / "run-claude-agentic.py"),
         "run_claude_structural": _sha256(BENCHMARKS / "run-claude-structural.py"),

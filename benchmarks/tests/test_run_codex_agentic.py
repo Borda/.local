@@ -212,7 +212,9 @@ def test_agentic_output_legend_uses_shared_renderer_contract(agentic: Any) -> No
     assert legend.startswith("LEGEND\n")
     assert legend.endswith("END LEGEND")
     assert legend.count("LEGEND") == 2
-    assert "treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=Codemap Skill read" in legend
+    assert (
+        "treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=installed Codemap Skill" in legend
+    )
     assert "SCORE: mean semantic answer-component score" in legend
     assert (
         "SCORE: mean semantic answer-component score; n/a when no answer can be recovered (higher is better)" in legend
@@ -308,27 +310,15 @@ def test_auto_no_call_is_valid(task_and_truth: tuple[Any, Any], agentic: Any) ->
     assert result.treatment_adherence is True
 
 
-def test_required_skill_read_precedes_compact_query(
+def test_required_installed_skill_binding_accepts_compact_query_without_manual_read(
     task_and_truth: tuple[Any, Any], agentic: Any, tmp_path: Path
 ) -> None:
-    """C_strict credits only an exact installed Skill read before a compact query."""
+    """C_strict credits a compact query through its immutable installed-Skill treatment."""
     task, truth = task_and_truth
     skill_path = tmp_path / "SKILL.md"
     skill_path.write_text("# locked Codemap skill\n", encoding="utf-8")
-    skill_read = {
-        "type": "item.completed",
-        "item": {
-            "id": "skill",
-            "type": "command_execution",
-            "command": 'cat "$CODEMAP_SKILL_FILE"',
-            "status": "completed",
-            "exit_code": 0,
-            "aggregated_output": skill_path.read_bytes().decode("utf-8"),
-        },
-    }
     result = agentic.parse_agentic_stream(
         _stream(
-            skill_read,
             _query(),
             _message(_labelled("lightning.pytorch.trainer.trainer and lightning.pytorch.loops.fit_loop.", truth)),
             _completed(),

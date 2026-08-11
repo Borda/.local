@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from benchmarks import provider_parity_contracts as core
+from benchmarks._bench_common import provider_parity_contracts as core
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
@@ -485,7 +485,7 @@ def test_codex_result_block_presents_persisted_arms_in_fixed_order(
 ) -> None:
     """Human output stays task-first/A-B-C even when raw execution is randomized."""
     printed: list[tuple[str, str]] = []
-    monkeypatch.setattr(script_run_codex, "_print_arm_row", lambda row, arm: printed.append((arm, row)))
+    monkeypatch.setattr(script_run_codex.runtime, "print_arm_row", lambda row, arm: printed.append((arm, row)))
 
     next_progress = script_run_codex._print_result_block(
         (("C_skill_required", "C row"), ("A_plain", "A row"), ("B_direct_required", "B row")),

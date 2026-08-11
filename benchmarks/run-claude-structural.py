@@ -69,23 +69,16 @@ import fire
 import pandas as pd
 from rich.console import Console as _Console
 
-# benchmarks/ is not a package; make the sibling _utilities module importable
+# benchmarks/ is not a package; make its private shared package importable
 # regardless of how this script is launched (direct path, symlink, or any cwd).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _utilities import (  # noqa: E402
-    MODELS,
-    RESULTS_DIR,
-    codemap_bin_on_path,
-    resolve_index_path,
-)
-from _utilities import MODEL_TIMEOUT  # noqa: E402
-from _utilities import TASKS_BENCH_FILE as TASKS_FILE  # noqa: E402
-from _utilities import fmt_time, fmt_tok  # noqa: E402
-from _utilities import gt_is_pending  # noqa: E402
-from _utilities import make_progress, parse_result_usage, stream_claude  # noqa: E402
-from mutation_isolation import IsolatedMutationCell, MutationCleanupError  # noqa: E402
-from provider_parity_contracts import (  # noqa: E402
+from _bench_common.benchmark_paths import RESULTS_DIR, TASKS_BENCH_FILE as TASKS_FILE, gt_is_pending  # noqa: E402
+from _bench_common.claude_transport import MODEL_TIMEOUT, MODELS, parse_result_usage, stream_claude  # noqa: E402
+from _bench_common.codemap_discovery import codemap_bin_on_path, resolve_index_path  # noqa: E402
+from _bench_common.presentation import fmt_time, fmt_tok, make_progress  # noqa: E402
+from _bench_common.mutation_isolation import IsolatedMutationCell, MutationCleanupError  # noqa: E402
+from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
     EvaluatorRegistry,
@@ -113,7 +106,7 @@ _console = _Console()
 # Constants
 # ---------------------------------------------------------------------------
 
-# TASKS_FILE, RESULTS_DIR now come from _utilities (shared across runners).
+# TASKS_FILE and RESULTS_DIR come from benchmark_paths (shared across runners).
 PATCH_TASKS_FILE = Path(__file__).parent / "suites" / "tasks-patch.json"
 
 # Synthetic task type assigned to tasks loaded via --tasks-file that carry a `skill`
@@ -151,7 +144,7 @@ _SELF_CONSISTENCY_KEY = "self_consistency"
 # the fingerprint stays cheap to compute without loading the whole (large) index body.
 _INDEX_META_KEYS = ("scan_version", "scanned_at", "git_sha", "project", "scan_root")
 
-# MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-claude-agentic).
+# MODELS and MODEL_TIMEOUT come from claude_transport (shared with run-claude-agentic).
 
 # Tiered protocol (release companion). Each tier runs a progressively smaller task set:
 #   haiku  → full suite         sonnet → dev-tagged subset        opus → disagreement adjudication
@@ -543,7 +536,7 @@ def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: s
 def _resolve_index(repo_path: Path, explicit: Path | None = None) -> Path:
     """Resolve the codemap index path (raises on miss; validates an explicit path).
 
-    Thin adapter over :func:`_utilities.resolve_index_path`: ``-master``/``-main`` stems,
+    Thin adapter over :func:`_bench_common.codemap_discovery.resolve_index_path`: ``-master``/``-main`` stems,
     ``.cache/codemap/`` before ``.cache/scan/``, resolved paths, ``FileNotFoundError`` on a
     miss, and an explicit path must be an existing file.
 
@@ -1068,7 +1061,7 @@ class TaskSelection:
     model: str
 
 
-# gt_is_pending now imported from _utilities (shared with generate-tasks-bench).
+# gt_is_pending comes from benchmark_paths (shared with generate-tasks-bench).
 
 
 def _base_task_list(sel: TaskSelection) -> Optional[list[dict]]:

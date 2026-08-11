@@ -16,10 +16,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-try:
-    from provider_parity_contracts import materialize_task_prompt
-except ModuleNotFoundError:
-    from benchmarks.provider_parity_contracts import materialize_task_prompt
+from .provider_parity_contracts import materialize_task_prompt
 
 
 AGENTIC_ARMS = ("A_plain", "B_auto", "C_strict")

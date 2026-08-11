@@ -24,7 +24,7 @@ BENCHMARKS = ROOT / "benchmarks"
 OUTPUT_MANIFEST = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 POLICY_SEED = BENCHMARKS / "policy" / "provider-parity-methodology.json"
 POLICY_SEED_SHA256 = "1e5b1cad389513db9402ca2da39f58c1ff9b7cb36b0fdc4a23ce03886e12f1f1"
-EXPERIMENT_REVISION = "provider-parity-skill-imports-guidance-2026-08-09"
+EXPERIMENT_REVISION = "provider-parity-agent-worktree-executable-2026-08-10"
 TASKS_BENCH = "benchmarks/suites/tasks-bench.json"
 TASKS_AGENTIC = "benchmarks/suites/tasks-agentic.json"
 CANONICAL_TARGET = (Path(os.sep) / "tmp" / "codemap-provider-parity-pl-2.6.5").resolve()
@@ -76,13 +76,13 @@ SUITE_METADATA: dict[str, dict[str, str]] = {
         "root_shape": "bare_list",
     },
     "benchmarks/suites/tasks-fix-multi.json": {
-        "current_consumer": "optional input to run-claude-agentic.py",
-        "generation_provenance": "committed_static_prompts_keyword_file_oracle",
+        "current_consumer": "run-codex-structural.py --study fix-multi; optional input to run-claude-agentic.py",
+        "generation_provenance": "committed_static_prompts_external_complete_caller_oracle",
         "root_shape": "bare_list",
     },
     "benchmarks/suites/tasks-fix-single.json": {
-        "current_consumer": "optional input to run-claude-agentic.py",
-        "generation_provenance": "committed_static_prompts_keyword_file_oracle",
+        "current_consumer": "run-codex-structural.py --study fix-single; optional input to run-claude-agentic.py",
+        "generation_provenance": "committed_static_prompts_external_executable_oracle",
         "root_shape": "bare_list",
     },
     "benchmarks/suites/tasks-patch.json": {
@@ -91,15 +91,15 @@ SUITE_METADATA: dict[str, dict[str, str]] = {
         "root_shape": "object_with_tasks",
     },
     "benchmarks/suites/tasks-readcrop.json": {
-        "current_consumer": "optional input to run-claude-agentic.py",
-        "generation_provenance": "committed_static_prompts_keyword_oracle",
+        "current_consumer": "run-codex-structural.py --study readcrop; optional input to run-claude-agentic.py",
+        "generation_provenance": "committed_static_prompts_source_validated_answer_contract",
         "root_shape": "bare_list",
     },
 }
 STATIC_REFERENCE_TYPES = frozenset({"symbol_extraction", "real_issue"})
 
 sys.path.insert(0, str(BENCHMARKS))
-import provider_parity_contracts as core  # noqa: E402
+import _bench_common.provider_parity_contracts as core  # noqa: E402
 
 
 def _sha256(path: Path) -> str:
@@ -240,12 +240,12 @@ def _build_suites(policy: Mapping[str, Any]) -> list[dict[str, Any]]:
 def _artifact_hashes() -> dict[str, str]:
     """Lock shared provider-neutral implementation bytes used by both runners."""
     paths = {
-        "agentic_contracts": "benchmarks/agentic_contracts.py",
+        "agentic_contracts": "benchmarks/_bench_common/agentic_contracts.py",
         "claude_query_skill": "plugins/codemap-py/claude-skills/query-code/SKILL.md",
         "codemap_graph": "plugins/codemap-py/src/codemap_py/graph.py",
         "codemap_query": "plugins/codemap-py/src/codemap_py/query.py",
         "codex_query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
-        "provider_parity_contracts": "benchmarks/provider_parity_contracts.py",
+        "provider_parity_contracts": "benchmarks/_bench_common/provider_parity_contracts.py",
         "run_all": "benchmarks/run-all.sh",
         "run_claude_agentic": "benchmarks/run-claude-agentic.py",
         "run_claude_structural": "benchmarks/run-claude-structural.py",

@@ -246,16 +246,16 @@ class TestImportGraphPrimitives:
         assert script_gen_bench._module_imports(ast.parse(source)) == expected
 
     def test_module_imports_not_interchangeable_with_shared_helper(
-        self, script_gen_bench: Any, script_utilities: Any
+        self, script_gen_bench: Any, script_python_source: Any
     ) -> None:
         """Guard: the shared helper resolves relatives and so DROPS multi-dot targets the oracle keeps.
 
-        Pins why _module_imports cannot be replaced by _utilities.extract_import_targets — swapping
+        Pins why _module_imports cannot be replaced by python_source.extract_import_targets — swapping
         would silently diverge the AST oracle from scan-index on any multi-dot relative import.
         """
         tree = ast.parse("from ..pkg import x\n")
         assert script_gen_bench._module_imports(tree) == {"pkg"}
-        shared = script_utilities.extract_import_targets(tree, package="", credit_submodules=False)
+        shared = script_python_source.extract_import_targets(tree, package="", credit_submodules=False)
         assert shared == set()
         assert script_gen_bench._module_imports(tree) != shared
 

@@ -29,7 +29,7 @@
     ],
     "id": "FM-02",
     "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
-    "prompt": "In `ModelCheckpoint` (`lightning/pytorch/callbacks/model_checkpoint.py`): add a `reason: str = ''` parameter to `_save_checkpoint` (defined around line 593). Prepend `reason` to any rank_zero_info/debug log messages inside the method when non-empty, so callers can annotate why the checkpoint was triggered. Find ALL internal call sites of `_save_checkpoint` within the same file (there are 4 of them) and update each to pass an appropriate reason string: e.g. `reason='top_k'`, `reason='last'`, `reason='best'` depending on the save path.",
+    "prompt": "In `ModelCheckpoint` (`lightning/pytorch/callbacks/model_checkpoint.py`): add a `reason: str = ''` parameter to `_save_checkpoint` (defined around line 593). When `reason` is non-empty, call `rank_zero_info` immediately before `trainer.save_checkpoint` with a message that includes both `reason` and `filepath`; preserve the existing save and logger behaviour. Discover and update every production caller of `_save_checkpoint`. Pass the exact reason that matches each save path: `reason='exception'`, `reason='last'`, `reason='none'`, or `reason='top_k'`. Update the method signature and every caller.",
     "requires_reset": true,
     "type": "fix_multicaller"
   },
@@ -40,7 +40,10 @@
       "strategy.py",
       "ddp.py",
       "fsdp.py",
-      "deepspeed.py"
+      "deepspeed.py",
+      "model_parallel.py",
+      "single_xla.py",
+      "xla.py"
     ],
     "expected_patch_keywords": [
       "verbose",
@@ -49,7 +52,7 @@
     ],
     "id": "FM-03",
     "primary_module": "lightning.pytorch.strategies.strategy",
-    "prompt": "In `Strategy.setup` (`lightning/pytorch/strategies/strategy.py`): add a `verbose: bool = False` parameter to the base class `setup` method. When `verbose=True`, log (via `log.debug`) that setup is beginning. All subclasses that override `setup` must also add `verbose: bool = False` to their signature and pass it through to `super().setup(trainer, verbose=verbose)`. The subclasses to update are: `DDPStrategy` (`ddp.py`), `FSDPStrategy` (`fsdp.py`), `DeepSpeedStrategy` (`deepspeed.py`), `ModelParallelStrategy` (`model_parallel.py`), `SingleXLAStrategy` (`single_xla.py`), and `XLAStrategy` (`xla.py`). Use codemap rdeps to verify you found them all before editing.",
+    "prompt": "In `Strategy.setup` (`lightning/pytorch/strategies/strategy.py`): add a `verbose: bool = False` parameter to the base class `setup` method. When `verbose=True`, log (via `log.debug`) that setup is beginning. Discover every production class under `src/lightning/pytorch/strategies/` that overrides `setup`; update each override to add `verbose: bool = False` and pass it through to `super().setup(trainer, verbose=verbose)`. Treat same-name symbol search as candidate discovery only and verify the inheritance and package boundary from source before editing.",
     "requires_reset": true,
     "type": "fix_multicaller"
   }

@@ -77,7 +77,7 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     }
     human = builder["_human_bytes"](human_manifest, "0" * 64).decode("utf-8")
 
-    assert builder["EXPERIMENT_REVISION"] == "codex-integration-skill-imports-guidance-2026-08-09"
+    assert builder["EXPERIMENT_REVISION"] == "codex-integration-unified-task-cli-2026-08-11"
     assert arms["B_direct_required"]["requirement"] == (
         "Run at least one successful compact direct query in its own native command item containing exactly "
         '"$CODEMAP_BIN" query --compact <subcommand> [arguments]; '
@@ -87,17 +87,27 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     assert controls["arm_order"] == arm_order
     assert cells["arm_order"] == arm_order
     assert controls["token_prompt_cache_policy"] == token_prompt_cache_policy
-    assert task_selection["repetitions"] == 3
     assert task_selection["coordinate_timeout_seconds"] == 600
     assert task_selection["nonpoolable"] is True
-    assert task_selection["allowed_task_ids"] == cells["structural_execution_task_ids"]
-    assert task_selection["allowed_families"] == list(
-        dict.fromkeys(task_id.split("-", 1)[0] for task_id in cells["structural_execution_task_ids"])
+    assert task_selection["default_total_cells"] == 204
+    assert task_selection["stages"]["structural"]["allowed_task_ids"] == cells["structural_execution_task_ids"]
+    assert task_selection["stages"]["structural"]["default_repetitions"] == 1
+    assert task_selection["stages"]["structural"]["selected_repetitions"] == 3
+    assert all(
+        task_selection["stages"][stage]["default_repetitions"] == 1 for stage in ("readcrop", "fix-single", "fix-multi")
     )
+    assert all(
+        task_selection["stages"][stage]["selected_repetitions"] == 1
+        for stage in ("readcrop", "fix-single", "fix-multi")
+    )
+    assert "repetitions" not in task_selection
+    assert "study_mode" not in task_selection
     assert task_selection["resolution_policy"]["exact_id_first"] is True
     assert task_selection["resolution_policy"]["deduplicate"].startswith("selector tokens")
     assert task_selection["scope_digest"]["runtime_derived"] is True
     assert task_selection["scope_digest"]["stored_in_manifest"] is False
+    assert task_selection["aggregate_execution_scope"]["approval_option"] == "--paid-approval"
+    assert task_selection["aggregate_execution_scope"]["dry_run_marker"] == "SCOPE"
     assert '`"$CODEMAP_BIN" query --compact <subcommand> [arguments]`' in human
     assert "every arm occupies every ordinal 18 or 19 times" in human
     assert "Console and primary efficiency reports use gross provider input tokens only." in human
@@ -105,7 +115,7 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     assert "--tasks=DI,GR" in human
     assert "--tasks=DI-01,GR-03" in human
     assert "--tasks=DI,GR-03" in human
-    assert "cannot authorize or replace the full scope" in human
+    assert "aggregate `SCOPE` printed by the matching full dry run" in human
 
 
 def test_generator_is_current_and_never_rewrites_methodology_source() -> None:
@@ -221,8 +231,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     }
     assert manifest["package_roster"] == ["codemap-py", "codex-rig"]
     assert manifest["experiment_id"] == "codex-integration-v1"
-    assert manifest["schema_version"] == "codex-integration-manifest-v2"
-    assert manifest["experiment_revision"] == "codex-integration-skill-imports-guidance-2026-08-09"
+    assert manifest["schema_version"] == "codex-integration-manifest-v3"
+    assert manifest["experiment_revision"] == "codex-integration-unified-task-cli-2026-08-11"
     assert manifest["preregistered_cells"]["arms"] == [
         "A_plain",
         "B_direct_required",
@@ -298,6 +308,9 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
         "codex_rig_integration_host",
         "codex_rig_package_manifest",
         "codex_rig_plugin_manifest",
+        "codex_stage_fix",
+        "codex_stage_readcrop",
+        "codex_stage_runtime",
         "prepare_codex_index",
         "run_all",
         "run_codex_structural",
@@ -325,89 +338,86 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
     assert validation["status"] == "runtime_smoke_required_before_paid_execution"
     assert set(validation["checks"].values()) == {"required"}
     assert len(validation["evidence"]) == 2
-    assert manifest["telemetry_admission"] == {
-        "telemetry_contract_id": "canonical-skill-file-locked-query-components-v2",
-        "run_metadata_schema": "codex-structural-run-metadata-v2",
-        "auxiliary_item_policy": (
-            "B/C may use additional reads and shell commands as separate native items. "
-            "They are ignored for query attribution."
-        ),
-        "raw_result_policy": (
-            "Raw JSONL cells are immutable. Parser corrections produce a separately versioned derived evaluation."
-        ),
-        "rejected_evidence": [
-            "launcher inspection without query execution",
-            "aliases, assignments, conditionals, compound shell, redirections, substitutions, or nested shells",
-            "literal-path, sed, dynamic-range, unquoted-variable, wrong-variable, or reassigned Skill readers",
-            "partial, wrong-path, wrong-byte, failed, or non-dedicated Skill reads",
-            "Skill reads that occur after the query",
-            "query output that is not one JSON document with complete compact index evidence",
-            "exact-path or non-CODEMAP_BIN launcher forms",
-        ],
-        "query": {
-            "accepted_form": '"$CODEMAP_BIN" query --compact <subcommand> [arguments]',
-            "item_scope": "dedicated native command item",
-            "required_exit_code": 0,
-            "required_output": "one JSON document with index.query_complete=true and index.compact=true",
-        },
-        "locked_query_components": {
-            "conformance": "locked_query_conformance",
-            "overall": "locked_query_fitness",
-            "endpoint": "locked_query_endpoint_fitness",
-            "target": "locked_query_target_fitness",
-            "options": "locked_query_option_fitness",
-            "semantics": "Conformance is exact tuple agreement; fitness is continuous component-level Jaccard similarity.",
-        },
-        "skill_read": {
-            "accepted_readers": ['cat "$CODEMAP_SKILL_FILE"'],
-            "arm": "C_skill_required",
-            "environment_binding": ("runner-owned immutable exact installed query Skill path; absent from A and B"),
-            "item_scope": "dedicated native command item",
-            "ordering": "before the credited query item",
-            "required_output": "exact manifest-locked codemap_query_skill bytes",
-        },
-        "treatment_attribution": {
-            "B_direct_required": "at least one successful compact direct CLI query",
-            "C_skill_required": ("dedicated exact Skill read item before at least one successful canonical query item"),
-        },
+    telemetry = manifest["telemetry_admission"]
+    assert telemetry["telemetry_contract_id"] == "installed-skill-binding-locked-query-components-v3"
+    assert telemetry["skill_binding"] == {
+        "arm": "C_skill_required",
+        "environment_binding": "runner-owned immutable exact installed query Skill path; absent from A and B",
+        "manual_read_telemetry": "skill_delivery_observed is diagnostic-only and never a query-credit prerequisite",
     }
+    assert telemetry["query"] == {
+        "accepted_form": '"$CODEMAP_BIN" query --compact <subcommand> [arguments]',
+        "item_scope": "dedicated native command item",
+        "required_exit_code": 0,
+        "required_output": "one JSON document with index.query_complete=true and index.compact=true",
+    }
+    assert telemetry["treatment_attribution"] == {
+        "B_direct_required": "at least one successful compact direct CLI query",
+        "C_skill_required": "at least one successful canonical compact query in the immutable installed-Skill treatment",
+    }
+    assert all("Skill read" not in item for item in telemetry["rejected_evidence"])
 
 
-def test_integration_manifest_locks_generic_nonpoolable_task_selection() -> None:
-    """Selected task studies are generic, deterministic, and nonpoolable."""
+def test_integration_manifest_locks_unified_nonpoolable_task_selection() -> None:
+    """Unified selections preserve stage order, native repetitions, and aggregate approval."""
     manifest = _load(MANIFEST)
     scope = manifest["task_selection"]
 
-    execution_ids = manifest["preregistered_cells"]["structural_execution_task_ids"]
+    stage_order = ["structural", "readcrop", "fix-single", "fix-multi"]
+    expected_stage_sizes = {"structural": 55, "readcrop": 6, "fix-single": 4, "fix-multi": 3}
+    flattened_ids = [task_id for stage in stage_order for task_id in scope["stages"][stage]["allowed_task_ids"]]
     assert scope["selector_option"] == "--tasks"
     assert scope["separator"] == ","
-    assert scope["allowed_task_ids"] == execution_ids
-    assert scope["allowed_families"] == list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in execution_ids))
+    assert scope["stage_order"] == stage_order
+    assert {stage: len(scope["stages"][stage]["allowed_task_ids"]) for stage in stage_order} == expected_stage_sizes
+    assert scope["allowed_task_ids"] == flattened_ids
+    assert len(scope["allowed_task_ids"]) == 68
+    assert scope["default_total_cells"] == 204
+    assert scope["allowed_families"] == list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in flattened_ids))
     assert scope["resolution_policy"] == {
         "exact_id_first": True,
         "family_match": "a family token selects every matching allowed ID",
-        "order": "resolved IDs preserve frozen structural_execution_task_ids order",
+        "order": "resolved IDs preserve structural, ReadCrop, Fix-Single, then Fix-Multi stage order",
         "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
         "reject": ["empty tokens", "unknown task IDs", "unknown families"],
     }
-    assert scope["arms"] == ["A_plain", "B_direct_required", "C_skill_required"]
-    assert scope["repetitions"] == 3
+    assert scope["stages"]["structural"]["arms"] == ["A_plain", "B_direct_required", "C_skill_required"]
+    assert scope["stages"]["structural"]["default_repetitions"] == 1
+    assert scope["stages"]["structural"]["selected_repetitions"] == 3
+    for stage in ("readcrop", "fix-single", "fix-multi"):
+        assert scope["stages"][stage]["arms"] == ["A_plain", "B_auto", "C_strict"]
+        assert scope["stages"][stage]["default_repetitions"] == 1
+        assert scope["stages"][stage]["selected_repetitions"] == 1
+    assert "arms" not in scope
+    assert "repetitions" not in scope
+    assert "study_mode" not in scope
     assert scope["coordinate_timeout_seconds"] == 600
     assert "complete_run_max_wall_clock_seconds" not in scope
     assert scope["nonpoolable"] is True
     assert scope["pooling_eligibility"] == "ineligible"
     assert scope["confirmatory_product_acceptance"] == "ineligible"
-    assert scope["study_mode"] == "selected_tasks"
     assert scope["scope_digest"] == {
         "canonical_fields": [
             "active manifest SHA-256",
+            "selection mode",
             "resolved ordered task IDs",
-            "repetitions",
-            "arms",
-            "coordinate timeout seconds",
+            "ordered stage partitions with repetitions, arms, and cell counts",
+            "total tasks and cells",
         ],
         "runtime_derived": True,
         "stored_in_manifest": False,
+    }
+    assert scope["aggregate_execution_scope"] == {
+        "canonical_fields": [
+            "schema version",
+            "active manifest SHA-256",
+            "model and reasoning effort",
+            "selection mode and ordered task IDs",
+            "ordered stage partitions and their native scope SHA-256 values",
+            "total tasks and cells",
+        ],
+        "approval_option": "--paid-approval",
+        "dry_run_marker": "SCOPE",
     }
 
     human = HUMAN_MANIFEST.read_text(encoding="utf-8")
@@ -416,17 +426,16 @@ def test_integration_manifest_locks_generic_nonpoolable_task_selection() -> None
     assert "--tasks=DI-01,GR-03" in human
     assert "--tasks=DI,GR-03" in human
     assert "duplicate tokens and overlapping expansions are evaluated once" in human
-    assert "derived at runtime" in human
+    assert "aggregate `SCOPE` printed by the matching full dry run" in human
     assert "## Paid selected-task command" in human
-    assert "bash benchmarks/run-all.sh codex --struct --tasks=DI,GR" in human
-    selected_section = human.split("## Paid selected-task command", 1)[1].split("## Confirmatory execution", 1)[0]
-    assert "CODEX_PAID_APPROVAL=<resolved-scope-sha256>" in selected_section
+    selected_section = human.split("## Paid selected-task command", 1)[1].split("## Full execution", 1)[0]
+    assert "--tasks RC,FS,FM --dry-run" in selected_section
+    assert "one exact `PAID_COMMAND` containing the aggregate approval" in selected_section
     assert f"CODEX_PAID_APPROVAL={_sha256(MANIFEST)}" not in selected_section
-    assert "copy its `selection scope` SHA-256" in selected_section
-    assert "--resolve-tasks DI,GR" in selected_section
+    assert "--resolve-tasks" not in selected_section
     assert "# Alternatively" not in selected_section
     assert "post-fix diagnostic" not in human
-    assert human.index("## Paid selected-task command") < human.index("## Confirmatory execution")
+    assert human.index("## Paid selected-task command") < human.index("## Full execution")
 
 
 def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authorization() -> None:
@@ -444,9 +453,10 @@ def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authoriz
     assert "Console and primary efficiency reports use gross provider input tokens only." in human
     assert "without claiming cache elimination" in human
     assert "Runtime smoke and exact coordinate-plan validation are required before paid execution." in human
-    assert "## Confirmatory execution" in human
-    assert "no separate chat authorization is required" in human
-    assert "CODEX_PAID_APPROVAL" in human
+    assert "## Full execution" in human
+    assert "aggregate `SCOPE`" in human
+    assert "exact `PAID_COMMAND`" in human
+    assert "CODEX_PAID_APPROVAL" not in human
     assert "bash benchmarks/run-all.sh codex --struct --dry-run" in human
     assert "immutable, user-owned `0600` auth source" in human
     assert "Do not run a concurrent Codex session with it" in human

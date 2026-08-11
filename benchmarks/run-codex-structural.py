@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-"""Codex-only runner for the structural provider-parity benchmark.
+"""Run the task-driven Codex provider-parity benchmark.
 
-``structural`` is the clearer name for the former `bench`/real-codebase category;
-it is not a third benchmark type. The two model-driven categories are:
+Omitting ``--tasks`` executes the complete locked catalog: 55 structural
+questions, 6 ReadCrop tasks, 4 Fix-Single tasks, and 3 Fix-Multi tasks, for 68
+tasks and 204 A/B/C cells. Family selectors such as ``RC,FS,FM`` and mixed exact
+IDs route to native stage scorers. Codex agentic exploration remains in
+``run-codex-agentic.py``.
 
-  structural — constrained questions from ``tasks-bench.json`` about symbols,
-               callers, dependencies, debugging, and change impact
-  agentic    — open-ended exploration tasks from ``tasks-agentic.json``
-
-This runner is structural-only. It does not load the agentic suite. Codex
-agentic support needs a separate runner after its evaluator and ground-truth
-transport contract are defined.
+The 55 structural tasks are the former `bench`/real-codebase category, not a third benchmark type beside the task-driven structural and agentic runners.
 
 ## What this measures
 
@@ -34,7 +31,7 @@ The task series are identical to ``run-claude-structural.py``:
 
 This module owns only Codex-native process handling, isolated homes, permission
 profiles, JSONL event normalization, and per-cell persistence. Task identity,
-arm contracts, and scoring remain in ``provider_parity_contracts.py`` and the
+arm contracts, and scoring remain in ``_bench_common/provider_parity_contracts.py`` and the
 shared Claude structural evaluator registry.
 
 ## Arms
@@ -78,50 +75,43 @@ The runner writes raw cells; it does not declare an advantage. The manifest
 analysis compares paired log input-token ratios and quality deltas, then applies
 failure, adoption, and compliance guardrails.
 
+Structural, ReadCrop, Fix-Single, and Fix-Multi keep separate telemetry,
+metadata, input snapshots, scorers, and checksum ledgers. The aggregate root
+records lifecycle and scope only; unlike quality metrics are never pooled.
+
 ## What is NOT measured
 
   - Agentic exploration from ``tasks-agentic.json``
   - Index construction cost; the locked index is prepared before model timing
   - A general Codemap advantage from one smoke task
   - Cross-provider raw token equality or pooled Claude/Codex results
+  - Pooling stage-specific answer and executable quality metrics
 
 ## Quick start
 
-First run the no-model preflight. It validates the target/index identities,
-permission profiles, authentication isolation, direct-launcher and installed-
-skill isolation, and the deterministic cell plan:
+Run the intended command with ``--dry-run`` first. The no-model preflight
+validates target, index, permission, direct-launcher, installed-Skill, and
+isolation contracts, prints the deterministic plan, then emits one aggregate
+``SCOPE`` and exact ``PAID_COMMAND``. Omit ``--tasks`` for all 68 tasks; use
+``--tasks RC,FS,FM`` for families or mixed exact IDs for a targeted run.
 
-  python benchmarks/run-codex-structural.py \\
-      --repo-path /path/to/pytorch-lightning \\
-      --tasks-path benchmarks/suites/tasks-bench.json \\
-      --index-path /path/to/pytorch-lightning/.cache/codemap/pytorch-lightning.json \\
-      --marketplace-root . \\
-      --codemap-bin /path/to/codemap-py \\
-      --model gpt-5.6-luna \\
-      --task-id FN-02 \\
-      --dry-run
+The emitted execution command has no Boolean paid flag. Absence of
+``--dry-run`` means model execution and requires a private ``auth.json``, a
+fresh ``--run-dir``, and the exact aggregate ``--paid-approval`` SHA-256.
 
-After manifest and spend approval, omit ``--dry-run`` and provide a new output
-path. This invokes the model and creates the JSONL file exclusively:
+Primary options:
 
-  python benchmarks/run-codex-structural.py \\
-      --repo-path /path/to/pytorch-lightning \\
-      --tasks-path benchmarks/suites/tasks-bench.json \\
-      --index-path /path/to/pytorch-lightning/.cache/codemap/pytorch-lightning.json \\
-      --marketplace-root . \\
-      --codemap-bin /path/to/codemap-py \\
-      --auth-source /path/to/codex/auth.json \\
-      --model gpt-5.6-luna \\
-      --task-id FN-02 \\
-      --arm all \\
-      --output-path benchmarks/results/codex-fn02-post-pilot.jsonl
-
-Use ``--arm A_plain``, ``--arm B_direct_required``, or
-``--arm C_skill_required`` for a single arm. ``--arm all`` uses the manifest's
-deterministic arm ordering.
-``--repetitions N`` executes repetitions 1 through N and records the repetition
-on every JSONL row. Pass ``--task-id`` a comma-separated list, for example
-``--task-id SE-01,FN-02``, to select the immutable pilot subset.
+  --repo-path            locked target repository
+  --manifest-path        active immutable benchmark manifest
+  --index-path           frozen Codemap index
+  --marketplace-root     local plugin marketplace used by the Skill arm
+  --codemap-bin          absolute direct launcher used by the direct arm
+  --model                locked Codex model identifier
+  --tasks                optional family, exact-ID, or mixed selector
+  --dry-run              no-model admission, plan, scope, and paid command
+  --auth-source          private auth source for model execution
+  --run-dir              fresh aggregate artifact directory
+  --paid-approval        exact aggregate scope emitted by the dry run
 
 ## Requirements
 
@@ -149,15 +139,12 @@ at most twice, within the original cell's timeout. A required arm without a succ
 
 ## Output
 
-``--dry-run`` invokes no model and prints one ``PROBE`` line per selected arm
-followed by deterministic task/repetition/arm ``PLAN`` lines. A paid run prints
-its telemetry and metadata paths once, appends one normalized JSON object per
-completed cell to ``--output-path`` in execution order, atomically refreshes a
-``telemetry-canonical.jsonl`` task/repetition/A-B-C sidecar, and prints a
-compact fixed-order progress block. Token counts show gross/cached/fresh
-input separately in telemetry; the terminal shows gross input only. Interactive terminals color A/B/C rows; redirected logs
-remain plain text. The raw file is created before the first cell so an existing
-result cannot be overwritten, and each completed cell survives a later failure.
+``--dry-run`` invokes no model and prints deterministic probe and plan rows.
+Execution creates the aggregate directory exclusively, persists normalized
+cells inside native stage children, and prints compact fixed-order progress.
+Token counts show gross/cached/fresh input in telemetry and gross input in the
+terminal. Interactive A/B/C rows are colored; redirected logs remain plain.
+Each completed cell survives a later failure.
 """
 
 from __future__ import annotations
@@ -170,7 +157,6 @@ import itertools
 import json
 import os
 import re
-import shlex
 import shutil
 import stat
 import subprocess
@@ -181,12 +167,10 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, NoReturn, TextIO
+from typing import Any, NoReturn
 from uuid import uuid4
 
 import sys
-from rich.console import Console as _Console
-from rich.panel import Panel as _Panel
 
 if sys.platform == "win32":  # pragma: no cover - exercised on Windows CI only
     import msvcrt
@@ -195,8 +179,8 @@ else:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _utilities import fmt_time, fmt_tok  # noqa: E402
-from provider_parity_contracts import (  # noqa: E402
+from _bench_codex import runtime  # noqa: E402
+from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
     PARITY_TIMEOUT_SECONDS,
@@ -223,7 +207,7 @@ PARITY_CODEX_MODEL = "gpt-5.6-luna"
 PARITY_CODEX_REASONING_EFFORT = "high"
 _CODEX_BIN = "codex"
 _PROVENANCE_KEY = "_codex_provenance"
-_NATIVE_ITEM_TELEMETRY_CONTRACT_ID = "canonical-skill-file-locked-query-components-v2"
+_NATIVE_ITEM_TELEMETRY_CONTRACT_ID = "installed-skill-binding-locked-query-components-v3"
 _PLAIN_PERMISSION_PROFILE = "provider-parity-plain"
 _CODEMAP_PERMISSION_PROFILE = "provider-parity-codemap"
 _COORDINATION_NAME = ".index-rw"
@@ -231,194 +215,15 @@ _FROZEN_MARKETPLACE_NAME = "borda-ai-rig-frozen"
 _REGISTRY_NAME = "registry.lock"
 _READERS_NAME = "readers"
 _AUTH_MAX_BYTES = 1024 * 1024
-_SENSITIVE_EVENT_KEYS = frozenset(
-    {"access_token", "refresh_token", "id_token", "authorization", "cookie", "set-cookie"}
-)
-_DISPLAY_ARM_LABELS = {
-    "A_plain": "A_plain",
-    "B_direct_required": "B_direct",
-    "C_skill_required": "C_skill",
-}
-_DISPLAY_ARM_TO_CANONICAL = {label: arm for arm, label in _DISPLAY_ARM_LABELS.items()}
-_DISPLAY_ARM_TO_CANONICAL.update({"B_auto": "B_direct_required", "C_strict": "C_skill_required"})
-_DISPLAY_ARM_COLUMN_WIDTH = max(len(label) for label in _DISPLAY_ARM_LABELS.values())
-_ARM_ROW_STYLES = {
-    "A_plain": "yellow",
-    "B_direct_required": "cyan",
-    "C_skill_required": "magenta",
-    "B_auto": "cyan",
-    "C_strict": "magenta",
-}
-_ARM_ROW_ANSI_CODES = {
-    "A_plain": "33",
-    "B_direct_required": "36",
-    "C_skill_required": "35",
-    "B_auto": "36",
-    "C_strict": "35",
-}
-_RESULT_ARM = re.compile(
-    r"^\(\d+/\d+\)\s+.*\b(A_plain|B_direct_required|C_skill_required|B_direct|C_skill|B_auto|C_strict)\b"
-)
-_OUTPUT_LEGEND = (
-    "LEGEND\n"
-    "  treatments: A_plain=no Codemap, B_direct=direct Codemap required, "
-    "C_skill=Codemap Skill required\n"
-    "  tasks:\n"
-    "      SE: symbol extraction\n"
-    "      FN: function-call graph\n"
-    "      RV: review assistance\n"
-    "      CQ: code quality\n"
-    "      BR: blast radius\n"
-    "      DG: debug from trace\n"
-    "      FT: feature scaffolding\n"
-    "      RI: real issue\n"
-    "      DI: diff impact\n"
-    "      GR: graph reasoning\n"
-    "      MB: module blast radius\n"
-    "  status: ✓ completed, ✗ failed\n"
-    "  quality: continuous [0,1], ? unscoreable (higher is better)\n"
-    "  progress: N completed cells / M planned cells\n"
-    "  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\n"
-    "  codemap-used: ✓ Codemap call observed; ✗ no Codemap call "
-    "(expected for A_plain) or required use missed (B/C)\n"
-    "  query: ✓ exact expected query; ✗ mismatch; — not applicable\n"
-    "  cohort: H headline; D diagnostic\n"
-    "  input tokens: gross total; cached and fresh details remain in telemetry only (lower is better at equal quality)\n"
-    "END LEGEND"
-)
-_console = _Console(highlight=False)
-
-
-def _format_plan_row(task_id: str, repetition: int, arm: str) -> str:
-    """Format one deterministic coordinate as an aligned terminal row."""
-    display_arm = _DISPLAY_ARM_LABELS.get(arm, arm)
-    return f"PLAN    {task_id:<5}  rep={repetition}  {display_arm}"
-
-
-def _format_result_row(
-    *,
-    status: str,
-    task_id: str,
-    repetition: int,
-    arm: str,
-    input_tokens: int,
-    cached_input_tokens: int,
-    fresh_tokens: int | None,
-    output_tokens: int,
-    elapsed_s: float,
-    quality: str,
-    adherence: bool,
-    codemap_used: bool,
-    query_conformance: bool | None = None,
-    headline_eligible: bool | None = None,
-) -> str:
-    """Format one result with stable columns and shared human-readable units."""
-    del cached_input_tokens, fresh_tokens
-    adherence_mark = "✓" if adherence else "✗"
-    codemap_used_mark = "✓" if codemap_used else "✗"
-    query_status = ""
-    if query_conformance is not None:
-        query_mark = "✓" if query_conformance else "✗"
-        cohort = "" if headline_eligible is None else ("  cohort:H" if headline_eligible else "  cohort:D")
-        query_status = f"  query:{query_mark}{cohort}"
-    display_arm = _DISPLAY_ARM_LABELS.get(arm, arm)
-    return (
-        f"{status}  {task_id:<5}  rep={repetition}  {display_arm:<{_DISPLAY_ARM_COLUMN_WIDTH}}"
-        f"  in={fmt_tok(input_tokens):>6}"
-        f"  out={fmt_tok(output_tokens):>5}  time={fmt_time(elapsed_s):>5}"
-        f"  quality={quality:>5}  treatment:{adherence_mark}  codemap-used:{codemap_used_mark}"
-        f"{query_status}"
-    )
-
-
-def _print_arm_row(row: str, arm: str) -> None:
-    """Print a plain log row, adding arm color only on interactive terminals."""
-    if _console.is_terminal:
-        _console.print(row, style=_ARM_ROW_STYLES[arm], markup=False, soft_wrap=True)
-        return
-    print(row)
 
 
 def _print_result_block(rows: Iterable[tuple[str, str]], *, printed_cells: int, planned_cells: int) -> int:
-    """Print persisted results in the fixed human A/B/C order for one task block."""
+    """Print one persisted task block in stable A/B/C display order."""
     arm_rank = {arm: index for index, arm in enumerate(CODEX_STRUCTURAL_ARMS)}
     for arm, row in sorted(rows, key=lambda item: arm_rank[item[0]]):
         printed_cells += 1
-        _print_arm_row(f"({printed_cells}/{planned_cells}) {row}", arm)
+        runtime.print_arm_row(f"({printed_cells}/{planned_cells}) {row}", arm)
     return printed_cells
-
-
-def _result_arm(row: str) -> str | None:
-    """Return the recognized arm from one result row, if any."""
-    match = _RESULT_ARM.search(row)
-    return _DISPLAY_ARM_TO_CANONICAL.get(match.group(1), match.group(1)) if match else None
-
-
-def render_result_rows(
-    rows: Iterable[str], output: TextIO, *, force_color: bool = False, hide_plan: bool = False
-) -> None:
-    """Render result rows, optionally hiding human PLAN rows and coloring terminal output."""
-    use_color = force_color or output.isatty()
-    if not use_color:
-        for row in rows:
-            if hide_plan and row.startswith("PLAN "):
-                continue
-            output.write(row)
-        output.flush()
-        return
-
-    console = _Console(
-        file=output,
-        force_terminal=use_color,
-        color_system="standard" if use_color else None,
-        highlight=False,
-        markup=False,
-        no_color=not use_color,
-        # Rich routes legacy Windows standard streams through the Win32 console API.
-        legacy_windows=False if force_color else None,
-    )
-    legend_lines: list[str] | None = None
-
-    def flush_legend() -> None:
-        """Render one accumulated plain legend section as a titled Rich panel."""
-        nonlocal legend_lines
-        if legend_lines is None:
-            return
-        body = "\n".join(line.rstrip("\r\n") for line in legend_lines[1:-1])
-        console.print(_Panel(body, title="Legend", subtitle="End legend", border_style="blue"))
-        legend_lines = None
-
-    for row in rows:
-        if hide_plan and row.startswith("PLAN "):
-            continue
-        stripped = row.rstrip("\r\n")
-        if legend_lines is not None:
-            legend_lines.append(row)
-            if stripped == "END LEGEND":
-                flush_legend()
-            continue
-        if stripped == "LEGEND":
-            legend_lines = [row]
-            continue
-        arm = _result_arm(row) if use_color else None
-        if arm is None:
-            output.write(row)
-            continue
-        if force_color:
-            # This test-only mode promises literal ANSI bytes even when Rich's Windows
-            # standard-stream renderer deliberately uses the Win32 console API.
-            colored_row = f"\x1b[{_ARM_ROW_ANSI_CODES[arm]}m{stripped}\x1b[0m\n"
-            if output is sys.stdout:
-                # Bypass Windows ANSI adapters on the standard stream; subprocess
-                # capture receives the promised raw escape bytes from the descriptor.
-                output.flush()
-                os.write(output.fileno(), colored_row.encode("utf-8"))
-            else:
-                output.write(colored_row)
-            continue
-        console.print(row.rstrip("\n"), style=_ARM_ROW_STYLES[arm], end="\n")
-    flush_legend()
-    output.flush()
 
 
 def _is_known_codex_arm(arm: str) -> bool:
@@ -678,6 +483,7 @@ def _validate_locked_runtime(
     arm: str,
     manifest_path: Path = PARITY_MANIFEST_PATH,
     diff_impact_stage: DiffImpactStageAdmission | None = None,
+    index_relocation: Mapping[str, str] | None = None,
 ) -> None:
     """Fail closed unless the target repository and index match the frozen manifest."""
     try:
@@ -700,9 +506,32 @@ def _validate_locked_runtime(
     expected_index_path = repo_path / ".cache" / "codemap" / f"{repo_path.name}.json"
     if index_path != expected_index_path:
         raise ValueError(f"canonical Codemap index must use the product resolver path {expected_index_path}")
-    if hashlib.sha256(index_path.read_bytes()).hexdigest() != expected_index["raw_sha256"]:
-        raise ValueError("canonical Codex run requires the locked index bytes")
-    metadata = json.loads(index_path.read_text(encoding="utf-8"))
+    index_bytes = index_path.read_bytes()
+    index_sha256 = hashlib.sha256(index_bytes).hexdigest()
+    metadata = json.loads(index_bytes)
+    if index_relocation is None:
+        if index_sha256 != expected_index["raw_sha256"]:
+            raise ValueError("canonical Codex run requires the locked index bytes")
+    else:
+        required_relocation_keys = {
+            "frozen_index_sha256",
+            "derived_index_sha256",
+            "non_root_content_sha256",
+            "source_scan_root",
+            "worktree_scan_root",
+        }
+        if set(index_relocation) != required_relocation_keys:
+            raise ValueError("canonical executable index relocation provenance is malformed")
+        if index_relocation["frozen_index_sha256"] != expected_index["raw_sha256"]:
+            raise ValueError("canonical executable index relocation has the wrong frozen source")
+        if index_relocation["derived_index_sha256"] != index_sha256:
+            raise ValueError("canonical executable index changed after relocation")
+        if index_relocation["worktree_scan_root"] != str(repo_path.resolve()):
+            raise ValueError("canonical executable index relocation has the wrong worktree root")
+        if metadata.get("scan_root") != str(repo_path.resolve()):
+            raise ValueError("canonical executable index scan_root does not match its worktree")
+        if _non_root_index_sha256(metadata) != index_relocation["non_root_content_sha256"]:
+            raise ValueError("canonical executable index relocation changed frozen graph content")
     if (
         metadata.get("git_sha") != expected_index["git_sha"]
         or metadata.get("scan_version") != expected_index["scan_version"]
@@ -778,7 +607,7 @@ def _read_manifest_revision(manifest_path: Path = PARITY_MANIFEST_PATH) -> str:
 
 
 def _task_selection_contract(manifest_path: Path) -> dict[str, Any]:
-    """Read and validate the active manifest's targeted-selection contract."""
+    """Read and validate the active manifest's unified task-selection contract."""
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         contract = manifest["task_selection"]
@@ -788,8 +617,8 @@ def _task_selection_contract(manifest_path: Path) -> dict[str, Any]:
         raise ValueError("task selection contract is unavailable or malformed")
     execution_ids = contract.get("allowed_task_ids")
     allowed_families = contract.get("allowed_families")
-    repetitions = contract.get("repetitions")
-    arms = contract.get("arms")
+    stage_order = contract.get("stage_order")
+    stages = contract.get("stages")
     coordinate_timeout = contract.get("coordinate_timeout_seconds")
     if (
         not isinstance(execution_ids, list)
@@ -802,20 +631,46 @@ def _task_selection_contract(manifest_path: Path) -> dict[str, Any]:
         or not all(isinstance(family, str) and re.fullmatch(r"[A-Z]{2}", family) for family in allowed_families)
         or len(allowed_families) != len(set(allowed_families))
         or allowed_families != list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in execution_ids))
-        or type(repetitions) is not int
-        or repetitions < 1
-        or not isinstance(arms, list)
-        or len(arms) != len(set(arms))
-        or set(arms) != set(CODEX_STRUCTURAL_ARMS)
+        or stage_order != ["structural", "readcrop", "fix-single", "fix-multi"]
+        or not isinstance(stages, Mapping)
+        or set(stages) != set(stage_order)
         or type(coordinate_timeout) is not int
         or coordinate_timeout < 1
     ):
         raise ValueError("task selection contract is unavailable or malformed")
+    flattened: list[str] = []
+    for stage_id in stage_order:
+        stage = stages.get(stage_id)
+        if not isinstance(stage, Mapping):
+            raise ValueError("task selection contract is unavailable or malformed")
+        task_ids = stage.get("allowed_task_ids")
+        families = stage.get("allowed_families")
+        arms = stage.get("arms")
+        default_repetitions = stage.get("default_repetitions")
+        selected_repetitions = stage.get("selected_repetitions")
+        if (
+            not isinstance(task_ids, list)
+            or not task_ids
+            or not all(isinstance(task_id, str) and re.fullmatch(r"[A-Z]{2}-[0-9]{2}", task_id) for task_id in task_ids)
+            or not isinstance(families, list)
+            or families != list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in task_ids))
+            or not isinstance(arms, list)
+            or len(arms) != 3
+            or len(arms) != len(set(arms))
+            or type(default_repetitions) is not int
+            or default_repetitions < 1
+            or type(selected_repetitions) is not int
+            or selected_repetitions < 1
+        ):
+            raise ValueError("task selection contract is unavailable or malformed")
+        flattened.extend(task_ids)
+    if flattened != execution_ids:
+        raise ValueError("task selection contract is unavailable or malformed")
     return {
         "execution_task_ids": execution_ids,
         "allowed_families": allowed_families,
-        "repetitions": repetitions,
-        "arms": arms,
+        "stage_order": stage_order,
+        "stages": stages,
         "coordinate_timeout_seconds": coordinate_timeout,
     }
 
@@ -852,13 +707,18 @@ def _targeted_scope_sha256(scope: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str]) -> dict[str, Any]:
-    """Resolve exact IDs and family selectors into a locked, nonpoolable scope."""
+def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str] | None = None) -> dict[str, Any]:
+    """Resolve one optional mixed selector into canonical stage partitions.
+
+    Omitting selectors selects every supported task exactly once. Explicit
+    selectors may mix family names and exact IDs; overlapping selections are
+    deduplicated in the immutable global stage order.
+    """
     manifest_path = Path(manifest_path)
     contract = _task_selection_contract(manifest_path)
-    normalized = _selector_tokens(selectors)
+    normalized = _selector_tokens(selectors) if selectors is not None else []
     task_ids = contract["execution_task_ids"]
-    selected: set[str] = set()
+    selected: set[str] = set(task_ids) if selectors is None else set()
     known_families = set(contract["allowed_families"])
     for selector in normalized:
         if selector in task_ids:
@@ -871,19 +731,62 @@ def resolve_task_selection(manifest_path: Path, selectors: str | Sequence[str]) 
     resolved_ids = [task_id for task_id in task_ids if task_id in selected]
     if not resolved_ids:
         raise ValueError("task selectors resolved to no executable tasks")
-    repetitions = contract["repetitions"]
-    arms = contract["arms"]
-    coordinate_timeout = contract["coordinate_timeout_seconds"]
-    scope = {
+    selection_mode = "all" if selectors is None else "selected"
+    stages: list[dict[str, Any]] = []
+    for stage_id in contract["stage_order"]:
+        stage_contract = contract["stages"][stage_id]
+        stage_task_ids = [task_id for task_id in stage_contract["allowed_task_ids"] if task_id in selected]
+        if not stage_task_ids:
+            continue
+        repetitions = (
+            stage_contract[f"{selection_mode}_repetitions"]
+            if selection_mode == "selected"
+            else stage_contract["default_repetitions"]
+        )
+        arms = list(stage_contract["arms"])
+        stages.append(
+            {
+                "stage_id": stage_id,
+                "task_ids": stage_task_ids,
+                "repetitions": repetitions,
+                "arms": arms,
+                "total_cells": len(stage_task_ids) * repetitions * len(arms),
+            }
+        )
+    resolved = {
         "selectors": normalized,
         "task_ids": resolved_ids,
+        "selection_mode": selection_mode,
+        "stages": stages,
+        "total_tasks": len(resolved_ids),
+        "total_cells": sum(stage["total_cells"] for stage in stages),
+        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    }
+    resolved["scope_sha256"] = hashlib.sha256(
+        json.dumps(resolved, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return resolved
+
+
+def _resolve_structural_task_selection(manifest_path: Path, selectors: str | Sequence[str]) -> dict[str, Any]:
+    """Resolve a structural-only subset for the established structural loop."""
+    unified = resolve_task_selection(manifest_path, selectors)
+    nonstructural = [stage["stage_id"] for stage in unified["stages"] if stage["stage_id"] != "structural"]
+    if nonstructural:
+        raise ValueError("the structural loop accepts only structural task selectors")
+    if not unified["stages"]:
+        raise ValueError("task selectors resolved to no structural tasks")
+    stage = unified["stages"][0]
+    scope = {
+        "selectors": unified["selectors"],
+        "task_ids": stage["task_ids"],
         "study_mode": "targeted",
         "nonpoolable": True,
         "pooling_eligibility": "ineligible",
-        "repetitions": repetitions,
-        "arms": arms,
-        "coordinate_timeout_seconds": coordinate_timeout,
-        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "repetitions": stage["repetitions"],
+        "arms": stage["arms"],
+        "coordinate_timeout_seconds": _task_selection_contract(Path(manifest_path))["coordinate_timeout_seconds"],
+        "manifest_sha256": unified["manifest_sha256"],
     }
     scope["scope_sha256"] = _targeted_scope_sha256(scope)
     return scope
@@ -945,472 +848,6 @@ def _validate_execution_manifest(manifest_path: Path = PARITY_MANIFEST_PATH) -> 
 
 
 @dataclass
-class CodexParseResult:
-    """Normalized Codex stream telemetry plus lossless parsed event records."""
-
-    thread_id: str = ""
-    output_text: str = ""
-    last_tool_text_offset: int = 0
-    input_tokens: int = 0
-    cached_input_tokens: int = 0
-    output_tokens: int = 0
-    reasoning_output_tokens: int = 0
-    command_calls: int = 0
-    codemap_calls: int = 0
-    codemap_successful_calls: int = 0
-    codemap_compact_successful_calls: int = 0
-    codemap_direct_calls: int = 0
-    codemap_direct_successful_calls: int = 0
-    codemap_direct_compact_successful_calls: int = 0
-    codemap_skill_calls: int = 0
-    codemap_skill_successful_calls: int = 0
-    codemap_skill_compact_successful_calls: int = 0
-    successful_query_arguments: list[list[str]] = field(default_factory=list)
-    skill_delivery_observed: bool = False
-    codemap_errors: int = 0
-    fallback_calls: int = 0
-    completed: bool = False
-    incomplete: bool = False
-    error: str = ""
-    error_type: str = ""
-    raw_events: list[dict[str, Any]] = field(default_factory=list)
-    malformed_lines: int = 0
-    raw_usage: dict[str, Any] = field(default_factory=dict)
-    item_counts: dict[str, int] = field(default_factory=dict)
-    tool_elapsed_s: float | None = None
-    tool_result_tokens: int | None = None
-    retryable: bool = False
-
-    @property
-    def success(self) -> bool:
-        """Return whether the stream reached a successful terminal event."""
-        return self.completed and not self.incomplete and not self.error
-
-
-def _is_refresh_token_authentication_failure(error: str) -> bool:
-    """Identify deterministic OAuth refresh failures that cannot succeed on retry."""
-    normalized = error.casefold()
-    return (
-        "401" in normalized
-        and "refresh token" in normalized
-        and ("expired" in normalized or "already been used" in normalized or "already used" in normalized)
-    )
-
-
-def _redact_sensitive_text(value: str) -> str:
-    """Remove standard credential representations from persisted provider errors."""
-    value = re.sub(
-        r"(?i)\b(authorization|cookie|set-cookie)\s*:\s*[^\r\n]*",
-        r"\1: <redacted>",
-        value,
-    )
-    value = re.sub(r"(?i)(bearer\s+)[^\s,;\]\}]+", r"\1<redacted>", value)
-    return re.sub(
-        r'(?i)(["\']?(?:access_token|refresh_token|id_token|authorization|cookie|set-cookie)["\']?\s*[:=]\s*["\'])[^"\']*',
-        r"\1<redacted>",
-        value,
-    )
-
-
-def _redact_sensitive_event(value: Any) -> Any:
-    """Return a telemetry-safe projection without credential-valued fields."""
-    if isinstance(value, Mapping):
-        return {
-            str(key): "<redacted>" if str(key).casefold() in _SENSITIVE_EVENT_KEYS else _redact_sensitive_event(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_redact_sensitive_event(item) for item in value]
-    if isinstance(value, str):
-        return _redact_sensitive_text(value)
-    return value
-
-
-def _redact_provider_error(value: Any) -> str:
-    """Render one provider error without persisting credential values."""
-    if isinstance(value, (Mapping, list)):
-        return json.dumps(_redact_sensitive_event(value), sort_keys=True, default=str)
-    return _redact_sensitive_text(str(value))
-
-
-def _as_int(value: Any) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
-
-
-def _item_text(item: Mapping[str, Any]) -> str:
-    for key in ("text", "content", "message"):
-        value = item.get(key)
-        if isinstance(value, str):
-            return value
-        if isinstance(value, list):
-            chunks = [part.get("text", "") for part in value if isinstance(part, Mapping)]
-            if chunks:
-                return "".join(str(part) for part in chunks)
-    return ""
-
-
-def _command_text(item: Mapping[str, Any]) -> str:
-    values = [item.get(key, "") for key in ("command", "cmd", "name", "arguments", "input")]
-    return " ".join(value if isinstance(value, str) else json.dumps(value, sort_keys=True) for value in values)
-
-
-def _unwrap_native_command(command: str) -> str | None:
-    """Return a native command after at most one exact Codex zsh wrapper."""
-    if not command or "\n" in command or "\r" in command:
-        return None
-    normalized = command.strip()
-    try:
-        parts = shlex.split(normalized)
-    except ValueError:
-        return None
-    if parts[:2] != ["/bin/zsh", "-lc"]:
-        return normalized
-    if len(parts) != 3 or not parts[2] or "\n" in parts[2] or "\r" in parts[2]:
-        return None
-    return parts[2]
-
-
-def _native_item_tokens(command: str, *, preserve_quotes: bool = False) -> list[str] | None:
-    """Tokenize one dedicated native command, optionally retaining quote context."""
-    normalized = _unwrap_native_command(command)
-    if normalized is None:
-        return None
-    try:
-        lexer = shlex.shlex(normalized, posix=not preserve_quotes, punctuation_chars=";&|()<>")
-        lexer.whitespace_split = True
-        lexer.commenters = ""
-        tokens = list(lexer)
-    except ValueError:
-        return None
-    if not tokens or any(any(character in ";&|<>()`" for character in token) for token in tokens):
-        return None
-    return tokens
-
-
-def _has_unquoted_comment(command: str) -> bool:
-    """Return whether a shell comment can hide after an otherwise valid command."""
-    quote: str | None = None
-    index = 0
-    while index < len(command):
-        character = command[index]
-        if character == "\\" and quote != "'":
-            index += 2
-            continue
-        if quote is not None:
-            if character == quote:
-                quote = None
-        elif character in {"'", '"'}:
-            quote = character
-        elif character == "#":
-            return True
-        index += 1
-    return False
-
-
-def _canonical_query_arguments(command: str) -> list[str] | None:
-    """Return query arguments only for the dedicated canonical launcher command."""
-    normalized = _unwrap_native_command(command)
-    if normalized is None:
-        return None
-    if _has_unquoted_comment(normalized):
-        return None
-    tokens = _native_item_tokens(command)
-    quoted_tokens = _native_item_tokens(command, preserve_quotes=True)
-    if (
-        tokens is None
-        or quoted_tokens is None
-        or len(tokens) != len(quoted_tokens)
-        or len(tokens) < 4
-        or tokens[0] not in {"$CODEMAP_BIN", "${CODEMAP_BIN}"}
-        or tokens[1:3] != ["query", "--compact"]
-        or any(
-            "$" in token and not (len(token) >= 2 and token.startswith("'") and token.endswith("'"))
-            for token in quoted_tokens[3:]
-        )
-    ):
-        return None
-    arguments = tokens[3:]
-    if arguments[0] == "help" or arguments[0].startswith("-"):
-        return None
-    return arguments
-
-
-def _records_compact_query_attempt(command: str) -> bool:
-    """Return whether a native item records a compact-query attempt for C ordering."""
-    return _canonical_query_arguments(command) is not None
-
-
-def _is_codemap_command(command: str, *, launcher_path: Path | None = None) -> bool:
-    """Return whether a command satisfies the prospective canonical query form."""
-    del launcher_path
-    return _canonical_query_arguments(command) is not None
-
-
-def _is_compact_codemap_query(command: str, *, launcher_path: Path | None = None) -> bool:
-    """Return whether a command satisfies the canonical compact-query form."""
-    return _is_codemap_command(command, launcher_path=launcher_path)
-
-
-def _command_output(item: Mapping[str, Any]) -> str:
-    """Return the captured command output used for deterministic evidence checks."""
-    value = item.get("aggregated_output", item.get("output", ""))
-    return value if isinstance(value, str) else ""
-
-
-def _query_output_complete(item: Mapping[str, Any]) -> bool:
-    """Return whether output contains JSON proving a completed locked-index query."""
-    output = _command_output(item)
-    decoder = json.JSONDecoder()
-    for offset, character in enumerate(output):
-        if character != "{":
-            continue
-        try:
-            payload, _ = decoder.raw_decode(output[offset:])
-        except json.JSONDecodeError:
-            continue
-        index = payload.get("index") if isinstance(payload, Mapping) else None
-        if isinstance(index, Mapping) and index.get("query_complete") is True:
-            return True
-    return False
-
-
-def _canonical_skill_read(command: str, skill_path: Path | None) -> bool:
-    """Return whether a dedicated command uses the runner-owned Skill binding."""
-    if skill_path is None:
-        return False
-    normalized = _unwrap_native_command(command)
-    return normalized is not None and normalized.strip() == 'cat "$CODEMAP_SKILL_FILE"'
-
-
-def _completed_with_explicit_zero_exit(item: Mapping[str, Any]) -> bool:
-    """Return whether one native command item completed with explicit exit zero."""
-    return item.get("status") == "completed" and type(item.get("exit_code")) is int and item["exit_code"] == 0
-
-
-def _canonical_query_output(item: Mapping[str, Any]) -> bool:
-    """Return whether output is one complete compact-query JSON document."""
-    try:
-        payload = json.loads(_command_output(item))
-    except (TypeError, json.JSONDecodeError):
-        return False
-    index = payload.get("index") if isinstance(payload, Mapping) else None
-    return isinstance(index, Mapping) and index.get("query_complete") is True and index.get("compact") is True
-
-
-def _exact_skill_read_output(item: Mapping[str, Any], skill_path: Path | None, skill_sha256: str) -> bool:
-    """Return whether output exactly proves the currently locked Skill bytes."""
-    if skill_path is None or not skill_sha256:
-        return False
-    try:
-        locked_skill_bytes = skill_path.read_bytes()
-        output_bytes = _command_output(item).encode("utf-8")
-    except (OSError, UnicodeEncodeError):
-        return False
-    return (
-        bool(locked_skill_bytes)
-        and hashlib.sha256(locked_skill_bytes).hexdigest() == skill_sha256
-        and output_bytes == locked_skill_bytes
-    )
-
-
-def _iter_lines(stream: str | bytes | Iterable[str | bytes]) -> Iterable[str]:
-    if isinstance(stream, bytes):
-        stream = stream.decode("utf-8", errors="replace")
-    if isinstance(stream, str):
-        yield from stream.splitlines()
-        return
-    for line in stream:
-        if isinstance(line, bytes):
-            yield line.decode("utf-8", errors="replace")
-        else:
-            yield line
-
-
-def _append_message_text(current: str, item: Mapping[str, Any]) -> str:
-    """Preserve agent-message boundaries when reconstructing one response."""
-    addition = _item_text(item)
-    if not addition:
-        return current
-    return f"{current}\n{addition}" if current else addition
-
-
-def parse_codex_jsonl(
-    stream: str | bytes | Iterable[str | bytes],
-    *,
-    launcher_path: Path | None = None,
-    skill_path: Path | None = None,
-    skill_sha256: str = "",
-) -> CodexParseResult:
-    """Parse Codex ``exec --json`` events into provider-neutral telemetry.
-
-    Codex has used both ``item.completed`` events and Claude-compatible
-    assistant blocks across CLI versions.  This parser accepts both shapes,
-    deduplicates lifecycle events by item ID, and retains every valid parsed
-    event in ``raw_events`` for audit/debugging.
-    """
-    result = CodexParseResult()
-    seen_items: set[str] = set()
-    pending_items: set[str] = set()
-    compact_query_attempt_seen = False
-    saw_terminal = False
-    saw_authentication_failure = False
-    for raw_line in _iter_lines(stream):
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except (TypeError, json.JSONDecodeError):
-            result.malformed_lines += 1
-            continue
-        if not isinstance(event, dict):
-            result.malformed_lines += 1
-            continue
-        result.raw_events.append(_redact_sensitive_event(event))
-        event_type = str(event.get("type", ""))
-        if event_type == "thread.started":
-            result.thread_id = str(event.get("thread_id", ""))
-
-        usage = event.get("usage")
-        if isinstance(usage, Mapping):
-            result.raw_usage.update(dict(usage))
-            result.input_tokens = max(result.input_tokens, _as_int(usage.get("input_tokens")))
-            result.cached_input_tokens = max(
-                result.cached_input_tokens,
-                _as_int(usage.get("cached_input_tokens", usage.get("cache_read_input_tokens"))),
-            )
-            result.output_tokens = max(result.output_tokens, _as_int(usage.get("output_tokens")))
-            result.reasoning_output_tokens = max(
-                result.reasoning_output_tokens,
-                _as_int(usage.get("reasoning_output_tokens")),
-            )
-
-        item = event.get("item")
-        if isinstance(item, Mapping):
-            item_id = str(item.get("id", ""))
-            item_type = str(item.get("type", ""))
-            command = _command_text(item)
-            if event_type == "item.completed" and item_type:
-                result.item_counts[item_type] = result.item_counts.get(item_type, 0) + 1
-            if item_type == "agent_message" and event_type in {"", "item.completed"}:
-                result.output_text = _append_message_text(result.output_text, item)
-            if item_type in {"command_execution", "shell_command", "command"}:
-                if event_type == "item.started" and item_id:
-                    pending_items.add(item_id)
-                if event_type == "item.completed" and item_id not in seen_items:
-                    seen_items.add(item_id)
-                    pending_items.discard(item_id)
-                    result.last_tool_text_offset = len(result.output_text)
-                    result.command_calls += 1
-                    duration_ms = item.get("duration_ms", item.get("elapsed_ms"))
-                    if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool):
-                        elapsed = max(float(duration_ms), 0.0) / 1000.0
-                        result.tool_elapsed_s = (result.tool_elapsed_s or 0.0) + elapsed
-                    skill_read_verified = (
-                        _canonical_skill_read(command, skill_path)
-                        and _completed_with_explicit_zero_exit(item)
-                        and _exact_skill_read_output(item, skill_path, skill_sha256)
-                    )
-                    if _canonical_query_arguments(command) is not None and (
-                        skill_path is None or result.skill_delivery_observed
-                    ):
-                        result.codemap_calls += 1
-                        delivery = "skill" if result.skill_delivery_observed else "direct"
-                        if delivery == "direct":
-                            result.codemap_direct_calls += 1
-                        else:
-                            result.codemap_skill_calls += 1
-                        if not _completed_with_explicit_zero_exit(item) or not _canonical_query_output(item):
-                            result.codemap_errors += 1
-                        else:
-                            result.codemap_successful_calls += 1
-                            result.codemap_compact_successful_calls += 1
-                            query_arguments = _canonical_query_arguments(command)
-                            if query_arguments is not None:
-                                result.successful_query_arguments.append(query_arguments)
-                            if delivery == "direct":
-                                result.codemap_direct_successful_calls += 1
-                                result.codemap_direct_compact_successful_calls += 1
-                            else:
-                                result.codemap_skill_successful_calls += 1
-                                result.codemap_skill_compact_successful_calls += 1
-                    elif result.codemap_errors:
-                        result.fallback_calls += 1
-                    if skill_read_verified and not compact_query_attempt_seen:
-                        result.skill_delivery_observed = True
-                    if _records_compact_query_attempt(command):
-                        compact_query_attempt_seen = True
-
-        # Compatibility with older/fixture streams that use assistant blocks.
-        message = event.get("message")
-        if isinstance(message, Mapping):
-            for block in message.get("content", []):
-                if not isinstance(block, Mapping):
-                    continue
-                if block.get("type") == "text":
-                    text_item = {"text": str(block.get("text", ""))}
-                    result.output_text = _append_message_text(result.output_text, text_item)
-                if block.get("type") == "tool_use":
-                    result.last_tool_text_offset = len(result.output_text)
-                    name = str(block.get("name", ""))
-                    command = _command_text(block)
-                    if name.lower() in {"bash", "shell", "command_execution"}:
-                        result.command_calls += 1
-                    if _is_codemap_command(name + " " + command, launcher_path=launcher_path):
-                        result.codemap_calls += 1
-                        if result.skill_delivery_observed:
-                            result.codemap_skill_calls += 1
-                        else:
-                            result.codemap_direct_calls += 1
-
-        if event_type in {"turn.completed", "result", "response.completed"}:
-            saw_terminal = True
-            status = str(event.get("status", event.get("subtype", "completed"))).lower()
-            if status in {"completed", "success", "succeeded", ""}:
-                result.completed = True
-            else:
-                result.incomplete = True
-                result.error = result.error or status
-                result.error_type = result.error_type or "turn_incomplete"
-        if event_type in {"error", "turn.failed", "response.failed"}:
-            saw_terminal = True
-            result.retryable = True
-            result.incomplete = True
-            error = event.get("error") or event.get("message") or event.get("detail")
-            result.error = _redact_provider_error(error) if error else event_type
-            native_error_type = event.get("error_type")
-            if isinstance(native_error_type, str) and native_error_type:
-                result.error_type = native_error_type
-            elif event_type == "turn.failed":
-                result.error_type = "turn_failed"
-            elif event_type == "response.failed":
-                result.error_type = "response_failed"
-            else:
-                result.error_type = "transport_error"
-            if _is_refresh_token_authentication_failure(result.error):
-                saw_authentication_failure = True
-    if not saw_terminal and not result.error:
-        result.incomplete = True
-        result.error = "missing terminal event"
-        result.error_type = "missing_terminal"
-        result.retryable = not result.raw_events
-    if pending_items:
-        result.completed = False
-        result.incomplete = True
-        result.error = result.error or "terminal event left command items incomplete"
-        result.error_type = result.error_type or "pending_item"
-    if result.malformed_lines:
-        result.completed = False
-        result.incomplete = True
-        result.error = result.error or f"malformed JSONL ({result.malformed_lines} line(s))"
-        result.error_type = result.error_type or "malformed_stream"
-    if saw_authentication_failure or _is_refresh_token_authentication_failure(result.error):
-        result.error_type = "authentication_failed"
-        result.retryable = False
-    return result
-
-
-@dataclass
 class ArmHome:
     """Disposable Codex home and environment for one canonical arm."""
 
@@ -1446,6 +883,145 @@ class ArmHome:
 
     def __exit__(self, *_exc: object) -> None:
         self.cleanup()
+
+
+@dataclass
+class ExecutableAgentWorkspace:
+    """One benchmark-owned editable worktree and its private index copy."""
+
+    source: Path
+    root: Path
+    worktree: Path
+    index_path: Path
+    baseline_commit: str
+    index_relocation: Mapping[str, str]
+
+    def index_unchanged(self) -> bool:
+        """Return whether the model left the derived frozen graph untouched."""
+        try:
+            current_sha256 = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
+        except OSError:
+            return False
+        return current_sha256 == self.index_relocation["derived_index_sha256"]
+
+    def capture_diff(self) -> str:
+        """Return the canonical Git diff produced by the agent's direct edits."""
+        return _workspace_git(self.worktree, "diff", "--binary", "--no-ext-diff").stdout
+
+    def changed_paths(self) -> tuple[str, ...]:
+        """Return the exact tracked paths changed by the agent."""
+        return tuple(
+            line for line in _workspace_git(self.worktree, "diff", "--name-only").stdout.splitlines() if line.strip()
+        )
+
+    def cleanup(self) -> bool:
+        """Restore and remove only this known disposable worktree, else fail closed."""
+        try:
+            _workspace_git(self.worktree, "reset", "--hard", "HEAD")
+            _workspace_git(self.source, "worktree", "remove", str(self.worktree))
+            cleaned = (
+                not self.worktree.exists()
+                and str(self.worktree) not in _workspace_git(self.source, "worktree", "list", "--porcelain").stdout
+            )
+        except (OSError, subprocess.SubprocessError):
+            cleaned = False
+        if cleaned:
+            shutil.rmtree(self.root, ignore_errors=True)
+        return cleaned
+
+
+def _workspace_git(repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run one bounded Git command against a benchmark-owned disposable repository."""
+    return subprocess.run(
+        ["git", "-C", str(repo_path), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def _non_root_index_sha256(payload: Mapping[str, Any]) -> str:
+    """Hash index content after excluding its environment-specific scan root."""
+    normalized = dict(payload)
+    normalized.pop("scan_root", None)
+    return hashlib.sha256(json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def relocate_frozen_index_for_worktree(
+    frozen_bytes: bytes, *, source_root: Path, worktree_root: Path
+) -> tuple[bytes, dict[str, str]]:
+    """Relocate only ``scan_root`` in a frozen index for a byte-identical worktree.
+
+    The structural graph remains immutable. This derived copy merely tells
+    Codemap that the checked-out baseline is now available at *worktree_root*,
+    preventing its deliberate root-mismatch completeness guard from rejecting
+    an otherwise identical source tree. The caller records both index hashes
+    and rejects a cell if the model changes the derived copy.
+    """
+    try:
+        frozen_payload = json.loads(frozen_bytes)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("executable agent workspace index must be valid JSON") from exc
+    if not isinstance(frozen_payload, dict):
+        raise ValueError("executable agent workspace index must be a JSON object")
+    expected_root = str(source_root.resolve())
+    if frozen_payload.get("scan_root") != expected_root:
+        raise ValueError("executable agent workspace index scan_root must match the frozen source repository")
+    derived_payload = dict(frozen_payload)
+    derived_payload["scan_root"] = str(worktree_root.resolve())
+    frozen_content_sha256 = _non_root_index_sha256(frozen_payload)
+    if _non_root_index_sha256(derived_payload) != frozen_content_sha256:
+        raise RuntimeError("executable index relocation changed frozen graph content")
+    derived_bytes = (json.dumps(derived_payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    return derived_bytes, {
+        "frozen_index_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
+        "derived_index_sha256": hashlib.sha256(derived_bytes).hexdigest(),
+        "non_root_content_sha256": frozen_content_sha256,
+        "source_scan_root": expected_root,
+        "worktree_scan_root": str(worktree_root.resolve()),
+    }
+
+
+def create_executable_agent_workspace(source: Path, index_path: Path, baseline_commit: str) -> ExecutableAgentWorkspace:
+    """Create an editable worktree with a root-relocated immutable graph copy."""
+    source = source.resolve(strict=True)
+    index_path = index_path.resolve(strict=True)
+    if not index_path.is_relative_to(source):
+        raise ValueError("executable agent workspace requires an index inside the frozen source repository")
+    if _repo_sha(source) != baseline_commit or _git_porcelain_status(source):
+        raise ValueError("executable agent workspace requires a clean frozen source repository")
+    root = Path(tempfile.mkdtemp(prefix="codemap-executable-agent-")).resolve(strict=True)
+    worktree = root / "repo"
+    copied_index = worktree / ".cache" / "codemap" / f"{worktree.name}.json"
+    try:
+        _workspace_git(source, "worktree", "add", "--detach", str(worktree), baseline_commit)
+        copied_index.parent.mkdir(parents=True, exist_ok=True)
+        derived_bytes, index_relocation = relocate_frozen_index_for_worktree(
+            index_path.read_bytes(), source_root=source, worktree_root=worktree
+        )
+        copied_index.write_bytes(derived_bytes)
+        if hashlib.sha256(copied_index.read_bytes()).hexdigest() != index_relocation["derived_index_sha256"]:
+            raise RuntimeError("executable agent workspace derived index write is incomplete")
+        return ExecutableAgentWorkspace(source, root, worktree, copied_index, baseline_commit, index_relocation)
+    except BaseException:
+        if worktree.exists():
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                _workspace_git(worktree, "reset", "--hard", "HEAD")
+                _workspace_git(source, "worktree", "remove", str(worktree))
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+
+
+@contextlib.contextmanager
+def bind_executable_agent_workspace(adapter: "CodexRunner", workspace: ExecutableAgentWorkspace) -> Iterable[None]:
+    """Bind one existing frozen adapter to a per-cell editable worktree temporarily."""
+    original_repo_path, original_index_path = adapter.repo_path, adapter.index_path
+    adapter.repo_path, adapter.index_path = workspace.worktree, workspace.index_path
+    try:
+        yield
+    finally:
+        adapter.repo_path, adapter.index_path = original_repo_path, original_index_path
 
 
 @dataclass(frozen=True)
@@ -1909,6 +1485,8 @@ def _write_permission_config(
     index_path: Path | None,
     *,
     marketplace_root: Path | None = None,
+    writable_workspace: Path | None = None,
+    denied_workspace: Path | None = None,
 ) -> Path:
     """Compose permissions ahead of any preserved Codex plugin registration."""
     if not _is_known_codex_arm(arm):
@@ -1917,7 +1495,13 @@ def _write_permission_config(
     auth_path = (home.path / "auth.json").resolve()
     filesystem_rules = [f'{json.dumps(str(auth_path))} = "deny"']
     denied_read_paths = _untrusted_host_agent_roots(home, arm, marketplace_root)
+    if denied_workspace is not None:
+        denied_workspace = denied_workspace.resolve()
+        if denied_workspace not in denied_read_paths:
+            denied_read_paths = (*denied_read_paths, denied_workspace)
     filesystem_rules.extend(f'{json.dumps(str(path))} = "deny"' for path in denied_read_paths)
+    if writable_workspace is not None:
+        filesystem_rules.append(f'{json.dumps(str(writable_workspace.resolve()))} = "write"')
     if index_path is None:
         raise ValueError(f"{arm} permission profile requires the locked index")
     canonical_index = _canonical_index_path(index_path)
@@ -2196,6 +1780,8 @@ def _verify_permission_profile(
     repo_path: Path,
     index_path: Path | None = None,
     command_runner: Callable[..., Any] | None = None,
+    *,
+    writable_workspace: Path | None = None,
 ) -> None:
     """Prove the selected profile denies secrets/source and permits only coordination."""
     code, stdout, stderr = _invoke_plugin_command(
@@ -2232,16 +1818,20 @@ def _verify_permission_profile(
     if code != 0:
         raise ValueError(f"Codex permission profile is unsupported or rejected: {error[:200]}")
 
-    source_probe = repo_path / f".codex-parity-deny-{uuid4().hex}"
+    source_probe = repo_path / f".codex-parity-write-{uuid4().hex}"
     write_script = "from pathlib import Path; import sys; Path(sys.argv[1]).write_bytes(b'probe')"
     code, _stdout, _stderr = _invoke_plugin_command(
         [*sandbox_prefix, write_script, str(source_probe)],
         home.env,
         command_runner=command_runner,
     )
-    if code == 0 or source_probe.exists():
-        source_probe.unlink(missing_ok=True)
-        raise ValueError("Codex permission profile allowed a source-tree write")
+    if writable_workspace is None:
+        if code == 0 or source_probe.exists():
+            source_probe.unlink(missing_ok=True)
+            raise ValueError("Codex permission profile allowed a source-tree write")
+    elif code != 0 or not source_probe.is_file():
+        raise ValueError("Codex permission profile denied benchmark-workspace writes")
+    source_probe.unlink(missing_ok=True)
 
     read_script = "from pathlib import Path; import sys; Path(sys.argv[1]).read_bytes()"
     auth_path = home.path / "auth.json"
@@ -2465,6 +2055,10 @@ def _configure_codex_rig_plugin(home: ArmHome, install_json: str) -> None:
     home.codex_rig_adapter_sha256 = hashlib.sha256(home.codex_rig_adapter_path.read_bytes()).hexdigest()
 
 
+class TreatmentArtifactLockError(ValueError):
+    """Report stale local treatment bytes without obscuring the safe recovery."""
+
+
 def _verify_treatment_artifact_locks(home: ArmHome, manifest_path: Path) -> None:
     """Require installed treatment files and versions to match the reviewed manifest locks."""
     try:
@@ -2506,12 +2100,49 @@ def _verify_treatment_artifact_locks(home: ArmHome, manifest_path: Path) -> None
         rig_manifest = json.loads((home.codex_rig_path / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
     except (AttributeError, OSError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("installed Codemap/Codex Rig artifact identity is incomplete") from exc
-    if codemap_manifest.get("version") != codemap_version or rig_manifest.get("version") != codex_rig_version:
-        raise ValueError("installed Codemap/Codex Rig version does not match the treatment manifest")
+    observed_versions = {
+        "codemap-py": str(codemap_manifest.get("version")),
+        "codex-rig": str(rig_manifest.get("version")),
+    }
+    expected_versions = {"codemap-py": codemap_version, "codex-rig": codex_rig_version}
+    version_drift = {
+        name: (expected_versions[name], observed_versions[name])
+        for name in expected_versions
+        if expected_versions[name] != observed_versions[name]
+    }
+    if version_drift:
+        raise TreatmentArtifactLockError(_treatment_artifact_version_mismatch_message(version_drift))
     for artifact_name, observed_sha256 in expected.items():
         expected_sha256 = hashes.get(artifact_name) if isinstance(hashes, Mapping) else None
         if not isinstance(expected_sha256, str) or observed_sha256 != expected_sha256:
-            raise ValueError(f"installed treatment artifact does not match lock: {artifact_name}")
+            raise TreatmentArtifactLockError(_treatment_artifact_lock_mismatch_message(artifact_name))
+
+
+def _treatment_artifact_lock_mismatch_message(artifact_name: str) -> str:
+    """Explain how to refresh a stale local treatment lock without weakening provenance."""
+    return (
+        f"installed treatment artifact does not match lock: {artifact_name}. "
+        "The local treatment bytes changed after `benchmarks/manifests/codex-integration.json` was generated; "
+        "no paid model call was started. Refresh the lock with "
+        "`python3 benchmarks/build-codex-integration-manifest.py`, then resolve a new scope for the same study, "
+        "repository, model, and task IDs. Do not reuse the previous --paid-approval value. "
+        "If Codex Rig edits are still in progress, regenerate only after the intended local bytes are ready."
+    )
+
+
+def _treatment_artifact_version_mismatch_message(version_drift: Mapping[str, tuple[str, str]]) -> str:
+    """Explain how to relock reviewed local plugin versions before a paid retry."""
+    observed = ", ".join(
+        f"{name}: manifest={expected}, installed={installed}"
+        for name, (expected, installed) in sorted(version_drift.items())
+    )
+    return (
+        f"installed treatment version differs from the active manifest ({observed}). "
+        "No paid model call was started. The local plugin changed after the treatment manifest was generated. "
+        "When the intended local plugin bytes are ready, run "
+        "`python3 benchmarks/build-codex-integration-manifest.py`, then resolve a new scope for the same study, "
+        "repository, model, and task IDs. Do not reuse the previous --paid-approval value."
+    )
 
 
 def _admit_installed_skill_pair(
@@ -2643,7 +2274,7 @@ def _admit_staged_direct_cli(
         command_runner=command_runner,
     )
     output_item = {"aggregated_output": stdout}
-    if code != 0 or not _query_output_complete(output_item):
+    if code != 0 or not runtime._query_output_complete(output_item):
         detail = stderr.strip() or stdout.strip()
         raise RuntimeError(f"staged direct CLI admission query failed: {detail[:300]}")
     if hashlib.sha256(index_path.read_bytes()).hexdigest() != index_sha256:
@@ -2835,6 +2466,7 @@ def _write_input_snapshot(
     auth_source: Path | None,
     arm_archives: Mapping[str, Mapping[str, Path]],
     arm_files: Mapping[str, Mapping[str, Path]] | None = None,
+    additional_shared_files: Mapping[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Write immutable launch inputs without copying credential bytes."""
     if snapshot_root.exists():
@@ -2844,14 +2476,22 @@ def _write_input_snapshot(
     shared = snapshot_root / "shared"
     for role, source, relative in (
         ("manifest", manifest_path, Path("manifest.json")),
-        ("task_suite", tasks_path, Path("tasks-bench.json")),
-        ("runner", runner_path, Path("run-codex-structural.py")),
+        ("task_suite", tasks_path, Path(tasks_path.name)),
+        ("runner", runner_path, Path(runner_path.name)),
     ):
         _archive_snapshot_file(source, shared / relative, role=role, archive_root=snapshot_root, entries=entries)
-    if invocation_launcher_path is not None:
+    for relative, source in sorted((additional_shared_files or {}).items()):
+        _archive_snapshot_file(
+            source,
+            shared / relative,
+            role=f"shared:{relative}",
+            archive_root=snapshot_root,
+            entries=entries,
+        )
+    if invocation_launcher_path is not None and invocation_launcher_path.resolve() != runner_path.resolve():
         _archive_snapshot_file(
             invocation_launcher_path,
-            shared / "run-all.sh",
+            shared / invocation_launcher_path.name,
             role="invocation_launcher",
             archive_root=snapshot_root,
             entries=entries,
@@ -3109,6 +2749,7 @@ class CodexRun:
     output_tokens: int = 0
     reasoning_output_tokens: int = 0
     command_calls: int = 0
+    codemap_observed_calls: int = 0
     codemap_calls: int = 0
     codemap_successful_calls: int = 0
     codemap_compact_successful_calls: int = 0
@@ -3161,18 +2802,20 @@ class LockedQueryFitness:
     options: float
 
 
-def _arm_compliance(arm: str, evidence: CodexParseResult | CodexRun) -> bool | None:
+def _arm_compliance(arm: str, evidence: runtime.CodexParseResult | CodexRun) -> bool | None:
     """Evaluate the transport-specific required-use contract for one arm."""
     if arm == "B_direct_required":
         return evidence.codemap_direct_compact_successful_calls > 0
     if arm == "C_skill_required":
-        return evidence.skill_delivery_observed and evidence.codemap_skill_compact_successful_calls > 0
+        return evidence.codemap_skill_compact_successful_calls > 0
     if arm == "A_plain":
         return None
     raise ValueError(f"unknown benchmark arm {arm!r}")
 
 
-def _locked_query_conformance(task: Mapping[str, Any], arm: str, run: CodexParseResult | CodexRun) -> bool | None:
+def _locked_query_conformance(
+    task: Mapping[str, Any], arm: str, run: runtime.CodexParseResult | CodexRun
+) -> bool | None:
     """Report whether successful compact queries exactly match the locked contract."""
     if arm == "A_plain":
         return None
@@ -3192,7 +2835,7 @@ def _locked_query_conformance(task: Mapping[str, Any], arm: str, run: CodexParse
 def _locked_query_fitness(
     task: Mapping[str, Any],
     arm: str,
-    run: CodexParseResult | CodexRun,
+    run: runtime.CodexParseResult | CodexRun,
 ) -> LockedQueryFitness | None:
     """Score exact-query similarity and expose endpoint, target, and option contributions."""
     if arm == "A_plain":
@@ -3775,10 +3418,10 @@ class CodexRunner:
         if self._auth_state is not None:
             self._auth_state.close()
 
-    def build_command(self, prompt: str) -> list[str]:
+    def build_command(self, prompt: str, *, working_directory: Path | None = None) -> list[str]:
         """Build this runner's canonical Codex command."""
         return build_codex_command(
-            self.repo_path,
+            working_directory or self.repo_path,
             self.model,
             prompt,
             reasoning_effort=self.reasoning_effort,
@@ -3789,6 +3432,9 @@ class CodexRunner:
         arm: str,
         *,
         diff_impact_stage: DiffImpactStageAdmission | None = None,
+        writable_workspace: Path | None = None,
+        denied_workspace: Path | None = None,
+        index_relocation: Mapping[str, str] | None = None,
     ) -> ArmHome:
         """Create and verify one arm home without invoking a model."""
         _validate_locked_runtime(
@@ -3797,6 +3443,7 @@ class CodexRunner:
             arm,
             self.manifest_path,
             diff_impact_stage,
+            index_relocation,
         )
         auth_state = self._ensure_auth_state()
         if auth_state is not None:
@@ -3882,6 +3529,8 @@ class CodexRunner:
                 arm,
                 self.index_path,
                 marketplace_root=self.marketplace_root,
+                writable_workspace=writable_workspace,
+                denied_workspace=denied_workspace,
             )
             if arm == "C_skill_required":
                 _verify_installed_plugin_pair(home, command_runner=self.command_runner)
@@ -3890,6 +3539,7 @@ class CodexRunner:
                 self.repo_path,
                 self.index_path,
                 command_runner=self.command_runner,
+                writable_workspace=writable_workspace,
             )
             if arm == "B_direct_required":
                 if self.index_path is None:
@@ -3973,7 +3623,7 @@ class CodexRunner:
                         self.command_runner,
                         cwd=self.repo_path,
                     )
-                    if code != 0 or not _canonical_query_output({"aggregated_output": stdout}):
+                    if code != 0 or not runtime._canonical_query_output({"aggregated_output": stdout}):
                         detail = stderr.strip() or stdout.strip()
                         raise RuntimeError(f"B_direct_required expected query failed for {task_id}: {detail[:300]}")
                     if hashlib.sha256(self.index_path.read_bytes()).hexdigest() != index_sha256:
@@ -3995,6 +3645,8 @@ class CodexRunner:
         invocation_launcher_path: Path | None = None,
         tasks: Iterable[Mapping[str, Any]],
         arms: Iterable[str],
+        runner_path: Path | None = None,
+        additional_shared_files: Mapping[str, Path] | None = None,
     ) -> dict[str, Any]:
         """Archive launch inputs and verified B/C package bytes before paid calls."""
         snapshot_root = Path(run_dir) / "inputs"
@@ -4031,12 +3683,13 @@ class CodexRunner:
                 snapshot_root,
                 manifest_path=manifest_path,
                 tasks_path=tasks_path,
-                runner_path=Path(__file__),
+                runner_path=runner_path or Path(__file__),
                 invocation_launcher_path=invocation_launcher_path,
                 index_path=self.index_path,
                 auth_source=self.auth_source,
                 arm_archives=arm_archives,
                 arm_files=arm_files,
+                additional_shared_files=additional_shared_files,
             )
             if isinstance(snapshot.get("path"), str):
                 runtime_archives = {
@@ -4205,7 +3858,7 @@ class CodexRunner:
         started_at = time.monotonic()
         coordinate_deadline = started_at + self.timeout
         attempt_events: list[list[dict[str, Any]]] = []
-        parsed = CodexParseResult()
+        parsed = runtime.CodexParseResult()
         postflight_error = ""
         auth_state_error = ""
         command = self.build_command(command_prompt)
@@ -4213,7 +3866,7 @@ class CodexRunner:
             for attempt in range(3):
                 remaining_s = coordinate_deadline - time.monotonic()
                 if remaining_s <= 0:
-                    parsed = CodexParseResult(
+                    parsed = runtime.CodexParseResult(
                         incomplete=True,
                         error=f"cell wall-clock budget exhausted ({self.timeout}s total)",
                         error_type="cell_timeout",
@@ -4225,7 +3878,7 @@ class CodexRunner:
                     stream = self._subprocess(command, home.env, timeout=remaining_s)
                 else:
                     stream = self.transport(command, arm=arm)
-                parsed = parse_codex_jsonl(
+                parsed = runtime.parse_codex_jsonl(
                     stream,
                     launcher_path=home.codemap_launcher_path if home is not None else None,
                     skill_path=home.codemap_skill_path if home is not None else None,
@@ -4288,6 +3941,7 @@ class CodexRunner:
             "output_tokens",
             "reasoning_output_tokens",
             "command_calls",
+            "codemap_observed_calls",
             "codemap_calls",
             "codemap_successful_calls",
             "codemap_compact_successful_calls",
@@ -4319,7 +3973,7 @@ class CodexRunner:
             run.codemap_delivery = "direct_cli"
         elif arm == "C_skill_required" and run.compliance:
             run.codemap_delivery = "installed_skill"
-        run.contaminated = bool(postflight_error) or (arm == "A_plain" and run.codemap_calls > 0)
+        run.contaminated = bool(postflight_error) or (arm == "A_plain" and run.codemap_observed_calls > 0)
         run.treatment_adherence = treatment_adherence(
             arm,
             codemap_use_compliance=run.compliance,
@@ -4354,13 +4008,14 @@ class CodexRunner:
         env: Mapping[str, str],
         *,
         timeout: float | None = None,
+        working_directory: Path | None = None,
     ) -> str:
         """Run one Codex attempt within the coordinate's remaining budget."""
         attempt_timeout = self.timeout if timeout is None else timeout
         try:
             completed = subprocess.run(
                 command,
-                cwd=self.repo_path,
+                cwd=working_directory or self.repo_path,
                 env=dict(env),
                 capture_output=True,
                 text=True,
@@ -4404,17 +4059,18 @@ def _arm_envelope(arm: str) -> str:
             "Codemap is available only through the direct CLI. Before answering, complete a dedicated native "
             'command item of the exact form "$CODEMAP_BIN" query --compact <subcommand> <arguments>. '
             "It must exit 0 and emit one JSON document whose index.query_complete and index.compact are true. "
+            "The credited item contains only that query: do not prefix, assign, wrap, or combine it with shell work. "
             "Do not use batch; repeat the dedicated command for each independently required fact. "
             'If discovery is needed, use "$CODEMAP_BIN" query --help; help is not a subcommand. '
             "Additional reads and shell work are allowed only as separate native items and are ignored for credit."
         )
     if arm == "C_skill_required":
         return (
-            "Codemap's installed $codemap-py:query-code Skill is available through the runner-owned immutable "
-            "CODEMAP_SKILL_FILE binding. Before the canonical query, complete a separate dedicated native item whose "
-            'exact command is cat "$CODEMAP_SKILL_FILE". Then complete a dedicated '
-            'native command item of the exact form "$CODEMAP_BIN" query --compact <subcommand> <arguments> with '
+            "Codemap's installed $codemap-py:query-code Skill is available through a runner-owned immutable binding. "
+            "Use its smallest complete query guidance, then complete a dedicated native command item of the exact form "
+            '"$CODEMAP_BIN" query --compact <subcommand> <arguments> with '
             "exit 0 and one JSON document whose index.query_complete and index.compact are true. "
+            "The credited item contains only that query: do not prefix, assign, wrap, or combine it with shell work. "
             "Do not use batch; repeat the dedicated command for each independently required fact. "
             'If discovery is needed, use "$CODEMAP_BIN" query --help; help is not a subcommand. '
             "Additional reads and shell work are allowed only as separate native items and are ignored for credit."
@@ -4675,14 +4331,14 @@ def rescore_results(run_dir: Path) -> Path:
         if not isinstance(raw_events, list) or not all(isinstance(event, Mapping) for event in raw_events):
             raise ValueError("offline rescore telemetry row lacks replayable raw events")
         seen_coordinates.add(coordinate)
-        parsed = parse_codex_jsonl(
+        parsed = runtime.parse_codex_jsonl(
             (json.dumps(event, sort_keys=True) for event in raw_events),
             skill_path=skill_path if arm == "C_skill_required" else None,
             skill_sha256=skill_sha256 if arm == "C_skill_required" else "",
         )
         evaluation = _default_evaluator(task_by_id[task_id], parsed.output_text)
         compliance = _arm_compliance(str(arm), parsed)
-        contaminated = arm == "A_plain" and parsed.codemap_calls > 0
+        contaminated = arm == "A_plain" and parsed.codemap_observed_calls > 0
         row = {
             "task_id": task_id,
             "repetition": repetition,
@@ -4705,6 +4361,7 @@ def rescore_results(run_dir: Path) -> Path:
                 contaminated=contaminated,
             ),
             "codemap_calls": parsed.codemap_calls,
+            "codemap_observed_calls": parsed.codemap_observed_calls,
             "codemap_successful_calls": parsed.codemap_successful_calls,
             "codemap_direct_compact_successful_calls": parsed.codemap_direct_compact_successful_calls,
             "codemap_skill_compact_successful_calls": parsed.codemap_skill_compact_successful_calls,
@@ -4886,7 +4543,9 @@ def main(
         raise ValueError("per-cell timeout must be positive")
     if task_ids and task_selectors is not None:
         raise ValueError("--task-id and --tasks cannot be combined")
-    targeted_scope = resolve_task_selection(Path(manifest_path), task_selectors) if task_selectors is not None else None
+    targeted_scope = (
+        _resolve_structural_task_selection(Path(manifest_path), task_selectors) if task_selectors is not None else None
+    )
     if targeted_scope is not None:
         task_ids = list(targeted_scope["task_ids"])
         repetitions = targeted_scope["repetitions"] if repetitions is None else repetitions
@@ -4967,14 +4626,14 @@ def main(
         ),
     )
     if show_legend:
-        render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
+        runtime.render_result_rows(f"{runtime.STRUCTURAL_OUTPUT_LEGEND}\n".splitlines(keepends=True), sys.stdout)
     if dry_run:
         try:
             for selected in ARMS if arm == "all" else (arm,):
                 evidence = runner.probe_arm(selected)
-                runtime = evidence.get("codemap_python") or "absent"
+                codemap_python = evidence.get("codemap_python") or "absent"
                 print(
-                    f"PROBE\t{selected}\tcodemap={str(evidence['codemap_available']).lower()}\tcodemap_python={runtime}"
+                    f"PROBE\t{selected}\tcodemap={str(evidence['codemap_available']).lower()}\tcodemap_python={codemap_python}"
                 )
             selected_arms = ARMS if arm == "all" else (arm,)
             preflight = getattr(runner, "preflight_expected_queries", None)
@@ -5015,7 +4674,7 @@ def main(
         for task in tasks:
             for repetition in range(1, repetitions + 1):
                 for selected in task_arms[(task["id"], repetition)]:
-                    print(_format_plan_row(task["id"], repetition, selected))
+                    print(runtime.format_plan_row(task["id"], repetition, selected))
         return
     assert output_path is not None
     assert metadata_path is not None
@@ -5135,7 +4794,7 @@ def main(
                     pending_result_rows.append(
                         (
                             selected,
-                            _format_result_row(
+                            runtime.format_structural_result_row(
                                 status=status,
                                 task_id=task["id"],
                                 repetition=repetition,
@@ -5147,7 +4806,7 @@ def main(
                                 elapsed_s=run.elapsed_s,
                                 quality=quality,
                                 adherence=run.treatment_adherence,
-                                codemap_used=run.codemap_calls > 0,
+                                codemap_used=run.codemap_observed_calls > 0,
                                 query_conformance=run.locked_query_conformance,
                                 headline_eligible=run.headline_eligible_v1,
                             ),
@@ -5289,40 +4948,6 @@ def _optional_path(value: str | Path | None) -> Path | None:
     return None if value is None else Path(value)
 
 
-def _normalize_cli_task_ids(value: str | Sequence[str] | None) -> list[str] | None:
-    """Normalize the comma-separated ``--task-id`` value into locked task IDs.
-
-    ``fire`` splits ``--task-id SE-01,FN-02`` into a tuple and keeps a single
-    ``--task-id SE-01`` a plain string; it never accumulates repeated flags.
-
-    Args:
-        value: Raw flag value: one ID, a tuple of IDs, or ``None``.
-
-    Returns:
-        The ordered task IDs, or ``None`` when the flag was not supplied.
-
-    Raises:
-        SystemExit: When any comma-separated token is empty.
-
-    Examples:
-        >>> _normalize_cli_task_ids(None) is None
-        True
-        >>> _normalize_cli_task_ids("SE-01")
-        ['SE-01']
-        >>> _normalize_cli_task_ids("SE-01,FN-02")
-        ['SE-01', 'FN-02']
-        >>> _normalize_cli_task_ids(("SE-01", "FN-02"))
-        ['SE-01', 'FN-02']
-    """
-    if value is None:
-        return None
-    raw_values = [value] if isinstance(value, str) else [str(item) for item in value]
-    task_ids = [token.strip() for raw_value in raw_values for token in raw_value.split(",")]
-    if not task_ids or any(not task_id for task_id in task_ids):
-        _cli_error("--task-id values cannot be empty")
-    return task_ids
-
-
 def _print_rescore(run_dir: Path) -> None:
     """Print the offline rescore artifact path; fire must never see a return value.
 
@@ -5408,6 +5033,274 @@ def _require_execution_options(**options: object) -> None:
             _cli_error(f"--{option.replace('_', '-')} is required unless --render-results is used")
 
 
+def _resolve_execution_scope(
+    *,
+    selection: Mapping[str, Any],
+    repo_path: Path,
+    model: str,
+    reasoning_effort: str,
+    manifest_path: Path,
+    index_path: Path,
+) -> dict[str, Any]:
+    """Bind the selected stage partitions into one immutable execution scope."""
+    from _bench_codex.stage_fix import resolve_fix_stage_scope
+    from _bench_codex.stage_readcrop import resolve_readcrop_stage_scope
+
+    scoped_stages: list[dict[str, Any]] = []
+    for stage in selection["stages"]:
+        stage_id = str(stage["stage_id"])
+        task_ids = list(stage["task_ids"])
+        if stage_id == "structural":
+            child_scope = {
+                "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                "task_ids": task_ids,
+                "repetitions": stage["repetitions"],
+                "arms": stage["arms"],
+                "coordinate_timeout_seconds": _task_selection_contract(manifest_path)["coordinate_timeout_seconds"],
+            }
+            child_scope["scope_sha256"] = _targeted_scope_sha256(child_scope)
+        elif stage_id == "readcrop":
+            child_scope = resolve_readcrop_stage_scope(
+                repo_path=repo_path,
+                model=model,
+                tasks_selector=",".join(task_ids),
+                structural_manifest_path=manifest_path,
+            )
+        else:
+            child_scope = resolve_fix_stage_scope(
+                study=stage_id,
+                repo_path=repo_path,
+                selected=set(task_ids),
+                model=model,
+                index_path=index_path,
+            )
+        scoped_stages.append({**stage, "scope_sha256": child_scope["scope_sha256"]})
+    aggregate = {
+        "schema_version": "codex-unified-scope-v1",
+        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "model": model,
+        "reasoning_effort": reasoning_effort,
+        "selection_mode": selection["selection_mode"],
+        "task_ids": selection["task_ids"],
+        "stages": scoped_stages,
+        "total_tasks": selection["total_tasks"],
+        "total_cells": selection["total_cells"],
+    }
+    aggregate["scope_sha256"] = hashlib.sha256(
+        json.dumps(aggregate, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return aggregate
+
+
+def _write_unified_metadata(path: Path, payload: Mapping[str, Any]) -> None:
+    """Persist aggregate lifecycle state without stage-specific quality fields."""
+    path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _annotate_stage_metadata(stage_dir: Path, stage_id: str) -> None:
+    """Ensure every child artifact identifies its native scorer stage."""
+    path = stage_dir / "run-metadata.json"
+    if not path.is_file():
+        return
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["stage_id"] = stage_id
+    _write_unified_metadata(path, payload)
+
+
+def _run_unified_execution(
+    *,
+    repo_path: Path,
+    model: str,
+    reasoning_effort: str,
+    tasks: str | Sequence[str] | None,
+    manifest_path: Path,
+    index_path: Path,
+    marketplace_root: Path,
+    codemap_bin: Path,
+    auth_source: Path | None,
+    invocation_launcher_path: Path | None,
+    run_dir: Path | None,
+    paid_approval: str | None,
+    dry_run: bool,
+    show_legend: bool,
+) -> None:
+    """Plan or execute the selected stage partitions under one authorization."""
+    from _bench_codex.stage_fix import run_fix_stage
+    from _bench_codex.stage_readcrop import run_stage as run_readcrop_stage
+
+    selection = resolve_task_selection(manifest_path, tasks)
+    if not dry_run:
+        missing = [
+            flag
+            for flag, value in (
+                ("--auth-source", auth_source),
+                ("--run-dir", run_dir),
+                ("--paid-approval", paid_approval),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                f"cannot start model execution; missing {', '.join(missing)}. "
+                "Run the same command with --dry-run and copy its PAID_COMMAND exactly."
+            )
+        if not isinstance(paid_approval, str) or re.fullmatch(r"[0-9a-f]{64}", paid_approval) is None:
+            raise ValueError(
+                "paid approval must be the 64-character aggregate scope printed by --dry-run. No model call was made."
+            )
+    scope = _resolve_execution_scope(
+        selection=selection,
+        repo_path=repo_path,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        manifest_path=manifest_path,
+        index_path=index_path,
+    )
+    if not dry_run:
+        if paid_approval != scope["scope_sha256"]:
+            raise ValueError(
+                "paid approval does not match the current aggregate scope. No model call was made. "
+                "Run the same command with --dry-run and copy its PAID_COMMAND exactly."
+            )
+        assert run_dir is not None
+        if run_dir.exists():
+            raise FileExistsError(
+                f"run directory already exists: {run_dir}. Use the fresh --run-dir printed by --dry-run."
+            )
+
+    def run_stage(stage: Mapping[str, Any], *, child_dir: Path | None) -> None:
+        """Dispatch one already-resolved partition to its native stage engine."""
+        stage_id = str(stage["stage_id"])
+        task_ids = list(stage["task_ids"])
+        if stage_id == "structural":
+            selected = selection["selection_mode"] == "selected"
+            main(
+                repo_path=repo_path,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                tasks_path=Path(__file__).with_name("suites") / "tasks-bench.json",
+                manifest_path=manifest_path,
+                index_path=index_path,
+                marketplace_root=marketplace_root,
+                codemap_bin=codemap_bin,
+                auth_source=auth_source,
+                invocation_launcher_path=invocation_launcher_path,
+                output_path=None if child_dir is None else child_dir / "telemetry.jsonl",
+                metadata_path=None if child_dir is None else child_dir / "run-metadata.json",
+                task_ids=None if selected else task_ids,
+                task_selectors=",".join(task_ids) if selected else None,
+                scope_sha256=stage["scope_sha256"] if selected else None,
+                repetitions=int(stage["repetitions"]),
+                dry_run=dry_run,
+                show_legend=show_legend,
+            )
+        elif stage_id == "readcrop":
+            run_readcrop_stage(
+                repo_path=repo_path,
+                model=model,
+                tasks_selector=",".join(task_ids),
+                dry_run_requested=dry_run,
+                resolve_scope_requested=False,
+                auth_source=auth_source,
+                run_dir=child_dir,
+                paid_approval=stage["scope_sha256"],
+                index_path=index_path,
+                marketplace_root=marketplace_root,
+                codemap_bin=codemap_bin,
+                structural_manifest_path=manifest_path,
+                emit_authorization=False,
+            )
+        else:
+            run_fix_stage(
+                study=stage_id,
+                repo_path=repo_path,
+                selected=set(task_ids),
+                dry_run=dry_run,
+                resolve_scope=False,
+                auth_source=auth_source,
+                run_dir=child_dir,
+                paid_approval=stage["scope_sha256"],
+                model=model,
+                index_path=index_path,
+                marketplace_root=marketplace_root,
+                codemap_bin=codemap_bin,
+                emit_authorization=False,
+            )
+
+    if dry_run:
+        for stage in scope["stages"]:
+            run_stage(stage, child_dir=None)
+        print(f"DESIGN   {scope['total_tasks']} tasks × A/B/C = {scope['total_cells']} cells")
+        print(f"SCOPE   {scope['scope_sha256']}")
+        runtime.print_unified_paid_command(
+            repo_path=repo_path,
+            manifest_path=manifest_path,
+            index_path=index_path,
+            marketplace_root=marketplace_root,
+            codemap_bin=codemap_bin,
+            model=model,
+            selectors=selection["selectors"],
+            scope_sha256=scope["scope_sha256"],
+        )
+        return
+
+    assert run_dir is not None
+    metadata_path = run_dir / "run-metadata.json"
+    metadata: dict[str, Any] = {
+        "schema_version": "codex-unified-run-v1",
+        "status": "running",
+        "scope": scope,
+        "stages": [],
+        "started_at": _utc_now(),
+    }
+    stage_design = ", ".join(
+        f"{stage['stage_id']}={len(stage['task_ids'])} tasks/{stage['total_cells']} cells" for stage in scope["stages"]
+    )
+    print("== CODEX UNIFIED A/B/C STUDY ==")
+    print(f"→ aggregate: {scope['total_tasks']} tasks, {scope['total_cells']} cells")
+    print(f"→ sequential stages: {stage_design}")
+    run_dir.mkdir(parents=True, exist_ok=False)
+    _write_unified_metadata(metadata_path, metadata)
+    aggregate_completed = 0
+    try:
+        for stage_number, stage in enumerate(scope["stages"], start=1):
+            stage_id = str(stage["stage_id"])
+            child_dir = run_dir / stage_id
+            stage_record = {"stage_id": stage_id, "status": "running", "path": stage_id}
+            metadata["stages"].append(stage_record)
+            _write_unified_metadata(metadata_path, metadata)
+            print(
+                f"== STAGE {stage_number}/{len(scope['stages'])}: {stage_id} "
+                f"({len(stage['task_ids'])} tasks, {stage['total_cells']} cells) =="
+            )
+            try:
+                with runtime.progress_scope(
+                    completed_offset=aggregate_completed,
+                    total_cells=int(scope["total_cells"]),
+                ):
+                    run_stage(stage, child_dir=child_dir)
+            finally:
+                _annotate_stage_metadata(child_dir, stage_id)
+                if child_dir.is_dir():
+                    runtime.write_checksums(child_dir)
+            stage_record["status"] = "completed"
+            aggregate_completed += int(stage["total_cells"])
+            _write_unified_metadata(metadata_path, metadata)
+        metadata["status"] = "completed"
+    except BaseException as exc:
+        metadata["status"] = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+        metadata["error"] = {"type": type(exc).__name__, "message": str(exc)[:1000]}
+        if metadata["stages"] and metadata["stages"][-1]["status"] == "running":
+            metadata["stages"][-1]["status"] = metadata["status"]
+        raise
+    finally:
+        metadata["completed_at"] = _utc_now()
+        _write_unified_metadata(metadata_path, metadata)
+        runtime.write_checksums(run_dir)
+        print(f"SUMMARY  status={metadata['status']}  stages={len(metadata['stages'])}/{len(scope['stages'])}")
+    print(f"done: {run_dir}")
+
+
 def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag with a default (0 required)
     render_results: bool = False,
     rescore_results: str | None = None,
@@ -5417,29 +5310,36 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
     repo_path: str | None = None,
     model: str | None = None,
     reasoning_effort: str = PARITY_CODEX_REASONING_EFFORT,
-    tasks_path: str | None = None,
     manifest_path: str | Path = PARITY_MANIFEST_PATH,
     index_path: str | None = None,
     marketplace_root: str | None = None,
     codemap_bin: str | None = None,
     auth_source: str | None = None,
     invocation_launcher_path: str | None = None,
-    output_path: str | None = None,
-    metadata_path: str | None = None,
-    task_id: str | Sequence[str] | None = None,
     tasks: str | Sequence[str] | None = None,
-    scope_sha256: str | None = None,
-    repetitions: int | None = None,
-    arm: str = "all",
     dry_run: bool = False,
     no_legend: bool = False,
+    run_dir: str | None = None,
+    paid_approval: str | None = None,
+    rescore_fix_run_dir: str | None = None,
+    rescore_fix_output_dir: str | None = None,
+    rescore_readcrop_run_dir: str | None = None,
+    rescore_readcrop_output_dir: str | None = None,
 ) -> None:
-    """Dispatch the Codex structural runner's four CLI modes.
+    """Dispatch one unified Codex benchmark, rendering, resolution, or rescore mode.
 
-    Exactly one mode runs per invocation: stream rendering, offline rescoring,
-    task-selector resolution, or benchmark execution. Every branch prints its own
-    output and returns ``None``, because ``fire`` echoes any returned value and
-    would corrupt the machine-parsed stdout stream.
+    Benchmark execution is task-driven. Omitting ``tasks`` executes all 55
+    structural, 6 ReadCrop, 4 Fix-Single, and 3 Fix-Multi tasks: 68 tasks and
+    204 A/B/C cells. Family selectors such as ``RC,FS,FM`` and mixed exact IDs
+    such as ``RC-01,FS-03,FM-02`` route to their native stage scorers while
+    retaining separate child artifacts. Absence of ``dry_run`` means model
+    execution and therefore requires authentication, a fresh run directory,
+    and the aggregate approval printed by the matching dry run.
+
+    Exactly one non-execution mode may run per invocation: stream rendering,
+    offline rescoring, or selector resolution. Every branch prints its own
+    output and returns ``None`` because Fire echoes returned values and would
+    corrupt machine-parsed standard output.
 
     Args:
         render_results: Render progress rows read from standard input.
@@ -5455,24 +5355,18 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
         model: Codex model identifier; required for execution.
         reasoning_effort: Locked Codex reasoning stratum; only
             ``PARITY_CODEX_REASONING_EFFORT`` is accepted.
-        tasks_path: Locked structural task suite JSON; required for execution.
         manifest_path: Active benchmark manifest defining the locked contract.
         index_path: Locked Codemap index consumed by the B and C arms.
         marketplace_root: Local plugin marketplace root for the C arm.
         codemap_bin: Direct Codemap launcher for the B arm.
         auth_source: User-owned ``auth.json`` copied into the disposable home.
         invocation_launcher_path: Recorded launcher whose digest is revalidated.
-        output_path: Raw telemetry JSONL destination; required for paid runs.
-        metadata_path: Run metadata destination; defaults beside ``output_path``.
-        task_id: Comma-separated locked task IDs, e.g. ``--task-id SE-01,FN-02``.
-            Repeating the flag does not accumulate; use the comma form.
-        tasks: Comma-separated exact task IDs or task families selecting a
-            targeted, nonpoolable scope.
-        scope_sha256: Resolved targeted-scope SHA-256 required for paid subsets.
-        repetitions: Number of repetitions to execute, starting at 1.
-        arm: Single arm name, or ``all`` for the manifest's arm ordering.
+        tasks: Optional comma-separated task families or exact IDs. Omit it for
+            the complete 68-task suite.
         dry_run: Validate locked inputs and print the cell plan without a model call.
         no_legend: Suppress the output legend block.
+        run_dir: Fresh aggregate artifact directory required for model execution.
+        paid_approval: Aggregate scope SHA-256 printed by the matching dry run.
 
     Raises:
         SystemExit: With status ``2`` when flags are combined illegally, a
@@ -5504,29 +5398,60 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
         _print_task_selection(Path(manifest_path), resolve_tasks)
         return
     if render_results:
-        render_result_rows(sys.stdin, sys.stdout, force_color=force_color, hide_plan=hide_plan)
+        runtime.render_result_rows(sys.stdin, sys.stdout, force_color=force_color, hide_plan=hide_plan)
         return
-    _require_execution_options(repo_path=repo_path, model=model, tasks_path=tasks_path)
+    if (rescore_readcrop_run_dir is None) != (rescore_readcrop_output_dir is None):
+        _cli_error("--rescore-readcrop-run-dir requires --rescore-readcrop-output-dir")
+    if rescore_readcrop_run_dir is not None:
+        from _bench_codex.stage_readcrop import run_stage
+
+        _require_execution_options(repo_path=repo_path)
+        run_stage(
+            repo_path=Path(str(repo_path)),
+            model=str(model) if model is not None else PARITY_CODEX_MODEL,
+            tasks_selector=None,
+            dry_run_requested=False,
+            resolve_scope_requested=False,
+            auth_source=None,
+            run_dir=None,
+            paid_approval=None,
+            structural_manifest_path=Path(manifest_path),
+            rescore_run_dir=Path(str(rescore_readcrop_run_dir)),
+            rescore_output_dir=Path(str(rescore_readcrop_output_dir)),
+        )
+        return
+    if (rescore_fix_run_dir is None) != (rescore_fix_output_dir is None):
+        _cli_error("--rescore-fix-run-dir requires --rescore-fix-output-dir")
+    if rescore_fix_run_dir is not None:
+        from _bench_codex.stage_fix import rescore_fix_stage
+
+        _require_execution_options(repo_path=repo_path)
+        output_dir = rescore_fix_stage(
+            Path(str(rescore_fix_run_dir)),
+            Path(str(rescore_fix_output_dir)),
+            Path(str(repo_path)),
+        )
+        print(f"rescored: {output_dir}")
+        return
+    _require_execution_options(repo_path=repo_path, model=model)
     if reasoning_effort != PARITY_CODEX_REASONING_EFFORT:
         _cli_error(f"--reasoning-effort must be {PARITY_CODEX_REASONING_EFFORT!r}")
-    main(
-        repo_path=Path(str(repo_path)),
+    resolved_repo = Path(str(repo_path))
+    resolved_index = _optional_path(index_path) or resolved_repo / ".cache" / "codemap" / f"{resolved_repo.name}.json"
+    _run_unified_execution(
+        repo_path=resolved_repo,
         model=str(model),
         reasoning_effort=reasoning_effort,
-        tasks_path=Path(str(tasks_path)),
+        tasks=tasks,
         manifest_path=Path(manifest_path),
-        index_path=_optional_path(index_path),
-        marketplace_root=_optional_path(marketplace_root),
-        codemap_bin=_optional_path(codemap_bin),
+        index_path=resolved_index,
+        marketplace_root=_optional_path(marketplace_root) or Path(__file__).resolve().parents[1],
+        codemap_bin=_optional_path(codemap_bin)
+        or Path(__file__).resolve().parents[1] / "plugins" / "codemap-py" / "bin" / "codemap-py",
         auth_source=_optional_path(auth_source),
         invocation_launcher_path=_optional_path(invocation_launcher_path),
-        output_path=_optional_path(output_path),
-        metadata_path=_optional_path(metadata_path),
-        task_ids=_normalize_cli_task_ids(task_id),
-        task_selectors=tasks,
-        scope_sha256=scope_sha256,
-        repetitions=None if repetitions is None else int(repetitions),
-        arm=arm,
+        run_dir=_optional_path(run_dir),
+        paid_approval=paid_approval,
         dry_run=dry_run,
         show_legend=not no_legend,
     )
@@ -5535,4 +5460,28 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
 if __name__ == "__main__":
     from fire import Fire
 
-    Fire(cli)
+    # Fire invokes the callable before reporting surplus flags. Fail first so a
+    # removed legacy option can never widen or start an execution accidentally.
+    removed_options = {
+        "--arm",
+        "--metadata-path",
+        "--output-path",
+        "--paid",
+        "--repetitions",
+        "--scope-sha256",
+        "--study",
+        "--task-id",
+        "--tasks-path",
+    }
+    supplied_removed = sorted({argument.partition("=")[0] for argument in sys.argv[1:]} & removed_options)
+    if supplied_removed:
+        print(
+            f"ERROR: removed option(s): {', '.join(supplied_removed)}. Use only --tasks for family or exact-task "
+            "selection; omit --tasks for all supported tasks.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    try:
+        Fire(cli)
+    except (TreatmentArtifactLockError, FileExistsError, ValueError) as exc:
+        raise SystemExit(f"ERROR: {exc}") from None

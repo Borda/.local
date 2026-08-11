@@ -207,10 +207,7 @@ def prompt_hash(task: Task) -> str:
         ValueError: If the task does not carry a string prompt.
     """
     if "answer_contract" in task:
-        try:
-            from agentic_contracts import materialize_agentic_prompt
-        except ModuleNotFoundError:
-            from benchmarks.agentic_contracts import materialize_agentic_prompt
+        from .agentic_contracts import materialize_agentic_prompt
 
         prompt = materialize_agentic_prompt(task)
     else:

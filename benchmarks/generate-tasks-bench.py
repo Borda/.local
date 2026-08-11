@@ -33,15 +33,17 @@ from typing import Any, Iterable, Mapping
 
 import fire
 
-# benchmarks/ is not a package; make the sibling _utilities module importable
+# benchmarks/ is not a package; make its private shared package importable
 # regardless of how this script is launched (direct path, symlink, or any cwd).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _utilities import TASKS_BENCH_FILE as TASKS_FILE  # noqa: E402
-from _utilities import find_codemap_bin, git_toplevel, prune_walk_dirs, walk_py_modules  # noqa: E402
-from _utilities import gt_is_pending  # noqa: E402
-from _utilities import module_from_init_chain  # noqa: E402
-from _utilities import resolve_index_path as _util_resolve_index_path  # noqa: E402
+from _bench_common.benchmark_paths import TASKS_BENCH_FILE as TASKS_FILE, gt_is_pending  # noqa: E402
+from _bench_common.codemap_discovery import (
+    find_codemap_bin,
+    git_toplevel,
+    resolve_index_path as _util_resolve_index_path,
+)  # noqa: E402
+from _bench_common.python_source import module_from_init_chain, prune_walk_dirs, walk_py_modules  # noqa: E402
 
 
 class TaskType(str, Enum):
@@ -230,7 +232,7 @@ def _detect_src_root(repo: Path) -> Path:
     return repo
 
 
-# module_from_init_chain now imported from _utilities (shared with run-claude-agentic).
+# module_from_init_chain comes from python_source (shared with run-claude-agentic).
 
 
 def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
@@ -270,13 +272,13 @@ def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
 # ---- BINARY RESOLUTION ----
 
 
-# find_codemap_bin now imported from _utilities (shared with run-codemap-cli).
+# find_codemap_bin comes from codemap (shared with run-codemap-cli).
 
 
 def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
     """Resolve the codemap index path, checking both .cache/codemap/ and .cache/scan/.
 
-    Thin adapter over :func:`_utilities.resolve_index_path` (``missing="bare"`` — never
+    Thin adapter over :func:`_bench_common.codemap_discovery.resolve_index_path` (``missing="bare"`` — never
     raises; may return a not-yet-built path).
 
     Args:
@@ -1000,7 +1002,7 @@ def _module_imports(tree: ast.Module) -> set[str]:
     """
     # Deliberately a byte-for-byte mirror of scan-index ``extract_imports`` (scanner.py): both test
     # ``node.module`` truthiness only, IGNORING ``node.level``, so ``from ..pkg import x`` yields
-    # "pkg". Do NOT replace with _utilities.extract_import_targets — that helper resolves relatives
+    # "pkg". Do NOT replace with python_source.extract_import_targets — that helper resolves relatives
     # and would drop multi-dot targets, diverging the AST oracle from scan-query. See guard test
     # TestImportGraphPrimitives.test_module_imports_not_interchangeable_with_shared_helper.
     imports: set[str] = set()
@@ -1956,7 +1958,7 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
 # rather than failing on the empty placeholder.
 
 
-# gt_is_pending now imported from _utilities (shared with run-claude-structural).
+# gt_is_pending comes from benchmark_paths (shared with run-claude-structural).
 
 
 def _validate_diff_impact(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:

@@ -50,6 +50,47 @@
     "id": "RC-03",
     "primary_module": "lightning.pytorch.trainer.trainer",
     "prompt": "Enumerate the constructor parameters of `Trainer` (`Trainer.__init__` in `lightning.pytorch.trainer.trainer`) that control checkpointing, validation cadence, gradient accumulation, and debugging. Name the exact argument identifiers.",
+    "required_behavior_facts": [
+      {
+        "parameter": "enable_checkpointing",
+        "terms": [
+          "checkpoint"
+        ]
+      },
+      {
+        "parameter": "val_check_interval",
+        "terms": [
+          "validation"
+        ]
+      },
+      {
+        "parameter": "accumulate_grad_batches",
+        "terms": [
+          "gradient",
+          "accumulation"
+        ]
+      },
+      {
+        "parameter": "fast_dev_run",
+        "terms": [
+          "debug"
+        ]
+      },
+      {
+        "parameter": "detect_anomaly",
+        "terms": [
+          "anomaly"
+        ]
+      }
+    ],
+    "required_parameters": [
+      "enable_checkpointing",
+      "val_check_interval",
+      "check_val_every_n_epoch",
+      "accumulate_grad_batches",
+      "fast_dev_run",
+      "detect_anomaly"
+    ],
     "symbol": "Trainer.__init__",
     "type": "read_crop"
   },

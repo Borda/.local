@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from benchmarks import provider_parity_contracts as core
-from benchmarks import agentic_contracts
+from benchmarks._bench_common import agentic_contracts
+from benchmarks._bench_common import provider_parity_contracts as core
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent

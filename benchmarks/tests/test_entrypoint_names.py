@@ -44,10 +44,15 @@ def test_codex_structural_header_explains_scope_and_usage() -> None:
         assert section in docstring
     for option in (
         "--repo-path",
-        "--tasks-path",
+        "--manifest-path",
         "--index-path",
+        "--marketplace-root",
+        "--codemap-bin",
         "--model",
+        "--tasks",
         "--dry-run",
-        "--output-path",
+        "--auth-source",
+        "--run-dir",
+        "--paid-approval",
     ):
         assert option in docstring

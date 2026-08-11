@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
-from io import StringIO
+import inspect
 import json
 import os
 import re
@@ -19,14 +19,22 @@ from typing import Any
 
 import pytest
 
-from benchmarks import provider_parity_contracts as core
-
-
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BENCHMARKS_DIR))
+
+from _bench_codex import runtime as codex_runtime  # noqa: E402
+from benchmarks._bench_common import provider_parity_contracts as core  # noqa: E402
+
+
 SCRIPT_PATH = BENCHMARKS_DIR / "run-codex-structural.py"
 SUITE_PATH = BENCHMARKS_DIR / "suites" / "tasks-bench.json"
 MANIFEST_PATH = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 POSIX_SECURITY = pytest.mark.skipif(os.name == "nt", reason="requires POSIX private-mode and ownership semantics")
+
+
+def test_public_runner_stays_below_the_250_kilobyte_maintenance_limit() -> None:
+    """The public runner must keep stage detail in focused private modules."""
+    assert SCRIPT_PATH.stat().st_size < 250_000
 
 
 @pytest.fixture(scope="module")
@@ -85,6 +93,58 @@ def test_codex_command_is_ephemeral_json_profile_backed_and_keeps_prompt_exact(
     assert command[command.index("--cd") + 1] == str(tmp_path)
     assert command[command.index("--model") + 1] == "fixture-model"
     assert command[-1] == prompt
+
+
+def test_executable_command_uses_profile_permissions_without_legacy_sandbox(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Executable cells rely on the verified profile rather than a CLI sandbox override."""
+    command = script_run_codex.build_codex_command(
+        repo_path=tmp_path,
+        model="fixture-model",
+        reasoning_effort="high",
+        prompt="Edit the disposable worktree.",
+    )
+
+    assert "--sandbox" not in command
+
+
+def test_worktree_index_relocation_changes_only_scan_root(script_run_codex: Any, tmp_path: Path) -> None:
+    """An executable worktree gets a valid graph without mutating graph content."""
+    source_root = tmp_path / "source"
+    worktree_root = tmp_path / "worktree"
+    frozen_payload = {
+        "scan_root": str(source_root.resolve()),
+        "scan_version": 13,
+        "modules": {"pkg.module": {"symbols": ["target"]}},
+    }
+    frozen_bytes = json.dumps(frozen_payload, indent=2, sort_keys=True).encode("utf-8")
+
+    derived_bytes, relocation = script_run_codex.relocate_frozen_index_for_worktree(
+        frozen_bytes,
+        source_root=source_root,
+        worktree_root=worktree_root,
+    )
+
+    assert json.loads(frozen_bytes) == frozen_payload
+    assert json.loads(derived_bytes) == {**frozen_payload, "scan_root": str(worktree_root.resolve())}
+    assert relocation["frozen_index_sha256"] == hashlib.sha256(frozen_bytes).hexdigest()
+    assert relocation["derived_index_sha256"] == hashlib.sha256(derived_bytes).hexdigest()
+    assert relocation["source_scan_root"] == str(source_root.resolve())
+    assert relocation["worktree_scan_root"] == str(worktree_root.resolve())
+    assert relocation["non_root_content_sha256"] == script_run_codex._non_root_index_sha256(frozen_payload)
+
+
+def test_worktree_index_relocation_rejects_an_unrelated_source_root(script_run_codex: Any, tmp_path: Path) -> None:
+    """A relocated graph must originate from the frozen benchmark repository."""
+    frozen_bytes = json.dumps({"scan_root": str(tmp_path / "other")}).encode("utf-8")
+
+    with pytest.raises(ValueError, match="scan_root"):
+        script_run_codex.relocate_frozen_index_for_worktree(
+            frozen_bytes,
+            source_root=tmp_path / "source",
+            worktree_root=tmp_path / "worktree",
+        )
 
 
 def test_codex_stratum_locks_luna_and_high_effort(script_run_codex: Any) -> None:
@@ -231,6 +291,66 @@ def test_permission_profiles_replace_legacy_sandbox_and_grant_only_coordination_
         assert "sandbox_workspace_write" not in treatment_text
         for denied_root in script_run_codex._untrusted_host_agent_roots(treatment_home, arm, marketplace_root):
             assert f'"{denied_root}" = "deny"' in treatment_text
+
+
+def test_executable_workspace_permission_grants_only_the_disposable_worktree(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Executable cells receive a bounded worktree grant while the source stays denied."""
+    home_path = tmp_path / "codex-home"
+    home_path.mkdir()
+    source_path = tmp_path / "source"
+    source_path.mkdir()
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    index_path = workspace_path / ".cache" / "codemap" / "locked-index.json"
+    index_path.parent.mkdir(parents=True)
+    index_path.write_text("{}", encoding="utf-8")
+    home = script_run_codex.ArmHome("A_plain", home_path, {"PATH": "/fixture/bin"}, False)
+
+    config = script_run_codex._write_permission_config(
+        home,
+        "A_plain",
+        index_path,
+        writable_workspace=workspace_path,
+        denied_workspace=source_path,
+    )
+
+    text = config.read_text(encoding="utf-8")
+    assert 'extends = ":read-only"' in text
+    assert f'"{workspace_path.resolve()}" = "write"' in text
+    assert f'"{source_path.resolve()}" = "deny"' in text
+
+
+def test_prepare_verified_home_passes_writable_workspace_to_permission_verifier(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Executable homes verify the workspace-write permission instead of source denial."""
+    workspace = tmp_path / "workspace"
+    source = tmp_path / "source"
+    workspace.mkdir()
+    source.mkdir()
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    prepare_original = script_run_codex.prepare_arm_home
+    observed: dict[str, Any] = {}
+
+    def prepare(arm: str, **kwargs: Any) -> Any:
+        return prepare_original(arm, root=tmp_path, **kwargs)
+
+    def verify_permission(*_args: Any, **kwargs: Any) -> None:
+        observed.update(kwargs)
+
+    monkeypatch.setattr(script_run_codex, "_validate_locked_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "prepare_arm_home", prepare)
+    monkeypatch.setattr(script_run_codex, "_write_permission_config", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(script_run_codex, "_verify_permission_profile", verify_permission)
+    monkeypatch.setattr(script_run_codex, "_verify_plain_plugin_absent", lambda *_args, **_kwargs: None)
+
+    home = runner._prepare_verified_home("A_plain", writable_workspace=workspace, denied_workspace=source)
+    try:
+        assert observed["writable_workspace"] == workspace
+    finally:
+        home.cleanup()
 
 
 def test_plain_and_direct_homes_drop_host_skill_file_binding(
@@ -785,7 +905,7 @@ def test_parse_codex_jsonl_preserves_native_events_and_normalizes_usage(
     ]
     stream = "\n".join(json.dumps(event) for event in events)
 
-    parsed = script_run_codex.parse_codex_jsonl(stream)
+    parsed = codex_runtime.parse_codex_jsonl(stream)
 
     assert parsed.thread_id == "thread-fixture"
     assert parsed.output_text == "Final fixture answer."
@@ -817,7 +937,7 @@ def test_parse_codex_jsonl_preserves_agent_message_boundaries(script_run_codex: 
         {"type": "turn.completed", "status": "completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
+    parsed = codex_runtime.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
 
     assert parsed.output_text == "Checked the repository.\n## Callers\npkg.mod::caller"
 
@@ -847,7 +967,7 @@ def test_parse_codex_jsonl_records_text_boundary_after_last_command(script_run_c
         {"type": "turn.completed", "status": "completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
+    parsed = codex_runtime.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
 
     assert parsed.output_text[parsed.last_tool_text_offset :].lstrip("\n") == "Final: pkg.second."
 
@@ -1020,7 +1140,7 @@ def test_result_rows_show_gross_input_while_telemetry_retains_cache_detail(
     output_path = tmp_path / "telemetry.jsonl"
     script_run_codex._append_run(output_path, result, execution_index=0)
     persisted = json.loads(output_path.read_text(encoding="utf-8"))
-    row = script_run_codex._format_result_row(
+    row = codex_runtime.format_structural_result_row(
         status="✓",
         task_id=result.task_id,
         repetition=1,
@@ -1044,7 +1164,7 @@ def test_result_rows_show_gross_input_while_telemetry_retains_cache_detail(
 
 def test_result_rows_expose_query_conformance_and_cohort(script_run_codex: Any) -> None:
     """Console progress must not disguise a diagnostic query mismatch as a clean treatment."""
-    row = script_run_codex._format_result_row(
+    row = codex_runtime.format_structural_result_row(
         status="✓",
         task_id="SE-01",
         repetition=1,
@@ -1068,8 +1188,8 @@ def test_result_rows_expose_query_conformance_and_cohort(script_run_codex: Any) 
 
 def test_parser_marks_malformed_and_missing_terminal_streams_incomplete(script_run_codex: Any) -> None:
     """Invalid or unterminated JSONL cannot become a complete benchmark cell."""
-    malformed = script_run_codex.parse_codex_jsonl('{"type":"turn.completed"}\nnot-json')
-    unterminated = script_run_codex.parse_codex_jsonl(
+    malformed = codex_runtime.parse_codex_jsonl('{"type":"turn.completed"}\nnot-json')
+    unterminated = codex_runtime.parse_codex_jsonl(
         json.dumps(
             {
                 "type": "item.completed",
@@ -1104,7 +1224,7 @@ def test_codemap_failure_then_ordinary_command_is_fallback(script_run_codex: Any
         ]
     )
 
-    parsed = script_run_codex.parse_codex_jsonl(stream)
+    parsed = codex_runtime.parse_codex_jsonl(stream)
 
     assert parsed.codemap_calls == 1
     assert parsed.codemap_errors == 1
@@ -1246,7 +1366,7 @@ def test_parser_keeps_refresh_authentication_classification_after_later_generic_
         )
     )
 
-    parsed = script_run_codex.parse_codex_jsonl(stream)
+    parsed = codex_runtime.parse_codex_jsonl(stream)
 
     assert parsed.incomplete is True
     assert parsed.error_type == "authentication_failed"
@@ -1269,7 +1389,7 @@ def test_parser_redacts_textual_credential_headers_from_provider_and_telemetry(
     Prevents provider error strings from retaining Cookie, Set-Cookie, or
     non-Bearer Authorization values in either the result error or raw events.
     """
-    parsed = script_run_codex.parse_codex_jsonl(json.dumps({"type": "error", "error": f"provider failure: {header}"}))
+    parsed = codex_runtime.parse_codex_jsonl(json.dumps({"type": "error", "error": f"provider failure: {header}"}))
     persisted_projection = json.dumps({"error": parsed.error, "raw_events": parsed.raw_events})
 
     assert secret not in persisted_projection
@@ -1369,7 +1489,7 @@ def test_command_lifecycle_uses_completed_status_once(script_run_codex: Any) -> 
         },
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
+    parsed = codex_runtime.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
 
     assert parsed.command_calls == 1
     assert parsed.codemap_calls == 1
@@ -1391,7 +1511,7 @@ def test_compound_shell_probe_is_not_codemap_delivery_evidence(script_run_codex:
         ]
     )
 
-    parsed = script_run_codex.parse_codex_jsonl(stream)
+    parsed = codex_runtime.parse_codex_jsonl(stream)
 
     assert parsed.codemap_calls == 0
     assert parsed.codemap_successful_calls == 0
@@ -1413,7 +1533,7 @@ def test_terminal_event_with_pending_command_is_incomplete(script_run_codex: Any
         {"type": "turn.completed", "usage": {"input_tokens": 5, "output_tokens": 1}},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
+    parsed = codex_runtime.parse_codex_jsonl("\n".join(json.dumps(event) for event in events))
 
     assert parsed.completed is False
     assert parsed.incomplete is True
@@ -1422,7 +1542,7 @@ def test_terminal_event_with_pending_command_is_incomplete(script_run_codex: Any
 
 def test_mentioning_codemap_in_an_ordinary_search_is_not_adoption(script_run_codex: Any) -> None:
     """A grep query about Codemap text is not a Codemap executable invocation."""
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = codex_runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -1584,6 +1704,13 @@ def test_skill_arm_installs_and_locks_rig_and_codemap_plugins(script_run_codex: 
             encoding="utf-8",
         )
         script_run_codex._verify_treatment_artifact_locks(home, lock_path)
+        stale_lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        stale_lock["artifact_sha256"]["codex_rig_adapter"] = "0" * 64
+        lock_path.write_text(json.dumps(stale_lock), encoding="utf-8")
+        with pytest.raises(script_run_codex.TreatmentArtifactLockError, match="no paid model call was started"):
+            script_run_codex._verify_treatment_artifact_locks(home, lock_path)
+        stale_lock["artifact_sha256"]["codex_rig_adapter"] = home.codex_rig_adapter_sha256
+        lock_path.write_text(json.dumps(stale_lock), encoding="utf-8")
         script_run_codex._admit_installed_skill_pair(
             home,
             tmp_path,
@@ -1921,6 +2048,16 @@ def test_verified_runtime_identity_is_recorded_before_home_cleanup(script_run_co
     assert evidence["status"] == "verified"
     assert evidence["error"] is None
     assert evidence["expected_plugin_identities"] == evidence["observed_plugin_identities"]
+
+
+def test_treatment_version_drift_message_names_versions_and_recovery(script_run_codex: Any) -> None:
+    """Version admission failures must provide a safe manifest-and-scope recovery path."""
+    message = script_run_codex._treatment_artifact_version_mismatch_message({"codex-rig": ("0.5.0", "0.5.1")})
+
+    assert "codex-rig: manifest=0.5.0, installed=0.5.1" in message
+    assert "No paid model call was started." in message
+    assert "build-codex-integration-manifest.py" in message
+    assert "Do not reuse the previous --paid-approval value." in message
 
 
 @POSIX_SECURITY
@@ -2459,6 +2596,67 @@ def test_locked_runtime_requires_one_shared_locked_index_for_every_arm(
         script_run_codex._validate_locked_runtime(repo_path, None, "A_plain", manifest_path)
 
 
+def test_locked_runtime_admits_only_a_provenance_bound_worktree_index(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Executable cells may relocate scan_root without weakening graph identity."""
+    source_root = tmp_path / "source"
+    worktree_root = tmp_path / "worktree"
+    index_path = worktree_root / ".cache" / "codemap" / "worktree.json"
+    index_path.parent.mkdir(parents=True)
+    frozen_bytes = json.dumps(
+        {
+            "git_sha": "fixture-commit",
+            "modules": {"pkg": ["symbol"]},
+            "scan_root": str(source_root),
+            "scan_version": 13,
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    derived_bytes, relocation = script_run_codex.relocate_frozen_index_for_worktree(
+        frozen_bytes,
+        source_root=source_root,
+        worktree_root=worktree_root,
+    )
+    index_path.write_bytes(derived_bytes)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "target_source": {"commit": "fixture-commit"},
+                "index": {
+                    "raw_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
+                    "git_sha": "fixture-commit",
+                    "scan_version": 13,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(script_run_codex, "_repo_sha", lambda _path: "fixture-commit")
+    monkeypatch.setattr(script_run_codex, "_git_porcelain_status", lambda _path: {})
+
+    script_run_codex._validate_locked_runtime(
+        worktree_root,
+        index_path,
+        "C_skill_required",
+        manifest_path,
+        index_relocation=relocation,
+    )
+
+    tampered = json.loads(index_path.read_text(encoding="utf-8"))
+    tampered["modules"] = {"pkg": ["changed"]}
+    index_path.write_text(json.dumps(tampered), encoding="utf-8")
+    with pytest.raises(ValueError, match="changed after relocation"):
+        script_run_codex._validate_locked_runtime(
+            worktree_root,
+            index_path,
+            "C_skill_required",
+            manifest_path,
+            index_relocation=relocation,
+        )
+
+
 def test_result_exposes_native_telemetry_and_turn_limit_capability(script_run_codex: Any, tmp_path: Path) -> None:
     """Every result keeps measurable Codex-native fields and the turn-limit gap."""
     runner = script_run_codex.CodexRunner(
@@ -2473,7 +2671,7 @@ def test_result_exposes_native_telemetry_and_turn_limit_capability(script_run_co
     assert result.elapsed_s >= 0.0
     assert result.native_item_counts == {"agent_message": 1}
     assert result.native_attempt_events == [result.raw_events]
-    assert result.telemetry_contract_id == "canonical-skill-file-locked-query-components-v2"
+    assert result.telemetry_contract_id == "installed-skill-binding-locked-query-components-v3"
     assert result.tool_elapsed_s is None
     assert result.tool_result_tokens is None
     assert result.error_type == ""
@@ -2517,7 +2715,7 @@ def test_subprocess_timeout_and_nonzero_exit_keep_distinct_error_types(
         raise script_run_codex.subprocess.TimeoutExpired(["codex"], 600)
 
     monkeypatch.setattr(script_run_codex.subprocess, "run", timeout)
-    timed_out = script_run_codex.parse_codex_jsonl(runner._subprocess(["codex"], {}))
+    timed_out = codex_runtime.parse_codex_jsonl(runner._subprocess(["codex"], {}))
 
     assert timed_out.incomplete is True
     assert timed_out.error_type == "timeout"
@@ -2531,7 +2729,7 @@ def test_subprocess_timeout_and_nonzero_exit_keep_distinct_error_types(
             stderr="CLI failed",
         ),
     )
-    nonzero = script_run_codex.parse_codex_jsonl(runner._subprocess(["codex"], {}))
+    nonzero = codex_runtime.parse_codex_jsonl(runner._subprocess(["codex"], {}))
 
     assert nonzero.output_text == "partial answer"
     assert nonzero.incomplete is True
@@ -3262,8 +3460,8 @@ def test_main_dry_run_prints_plan_without_arm_color_helper(
     monkeypatch.setattr(script_run_codex, "CodexRunner", FixtureRunner)
     monkeypatch.setattr(script_run_codex, "print", printed.append, raising=False)
     monkeypatch.setattr(
-        script_run_codex,
-        "_print_arm_row",
+        codex_runtime,
+        "print_arm_row",
         lambda *_args, **_kwargs: pytest.fail("dry-run plan reached the arm-color helper"),
     )
 
@@ -3405,7 +3603,7 @@ def test_main_prints_interrupted_partial_block_with_planned_denominator(
 
 def test_output_legend_defines_treatments_tasks_and_measurement_marks(script_run_codex: Any) -> None:
     """The upfront legend makes every compact terminal field independently interpretable."""
-    legend = script_run_codex._OUTPUT_LEGEND
+    legend = script_run_codex.runtime.STRUCTURAL_OUTPUT_LEGEND
     lines = legend.splitlines()
 
     assert legend.startswith("LEGEND\n")
@@ -3447,8 +3645,8 @@ def test_human_arm_labels_shorten_only_presentation_names(
     display_arm: str,
 ) -> None:
     """PLAN/progress rows use short labels while machine arm IDs remain canonical."""
-    plan = script_run_codex._format_plan_row("FN-02", 1, canonical_arm)
-    result = script_run_codex._format_result_row(
+    plan = codex_runtime.format_plan_row("FN-02", 1, canonical_arm)
+    result = codex_runtime.format_structural_result_row(
         status="✓",
         task_id="FN-02",
         repetition=1,
@@ -3488,7 +3686,7 @@ def test_human_arm_labels_shorten_only_presentation_names(
 )
 def test_output_legend_defines_each_task_code(script_run_codex: Any, code: str, meaning: str) -> None:
     """Every task code in compact output expands to its benchmark meaning."""
-    assert f"      {code}: {meaning}" in script_run_codex._OUTPUT_LEGEND.splitlines()
+    assert f"      {code}: {meaning}" in script_run_codex.runtime.STRUCTURAL_OUTPUT_LEGEND.splitlines()
 
 
 def _render_result_stream(input_text: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -3526,65 +3724,6 @@ def test_render_results_force_color_maps_each_arm_to_its_review_color(arm: str, 
     assert completed.stdout.endswith("\x1b[0m\n")
 
 
-def test_render_results_force_color_writes_result_rows_without_rich_backend(
-    script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Forced ANSI output must not depend on Rich's Windows stream renderer."""
-
-    class UnexpectedConsole:
-        """Fail if the ANSI regression path delegates a result row to Rich."""
-
-        def __init__(self, **_kwargs: object) -> None:
-            pass
-
-        def print(self, *_args: object, **_kwargs: object) -> None:
-            raise AssertionError("forced result row must write ANSI directly")
-
-    monkeypatch.setattr(script_run_codex, "_Console", UnexpectedConsole)
-    output = StringIO()
-
-    script_run_codex.render_result_rows(["(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\n"], output, force_color=True)
-
-    assert output.getvalue() == "\x1b[33m(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\x1b[0m\n"
-
-
-def test_render_results_force_color_writes_standard_output_descriptor(
-    script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Forced ANSI bypasses a Windows-style standard-stream adapter."""
-
-    class FixtureConsole:
-        """Allow construction while proving the result row does not use Rich."""
-
-        def __init__(self, **_kwargs: object) -> None:
-            pass
-
-        def print(self, *_args: object, **_kwargs: object) -> None:
-            raise AssertionError("forced result row must bypass the adapter")
-
-    class AdapterStream:
-        """Stand in for a stdout wrapper that would strip ANSI text writes."""
-
-        def flush(self) -> None:
-            pass
-
-        def fileno(self) -> int:
-            return 41
-
-        def isatty(self) -> bool:
-            return False
-
-    writes: list[tuple[int, bytes]] = []
-    output = AdapterStream()
-    monkeypatch.setattr(script_run_codex, "_Console", FixtureConsole)
-    monkeypatch.setattr(script_run_codex.sys, "stdout", output)
-    monkeypatch.setattr(script_run_codex.os, "write", lambda fd, data: writes.append((fd, data)))
-
-    script_run_codex.render_result_rows(["(1/3) ✓  FN-02  rep=1  A_plain  quality=1.000\n"], output, force_color=True)
-
-    assert writes == [(41, b"\x1b[33m(1/3) \xe2\x9c\x93  FN-02  rep=1  A_plain  quality=1.000\x1b[0m\n")]
-
-
 def test_render_results_recovers_bare_force_color_flag_at_cli_boundary(
     script_run_codex: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3596,7 +3735,7 @@ def test_render_results_recovers_bare_force_color_flag_at_cli_boundary(
         assert hide_plan is False
         received.append(force_color)
 
-    monkeypatch.setattr(script_run_codex, "render_result_rows", render)
+    monkeypatch.setattr(codex_runtime, "render_result_rows", render)
     monkeypatch.setattr(script_run_codex.sys, "argv", ["runner", "--render-results", "--force-color"])
 
     script_run_codex.cli(render_results=True)
@@ -3771,7 +3910,7 @@ def test_format_result_row_uses_shared_human_units_and_fixed_columns(
     status = "✓" if adherence else "✗"
 
     assert (
-        script_run_codex._format_result_row(
+        codex_runtime.format_structural_result_row(
             status=status,
             task_id="SE-01",
             repetition=1,
@@ -3791,7 +3930,7 @@ def test_format_result_row_uses_shared_human_units_and_fixed_columns(
 
 def test_format_result_row_hides_inconsistent_cache_detail(script_run_codex: Any) -> None:
     """The terminal display must remain gross-only even for inconsistent cache telemetry."""
-    row = script_run_codex._format_result_row(
+    row = codex_runtime.format_structural_result_row(
         status="✓",
         task_id="SE-01",
         repetition=1,
@@ -3814,7 +3953,7 @@ def test_format_result_row_separates_treatment_from_observed_codemap_use(
     script_run_codex: Any,
 ) -> None:
     """A contaminated plain arm reports use even though its treatment failed."""
-    row = script_run_codex._format_result_row(
+    row = codex_runtime.format_structural_result_row(
         status="✗",
         task_id="FN-02",
         repetition=1,
@@ -3842,7 +3981,6 @@ def test_format_result_row_separates_treatment_from_observed_codemap_use(
     ],
 )
 def test_print_arm_row_colors_only_interactive_output(
-    script_run_codex: Any,
     monkeypatch: pytest.MonkeyPatch,
     is_terminal: bool,
     expected_rich_calls: int,
@@ -3861,10 +3999,10 @@ def test_print_arm_row_colors_only_interactive_output(
         def print(self, row: str, **kwargs: Any) -> None:
             rich_calls.append((row, kwargs))
 
-    monkeypatch.setattr(script_run_codex, "_console", FixtureConsole())
-    monkeypatch.setattr(script_run_codex, "print", plain_calls.append, raising=False)
+    monkeypatch.setattr(codex_runtime, "_CONSOLE", FixtureConsole())
+    monkeypatch.setattr(codex_runtime, "print", plain_calls.append, raising=False)
 
-    script_run_codex._print_arm_row("progress fixture", "B_direct_required")
+    codex_runtime.print_arm_row("progress fixture", "B_direct_required")
 
     assert len(rich_calls) == expected_rich_calls
     assert len(plain_calls) == expected_plain_calls
@@ -3884,7 +4022,7 @@ def test_print_result_block_numbers_rows_in_fixed_display_order(
 ) -> None:
     """Progress follows A/B/C display order instead of completion order."""
     printed: list[tuple[str, str]] = []
-    monkeypatch.setattr(script_run_codex, "_print_arm_row", lambda row, arm: printed.append((row, arm)))
+    monkeypatch.setattr(codex_runtime, "print_arm_row", lambda row, arm: printed.append((row, arm)))
 
     next_progress = script_run_codex._print_result_block(
         [
@@ -3910,7 +4048,7 @@ def test_print_result_block_keeps_partial_progress_relative_to_full_plan(
 ) -> None:
     """An interrupted block retains the selected plan's denominator."""
     printed: list[tuple[str, str]] = []
-    monkeypatch.setattr(script_run_codex, "_print_arm_row", lambda row, arm: printed.append((row, arm)))
+    monkeypatch.setattr(codex_runtime, "print_arm_row", lambda row, arm: printed.append((row, arm)))
 
     next_progress = script_run_codex._print_result_block(
         [("C_skill_required", "✓  task  rep=1  C_skill"), ("B_direct_required", "✓  task  rep=1  B_direct")],
@@ -4041,8 +4179,7 @@ def test_main_plans_every_preregistered_pilot_coordinate_once(
         for task_id in pilot_ids
         for repetition in range(1, repetitions + 1)
         for arm in (
-            script_run_codex._DISPLAY_ARM_LABELS[canonical_arm]
-            for canonical_arm in script_run_codex.CODEX_STRUCTURAL_ARMS
+            codex_runtime._DISPLAY_ARM_LABELS[canonical_arm] for canonical_arm in script_run_codex.CODEX_STRUCTURAL_ARMS
         )
     ]
     assert plan_rows == expected
@@ -4062,8 +4199,8 @@ def test_codex_arm_envelopes_define_plain_cli_and_skill_treatments(script_run_co
     assert "Do not use batch" in script_run_codex._arm_envelope("B_direct_required")
     assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("B_direct_required")
     assert "$codemap-py:query-code" in script_run_codex._arm_envelope("C_skill_required")
-    assert "separate dedicated native item" in script_run_codex._arm_envelope("C_skill_required")
-    assert 'cat "$CODEMAP_SKILL_FILE"' in script_run_codex._arm_envelope("C_skill_required")
+    assert "installed $codemap-py:query-code Skill is available" in script_run_codex._arm_envelope("C_skill_required")
+    assert 'cat "$CODEMAP_SKILL_FILE"' not in script_run_codex._arm_envelope("C_skill_required")
     assert "Do not use batch" in script_run_codex._arm_envelope("C_skill_required")
     assert '"$CODEMAP_BIN" query --help' in script_run_codex._arm_envelope("C_skill_required")
     assert "sed -n" not in script_run_codex._arm_envelope("C_skill_required")
@@ -4223,7 +4360,7 @@ def test_canonical_native_item_query_contract(
     Prevents telemetry from treating shell interpretation or loosely embedded
     JSON as equivalent to the future benchmark's explicit native-item proof.
     """
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = codex_runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -4243,7 +4380,7 @@ def test_canonical_native_item_query_contract(
 
 def test_canonical_native_query_allows_auxiliary_separate_events(script_run_codex: Any) -> None:
     """Separate native command items cannot contaminate a canonical query item."""
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = codex_runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -4566,6 +4703,7 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
     manifest = source / "manifest.json"
     tasks = source / "tasks.json"
     runner = source / "runner.py"
+    contract = source / "contract.py"
     launcher = source / "run-all.sh"
     index = source / "index.json"
     for path, value in (
@@ -4574,6 +4712,7 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
         (runner, "runner"),
         (launcher, "launcher"),
         (index, "index"),
+        (contract, "contract"),
     ):
         path.write_text(value, encoding="utf-8")
     package = source / "package"
@@ -4591,6 +4730,7 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
         index_path=index,
         auth_source=auth,
         arm_archives={"B_direct_required": {"direct-cli": package}},
+        additional_shared_files={"readcrop-contracts.py": contract},
     )
     payload = json.loads((tmp_path / "inputs" / "input-snapshot.json").read_text(encoding="utf-8"))
     assert payload["auth_source"] == {"archived": False, "supplied": True}
@@ -4601,7 +4741,38 @@ def test_input_snapshot_archives_hashes_but_never_credential_bytes(script_run_co
     launcher_entry = next(entry for entry in payload["files"] if entry["role"] == "invocation_launcher")
     assert launcher_entry["archived_path"] == "shared/run-all.sh"
     assert launcher_entry["sha256"] == hashlib.sha256(launcher.read_bytes()).hexdigest()
+    contract_entry = next(entry for entry in payload["files"] if entry["role"] == "shared:readcrop-contracts.py")
+    assert contract_entry["archived_path"] == "shared/readcrop-contracts.py"
+    assert contract_entry["sha256"] == hashlib.sha256(contract.read_bytes()).hexdigest()
     assert snapshot["sha256"] == hashlib.sha256((tmp_path / "inputs" / "input-snapshot.json").read_bytes()).hexdigest()
+
+
+def test_input_snapshot_uses_source_names_for_nonstructural_launch_inputs(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """A stage-specific adapter keeps its task and runner provenance legible."""
+    source = tmp_path / "source"
+    source.mkdir()
+    manifest = source / "manifest.json"
+    tasks = source / "tasks-readcrop.json"
+    runner = source / "run-codex-structural.py"
+    for path in (manifest, tasks, runner):
+        path.write_text(path.name, encoding="utf-8")
+
+    script_run_codex._write_input_snapshot(
+        tmp_path / "inputs",
+        manifest_path=manifest,
+        tasks_path=tasks,
+        runner_path=runner,
+        invocation_launcher_path=runner,
+        index_path=None,
+        auth_source=None,
+        arm_archives={},
+    )
+    payload = json.loads((tmp_path / "inputs" / "input-snapshot.json").read_text(encoding="utf-8"))
+    archived = {entry["archived_path"] for entry in payload["files"]}
+
+    assert {"shared/tasks-readcrop.json", "shared/run-codex-structural.py"}.issubset(archived)
 
 
 @POSIX_SECURITY
@@ -4995,11 +5166,18 @@ def test_resolve_task_selection_is_manifest_ordered_and_deduplicated(
     """Selectors preserve the manifest order rather than caller token order."""
     scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, selectors)
     assert scope["task_ids"] == expected_ids
-    assert scope["repetitions"] == 3
-    assert scope["arms"] == list(script_run_codex.CODEX_STRUCTURAL_ARMS)
-    assert scope["coordinate_timeout_seconds"] == 600
+    assert scope["selection_mode"] == "selected"
+    assert scope["stages"] == [
+        {
+            "stage_id": "structural",
+            "task_ids": expected_ids,
+            "repetitions": 3,
+            "arms": list(script_run_codex.CODEX_STRUCTURAL_ARMS),
+            "total_cells": len(expected_ids) * 9,
+        }
+    ]
     assert "complete_run_max_wall_clock_seconds" not in scope
-    assert scope["scope_sha256"] == script_run_codex._targeted_scope_sha256(scope)
+    assert len(scope["scope_sha256"]) == 64
 
 
 @pytest.mark.parametrize(
@@ -5037,7 +5215,7 @@ def test_paid_targeted_scope_rejects_control_or_hash_tampering(
     error: str,
 ) -> None:
     """A paid subset cannot alter reviewed coordinates, controls, or scope identity."""
-    scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, "DI")
+    scope = script_run_codex._resolve_structural_task_selection(MANIFEST_PATH, "DI")
     if scope_sha256 == "match":
         scope_sha256 = scope["scope_sha256"]
     with pytest.raises(ValueError, match=error):
@@ -5083,7 +5261,7 @@ def test_targeted_scope_is_persisted_separately_from_confirmatory_metadata(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
     """Targeted rows are durable nonpoolable evidence rather than confirmatory data."""
-    scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, "DI")
+    scope = script_run_codex._resolve_structural_task_selection(MANIFEST_PATH, "DI")
     task_arms = {
         (task_id, repetition): script_run_codex.CODEX_STRUCTURAL_ARMS
         for task_id in scope["task_ids"]
@@ -5461,7 +5639,7 @@ def test_public_query_forms_credit_completed_queries_but_not_help(
     expected_credit: bool,
 ) -> None:
     """A public compact query may omit target arguments; a help call is not evidence."""
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = codex_runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -5513,7 +5691,7 @@ def test_skill_activation_then_public_coupled_query_satisfies_compliance_and_adh
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = codex_runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         skill_path=skill_path,
         skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
@@ -5527,7 +5705,7 @@ def test_skill_activation_then_public_coupled_query_satisfies_compliance_and_adh
 
 
 @pytest.mark.parametrize(
-    ("read_command", "read_output", "query_first", "expected_credit"),
+    ("read_command", "read_output", "query_first", "expected_manual_read"),
     [
         pytest.param('cat "$CODEMAP_SKILL_FILE"', "locked", False, True, id="canonical-skill-file"),
         pytest.param(
@@ -5548,15 +5726,15 @@ def test_skill_activation_then_public_coupled_query_satisfies_compliance_and_adh
         pytest.param('cat "$CODEMAP_SKILL_FILE"', "locked", True, False, id="read-after-query"),
     ],
 )
-def test_canonical_C_skill_delivery_requires_the_runner_owned_skill_file(
+def test_C_skill_binding_credits_a_valid_query_while_retaining_manual_read_diagnostics(
     script_run_codex: Any,
     tmp_path: Path,
     read_command: str,
     read_output: str,
     query_first: bool,
-    expected_credit: bool,
+    expected_manual_read: bool,
 ) -> None:
-    """Require the exact runner-owned Skill command before a canonical query."""
+    """Separate installed-Skill query credit from optional manual-read telemetry."""
     skill_path = tmp_path / "query-code" / "SKILL.md"
     skill_path.parent.mkdir()
     skill_bytes = b"locked"
@@ -5584,11 +5762,222 @@ def test_canonical_C_skill_delivery_requires_the_runner_owned_skill_file(
         },
     }
     ordered_events = [query, reader] if query_first else [reader, query]
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = codex_runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in [*ordered_events, {"type": "turn.completed"}]),
         skill_path=skill_path,
         skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
     )
 
-    assert parsed.codemap_skill_compact_successful_calls == int(expected_credit)
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is expected_credit
+    assert parsed.codemap_skill_compact_successful_calls == 1
+    assert parsed.skill_delivery_observed is expected_manual_read
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
+
+
+def test_cli_exposes_only_task_selection_not_study_or_paid_switches(script_run_codex: Any) -> None:
+    """The single runner infers internal stages from task IDs.
+
+    Prevents deprecated public routing and confirmation switches from surviving
+    after task selection becomes the complete execution interface.
+    """
+    parameters = inspect.signature(script_run_codex.cli).parameters
+
+    assert "study" not in parameters
+    assert "paid" not in parameters
+    assert "task_id" not in parameters
+
+
+@pytest.mark.parametrize(
+    ("legacy_flag", "value"),
+    [
+        pytest.param("--study", "structural", id="study"),
+        pytest.param("--paid", "true", id="paid"),
+        pytest.param("--task-id", "FN-02", id="task-id"),
+    ],
+)
+def test_removed_cli_flags_fail_before_task_resolution_or_plan_output(legacy_flag: str, value: str) -> None:
+    """Deprecated routing flags must not invoke the unified runner before Fire rejects them."""
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), legacy_flag, value],
+        cwd=BENCHMARKS_DIR.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "PLAN" not in completed.stdout
+    assert "SCOPE" not in completed.stdout
+    assert "PAID_COMMAND" not in completed.stdout
+
+
+def test_unified_paid_command_preserves_the_supplied_absolute_manifest_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dry-run handoff must replay a non-default manifest, not silently substitute the default."""
+    custom_manifest = tmp_path / "custom manifest.json"
+
+    codex_runtime.print_unified_paid_command(
+        repo_path=tmp_path,
+        manifest_path=custom_manifest,
+        index_path=tmp_path / "locked-index.json",
+        marketplace_root=tmp_path / "marketplace root",
+        codemap_bin=tmp_path / "codemap-py",
+        model="gpt-5.6-luna",
+        selectors=("RC", "FS-03"),
+        scope_sha256="a" * 64,
+    )
+
+    command = capsys.readouterr().out
+    assert f"--manifest-path '{custom_manifest.resolve()}'" in command
+    assert "--tasks RC,FS-03" in command
+    assert "--study" not in command
+    assert "--paid " not in command
+    assert "--task-id" not in command
+
+
+def test_resolve_task_selection_without_selectors_plans_all_stage_cells(script_run_codex: Any) -> None:
+    """Omitting --tasks must plan the complete 68-task, 204-cell benchmark."""
+    scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, None)
+    stage_task_ids = {stage["stage_id"]: stage["task_ids"] for stage in scope["stages"]}
+
+    assert len(scope["task_ids"]) == 68
+    assert scope["total_tasks"] == 68
+    assert scope["total_cells"] == 204
+    assert {task_id[:2] for task_id in scope["task_ids"]} >= {"RC", "FS", "FM"}
+    assert stage_task_ids == {
+        "structural": scope["task_ids"][:55],
+        "readcrop": [f"RC-{number:02d}" for number in range(1, 7)],
+        "fix-single": [f"FS-{number:02d}" for number in range(1, 5)],
+        "fix-multi": [f"FM-{number:02d}" for number in range(1, 4)],
+    }
+
+
+def test_resolve_task_selection_partitions_mixed_families_and_ids_once(script_run_codex: Any) -> None:
+    """Mixed selectors deduplicate before dispatching every task to its native scorer."""
+    scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, "FM-02,RC,FS-03,RC-01,FM")
+    stage_task_ids = {stage["stage_id"]: stage["task_ids"] for stage in scope["stages"]}
+
+    assert scope["task_ids"] == [
+        *[f"RC-{number:02d}" for number in range(1, 7)],
+        "FS-03",
+        "FM-01",
+        "FM-02",
+        "FM-03",
+    ]
+    assert scope["total_cells"] == 30
+    assert stage_task_ids == {
+        "readcrop": [f"RC-{number:02d}" for number in range(1, 7)],
+        "fix-single": ["FS-03"],
+        "fix-multi": ["FM-01", "FM-02", "FM-03"],
+    }
+
+
+def test_unified_scope_digest_changes_with_each_stage_partition(script_run_codex: Any) -> None:
+    """One approval must bind all selected stage scopes, not only structural rows."""
+    first = script_run_codex.resolve_task_selection(MANIFEST_PATH, "RC-01,FS-03")
+    second = script_run_codex.resolve_task_selection(MANIFEST_PATH, "RC-01,FM-03")
+
+    assert first["scope_sha256"] != second["scope_sha256"]
+    assert [stage["stage_id"] for stage in first["stages"]] == ["readcrop", "fix-single"]
+    assert [stage["stage_id"] for stage in second["stages"]] == ["readcrop", "fix-multi"]
+
+
+def test_unified_execution_rejects_stale_aggregate_approval_before_creating_run_dir(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """A stale multi-stage approval cannot create partial artifacts or reach a model."""
+    run_dir = tmp_path / "unified-run"
+    auth_source = tmp_path / "auth.json"
+    auth_source.write_text('{"refresh_token":"fixture"}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="approval"):
+        script_run_codex.cli(
+            repo_path=str(tmp_path),
+            model=script_run_codex.PARITY_CODEX_MODEL,
+            tasks="RC-01,FS-03",
+            auth_source=str(auth_source),
+            run_dir=str(run_dir),
+            paid_approval="stale-aggregate-scope",
+        )
+
+    assert not run_dir.exists()
+
+
+def test_unified_paid_execution_uses_one_counter_across_native_stage_rows(
+    script_run_codex: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Paid output must count every native stage row against the complete scope."""
+    import _bench_codex.stage_fix as fix_stage
+    import _bench_codex.stage_readcrop as readcrop_stage
+
+    stages = [
+        {"stage_id": "structural", "task_ids": ["SE-01"], "total_cells": 3, "repetitions": 1},
+        {"stage_id": "readcrop", "task_ids": ["RC-01"], "total_cells": 3, "repetitions": 1},
+        {"stage_id": "fix-single", "task_ids": ["FS-01"], "total_cells": 3, "repetitions": 1},
+        {"stage_id": "fix-multi", "task_ids": ["FM-01"], "total_cells": 3, "repetitions": 1},
+    ]
+    for number, stage in enumerate(stages, start=1):
+        stage["scope_sha256"] = str(number) * 64
+    selection = {
+        "selection_mode": "all",
+        "selectors": [],
+        "task_ids": [task_id for stage in stages for task_id in stage["task_ids"]],
+        "total_tasks": 4,
+        "total_cells": 12,
+        "stages": stages,
+    }
+    scope = {**selection, "scope_sha256": "a" * 64}
+
+    def emit_stage_rows(stage_id: str) -> None:
+        """Emit one native three-arm block through the production renderer."""
+        for completed, arm in enumerate(("A_plain", "B_auto", "C_strict"), start=1):
+            script_run_codex.runtime.print_arm_row(f"({completed}/3) ✓ {stage_id} {arm}", arm)
+
+    monkeypatch.setattr(script_run_codex, "resolve_task_selection", lambda *_args: selection)
+    monkeypatch.setattr(script_run_codex, "_resolve_execution_scope", lambda **_kwargs: scope)
+    monkeypatch.setattr(script_run_codex, "main", lambda **_kwargs: emit_stage_rows("structural"))
+    monkeypatch.setattr(readcrop_stage, "run_stage", lambda **_kwargs: emit_stage_rows("readcrop"))
+    monkeypatch.setattr(fix_stage, "run_fix_stage", lambda study, **_kwargs: emit_stage_rows(study))
+    monkeypatch.setattr(script_run_codex.runtime, "write_checksums", lambda _path: None)
+
+    script_run_codex._run_unified_execution(
+        repo_path=tmp_path,
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        reasoning_effort=script_run_codex.PARITY_CODEX_REASONING_EFFORT,
+        tasks=None,
+        manifest_path=MANIFEST_PATH,
+        index_path=tmp_path / "index.json",
+        marketplace_root=tmp_path,
+        codemap_bin=tmp_path / "codemap-py",
+        auth_source=tmp_path / "auth.json",
+        invocation_launcher_path=None,
+        run_dir=tmp_path / "run",
+        paid_approval="a" * 64,
+        dry_run=False,
+        show_legend=True,
+    )
+
+    output = capsys.readouterr().out
+    expected_order = [
+        "→ aggregate: 4 tasks, 12 cells",
+        "== STAGE 1/4: structural (1 tasks, 3 cells) ==",
+        "(1/12) ✓ structural A_plain",
+        "(3/12) ✓ structural C_strict",
+        "== STAGE 2/4: readcrop (1 tasks, 3 cells) ==",
+        "(4/12) ✓ readcrop A_plain",
+        "(6/12) ✓ readcrop C_strict",
+        "== STAGE 3/4: fix-single (1 tasks, 3 cells) ==",
+        "(7/12) ✓ fix-single A_plain",
+        "(9/12) ✓ fix-single C_strict",
+        "== STAGE 4/4: fix-multi (1 tasks, 3 cells) ==",
+        "(10/12) ✓ fix-multi A_plain",
+        "(12/12) ✓ fix-multi C_strict",
+    ]
+    positions = [output.index(fragment) for fragment in expected_order]
+    assert positions == sorted(positions)
+    assert "→ sequential stages: structural=1 tasks/3 cells, readcrop=1 tasks/3 cells" in output
+    progress = [re.match(r"^\((\d+)/(\d+)\)", row).groups() for row in output.splitlines() if row.startswith("(")]
+    assert progress == [(str(completed), "12") for completed in range(1, 13)]

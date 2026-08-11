@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from benchmarks import provider_parity_contracts as core
+from benchmarks._bench_common import provider_parity_contracts as core
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
@@ -110,7 +110,7 @@ def test_historical_shell_query_shapes_reject_the_native_item_contract(
     script_run_codex: Any, command: str, expected: bool
 ) -> None:
     """Standalone native commands remain evidence across quoted launcher spellings."""
-    assert script_run_codex._is_codemap_command(command) is expected
+    assert script_run_codex.runtime._is_codemap_command(command) is expected
 
 
 def test_required_compliance_needs_successful_compact_delivery_by_arm(script_run_codex: Any, tmp_path: Path) -> None:
@@ -323,6 +323,16 @@ def test_direct_cli_launcher_must_match_its_manifest_hash(script_run_codex: Any,
             script_run_codex._verify_treatment_artifact_locks(home, lock_path)
 
 
+def test_treatment_artifact_lock_mismatch_explains_safe_refresh(script_run_codex: Any) -> None:
+    """A stale local treatment lock names the no-model recovery sequence."""
+    message = script_run_codex._treatment_artifact_lock_mismatch_message("codex_rig_adapter")
+
+    assert "codex_rig_adapter" in message
+    assert "no paid model call was started" in message
+    assert "python3 benchmarks/build-codex-integration-manifest.py" in message
+    assert "Do not reuse the previous --paid-approval value" in message
+
+
 def test_historical_exact_launcher_and_compound_forms_reject_native_item_contract(
     script_run_codex: Any, tmp_path: Path
 ) -> None:
@@ -331,12 +341,12 @@ def test_historical_exact_launcher_and_compound_forms_reject_native_item_contrac
     launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     launcher.chmod(0o755)
 
-    assert script_run_codex._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core")
-    assert not script_run_codex._is_codemap_command(
+    assert script_run_codex.runtime._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core")
+    assert not script_run_codex.runtime._is_codemap_command(
         f'"{launcher}" query --compact rdeps pkg.core', launcher_path=launcher
     )
-    assert not script_run_codex._is_codemap_command("/plugin/bin/codemap-py query --compact rdeps pkg.core")
-    assert not script_run_codex._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core; echo done")
+    assert not script_run_codex.runtime._is_codemap_command("/plugin/bin/codemap-py query --compact rdeps pkg.core")
+    assert not script_run_codex.runtime._is_codemap_command("$CODEMAP_BIN query --compact rdeps pkg.core; echo done")
 
 
 @pytest.mark.parametrize(
@@ -367,7 +377,7 @@ def test_one_outer_transport_wrapper_preserves_the_native_item_contract(
     script_run_codex: Any, command: str, expected: bool
 ) -> None:
     """Only one exact Codex transport wrapper may contain the native payload."""
-    assert script_run_codex._is_codemap_command(command) is expected
+    assert script_run_codex.runtime._is_codemap_command(command) is expected
 
 
 def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
@@ -407,7 +417,7 @@ def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_c
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -433,7 +443,7 @@ def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_c
         },
         {"type": "turn.completed"},
     ]
-    direct_parsed = script_run_codex.parse_codex_jsonl(
+    direct_parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in direct_after_skill),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -444,7 +454,82 @@ def test_historical_wrapped_C_delivery_rejects_native_item_contract(script_run_c
     assert direct_parsed.codemap_calls == 1
     assert script_run_codex._arm_compliance("C_skill_required", direct_parsed) is False
 
-    incomplete = script_run_codex.parse_codex_jsonl(
+
+def test_compound_compact_query_is_observed_without_receiving_canonical_credit(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Expose actual Codemap use while rejecting a non-standalone credited command.
+
+    The observation protects result reporting: a model can invoke the compact
+    query after a shell probe in the same item, which is real product use but
+    must remain noncompliant with the benchmark's exact-command contract.
+    """
+    skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\n"
+    skill_path.write_bytes(skill_bytes)
+    events = _completed_stream(
+        commands=[
+            {
+                "type": "command_execution",
+                "command": 'printf "%s\\n" "$CODEMAP_BIN"; "$CODEMAP_BIN" query --compact symbol pkg.Item',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+            }
+        ]
+    )
+
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
+        events,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.codemap_observed_calls == 1
+    assert parsed.codemap_calls == 0
+    assert parsed.codemap_skill_compact_successful_calls == 0
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+
+
+def test_installed_skill_binding_credits_compact_query_without_manual_skill_read(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """A C treatment is productive when its installed Skill binding guides one exact compact query.
+
+    Manual ``cat "$CODEMAP_SKILL_FILE"`` reads are audit diagnostics, not a
+    prerequisite for counting a query made through the immutable installed-Skill
+    treatment. Requiring that extra read would measure benchmark ceremony rather
+    than normal integration use.
+    """
+    skill_path = tmp_path / "codex-skills" / "query-code" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_bytes = b"# query-code\nUse compact queries.\n"
+    skill_path.write_bytes(skill_bytes)
+    events = _completed_stream(
+        commands=[
+            {
+                "type": "command_execution",
+                "command": '"$CODEMAP_BIN" query --compact rdeps pkg.core',
+                "status": "completed",
+                "exit_code": 0,
+                "aggregated_output": '{"index":{"query_complete":true,"compact":true}}',
+            }
+        ]
+    )
+
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
+        events,
+        skill_path=skill_path,
+        skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
+    )
+
+    assert parsed.skill_delivery_observed is False
+    assert parsed.codemap_calls == 1
+    assert parsed.codemap_skill_compact_successful_calls == 1
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
+
+    incomplete = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -501,7 +586,7 @@ def test_historical_bound_launcher_query_rejects_native_item_contract(script_run
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -513,7 +598,7 @@ def test_historical_bound_launcher_query_rejects_native_item_contract(script_run
     assert parsed.codemap_direct_successful_calls == 0
     assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
 
-    reversed_parsed = script_run_codex.parse_codex_jsonl(
+    reversed_parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in [events[1], events[0], events[2]]),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -568,7 +653,7 @@ def test_historical_uppercase_launcher_assignment_rejects_native_item_contract(
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -636,7 +721,7 @@ def test_uppercase_launcher_fallback_rejects_untrusted_shell_forms(
     launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     launcher.chmod(0o755)
 
-    assert not script_run_codex._is_codemap_command(
+    assert not script_run_codex.runtime._is_codemap_command(
         command.replace("{launcher}", str(launcher)), launcher_path=launcher
     )
 
@@ -644,7 +729,7 @@ def test_uppercase_launcher_fallback_rejects_untrusted_shell_forms(
 def test_historical_compound_direct_query_rejects_native_item_contract(script_run_codex: Any) -> None:
     """A diagnostic/query compound is historical evidence, not a future query item."""
     output = "ready\n" + json.dumps({"index": {"query_complete": True, "compact": True}}) + "\ndone\n"
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -668,7 +753,7 @@ def test_historical_multiline_direct_query_rejects_native_item_contract(script_r
         '/bin/zsh -lc "printf \'CODEMAP_BIN=%s\\\\n\' \\""\'$CODEMAP_BIN"\n'
         '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"\''
     )
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -728,7 +813,7 @@ def test_historical_multiline_direct_query_rejects_native_item_contract(script_r
 )
 def test_historical_newline_shell_forms_reject_native_item_contract(script_run_codex: Any, command: str) -> None:
     """No multiline shell form is the dedicated future native query item."""
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -755,7 +840,7 @@ def test_historical_diagnostic_conditional_query_rejects_native_item_contract(sc
         '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"; '
         "else printf 'CODEMAP_BIN is unset\\n'; fi"
     )
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -786,7 +871,7 @@ def test_historical_bound_launcher_diagnostic_rejects_native_item_contract(
         '"$codemap_bin" query --compact rdeps pkg.core'
     )
 
-    assert not script_run_codex._is_codemap_command(command, launcher_path=launcher)
+    assert not script_run_codex.runtime._is_codemap_command(command, launcher_path=launcher)
 
 
 def test_historical_compound_skill_and_control_query_reject_native_item_contract(
@@ -831,7 +916,7 @@ def test_historical_compound_skill_and_control_query_reject_native_item_contract
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -892,7 +977,7 @@ def test_historical_conditional_launcher_alias_replay_is_not_canonical_C_complia
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -1090,7 +1175,7 @@ def test_conditional_launcher_alias_rejects_unproven_forms(
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         launcher_path=launcher,
         skill_path=skill_path,
@@ -1103,8 +1188,10 @@ def test_conditional_launcher_alias_rejects_unproven_forms(
     assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
 
 
-def test_historical_compound_skill_reader_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
-    """A complete Skill body in a compound reader item is insufficient for C."""
+def test_compound_skill_reader_is_diagnostic_but_does_not_block_a_later_c_query(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """A standalone compact C query remains valid when an earlier reader is noncanonical."""
     skill_path = tmp_path / "query-code" / "SKILL.md"
     skill_path.parent.mkdir()
     skill_bytes = b"# query-code\nline 2\nline 3\n"
@@ -1135,19 +1222,21 @@ def test_historical_compound_skill_reader_rejects_native_item_contract(script_ru
         {"type": "turn.completed"},
     ]
 
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(json.dumps(event) for event in events),
         skill_path=skill_path,
         skill_sha256=hashlib.sha256(skill_bytes).hexdigest(),
     )
 
     assert parsed.skill_delivery_observed is False
-    assert parsed.codemap_skill_compact_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert parsed.codemap_skill_compact_successful_calls == 1
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
 
 
-def test_historical_bound_skill_path_read_rejects_native_item_contract(script_run_codex: Any, tmp_path: Path) -> None:
-    """A bound Skill path is historical evidence, not future static-path proof."""
+def test_noncanonical_skill_reader_does_not_block_a_later_standalone_c_query(
+    script_run_codex: Any, tmp_path: Path
+) -> None:
+    """Reader provenance remains diagnostic while the immutable C binding owns delivery."""
     skill_path = tmp_path / "query-code" / "SKILL.md"
     skill_path.parent.mkdir()
     skill_bytes = b"# query-code\nUse the compact query.\n"
@@ -1155,7 +1244,7 @@ def test_historical_bound_skill_path_read_rejects_native_item_contract(script_ru
     read_command = f"skill_path='{skill_path}'; wc -l \"$skill_path\"; sed -n '1,260p' \"$skill_path\""
     read_output = f"{len(skill_bytes.splitlines())} {skill_path}\n" + skill_bytes.decode()
     query_command = '"$CODEMAP_BIN" query --compact fn-rdeps "pkg.core::target"'
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         "\n".join(
             json.dumps(event)
             for event in [
@@ -1189,9 +1278,9 @@ def test_historical_bound_skill_path_read_rejects_native_item_contract(script_ru
     )
 
     assert parsed.skill_delivery_observed is False
-    assert parsed.codemap_skill_compact_successful_calls == 0
+    assert parsed.codemap_skill_compact_successful_calls == 1
     assert parsed.codemap_direct_successful_calls == 0
-    assert script_run_codex._arm_compliance("C_skill_required", parsed) is False
+    assert script_run_codex._arm_compliance("C_skill_required", parsed) is True
 
 
 @pytest.mark.parametrize(
@@ -1295,7 +1384,7 @@ def test_historical_bound_skill_reader_forms_reject_native_item_contract(
         "incomplete": "# query-code\n",
         "wrong": skill_bytes.decode().replace("compact", "expanded"),
     }
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -1326,7 +1415,7 @@ def test_historical_query_then_skill_read_rejects_native_item_contract(script_ru
     skill_path.write_bytes(skill_bytes)
     output = json.dumps({"index": {"query_complete": True}}) + "\n" + skill_bytes.decode()
     command = f'"$CODEMAP_BIN" query --compact rdeps pkg.core; cat {skill_path}'
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {
@@ -1396,7 +1485,7 @@ def test_query_credit_rejects_launcher_variable_mutation(script_run_codex: Any, 
     launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     launcher.chmod(0o755)
 
-    assert not script_run_codex._is_codemap_command(
+    assert not script_run_codex.runtime._is_codemap_command(
         command.replace("{launcher}", str(launcher)),
         launcher_path=launcher,
     )
@@ -1435,7 +1524,7 @@ def test_bound_launcher_query_rejects_ambiguous_or_unlocked_shell_forms(
     launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     launcher.chmod(0o755)
 
-    assert not script_run_codex._is_codemap_command(
+    assert not script_run_codex.runtime._is_codemap_command(
         command.replace("{launcher}", str(launcher)), launcher_path=launcher
     )
 
@@ -1471,7 +1560,7 @@ def test_skill_read_requires_exact_environment_command_bytes_and_success(
         "partial": "# query-code\n",
         "wrong": skill_bytes.decode().replace("line 2", "changed"),
     }
-    parsed = script_run_codex.parse_codex_jsonl(
+    parsed = script_run_codex.runtime.parse_codex_jsonl(
         _completed_stream(
             commands=[
                 {

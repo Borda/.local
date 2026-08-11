@@ -53,9 +53,9 @@ LOCKED_INDEX_SCAN_VERSION = ACTIVE_MANIFEST_DATA["index"]["scan_version"]
 CONFIRMATORY_TASK_IDS = json.loads(ACTIVE_MANIFEST.read_text(encoding="utf-8"))["preregistered_cells"][
     "structural_execution_task_ids"
 ]
-SELECTED_SCOPE_SHA = "selection-scope-di-gr"
+DEFAULT_SCOPE_SHA = "d" * 64
+SELECTED_SCOPE_SHA = "e" * 64
 SELECTED_TASK_IDS = ("DI-01", "GR-01")
-SELECTED_REPETITIONS = 2
 
 
 def _assert_safe_paid_preflight(calls: list[str], *, agentic: bool) -> None:
@@ -83,30 +83,6 @@ def _assert_safe_paid_preflight(calls: list[str], *, agentic: bool) -> None:
     assert all("prepare-codex-index.py" not in call for call in calls)
     assert all("run-codex-structural.py" not in call for call in calls)
     assert all("run-codex-agentic.py" not in call or "--resolve-scope" in call for call in calls)
-
-
-def _task_id_values(call: str) -> list[str]:
-    """Return the task IDs carried by a recorded call's single ``--task-id`` argument.
-
-    The runners are Fire CLIs, so ``--task-id`` is passed once with a comma-separated
-    value rather than repeated per ID (Fire keeps only the last of a repeated flag).
-
-    Args:
-        call: One recorded command line from the stub call log.
-
-    Returns:
-        The task IDs in argument order; empty when the call carries no ``--task-id``.
-
-    Examples:
-        >>> _task_id_values("run.py --task-id SE-01,FN-02 --arm all")
-        ['SE-01', 'FN-02']
-        >>> _task_id_values("run.py --arm all")
-        []
-    """
-    tokens = call.split()
-    if "--task-id" not in tokens:
-        return []
-    return tokens[tokens.index("--task-id") + 1].split(",")
 
 
 def _claude_task_values(call: str) -> list[str]:
@@ -157,7 +133,7 @@ if [[ "$*" == *"--resolve-tasks"* ]]; then
     printf "invalid task selector\\n" >&2
     exit 2
   fi
-  printf '{{"task_ids":["DI-01","GR-01"],"repetitions":{SELECTED_REPETITIONS},"total_cells":12,"arms":["A_plain","B_direct_required","C_skill_required"],"coordinate_timeout_seconds":600,"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
+  printf '{{"task_ids":["DI-01","GR-01"],"total_cells":6,"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
   exit 0
 fi
 if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--resolve-scope"* ]]; then
@@ -221,6 +197,11 @@ if [[ "$*" == *"run-codex-structural.py"* && "$*" != *"--no-legend"* ]]; then
 fi
 if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PLAN    FN-02  rep=1  A_plain\\n"
+  if [[ "$*" == *"--tasks DI,GR"* ]]; then
+    printf "SCOPE   {SELECTED_SCOPE_SHA}\\n"
+  elif [[ "$*" != *"--tasks FN-02"* ]]; then
+    printf "SCOPE   {DEFAULT_SCOPE_SHA}\\n"
+  fi
 fi
 if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PROBE   A_plain    codemap=false skill-required=false\\n"
@@ -231,7 +212,7 @@ if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--auth-source"* ]]; then
     printf "agentic console artifact existed before paid Python admission\\n" >&2
     exit 49
   fi
-  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=Codemap Skill read plus compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / {AGENTIC_TOTAL_CELLS} planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
+  printf "LEGEND\\n  treatments: A_plain=no Codemap, B_auto=CLI available and optional, C_strict=installed Codemap Skill with compact query required\\n  metrics:\\n      EREC: expected direct-importer recall\\n      RREC: final-report recall\\n      DEFF: expected dependencies exposed per tool call\\n  status: ✓ completed, ✗ failed\\n  progress: N completed cells / {AGENTIC_TOTAL_CELLS} planned cells\\n  treatment: ✓ assigned arm followed, ✗ assigned arm not followed\\n  codemap-used: ✓ Codemap call observed; ✗ no call observed (A_plain expects none)\\n  input tokens: gross total; cached and fresh details remain in telemetry only\\nEND LEGEND\\n"
   printf "agentic raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
   printf "agentic canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
   printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
@@ -241,12 +222,24 @@ if [[ "$*" == *"run-codex-agentic.py"* && "$*" == *"--auth-source"* ]]; then
 fi
 if [[ "$*" == *"--auth-source"* ]]; then
   if [[ "$*" != *"run-codex-agentic.py"* ]]; then
-    printf "raw\\n" > "$CODEX_RUN_DIR/telemetry.jsonl"
-    printf "canonical\\n" > "$CODEX_RUN_DIR/telemetry-canonical.jsonl"
-    printf "{{}}\\n" > "$CODEX_RUN_DIR/run-metadata.json"
+    structural_run_dir="$CODEX_RUN_DIR"
+    expect_run_dir=false
+    for arg in "$@"; do
+      if [ "$expect_run_dir" = true ]; then
+        structural_run_dir="$arg"
+        break
+      fi
+      if [ "$arg" = "--run-dir" ]; then
+        expect_run_dir=true
+      fi
+    done
+    mkdir -p "$structural_run_dir"
+    printf "raw\\n" > "$structural_run_dir/telemetry.jsonl"
+    printf "canonical\\n" > "$structural_run_dir/telemetry-canonical.jsonl"
+    printf "{{}}\\n" > "$structural_run_dir/run-metadata.json"
     printf "PLAN    FN-02  rep=1  A_plain\\n"
     printf "RESULT  completed  FN-02  rep=1  A_plain  in=1  out=1  time=1s  quality=1.0  compliance:✓\\n"
-    printf "ARTIFACTS  telemetry=%s/telemetry.jsonl  metadata=%s/run-metadata.json\\n" "$CODEX_RUN_DIR" "$CODEX_RUN_DIR"
+    printf "ARTIFACTS  telemetry=%s/telemetry.jsonl  metadata=%s/run-metadata.json\\n" "$structural_run_dir" "$structural_run_dir"
   fi
 fi""",
     )
@@ -278,7 +271,7 @@ fi""",
         "CALL_LOG": str(call_log),
         "CODEX_AUTH_SOURCE": str(auth_source),
         "CODEX_RUN_DIR": str(tmp_path / "codex-run"),
-        "CODEX_PAID_APPROVAL": ACTIVE_MANIFEST_SHA,
+        "CODEX_PAID_APPROVAL": DEFAULT_SCOPE_SHA,
         "CODEMAP_BIN": str(bin_dir / "codemap-py"),
         "REPO": str(repo),
     }
@@ -393,9 +386,11 @@ def test_codex_default_dry_run_dispatches_structural_then_agentic_without_paid_i
     codex_calls = [line for line in calls if "run-codex-structural.py" in line]
     assert len(codex_calls) == 2
     assert all("--dry-run" in line for line in codex_calls)
-    full_plan = next(line for line in codex_calls if "--repetitions 1" in line)
-    assert full_plan.count("--task-id") == 1
-    assert _task_id_values(full_plan) == CONFIRMATORY_TASK_IDS
+    full_plan = next(line for line in codex_calls if "--tasks" not in line)
+    assert "--task-id" not in full_plan
+    assert "--study" not in full_plan
+    assert "--paid" not in full_plan
+    assert "--paid-approval" not in full_plan
     assert "--max-wall-clock-seconds" not in full_plan
     agentic_calls = [line for line in calls if "run-codex-agentic.py" in line and "--resolve-scope" not in line]
     assert len(agentic_calls) == 1
@@ -416,7 +411,8 @@ def test_codex_default_dry_run_dispatches_structural_then_agentic_without_paid_i
     assert all("--output-path" not in line for line in agentic_calls)
     assert all("--render-results" not in line for line in codex_calls)
     assert "PLAN " in completed.stdout
-    assert "165 cells" in completed.stdout
+    assert "204 cells" in completed.stdout
+    assert completed.stdout.count(f"SCOPE   {DEFAULT_SCOPE_SHA}") == 1
     assert "48 cells" in completed.stdout
 
 
@@ -473,7 +469,7 @@ def test_paid_codex_uses_a_fresh_default_run_directory_without_total_timeout(
     assert completed.returncode == 0, completed.stderr
     run_dirs = list(results_root.glob("codex-integration-*"))
     assert len(run_dirs) == 1
-    assert (run_dirs[0] / "run-metadata.json").is_file()
+    assert (run_dirs[0] / "benchmark" / "run-metadata.json").is_file()
 
 
 def test_paid_codex_executes_from_a_run_scoped_source_snapshot(
@@ -907,17 +903,19 @@ def test_codex_tasks_dry_run_dispatches_resolved_scope(
         if "run-codex-structural.py" in line and "--resolve-tasks" not in line
     ]
     assert len(codex_calls) == 2
-    selected = next(line for line in codex_calls if "--scope-sha256" in line)
+    selected = next(line for line in codex_calls if "--tasks DI,GR" in line)
     assert "--dry-run" in selected
     assert "--tasks DI,GR" in selected
-    assert "--task-id DI-01" not in selected
-    assert f"--repetitions {SELECTED_REPETITIONS}" in selected
+    assert "--task-id" not in selected
+    assert "--study" not in selected
+    assert "--paid" not in selected
+    assert "--paid-approval" not in selected
     assert "--max-wall-clock-seconds" not in selected
-    assert f"--scope-sha256 {SELECTED_SCOPE_SHA}" in selected
+    assert "--scope-sha256" not in selected
     assert "--auth-source" not in selected
     assert "--output-path" not in selected
-    assert "12 cells" in completed.stdout
-    assert "nonpoolable" in completed.stdout
+    assert "6 cells" in completed.stdout
+    assert completed.stdout.count(f"SCOPE   {SELECTED_SCOPE_SHA}") == 1
 
 
 def test_codex_rejects_removed_diagnostic_switch(
@@ -962,10 +960,13 @@ def test_codex_tasks_accepts_option_ordering(
     selected = next(
         line
         for line in call_log.read_text(encoding="utf-8").splitlines()
-        if "run-codex-structural.py" in line and "--scope-sha256" in line
+        if "run-codex-structural.py" in line and "--tasks DI,GR" in line
     )
     assert "--dry-run" in selected
-    assert f"--scope-sha256 {SELECTED_SCOPE_SHA}" in selected
+    assert "--scope-sha256" not in selected
+    assert "--task-id" not in selected
+    assert "--study" not in selected
+    assert "--paid" not in selected
 
 
 def test_smoke_checks_claude_and_codex_without_paid_codex(
@@ -990,6 +991,10 @@ def test_smoke_checks_claude_and_codex_without_paid_codex(
     assert f"--manifest-path {ACTIVE_MANIFEST}" in codex_call
     assert f"--codemap-bin {env['CODEMAP_BIN']}" in codex_call
     assert "--no-legend" not in codex_call
+    assert "--tasks FN-02" in codex_call
+    assert "--task-id" not in codex_call
+    assert "--tasks-path" not in codex_call
+    assert "--arm" not in codex_call
 
 
 @pytest.mark.parametrize(
@@ -1026,7 +1031,7 @@ def test_top_level_provider_invocation_emits_one_bounded_legend(
     [
         ("smoke", "run-claude-structural.py", "run-codex-structural.py"),
         ("claude", "run-claude-structural.py", "--model haiku --arm A_plain"),
-        ("codex", "--task-id FN-02 --arm all --dry-run", "--repetitions 1"),
+        ("codex", "--tasks FN-02 --dry-run", "--auth-source"),
     ],
     ids=["both-providers", "claude", "codex"],
 )
@@ -1264,14 +1269,14 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
 
     assert completed.returncode == 2
     assert "bash benchmarks/run-all.sh codex --struct --dry-run" in completed.stderr
-    assert f"CODEX_PAID_APPROVAL={ACTIVE_MANIFEST_SHA}" in completed.stderr
+    assert "CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-above>" in completed.stderr
     assert "CODEX_AUTH_SOURCE=" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
     assert str(Path.home()) not in completed.stderr
     assert "set CODEX_RUN_DIR only to choose another new path" in completed.stderr
     assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in completed.stderr
     assert "benchmarks/manifests/codex-integration.md" in completed.stderr
-    assert "The command records paid authorization for this exact scope" in completed.stderr
+    assert "The command records paid authorization for this exact aggregate scope" in completed.stderr
     assert "use an immutable, user-owned 0600 auth source" in completed.stderr
     assert "Do not run a concurrent Codex session with it" in completed.stderr
     assert "independently authenticated benchmark credential" in completed.stderr
@@ -1296,12 +1301,38 @@ def test_codex_default_paid_rejection_requires_both_scope_approvals_before_dispa
     completed = _run_batch("codex", env)
 
     assert completed.returncode == 2
-    assert f"CODEX_PAID_APPROVAL={ACTIVE_MANIFEST_SHA}" in completed.stderr
+    assert "CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-by-the-unified-dry-run>" in completed.stderr
     assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
     assert "bash benchmarks/run-all.sh codex --dry-run" in completed.stderr
     assert "benchmarks/manifests/codex-integration.md" in completed.stderr
     assert "benchmarks/manifests/codex-agentic.md" in completed.stderr
     calls = call_log.read_text(encoding="utf-8").splitlines() if call_log.exists() else []
+    assert not any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
+    assert not any("run-codex-agentic.py" in line and "--auth-source" in line for line in calls)
+
+
+def test_combined_paid_run_defers_exact_aggregate_match_until_structural_preflight(
+    batch_env: tuple[dict[str, str], Path],
+) -> None:
+    """A syntactically valid stale aggregate approval reaches the no-model structural check only.
+
+    Prevents combined admission from incorrectly comparing the user-provided aggregate
+    approval to the manifest hash before the structural preflight derives its scope.
+    """
+    env, call_log = batch_env
+    env["CODEX_PAID_APPROVAL"] = "a" * 64
+    env["CODEX_AGENTIC_PAID_APPROVAL"] = AGENTIC_MANIFEST_SHA
+    env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-stale-combined-run"))
+
+    completed = _run_batch("codex", env)
+
+    assert completed.returncode == 2
+    # Paid study output is intentionally merged into the persisted/rendered stream.
+    # The completed preflight exposes the exact replacement approval before the
+    # stale value is rejected; direct-runner tests cover the full PAID_COMMAND.
+    assert f"CODEX_PAID_APPROVAL={DEFAULT_SCOPE_SHA}" in completed.stdout
+    calls = call_log.read_text(encoding="utf-8").splitlines()
+    assert any("run-codex-structural.py" in line and "--dry-run" in line for line in calls)
     assert not any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
     assert not any("run-codex-agentic.py" in line and "--auth-source" in line for line in calls)
 
@@ -1348,14 +1379,15 @@ def test_provider_modes_dispatch_only_the_selected_provider(
     structural_call = paid_structural[0]
     agentic_call = paid_agentic[0]
     assert calls.index(structural_call) < calls.index(agentic_call)
-    assert _task_id_values(structural_call) == CONFIRMATORY_TASK_IDS
-    assert "--repetitions 1" in structural_call
+    assert "--tasks" not in structural_call
+    assert "--task-id" not in structural_call
+    assert "--study" not in structural_call
+    assert "--paid" not in structural_call.replace("--paid-approval", "")
     assert "--reasoning-effort high" in structural_call
-    assert "--arm all" in structural_call
     assert "--max-wall-clock-seconds" not in "\n".join(calls)
     assert not any("run-claude-" in line for line in calls)
 
-    structural_run_dir = Path(_option_value(structural_call, "--output-path")).parent
+    structural_run_dir = Path(_option_value(structural_call, "--run-dir"))
     agentic_run_dir = Path(_option_value(agentic_call, "--run-dir"))
     assert structural_run_dir != agentic_run_dir
     assert structural_run_dir.is_dir()
@@ -1423,18 +1455,20 @@ def test_paid_codex_tasks_runs_only_resolved_scope(
     ]
     assert len(codex_calls) == 3
     paid = next(line for line in codex_calls if "--auth-source" in line)
-    assert "--scope-sha256" in paid
-    assert f"--scope-sha256 {SELECTED_SCOPE_SHA}" in paid
+    assert f"--paid-approval {SELECTED_SCOPE_SHA}" in paid
     assert "--dry-run" not in paid
     assert "--no-legend" in paid
     assert "--tasks DI,GR" in paid
-    assert "--task-id DI-01" not in paid
-    assert f"--repetitions {SELECTED_REPETITIONS}" in paid
+    assert "--task-id" not in paid
+    assert "--study" not in paid
+    assert "--paid" not in paid.replace("--paid-approval", "")
+    assert "--repetitions" not in paid
+    assert "--scope-sha256" not in paid
     assert "--max-wall-clock-seconds" not in paid
-    assert "--task-id FN-02" not in paid
-    diagnostic_smoke = next(line for line in codex_calls if "--task-id FN-02 --arm all --dry-run" in line)
+    assert f"--run-dir {env['CODEX_RUN_DIR']}/benchmark" in paid
+    diagnostic_smoke = next(line for line in codex_calls if "--tasks FN-02 --dry-run" in line)
     assert "--no-legend" in diagnostic_smoke
-    selected_plan = next(line for line in codex_calls if "--scope-sha256" in line and "--dry-run" in line)
+    selected_plan = next(line for line in codex_calls if "--tasks DI,GR" in line and "--dry-run" in line)
     assert "--no-legend" not in selected_plan
 
 
@@ -1448,7 +1482,7 @@ def test_paid_codex_checksums_include_canonical_telemetry_sidecar(
 
     assert completed.returncode == 0, completed.stderr
     run_dir = Path(env["CODEX_RUN_DIR"])
-    canonical = run_dir / "telemetry-canonical.jsonl"
+    canonical = run_dir / "benchmark" / "telemetry-canonical.jsonl"
     assert canonical.is_file()
     checksums = (run_dir / "checksums.sha256").read_text(encoding="utf-8").splitlines()
     canonical_line = next(line for line in checksums if "telemetry-canonical.jsonl" in line)

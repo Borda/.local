@@ -25,8 +25,8 @@ OUTPUT_HUMAN_MANIFEST = MANIFESTS / "codex-agentic.md"
 EXPERIMENT_ID = "codex-agentic"
 EXPERIMENT_REVISION = "codex-agentic-skill-imports-guidance-2026-08-09"
 sys.path.insert(0, str(BENCHMARKS))
-from agentic_contracts import AGENTIC_ARMS, DEFAULT_REPETITIONS, materialize_agentic_prompt  # noqa: E402
-from provider_parity_contracts import canonical_task_hash, semantic_suite_hash  # noqa: E402
+from _bench_common.agentic_contracts import AGENTIC_ARMS, DEFAULT_REPETITIONS, materialize_agentic_prompt  # noqa: E402
+from _bench_common.provider_parity_contracts import canonical_task_hash, semantic_suite_hash  # noqa: E402
 
 
 ARMS = AGENTIC_ARMS
@@ -104,7 +104,7 @@ def _artifact_hashes() -> dict[str, str]:
         "codex_agentic_runner": "benchmarks/run-codex-agentic.py",
         "codex_structural_runner": "benchmarks/run-codex-structural.py",
         "codex_structural_manifest": "benchmarks/manifests/codex-integration.json",
-        "agentic_contracts": "benchmarks/agentic_contracts.py",
+        "agentic_contracts": "benchmarks/_bench_common/agentic_contracts.py",
         "run_all": "benchmarks/run-all.sh",
     }
     return {name: _sha256(ROOT / relative_path) for name, relative_path in paths.items()}
@@ -164,11 +164,11 @@ def _build_manifest() -> dict[str, Any]:
             },
             "C_strict": {
                 "codemap_available": True,
-                "requirement": "Read the exact installed Skill before a successful compact query.",
+                "requirement": "Use the immutable installed Skill treatment for a successful compact query.",
                 "skill_path": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
                 "no_call_valid": False,
                 "row_retained_on_noncompliance": True,
-                "pooling": "ineligible when the required Skill read or successful query is absent",
+                "pooling": "ineligible when the required successful compact query is absent",
             },
         },
         "preregistered_scope": {
@@ -185,7 +185,7 @@ def _build_manifest() -> dict[str, Any]:
         "scoring": {
             "provider": "provider_neutral_answer_contract",
             "implementation": {
-                "path": "benchmarks/agentic_contracts.py",
+                "path": "benchmarks/_bench_common/agentic_contracts.py",
                 "sha256": artifact_hashes["agentic_contracts"],
                 "semantic_symbol": "score_answer",
                 "response_symbol": "assess_answer_response",
@@ -294,7 +294,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         f"- Cells: `{scope['total_cells']}`; per-cell timeout: `{scope['coordinate_timeout_seconds']}s`, including retries.",
         "- `A_plain`: Codemap absent; no-call is valid.",
         "- `B_auto`: Codemap CLI available; use is optional, and adoption is measured.",
-        "- `C_strict`: exact Skill read must precede a successful compact query; noncompliant rows remain scored but are excluded from pooling.",
+        "- `C_strict`: immutable installed-Skill treatment requires a successful compact query; noncompliant rows remain scored but are excluded from pooling.",
         "",
         "## Artifact and stop contract",
         "",

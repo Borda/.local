@@ -3,8 +3,7 @@
 
 This module runs every manifest-locked agentic task in the A_plain, B_auto, and
 C_strict treatments. It reuses the provider-neutral answer-contract scorer
-and the Codex structural runner's native JSONL parser instead of copying either
-implementation.
+and the shared Codex native JSONL parser instead of copying either implementation.
 
 ``--dry-run`` validates the locked shared provenance and prints the
 deterministic task × arm cell plan without reading credentials, invoking a model, or
@@ -32,8 +31,9 @@ _BENCHMARKS_DIR = Path(__file__).resolve().parent
 if str(_BENCHMARKS_DIR) not in sys.path:
     sys.path.insert(0, str(_BENCHMARKS_DIR))
 
-from _utilities import fmt_time, fmt_tok  # noqa: E402
-from agentic_contracts import (  # noqa: E402
+from _bench_common.presentation import fmt_time, fmt_tok  # noqa: E402
+from _bench_codex import runtime as codex_runtime  # noqa: E402
+from _bench_common.agentic_contracts import (  # noqa: E402
     AGENTIC_ARMS,
     DEFAULT_REPETITIONS,
     assess_answer_response,
@@ -44,10 +44,13 @@ from agentic_contracts import (  # noqa: E402
     score_evidence_metrics,
     validate_answer_contract,
 )
-from provider_parity_contracts import (  # noqa: E402
+from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
+    canonical_result_rows,
     canonical_task_hash,
+    fresh_input_tokens,
     semantic_suite_hash,
+    token_accounting_inconsistent,
     treatment_adherence,
 )
 
@@ -63,7 +66,7 @@ _NATIVE_HOME_ARM = {
 _OUTPUT_LEGEND = (
     "LEGEND\n"
     "  treatments: A_plain=no Codemap, B_auto=CLI available and optional, "
-    "C_strict=Codemap Skill read plus compact query required\n"
+    "C_strict=installed Codemap Skill with compact query required\n"
     "  metrics:\n"
     "      SCORE: mean semantic answer-component score; n/a when no answer can be recovered (higher is better)\n"
     "      EREC: expected-importer recall in all agent text (higher is better)\n"
@@ -260,16 +263,16 @@ def parse_agentic_stream(
         raise ValueError("only C_strict accepts a Codemap Skill path")
 
     skill_bytes = skill_path.read_bytes() if skill_path is not None else b""
-    parsed = _structural.parse_codex_jsonl(
+    parsed = codex_runtime.parse_codex_jsonl(
         stream,
         skill_path=skill_path,
         skill_sha256=hashlib.sha256(skill_bytes).hexdigest() if skill_bytes else "",
     )
-    codemap_used = parsed.codemap_calls > 0
+    codemap_used = getattr(parsed, "codemap_observed_calls", parsed.codemap_calls) > 0
     contaminated = arm == "A_plain" and codemap_used
     compliance = None
     if arm == "C_strict":
-        compliance = bool(parsed.skill_delivery_observed and parsed.codemap_skill_compact_successful_calls > 0)
+        compliance = bool(parsed.codemap_skill_compact_successful_calls > 0)
     adherence_arm = arm
     adherence = treatment_adherence(
         adherence_arm,
@@ -465,9 +468,10 @@ def _agentic_envelope(arm: str, task: Mapping[str, Any]) -> str:
         )
     elif arm == "C_strict":
         treatment = (
-            'Use the installed Codemap Skill before answering: first execute exactly cat "$CODEMAP_SKILL_FILE", '
-            "then complete at least one successful $CODEMAP_BIN query --compact structural query. Other reads and "
-            "shell commands remain allowed."
+            "The installed Codemap Skill is bound immutably for this treatment. Use its smallest complete-query "
+            "guidance, then complete at least one standalone successful $CODEMAP_BIN query --compact structural query; "
+            "do not prefix, assign, wrap, or combine the credited query with shell work. "
+            "Other reads and shell commands remain allowed."
         )
     else:
         raise ValueError(f"unsupported Codex agentic arm {arm!r}")
@@ -818,7 +822,7 @@ def _format_probe(probe: ArmProbe) -> str:
 def _emit_output_legend(output: Any | None = None) -> None:
     """Emit the agentic legend through the structural shared renderer."""
     destination = sys.stdout if output is None else output
-    _structural.render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), destination)
+    codex_runtime.render_result_rows(f"{_OUTPUT_LEGEND}\n".splitlines(keepends=True), destination)
 
 
 def _format_plan(task_id: str, repetition: int, arm: str) -> str:
@@ -862,10 +866,8 @@ def _append_telemetry(path: Path, run: AgenticRun, execution_index: int) -> None
     if run.evidence is not None:
         row["evidence"] = vars(run.evidence)
     row["execution_index"] = execution_index
-    row["fresh_input_tokens"] = _structural.fresh_input_tokens(run.input_tokens, run.cached_input_tokens)
-    row["token_accounting_inconsistent"] = _structural.token_accounting_inconsistent(
-        run.input_tokens, run.cached_input_tokens
-    )
+    row["fresh_input_tokens"] = fresh_input_tokens(run.input_tokens, run.cached_input_tokens)
+    row["token_accounting_inconsistent"] = token_accounting_inconsistent(run.input_tokens, run.cached_input_tokens)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -873,7 +875,7 @@ def _append_telemetry(path: Path, run: AgenticRun, execution_index: int) -> None
 def _write_canonical_telemetry(raw_path: Path, task_ids: Sequence[str]) -> str:
     """Publish the derived agentic canonical order without rewriting raw JSONL."""
     rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines() if line]
-    canonical = _structural.canonical_result_rows(rows, task_order=task_ids, arm_order=AGENTIC_ARMS)
+    canonical = canonical_result_rows(rows, task_order=task_ids, arm_order=AGENTIC_ARMS)
     payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in canonical).encode("utf-8")
     output = raw_path.with_name("telemetry-canonical.jsonl")
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix=f".{output.name}.", delete=False) as handle:

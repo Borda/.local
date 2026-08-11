@@ -167,20 +167,18 @@ from pathlib import Path
 import fire
 import pandas as pd
 
-# benchmarks/ is not a package; make the sibling _utilities module importable
+# benchmarks/ is not a package; make its private shared package importable
 # regardless of how this script is launched (direct path, symlink, or any cwd).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _utilities import TASKS_BENCH_FILE as OSS_TASKS_FILE  # noqa: E402
-from _utilities import (  # noqa: E402
-    extract_import_targets,
+from _bench_common.benchmark_paths import TASKS_BENCH_FILE as OSS_TASKS_FILE, unwrap_tasks  # noqa: E402
+from _bench_common.codemap_discovery import (
     find_codemap_bin,
     git_toplevel,
-    make_progress,
-    resolve_relative_base,
-    unwrap_tasks,
-)
-from _utilities import resolve_index_path as _util_resolve_index_path  # noqa: E402
+    resolve_index_path as _util_resolve_index_path,
+)  # noqa: E402
+from _bench_common.presentation import make_progress  # noqa: E402
+from _bench_common.python_source import extract_import_targets, resolve_relative_base  # noqa: E402
 
 try:
     from rich.console import Console
@@ -309,7 +307,7 @@ class ScanResult:
 # ---- CONFIG ----
 
 TASKS_FILE = Path(__file__).parent / "suites" / "tasks-code.json"
-# OSS_TASKS_FILE (tasks-bench.json) now imported from _utilities as TASKS_BENCH_FILE.
+# OSS_TASKS_FILE (tasks-bench.json) comes from benchmark_paths as TASKS_BENCH_FILE.
 
 THRESHOLDS = {
     # Coverage gap suite (C): structural completeness of cold grep vs codemap
@@ -626,7 +624,7 @@ def count_cold_calls_path(repo_path: Path, frm: str, to: str) -> int:
 # ---- WARM QUERIES ----
 
 
-# find_codemap_bin now imported from _utilities (shared with generate-tasks-bench).
+# find_codemap_bin comes from codemap (shared with generate-tasks-bench).
 
 
 def run_scan_query_result(scan_query_bin: Path, args: list[str], index_path: Path, repo_path: Path) -> ScanResult:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 try:
-    from edit_patch_contracts import (
+    from _bench_common.edit_patch_contracts import (
         EditExecution,
         StageIdentity,
         assess_patch_answer,
@@ -15,7 +15,7 @@ try:
         validate_provider_binding,
     )
 except ModuleNotFoundError:
-    from benchmarks.edit_patch_contracts import (
+    from benchmarks._bench_common.edit_patch_contracts import (
         EditExecution,
         StageIdentity,
         assess_patch_answer,
@@ -71,6 +71,13 @@ def test_malformed_or_multiple_patch_envelopes_fail_closed() -> None:
     """Only one fenced diff may become a mutable-cell candidate."""
     with pytest.raises(ValueError, match="exactly one fenced diff"):
         assess_patch_answer("```diff\ndiff --git a/a b/a\n```\n```diff\ndiff --git a/b b/b\n```")
+
+
+def test_patch_answer_preserves_a_trailing_blank_context_marker() -> None:
+    """Fence framing may be removed, but a diff's meaningful leading space must survive."""
+    answer = assess_patch_answer("```diff\ndiff --git a/a.py b/a.py\n@@ -1 +1 @@\n old\n \n```")
+
+    assert answer.diff.endswith("\n ")
 
 
 def test_stage_identity_detects_prior_stage_drift() -> None:

@@ -1,8 +1,7 @@
-"""Tests for benchmarks/_utilities.py — the shared helper module.
+"""Tests for benchmarks/_bench_common/claude_transport.py.
 
 Focus: the previously-uncovered hot path (``stream_claude`` + ``parse_result_usage``), which
 runs a live ``claude -p`` subprocess in production and so is exercised by no other unit test.
-A fake subprocess locks the loop mechanics (event routing, returncode, stderr, timeout, error).
 """
 
 from __future__ import annotations
@@ -58,7 +57,7 @@ def _patch_popen(monkeypatch: pytest.MonkeyPatch, module: Any, proc: Any) -> Non
 class TestParseResultUsage:
     """Contract: sum cached input parts, capture cost + success from a result event."""
 
-    def test_sums_cache_parts_into_input(self, script_utilities: Any) -> None:
+    def test_sums_cache_parts_into_input(self, script_claude_stream: Any) -> None:
         """input_tokens = uncached + cache_creation + cache_read; success on 'success' subtype."""
         ev = {
             "usage": {
@@ -70,14 +69,14 @@ class TestParseResultUsage:
             "total_cost_usd": 0.5,
             "subtype": "success",
         }
-        u = script_utilities.parse_result_usage(ev)
+        u = script_claude_stream.parse_result_usage(ev)
         assert (u.input_tokens, u.output_tokens, u.cache_creation_tokens, u.cache_read_tokens) == (100, 5, 20, 70)
         assert u.cost_usd == 0.5
         assert u.success is True
 
-    def test_missing_cost_and_error_subtype(self, script_utilities: Any) -> None:
+    def test_missing_cost_and_error_subtype(self, script_claude_stream: Any) -> None:
         """Absent total_cost_usd → 0.0; non-'success' subtype → success False, subtype preserved."""
-        u = script_utilities.parse_result_usage({"subtype": "error_max_turns"})
+        u = script_claude_stream.parse_result_usage({"subtype": "error_max_turns"})
         assert u.cost_usd == 0.0
         assert u.success is False
         assert u.subtype == "error_max_turns"
@@ -92,15 +91,15 @@ class TestStreamClaude:
     """Contract: route decoded events, skip blanks/garbage, report mechanics via StreamOutcome."""
 
     def test_routes_valid_events_and_captures_outcome(
-        self, script_utilities: Any, monkeypatch: pytest.MonkeyPatch
+        self, script_claude_stream: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Blank and non-JSON lines are skipped; valid events reach on_event; returncode+stderr captured."""
         lines = ['{"type":"a"}\n', "\n", "not json\n", '{"type":"result","subtype":"success"}\n']
         proc = _FakeProc(lines, stderr="warn", returncode=0)
-        _patch_popen(monkeypatch, script_utilities, proc)
+        _patch_popen(monkeypatch, script_claude_stream, proc)
 
         seen: list[dict] = []
-        outcome = script_utilities.stream_claude(
+        outcome = script_claude_stream.stream_claude(
             ["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: seen.append(e)
         )
         assert [e["type"] for e in seen] == ["a", "result"]
@@ -110,43 +109,49 @@ class TestStreamClaude:
         assert outcome.error is None
         assert outcome.elapsed_s >= 0.0
 
-    def test_negative_returncode_surfaced(self, script_utilities: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_negative_returncode_surfaced(self, script_claude_stream: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """A signal-killed process (returncode < 0) is surfaced for the caller's timeout mapping."""
         proc = _FakeProc(['{"type":"x"}\n'], returncode=-9)
-        _patch_popen(monkeypatch, script_utilities, proc)
-        outcome = script_utilities.stream_claude(["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: None)
+        _patch_popen(monkeypatch, script_claude_stream, proc)
+        outcome = script_claude_stream.stream_claude(
+            ["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: None
+        )
         assert outcome.returncode == -9
         assert outcome.exc_timeout is False
 
     def test_wait_timeout_sets_exc_timeout_and_no_stderr(
-        self, script_utilities: Any, monkeypatch: pytest.MonkeyPatch
+        self, script_claude_stream: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When wait() raises TimeoutExpired the process is killed, exc_timeout set, stderr left empty."""
         proc = _FakeProc(['{"type":"x"}\n'], stderr="ignored", wait_raises=True)
-        _patch_popen(monkeypatch, script_utilities, proc)
-        outcome = script_utilities.stream_claude(["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: None)
+        _patch_popen(monkeypatch, script_claude_stream, proc)
+        outcome = script_claude_stream.stream_claude(
+            ["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: None
+        )
         assert outcome.exc_timeout is True
         assert outcome.stderr == ""  # stderr only recorded on a clean wait
         assert proc.killed is True
 
-    def test_popen_failure_recorded_as_error(self, script_utilities: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_popen_failure_recorded_as_error(self, script_claude_stream: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """An unexpected exception (e.g. Popen failure) is captured as outcome.error, not raised."""
 
         def _boom(*_a: Any, **_k: Any) -> None:
             raise OSError("no such binary")
 
-        monkeypatch.setattr(script_utilities.subprocess, "Popen", _boom)
-        outcome = script_utilities.stream_claude(["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: None)
+        monkeypatch.setattr(script_claude_stream.subprocess, "Popen", _boom)
+        outcome = script_claude_stream.stream_claude(
+            ["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: None
+        )
         assert outcome.error is not None
         assert "no such binary" in outcome.error
         assert outcome.exc_timeout is False
 
-    def test_update_fn_receives_elapsed(self, script_utilities: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_update_fn_receives_elapsed(self, script_claude_stream: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """update_fn is invoked with an elapsed-seconds float (throttled ≤ every 0.5 s)."""
         proc = _FakeProc(['{"type":"a"}\n'], returncode=0)
-        _patch_popen(monkeypatch, script_utilities, proc)
+        _patch_popen(monkeypatch, script_claude_stream, proc)
         calls: list[float] = []
-        script_utilities.stream_claude(
+        script_claude_stream.stream_claude(
             ["claude"], timeout=99, cwd=".", env={}, on_event=lambda e, ts: None, update_fn=calls.append
         )
         # First event is >0.5 s from the sentinel 0.0 baseline, so exactly one throttled call fires.

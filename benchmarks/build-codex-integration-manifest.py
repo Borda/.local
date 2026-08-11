@@ -27,8 +27,8 @@ SOURCE_MANIFEST = MANIFESTS / "provider-parity-methodology.json"
 OUTPUT_MANIFEST = MANIFESTS / "codex-integration.json"
 OUTPUT_HUMAN_MANIFEST = MANIFESTS / "codex-integration.md"
 EXPERIMENT_ID = "codex-integration-v1"
-EXPERIMENT_REVISION = "codex-integration-skill-imports-guidance-2026-08-09"
-TELEMETRY_CONTRACT_ID = "canonical-skill-file-locked-query-components-v2"
+EXPERIMENT_REVISION = "codex-integration-unified-task-cli-2026-08-11"
+TELEMETRY_CONTRACT_ID = "installed-skill-binding-locked-query-components-v3"
 CANONICAL_QUERY_FORM = '"$CODEMAP_BIN" query --compact <subcommand> [arguments]'
 ARM_ORDER_POLICY = (
     "deterministic six-permutation counterbalancing by frozen structural task ordinal; "
@@ -91,6 +91,9 @@ def _artifact_hashes() -> dict[str, str]:
         "codex_rig_plugin_manifest": "plugins/codex-rig/.codex-plugin/plugin.json",
         "run_all": "benchmarks/run-all.sh",
         "run_codex_structural": "benchmarks/run-codex-structural.py",
+        "codex_stage_readcrop": "benchmarks/_bench_codex/stage_readcrop.py",
+        "codex_stage_fix": "benchmarks/_bench_codex/stage_fix.py",
+        "codex_stage_runtime": "benchmarks/_bench_codex/runtime.py",
         "prepare_codex_index": "benchmarks/prepare-codex-index.py",
     }
     return {name: _sha256(ROOT / relative_path) for name, relative_path in paths.items()}
@@ -158,8 +161,8 @@ def _arms() -> dict[str, dict[str, Any]]:
         "C_skill_required": {
             "installed_packages": ["codemap-py", "codex-rig"],
             "requirement": (
-                "Read the installed $codemap-py:query-code skill in its own native command item using exactly "
-                'cat "$CODEMAP_SKILL_FILE", then complete one successful canonical compact query in a separate item; '
+                "Use the immutable installed $codemap-py:query-code Skill binding and complete one successful "
+                "canonical compact query as its entire separate item; "
                 "additional reads and shell work are allowed."
             ),
             "treatment": "packaged_skill",
@@ -250,13 +253,10 @@ def _telemetry_admission() -> dict[str, Any]:
         "raw_result_policy": (
             "Raw JSONL cells are immutable. Parser corrections produce a separately versioned derived evaluation."
         ),
-        "skill_read": {
+        "skill_binding": {
             "arm": "C_skill_required",
-            "item_scope": "dedicated native command item",
-            "accepted_readers": ['cat "$CODEMAP_SKILL_FILE"'],
             "environment_binding": ("runner-owned immutable exact installed query Skill path; absent from A and B"),
-            "required_output": "exact manifest-locked codemap_query_skill bytes",
-            "ordering": "before the credited query item",
+            "manual_read_telemetry": "skill_delivery_observed is diagnostic-only and never a query-credit prerequisite",
         },
         "query": {
             "item_scope": "dedicated native command item",
@@ -274,14 +274,11 @@ def _telemetry_admission() -> dict[str, Any]:
         },
         "treatment_attribution": {
             "B_direct_required": "at least one successful compact direct CLI query",
-            "C_skill_required": ("dedicated exact Skill read item before at least one successful canonical query item"),
+            "C_skill_required": "at least one successful canonical compact query in the immutable installed-Skill treatment",
         },
         "rejected_evidence": [
             "launcher inspection without query execution",
             "aliases, assignments, conditionals, compound shell, redirections, substitutions, or nested shells",
-            "literal-path, sed, dynamic-range, unquoted-variable, wrong-variable, or reassigned Skill readers",
-            "partial, wrong-path, wrong-byte, failed, or non-dedicated Skill reads",
-            "Skill reads that occur after the query",
             "query output that is not one JSON document with complete compact index evidence",
             "exact-path or non-CODEMAP_BIN launcher forms",
         ],
@@ -300,44 +297,73 @@ def _preregistered_cells(source: dict[str, Any]) -> dict[str, Any]:
 
 
 def _task_selection_contract(source: dict[str, Any]) -> dict[str, Any]:
-    """Describe the generic nonpoolable ``--tasks`` selection contract."""
+    """Describe the unified task-driven selection contract for every Codex stage."""
     cells = _preregistered_cells(source)
-    task_ids = list(cells["structural_execution_task_ids"])
+    suite_ids = {suite["path"]: list(suite["ordered_task_ids"]) for suite in source["suites"]}
+    stage_ids = {
+        "structural": list(cells["structural_execution_task_ids"]),
+        "readcrop": suite_ids["benchmarks/suites/tasks-readcrop.json"],
+        "fix-single": suite_ids["benchmarks/suites/tasks-fix-single.json"],
+        "fix-multi": suite_ids["benchmarks/suites/tasks-fix-multi.json"],
+    }
+    task_ids = [task_id for stage_task_ids in stage_ids.values() for task_id in stage_task_ids]
     families = list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in task_ids))
+    stages = {
+        stage: {
+            "allowed_families": list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in selected_ids)),
+            "allowed_task_ids": selected_ids,
+            "arms": list(_arms()) if stage == "structural" else ["A_plain", "B_auto", "C_strict"],
+            "default_repetitions": 1,
+            "selected_repetitions": TASK_SELECTION_REPETITIONS if stage == "structural" else 1,
+        }
+        for stage, selected_ids in stage_ids.items()
+    }
     return {
-        "arms": list(_arms()),
         "allowed_families": families,
         "allowed_task_ids": task_ids,
+        "default_total_cells": len(task_ids) * 3,
+        "stage_order": list(stage_ids),
+        "stages": stages,
         "confirmatory_product_acceptance": "ineligible",
         "coordinate_timeout_seconds": TASK_SELECTION_COORDINATE_TIMEOUT_SECONDS,
         "nonpoolable": True,
         "pooling_eligibility": "ineligible",
         "purpose": (
-            "Targeted task-family or exact-task study selected from the frozen structural execution IDs; "
-            "it estimates selected behavior only."
+            "Task-family or exact-task selection across the frozen structural, ReadCrop, Fix-Single, and Fix-Multi "
+            "stages; omitted selectors execute every supported task once."
         ),
-        "repetitions": TASK_SELECTION_REPETITIONS,
         "resolution_policy": {
             "exact_id_first": True,
             "family_match": "a family token selects every matching allowed ID",
-            "order": "resolved IDs preserve frozen structural_execution_task_ids order",
+            "order": "resolved IDs preserve structural, ReadCrop, Fix-Single, then Fix-Multi stage order",
             "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
             "reject": ["empty tokens", "unknown task IDs", "unknown families"],
         },
         "scope_digest": {
             "canonical_fields": [
                 "active manifest SHA-256",
+                "selection mode",
                 "resolved ordered task IDs",
-                "repetitions",
-                "arms",
-                "coordinate timeout seconds",
+                "ordered stage partitions with repetitions, arms, and cell counts",
+                "total tasks and cells",
             ],
             "runtime_derived": True,
             "stored_in_manifest": False,
         },
+        "aggregate_execution_scope": {
+            "canonical_fields": [
+                "schema version",
+                "active manifest SHA-256",
+                "model and reasoning effort",
+                "selection mode and ordered task IDs",
+                "ordered stage partitions and their native scope SHA-256 values",
+                "total tasks and cells",
+            ],
+            "approval_option": "--paid-approval",
+            "dry_run_marker": "SCOPE",
+        },
         "separator": ",",
         "selector_option": "--tasks",
-        "study_mode": "selected_tasks",
     }
 
 
@@ -441,11 +467,9 @@ def _build_manifest() -> dict[str, Any]:
                 {
                     "command": (
                         "python3 benchmarks/run-codex-structural.py --repo-path <locked-target> "
-                        "--tasks-path benchmarks/suites/tasks-bench.json --manifest-path "
-                        "benchmarks/manifests/codex-integration.json --index-path "
-                        "<locked-index> --marketplace-root <repository> --codemap-bin "
-                        "<repository>/plugins/codemap-py/bin/codemap-py --model gpt-5.6-luna "
-                        "--task-id FN-02 --arm all --dry-run"
+                        "--manifest-path benchmarks/manifests/codex-integration.json --index-path <locked-index> "
+                        "--marketplace-root <repository> --codemap-bin "
+                        "<repository>/plugins/codemap-py/bin/codemap-py --model gpt-5.6-luna --tasks FN-02 --dry-run"
                     ),
                     "required_result": (
                         "exit 0; A absent; B exact staged runtime plus task-shaped compact query; C locked provider-then-consumer "
@@ -472,7 +496,7 @@ def _build_manifest() -> dict[str, Any]:
         "package_roster": ["codemap-py", "codex-rig"],
         "task_selection": _task_selection_contract(source),
         "preregistered_cells": _preregistered_cells(source),
-        "schema_version": "codex-integration-manifest-v2",
+        "schema_version": "codex-integration-manifest-v3",
         "source_manifest": {
             "path": SOURCE_MANIFEST.relative_to(ROOT).as_posix(),
             "sha256": _sha256(SOURCE_MANIFEST),
@@ -492,11 +516,12 @@ def _json_bytes(manifest: dict[str, Any]) -> bytes:
 
 def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
     """Render the short review record from the same immutable machine content."""
-    execution_tasks = len(manifest["preregistered_cells"]["structural_execution_task_ids"])
+    structural_tasks = len(manifest["preregistered_cells"]["structural_execution_task_ids"])
     repetitions = manifest["preregistered_cells"]["confirmatory_repetitions"]
     arm_count = len(manifest["preregistered_cells"]["arms"])
-    total_cells = execution_tasks * repetitions * arm_count
     task_selection = manifest["task_selection"]
+    execution_tasks = len(task_selection["allowed_task_ids"])
+    total_cells = task_selection["default_total_cells"]
     lines = [
         f"# `{EXPERIMENT_ID}`",
         "",
@@ -510,7 +535,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "",
         "- `A_plain`: no Codemap package or query access.",
         f"- `B_direct_required`: one dedicated successful `{CANONICAL_QUERY_FORM}` command item.",
-        '- `C_skill_required`: one dedicated exact `cat "$CODEMAP_SKILL_FILE"` item, then one dedicated canonical compact query item.',
+        "- `C_skill_required`: immutable installed Skill binding and one dedicated canonical compact query item.",
         "- B/C may use additional reads and shell commands as separate items; those actions are ignored for attribution.",
         "",
         "## Estimands",
@@ -544,14 +569,21 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         f"- Codex CLI: `{manifest['codex_cli']}`.",
         f"- Source manifest: `{manifest['source_manifest']['path']}` SHA-256 `{manifest['source_manifest']['sha256']}`.",
         "",
-        "## Study scope",
+        "## Unified execution scope",
         "",
-        f"- Execution tasks: `{execution_tasks}`.",
+        f"- Default execution: `{execution_tasks}` tasks and `{total_cells}` A/B/C cells.",
+        "- Stage partitions: `55` structural, `6` ReadCrop, `4` Fix-Single, and `3` Fix-Multi tasks.",
+        "- Omit `--tasks` to execute the complete supported suite once.",
+        "- Structural, ReadCrop, Fix-Single, and Fix-Multi retain separate child artifacts, native scorers, and nonpoolable quality records.",
+        "- Model-cell failures are recorded by their native stage; integrity and interruption failures preserve completed child artifacts and stop later stages.",
+        "",
+        "## Structural methodology",
+        "",
+        f"- Structural execution tasks: `{structural_tasks}`.",
         f"- Independently scored headline tasks: `{len(manifest['preregistered_cells']['structural_confirmatory_task_ids'])}`.",
         f"- Diagnostic tasks: `{len(manifest['preregistered_cells']['structural_diagnostic_task_ids'])}`.",
         f"- Repetitions: `{repetitions}`.",
-        f"- Total cells: `{total_cells}` (`{execution_tasks} tasks × {repetitions} repetition × {arm_count} arms`).",
-        "- Model-cell failures are recorded and do not stop the study after admission; integrity and interruption failures preserve a partial artifact and stop execution.",
+        f"- Structural default cells: `{structural_tasks * repetitions * arm_count}` (`{structural_tasks} tasks × {repetitions} repetition × {arm_count} arms`).",
         "",
         "## Selected-task scope",
         "",
@@ -559,50 +591,32 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "- Exact task IDs are resolved before family tokens; family tokens select all matching frozen IDs.",
         "- Empty or unknown selectors fail closed; duplicate tokens and overlapping expansions are evaluated once.",
         "- Resolved IDs always follow frozen manifest order, independent of selector order.",
-        "- Omit --tasks for the full confirmatory scope; providing --tasks requires separate targeted approval and cannot authorize or replace the full scope.",
-        f"- Selected-task runs use `{task_selection['repetitions']}` repetitions × `{len(task_selection['arms'])}` arms and `{task_selection['coordinate_timeout_seconds']}` seconds per coordinate.",
+        "- Omit `--tasks` for all 68 supported tasks; selected structural tasks retain three repetitions while RC/FS/FM tasks retain one repetition.",
+        f"- Every stage uses three native arms and a `{task_selection['coordinate_timeout_seconds']}`-second coordinate limit.",
         "- Selected-task runs are explicitly nonpoolable and ineligible for confirmatory or product acceptance.",
-        "- The runtime scope digest covers the active manifest SHA-256, resolved ordered IDs, and execution controls; it is derived at runtime and is not stored in this manifest.",
+        "- Task resolution prints a selection identity for inspection. Model execution is authorized only by the aggregate `SCOPE` printed by the matching full dry run.",
         "",
         "## Paid selected-task command",
         "",
-        "Replace `DI,GR` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.",
+        "Replace `RC,FS,FM` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.",
         "",
-        "Run the matching no-model dry-run first and copy its `selection scope` SHA-256 (or the `scope_sha256` field from the resolver output) into the placeholder below. This targeted scope digest is distinct from the machine-manifest SHA-256.",
-        "",
-        "```bash",
-        "bash benchmarks/run-all.sh codex --struct --tasks=DI,GR --dry-run",
-        "```",
-        "",
-        "Alternatively, resolve the selector directly and copy its `scope_sha256` value:",
+        "Run the matching no-model dry run first. It validates every selected stage and prints one exact `PAID_COMMAND` containing the aggregate approval and a fresh run directory.",
         "",
         "```bash",
-        "python3 benchmarks/run-codex-structural.py --manifest-path benchmarks/manifests/codex-integration.json --resolve-tasks DI,GR",
+        "python3 benchmarks/run-codex-structural.py --repo-path <locked-target> --index-path <locked-index> --marketplace-root <marketplace> --codemap-bin <absolute-launcher> --model gpt-5.6-luna --tasks RC,FS,FM --dry-run",
         "```",
         "",
-        "```bash",
-        "CODEX_PAID_APPROVAL=<resolved-scope-sha256> \\",
-        '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
-        "    bash benchmarks/run-all.sh codex --struct --tasks=DI,GR",
-        "```",
+        "## Full execution",
         "",
-        "## Confirmatory execution",
-        "",
-        "Run the exact no-model Codex smoke and 165-coordinate plan first:",
+        "Run the exact no-model unified plan first:",
         "",
         "```bash",
         "bash benchmarks/run-all.sh codex --struct --dry-run",
         "```",
         "",
-        "After reviewing this manifest, launch the separate paid confirmatory study with the manifest-bound command:",
+        "After reviewing the 68-task/204-cell plan, copy the exact `PAID_COMMAND` printed by that dry run. Do not substitute the machine-manifest or selector-resolution digest for its aggregate approval.",
         "",
-        "```bash",
-        f"CODEX_PAID_APPROVAL={machine_sha256} \\",
-        '    CODEX_AUTH_SOURCE="$HOME/.codex/auth.json" \\',
-        "    bash benchmarks/run-all.sh codex --struct",
-        "```",
-        "",
-        "Setting `CODEX_PAID_APPROVAL` to this exact machine-manifest SHA-256 in the launch command is the human authorization and stale-manifest lock; no separate chat authorization is required. The launcher creates a fresh run directory unless `CODEX_RUN_DIR` selects another new path. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless the user deliberately exports them for review.",
+        "The aggregate approval binds the manifest, model, ordered tasks, and every native child scope. The runner rejects stale approval or an existing run directory before any model call. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless deliberately exported for review.",
         "",
         "## Status",
         "",

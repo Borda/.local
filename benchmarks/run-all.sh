@@ -9,11 +9,11 @@
 #   bash benchmarks/run-all.sh claude --agentic --dry-run  # shared 144-cell Claude agentic plan, no model
 #   bash benchmarks/run-all.sh claude --agentic --tasks=BA-02,BA-04,BA-12,BA-16 --dry-run  # selected nonpoolable Claude plan
 #   bash benchmarks/run-all.sh claude --agentic --repetitions=2 --dry-run  # scope-bound Claude repeat override
-#   bash benchmarks/run-all.sh codex --struct --dry-run  # exact 165-cell Codex structural plan, no model
-#   bash benchmarks/run-all.sh codex --struct  # paid 55-task Codex structural study
-#   bash benchmarks/run-all.sh codex --dry-run  # structural + agentic Codex plans, no model
-#   bash benchmarks/run-all.sh codex   # paid structural study, then paid agentic study
-#   bash benchmarks/run-all.sh codex --struct --tasks=DI,GR [--dry-run]  # selected, nonpoolable structural study
+#   bash benchmarks/run-all.sh codex --struct --dry-run  # unified 68-task/204-cell Codex plan, no model
+#   bash benchmarks/run-all.sh codex --struct  # paid unified Codex task study
+#   bash benchmarks/run-all.sh codex --dry-run  # unified task + agentic Codex plans, no model
+#   bash benchmarks/run-all.sh codex   # paid unified task study, then paid agentic study
+#   bash benchmarks/run-all.sh codex --struct --tasks=RC,FS,FM [--dry-run]  # selected stage-native task families
 #   bash benchmarks/run-all.sh codex --agentic --dry-run  # shared 48-cell agentic plan, no model
 #   bash benchmarks/run-all.sh codex --agentic --tasks=BA-02,BA-04,BA-12,BA-16 --dry-run  # selected nonpoolable Codex plan
 #   bash benchmarks/run-all.sh codex --agentic --repetitions=2 --dry-run  # scope-bound repeat override
@@ -48,7 +48,8 @@ CODEX_TASKS=""
 AGENTIC_TASK_IDS=()
 SHARED_STRUCTURAL_TASK_IDS=()
 CODEX_SELECTION_SCOPE_SHA=""
-CODEX_SELECTION_REPETITIONS=""
+CODEX_SELECTION_TOTAL_CELLS=""
+CODEX_EXECUTION_SCOPE_SHA=""
 CODEX_SELECTION_TASK_IDS=()
 MANIFEST_PATH="$ROOT/benchmarks/manifests/codex-integration.json"
 AGENTIC_MANIFEST_PATH="$ROOT/benchmarks/manifests/codex-agentic.json"
@@ -292,7 +293,7 @@ append_launcher_checksum_attestation() {
 
 write_codex_result_checksums() {
   local checksum_path="$1"
-  local artifact input_artifact
+  local artifact input_artifact benchmark_artifact
   : > "$checksum_path"
   for artifact in run.log telemetry.jsonl telemetry-canonical.jsonl run-metadata.json runtime-isolation.jsonl; do
     if [ -f "$CODEX_RUN_DIR/$artifact" ]; then
@@ -303,6 +304,11 @@ write_codex_result_checksums() {
     while IFS= read -r input_artifact; do
       shasum -a 256 "$input_artifact" >> "$checksum_path"
     done < <(find "$CODEX_RUN_DIR/inputs" -type f -print | LC_ALL=C sort)
+  fi
+  if [ -d "$CODEX_RUN_DIR/benchmark" ]; then
+    while IFS= read -r benchmark_artifact; do
+      shasum -a 256 "$benchmark_artifact" >> "$checksum_path"
+    done < <(find "$CODEX_RUN_DIR/benchmark" -type f -print | LC_ALL=C sort)
   fi
   append_launcher_checksum_attestation "$checksum_path"
 }
@@ -612,15 +618,13 @@ codex_smoke_preflight() {
   validate_codex_cli
   python3 "$ROOT/benchmarks/run-codex-structural.py" \
     --repo-path "$REPO" \
-    --tasks-path benchmarks/suites/tasks-bench.json \
     --manifest-path "$MANIFEST_PATH" \
     --index-path "$INDEX_PATH" \
     --marketplace-root "$ROOT" \
     --codemap-bin "$CODEMAP_BIN" \
     --model "$codex_model" \
     --reasoning-effort "$codex_reasoning_effort" \
-    --task-id FN-02 \
-    --arm all \
+    --tasks FN-02 \
     --dry-run \
     $legend_arg
 }
@@ -704,15 +708,8 @@ require_codex_paid_inputs() {
     echo "ERROR: active provider-parity manifest is missing: $MANIFEST_PATH" >&2
     exit 2
   fi
-  active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
-  if [ -n "$CODEX_TASKS" ]; then
-    ensure_codex_scope_resolved
-    approved_approval="$CODEX_SELECTION_SCOPE_SHA"
-  else
-    approved_approval="$active_manifest_sha"
-  fi
-  if [ "${CODEX_PAID_APPROVAL:-}" != "$approved_approval" ]; then
-    echo "ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=$approved_approval" >&2
+  if [[ ! "${CODEX_PAID_APPROVAL:-}" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "ERROR: paid Codex mode requires the 64-character aggregate SCOPE printed by --dry-run." >&2
     print_codex_paid_guidance
     exit 2
   fi
@@ -775,11 +772,9 @@ print_codex_paid_guidance() {
   if [ -n "$CODEX_TASKS" ]; then
     ensure_codex_scope_resolved
     mode_args="$structural_arg --tasks=$CODEX_TASKS"
-    approval_hint="$CODEX_SELECTION_SCOPE_SHA"
-    scope_guidance="Selected task study: $CODEX_TASKS; $CODEX_SELECTION_REPETITIONS repetitions × A/B/C = $(( ${#CODEX_SELECTION_TASK_IDS[@]} * CODEX_SELECTION_REPETITIONS * 3 )) cells; $CODEX_SELECTION_COORDINATE_TIMEOUT seconds per cell, including retries. It is nonpoolable."
+    scope_guidance="Selected tasks: $CODEX_TASKS; $CODEX_SELECTION_TOTAL_CELLS stage-native A/B/C cells."
   else
     mode_args="$structural_arg"
-    approval_hint="$active_manifest_sha"
     scope_guidance=""
   fi
   cat >&2 <<EOF
@@ -787,12 +782,12 @@ print_codex_paid_guidance() {
 Review the exact no-model plan first:
   bash benchmarks/run-all.sh codex${mode_args} --dry-run
 
-Then launch the paid study with one manifest-bound command:
-  CODEX_PAID_APPROVAL=$approval_hint \\
+Then launch the paid study with the aggregate SCOPE printed above:
+  CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-above> \\
   CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \\
     bash benchmarks/run-all.sh codex${mode_args}
 
-The command records paid authorization for this exact scope. The launcher creates a fresh run directory under benchmarks/results; set CODEX_RUN_DIR only to choose another new path. Review benchmarks/manifests/codex-integration.md for the locked scope.
+The command records paid authorization for this exact aggregate scope. The launcher creates a fresh run directory under benchmarks/results; set CODEX_RUN_DIR only to choose another new path. Review benchmarks/manifests/codex-integration.md for the locked scope.
 Credential warning: use an immutable, user-owned 0600 auth source. Do not run a concurrent Codex session with it; use an independently authenticated benchmark credential instead. The runner keeps private run state and atomically propagates valid refreshes between cells. A private sequential refresh can invalidate an unchanged source, so reauthenticate after the run if needed. Known refresh-token authentication failures stop immediately; three matching unknown zero-token pre-response failures preserve partial artifacts and stop scheduling.
 ${scope_guidance:+$'\n'"$scope_guidance"$'\n'}
 EOF
@@ -875,8 +870,7 @@ require_codex_agentic_paid_inputs() {
 }
 
 print_codex_combined_paid_guidance() {
-  local agentic_manifest_sha structural_manifest_sha
-  structural_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
+  local agentic_manifest_sha
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
   cat >&2 <<EOF
 
@@ -884,7 +878,7 @@ Review both exact no-model plans first:
   bash benchmarks/run-all.sh codex --dry-run
 
 Then launch the paid structural and agentic studies from one frozen source:
-  CODEX_PAID_APPROVAL=$structural_manifest_sha \
+  CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-by-the-unified-dry-run> \
   CODEX_AGENTIC_PAID_APPROVAL=$agentic_manifest_sha \
   CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \
     bash benchmarks/run-all.sh codex
@@ -895,11 +889,10 @@ EOF
 }
 
 require_codex_combined_paid_inputs() {
-  local agentic_manifest_sha structural_manifest_sha expected_launcher
-  structural_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
+  local agentic_manifest_sha expected_launcher
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
-  if [ "${CODEX_PAID_APPROVAL:-}" != "$structural_manifest_sha" ] || [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$agentic_manifest_sha" ]; then
-    echo "ERROR: paid combined Codex mode requires both manifest-bound approvals." >&2
+  if [[ ! "${CODEX_PAID_APPROVAL:-}" =~ ^[0-9a-f]{64}$ ]] || [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$agentic_manifest_sha" ]; then
+    echo "ERROR: paid combined Codex mode requires the unified aggregate SCOPE and exact agentic approval." >&2
     print_codex_combined_paid_guidance
     exit 2
   fi
@@ -937,8 +930,7 @@ resolve_codex_tasks() {
     return 2
   fi
   if ! CODEX_SELECTION_SCOPE_SHA="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["scope_sha256"])' <<<"$selection_json" 2>/dev/null)" \
-    || ! CODEX_SELECTION_REPETITIONS="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["repetitions"])' <<<"$selection_json" 2>/dev/null)" \
-    || ! CODEX_SELECTION_COORDINATE_TIMEOUT="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["coordinate_timeout_seconds"])' <<<"$selection_json" 2>/dev/null)"; then
+    || ! CODEX_SELECTION_TOTAL_CELLS="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["total_cells"])' <<<"$selection_json" 2>/dev/null)"; then
     echo "ERROR: Codex task resolver returned malformed selection metadata:" >&2
     echo "$selection_json" >&2
     return 2
@@ -961,34 +953,25 @@ ensure_codex_scope_resolved() {
 
 configure_codex_plan() {
   active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
-  confirmatory_repetitions="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["preregistered_cells"]["confirmatory_repetitions"])' "$MANIFEST_PATH")"
   coordinate_timeout="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_controls"]["parity_timeout_seconds"])' "$MANIFEST_PATH")"
   codex_model="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["name"])' "$MANIFEST_PATH")"
   codex_reasoning_effort="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["reasoning_effort"])' "$MANIFEST_PATH")"
-  confirmatory_task_ids=("${SHARED_STRUCTURAL_TASK_IDS[@]}")
-  task_count="${#confirmatory_task_ids[@]}"
-  # The runner is a Fire CLI: it takes ONE comma-separated --task-id value. A repeated
-  # flag would silently keep only the last ID, so join the list into a single argument.
-  confirmatory_task_args=(--task-id "$(IFS=,; echo "${confirmatory_task_ids[*]}")")
-  planned_cells=$((task_count * confirmatory_repetitions * 3))
-  echo "== CODEX STRUCTURAL STUDY =="
-  echo "→ design: $planned_cells cells ($task_count tasks × $confirmatory_repetitions run × 3 arms)"
-  echo "→ analysis: 45 independently scored headline tasks; 10 diagnostic tasks reported separately"
+  task_count="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["task_selection"]["allowed_task_ids"]))' "$MANIFEST_PATH")"
+  planned_cells="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["task_selection"]["default_total_cells"])' "$MANIFEST_PATH")"
+  echo "== CODEX UNIFIED TASK STUDY =="
+  echo "→ design: $planned_cells cells ($task_count tasks × A/B/C; stage-native scoring)"
+  echo "→ stages: 55 structural + 6 ReadCrop + 4 Fix-Single + 3 Fix-Multi"
   echo "→ model: $codex_model; reasoning effort: $codex_reasoning_effort"
   echo "→ timeout: $coordinate_timeout seconds per cell, including retries"
   echo "→ manifest: $MANIFEST_PATH ($active_manifest_sha)"
   common_args=(
     --repo-path "$REPO" \
-    --tasks-path benchmarks/suites/tasks-bench.json \
     --manifest-path "$MANIFEST_PATH" \
     --index-path "$INDEX_PATH" \
     --marketplace-root "$ROOT" \
     --codemap-bin "$CODEMAP_BIN" \
     --model "$codex_model" \
-    --reasoning-effort "$codex_reasoning_effort" \
-    "${confirmatory_task_args[@]}" \
-    --repetitions "$confirmatory_repetitions" \
-    --arm all
+    --reasoning-effort "$codex_reasoning_effort"
   )
 }
 
@@ -998,30 +981,26 @@ configure_codex_selected_plan() {
   codex_model="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["name"])' "$MANIFEST_PATH")"
   codex_reasoning_effort="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["reasoning_effort"])' "$MANIFEST_PATH")"
   selected_task_count="${#CODEX_SELECTION_TASK_IDS[@]}"
-  selected_cells=$((selected_task_count * CODEX_SELECTION_REPETITIONS * 3))
+  selected_cells="$CODEX_SELECTION_TOTAL_CELLS"
   echo "== CODEX SELECTED A/B/C STUDY =="
-  echo "→ design: $selected_cells cells ($selected_task_count tasks × $CODEX_SELECTION_REPETITIONS runs × 3 arms; nonpoolable)"
+  echo "→ design: $selected_cells cells ($selected_task_count selected tasks; stage-native scoring)"
   echo "→ tasks: ${CODEX_TASKS}"
   echo "→ model: $codex_model; reasoning effort: $codex_reasoning_effort"
-  echo "→ timeout: $CODEX_SELECTION_COORDINATE_TIMEOUT seconds per cell, including retries"
   echo "→ selection scope: $CODEX_SELECTION_SCOPE_SHA"
   common_args=(
     --repo-path "$REPO" \
-    --tasks-path benchmarks/suites/tasks-bench.json \
     --manifest-path "$MANIFEST_PATH" \
     --index-path "$INDEX_PATH" \
     --marketplace-root "$ROOT" \
     --codemap-bin "$CODEMAP_BIN" \
     --model "$codex_model" \
     --reasoning-effort "$codex_reasoning_effort" \
-    --tasks "$CODEX_TASKS" \
-    --repetitions "$CODEX_SELECTION_REPETITIONS" \
-    --arm all \
-    --scope-sha256 "$CODEX_SELECTION_SCOPE_SHA"
+    --tasks "$CODEX_TASKS"
   )
 }
 
 run_codex_plan() {
+  local plan_output
   # Paid execution wraps this function in a tee pipeline. Explicit propagation
   # prevents the full plan or paid cells from starting after a failed smoke.
   query_check || return "$?"
@@ -1036,11 +1015,29 @@ run_codex_plan() {
   else
     echo "== CODEX CONFIRMATORY A/B/C PREFLIGHT (no model) =="
   fi
-  python3 "$ROOT/benchmarks/run-codex-structural.py" "${common_args[@]}" --dry-run || return "$?"
+  if ! plan_output="$(mktemp "$BENCHMARK_TEMP_ROOT/codex-unified-plan.XXXXXX")"; then
+    echo "ERROR: failed to create the private Codex plan capture." >&2
+    return 2
+  fi
+  if ! python3 "$ROOT/benchmarks/run-codex-structural.py" "${common_args[@]}" --dry-run | tee "$plan_output"; then
+    rm -f "$plan_output"
+    return 1
+  fi
+  CODEX_EXECUTION_SCOPE_SHA="$(awk '$1 == "SCOPE" {print $2}' "$plan_output" | tail -n 1)"
+  rm -f "$plan_output"
+  if [[ ! "$CODEX_EXECUTION_SCOPE_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "ERROR: unified Codex preflight did not emit one valid aggregate SCOPE." >&2
+    return 2
+  fi
 }
 
 run_codex_study() {
   run_codex_plan || return "$?"
+  if [ "$CODEX_PAID_APPROVAL" != "$CODEX_EXECUTION_SCOPE_SHA" ]; then
+    echo "ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=$CODEX_EXECUTION_SCOPE_SHA" >&2
+    echo "Copy the aggregate SCOPE printed by the completed no-model preflight." >&2
+    return 2
+  fi
   if [ -n "$CODEX_TASKS" ]; then
     echo "== CODEX SELECTED A/B/C STUDY (paid model runs) =="
   else
@@ -1051,8 +1048,8 @@ run_codex_study() {
     --auth-source "$CODEX_AUTH_SOURCE" \
     --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
     --no-legend \
-    --output-path "$CODEX_RUN_DIR/telemetry.jsonl" \
-    --metadata-path "$CODEX_RUN_DIR/run-metadata.json"
+    --run-dir "$CODEX_RUN_DIR/benchmark" \
+    --paid-approval "$CODEX_EXECUTION_SCOPE_SHA"
 }
 
 run_codex_agentic_prepared_plan() {
@@ -1087,7 +1084,9 @@ run_codex_agentic_study() {
   echo "→ timeout: $AGENTIC_COORDINATE_TIMEOUT seconds per cell, including retries"
   echo "→ manifest: $AGENTIC_MANIFEST_PATH ($agentic_manifest_sha)"
   echo "→ scope: $AGENTIC_SCOPE_SHA"
-  echo "ARTIFACTS  telemetry=$CODEX_RUN_DIR/telemetry.jsonl  metadata=$CODEX_RUN_DIR/run-metadata.json"
+  echo "ARTIFACTS:"
+  echo "→ telemetry=$CODEX_RUN_DIR/telemetry.jsonl"
+  echo "→ metadata=$CODEX_RUN_DIR/run-metadata.json"
   configure_agentic_dispatch
   python3 "$AGENTIC_RUNNER" \
     "${AGENTIC_DISPATCH_ARGS[@]}" \

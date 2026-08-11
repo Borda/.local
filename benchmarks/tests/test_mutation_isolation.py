@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 try:
-    from mutation_isolation import IsolatedMutationCell, MutationCleanupError
+    from _bench_common.mutation_isolation import IsolatedMutationCell, MutationCleanupError
 except ModuleNotFoundError:
-    from benchmarks.mutation_isolation import IsolatedMutationCell, MutationCleanupError
+    from benchmarks._bench_common.mutation_isolation import IsolatedMutationCell, MutationCleanupError
 
 
 @pytest.mark.parametrize("failure", [None, RuntimeError("model failure"), TimeoutError("cell timeout")])

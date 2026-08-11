@@ -96,8 +96,8 @@ def _load_module(module_name: str, filename: str):
     Returns:
         The loaded module with all public symbols accessible.
     """
-    # The runners import their sibling `_utilities` module by bare name; at runtime their own
-    # directory is sys.path[0], but spec_from_file_location does not add it, so ensure it here.
+    # Runners import private benchmark packages from their own directory; add it
+    # because spec_from_file_location does not set it as sys.path[0].
     if str(BENCHMARKS_DIR) not in sys.path:
         sys.path.insert(0, str(BENCHMARKS_DIR))
     path = BENCHMARKS_DIR / filename
@@ -109,9 +109,21 @@ def _load_module(module_name: str, filename: str):
 
 
 @pytest.fixture(scope="session")
-def script_utilities():
-    """Loaded shared _utilities module."""
-    return _load_module("benchmarks_utilities", "_utilities.py")
+def script_claude_stream():
+    """Load the shared Claude stream implementation."""
+    return _load_module("benchmarks_claude_transport", "_bench_common/claude_transport.py")
+
+
+@pytest.fixture(scope="session")
+def script_python_source():
+    """Load shared Python-source import graph helpers."""
+    return _load_module("benchmarks_python_source", "_bench_common/python_source.py")
+
+
+@pytest.fixture(scope="session")
+def script_benchmark_paths():
+    """Load shared benchmark-task paths and metadata helpers."""
+    return _load_module("benchmarks_benchmark_paths", "_bench_common/benchmark_paths.py")
 
 
 @pytest.fixture(scope="session")

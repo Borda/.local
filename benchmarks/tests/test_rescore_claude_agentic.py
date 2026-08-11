@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from benchmarks import agentic_contracts
+from benchmarks._bench_common import agentic_contracts
 
 
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent

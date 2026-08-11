@@ -233,28 +233,19 @@ import pandas as pd
 from rich.console import Console as _Console
 from rich.text import Text as _Text
 
-# benchmarks/ is not a package; make the sibling _utilities module importable
+# benchmarks/ is not a package; make its private shared package importable
 # regardless of how this script is launched (direct path, symlink, or any cwd).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _utilities import (  # noqa: E402
-    MODELS,
-    RESULTS_DIR,
-    codemap_bin_on_path,
-    extract_import_targets,
-    iter_py_files,
-    make_progress,
-    module_from_init_chain,
-    parse_result_usage,
-    resolve_index_path,
-    stream_claude,
-)
-from _utilities import MODEL_TIMEOUT  # noqa: E402
-from _utilities import fmt_time, fmt_tok  # noqa: E402
+from _bench_common.benchmark_paths import RESULTS_DIR  # noqa: E402
+from _bench_common.claude_transport import MODEL_TIMEOUT, MODELS, parse_result_usage, stream_claude  # noqa: E402
+from _bench_common.codemap_discovery import codemap_bin_on_path, resolve_index_path  # noqa: E402
+from _bench_common.presentation import fmt_time, fmt_tok, make_progress  # noqa: E402
+from _bench_common.python_source import extract_import_targets, iter_py_files, module_from_init_chain  # noqa: E402
 
 # Re-exported for call-site/test compatibility (tests reference it via this module's namespace).
-from _utilities import resolve_relative_base  # noqa: E402,F401
-from agentic_contracts import (  # noqa: E402
+from _bench_common.python_source import resolve_relative_base  # noqa: E402,F401
+from _bench_common.agentic_contracts import (  # noqa: E402
     AGENTIC_ARMS,
     DEFAULT_REPETITIONS,
     AgenticOracle,  # noqa: F401
@@ -265,20 +256,35 @@ from agentic_contracts import (  # noqa: E402
     score_answer,
     score_evidence_metrics,
 )
-from provider_parity_contracts import (  # noqa: E402
+from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     PARITY_TIMEOUT_SECONDS,
     canonical_task_hash,
+    fresh_input_tokens,
     load_task_policies,
     load_task_suite,
     materialize_task_prompt,
+    prompt_hash,
     semantic_suite_hash,
+    token_accounting_inconsistent,
 )
+from _bench_common.readcrop_contracts import (  # noqa: E402
+    ReadcropUsage,
+    build_readcrop_contract,
+    parse_readcrop_answer,
+    score_readcrop_answer,
+)
+from _bench_common.edit_patch_contracts import build_fix_multi_contract  # noqa: E402
 
 _console = _Console()
 
 PARITY_MANIFEST_PATH = Path(__file__).resolve().parent / "manifests" / "provider-parity-methodology.json"
+READCROP_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-readcrop.json"
+FIX_MULTI_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-fix-multi.json"
+READCROP_ARMS = ("A_plain", "B_auto", "C_strict")
+FIX_MULTI_ARMS = READCROP_ARMS
 LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
+_READCROP_ANSWER_RE = re.compile(r"BEGIN_READ_CROP_JSON\s*(?P<payload>\{.*?\})\s*END_READ_CROP_JSON", re.DOTALL)
 
 
 def _manifest_sha256(manifest_path: Path) -> str:
@@ -287,6 +293,322 @@ def _manifest_sha256(manifest_path: Path) -> str:
         return hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()
     except OSError as exc:
         raise ValueError("provider-parity manifest is unavailable") from exc
+
+
+def _readcrop_module_path(repo_path: Path, module: str) -> Path:
+    """Resolve one source module using the frozen target's supported layouts."""
+    relative = Path(*module.split("."))
+    candidates = (repo_path / "src" / relative.with_suffix(".py"), repo_path / relative.with_suffix(".py"))
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
+        raise ValueError(f"read-crop module {module!r} is unavailable under {repo_path}")
+    return path
+
+
+def extract_readcrop_symbol_source(repo_path: Path, module: str, symbol: str) -> str:
+    """Return exact AST source for one module-qualified function or method."""
+    path = _readcrop_module_path(repo_path, module)
+    text = path.read_text(encoding="utf-8")
+    node: ast.AST = ast.parse(text)
+    for part in symbol.split("."):
+        node = next(
+            (
+                child
+                for child in getattr(node, "body", [])
+                if isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == part
+            ),
+            None,
+        )
+        if node is None:
+            raise ValueError(f"read-crop symbol {symbol!r} is unavailable in {path}")
+    source = ast.get_source_segment(text, node)
+    if not isinstance(source, str) or not source:
+        raise ValueError(f"read-crop source is unavailable for {symbol!r}")
+    return source
+
+
+def load_claude_readcrop_tasks(
+    repo_path: Path,
+    tasks_path: Path = READCROP_TASKS_PATH,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+) -> list[dict[str, Any]]:
+    """Load the locked ReadCrop suite with source-anchored shared contracts."""
+    raw_tasks = load_task_suite(tasks_path)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("provider-parity manifest is unavailable or malformed") from exc
+    suites = manifest.get("suites") if isinstance(manifest, Mapping) else None
+    if not isinstance(suites, list):
+        raise ValueError("provider-parity manifest requires suites")
+    suite = next((item for item in suites if item.get("path") == "benchmarks/suites/tasks-readcrop.json"), None)
+    if not isinstance(suite, Mapping):
+        raise ValueError("provider-parity manifest lacks the read-crop suite")
+    if suite.get("ordered_task_ids") != [task["id"] for task in raw_tasks]:
+        raise ValueError("read-crop task order drifted")
+    if suite.get("semantic_suite_sha256") != semantic_suite_hash(raw_tasks):
+        raise ValueError("read-crop suite identity drifted")
+    rows = {row.get("id"): row for row in suite.get("tasks", []) if isinstance(row, Mapping)}
+    loaded: list[dict[str, Any]] = []
+    for task in raw_tasks:
+        row = rows.get(task["id"])
+        if not isinstance(row, Mapping) or row.get("canonical_task_sha256") != canonical_task_hash(task):
+            raise ValueError(f"read-crop task identity drifted for {task['id']}")
+        if row.get("prompt_sha256") != prompt_hash(task):
+            raise ValueError(f"read-crop prompt identity drifted for {task['id']}")
+        source = extract_readcrop_symbol_source(repo_path, str(task["primary_module"]), str(task["symbol"]))
+        loaded.append({"task": task, "source": source, "contract": build_readcrop_contract(task, source=source)})
+    return loaded
+
+
+def readcrop_prompt(arm: str, task: Mapping[str, Any]) -> str:
+    """Build the shared strict answer envelope with an arm-only tool supplement."""
+    supplements = {
+        "A_plain": "Codemap is absent and inaccessible. Use ordinary repository tools.",
+        "B_auto": "Codemap is installed and available through /codemap:query-code; use it when useful.",
+        "C_strict": "Codemap is installed and available through /codemap:query-code. Use Codemap at least once.",
+    }
+    try:
+        supplement = supplements[arm]
+    except KeyError as exc:
+        raise ValueError(f"unsupported Claude read-crop arm {arm!r}") from exc
+    parameter_requirement = (
+        "each exact required source parameter"
+        if task.get("required_parameters") is not None
+        else "every exact source parameter"
+    )
+    envelope = (
+        "After completing any tools, return no prose or Markdown outside this exact envelope:\n"
+        "BEGIN_READ_CROP_JSON\n"
+        '{"signature":"full qualified signature","parameters":["exact parameter name"],"behavior":"non-empty contract summary"}\n'
+        "END_READ_CROP_JSON\n"
+        "The JSON object must have exactly those three fields. "
+        f"`parameters` must list {parameter_requirement} name, and `behavior` must be a non-empty summary."
+    )
+    return f"{supplement}\n\n{task['prompt']}\n\n{envelope}"
+
+
+def parse_claude_readcrop_events(events: Sequence[Mapping[str, Any]], *, arm: str, contract: Any) -> dict[str, Any]:
+    """Normalize Claude stream-json events without estimating unavailable tool payload tokens."""
+    if arm not in READCROP_ARMS:
+        raise ValueError(f"unsupported Claude read-crop arm {arm!r}")
+    output_text = ""
+    codemap_calls = 0
+    command_calls = 0
+    usage = None
+    raw_events: list[Mapping[str, Any]] = []
+    for event in events:
+        raw_events.append(event)
+        if event.get("type") == "assistant":
+            content = event.get("message", {}).get("content", [])
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, Mapping):
+                    continue
+                if block.get("type") == "text" and isinstance(block.get("text"), str):
+                    output_text += block["text"]
+                if block.get("type") != "tool_use":
+                    continue
+                command_calls += 1
+                name = block.get("name")
+                tool_input = block.get("input")
+                if (
+                    name == "Skill"
+                    and isinstance(tool_input, Mapping)
+                    and "codemap" in str(tool_input.get("skill", ""))
+                ):
+                    codemap_calls += 1
+                if name == "Bash" and isinstance(tool_input, Mapping):
+                    command = str(tool_input.get("command", ""))
+                    if re.search(r"(?:^|/)scan-query\s+symbol\s+\S", command):
+                        codemap_calls += 1
+        elif event.get("type") == "result":
+            usage = parse_result_usage(dict(event))
+    match = _READCROP_ANSWER_RE.search(output_text)
+    answer_error = ""
+    score = None
+    if match is None:
+        answer_error = "missing strict read-crop answer envelope"
+    else:
+        try:
+            score = score_readcrop_answer(contract, parse_readcrop_answer(match.group("payload")))
+        except ValueError as exc:
+            answer_error = str(exc)
+    native_usage = usage if usage is not None else parse_result_usage({})
+    tool_result_tokens = None
+    ReadcropUsage(native_usage.input_tokens, tool_result_tokens)
+    contaminated = arm == "A_plain" and codemap_calls > 0
+    compliance = {"A_plain": not contaminated, "B_auto": True, "C_strict": codemap_calls > 0}[arm]
+    return {
+        "task_id": contract.task_id,
+        "arm": arm,
+        "success": native_usage.success and not answer_error and not contaminated,
+        "answer_error": answer_error,
+        "primary_correct": score.primary_correct if score is not None else False,
+        "quality_score": score.quality_score if score is not None else None,
+        "quality_components": dict(score.quality_components) if score is not None else {},
+        "parameter_recall": score.parameter_recall if score is not None else 0.0,
+        "behavior_fact_recall": score.behavior_fact_recall if score is not None else None,
+        "behavior_facts_correct": score.behavior_facts_correct if score is not None else None,
+        "keyword_recall_diagnostic": score.keyword_recall if score is not None else 0.0,
+        "input_tokens": native_usage.input_tokens,
+        "cache_creation_tokens": native_usage.cache_creation_tokens,
+        "cache_read_tokens": native_usage.cache_read_tokens,
+        "cached_input_tokens": native_usage.cache_creation_tokens + native_usage.cache_read_tokens,
+        "fresh_input_tokens": fresh_input_tokens(
+            native_usage.input_tokens, native_usage.cache_creation_tokens + native_usage.cache_read_tokens
+        ),
+        "token_accounting_inconsistent": token_accounting_inconsistent(
+            native_usage.input_tokens, native_usage.cache_creation_tokens + native_usage.cache_read_tokens
+        ),
+        "output_tokens": native_usage.output_tokens,
+        "tool_result_tokens": tool_result_tokens,
+        "command_calls": command_calls,
+        "codemap_calls": codemap_calls,
+        "codemap_used": codemap_calls > 0,
+        "compliance": compliance,
+        "contaminated": contaminated,
+        "native_subtype": native_usage.subtype,
+        "output_text": output_text,
+        "raw_events": raw_events,
+        "raw_events_sha256": hashlib.sha256(
+            json.dumps(raw_events, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "provider_binding": dict(contract.provider_binding()),
+    }
+
+
+def resolve_readcrop_scope(
+    tasks: Sequence[Mapping[str, Any]],
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    tasks_path: Path = READCROP_TASKS_PATH,
+) -> dict[str, Any]:
+    """Return the deterministic source-bound no-model Claude ReadCrop scope."""
+    task_ids = [str(item["contract"].task_id) for item in tasks]
+    if not task_ids or len(set(task_ids)) != len(task_ids):
+        raise ValueError("Claude read-crop scope requires unique selected task IDs")
+    payload: dict[str, Any] = {
+        "provider": "claude",
+        "study": "readcrop",
+        "manifest_sha256": _manifest_sha256(manifest_path),
+        "suite_sha256": hashlib.sha256(tasks_path.read_bytes()).hexdigest(),
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "task_ids": task_ids,
+        "arms": list(READCROP_ARMS),
+        "repetitions": 1,
+        "total_cells": len(tasks) * len(READCROP_ARMS),
+        "source_contracts": {
+            item["contract"].task_id: {
+                "oracle_sha256": item["contract"].oracle_sha256,
+                "source_sha256": item["contract"].source_sha256,
+            }
+            for item in tasks
+        },
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def _run_readcrop_no_model(
+    *, repo_path: Path | None, tasks_path: Path, manifest_path: Path, dry_run: bool, resolve_scope: bool
+) -> None:
+    """Resolve or print the source-bound Claude ReadCrop plan without launching Claude."""
+    if repo_path is None:
+        sys.exit("repo_path is required for source-bound Claude read-crop planning.")
+    if not dry_run and not resolve_scope:
+        sys.exit("Claude read-crop adapter is no-model only; choose --dry-run or --resolve-scope.")
+    loaded = load_claude_readcrop_tasks(Path(repo_path), tasks_path, manifest_path)
+    scope = resolve_readcrop_scope(loaded, manifest_path, tasks_path)
+    if resolve_scope:
+        print(json.dumps(scope, sort_keys=True))
+        return
+    print("READCROP PREFLIGHT (no model)")
+    for item in loaded:
+        for arm in READCROP_ARMS:
+            print(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}")
+    print(f"SCOPE   {scope['scope_sha256']}")
+
+
+def load_claude_fix_multi_tasks(
+    tasks_path: Path = FIX_MULTI_TASKS_PATH,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    selected_ids: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Load canonical Fix-Multi tasks with the provider-neutral contract owner."""
+    raw_tasks = load_task_suite(tasks_path)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("provider-parity manifest is unavailable or malformed") from exc
+    suites = manifest.get("suites") if isinstance(manifest, Mapping) else None
+    if not isinstance(suites, list):
+        raise ValueError("provider-parity manifest requires suites")
+    suite = next((item for item in suites if item.get("path") == "benchmarks/suites/tasks-fix-multi.json"), None)
+    if not isinstance(suite, Mapping):
+        raise ValueError("provider-parity manifest lacks the fix-multi suite")
+    if suite.get("ordered_task_ids") != [task["id"] for task in raw_tasks]:
+        raise ValueError("fix-multi task order drifted")
+    if suite.get("semantic_suite_sha256") != semantic_suite_hash(raw_tasks):
+        raise ValueError("fix-multi suite identity drifted")
+    rows = {row.get("id"): row for row in suite.get("tasks", []) if isinstance(row, Mapping)}
+    wanted = set(selected_ids or [str(task["id"]) for task in raw_tasks])
+    loaded: list[dict[str, Any]] = []
+    for task in raw_tasks:
+        if task["id"] not in wanted:
+            continue
+        row = rows.get(task["id"])
+        if not isinstance(row, Mapping) or row.get("canonical_task_sha256") != canonical_task_hash(task):
+            raise ValueError(f"fix-multi task identity drifted for {task['id']}")
+        if row.get("prompt_sha256") != prompt_hash(task):
+            raise ValueError(f"fix-multi prompt identity drifted for {task['id']}")
+        loaded.append({"task": task, "contract": build_fix_multi_contract(task)})
+    if {item["contract"].task_id for item in loaded} != wanted:
+        raise ValueError("--tasks must select known fix-multi task IDs")
+    return loaded
+
+
+def resolve_claude_fix_multi_scope(
+    tasks: Sequence[Mapping[str, Any]],
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    tasks_path: Path = FIX_MULTI_TASKS_PATH,
+) -> dict[str, Any]:
+    """Bind Claude planning to the shared Fix-Multi science contract."""
+    task_ids = [str(item["contract"].task_id) for item in tasks]
+    if not task_ids or len(set(task_ids)) != len(task_ids):
+        raise ValueError("Claude fix-multi scope requires unique selected task IDs")
+    payload: dict[str, Any] = {
+        "provider": "claude",
+        "study": "fix-multi",
+        "manifest_sha256": _manifest_sha256(manifest_path),
+        "suite_sha256": hashlib.sha256(tasks_path.read_bytes()).hexdigest(),
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "task_ids": task_ids,
+        "arms": list(FIX_MULTI_ARMS),
+        "repetitions": 1,
+        "total_cells": len(tasks) * len(FIX_MULTI_ARMS),
+        "contracts": {item["contract"].task_id: dict(item["contract"].provider_binding()) for item in tasks},
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def _run_fix_multi_no_model(
+    *, tasks_path: Path, manifest_path: Path, selected_ids: Sequence[str] | None, dry_run: bool, resolve_scope: bool
+) -> None:
+    """Resolve or print the contract-bound Claude Fix-Multi plan without Claude."""
+    if not dry_run and not resolve_scope:
+        sys.exit("Claude fix-multi adapter is no-model only; choose --dry-run or --resolve-scope.")
+    loaded = load_claude_fix_multi_tasks(tasks_path, manifest_path, selected_ids)
+    scope = resolve_claude_fix_multi_scope(loaded, manifest_path, tasks_path)
+    if resolve_scope:
+        print(json.dumps(scope, sort_keys=True))
+        return
+    print("FIX-MULTI PREFLIGHT (no model)")
+    for item in loaded:
+        for arm in FIX_MULTI_ARMS:
+            print(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}")
+    print(f"SCOPE   {scope['scope_sha256']}")
 
 
 def resolve_agentic_scope(
@@ -369,7 +691,7 @@ def _delivered_prompt_hash(task: Mapping[str, object], *, canonical: bool) -> st
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-# RESULTS_DIR, MODELS, MODEL_TIMEOUT now come from _utilities (shared with run-claude-structural).
+# RESULTS_DIR, MODELS, and MODEL_TIMEOUT come from shared benchmark_paths and claude_transport modules.
 
 # Cost is the fair cross-arm metric because arms differ in how many tokens they burn to reach the
 # same answer. We use Anthropic's own per-run total_cost_usd (captured from the stream-json result
@@ -401,7 +723,7 @@ def run_cost_usd(r: "BenchmarkRun") -> float:
     return getattr(r, "cost_usd", 0.0) or 0.0
 
 
-# fmt_tok now imported from _utilities (shared with run-claude-structural).
+# fmt_tok comes from presentation (shared with run-claude-structural).
 
 
 # ---------------------------------------------------------------------------
@@ -833,7 +1155,7 @@ def count_tokens(text: str) -> int:
 def find_index(repo_path: Path, explicit: Optional[Path]) -> Path:
     """Locate the pre-built codemap index for the target repo.
 
-    Thin adapter over :func:`_utilities.resolve_index_path`: exact ``<repo_name>.json``
+    Thin adapter over :func:`_bench_common.codemap_discovery.resolve_index_path`: exact ``<repo_name>.json``
     match (no ``-master``/``-main`` stripping), ``.cache/codemap/`` before ``.cache/scan/``,
     resolved paths, and a raise on miss. The index is built once by ``scan-index`` and
     excluded from benchmark timing; this only validates it exists before any run starts.
@@ -990,7 +1312,7 @@ def _derive_module_name(py_path: Path, root: Path) -> Optional[str]:
     return rel_dotted or None
 
 
-# resolve_relative_base now imported from _utilities (shared with run-codemap-cli).
+# resolve_relative_base comes from python_source (shared with run-codemap-cli).
 
 
 def _extract_import_targets(tree: ast.Module, package: str, all_modules: set[str]) -> set[str]:
@@ -3147,7 +3469,10 @@ def main(
     repo_path: Path = None,
     index: Path = None,
     tasks_file: Path = Path("benchmarks/suites/tasks-agentic.json"),
+    readcrop_tasks_path: Path = READCROP_TASKS_PATH,
+    fix_multi_tasks_path: Path = FIX_MULTI_TASKS_PATH,
     manifest_path: Path = PARITY_MANIFEST_PATH,
+    study: str = "agentic",
     model: str = None,
     arm: str = None,
     run_all: bool = False,
@@ -3165,7 +3490,10 @@ def main(
         repo_path: Path to the indexed repo; omitted only for scope resolution.
         index: Explicit index path (auto-discovered if omitted).
         tasks_file: Task definition file.
+        readcrop_tasks_path: Locked source-contract task suite for ``--study readcrop``.
+        fix_multi_tasks_path: Locked complete-caller task suite for ``--study fix-multi``.
         manifest_path: Provider-neutral methodology lock defining the shared suite.
+        study: ``agentic`` historical runner or a no-model shared-contract adapter.
         model: Run a single model tier (default: all — haiku/sonnet/opus).
         arm: Run one canonical or legacy arm. The default runs canonical A/B/C.
         run_all: Run all tasks in the selected arms.
@@ -3181,9 +3509,32 @@ def main(
     if index is not None:
         index = Path(index)
     tasks_file = Path(tasks_file)
+    readcrop_tasks_path = Path(readcrop_tasks_path)
+    fix_multi_tasks_path = Path(fix_multi_tasks_path)
     manifest_path = Path(manifest_path)
     if output is not None:
         output = Path(output)
+
+    if study == "readcrop":
+        _run_readcrop_no_model(
+            repo_path=repo_path,
+            tasks_path=readcrop_tasks_path,
+            manifest_path=manifest_path,
+            dry_run=dry_run,
+            resolve_scope=resolve_scope,
+        )
+        return
+    if study == "fix-multi":
+        _run_fix_multi_no_model(
+            tasks_path=fix_multi_tasks_path,
+            manifest_path=manifest_path,
+            selected_ids=tasks,
+            dry_run=dry_run,
+            resolve_scope=resolve_scope,
+        )
+        return
+    if study != "agentic":
+        sys.exit("study must be 'agentic', 'readcrop', or 'fix-multi'.")
 
     if not run_all and not tasks and not arm and not dry_run and not resolve_scope:
         sys.exit("Specify --run_all to run everything, or narrow with --tasks / --arm.")
