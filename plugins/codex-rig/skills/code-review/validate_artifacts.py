@@ -103,6 +103,7 @@ UNAVAILABLE_CONFIDENCE_GAP = (
     "Core PR source verification did not complete; no source review or merge decision was made."
 )
 PR_THREAD_CONFIDENCE_GAP = "PR review-thread resolution status was unavailable; online review triage may be incomplete."
+PR_PUBLIC_FALLBACK_MAX_CONFIDENCE = 0.89
 UNAVAILABLE_RECOVERY_ACTIONS = {
     "retry": "Retry the unchanged collector later; no review or merge decision was made.",
     "auth": "Repair local gh access privately, verify repository access, then retry.",
@@ -555,6 +556,28 @@ def _validate_confidence_gaps(result: dict[str, Any], metadata: dict[str, Any]) 
     _validate_confidence_gap_closures(metadata, confidence_gaps)
 
 
+def _validate_pr_fallback_confidence(
+    online_summary: dict[str, Any], result: dict[str, Any], metadata: dict[str, Any]
+) -> str | None:
+    """Require explicit evidence limits and cautious confidence after public PR fallback."""
+    if online_summary.get("pr_metadata_transport") != "public-https-fallback":
+        return None
+    unavailable = online_summary.get("unavailable_evidence")
+    if online_summary.get("limited_data") is not True or not isinstance(unavailable, list) or not unavailable:
+        raise SystemExit("pr-public-fallback-limitation-missing")
+    if not all(isinstance(item, str) and item for item in unavailable):
+        raise SystemExit("pr-public-fallback-limitation-missing")
+    if unavailable != sorted(unavailable):
+        raise SystemExit("pr-public-fallback-evidence-not-sorted")
+    confidence_gap = f"Public HTTPS PR metadata fallback omitted evidence: {', '.join(unavailable)}."
+    confidence_gaps = metadata.get("confidence_gaps")
+    if not isinstance(confidence_gaps, list) or confidence_gap not in confidence_gaps:
+        raise SystemExit("pr-public-fallback-confidence-gap-missing")
+    if float(result["confidence"]) > PR_PUBLIC_FALLBACK_MAX_CONFIDENCE:
+        raise SystemExit("pr-public-fallback-confidence-cap-exceeded")
+    return confidence_gap
+
+
 def _validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: list[str]) -> None:
     """Validate that every review confidence gap has closure evidence or carry-forward state."""
     active_gaps = [gap.strip() for gap in confidence_gaps if gap.strip()]
@@ -915,6 +938,9 @@ def _validate_result(
         target_branch = _load_json(out_dir / "target-branch.json")
         checkout = _load_json(out_dir / "local-checkout.json")
         online_summary = _load_json(out_dir / "online-review-summary.json")
+        fallback_gap = _validate_pr_fallback_confidence(online_summary, result, metadata)
+        if fallback_gap is not None and fallback_gap not in notes_text:
+            raise SystemExit("pr-public-fallback-confidence-gap-not-documented")
         if not isinstance(pr_payload.get("body"), str):
             raise SystemExit("pr-description-missing")
         if routing.get("base_identity_source") != "pr_url":
@@ -934,8 +960,14 @@ def _validate_result(
             raise SystemExit("pr-routing-force-checkout-forbidden")
         if "force_policy" not in routing:
             raise SystemExit("pr-routing-force-policy-missing")
-        if routing.get("local_checkout_command") != f"gh pr checkout {routing.get('pr_number')}":
-            raise SystemExit("pr-routing-checkout-command-must-use-number")
+        expected_checkout = f"gh pr checkout {routing.get('pr_number')}"
+        if routing.get("pr_metadata_transport") == "public-https-fallback":
+            expected_checkout = (
+                f"git checkout --detach refs/remotes/{remote_selection.get('remote')}/pull/"
+                f"{routing.get('pr_number')}/head"
+            )
+        if routing.get("local_checkout_command") != expected_checkout:
+            raise SystemExit("pr-routing-checkout-command-invalid")
         if target_branch.get("status") != "fetched":
             raise SystemExit("pr-target-branch-not-fetched")
         if target_branch.get("remote") != remote_selection.get("remote"):

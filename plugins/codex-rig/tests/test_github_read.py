@@ -113,13 +113,13 @@ def test_run_gh_read_allows_rest_get_commands(argv: list[str]) -> None:
     assert module.run_gh_read(runner, argv, timeout=5, label="rest-get") == b"{}"
 
 
-def test_read_with_fallback_uses_public_https_get_without_gh_credentials() -> None:
-    """Use the public API only after the preferred GitHub CLI is unavailable."""
+def test_read_with_fallback_uses_public_https_get_after_eligible_network_failure() -> None:
+    """Use the public API only after the preferred GitHub CLI has a classified network failure."""
     module = load_reader()
     requested: list[tuple[str, str]] = []
 
     def unavailable(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        raise OSError("gh not installed")
+        return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"connection reset by peer")
 
     class Response(io.BytesIO):
         """Provide the context-manager protocol expected from urllib responses."""
@@ -130,8 +130,9 @@ def test_read_with_fallback_uses_public_https_get_without_gh_credentials() -> No
         def __exit__(self, *args: object) -> None:
             self.close()
 
-    def open_url(request: Any, *, timeout: int) -> Response:
+    def open_url(request: Any, *, timeout: int, context: Any) -> Response:
         requested.append((request.full_url, request.get_method()))
+        assert context is not None
         return Response(b'{"number": 17}')
 
     payload, transport = module.read_with_fallback(
@@ -148,12 +149,99 @@ def test_read_with_fallback_uses_public_https_get_without_gh_credentials() -> No
     assert requested == [("https://api.github.com/repos/Borda/AI-Rig/issues/17", "GET")]
 
 
+def test_public_github_ssl_context_loads_system_bundle_when_default_store_is_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recover HTTPS verification when Python has no configured default CA file."""
+    module = load_reader()
+    system_bundle = tmp_path / "system-ca.pem"
+    system_bundle.write_text("test CA bundle", encoding="utf-8")
+    loaded_bundles: list[str] = []
+
+    class EmptyTrustContext:
+        """Model a Python installation whose default trust store is empty."""
+
+        @staticmethod
+        def cert_store_stats() -> dict[str, int]:
+            return {"x509_ca": 0}
+
+        @staticmethod
+        def load_verify_locations(*, cafile: str) -> None:
+            loaded_bundles.append(cafile)
+
+    context = EmptyTrustContext()
+    monkeypatch.setattr(module.ssl, "create_default_context", lambda: context)
+    monkeypatch.setattr(module, "SYSTEM_CA_FILE_CANDIDATES", (system_bundle,))
+
+    assert module._public_github_ssl_context() is context
+    assert loaded_bundles == [str(system_bundle)]
+
+
+def test_public_github_ssl_context_preserves_explicit_ca_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Do not widen an explicit caller-provided trust configuration."""
+    module = load_reader()
+    system_bundle = tmp_path / "system-ca.pem"
+    system_bundle.write_text("system CA bundle", encoding="utf-8")
+    loaded_bundles: list[str] = []
+
+    class EmptyTrustContext:
+        """Model a trust store whose configured certificates load lazily."""
+
+        @staticmethod
+        def cert_store_stats() -> dict[str, int]:
+            return {"x509_ca": 0}
+
+        @staticmethod
+        def load_verify_locations(*, cafile: str) -> None:
+            loaded_bundles.append(cafile)
+
+    context = EmptyTrustContext()
+    monkeypatch.setattr(module.ssl, "create_default_context", lambda: context)
+    monkeypatch.setattr(module, "SYSTEM_CA_FILE_CANDIDATES", (system_bundle,))
+    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "explicit-ca.pem"))
+
+    assert module._public_github_ssl_context() is context
+    assert loaded_bundles == []
+
+
+def test_read_with_fallback_keeps_command_unavailable_fail_closed() -> None:
+    """Do not treat a missing local GitHub CLI as proof that public PR data is safe to collect."""
+    module = load_reader()
+    requested: list[object] = []
+
+    def unavailable(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        raise OSError("gh not installed")
+
+    def open_url(*args: Any, **kwargs: Any) -> None:
+        requested.append((args, kwargs))
+        raise AssertionError("command-unavailable must not activate public HTTPS fallback")
+
+    with pytest.raises(module.GitHubReadError, match="command-unavailable:gh-issue-view") as error:
+        module.read_with_fallback(
+            unavailable,
+            ["gh", "issue", "view", "17", "--json", "title"],
+            timeout=5,
+            label="gh-issue-view",
+            fallback_url="https://api.github.com/repos/Borda/AI-Rig/issues/17",
+            open_url=open_url,
+        )
+
+    assert error.value.diagnostics == {
+        "failure_class": "command-unavailable",
+        "failure_reason": "unavailable",
+        "label": "gh-issue-view",
+    }
+    assert requested == []
+
+
 def test_read_with_fallback_rejects_non_github_url() -> None:
     """Keep fallback requests limited to the public GitHub API host."""
     module = load_reader()
 
     def unavailable(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        raise OSError("gh not installed")
+        return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"connection reset by peer")
 
     with pytest.raises(module.GitHubReadError, match="unsafe-github-fallback-url:gh-issue-view"):
         module.read_with_fallback(
@@ -190,7 +278,7 @@ def test_public_fallback_rejects_tokenized_url_and_normalizes_transport_error() 
     module = load_reader()
 
     def unavailable(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        raise OSError("gh unavailable")
+        return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"connection reset by peer")
 
     with pytest.raises(module.GitHubReadError, match="unsafe-github-fallback-url:gh-issue-view"):
         module.read_with_fallback(
@@ -241,8 +329,9 @@ def test_dns_failures_enable_public_last_resort_transport(stderr: bytes) -> None
         def __exit__(self, *args: object) -> None:
             self.close()
 
-    def open_url(request: Any, *, timeout: int) -> Response:
+    def open_url(request: Any, *, timeout: int, context: Any) -> Response:
         assert request.get_method() == "GET"
+        assert context is not None
         return Response(b'{"number": 17}')
 
     payload, transport = module.read_with_fallback(
@@ -277,6 +366,47 @@ def test_gh_failure_classifies_common_auth_and_transport_diagnostics(stderr: byt
     module = load_reader()
 
     assert module.github_failure_class(stderr) == expected
+
+
+@pytest.mark.parametrize("object_type", ["PullRequest", "Repository"])
+def test_gh_failure_classifies_missing_graphql_object_as_not_found(object_type: str) -> None:
+    """Do not mistake GitHub GraphQL object resolution for DNS resolution."""
+    module = load_reader()
+    stderr = f"GraphQL: Could not resolve to a {object_type} with the supplied identity.".encode()
+
+    assert module.github_failure_class(stderr) == "github-not-found"
+    assert module.github_failure_reason(stderr, "github-not-found") == "not-found"
+
+
+@pytest.mark.parametrize(
+    ("stderr", "expected_reason"),
+    [
+        pytest.param(b"could not resolve host: api.github.com", "dns", id="dns"),
+        pytest.param(b"read: connection reset by peer", "connection-reset", id="connection-reset"),
+    ],
+)
+def test_run_gh_read_persists_safe_network_reason_without_stderr(stderr: bytes, expected_reason: str) -> None:
+    """Keep retry routing specific without storing raw network diagnostics or credentials."""
+    module = load_reader()
+
+    def runner(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=stderr)
+
+    with pytest.raises(module.GitHubReadError, match="github-network:gh-issue-view") as error:
+        module.run_gh_read(
+            runner,
+            ["gh", "issue", "view", "17", "--json", "title"],
+            timeout=5,
+            label="gh-issue-view",
+        )
+
+    assert error.value.diagnostics == {
+        "exit_code": 1,
+        "failure_class": "github-network",
+        "failure_reason": expected_reason,
+        "label": "gh-issue-view",
+    }
+    assert stderr.decode() not in str(error.value)
 
 
 def test_read_with_fallback_preserves_gh_permission_failure() -> None:

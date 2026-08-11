@@ -100,6 +100,7 @@ CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS = {
     "evidence",
 }
 PR_THREAD_CONFIDENCE_GAP = "PR review-thread resolution status was unavailable; online review triage may be incomplete."
+PR_PUBLIC_FALLBACK_MAX_CONFIDENCE = 0.89
 
 SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
     "analyse": {"files": {}},
@@ -314,6 +315,27 @@ def _validate_confidence_gaps(result: dict[str, Any], skill: str) -> None:
     if float(result["confidence"]) < 1.0 and not any(item.strip() for item in confidence_gaps):
         raise SystemExit(f"{skill}-confidence-gaps-required")
     _validate_confidence_gap_closures(metadata, confidence_gaps, skill)
+
+
+def _validate_pr_fallback_confidence(
+    online_summary: dict[str, Any], result: dict[str, Any], metadata: dict[str, Any]
+) -> None:
+    """Require explicit evidence limits and cautious confidence after public PR fallback."""
+    if online_summary.get("pr_metadata_transport") != "public-https-fallback":
+        return
+    unavailable = online_summary.get("unavailable_evidence")
+    if online_summary.get("limited_data") is not True or not isinstance(unavailable, list) or not unavailable:
+        raise SystemExit("code-remediate-pr-public-fallback-limitation-missing")
+    if not all(isinstance(item, str) and item for item in unavailable):
+        raise SystemExit("code-remediate-pr-public-fallback-limitation-missing")
+    if unavailable != sorted(unavailable):
+        raise SystemExit("code-remediate-pr-public-fallback-evidence-not-sorted")
+    confidence_gap = f"Public HTTPS PR metadata fallback omitted evidence: {', '.join(unavailable)}."
+    confidence_gaps = metadata.get("confidence_gaps")
+    if not isinstance(confidence_gaps, list) or confidence_gap not in confidence_gaps:
+        raise SystemExit("code-remediate-pr-public-fallback-confidence-gap-missing")
+    if float(result["confidence"]) > PR_PUBLIC_FALLBACK_MAX_CONFIDENCE:
+        raise SystemExit("code-remediate-pr-public-fallback-confidence-cap-exceeded")
 
 
 def _validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: list[str], skill: str) -> None:
@@ -1002,6 +1024,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
             target_branch = _load_json(pr_dir / "target-branch.json")
             checkout = _load_json(pr_dir / "local-checkout.json")
             online_summary = _load_json(pr_dir / "online-review-summary.json")
+            _validate_pr_fallback_confidence(online_summary, result, metadata)
             if not isinstance(pr_payload.get("body"), str):
                 raise SystemExit("code-remediate-pr-description-missing")
             if routing.get("local_checkout_required") is not True:
@@ -1010,8 +1033,14 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 raise SystemExit("code-remediate-pr-routing-force-checkout-forbidden")
             if "force_policy" not in routing:
                 raise SystemExit("code-remediate-pr-routing-force-policy-missing")
-            if routing.get("local_checkout_command") != f"gh pr checkout {routing.get('pr_number')}":
-                raise SystemExit("code-remediate-pr-routing-checkout-command-must-use-number")
+            expected_checkout = f"gh pr checkout {routing.get('pr_number')}"
+            if routing.get("pr_metadata_transport") == "public-https-fallback":
+                expected_checkout = (
+                    f"git checkout --detach refs/remotes/{remote_selection.get('remote')}/pull/"
+                    f"{routing.get('pr_number')}/head"
+                )
+            if routing.get("local_checkout_command") != expected_checkout:
+                raise SystemExit("code-remediate-pr-routing-checkout-command-invalid")
             if target_branch.get("status") != "fetched":
                 raise SystemExit("code-remediate-pr-target-branch-not-fetched")
             if checkout.get("status") != "checked-out":

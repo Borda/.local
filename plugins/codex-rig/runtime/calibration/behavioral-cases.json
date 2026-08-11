@@ -333,6 +333,17 @@
     },
     {
       "expected_findings": [
+        "public-pr-fallback-identity-unbound",
+        "public-pr-fallback-limitations-missing",
+        "public-pr-fallback-confidence-not-lowered",
+        "verified-local-diff-missing"
+      ],
+      "id": "code-review-pr-public-fallback-confidence",
+      "prompt": "Assess a PR review that handles a GitHub CLI network failure by reading anonymous public PR metadata from a caller-supplied repository URL without matching it to configured local remotes, claims empty comments/reviews/files are complete, skips exact pull-ref checkout and local diff verification, and reports full confidence without listing the unavailable evidence.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
         "nonapproval-pr-findings-table-missing",
         "reported-finding-not-tabulated",
         "decision-action-evidence-missing"

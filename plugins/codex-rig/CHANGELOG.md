@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+- Add a bounded public HTTPS PR metadata fallback through the allowlisted, read-only `github_read.py` boundary for `github-network`, `github-auth`, `github-rate-limit`, and `command-timeout` failures; raw GitHub CLI stderr remains unpersisted and terminal diagnostics may include a safe `failure_reason` enum.
+- Distinguish GitHub GraphQL object-resolution failures from DNS errors, and recover an available system CA bundle when Python's default HTTPS trust store is empty.
+- Require canonical PR URLs to match a configured GitHub remote and numeric targets to resolve to one distinct configured GitHub repository identity; ambiguous, unsafe, permission, not-found, and unclassified cases remain fail-closed.
+- Normalize limited public PR metadata, verify the `refs/pull/<number>/head` detached checkout and local diff, and list unavailable evidence in `online-review-summary.json` while preserving private-PR and open-only merge/remediation constraints.
+- Require review/remediation online triage and action evidence to list sorted fallback evidence IDs, add the exact public-fallback confidence gap, and cap final confidence at `0.89`.
+
 ## 0.7.0
 
 - Add task-neutral adaptive Codemap routing to the shared structural-context adapter: localized edits can record a zero-query `skip`, one unresolved structural fact selects one compact query, and broad or unknown scope retains the legacy `standard` batch.

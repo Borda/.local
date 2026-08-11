@@ -51,6 +51,8 @@ For PR scope, inspect `python PLUGIN_ROOT/shared/collect_pr.py --help`; collect 
 
 PR evidence has two tiers. Core evidence is `gh pr view` metadata including contributor description/body, authoritative base-repository identity, refreshed target ancestry, an exact local PR head, and a diff derived with local `git diff <base>...<head>` after SHA verification. Supplemental evidence is GraphQL review-thread resolution state and derived diff statistics. The collector delegates remote GitHub state reads to `github_read.py`, which uses `gh` as an opaque local credential broker: it never invokes `gh auth`, reads token/keychain state, or writes CLI failure output to artifacts. That read-only boundary permits audited view commands, REST GET, and GraphQL query operations; public HTTPS fallback cannot establish private PR evidence. A classified core command failure is recorded in `command-failure.json` when diagnostics exist. For an open PR, use fork-aware `gh pr checkout <number>` unless the current HEAD already exactly equals PR metadata; historical collection fetches GitHub's `refs/pull/<number>/head`, verifies its exact SHA, and checks it out detached. Inspect source only in the local checkout recorded by `<run-directory>/local-checkout.json`; `diff.patch` must record `diff_source=verified-local-checkout` provenance there. Never reconstruct changed source from `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots. If checkout or local-diff verification fails, fail instead of reviewing remote raw files. Do not retry with `--force` unless user explicitly confirms after receiving force reason and overwrite risk.
 
+When `gh pr view` metadata fails, public unauthenticated HTTPS fallback is eligible only for `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout`, and only with a trusted checkout target. A canonical PR URL must match a configured GitHub remote; a numeric target requires exactly one distinct configured GitHub repository identity. Ambiguous or unsafe targets, permission failures, not-found failures, and unclassified failures remain fail-closed. The fallback normalizes limited PR metadata, then uses the verified `refs/pull/<number>/head` ref for a detached checkout and derives the local diff; it never establishes private PR evidence. `online-review-summary.json` must list unavailable fallback evidence as sorted IDs, and raw GitHub CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum alongside non-secret classification metadata.
+
 Classify diff; write `<run-directory>/scope.txt`:
 
 - `TRIVIAL`: no public API/config/security/ML behavior touched, \<3 files, \<50 changed lines.
@@ -152,6 +154,8 @@ Required sections:
 - `Confidence Gaps`
 - `Confidence Calibration`
 - `Online Review Triage` for `scope=pr`
+
+When `online-review-summary.json` reports `pr_metadata_transport=public-https-fallback`, `Online Review Triage` must list the sorted `unavailable_evidence` IDs `github_provided_file_list`, `mergeability`, `review_decision`, `reviews`, and `top_level_comments`, and add the exact confidence gap `Public HTTPS PR metadata fallback omitted evidence: <sorted IDs>.` Substitute that sorted list into `<sorted IDs>`. The final review confidence is capped at `0.89`; preserve the gap and its closure state in the confidence metadata.
 
 ### 07: Run shared quality gates
 

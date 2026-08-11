@@ -58,6 +58,25 @@ def pr_payload(*, state: str = "OPEN", cross_repository: bool = False) -> dict[s
     }
 
 
+def public_pr_payload() -> dict[str, Any]:
+    """Return the public REST representation available without GitHub CLI access."""
+    return {
+        "number": 17,
+        "title": "Portable collector",
+        "body": "Fix checkpoint resume behavior described by the contributor.",
+        "html_url": "https://github.com/Borda/AI-Rig/pull/17",
+        "user": {"login": "contributor"},
+        "base": {"ref": "main", "sha": BASE_OID, "repo": {"full_name": "Borda/AI-Rig"}},
+        "head": {
+            "ref": "portable-pr",
+            "sha": HEAD_OID,
+            "repo": {"full_name": "Borda/AI-Rig", "owner": {"login": "Borda"}},
+        },
+        "state": "open",
+        "draft": False,
+    }
+
+
 def threads_payload(*, paginated: bool = False) -> dict[str, Any]:
     """Return one GraphQL review-thread response fixture."""
     return {
@@ -103,6 +122,7 @@ class FakeRunner:
         review_threads_failure: bool = False,
         current_head_oid: str = "d" * 40,
         cross_repository: bool = False,
+        github_remotes: dict[str, list[str]] | None = None,
     ) -> None:
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
         self.paginated = paginated
@@ -114,6 +134,7 @@ class FakeRunner:
         self.review_threads_failure = review_threads_failure
         self.local_head_oid = current_head_oid
         self.cross_repository = cross_repository
+        self.github_remotes = github_remotes or {"origin": ["https://github.com/Borda/AI-Rig.git"]}
 
     def __call__(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         """Simulate the Git, GitHub CLI, and remote-selector commands."""
@@ -125,6 +146,13 @@ class FakeRunner:
             stdout = b""
         elif argv[:3] == ["git", "status", "--short"]:
             stdout = b" M local.txt\n"
+        elif argv == ["git", "remote"]:
+            stdout = "".join(f"{remote}\n" for remote in self.github_remotes).encode()
+        elif argv[:4] == ["git", "remote", "get-url", "--all"]:
+            remote = argv[4]
+            if remote not in self.github_remotes:
+                return subprocess.CompletedProcess(argv, 2, stdout=b"", stderr=b"unknown remote")
+            stdout = "".join(f"{url}\n" for url in self.github_remotes[remote]).encode()
         elif argv[:3] == ["gh", "pr", "view"]:
             stdout = json.dumps(pr_payload(state=self.pr_state, cross_repository=self.cross_repository)).encode()
         elif argv[:3] == ["gh", "api", "graphql"]:
@@ -225,6 +253,9 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
     assert (output / "pr-target.txt").read_text(encoding="utf-8") == "17\n"
     assert (output / "files.txt").read_text(encoding="utf-8") == "a.py\nb.py\n"
     assert json.loads((output / "online-review-summary.json").read_text()) == {
+        "pr_metadata_transport": "gh",
+        "limited_data": False,
+        "unavailable_evidence": [],
         "review_threads_status": "available",
         "review_threads_error": None,
         "review_thread_count": 3,
@@ -262,6 +293,295 @@ def test_collect_pr_degrades_incomplete_review_thread_pagination(
     assert summary["review_threads_status"] == "unavailable"
     assert summary["review_threads_error"] == "review-thread-pagination-incomplete"
     assert json.loads((output / "review-threads.json").read_text()) == []
+
+
+def test_collect_pr_does_not_require_fallback_identity_when_primary_gh_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep the authenticated primary path independent of fallback-only remote trust checks."""
+    module = load_collector()
+    runner = FakeRunner(github_remotes={"origin": ["https://github.com/another/project.git"]})
+    configure_collector(monkeypatch, module, runner)
+    output = tmp_path / "pr"
+
+    result = module.collect_pr(
+        target="https://github.com/Borda/AI-Rig/pull/17",
+        output=output,
+        checkout=False,
+        timeout_seconds=5,
+    )
+
+    assert result == 0, (output / "pr-error.txt").read_text() if (output / "pr-error.txt").exists() else ""
+    assert json.loads((output / "online-review-summary.json").read_text())["pr_metadata_transport"] == "gh"
+
+
+def test_public_pr_metadata_normalizes_an_absent_optional_body() -> None:
+    """Keep public PRs without a description eligible for limited fallback review."""
+    module = load_collector()
+    payload = public_pr_payload()
+    payload["body"] = None
+
+    normalized = module._normalized_public_pr(payload, module.PRTarget("Borda", "AI-Rig", 17))
+
+    assert normalized["body"] == ""
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        pytest.param("https://github.com/Borda/AI-Rig/pull/17", id="canonical-pr-url"),
+        pytest.param("https://github.com/borda/ai-rig/pull/17", id="case-normalized-canonical-pr-url"),
+        pytest.param("17", id="unique-configured-github-remote"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("failure_kind", "stderr"),
+    [
+        pytest.param("network", b"connection reset by peer", id="network"),
+        pytest.param("auth", b"authentication required", id="auth"),
+        pytest.param("rate-limit", b"rate limit exceeded", id="rate-limit"),
+        pytest.param("timeout", None, id="timeout"),
+    ],
+)
+def test_collect_pr_uses_public_metadata_fallback_with_trusted_pr_identity(
+    target: str,
+    failure_kind: str,
+    stderr: bytes | None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep public PR context available only after canonical or uniquely configured identity verification."""
+    module = load_collector()
+    reader = sys.modules["github_read"]
+    output = tmp_path / "pr"
+    public_requests: list[str] = []
+    runner = FakeRunner()
+
+    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] in (["gh", "pr", "view"], ["gh", "api", "graphql"]):
+            if failure_kind == "timeout":
+                raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+            assert stderr is not None
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=stderr)
+        return runner(argv, **kwargs)
+
+    def public_get(url: str, **kwargs: Any) -> bytes:
+        public_requests.append(url)
+        return json.dumps(public_pr_payload()).encode()
+
+    configure_collector(monkeypatch, module, unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", public_get)
+
+    result = module.collect_pr(
+        target=target,
+        output=output,
+        checkout=True,
+        timeout_seconds=5,
+    )
+
+    assert result == 0, (output / "pr-error.txt").read_text() if (output / "pr-error.txt").exists() else ""
+    assert public_requests == ["https://api.github.com/repos/Borda/AI-Rig/pulls/17"]
+    assert any(
+        argv == ["git", "fetch", "--no-tags", "origin", "refs/pull/17/head:refs/remotes/origin/pull/17/head"]
+        for argv, _ in runner.calls
+    )
+    assert any(argv == ["git", "checkout", "--detach", "refs/remotes/origin/pull/17/head"] for argv, _ in runner.calls)
+    assert json.loads((output / "pr.json").read_text(encoding="utf-8"))["number"] == 17
+    summary = json.loads((output / "online-review-summary.json").read_text(encoding="utf-8"))
+    assert summary["pr_metadata_transport"] == "public-https-fallback"
+    assert summary["limited_data"] is True
+    assert summary["unavailable_evidence"] == [
+        "github_provided_file_list",
+        "mergeability",
+        "review_decision",
+        "reviews",
+        "top_level_comments",
+    ]
+    assert summary["review_threads_status"] == "unavailable"
+    assert json.loads((output / "pr-routing.json").read_text(encoding="utf-8"))["pr_metadata_transport"] == (
+        "public-https-fallback"
+    )
+    checkout = json.loads((output / "local-checkout.json").read_text(encoding="utf-8"))
+    assert checkout["diff_source"] == "verified-local-checkout"
+    assert checkout["head_matches_pr"] is True
+    assert (output / "diff.patch").read_bytes() == b"diff --git a/a.py b/a.py\n"
+
+
+@pytest.mark.parametrize(
+    ("target", "stderr", "expected_error", "github_remotes"),
+    [
+        pytest.param(
+            "17",
+            b"connection reset by peer",
+            "github-network:gh-pr-view",
+            {
+                "origin": ["https://github.com/Borda/AI-Rig.git"],
+                "fork": ["https://github.com/contributor/AI-Rig.git"],
+            },
+            id="ambiguous-configured-remotes",
+        ),
+        pytest.param(
+            "https://github.com/Borda/AI-Rig/pull/17",
+            b"resource not accessible",
+            "github-permission:gh-pr-view",
+            {"origin": ["https://github.com/Borda/AI-Rig.git"]},
+            id="permission-denied",
+        ),
+    ],
+)
+def test_collect_pr_keeps_ambiguous_or_permission_limited_metadata_fail_closed(
+    target: str,
+    stderr: bytes,
+    expected_error: str,
+    github_remotes: dict[str, list[str]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not infer public identity or bypass GitHub's authenticated permission decision."""
+    module = load_collector()
+    reader = sys.modules["github_read"]
+    output = tmp_path / "pr"
+    runner = FakeRunner(github_remotes=github_remotes)
+
+    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=stderr)
+        return runner(argv, **kwargs)
+
+    def public_get(*args: Any, **kwargs: Any) -> bytes:
+        raise AssertionError("ambiguous selectors and permission failures must not activate public HTTPS fallback")
+
+    configure_collector(monkeypatch, module, unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", public_get)
+
+    assert module.collect_pr(target=target, output=output, checkout=False, timeout_seconds=5) == 2
+    assert (output / "pr-error.txt").read_text(encoding="utf-8") == f"{expected_error}\n"
+
+
+def test_collect_pr_fails_closed_when_public_fallback_cannot_read_pr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Do not emit partial PR evidence when a canonical URL is private or unavailable publicly."""
+    module = load_collector()
+    reader = sys.modules["github_read"]
+    output = tmp_path / "pr"
+    runner = FakeRunner()
+
+    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
+        return runner(argv, **kwargs)
+
+    def public_get(*args: Any, **kwargs: Any) -> bytes:
+        raise reader.GitHubReadError("github-not-found:gh-pr-view")
+
+    configure_collector(monkeypatch, module, unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", public_get)
+
+    assert (
+        module.collect_pr(
+            target="https://github.com/Borda/AI-Rig/pull/17",
+            output=output,
+            checkout=True,
+            timeout_seconds=5,
+        )
+        == 2
+    )
+    assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-not-found:gh-pr-view\n"
+    assert not (output / "pr.json").exists()
+
+
+def test_collect_pr_keeps_graphql_missing_pr_out_of_public_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Report a missing PR directly instead of retrying it as a network failure."""
+    module = load_collector()
+    reader = sys.modules["github_read"]
+    output = tmp_path / "pr"
+    runner = FakeRunner()
+
+    def missing_pr(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(
+                argv,
+                1,
+                stdout=b"",
+                stderr=b"GraphQL: Could not resolve to a PullRequest with the number of 17.",
+            )
+        return runner(argv, **kwargs)
+
+    def public_get(*args: Any, **kwargs: Any) -> bytes:
+        raise AssertionError("a semantic not-found response must not activate public fallback")
+
+    configure_collector(monkeypatch, module, missing_pr)
+    monkeypatch.setattr(reader, "public_github_get", public_get)
+
+    assert module.collect_pr(target="17", output=output, checkout=True, timeout_seconds=5) == 2
+    assert (output / "pr-error.txt").read_text(encoding="utf-8") == "github-not-found:gh-pr-view\n"
+    assert not (output / "pr.json").exists()
+
+
+def test_collect_pr_rejects_canonical_url_without_matching_configured_github_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent a public URL from authorizing a different local repository's checkout evidence."""
+    module = load_collector()
+    reader = sys.modules["github_read"]
+    output = tmp_path / "pr"
+    runner = FakeRunner(github_remotes={"origin": ["https://github.com/Borda/other-repository.git"]})
+
+    def unavailable_gh(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        if argv[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"connection reset by peer")
+        return runner(argv, **kwargs)
+
+    def public_get(*args: Any, **kwargs: Any) -> bytes:
+        raise AssertionError("a URL without matching configured remote must not request public metadata")
+
+    configure_collector(monkeypatch, module, unavailable_gh)
+    monkeypatch.setattr(reader, "public_github_get", public_get)
+
+    assert (
+        module.collect_pr(
+            target="https://github.com/Borda/AI-Rig/pull/17",
+            output=output,
+            checkout=True,
+            timeout_seconds=5,
+        )
+        == 2
+    )
+    assert not (output / "pr.json").exists()
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        pytest.param("https://github.com/Borda/AI-Rig/pull/17?access_token=secret", id="token-query"),
+        pytest.param("https://token@github.com/Borda/AI-Rig/pull/17", id="userinfo"),
+    ],
+)
+def test_collect_pr_rejects_unsafe_public_target_without_persisting_it(
+    target: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep query credentials and userinfo out of PR evidence artifacts and fallback requests."""
+    module = load_collector()
+    reader = sys.modules["github_read"]
+    output = tmp_path / "pr"
+
+    def fail_if_called(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        raise AssertionError(f"unsafe public target must be rejected before command execution: {argv}")
+
+    def public_get(*args: Any, **kwargs: Any) -> bytes:
+        raise AssertionError("unsafe public target must not activate public HTTPS fallback")
+
+    configure_collector(monkeypatch, module, fail_if_called)
+    monkeypatch.setattr(reader, "public_github_get", public_get)
+
+    assert module.collect_pr(target=target, output=output, checkout=True, timeout_seconds=5) == 2
+    target_artifact = output / "pr-target.txt"
+    persisted_target = target_artifact.read_text(encoding="utf-8") if target_artifact.exists() else ""
+    assert "secret" not in persisted_target
+    assert "token@" not in persisted_target
 
 
 def test_collect_pr_records_unavailable_diff_statistics_without_failing(
@@ -642,7 +962,12 @@ def test_run_preserves_classified_gh_failure_details() -> None:
     with pytest.raises(module.CollectionError, match="github-network:gh-pr-view") as error:
         module._run(runner, ["gh", "pr", "view", "17", "--json", module.PR_FIELDS], 5, "gh-pr-view")
 
-    assert error.value.diagnostics == {"exit_code": 1, "failure_class": "github-network", "label": "gh-pr-view"}
+    assert error.value.diagnostics == {
+        "exit_code": 1,
+        "failure_class": "github-network",
+        "failure_reason": "network",
+        "label": "gh-pr-view",
+    }
 
 
 def test_collect_pr_writes_classified_opaque_failure_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -669,6 +994,7 @@ def test_collect_pr_writes_classified_opaque_failure_artifact(tmp_path: Path, mo
     assert json.loads((output / "command-failure.json").read_text(encoding="utf-8")) == {
         "exit_code": 1,
         "failure_class": "github-network",
+        "failure_reason": "network",
         "label": "gh-pr-view",
     }
 

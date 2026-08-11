@@ -30,12 +30,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
+from urllib.parse import urlparse
 
 
 # Keep this executable helper importable when pytest discovers it as a module.
@@ -43,11 +45,22 @@ SHARED_DIRECTORY = Path(__file__).resolve().parent
 if str(SHARED_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SHARED_DIRECTORY))
 
-from github_read import GitHubReadError, run_gh_read  # noqa: E402
+from github_read import GitHubReadError, read_with_fallback, run_gh_read  # noqa: E402
 
 
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 VALID_PR_STATES = frozenset({"OPEN", "MERGED", "CLOSED"})
+GITHUB_HOST = "github.com"
+PR_NUMBER_PATTERN = re.compile(r"[1-9][0-9]*")
+GITHUB_PATH_COMPONENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+GIT_OBJECT_ID_PATTERN = re.compile(r"[0-9a-fA-F]{40}")
+FALLBACK_UNAVAILABLE_EVIDENCE = (
+    "github_provided_file_list",
+    "mergeability",
+    "review_decision",
+    "reviews",
+    "top_level_comments",
+)
 COLLECTOR_EVIDENCE_ARTIFACTS = (
     "comments.json",
     "checkout-state.json",
@@ -98,6 +111,19 @@ query($owner: String!, $name: String!, $number: Int!) {
 RunCommand = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
+class PRTarget(NamedTuple):
+    """Represent a validated GitHub pull-request identity."""
+
+    owner: str
+    repository: str
+    number: int
+
+    @property
+    def url(self) -> str:
+        """Return the canonical GitHub pull-request URL."""
+        return f"https://{GITHUB_HOST}/{self.owner}/{self.repository}/pull/{self.number}"
+
+
 class CollectionError(RuntimeError):
     """Carry one stable bounded collection failure code."""
 
@@ -111,7 +137,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the portable PR collector command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path, help="Artifact directory")
-    parser.add_argument("--target", default="", help="PR number, URL, or gh-compatible selector")
+    parser.add_argument("--target", default="", help="PR number, canonical GitHub URL, or empty for current branch")
     parser.add_argument("--checkout", action="store_true", help="Fetch and update the verified local PR checkout")
     parser.add_argument("--timeout-seconds", type=int, default=60, help="Per-command timeout")
     arguments = parser.parse_args(argv)
@@ -156,6 +182,226 @@ def _run(run: RunCommand, argv: list[str], timeout: int, label: str, *, input_by
             },
         )
     return completed.stdout
+
+
+def _parse_pr_target(value: str) -> PRTarget | None:
+    """Parse a positive PR number or exact canonical GitHub PR URL."""
+    target = value.strip()
+    if not target:
+        return None
+    if PR_NUMBER_PATTERN.fullmatch(target):
+        return PRTarget("", "", int(target))
+    if "%" in target:
+        raise CollectionError("unsafe-pr-target")
+    try:
+        parsed = urlparse(target)
+        port = parsed.port
+    except ValueError as error:
+        raise CollectionError("unsafe-pr-target") from error
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != GITHUB_HOST
+        or port is not None
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise CollectionError("unsafe-pr-target")
+    parts = parsed.path.split("/")
+    if (
+        len(parts) != 5
+        or parts[0]
+        or parts[3] != "pull"
+        or not GITHUB_PATH_COMPONENT_PATTERN.fullmatch(parts[1])
+        or not GITHUB_PATH_COMPONENT_PATTERN.fullmatch(parts[2])
+        or not PR_NUMBER_PATTERN.fullmatch(parts[4])
+    ):
+        raise CollectionError("unsafe-pr-target")
+    return PRTarget(parts[1], parts[2], int(parts[4]))
+
+
+def _github_remote_identity(url: str) -> tuple[str, str] | None:
+    """Return one configured GitHub remote's normalized owner and repository."""
+    value = url.strip()
+    scp_match = re.fullmatch(r"(?:[^@/\s]+@)?github\.com:([^/\s:]+)/([^/\s]+)", value, flags=re.IGNORECASE)
+    if scp_match:
+        owner, repository = scp_match.groups()
+    else:
+        try:
+            parsed = urlparse(value)
+            port = parsed.port
+        except ValueError:
+            return None
+        if (
+            parsed.scheme not in {"git", "https", "ssh"}
+            or parsed.hostname != GITHUB_HOST
+            or port is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.password
+            or (parsed.username and parsed.scheme != "ssh")
+        ):
+            return None
+        parts = parsed.path.split("/")
+        if len(parts) != 3 or parts[0]:
+            return None
+        owner, repository = parts[1:]
+    if repository.endswith(".git"):
+        repository = repository[:-4]
+    if not GITHUB_PATH_COMPONENT_PATTERN.fullmatch(owner) or not GITHUB_PATH_COMPONENT_PATTERN.fullmatch(repository):
+        return None
+    return owner, repository
+
+
+def _configured_github_repositories(run: RunCommand, timeout: int) -> dict[str, tuple[str, str]]:
+    """Return distinct GitHub repository identities configured as local remotes."""
+    repositories: dict[str, tuple[str, str]] = {}
+    remote_names = (
+        _run(run, ["git", "remote"], timeout, "github-remote-list").decode("utf-8", errors="strict").splitlines()
+    )
+    for remote_name in remote_names:
+        if not remote_name:
+            continue
+        urls = (
+            _run(
+                run,
+                ["git", "remote", "get-url", "--all", remote_name],
+                timeout,
+                "github-remote-url",
+            )
+            .decode("utf-8", errors="strict")
+            .splitlines()
+        )
+        for url in urls:
+            identity = _github_remote_identity(url)
+            if identity is not None:
+                repositories.setdefault("/".join(part.casefold() for part in identity), identity)
+    return repositories
+
+
+def _fallback_target(target: PRTarget | None, run: RunCommand, timeout: int) -> PRTarget | None:
+    """Bind a fallback target to configured GitHub remotes or decline fallback."""
+    if target is None:
+        return None
+    repositories = _configured_github_repositories(run, timeout)
+    if target.owner and target.repository:
+        key = f"{target.owner.casefold()}/{target.repository.casefold()}"
+        configured_identity = repositories.get(key)
+        if configured_identity is None:
+            raise CollectionError("missing-matching-git-remote-for-pr-base")
+        return PRTarget(*configured_identity, target.number)
+    if len(repositories) != 1:
+        return None
+    owner, repository = next(iter(repositories.values()))
+    return PRTarget(owner, repository, target.number)
+
+
+def _read_pr_metadata(
+    run: RunCommand,
+    target: PRTarget | None,
+    timeout: int,
+    *,
+    checkout: bool,
+) -> tuple[bytes, str]:
+    """Read PR metadata through gh with a trusted public REST fallback."""
+    pr_args = [target.url if target and target.owner else str(target.number)] if target else []
+
+    def fallback_url() -> str | None:
+        """Resolve trusted repository identity only after an eligible primary failure."""
+        if not checkout:
+            return None
+        fallback_target = _fallback_target(target, run, timeout)
+        if fallback_target is None:
+            return None
+        return (
+            f"https://api.github.com/repos/{fallback_target.owner}/{fallback_target.repository}"
+            f"/pulls/{fallback_target.number}"
+        )
+
+    try:
+        return read_with_fallback(
+            run,
+            ["gh", "pr", "view", *pr_args, "--json", PR_FIELDS],
+            timeout=timeout,
+            label="gh-pr-view",
+            fallback_url=fallback_url,
+        )
+    except GitHubReadError as error:
+        raise CollectionError(str(error), diagnostics=error.diagnostics) from error
+
+
+def _normalized_public_pr(payload: dict[str, Any], target: PRTarget) -> dict[str, Any]:
+    """Map one validated public REST PR response to the collector metadata schema."""
+    base = payload.get("base")
+    head = payload.get("head")
+    user = payload.get("user")
+    if not isinstance(base, dict) or not isinstance(head, dict) or not isinstance(user, dict):
+        raise CollectionError("invalid-json:public-pr-metadata")
+    base_repo = base.get("repo")
+    head_repo = head.get("repo")
+    if not isinstance(base_repo, dict) or not isinstance(payload.get("number"), int):
+        raise CollectionError("invalid-json:public-pr-metadata")
+    expected_base = f"{target.owner}/{target.repository}"
+    if payload["number"] != target.number or not isinstance(base_repo.get("full_name"), str):
+        raise CollectionError("public-pr-identity-mismatch")
+    if base_repo["full_name"].casefold() != expected_base.casefold():
+        raise CollectionError("public-pr-base-repository-mismatch")
+    html_url = payload.get("html_url")
+    try:
+        returned_target = _parse_pr_target(html_url) if isinstance(html_url, str) else None
+    except CollectionError as error:
+        raise CollectionError("public-pr-identity-mismatch") from error
+    if returned_target != target:
+        raise CollectionError("public-pr-identity-mismatch")
+    body = payload.get("body")
+    if body is None:
+        body = ""
+    required_text = {
+        "title": payload.get("title"),
+        "author": user.get("login"),
+        "base_ref": base.get("ref"),
+        "base_oid": base.get("sha"),
+        "head_ref": head.get("ref"),
+        "head_oid": head.get("sha"),
+    }
+    if not isinstance(body, str) or not all(isinstance(value, str) and value for value in required_text.values()):
+        raise CollectionError("invalid-json:public-pr-metadata")
+    if not GIT_OBJECT_ID_PATTERN.fullmatch(required_text["base_oid"]) or not GIT_OBJECT_ID_PATTERN.fullmatch(
+        required_text["head_oid"]
+    ):
+        raise CollectionError("invalid-json:public-pr-metadata")
+    state = payload.get("state")
+    if not isinstance(state, str) or state.upper() not in VALID_PR_STATES or not isinstance(payload.get("draft"), bool):
+        raise CollectionError("invalid-json:public-pr-metadata")
+    head_repository = head_repo.get("full_name") if isinstance(head_repo, dict) else ""
+    if not isinstance(head_repository, str):
+        raise CollectionError("invalid-json:public-pr-metadata")
+    head_owner = head_repo.get("owner") if isinstance(head_repo, dict) else None
+    head_repository_owner = head_owner.get("login") if isinstance(head_owner, dict) else ""
+    if not isinstance(head_repository_owner, str):
+        raise CollectionError("invalid-json:public-pr-metadata")
+    return {
+        "number": target.number,
+        "title": required_text["title"],
+        "body": body,
+        "url": target.url,
+        "author": {"login": required_text["author"]},
+        "baseRefName": required_text["base_ref"],
+        "baseRefOid": required_text["base_oid"],
+        "headRefName": required_text["head_ref"],
+        "headRefOid": required_text["head_oid"],
+        "headRepository": {"nameWithOwner": head_repository},
+        "headRepositoryOwner": {"login": head_repository_owner},
+        "isCrossRepository": head_repository.casefold() != expected_base.casefold(),
+        "state": state.upper(),
+        "isDraft": payload["draft"],
+        "reviewDecision": None,
+        "mergeable": None,
+        "comments": [],
+        "reviews": [],
+        "files": [],
+    }
 
 
 def _json(payload: bytes, label: str) -> dict[str, Any]:
@@ -271,6 +517,7 @@ def _review_artifacts(
     base_repo: str,
     base_host: str,
     thread_error: str | None,
+    pr_metadata_transport: str,
 ) -> dict[str, Any]:
     """Validate core metadata and emit normalized online-review artifacts."""
     comments = payload.get("comments") or []
@@ -285,6 +532,11 @@ def _review_artifacts(
     active = [item for item in unresolved if item.get("isOutdated") is not True]
     outdated = [item for item in unresolved if item.get("isOutdated") is True]
     summary = {
+        "pr_metadata_transport": pr_metadata_transport,
+        "limited_data": pr_metadata_transport == "public-https-fallback",
+        "unavailable_evidence": list(FALLBACK_UNAVAILABLE_EVIDENCE)
+        if pr_metadata_transport == "public-https-fallback"
+        else [],
         "review_threads_status": "unavailable" if thread_error else "available",
         "review_threads_error": thread_error,
         "review_thread_count": len(threads),
@@ -315,7 +567,13 @@ def _review_artifacts(
         "local_checkout_required": True,
         "local_checkout_command": f"gh pr checkout {payload.get('number')}",
         "force_policy": "never pass --force to git or gh automatically; stop and ask the user first",
-        "source_policy": "inspect the exact local checkout and derive its diff locally; use gh for PR metadata and supplemental review evidence",
+        "source_policy": (
+            "inspect the exact local checkout and derive its diff locally; use public REST metadata with unavailable "
+            "review evidence marked explicitly"
+            if pr_metadata_transport == "public-https-fallback"
+            else "inspect the exact local checkout and derive its diff locally; use gh for PR metadata and supplemental review evidence"
+        ),
+        "pr_metadata_transport": pr_metadata_transport,
     }
     (output / "files.txt").write_text("".join(f"{name}\n" for name in file_names), encoding="utf-8")
     _write_json(output / "comments.json", comments)
@@ -397,7 +655,32 @@ def _checkout(
     if routing.get("pr_state") == "OPEN" and not base_is_ancestor:
         raise CollectionError(f"target-branch-diverged:{base_local}:{base_oid}")
 
-    if (
+    use_pull_ref = routing.get("pr_metadata_transport") == "public-https-fallback" and isinstance(number, int)
+    if use_pull_ref:
+        head_remote_ref = f"refs/remotes/{remote_name}/pull/{number}/head"
+        _run(
+            run,
+            ["git", "fetch", "--no-tags", remote_name, f"refs/pull/{number}/head:{head_remote_ref}"],
+            timeout,
+            "public-pr-head-fetch",
+        )
+        head_local = (
+            _run(run, ["git", "rev-parse", head_remote_ref], timeout, "public-pr-head-rev-parse").decode().strip()
+        )
+        head = {
+            "status": "fetched",
+            "remote": remote_name,
+            "head_ref": head_remote_ref,
+            "local_head": head_local,
+            "expected_head_oid": head_oid,
+            "head_matches_pr_metadata": head_local == head_oid,
+            "command": f"git fetch --no-tags {remote_name} refs/pull/{number}/head:{head_remote_ref}",
+            "source_policy": "public fallback verifies GitHub's pull ref against REST metadata before detached local checkout",
+        }
+        _write_json(output / "pr-head-fetch.json", head)
+        if head_local != head_oid:
+            raise CollectionError(f"public-pr-head-oid-mismatch:{head_local}:{head_oid}")
+    elif (
         routing.get("same_repo") is True
         and routing.get("pr_state") == "OPEN"
         and isinstance(head_ref, str)
@@ -471,7 +754,7 @@ def _checkout(
     if dirty.strip():
         raise CollectionError("dirty-tracked-worktree-before-pr-checkout")
     checkout_argv = ["gh", "pr", "checkout", str(number)]
-    if routing.get("pr_state") != "OPEN" and isinstance(number, int):
+    if (use_pull_ref or routing.get("pr_state") != "OPEN") and isinstance(number, int):
         checkout_argv = ["git", "checkout", "--detach", f"refs/remotes/{remote_name}/pull/{number}/head"]
     routing["local_checkout_command"] = " ".join(checkout_argv)
     _write_json(output / "pr-routing.json", routing)
@@ -537,9 +820,15 @@ def collect_pr(
     """Collect one PR context pack and optionally update its verified checkout."""
     output.mkdir(parents=True, exist_ok=True)
     _clear_collector_artifacts(output)
-    (output / "pr-target.txt").write_text(f"{target.strip() or 'current-branch-pr'}\n", encoding="utf-8")
     command_runner = subprocess.run if run is None else run
     try:
+        requested_target = _parse_pr_target(target)
+        normalized_target = (
+            requested_target.url
+            if requested_target and requested_target.owner
+            else (str(requested_target.number) if requested_target else "current-branch-pr")
+        )
+        (output / "pr-target.txt").write_text(f"{normalized_target}\n", encoding="utf-8")
         for command in ("git", "gh"):
             if shutil.which(command) is None:
                 raise CollectionError(f"missing-command:{command}")
@@ -549,25 +838,40 @@ def collect_pr(
             status = b""
         (output / "status.txt").write_bytes(status)
         selector = Path(__file__).resolve().with_name("select-git-remote.py")
-        pr_args = [target] if target else []
-        payload_bytes = _run(
+        payload_bytes, pr_metadata_transport = _read_pr_metadata(
             command_runner,
-            ["gh", "pr", "view", *pr_args, "--json", PR_FIELDS],
+            requested_target,
             timeout_seconds,
-            "gh-pr-view",
+            checkout=checkout,
         )
-        payload = _json(payload_bytes, "pr-view")
+        raw_payload = _json(payload_bytes, "pr-view")
+        if pr_metadata_transport == "public-https-fallback":
+            fallback_target = _fallback_target(requested_target, command_runner, timeout_seconds)
+            if fallback_target is None:
+                raise CollectionError("missing-trusted-pr-fallback-identity")
+            if not checkout:
+                raise CollectionError("public-pr-fallback-requires-checkout")
+            payload = _normalized_public_pr(raw_payload, fallback_target)
+            payload_bytes = json.dumps(payload, indent=2, sort_keys=True).encode() + b"\n"
+        else:
+            payload = raw_payload
         url = payload.get("url")
         number = payload.get("number")
-        if not isinstance(url, str) or not url or not isinstance(number, int):
+        try:
+            returned_target = _parse_pr_target(url) if isinstance(url, str) else None
+        except CollectionError as error:
+            raise CollectionError("missing-pr-identity") from error
+        if returned_target is None or not isinstance(number, int) or returned_target.number != number:
             raise CollectionError("missing-pr-identity")
+        if requested_target and requested_target.owner:
+            requested_identity = (requested_target.owner.casefold(), requested_target.repository.casefold())
+            returned_identity = (returned_target.owner.casefold(), returned_target.repository.casefold())
+            if returned_target.number != requested_target.number or returned_identity != requested_identity:
+                raise CollectionError("pr-identity-mismatch")
         (output / "pr.json").write_bytes(payload_bytes)
-        identity = _selector(command_runner, timeout_seconds, selector, url, identity_only=True)
-        base_repo = identity.get("repository")
-        base_host = identity.get("host")
-        if not isinstance(base_repo, str) or "/" not in base_repo or not isinstance(base_host, str):
-            raise CollectionError("invalid-pr-base-url")
-        owner, repository = base_repo.split("/", 1)
+        base_repo = f"{returned_target.owner}/{returned_target.repository}"
+        base_host = GITHUB_HOST
+        owner, repository = returned_target.owner, returned_target.repository
         threads: list[dict[str, Any]] = []
         thread_error: str | None = None
         try:
@@ -604,6 +908,7 @@ def collect_pr(
             base_repo=base_repo,
             base_host=base_host,
             thread_error=thread_error,
+            pr_metadata_transport=pr_metadata_transport,
         )
         (output / "untracked.txt").write_bytes(b"")
         if checkout:
@@ -633,6 +938,7 @@ def collect_pr(
                 )
             )
         else:
+            pr_args = [returned_target.url]
             diff = _run(command_runner, ["gh", "pr", "diff", *pr_args], timeout_seconds, "gh-pr-diff")
             (output / "diff.patch").write_bytes(diff)
             (output / "diffstat.txt").write_bytes(

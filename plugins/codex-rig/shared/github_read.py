@@ -29,6 +29,8 @@ Unsafe argv, mutation-like input, browser flag, auth/network/rate-limit error, p
 from __future__ import annotations
 
 import argparse
+import os
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -44,8 +46,14 @@ MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 PUBLIC_GITHUB_API_HOST = "api.github.com"
 VIEW_RESOURCE_COMMANDS = frozenset({"gist", "issue", "pr", "project", "release", "repo", "ruleset", "run", "workflow"})
 SENSITIVE_QUERY_KEYS = frozenset({"access_token", "auth", "authorization", "client_secret", "password", "token"})
+SYSTEM_CA_FILE_CANDIDATES = (
+    Path("/etc/ssl/cert.pem"),
+    Path("/etc/ssl/certs/ca-certificates.crt"),
+    Path("/etc/pki/tls/certs/ca-bundle.crt"),
+)
 RunCommand = Callable[..., subprocess.CompletedProcess[bytes]]
 OpenUrl = Callable[..., Any]
+FallbackUrl = str | Callable[[], str | None]
 DEFAULT_RUN_COMMAND = subprocess.run
 
 
@@ -144,10 +152,12 @@ def require_read_only_gh_command(argv: list[str], label: str) -> None:
 def github_failure_class(stderr: bytes) -> str:
     """Classify a GitHub CLI failure without persisting its output."""
     text = stderr.decode("utf-8", errors="replace").casefold()
+    if "graphql:" in text and "could not resolve to a " in text:
+        return "github-not-found"
     if any(
         token in text
         for token in (
-            "could not resolve",
+            "could not resolve host",
             "dial tcp",
             "error connecting",
             "name resolution",
@@ -186,6 +196,32 @@ def github_failure_class(stderr: bytes) -> str:
     if any(token in text for token in ("resource not accessible", "permission", "http 403")):
         return "github-permission"
     return "github-command-failed"
+
+
+def github_failure_reason(stderr: bytes, failure_class: str) -> str:
+    """Return a safe actionable subtype without retaining GitHub CLI stderr."""
+    text = stderr.decode("utf-8", errors="replace").casefold()
+    if failure_class == "github-network":
+        if any(token in text for token in ("could not resolve host", "name resolution", "no such host")):
+            return "dns"
+        if "connection refused" in text:
+            return "connection-refused"
+        if "connection reset" in text:
+            return "connection-reset"
+        if any(token in text for token in ("deadline exceeded", "i/o timeout", "client.timeout exceeded")):
+            return "timeout"
+        if "tls" in text:
+            return "tls"
+        return "network"
+    if failure_class == "github-rate-limit":
+        return "rate-limit"
+    if failure_class == "github-auth":
+        return "auth"
+    if failure_class == "github-permission":
+        return "permission"
+    if failure_class == "github-not-found":
+        return "not-found"
+    return "unclassified"
 
 
 def _run_default_gh_command(argv: list[str], timeout: int) -> subprocess.CompletedProcess[bytes]:
@@ -228,9 +264,15 @@ def run_gh_read(run: RunCommand, argv: list[str], *, timeout: int, label: str) -
             )
         )
     except subprocess.TimeoutExpired as error:
-        raise GitHubReadError(f"command-timeout:{label}") from error
+        raise GitHubReadError(
+            f"command-timeout:{label}",
+            diagnostics={"failure_class": "command-timeout", "failure_reason": "timeout", "label": label},
+        ) from error
     except OSError as error:
-        raise GitHubReadError(f"command-unavailable:{label}") from error
+        raise GitHubReadError(
+            f"command-unavailable:{label}",
+            diagnostics={"failure_class": "command-unavailable", "failure_reason": "unavailable", "label": label},
+        ) from error
     except GitHubReadError as error:
         if str(error) == "command-output-oversized":
             raise GitHubReadError(f"command-output-oversized:{label}") from error
@@ -241,7 +283,12 @@ def run_gh_read(run: RunCommand, argv: list[str], *, timeout: int, label: str) -
         failure_class = github_failure_class(completed.stderr)
         raise GitHubReadError(
             f"{failure_class}:{label}",
-            diagnostics={"exit_code": completed.returncode, "failure_class": failure_class, "label": label},
+            diagnostics={
+                "exit_code": completed.returncode,
+                "failure_class": failure_class,
+                "failure_reason": github_failure_reason(completed.stderr, failure_class),
+                "label": label,
+            },
         )
     return completed.stdout
 
@@ -249,10 +296,14 @@ def run_gh_read(run: RunCommand, argv: list[str], *, timeout: int, label: str) -
 def _is_public_github_api_url(url: str) -> bool:
     """Return whether url is a safe unauthenticated GitHub REST endpoint."""
     parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
     return (
         parsed.scheme == "https"
         and parsed.hostname == PUBLIC_GITHUB_API_HOST
-        and parsed.port is None
+        and port is None
         and not parsed.username
         and not parsed.password
         and not parsed.fragment
@@ -263,13 +314,30 @@ def _is_public_github_api_url(url: str) -> bool:
     )
 
 
+def _public_github_ssl_context() -> ssl.SSLContext:
+    """Build an HTTPS context that recovers an omitted system CA bundle."""
+    context = ssl.create_default_context()
+    if (
+        context.cert_store_stats().get("x509_ca", 0)
+        or os.environ.get("SSL_CERT_FILE")
+        or os.environ.get("SSL_CERT_DIR")
+    ):
+        return context
+    # Python framework installs may omit their OpenSSL CA symlink even when the OS bundle exists.
+    for ca_file in SYSTEM_CA_FILE_CANDIDATES:
+        if ca_file.is_file():
+            context.load_verify_locations(cafile=str(ca_file))
+            break
+    return context
+
+
 def public_github_get(url: str, *, timeout: int, label: str, open_url: OpenUrl = urlopen) -> bytes:
     """Read one public GitHub REST resource through unauthenticated HTTPS GET."""
     if not _is_public_github_api_url(url):
         raise GitHubReadError(f"unsafe-github-fallback-url:{label}")
     request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "codex-rig-read"})
     try:
-        with open_url(request, timeout=timeout) as response:
+        with open_url(request, timeout=timeout, context=_public_github_ssl_context()) as response:
             payload = response.read(MAX_OUTPUT_BYTES + 1)
     except HTTPError as error:
         if error.code == 404:
@@ -293,7 +361,6 @@ def public_github_get(url: str, *, timeout: int, label: str, open_url: OpenUrl =
 def _may_use_public_fallback(error: GitHubReadError) -> bool:
     """Return whether gh is unavailable to obtain public data through its primary route."""
     return str(error).split(":", maxsplit=1)[0] in {
-        "command-unavailable",
         "command-timeout",
         "github-auth",
         "github-network",
@@ -307,16 +374,22 @@ def read_with_fallback(
     *,
     timeout: int,
     label: str,
-    fallback_url: str | None = None,
+    fallback_url: FallbackUrl | None = None,
     open_url: OpenUrl = urlopen,
 ) -> tuple[bytes, str]:
     """Prefer authenticated gh and use a public unauthenticated GET only as a last resort."""
     try:
         return run_gh_read(run, argv, timeout=timeout, label=label), "gh"
     except GitHubReadError as error:
-        if fallback_url is None or not _may_use_public_fallback(error):
+        if not _may_use_public_fallback(error):
             raise
-        return public_github_get(fallback_url, timeout=timeout, label=label, open_url=open_url), "public-https-fallback"
+        resolved_fallback_url = fallback_url() if callable(fallback_url) else fallback_url
+        if resolved_fallback_url is None:
+            raise
+        return (
+            public_github_get(resolved_fallback_url, timeout=timeout, label=label, open_url=open_url),
+            "public-https-fallback",
+        )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
