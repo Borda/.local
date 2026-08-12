@@ -58,7 +58,7 @@ For `sota`, `paper`, `methodology`, `code-fidelity`, apply `../../shared/special
 
 - `web-explorer`: current docs, release notes, API and dependency changes.
 - `scientist`: formulas, methodology, metrics, ablations, benchmark claims.
-- `solution-architect`: implementation fit, API boundaries, migration shape.
+- `solution-architect`: only when the user expressly requests Sol or selects that role for implementation fit, API boundaries, or migration shape; it returns a bounded read-only design artifact to the Terra parent/session for next action and acceptance.
 - `squeezer`: performance or resource claims.
 - `data-steward`: datasets, splits, leakage, reproducibility.
 - `challenger`: unsupported recommendation or overconfident source synthesis.

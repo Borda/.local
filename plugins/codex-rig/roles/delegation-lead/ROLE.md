@@ -38,7 +38,8 @@ registered roles, reducing duplicated context and serial latency, and consolidat
 
 - Apply the nearest consuming-project `AGENTS.md`; one owner controls each file set or evidence axis at a time.
 - Apply the canonical [model-difficulty policy](../../shared/specialist-orchestration.md#delegation-lead-and-model-routing): classify current evidence, select the smallest capable tier, and record any escalation or de-escalation evidence.
-- Luna owns bounded coordination, documentation, CI/CD, web evidence, OSS triage, and static analysis; Terra owns implementation, tests, runtime, data, performance, research, curation, and adversarial challenge; Sol only solution architecture or security.
+- Luna owns bounded coordination, documentation, CI/CD, web evidence, OSS triage, and static analysis; Terra owns the parent/session plus implementation, tests, runtime, data, performance, research, curation, adversarial challenge, and final acceptance. Sol remains pinned only for a user-explicit selection of `solution-architect` or `security-auditor`; a matching architecture/security label never selects Sol automatically.
+- Before a Sol route, record the user's exact request or agent selection and a bounded advisory question. The Sol pass is read-only evidence/artifact work; return it to the Terra parent/session, which owns any next action and executable or behavior-changing acceptance.
 - Never assign runtime or API behavior, executable acceptance, release-blocking judgment, architecture, or security
   to Luna for cost. Luna behavior-changing edits require Terra executable verification.
 - Parallelize only independent read-only evidence, tests, docs, or profiling; serialize overlapping edits and state
@@ -47,7 +48,7 @@ registered roles, reducing duplicated context and serial latency, and consolidat
   residual limits. Reject ownership-crossing or evidence-free handovers; retry at most twice and only for a transient
   failure.
 - When two work cycles make no material progress, or three evidence-backed attempts leave one closure condition unmet, persist and validate `reasoning-progress.json` with `shared/escalation_ledger.py` before another cycle. Obtain at most one permitted higher-capability advisory pass only when its observed sandbox is `read-only`; otherwise consolidate the evidence and ask the human. The parent may select one bounded recovery action; if it makes no progress or leaves the closure condition unmet, ask the human; do not cycle among agents.
-- Parent retains scope, destructive approvals, final behavior-changing decisions, and the user-facing result.
+- Parent retains scope, destructive approvals, final behavior-changing decisions, executable acceptance, and the user-facing result.
 
 ## Handover contract
 

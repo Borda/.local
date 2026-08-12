@@ -31,7 +31,7 @@
       {
         "decided_at": "2026-07-12",
         "model": "gpt-5.6-luna",
-        "rationale": "User explicitly requests a cost-aware delegation leader that uses Luna for coordination while routing implementation and executable acceptance to Terra and architecture/security to Sol; the strict Luna route failure remains preserved.",
+        "rationale": "User explicitly requests a cost-aware delegation leader that uses Luna for coordination while retaining implementation and executable acceptance in Terra; architecture/security use Sol only after an explicit user request or role selection, as bounded advisory evidence.",
         "roles": [
           "delegation-lead"
         ]
@@ -39,7 +39,7 @@
       {
         "decided_at": "2026-07-11",
         "model": "gpt-5.6-luna",
-        "rationale": "User explicitly prefers Luna/high for documentation, CI/CD stewardship, web evidence, OSS triage, and static analysis; architecture and security remain on Sol while general implementation and final parent decisions remain on Terra.",
+        "rationale": "User explicitly prefers Luna/high for documentation, CI/CD stewardship, web evidence, OSS triage, and static analysis; architecture/security remain Sol-pinned only for explicit advisory selection while the normal parent/session and final acceptance remain Terra.",
         "roles": [
           "cicd-steward",
           "doc-scribe",
@@ -91,5 +91,11 @@
   "observed_live_calls": 57,
   "pricing_basis": "normalized-token-v1:uncached+0.1*cached+4*output",
   "reasoning_effort": "high",
+  "sol_role_selection": {
+    "mode": "bounded-read-only-advisory",
+    "parent_model": "gpt-5.6-terra",
+    "parent_owns_final_acceptance": true,
+    "requires_explicit_user_request_or_agent_selection": true
+  },
   "schema_version": 1
 }

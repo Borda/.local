@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.7.2`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.7.3`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -14,7 +14,7 @@ The plugin is complete for the capabilities Codex can currently install and veri
 - **Evidence-backed completion:** workflows write comparable artifacts under `.reports/codex/<skill>/<timestamp>/` and disclose failed gates and confidence limits.
 - **Auditable commit handoffs:** every proposed or created commit records all meaningful changes, concrete impacts, executed verification, and residual limits in the commit body.
 - **Cold PR review and remediation:** `$code-review #123` and `$code-remediate #123 +review` preserve current PR evidence and local merge context.
-- **Calibration:** fixed and behavioral checks measure recall, precision, confidence accuracy, routing leaks, and stale assumptions.
+- **Calibration:** fixed and behavioral checks measure recall, precision, confidence accuracy, routing leaks, stale assumptions, fixture misuse, unjustified local imports, and incomplete abstractions.
 - **Safe legacy cleanup:** authenticated, exact-plan removal exists for thin shims created during pre-release development.
 - **Optional codemap-py structural context:** the `develop`, `investigate`, and `optimize` workflows select a task-neutral route and probe the public codemap-py CLI once per run for only the required structural fact, or record a zero-query decision for a localized edit; they persist one artifact and fall back to bounded file inspection when Codemap is absent.
 
@@ -53,15 +53,15 @@ $codex-rig:audit
 
 ## Managed global instructions
 
-`assets/AGENTS.md` is a versioned template, not an automatically installed plugin capability. It requires the simplest solution for verified current behavior, prefers maintained standard-library/native/already-installed package functionality over duplicating custom code, rejects machinery justified only by hypothetical future states, risks, scale, reuse, or edge cases, and preserves trust-boundary, data-loss, security, accessibility, and explicit-contract safeguards. A deliberately bounded simplification records its present ceiling and observable revisit trigger without creating a separate debt system. Direct marketplace and plugin installation leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged. Repository sync installs or updates its managed block by default whenever Codex scope is active.
+`assets/AGENTS.md` is a versioned template, not an automatically installed plugin capability. It requires the simplest solution for verified current behavior, prefers maintained standard-library/native/already-installed package functionality over duplicating custom code, rejects machinery justified only by hypothetical future states, risks, scale, reuse, or edge cases, and preserves trust-boundary, data-loss, security, accessibility, and explicit-contract safeguards. Abstractions must reduce reader-visible concepts, Python imports stay at module scope unless a verified boundary requires locality, and fixtures provide concrete state unless fixture-managed lifecycle requires a callable; use ordinary helpers for configurable construction instead of nested fixture factories or aliases that add no meaning. A deliberately bounded simplification records its present ceiling and observable revisit trigger without creating a separate debt system. Direct marketplace/plugin installation leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged and does not project repository `.codex/` settings. The direct `plugins/codex-rig/scripts/sync_codex.py` command installs or updates the managed Codex plugins and authenticated Codex Rig block only; it does not project repository model defaults or personal policy. Root `bash sync.sh` with Codex scope additionally projects the root `model` and `review_model` from `.codex/config.toml` and the authenticated personal-policy block from `.codex/global-session-policy.md`. The current repository policy keeps the parent session on Terra and permits Sol only for an explicitly requested advisory pass or explicitly selected Sol agent.
 
 From an AI-Rig checkout:
 
 ```bash
 bash sync.sh                                      # full Claude + Codex restore
 bash sync.sh codex                                # Codex scope only
-bash sync.sh codex --no-codex-global-agents       # skip global guidance
-bash sync.sh clear                                # teardown: uninstall plugins + strip managed block
+bash sync.sh codex --no-codex-global-agents       # leave AGENTS.md unchanged; project model defaults
+bash sync.sh clear                                # teardown: uninstall plugins + strip block; keep model/policy
 bash sync.sh clear codex                          # teardown Codex scope only
 ```
 
@@ -75,7 +75,7 @@ python plugins/codex-rig/scripts/sync_codex.py clear
 
 `bash sync.sh claude` changes only Claude scope. `--codex-ref REF` selects a Codex source revision; it does not change product scope.
 
-`bash sync.sh clear` reverses a sync instead of installing: it uninstalls this marketplace's Claude plugins plus the Codex Rig and Codemap plugins, then strips the managed block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`, keeping a timestamped backup and preserving user-owned content byte-for-byte. It honors `claude`/`codex` scoping and leaves marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
+The direct `sync_codex.py clear` action removes the managed Codex plugins and strips only the authenticated Codex Rig block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`; it leaves repository-projected model defaults and personal policy untouched. Root `bash sync.sh clear` reverses the selected Claude/Codex installation: it also uninstalls this marketplace's Claude plugins when Claude scope is active, strips the Codex Rig block, and leaves repository model defaults and personal-policy state in place. Both commands keep a timestamped backup and preserve user-owned content byte-for-byte, honor `claude`/`codex` scoping where applicable, and leave marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
 Codex sync uses the template from the installed marketplace revision. A missing global file is created as one SHA-256-authenticated managed block. Existing user instructions are backed up and preserved byte-for-byte outside that block. An exact unmarked copy from an older sync is adopted without duplication. Later runs update only an unmodified managed block and otherwise fail without writing when markers are missing, duplicated, malformed, or manually changed.
 
@@ -263,7 +263,7 @@ codex plugin add codex-rig@borda-ai-rig
 
 Then start a fresh Codex session. Plugin reinstall does not update external user-agent files automatically. Use the manager's authenticated `remove` action to clean prior development shims; new installation remains platform-blocked.
 
-Repository sync never restores the legacy `.codex/` tree. When Codex scope is active, it installs the public GitHub plugin and manages only the authenticated global-instructions block by default. `--no-codex-global-agents` leaves that file unchanged.
+Repository sync never restores the legacy `.codex/` tree. When Codex scope is active, root `sync.sh` installs or updates the public Codex plugins and authenticated Codex Rig block, then projects repository model defaults and personal policy as described above. `--no-codex-global-agents` leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged and skips personal-policy projection while still projecting `model` and `review_model`.
 
 ### Legacy project-to-home copies
 

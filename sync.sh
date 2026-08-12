@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # Install AI-Rig plugins for Claude Code and/or Codex from the GitHub remote.
+# Codex sync also mirrors this checkout's normal-session model defaults and personal policy into $CODEX_HOME.
 # Remote installs use pushed state — commit and push before running; release tags are optional pins.
 # Run from the project root: bash sync.sh [claude] [codex] [clear] [--no-clean] [--codex-ref REF] [--no-codex-global-agents]
 #
 # Arguments (order-independent):
 #   claude   — sync Claude plugins + their installed setup skills (default: both)
-#   codex    — install or update the Codex Rig and Codemap plugins (default: both)
+#   codex    — install or update the Codex Rig and Codemap plugins, then mirror this checkout's Codex session policy (default: both)
 #   clear    — teardown instead of install: uninstall this marketplace's Claude plugins
 #              + the Codex Rig and Codemap plugins, and strip the managed block from $CODEX_HOME/AGENTS.md
 #              (a timestamped backup is kept). Honors claude/codex scoping (default: both sides).
 #              Leaves marketplace registrations and external plugins (caveman/openai-codex) in place.
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
-#   --no-codex-global-agents — skip Codex Rig's managed block in $CODEX_HOME/AGENTS.md
+#   --no-codex-global-agents — leave $CODEX_HOME/AGENTS.md unchanged; model defaults still mirror
 #
 # Setup skills shipped by installed managed plugins run headlessly at the end of
 # Claude sync — no manual step needed.
@@ -76,6 +77,7 @@ CACHE_DIR="$HOME/.claude/plugins/cache"
 PROJECT_DIR="$(pwd)"
 MARKETPLACE_REMOTE=$(git -C "$PROJECT_DIR" remote get-url origin 2>/dev/null | sed 's/\.git$//')  # GitHub source for cache install
 CODEX_SYNC_SCRIPT="$PROJECT_DIR/plugins/codex-rig/scripts/sync_codex.py"
+CODEX_HOME_SYNC_SCRIPT="$PROJECT_DIR/scripts/sync_codex_session_policy.py"
 
 if $CLEAR; then
     if $SYNC_CLAUDE; then
@@ -259,6 +261,15 @@ if ! $INSTALL_CODEX_GLOBAL_AGENTS; then
     CODEX_SYNC_ARGS+=(--no-codex-global-agents)
 fi
 python3 "$CODEX_SYNC_SCRIPT" "${CODEX_SYNC_ARGS[@]}"
+CODEX_HOME_SYNC_ARGS=(
+    --source-config "$PROJECT_DIR/.codex/config.toml"
+    --source-policy "$PROJECT_DIR/.codex/global-session-policy.md"
+    --codex-home "${CODEX_HOME:-$HOME/.codex}"
+)
+if ! $INSTALL_CODEX_GLOBAL_AGENTS; then
+    CODEX_HOME_SYNC_ARGS+=(--skip-policy)
+fi
+python3 "$CODEX_HOME_SYNC_SCRIPT" "${CODEX_HOME_SYNC_ARGS[@]}"
 
 fi  # SYNC_CODEX
 

@@ -45,7 +45,7 @@ EXPECTED_ROLES = {
     "qa-specialist": ("gpt-5.6-terra", "workspace-write"),
     "scientist": ("gpt-5.6-terra", "workspace-write"),
     "security-auditor": ("gpt-5.6-sol", "read-only"),
-    "solution-architect": ("gpt-5.6-sol", "workspace-write"),
+    "solution-architect": ("gpt-5.6-sol", "read-only"),
     "squeezer": ("gpt-5.6-terra", "read-only"),
     "sw-engineer": ("gpt-5.6-terra", "workspace-write"),
     "web-explorer": ("gpt-5.6-luna", "read-only"),

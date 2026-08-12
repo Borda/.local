@@ -149,7 +149,7 @@ Routed specialist axes:
 
 - `qa-specialist`: tests, edges, regressions, tensor/data boundaries.
 - `challenger`: adversarial assumptions, high findings, migration/API risks, material no-finding conclusions.
-- Conditional roles: `solution-architect`, `security-auditor`, `data-steward`, `cicd-steward`, `linting-expert`, `doc-scribe`, `oss-shepherd`, `squeezer`, `scientist`, and `web-explorer` cover named domains.
+- Conditional roles: `data-steward`, `cicd-steward`, `linting-expert`, `doc-scribe`, `oss-shepherd`, `squeezer`, `scientist`, and `web-explorer` cover named domains. `solution-architect` and `security-auditor` are Sol-pinned and never triggered by a matching domain alone: use either only when the user expressly requests Sol or selects that role, then return its bounded read-only evidence artifact to the Terra parent/session for review acceptance.
 
 Use runtime-provided subagents when independence materially helps and follow the portable route order in the shared
 orchestration policy. A built-in/default child receives the exact canonical role card before its context pack. It may

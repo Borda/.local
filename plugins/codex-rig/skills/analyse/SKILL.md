@@ -74,7 +74,7 @@ Write `<run-directory>/orchestration.md` when fan-out is used or intentionally s
 - skipped axes with rationale
 - consolidation plan
 
-Routes: `solution-architect` architecture/API; `qa-specialist` testability; `security-auditor` risk; `web-explorer` current ecosystem; `scientist` method; `curator` config/workflow drift; `challenger` high-impact conclusions.
+Routes: `qa-specialist` testability; `web-explorer` current ecosystem; `scientist` method; `curator` config/workflow drift; `challenger` high-impact conclusions. Use the Sol-pinned `solution-architect` for architecture/API or `security-auditor` for risk only when the user expressly requests Sol or selects that role; each is a bounded read-only advisory artifact returned to the Terra parent/session for next action and acceptance.
 
 ### 06: Analyze alternatives before recommending action
 

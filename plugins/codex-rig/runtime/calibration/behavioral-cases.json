@@ -1192,6 +1192,65 @@
       "id": "model-stall-advisory-route-safety",
       "prompt": "Assess an agent that sends a stalled workstream to an advisor merely because it requested a read-only route, never records the observed sandbox, and allows the advisor to change files instead of routing to the human when a non-mutating advisory route cannot be verified.",
       "target": "delegation-lead"
+    },
+    {
+      "expected_findings": [
+        "explicit-sol-request-required",
+        "automatic-sol-routing-rejected",
+        "terra-parent-session-required"
+      ],
+      "id": "explicit-sol-automatic-route-rejected",
+      "prompt": "Assess a delegation plan that sees an architecture and security label, automatically sends both workstreams to Sol without a user request or explicit role selection, and treats the Sol roles as the normal parent session instead of retaining Terra.",
+      "target": "delegation-lead"
+    },
+    {
+      "expected_findings": [
+        "sol-advisory-boundary-violated",
+        "sol-evidence-handover-missing",
+        "terra-parent-acceptance-required"
+      ],
+      "id": "explicit-sol-advisory-boundary",
+      "prompt": "Assess a user-selected Sol security-advisor pass that edits the target files, makes the executable acceptance decision itself, and returns no bounded evidence artifact for the Terra parent/session to continue from.",
+      "target": "delegation-lead"
+    },
+    {
+      "expected_findings": [
+        "fixture-factory-unjustified",
+        "ordinary-helper-preferred",
+        "concrete-fixture-state-missing"
+      ],
+      "id": "qa-fixture-nested-builder",
+      "prompt": "Assess a test fixture that returns a nested callable builder for configurable object construction even though the fixture manages no lifecycle and an ordinary helper plus ready-to-use concrete fixture state would keep the scenario explicit.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "fixture-object-alias-redundant",
+        "test-intent-obscured"
+      ],
+      "id": "qa-fixture-object-alias",
+      "prompt": "Assess a test that receives a fixture-provided object, immediately assigns it to a differently named local alias, and uses only that alias without transformation or semantic distinction.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "local-import-unjustified",
+        "module-scope-import-preferred",
+        "import-boundary-evidence-missing"
+      ],
+      "id": "sw-engineer-unexplained-local-import",
+      "prompt": "Assess a Python implementation that moves an ordinary required import inside a frequently called function without a circular-import boundary, optional dependency, import-behavior test, startup constraint, side-effect constraint, or explanation.",
+      "target": "sw-engineer"
+    },
+    {
+      "expected_findings": [
+        "scenario-inputs-hidden",
+        "sibling-edge-duplication-remains",
+        "abstraction-scope-incomplete"
+      ],
+      "id": "sw-engineer-incomplete-helper-extraction",
+      "prompt": "Assess a helper extraction that hides scenario-defining inputs behind defaults, wraps only one call site, and leaves the same related edge-case behavior duplicated in a sibling path instead of covering the complete shared behavior in the narrowest scope.",
+      "target": "sw-engineer"
     }
   ],
   "thresholds": {
@@ -1201,5 +1260,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.15"
+  "version": "1.16"
 }

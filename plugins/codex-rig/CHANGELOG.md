@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3
+
+- Require abstractions to reduce reader-visible concepts, keep ordinary Python imports at module scope, and prefer concrete fixture state plus ordinary helpers over nested fixture factories or meaningless aliases.
+- Calibrate nested fixture builders, redundant fixture aliases, unjustified local imports, and incomplete helper extractions that hide scenario inputs or leave sibling behavior duplicated.
+- Keep Terra as the normal parent/session and require explicit user selection before either Sol-pinned architecture or security role runs; Sol passes are bounded read-only advisories that return evidence and final acceptance to Terra.
+
 ## 0.7.2
 
 - Add `$code-remediate review` for current-session report-mode remediation: reuse the latest assessed `code-review` artifact without refreshing PR evidence or online comments, and fail closed when that artifact is unavailable.

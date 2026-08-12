@@ -167,6 +167,24 @@ MODEL_STALL_CASE_CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
         ),
     ),
 }
+EXPLICIT_SOL_ROUTING_CASE_CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "explicit-sol-automatic-route-rejected": (
+        "delegation-lead",
+        (
+            "explicit-sol-request-required",
+            "automatic-sol-routing-rejected",
+            "terra-parent-session-required",
+        ),
+    ),
+    "explicit-sol-advisory-boundary": (
+        "delegation-lead",
+        (
+            "sol-advisory-boundary-violated",
+            "sol-evidence-handover-missing",
+            "terra-parent-acceptance-required",
+        ),
+    ),
+}
 
 
 @dataclass(slots=True)
@@ -476,6 +494,14 @@ def check_accepted_route_evidence(run: CalibrationRun) -> None:
         payload = json.loads(run.paths.accepted_route_evidence.read_text(encoding="utf-8"))
         if payload.get("schema_version") != 1 or payload.get("reasoning_effort") != "high":
             raise ValueError("unsupported accepted-route evidence schema or effort")
+        sol_selection = payload.get("sol_role_selection")
+        if sol_selection != {
+            "mode": "bounded-read-only-advisory",
+            "parent_model": DEFAULT_MODEL,
+            "parent_owns_final_acceptance": True,
+            "requires_explicit_user_request_or_agent_selection": True,
+        }:
+            raise ValueError("explicit Sol selection policy mismatch")
 
         scores: dict[str, dict[str, Any]] = {}
         observed_rows = 0
@@ -830,6 +856,7 @@ def check_fixed_task_and_behavioral_rosters(run: CalibrationRun) -> None:
             raise ValueError(f"behavioral skill targets missing: {missing_targets}")
         validate_recurrence_case_contract(cases_payload)
         validate_model_stall_case_contract(cases_payload)
+        validate_explicit_sol_routing_case_contract(cases_payload)
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         run.fail_and_leak("fixed-task-set", f"fixed-task-roster-invalid:{exc}")
         return
@@ -874,6 +901,26 @@ def validate_model_stall_case_contract(cases_payload: dict[str, Any]) -> None:
             raise ValueError(f"model stall case target mismatch: {case_id}")
         if case.get("expected_findings") != list(expected_findings):
             raise ValueError(f"model stall case findings mismatch: {case_id}")
+
+
+def validate_explicit_sol_routing_case_contract(cases_payload: dict[str, Any]) -> None:
+    """Require coverage for explicit-only Sol selection and advisory handoff."""
+    cases = cases_payload.get("cases")
+    if not isinstance(cases, list):
+        raise ValueError("behavioral cases must be a list")
+    sol_routing_cases = {
+        case.get("id"): case
+        for case in cases
+        if isinstance(case, dict) and isinstance(case.get("id"), str) and case["id"].startswith("explicit-sol-")
+    }
+    if set(sol_routing_cases) != set(EXPLICIT_SOL_ROUTING_CASE_CONTRACT):
+        raise ValueError("explicit Sol routing behavioral case roster mismatch")
+    for case_id, (expected_target, expected_findings) in EXPLICIT_SOL_ROUTING_CASE_CONTRACT.items():
+        case = sol_routing_cases[case_id]
+        if case.get("target") != expected_target:
+            raise ValueError(f"explicit Sol routing case target mismatch: {case_id}")
+        if case.get("expected_findings") != list(expected_findings):
+            raise ValueError(f"explicit Sol routing case findings mismatch: {case_id}")
 
 
 def find_misplaced_packaged_recurrence_policy_links(

@@ -36,7 +36,7 @@ Classify each workstream from current task evidence before selecting a role; a t
 
 - Bounded support with no behavior, API, runtime, release-blocking, architecture, or security authority: Luna.
 - Implementation, runtime behavior, tests, data/ML, performance, research method, curation, adversarial challenge, or executable verification: Terra.
-- Architecture or security judgment: Sol only.
+- Architecture or security judgment: Sol only after the user expressly requests Sol or selects `solution-architect` or `security-auditor`; otherwise the Terra parent/session retains the work.
 
 Choose the smallest tier satisfying that classification while preserving each role card's trigger and NOT-for boundary. Escalate only for a specific mandatory boundary or observed lower-tier insufficiency; record the boundary or failed/insufficient evidence. De-escalate only after an evidenced scope split leaves bounded support with no retained Terra/Sol authority; record that reduced scope. Cost alone never escalates or de-escalates a tier.
 
@@ -44,15 +44,15 @@ Current canonical assignments:
 
 - Luna: delegation coordination, documentation, CI/CD stewardship, web evidence, OSS triage, and static analysis.
 - Terra: implementation, tests, runtime behavior, data/ML, performance, research method, curation, adversarial challenge, and final executable verification.
-- Sol: solution architecture and security only.
+- Sol: explicitly requested architecture or security advice only. The pass is read-only and bounded: it returns evidence and an artifact, then the Terra parent/session continues and accepts any behavior-changing or executable result.
 
-Never downgrade architecture, security, runtime/API, release-blocking judgment, executable acceptance; never escalate bounded support to Sol. Record the classification and any escalation/de-escalation evidence in the routing decision. Avoid delegation when all need same context or parent can finish before handoff packaging/validation.
+Never downgrade architecture, security, runtime/API, release-blocking judgment, executable acceptance; never auto-escalate a matching architecture/security workstream to Sol or escalate bounded support to Sol. Sol selection requires the user's explicit request or agent selection, not task labels or risk classification. Record that request/selection, the bounded advisory question, and any escalation/de-escalation evidence in the routing decision. Avoid delegation when all need same context or parent can finish before handoff packaging/validation.
 
 ### Reasoning-Progress Escalation
 
 The [reasoning-progress escalation policy](native-skill-contract.md#reasoning-progress-escalation) is authoritative for detecting a stalled workstream and its required ledger. Two consecutive work cycles without material progress or three evidence-backed attempts without closing the same condition are observed lower-tier insufficiency, not permission to bypass role boundaries.
 
-For the single advisory pass, first request one supported higher reasoning-effort level for the same permitted model; only then use the next permitted tier. Luna may consult Terra; Sol remains limited to architecture or security, and no advisory pass transfers executable acceptance or state-changing authority. A route is advisory-eligible only when the actual observed sandbox is `read-only`; a requested or claimed sandbox is insufficient. If no permitted read-only route is observable or available, route directly to the human handoff. Record the trigger ledger, closure condition, requested and observed model/effort, observed sandbox, route result, advisory recommendation, and its stop condition. The parent may authorize one bounded recovery action; a result without material progress or an unchanged unmet closure condition then requires the human handoff, not another advisor or retry.
+For the single advisory pass, first request one supported higher reasoning-effort level for the same permitted model; only then use the next permitted tier. Luna may consult Terra. Sol remains limited to architecture or security and still requires the user's explicit request or agent selection; no advisory pass transfers executable acceptance or state-changing authority. A route is advisory-eligible only when the actual observed sandbox is `read-only`; a requested or claimed sandbox is insufficient. If no permitted read-only route is observable or available, route directly to the human handoff. Record the trigger ledger, closure condition, requested and observed model/effort, observed sandbox, route result, advisory recommendation, and its stop condition. The parent may authorize one bounded recovery action; a result without material progress or an unchanged unmet closure condition then requires the human handoff, not another advisor or retry.
 
 ## Context Packs
 
@@ -117,6 +117,8 @@ Every real/substitute pass returns:
 
 Parent consolidates one decision, explicitly reconciles conflicts. Outputs are evidence, not votes.
 
+An explicit Sol advisor is never an implementation or acceptance owner: preserve its evidence artifact, return to the Terra parent/session, and require that parent to decide the next action and final acceptance.
+
 ## Handover Gate
 
 Before accepting delegated work, lead then parent verify:
@@ -151,9 +153,9 @@ Claim "specialist fan-out" only with separate outputs/runtime provenance. Record
 | --- | --- | --- |
 | implementation | `sw-engineer` | feature, fix, refactor, API implementation |
 | tests and regression | `qa-specialist` | acceptance checks, edge cases, failure/pass evidence |
-| architecture/API | `solution-architect` | public API, migration, cross-subsystem coupling |
+| architecture/API | `solution-architect` | user expressly requests Sol or selects the role for public API, migration, or cross-subsystem coupling |
 | docs and migration | `doc-scribe` | public docs, examples, changelog, docstrings |
-| security | `security-auditor` | auth, secrets, permissions, deserialization, supply chain |
+| security | `security-auditor` | user expressly requests Sol or selects the role for auth, secrets, permissions, deserialization, or supply chain |
 | CI/tooling | `cicd-steward` | workflows, release automation, flaky CI |
 | lint/types | `linting-expert` | ruff, mypy, pre-commit, suppression policy |
 | data/ML pipeline | `data-steward` | datasets, leakage, reproducibility, tensor boundaries |

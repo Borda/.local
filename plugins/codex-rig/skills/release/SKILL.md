@@ -77,7 +77,7 @@ For `prepare`/`audit`, apply `../../shared/specialist-orchestration.md` for publ
 - `cicd-steward`: release workflow, publishing, CI status, artifact gates.
 - `doc-scribe`: changelog, migration guide, README/examples.
 - `qa-specialist`: verification matrix and test evidence.
-- `security-auditor`: security/dependency-sensitive changes.
+- `security-auditor`: only when the user expressly requests Sol or selects that role for security/dependency-sensitive changes; it returns a bounded read-only evidence artifact to the Terra parent/session for release acceptance.
 - `challenger`: release-blocker downgrade or no-blocker conclusion.
 
 Single-agent for `notes` on narrow low-risk range unless SemVer/migration impact ambiguous.

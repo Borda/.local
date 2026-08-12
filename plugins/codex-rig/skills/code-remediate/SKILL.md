@@ -295,7 +295,7 @@ Each selected item is in exactly one group or `## Ungrouped Items`. Every group 
 - selected indexes
 - severity range
 - grouping rationale
-- primary owner: `parent|sw-engineer|qa-specialist|doc-scribe|cicd-steward|linting-expert|security-auditor|data-steward|scientist|squeezer|oss-shepherd`
+- primary owner: `parent|sw-engineer|qa-specialist|doc-scribe|cicd-steward|linting-expert|data-steward|scientist|squeezer|oss-shepherd`
 - verifier: `parent|qa-specialist|security-auditor|linting-expert|cicd-steward|challenger|solution-architect|none`
 - context pack path
 - expected closure evidence
@@ -304,13 +304,13 @@ Each selected item is in exactly one group or `## Ungrouped Items`. Every group 
 
 Owner assignment rules:
 
-- implementation/refactor/API: `sw-engineer` primary, `qa-specialist` verifier; public API/migration shape adds `solution-architect` to verifier/context (verifier-only, never primary).
+- implementation/refactor/API: `sw-engineer` primary, `qa-specialist` verifier. A public API/migration concern stays with the Terra parent/session unless the user expressly requests Sol or selects `solution-architect`; then it is a bounded read-only verifier/context artifact, never primary, returned to Terra for acceptance.
 - test gap/regression proof: `qa-specialist` primary, `parent` verifier.
 - docs/changelog/examples/docstrings: `doc-scribe` primary, `parent` or `qa-specialist` verifier for executable docs.
-- CI/workflow/release gate: `cicd-steward` primary, `parent` verifier; permission/secret work adds `security-auditor`.
+- CI/workflow/release gate: `cicd-steward` primary, `parent` verifier. Permission/secret work stays with the Terra parent/session unless the user expressly requests Sol or selects `security-auditor`; then it is a bounded read-only evidence artifact returned to Terra for acceptance.
 - SemVer/compatibility classification, deprecation-cycle correctness, or release-readiness/blocker impact: `oss-shepherd` primary, `parent` verifier; changelog/migration prose stays `doc-scribe`, release automation stays `cicd-steward`.
 - lint/type/pre-commit/suppression: `linting-expert` primary, `parent` or `qa-specialist` verifier when runtime could change.
-- security/dependency/permission/data exposure: `security-auditor` primary, `challenger` verifier for high/critical/non-obvious closure.
+- security/dependency/permission/data exposure: Terra parent/session primary, `challenger` verifier for high/critical/non-obvious closure. Use `security-auditor` only on a user-explicit Sol request or role selection, as a bounded read-only evidence artifact; it never becomes primary or accepts the closure.
 - data/ML/research/performance: `data-steward`, `scientist`, or `squeezer` primary; `qa-specialist` verifies tensor/data boundaries.
 - review-gate/follow-up: primary role matching missing evidence, `parent` verifier; unresolved when evidence needs unavailable CI, maintainer review, user-deferred external step.
 - merge/conflict collision: `sw-engineer` primary; `challenger` verifies critical/high/non-obvious; cite `<run-directory>/merge-prestage.md`.
@@ -343,7 +343,7 @@ Apply `../../shared/specialist-orchestration.md` when selected findings cross sp
 Specialist closure triggers:
 
 - `qa-specialist`: bug fix, test gap, regression proof, or behavior `already-applied` claim.
-- `security-auditor`: auth, credentials, deserialization, dependency/supply-chain, permissions, data exposure.
+- `security-auditor`: only when the user expressly requests Sol or selects that role for auth, credentials, deserialization, dependency/supply-chain, permissions, or data exposure; return its bounded read-only evidence artifact to the Terra parent/session for closure acceptance.
 - `cicd-steward`: GitHub Actions, release automation, flaky CI, gate-environment failures.
 - `linting-expert`: ruff, mypy, pre-commit, type/lint config, suppression changes.
 - `doc-scribe`: public docs, changelog, examples, migration text, public docstrings.
