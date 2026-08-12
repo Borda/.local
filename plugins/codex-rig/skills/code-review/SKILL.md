@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: "Review local diffs/PRs with scope gates, specialists, and JSON artifact; fix via code-remediate."
+description: "Close PRs at an evidence gate or review local diffs/PRs with specialists and JSON artifacts."
 ---
 
 # Code Review
@@ -68,6 +68,25 @@ If `files.txt` and `untracked.txt` are empty with no explicit target, fail befor
 
 For retryable `github-network`, `github-rate-limit`, or `command-timeout`, explain that no review occurred and ask the user to retry the unchanged collector later; rate-limit diagnostics deliberately retain no server interval. If `checkout-state.json` exists, say the local checkout command may have changed the worktree, tell the user to inspect that local state before retrying, and never claim no checkout was produced. For `github-auth` or a permission failure, stop and explain that the local `gh` configuration/account access needs repair; tell the user to run `gh auth status` and, if needed, `gh auth login` privately outside the agent workflow, verify repository access, and never paste tokens, keychain data, or credential output into chat. For `missing-command:gh`, tell the user to install or repair `gh` locally before retrying. For `github-not-found`, ask for the canonical PR URL and repository identity. For definitive `unsafe-gh-command`, invalid protocol/JSON, missing required PR identity, or an unclassified deterministic collector error, stop at the unavailable result, explain the classified code and artifact, and suggest filing a Codex Rig bug with the plugin version, command label, failure code, and sanitized artifacts. Never retry a deterministic target, permission, safety-guard, or plugin-contract failure automatically.
 
+**Terminal close gate (PR only):** After successful T0 collection for an `OPEN` PR and before structural context or T1/T2, screen the PR goal, description, minimal verified diff evidence, authoritative project policy/history, and linked upstream evidence for one conclusive proposal-level close reason. This is a disposition decision, not a source review. If evidence is inconclusive, continue to T1/T2; never close from suspicion, reviewer preference, contributor identity, AI authorship/style, or a merely related change.
+
+Use exactly one close code:
+
+| Code | Conclusive evidence | Insufficient alone |
+| --- | --- | --- |
+| `FALSE_GOAL` | The stated goal contradicts a citable invariant, specification, domain fact, or verified current behavior. | Implementation disagreement, stale wording, or an unverified claim. |
+| `BREAKING_CONDUCT` | Direct evidence that the contribution is intentionally malicious or adversarial by design, such as a backdoor, exfiltration, or supply-chain attack. | An accidental security bug, poor code, suspicion, or inferred intent. |
+| `WRONG_SCOPE` | A documented roadmap, maintainer decision, ADR, or contribution boundary directly excludes the proposed goal. | Size, mixed files, or an undocumented preference. |
+| `WRONG_PROVENANCE` | A documented license or rights requirement and objective evidence of an incompatible or unresolvable provenance conflict. | Fork ownership, code similarity, unknown provenance, or a missing CLA/DCO signature that the project permits the contributor to fix. |
+| `DUPLICATE` | A verified merged change or resolved upstream issue already supplies the same still-applicable outcome. | A similar title, overlapping files, related open work, or the same issue area. |
+| `UNADDRESSED_REVERT` | The PR semantically reintroduces a reverted change and does not address the documented reason for that revert. | File overlap, patch similarity, or a revert title alone. |
+| `SPAM` | Objective irrelevant, promotional, repeated-submission, or non-substantive evidence shows no bona fide project change. | A small change, missing tests, low quality, or AI-generated content by itself. |
+| `ARCHITECTURE_VIOLATION` | The proposal directly contradicts a documented current architectural principle. | Style preference, abstraction concern, or reasoning that requires detailed source review. |
+
+A close decision requires `confidence >= 0.90`, two distinct evidence sources, a recorded counterevidence/falsification check, and binding to the verified current PR head. Public-HTTPS fallback evidence cannot close because its confidence cap is `0.89`. For `WRONG_PROVENANCE`, a missing required CLA/DCO signature remains a normal blocking item unless documented project policy makes the conflict terminal. For `BREAKING_CONDUCT`, an accidental security defect remains a normal blocking finding; only evidenced by-design harm reaches this gate.
+
+On close, skip structural context, T1, T2, specialist routing, detailed findings, severity classification, and the normal recommendation step. Write `review-notes.md` with `Review Decision: close`, source findings `not assessed`, detailed review `skipped`, the exact close reason, summary, rationale, evidence, counterevidence checked, and `GitHub mutation: not performed.` Emit `status=pass` for the successfully completed workflow, zero findings, `review_status=closed`, and `close_decision={"schema_version": 1, "code": "<CODE>", "advisory_only": true, "head_sha": "<verified PR head>", "summary": "<summary>", "rationale": "<rationale>", "evidence": [{"claim": "<observed fact>", "source": "<artifact, repository path, or authoritative URL>"}], "counterevidence_checked": ["<falsification check>"]}`. Include at least two distinct evidence entries. Omit `review_decision`, recommendations, follow-up, review routing, specialist artifacts, and every Markdown table. Run the shared gates with detailed-review checks marked not applicable and the `review` gate validating the close artifact, then run both artifact validators. This result only advises the user to close; never close, comment on, merge, or otherwise mutate GitHub.
+
 **Structural context (optional)**: after the diff is collected, also probe codemap-py once for changed-symbol blast
 radius: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category review --out <run-directory>/codemap-context.json`.
 Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with T1/T2 as scoped by `scope.txt`
@@ -84,6 +103,20 @@ Review axes, in order:
 - Project coding principles: changed code follows the applicable `AGENTS.md` layers for simplicity, readability, reproducibility, short reusable units without low-value argument-remapping wrappers, guard clauses or early `return`/`yield`/`continue`, project docstring-style detection, concise purpose docstrings, and inline comments only for non-trivial implementation blocks.
 - Security, data, ML, CI/CD, or release risks signaled by T0.
 - Documentation or migration gaps caused by behavior/API changes.
+
+Blocking defaults guide merge judgment; they are not automatic labels:
+
+| Category | Default | Nuance |
+| --- | --- | --- |
+| CI red or failing check | blocking | Only a major or required-check failure. Note a single flaky-looking rerun blip without automatically blocking. |
+| Missing test coverage for new or changed logic | blocking | Require coverage proportional to the changed contract and regression risk. |
+| Accidental security bug | blocking | Evidenced by-design harm is terminal `BREAKING_CONDUCT` at the close gate. |
+| Breaking API change without deprecation or migration path | blocking | Require the project-compatible transition before merge. |
+| Missing docs for new or changed public behavior | blocking | Missing CHANGELOG entry alone is not blocking and may be completed through the release workflow. |
+| Performance regression | contextual | Block an unexplained regression against recent releases; do not block when a correctness fix necessarily removes invalid prior speed. |
+| Merge conflicts | not blocking | Conflict resolution belongs to `code-remediate`; review does not gate on the conflict alone. |
+| Incomplete implementation | blocking | Includes TODOs in changed paths, missing expected error handling, or an unfinished public contract. |
+| Missing CLA/DCO signature | blocking only when the project requires it | Verify a CLA/DCO bot check or explicit contribution policy first; without such a requirement it is not applicable. |
 
 ### 04: T2 risk-routed specialist fan-out. Route independent review from explicit behavior signals, not the file-count tier alone
 
@@ -172,7 +205,7 @@ Use exactly one recommendation:
 - `accept-as-is`: no findings; required gates passed/not applicable; residual risks explicitly low.
 - `minor-changes`: only non-blocking low/medium findings or polish remain.
 - `needs-more-work`: high findings, missing tests/evidence, failed relevant gates, or unresolved review-risk gaps.
-- `reject`: critical findings, unsafe behavior, security/data-loss risk, or change should not merge as-is.
+- `reject`: critical findings, unsafe behavior, security/data-loss risk, or another terminal defect discovered during a completed detailed review.
 - `not-aligned`: change does not address requested issue, PR intent, migration contract, or project direction despite mechanical soundness.
 
 `Decision Summary` must include:
@@ -218,25 +251,25 @@ Confidence must be honest/objectively verifiable. Never raise it to pass a gate;
 
 Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with `CODE_REVIEW_METADATA` and `FOLLOW_UP`; run review-specific validator before shared validator for `code-review`; promote only candidate accepted by both.
 
-`CODE_REVIEW_METADATA.specialist_passes` mirrors every triggered `specialist-manifest.json` entry; `review_run_id`/`review_input_sha256` mirror top-level values. `CODE_REVIEW_METADATA.scope` matches normalized scope. For assessed reviews, `CODE_REVIEW_METADATA.review_decision` mirrors `Decision Summary` recommendation, summary, rationale; a terminal collection failure instead records `review_status=unavailable` with source findings not assessed and merge decision not made. Its `findings` object has exactly `critical`, `high`, `medium`, and `low`, each `0`; no normal findings/recommendations/follow-up fields or assessed review metadata are permitted. Every assessed non-`accept-as-is` PR and every `needs-more-work` result in another scope carries the validated canonical `Review Findings and Merge Blocks` table in `review-notes.md`; terminal unavailable collection carries plain process diagnostic prose and no table. An assessed review with unavailable thread-resolution evidence includes the canonical thread confidence gap and unresolved/deferred closure rationale. `CODE_REVIEW_METADATA.confidence_recovery` mirrors `Confidence Calibration` and includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REVIEW_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` and matching evidence/rationale.
+`CODE_REVIEW_METADATA.specialist_passes` mirrors every triggered `specialist-manifest.json` entry; `review_run_id`/`review_input_sha256` mirror top-level values. `CODE_REVIEW_METADATA.scope` matches normalized scope. For assessed reviews, `CODE_REVIEW_METADATA.review_decision` mirrors `Decision Summary` recommendation, summary, rationale. A terminal collection failure records `review_status=unavailable` with source findings not assessed and merge decision not made. A terminal close records `review_status=closed` plus the validated `close_decision`, with source findings not assessed and detailed review skipped. Both terminal shapes use exactly zero `critical`, `high`, `medium`, and `low` findings and omit normal recommendations/follow-up and assessed-review metadata. Every assessed non-`accept-as-is` PR and every `needs-more-work` result in another scope carries the validated canonical `Review Findings and Merge Blocks` table in `review-notes.md`; terminal unavailable and closed results use their canonical plain prose and no table. An assessed review with unavailable thread-resolution evidence includes the canonical thread confidence gap and unresolved/deferred closure rationale. `CODE_REVIEW_METADATA.confidence_recovery` mirrors `Confidence Calibration` and includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REVIEW_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` and matching evidence/rationale.
 
 ## Fail-fast Rules
 
 01. Empty `files.txt` and `untracked.txt` with no explicit target => fail.
 02. Shared gate or diff collection script missing => fail.
 03. Result artifact missing => fail.
-04. Review that skips changed-file inspection => fail.
+04. Assessed review that skips changed-file inspection => fail; a terminal close instead requires minimal verified diff evidence at T0.
 05. Blocking finding without local evidence or pattern check => fail.
 06. Missing T0 scope classification => fail.
-07. Routing signals, triggered roles, manifest roles, and specialist files disagree => fail.
-08. Triggered axis without spawned/explicit substitute output => fail.
-09. Missing review routing or schema-v2 specialist manifest => fail.
+07. Detailed-review routing signals, triggered roles, manifest roles, and specialist files disagree => fail.
+08. Detailed review triggers an axis without spawned/explicit substitute output => fail.
+09. Detailed review is missing review routing or its schema-v2 specialist manifest => fail.
 10. `BROAD` or `HIGH_RISK` review returning `status=pass` with substituted required specialists => fail.
 11. Result artifact validator failure => fail.
-12. Missing `review-notes.md` sections => fail.
+12. An assessed review is missing required `review-notes.md` sections, or a terminal result violates its exact prose shape => fail.
 13. PR scope without PR body metadata, authoritative remote/target evidence, exact `local-checkout.json`, locally derived `diff.patch`, comments/reviews, normalized thread artifacts, and `online-review-summary.json` => fail.
 14. PR scope ignores unresolved online reviews without triage, or claims complete thread triage when `review_threads_status=unavailable` => fail.
-15. Missing structured review decision summary or invalid recommendation => fail.
+15. An assessed review has a missing structured review decision summary or invalid recommendation => fail.
 16. PR scope uses `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots for source inspection instead of local checkout => fail.
 17. PR scope runs `git`/`gh` with `--force` before explicit user confirmation and overwrite-risk explanation => fail.
 18. Missing `Confidence Calibration`, `metadata.confidence_recovery`, or `metadata.confidence_gap_closures` => fail.
@@ -245,12 +278,14 @@ Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with 
 21. More than two attempts or retry after non-transient outcome => fail.
 22. An assessed non-`accept-as-is` PR or `needs-more-work` result is missing a complete actionable `Review Findings and Merge Blocks` table => fail.
 23. A terminal core T0 PR collection failure emits any Markdown table or merge recommendation, omits its plain process diagnostic/recovery/evidence prose, or does not explicitly mark source findings `not assessed` and merge decision `not made` => fail.
+24. A terminal close lacks one valid close code, two distinct evidence sources, a counterevidence check, verified-head binding, `confidence >= 0.90`, or advisory-only/no-mutation state => fail.
+25. A terminal close emits findings, a normal recommendation/follow-up, any Markdown table, review routing, specialist artifacts, or detailed-review claims => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: T0 files, risk tier, local changed-file inspection, simplicity/readability/reproducibility inspection, project docstring-style detection, docstring/comment policy inspection for changed code, PR body/target/checkout/local-diff evidence when relevant, specialist manifest/notes, structured assessed decision summary or terminal unavailable process result, non-approval PR findings/action table for assessed reviews, plain process diagnostics for terminal core collection failure, explicit supplemental-thread degradation, confidence calibration/recovery, PR online-review triage, severity map, `git diff --check`.
+- `review`: T0 files, risk tier, either validated terminal close evidence or local changed-file inspection, simplicity/readability/reproducibility inspection, project docstring-style detection, docstring/comment policy inspection for changed code, PR body/target/checkout/local-diff evidence when relevant, specialist manifest/notes when detailed review proceeds, structured assessed decision summary or terminal unavailable/closed result, non-approval PR findings/action table for assessed reviews, plain terminal diagnostics, explicit supplemental-thread degradation, confidence calibration/recovery, PR online-review triage when assessed, severity map when assessed, `git diff --check`.
 
 Conditional checks:
 
@@ -262,13 +297,13 @@ Conditional checks:
 Update calibration when review routing, severity discipline, decision vocabulary, or output shape changes:
 
 - benchmark patterns: `code-review`
-- behavioral cases: false blocker, target-advance false blocker, supplemental-thread degradation, non-approval PR findings/action table missing a reported finding, missing `needs-more-work` table, T0 PR collection failure with a merge recommendation/table or without plain process diagnostic/source findings `not assessed`/merge decision `not made`, malformed finding-table row, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage, missing project docstring-style detection, missing code self-documentation, long code blocks, deep branching, docstrings masking poor structure, low-confidence recovery loop, objective confidence evidence
+- behavioral cases: false blocker, target-advance false blocker, supplemental-thread degradation, each terminal close code plus its false-positive fall-through, close-versus-reject separation, closed-report remediation rejection, non-approval PR findings/action table missing a reported finding, missing `needs-more-work` table, T0 PR collection failure with a merge recommendation/table or without plain process diagnostic/source findings `not assessed`/merge decision `not made`, malformed finding-table row, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage, missing project docstring-style detection, missing code self-documentation, long code blocks, deep branching, docstrings masking poor structure, low-confidence recovery loop, objective confidence evidence
 - PR routing cases: target-branch refresh required, fork-aware numbered local checkout, exact-head checkout reuse, verified local diff required, stale local PR branch, raw-file snapshot rejection
 
 ## Output Contract
 
 Use shared gate schema from `../../shared/quality-gates.md`.
 
-Final chat starts compact `Review Decision Summary` for assessed reviews: recommendation, blockers, required next work, confidence/material limits, artifact path. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table in the chat output; it is the decision handoff, not optional detail. A terminal core T0 PR collection failure instead starts `PR Review Availability: unavailable` and uses plain prose for classified process diagnostic, recovery, source findings `not assessed`, merge decision `not made`, confidence/material limits, evidence, and artifact path; never reproduce a table or recommendation. Keep full routing, recovery, closure evidence in artifact, not chat. Assessed recommendations must be `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
+Final chat starts compact `Review Decision Summary` for assessed reviews: recommendation, blockers, required next work, confidence/material limits, artifact path. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table in the chat output; it is the decision handoff, not optional detail. A terminal core T0 PR collection failure instead starts `PR Review Availability: unavailable` and uses plain prose for classified process diagnostic, recovery, source findings `not assessed`, merge decision `not made`, confidence/material limits, evidence, and artifact path. A terminal close starts `Review Decision: close`, names the code, says source findings were not assessed and detailed review was skipped, lists decisive evidence and counterevidence checked, states `GitHub mutation: not performed`, and provides confidence/material limits plus the artifact path. Neither terminal result uses a table or normal recommendation. Keep full routing, recovery, closure evidence in artifact, not chat. Assessed recommendations remain `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
 Minimum artifact payload template: `result-template.json`.

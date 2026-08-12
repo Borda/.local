@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.7.1`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.7.2`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -12,6 +12,7 @@ The plugin is complete for the capabilities Codex can currently install and veri
 - **Specialist depth without a permanent agent install:** exact packaged role cards can guide independent blank agents or inline passes.
 - **Bounded context:** each specialist receives a narrow context pack instead of the whole parent thread.
 - **Evidence-backed completion:** workflows write comparable artifacts under `.reports/codex/<skill>/<timestamp>/` and disclose failed gates and confidence limits.
+- **Auditable commit handoffs:** every proposed or created commit records all meaningful changes, concrete impacts, executed verification, and residual limits in the commit body.
 - **Cold PR review and remediation:** `$code-review #123` and `$code-remediate #123 +review` preserve current PR evidence and local merge context.
 - **Calibration:** fixed and behavioral checks measure recall, precision, confidence accuracy, routing leaks, and stale assumptions.
 - **Safe legacy cleanup:** authenticated, exact-plan removal exists for thin shims created during pre-release development.
@@ -101,11 +102,18 @@ $codex-rig:code-review #123
 $codex-rig:code-remediate #123 +review
 ```
 
+To remediate the latest assessed review created in the current session without refreshing PR evidence or online comments:
+
+```text
+$codex-rig:code-remediate review
+```
+
 When the same invocations are passed from a shell, quote them so `$` is not expanded:
 
 ```bash
 codex '$codex-rig:code-review #123'
 codex '$codex-rig:code-remediate #123 +review'
+codex '$codex-rig:code-remediate review'
 ```
 
 ## Skills
@@ -120,7 +128,7 @@ Codex Rig installs 14 skills: 13 work workflows plus the legacy shim manager.
 | `audit`          | Detect configuration, workflow, routing, documentation, and quality-gate drift.                                     |
 | `calibrate`      | Run fixed and behavioral checks across packaged skills and roles; score recall, precision, and confidence accuracy. |
 | `code-remediate` | Triage review findings, select valid work, assign owners/verifiers, apply fixes, and prove closure.                 |
-| `code-review`    | Review a local diff or GitHub PR across mandatory and risk-triggered specialist axes.                               |
+| `code-review`    | Close a PR at an evidence-backed proposal gate or review its local diff across mandatory and risk-triggered axes.    |
 | `develop`        | Run the linear plan-build-verify implementation loop with measurable acceptance gates.                              |
 | `investigate`    | Debug code and narrow unknown failures to an evidence-backed root cause before implementation.                      |
 | `kaggle`         | Create or extend grounded Jupytext Kaggle notebooks, grounding schema via the authenticated `kaggle` CLI.           |
@@ -215,10 +223,10 @@ Confidence is evidence-backed:
 
 ## PR review-to-remediation
 
-`$codex-rig:code-review #123` collects contributor intent from the PR title/body, comments/reviews, target-branch evidence, an exact local PR head, and a locally derived diff before producing a structured review artifact. It performs mandatory QA/challenge passes for broad or high-risk diffs and conditionally triggers architecture, security, CI, docs, data, performance, research, or web evidence. `shared/github_read.py` is the sole GitHub data transport: it prefers authenticated `gh` but never reads credentials; permits only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`), REST GET, and GraphQL query operations; and retains no CLI failure output. `collect_pr.py` separates core source evidence from supplemental online evidence: PR identity/body, base-repository identity, target ancestry, exact PR-head checkout, and local diff are mandatory; GraphQL review-thread resolution status and derived statistics may degrade with explicit artifacts and confidence gaps. Open fork PRs use `gh pr checkout <number>` unless the current HEAD already exactly matches PR metadata, then `git diff <base>...<head>` supplies the authoritative patch. Target advancement is integration context, not a PR finding or merge blocker; genuine divergence remains a collection failure. Historical merged/closed PR evidence uses GitHub's pull ref, exact SHA verification, and detached local checkout, but merge decisions and code-remediate remain OPEN-only. Every assessed non-approval PR result includes the findings/action table only for actual findings or review gates. If core collection fails before source review, report `PR Review Availability: unavailable`, source findings `not assessed`, merge decision `not made`, and plain process diagnostic/recovery/evidence prose; never use a Markdown table, list the operational failure as a PR issue, or emit `needs-more-work`. Current-attempt evidence is retained for diagnosis but remains explicitly unassessed. Authentication recovery remains a user-owned, out-of-band `gh` operation.
+`$codex-rig:code-review #123` collects contributor intent from the PR title/body, comments/reviews, target-branch evidence, an exact local PR head, and a locally derived diff before producing a structured review artifact. After successful collection it may emit an evidence-backed terminal `close` decision before detailed review for one of `FALSE_GOAL`, `BREAKING_CONDUCT`, `WRONG_SCOPE`, `WRONG_PROVENANCE`, `DUPLICATE`, `UNADDRESSED_REVERT`, `SPAM`, or `ARCHITECTURE_VIOLATION`; ambiguous evidence always continues to detailed review, and the decision never closes, comments on, merges, or otherwise mutates GitHub. It performs mandatory QA/challenge passes for broad or high-risk diffs and conditionally triggers architecture, security, CI, docs, data, performance, research, or web evidence when detailed review proceeds. `shared/github_read.py` is the sole GitHub data transport: it prefers authenticated `gh` but never reads credentials; permits only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`), REST GET, and GraphQL query operations; and retains no CLI failure output. `collect_pr.py` separates core source evidence from supplemental online evidence: PR identity/body, base-repository identity, target ancestry, exact PR-head checkout, and local diff are mandatory; GraphQL review-thread resolution status and derived statistics may degrade with explicit artifacts and confidence gaps. Open fork PRs use `gh pr checkout <number>` unless the current HEAD already exactly matches PR metadata, then `git diff <base>...<head>` supplies the authoritative patch. Target advancement is integration context, not a PR finding or merge blocker; genuine divergence remains a collection failure. Historical merged/closed PR evidence uses GitHub's pull ref, exact SHA verification, and detached local checkout, but merge decisions and code-remediate remain OPEN-only. Every assessed non-approval PR result includes the findings/action table only for actual findings or review gates. If core collection fails before source review, report `PR Review Availability: unavailable`, source findings `not assessed`, merge decision `not made`, and plain process diagnostic/recovery/evidence prose; never use a Markdown table, list the operational failure as a PR issue, or emit `needs-more-work`. Current-attempt evidence is retained for diagnosis but remains explicitly unassessed. Authentication recovery remains a user-owned, out-of-band `gh` operation.
 Public PR metadata fallback is limited to `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout` failures and requires a canonical URL matching a configured GitHub remote, or a numeric target bound to one distinct configured GitHub repository identity. Ambiguous or unsafe targets, permission, not-found, and unclassified failures fail closed. GitHub GraphQL object-resolution failures remain not-found errors instead of activating the network fallback. The HTTPS client uses Python's default CA store and recovers an available system CA bundle only when that store is empty. The fallback normalizes limited metadata, verifies a `refs/pull/<number>/head` detached checkout, derives the local diff, and records unavailable evidence in `online-review-summary.json`; it cannot establish private PR evidence. Review and remediation list the sorted IDs `github_provided_file_list`, `mergeability`, `review_decision`, `reviews`, and `top_level_comments` in their online triage/action evidence, add the exact gap `Public HTTPS PR metadata fallback omitted evidence: <sorted IDs>.`, and cap final confidence at `0.89`. Raw CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum.
 
-`$codex-rig:code-remediate #123 +review` finds the newest matching review artifact, refreshes the same core PR/body/checkout/local-diff evidence, records supplemental review-thread coverage gaps, evaluates merge-conflict risk, and presents a resolution table before editing. Selected findings are grouped by root cause and assigned a primary owner, verifier, expected closure evidence, and context pack. The workflow never pushes, comments, merges, or publishes remotely.
+`$codex-rig:code-remediate #123 +review` finds the newest matching assessed review artifact, refreshes the same core PR/body/checkout/local-diff evidence, records supplemental review-thread coverage gaps, evaluates merge-conflict risk, and presents a resolution table before editing. `$codex-rig:code-remediate review` instead reuses the latest assessed `code-review` result created in the current session in report mode; it does not refresh PR evidence or online comments, and fails if that artifact is unavailable or closed at the proposal gate. A newer close result blocks fallback to stale assessed findings because it contains no source-remediation contract. Selected findings are grouped by root cause and assigned a primary owner, verifier, expected closure evidence, and context pack. The workflow never pushes, comments, merges, or publishes remotely.
 
 Historical `.reports/codex/review/` and `.reports/codex/resolve/` artifacts remain readable fallback inputs. `code-review` and `code-remediate` are the canonical names.
 

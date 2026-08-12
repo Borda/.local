@@ -4,7 +4,7 @@
       "goal": "Catch blocking findings in working tree changes",
       "id": "code-review-001",
       "skill": "code-review",
-      "success": "severity mapping, gate result, and findings/action table are present for every completed non-accept-as-is PR decision; a core T0 PR collection failure instead reports review unavailable, source findings not assessed, no recommendation or merge decision, and plain process diagnostic/recovery/evidence prose without a table"
+      "success": "severity mapping, blocking-default judgment, gate result, and findings/action table are present for every completed non-accept-as-is PR decision; after successful T0 an evidence-backed proposal-level close may skip detailed review with one valid code, two sources, counterevidence, verified-head binding, and no remote mutation; inconclusive close evidence falls through to T1/T2; a core T0 failure instead reports review unavailable without a recommendation or table"
     },
     {
       "goal": "Implement minimal change and verify checks",
@@ -58,7 +58,7 @@
       "goal": "Apply controlled config updates",
       "id": "manage-001",
       "skill": "manage",
-      "success": "change summary and gate status are present"
+      "success": "change summary and gate status are present; every proposed or created commit uses the shared template with complete Changes, Impact, Verification, and Residual limits sections"
     },
     {
       "goal": "Produce scoped analysis with confidence",

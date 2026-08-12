@@ -1077,6 +1077,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         "collect-pr": run.paths.collect_pr,
         "find-review-report": run.paths.find_review_report,
         "run-gates": run.paths.run_gates,
+        "escalation-ledger": run.paths.shared_dir / "escalation_ledger.py",
         "code-review-validate-artifacts": run.paths.code_review_validate_artifacts,
         "select-git-remote": run.paths.select_git_remote,
         "validate-artifacts": run.paths.validate_artifacts,

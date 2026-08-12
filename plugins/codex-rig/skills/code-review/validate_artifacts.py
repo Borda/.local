@@ -9,7 +9,7 @@ It gives the code-review workflow a mechanical final check that connects the dec
 ## Scope
 
 reads a completed local review artifact and rejects contract violations; it neither collects GitHub data nor performs a source-code review itself.
-Validation covers both normal reviewed results and explicitly unavailable-review results, including path containment and provenance checks for referenced files.
+Validation covers normal reviewed results, explicitly unavailable-review results, and proposal-level close results, including path containment and provenance checks for referenced files.
 
 ## Usage
 
@@ -23,13 +23,13 @@ Maintainers can also run it while diagnosing an incomplete artifact, but it is n
 
 ## Outputs
 
-accepts a coherent review artifact or emits an explicit contract failure for missing routing, source evidence, decision rationale, or action-table cells.
+accepts a coherent review artifact or emits an explicit contract failure for missing routing, source evidence, close evidence, decision rationale, or action-table cells.
 Successful validation returns a zero exit status, while failures identify the violated contract so the workflow can stop before presenting a merge recommendation.
 
 ## Failure
 
-untriaged specialist output, unsupported recommendation, inconsistent PR evidence, or a non-accept decision without merge blocks exits non-zero.
-It also rejects artifacts that reference files outside the review output directory or claim unavailable source evidence while retaining forbidden review artifacts.
+untriaged specialist output, unsupported recommendation, inconsistent PR evidence, an invalid close disposition, or a non-accept decision without merge blocks exits non-zero.
+It also rejects artifacts that reference files outside the review output directory or claim a terminal result while retaining forbidden detailed-review artifacts.
 """
 
 from __future__ import annotations
@@ -56,6 +56,16 @@ REQUIRED_SECTIONS = (
 )
 REQUIRED_ROLES = {"qa-specialist", "challenger"}
 VALID_RECOMMENDATIONS = {"accept-as-is", "minor-changes", "needs-more-work", "reject", "not-aligned"}
+CLOSE_CODES = {
+    "FALSE_GOAL",
+    "BREAKING_CONDUCT",
+    "WRONG_SCOPE",
+    "WRONG_PROVENANCE",
+    "DUPLICATE",
+    "UNADDRESSED_REVERT",
+    "SPAM",
+    "ARCHITECTURE_VIOLATION",
+}
 ACTION_TABLE_SECTION = "Review Findings and Merge Blocks"
 ACTION_TABLE_HEADERS = ("Finding / area", "Required change", "Evidence", "Status")
 ALL_MANIFEST_ROLES = {
@@ -102,6 +112,31 @@ UNAVAILABLE_FORBIDDEN_ARTIFACTS = {"specialist-manifest.json"}
 UNAVAILABLE_CONFIDENCE_GAP = (
     "Core PR source verification did not complete; no source review or merge decision was made."
 )
+CLOSED_CONFIDENCE_GAP = "Detailed source review was intentionally skipped after the close gate."
+CLOSED_RESULT_KEYS = UNAVAILABLE_RESULT_KEYS
+CLOSED_METADATA_KEYS = {
+    "scope",
+    "risk_tier",
+    "review_status",
+    "close_decision",
+    "confidence_gaps",
+    "confidence_gap_closures",
+    "confidence_recovery",
+}
+CLOSED_REQUIRED_PR_ARTIFACTS = {
+    "pr.json",
+    "pr-routing.json",
+    "remote-selection.json",
+    "target-branch.json",
+    "local-checkout.json",
+    "comments.json",
+    "reviews.json",
+    "review-threads.json",
+    "unresolved-review-threads.json",
+    "online-review-summary.json",
+    "diff.patch",
+}
+CLOSED_FORBIDDEN_ARTIFACTS = {"codemap-context.json", "review-routing.json", "specialist-manifest.json", "specialists"}
 PR_THREAD_CONFIDENCE_GAP = "PR review-thread resolution status was unavailable; online review triage may be incomplete."
 PR_PUBLIC_FALLBACK_MAX_CONFIDENCE = 0.89
 UNAVAILABLE_RECOVERY_ACTIONS = {
@@ -546,6 +581,143 @@ def _validate_unavailable_result(out_dir: Path, result: dict[str, Any], metadata
         raise SystemExit("unavailable-review-confidence-recovery-must-be-canonical")
 
 
+def _validate_closed_result(out_dir: Path, result: dict[str, Any], metadata: dict[str, Any], scope: str) -> None:
+    """Validate a conclusive proposal-level PR close decision that precedes source review."""
+    if scope != "pr":
+        raise SystemExit("closed-review-non-pr-scope")
+    if result.get("status") != "pass":
+        raise SystemExit("closed-review-status-must-pass")
+    unexpected_result_keys = sorted(set(result) - CLOSED_RESULT_KEYS)
+    if unexpected_result_keys:
+        raise SystemExit("closed-review-unexpected-result-fields:" + ",".join(unexpected_result_keys))
+    unexpected_metadata_keys = sorted(set(metadata) - CLOSED_METADATA_KEYS)
+    if unexpected_metadata_keys:
+        raise SystemExit("closed-review-unexpected-metadata-fields:" + ",".join(unexpected_metadata_keys))
+
+    findings = result.get("findings")
+    finding_levels = {"critical", "high", "medium", "low"}
+    if (
+        not isinstance(findings, dict)
+        or set(findings) != finding_levels
+        or any(findings[level] != 0 for level in finding_levels)
+    ):
+        raise SystemExit("closed-review-must-not-have-findings")
+
+    forbidden = sorted(
+        path.name
+        for path in out_dir.iterdir()
+        if path.name in CLOSED_FORBIDDEN_ARTIFACTS or path.name.startswith("specialist-")
+    )
+    if forbidden:
+        raise SystemExit("closed-review-has-detailed-review-artifacts:" + ",".join(forbidden))
+    for filename in sorted(CLOSED_REQUIRED_PR_ARTIFACTS):
+        if not (out_dir / filename).is_file():
+            raise SystemExit(f"closed-review-missing-pr-artifact:{filename}")
+
+    decision = metadata.get("close_decision")
+    expected_decision_keys = {
+        "schema_version",
+        "code",
+        "advisory_only",
+        "head_sha",
+        "summary",
+        "rationale",
+        "evidence",
+        "counterevidence_checked",
+    }
+    if not isinstance(decision, dict) or set(decision) != expected_decision_keys:
+        raise SystemExit("closed-review-invalid-decision-shape")
+    if decision.get("schema_version") != 1 or decision.get("advisory_only") is not True:
+        raise SystemExit("closed-review-invalid-decision-policy")
+    code = decision.get("code")
+    if code not in CLOSE_CODES:
+        raise SystemExit(f"closed-review-invalid-code:{code!r}")
+    head_sha = decision.get("head_sha")
+    if not isinstance(head_sha, str) or re.fullmatch(r"[0-9a-f]{40}", head_sha) is None:
+        raise SystemExit("closed-review-invalid-head-sha")
+    for key in ("summary", "rationale"):
+        value = decision.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise SystemExit(f"closed-review-missing-{key}")
+    evidence = decision.get("evidence")
+    if not isinstance(evidence, list) or len(evidence) < 2:
+        raise SystemExit("closed-review-evidence-required")
+    evidence_sources: set[str] = set()
+    for index, item in enumerate(evidence):
+        if not isinstance(item, dict) or set(item) != {"claim", "source"}:
+            raise SystemExit(f"closed-review-invalid-evidence-shape:{index}")
+        if not all(isinstance(item[key], str) and item[key].strip() for key in ("claim", "source")):
+            raise SystemExit(f"closed-review-empty-evidence:{index}")
+        evidence_sources.add(item["source"].strip())
+    if len(evidence_sources) < 2:
+        raise SystemExit("closed-review-distinct-evidence-required")
+    counterevidence = decision.get("counterevidence_checked")
+    if (
+        not isinstance(counterevidence, list)
+        or not counterevidence
+        or not all(isinstance(item, str) and item.strip() for item in counterevidence)
+    ):
+        raise SystemExit("closed-review-counterevidence-required")
+
+    pr_payload = _load_json(out_dir / "pr.json")
+    routing = _load_json(out_dir / "pr-routing.json")
+    target_branch = _load_json(out_dir / "target-branch.json")
+    checkout = _load_json(out_dir / "local-checkout.json")
+    if pr_payload.get("state") != "OPEN" or routing.get("pr_state") != "OPEN":
+        raise SystemExit("closed-review-pr-state-not-open")
+    if not isinstance(pr_payload.get("body"), str):
+        raise SystemExit("closed-review-pr-description-missing")
+    if head_sha != pr_payload.get("headRefOid") or head_sha != routing.get("head_oid"):
+        raise SystemExit("closed-review-head-sha-mismatch")
+    base_oid = routing.get("base_oid")
+    if base_oid != pr_payload.get("baseRefOid"):
+        raise SystemExit("closed-review-base-sha-mismatch")
+    if (
+        target_branch.get("status") != "fetched"
+        or target_branch.get("expected_base_oid") != base_oid
+        or target_branch.get("expected_base_is_ancestor") is not True
+    ):
+        raise SystemExit("closed-review-target-branch-invalid")
+    if (
+        checkout.get("status") != "checked-out"
+        or checkout.get("expected_head") != head_sha
+        or checkout.get("local_head") != head_sha
+        or checkout.get("head_matches_pr") is not True
+        or checkout.get("diff_source") != "verified-local-checkout"
+        or checkout.get("diff_base_oid") != base_oid
+        or checkout.get("diff_head_oid") != head_sha
+    ):
+        raise SystemExit("closed-review-local-checkout-invalid")
+
+    notes = (out_dir / "review-notes.md").read_text(encoding="utf-8")
+    if any(line.strip().startswith("|") for line in notes.splitlines()):
+        raise SystemExit("closed-review-table-forbidden")
+    evidence_notes = "\n".join(f"- `{item['source']}`: {item['claim']}" for item in evidence)
+    counterevidence_notes = "\n".join(f"- {item}" for item in counterevidence)
+    expected_notes = (
+        "# Review Decision: close\n\n"
+        "Source findings: not assessed\n\n"
+        "Detailed review: skipped\n\n"
+        f"Close reason: `{code}`\n\n"
+        f"Summary: {decision['summary']}\n\n"
+        f"Rationale: {decision['rationale']}\n\n"
+        f"Evidence:\n\n{evidence_notes}\n\n"
+        f"Counterevidence checked:\n\n{counterevidence_notes}\n\n"
+        "GitHub mutation: not performed."
+    )
+    if notes.strip() != expected_notes:
+        raise SystemExit("closed-review-notes-must-be-close-only")
+    confidence_gaps = metadata.get("confidence_gaps")
+    if not isinstance(confidence_gaps, list) or CLOSED_CONFIDENCE_GAP not in confidence_gaps:
+        raise SystemExit("closed-review-confidence-gap-missing")
+    confidence = result.get("confidence")
+    if not isinstance(confidence, int | float) or float(confidence) < 0.9:
+        raise SystemExit("closed-review-confidence-below-threshold")
+    online_summary = _load_json(out_dir / "online-review-summary.json")
+    if online_summary.get("pr_metadata_transport") == "public-https-fallback":
+        raise SystemExit("closed-review-public-fallback-insufficient")
+
+
 def _validate_confidence_gaps(result: dict[str, Any], metadata: dict[str, Any]) -> None:
     """Validate confidence gap metadata whenever review confidence is reported."""
     confidence_gaps = metadata.get("confidence_gaps")
@@ -901,6 +1073,11 @@ def _validate_result(
     review_status = metadata.get("review_status")
     if review_status == "unavailable":
         _validate_unavailable_result(out_dir, result, metadata, scope)
+        _validate_confidence_gaps(result, metadata)
+        _validate_confidence_recovery(result, metadata)
+        return
+    if review_status == "closed":
+        _validate_closed_result(out_dir, result, metadata, scope)
         _validate_confidence_gaps(result, metadata)
         _validate_confidence_recovery(result, metadata)
         return

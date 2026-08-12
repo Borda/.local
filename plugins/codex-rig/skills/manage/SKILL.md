@@ -127,6 +127,20 @@ Commit-output management also keeps the owning project's commit-response contrac
 ```text
 <type>(<scope>): <title>
 
+Changes:
+- <complete meaningful change description>
+
+Impact:
+- <concrete effect>
+
+Verification:
+- <exact check and result>
+
+Residual limits:
+- <remaining limit or "None known">
+
+---
+
 Co-authored-by: Codex <codex@openai.com>
 ```
 

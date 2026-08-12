@@ -3,15 +3,15 @@
 
 ## Purpose
 
-Let remediation locate an assessed prior review report that matches the canonical PR URL rather than guessing from timestamps alone. This prevents code-remediate from applying findings from a different pull request or from a review that never reached an assessed verdict.
+Let remediation locate an assessed prior review report that matches the canonical PR URL rather than guessing from timestamps alone. This prevents code-remediate from applying findings from a different pull request, a review that never reached an assessed verdict, or a terminal close disposition.
 
 ## Scope
 
-It scans local report directories and JSON identity files; it does not query GitHub, validate findings beyond excluding terminal-unavailable diagnostics, or change report content. Matching accepts a PR number, ``#number``, or exact normalized URL and checks both ``pr.json`` identity and result metadata.
+It scans local report directories and JSON identity files; it does not query GitHub, validate findings beyond classifying terminal results, or change report content. Matching accepts a PR number, ``#number``, or exact normalized URL and checks both ``pr.json`` identity and result metadata.
 
 ## Usage
 
-Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report, or ``python find-review-report.py --result <path>`` to reject a supplied unavailable diagnostic. The target search covers the requested reports root and, for the default current root, the legacy ``.reports/codex/review`` root as well.
+Run ``python find-review-report.py --target <pr-url-or-number>`` to select an assessed report, or ``python find-review-report.py --result <path>`` to reject a supplied unavailable or closed result. The target search covers the requested reports root and, for the default current root, the legacy ``.reports/codex/review`` root as well.
 
 ## Used by
 
@@ -23,7 +23,7 @@ It prints one matching assessed local review-artifact path, choosing the newest 
 
 ## Failure
 
-Absent PR identity, malformed report JSON, only unavailable diagnostics, or no matching artifact returns a non-zero status so remediation cannot consume unassessed findings. Terminal messages distinguish ``matching-review-unavailable-rerun-code-review`` from ``missing-matching-review-report`` and invalid assessed candidates.
+Absent PR identity, malformed report JSON, a current terminal close, only unavailable diagnostics, or no matching artifact returns a non-zero status so remediation cannot consume unassessed findings. Terminal messages distinguish unavailable, closed, missing, and invalid candidates.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _matches_target(target: str, number: str, url: str) -> bool:
 
 
 def review_result_kind(result_path: Path) -> str:
-    """Classify a result as assessed, unavailable, or invalid for remediation intake."""
+    """Classify a result as assessed, unavailable, closed, or invalid for remediation intake."""
     try:
         payload: dict[str, Any] = json.loads(result_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -62,6 +62,8 @@ def review_result_kind(result_path: Path) -> str:
         return "invalid"
     if metadata.get("review_status") == "unavailable":
         return "unavailable"
+    if metadata.get("review_status") == "closed":
+        return "closed"
     decision = metadata.get("review_decision")
     if not isinstance(decision, dict) or decision.get("recommendation") not in {
         "accept-as-is",
@@ -79,6 +81,8 @@ def require_assessed_review_result(result_path: Path) -> Path:
     kind = review_result_kind(result_path)
     if kind == "unavailable":
         raise LookupError("matching-review-unavailable-rerun-code-review")
+    if kind == "closed":
+        raise LookupError("matching-review-closed-not-remediable")
     if kind != "assessed":
         raise LookupError("invalid-review-report-rerun-code-review")
     return result_path
@@ -94,6 +98,7 @@ def find_latest_review_report(target: str, reports_dirs: list[Path]) -> Path:
     matches: list[Path] = []
     unavailable_matches = False
     invalid_matches = False
+    closed_matches: list[Path] = []
 
     for reports_dir in reports_dirs:
         for result_path in reports_dir.glob("*/result.json"):
@@ -109,12 +114,18 @@ def find_latest_review_report(target: str, reports_dirs: list[Path]) -> Path:
                 continue
             number, url = identity
             if _matches_target(normalized_target, number, url):
+                if kind == "closed":
+                    closed_matches.append(result_path)
+                    continue
                 if kind != "assessed":
                     invalid_matches = True
                     continue
                 matches.append(result_path)
 
     matches.sort(key=lambda path: path.parent.name, reverse=True)
+    closed_matches.sort(key=lambda path: path.parent.name, reverse=True)
+    if closed_matches and (not matches or closed_matches[0].parent.name > matches[0].parent.name):
+        raise LookupError("matching-review-closed-not-remediable")
     if not matches:
         if unavailable_matches:
             raise LookupError("matching-review-unavailable-rerun-code-review")

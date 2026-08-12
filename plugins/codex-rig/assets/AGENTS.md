@@ -231,7 +231,7 @@ Every local commit created by Codex must end with:
 
 This applies to every skill and workflow. Use Codex Rig's packaged `shared/commit-response-template.md` exactly for commit and summary messages; the `commit_attribution` setting and individual skill rules reinforce this project-wide requirement.
 
-After creating or describing commits, report each hash and title with behavior, affected surfaces, exact verification evidence, and residual limits. For multiple commits, explain the boundary between them. Keep commit messages concise; put the complete impact and evidence record in the user-facing summary.
+Every proposed or created commit message must use the packaged template's `Changes:`, `Impact:`, `Verification:`, and `Residual limits:` sections. List every meaningful change and its concrete effect, all executed checks and results, and any remaining risk or `None known`; extensive means complete and auditable rather than padded. After creating or describing commits, report each hash and title with behavior, affected surfaces, exact verification evidence, and residual limits. For multiple commits, explain the boundary between them.
 
 - Explicit request: commit after checks.
 - Implicit request: show proposed message; commit only after confirmation.

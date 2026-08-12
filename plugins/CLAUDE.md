@@ -44,6 +44,15 @@ Three compression tiers by reader: user-facing docs = verbose (full sentences, r
 
 Worked before/after example: `AUTHORING.md` §Comment Compression.
 
+## Code Density — Bash/Code Blocks
+
+Balance compression against readability in inline bash/code blocks — don't trade one for the other, tune both. Readability is carried by **variable names**, not by extra blank lines, comments, or nesting — `MATCH_REPORT`/`GATE_LINE` need no surrounding whitespace to stay legible; a cryptic name does. Compression is validated by **tokens actually used** (`$(( $(wc -c < file) / 4 ))`, per §Length Unit Convention), not by how short a snippet looks — cutting a line that adds no information (a blank separator, a nested nothing block, a nested loop a single `grep`/pipeline replaces) lowers the real number; renaming a variable to something shorter but vaguer does not, it just moves the cost onto whoever reads it next.
+
+- Prefer an early-exit guard (`[ -n "$X" ] || exit 0`) over wrapping the rest of the block in `if`.
+- Collapse a loop-with-break searching for one match into a single `grep`/`awk`/pipeline when the semantics are identical (mind edge cases — e.g. a glob expanding to zero files feeding a filter with no explicit input turns into a stdin hang).
+- Drop blank lines between statements that read as one step; keep one where it marks a genuine phase change.
+- Terse code never overrides correctness — a safety check (fail-closed on an unverifiable value) stays even if it costs a line.
+
 ## Length Unit Convention
 
 All size/length limits: **tokens primary, lines secondary** — format `N tokens (~M lines)` (e.g. `10K tokens (~500 lines)`); never lines-only or chars-only as sole unit. Token estimate: `$(( $(wc -c < file) / 4 ))`. Applies to per-file limits, per-turn budgets, envelope caps, consolidator thresholds. Rationale + full apply-list: `AUTHORING.md` §Length Unit Convention.

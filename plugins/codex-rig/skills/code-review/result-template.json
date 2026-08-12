@@ -49,8 +49,30 @@
     "independence_satisfied": true,
     "review_decision": {
       "rationale": "why the recommendation follows from findings, gates, and scope",
-      "recommendation": "accept-as-is|minor-changes|needs-more-work|reject|not-aligned",
+      "recommendation": "assessed only: accept-as-is|minor-changes|needs-more-work|reject|not-aligned",
       "summary": "1-3 sentence review outcome"
+    },
+    "review_status": "omit for assessed review; unavailable|closed for a terminal result",
+    "close_decision": {
+      "advisory_only": true,
+      "code": "FALSE_GOAL|BREAKING_CONDUCT|WRONG_SCOPE|WRONG_PROVENANCE|DUPLICATE|UNADDRESSED_REVERT|SPAM|ARCHITECTURE_VIOLATION",
+      "counterevidence_checked": [
+        "falsification check performed before closing"
+      ],
+      "evidence": [
+        {
+          "claim": "observed fact supporting the close code",
+          "source": "artifact, repository path, or authoritative URL"
+        },
+        {
+          "claim": "independent observed fact supporting the same close code",
+          "source": "a distinct artifact, repository path, or authoritative URL"
+        }
+      ],
+      "head_sha": "verified current PR head",
+      "rationale": "why the close code follows from the evidence",
+      "schema_version": 1,
+      "summary": "1-3 sentence close outcome"
     },
     "review_input_sha256": "sha256 of diff.patch",
     "review_run_id": "stable ID for this review execution",

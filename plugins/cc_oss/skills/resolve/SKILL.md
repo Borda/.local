@@ -202,6 +202,33 @@ echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}"  # timeou
 - `MODE="pr"` → continue Step 2
 - `MODE="comment-dispatch"` → branch safety check before Step 12: `export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"; IFS= read -r WT_ENABLED < "${TMPDIR:-/tmp}/oss-resolve-worktree-${CSID}" 2>/dev/null; [ "$WT_ENABLED" = "true" ] || WT_ENABLED=false; CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }; [ "$WT_ENABLED" = "true" ] && echo "⚠ --worktree has no effect in comment-dispatch mode"` → jump to Step 12
 
+### Reject-gate check (all modes with a known `PR_NUMBER`)
+
+`oss:review`'s acceptance gate can reject a PR at the premise level — `Gate: REJECT_<GROUND> @<sha>`, one of `GOAL`/`CONDUCT`/`SCOPE`/`LICENSE`/`DUPLICATE`/`REVERTED`/`SPAM`/`PHILOSOPHY` (see `oss:review` SKILL.md Stage 1 for what each means). That's a premise problem, not something `/oss:resolve` fixes by editing code — never start the fix pipeline on a PR still in that state, regardless of which of the 8 grounds fired. `Gate: BLOCK` and anything else (`PASS`, or no `Gate:` field at all — pre-gate reports) impose no restriction here; those are ordinary fixable findings, exactly what resolve exists for.
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PR_NUMBER < "${TMPDIR:-/tmp}/resolve-pr-number-${CSID}" 2>/dev/null || PR_NUMBER=""
+[ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "n/a" ] || exit 0
+REPORTS=$(ls -t .reports/review/*/review-report.md 2>/dev/null)
+[ -n "$REPORTS" ] || exit 0
+MATCH_REPORT=$(grep -lE "^PR: *#${PR_NUMBER}\$" $REPORTS 2>/dev/null | head -1)  # newest-first (ls -t), first match wins
+[ -n "$MATCH_REPORT" ] || exit 0
+GATE_LINE=$(grep -E '^Gate:' "$MATCH_REPORT" | head -1)
+case "$GATE_LINE" in
+*REJECT_*)
+    REJECT_SHA=$(echo "$GATE_LINE" | grep -oE '@[0-9a-f]{7,40}' | tr -d '@')
+    CURRENT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
+    if [ -n "$REJECT_SHA" ] && [ -n "$CURRENT_SHA" ] && [ "$REJECT_SHA" != "$CURRENT_SHA" ]; then
+        echo "⚠ PR #$PR_NUMBER rejected ($GATE_LINE), head moved $REJECT_SHA→$CURRENT_SHA — state changed, proceeding. Re-run /oss:review $PR_NUMBER after to confirm the ground is gone."
+    else
+        echo "⛔ BLOCKED — PR #$PR_NUMBER rejected ($GATE_LINE), head unchanged (or unverifiable) — premise problem, resolve can't fix it. Address the ground, then /oss:review $PR_NUMBER again."
+        exit 1
+    fi
+    ;;
+esac
+```
+
 ## Step 1b: Create all workflow tasks upfront
 
 After `PR_NUMBER` and `MODE` resolved above, create all major-step tasks now.

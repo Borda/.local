@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.2
+
+- Add `$code-remediate review` for current-session report-mode remediation: reuse the latest assessed `code-review` artifact without refreshing PR evidence or online comments, and fail closed when that artifact is unavailable.
+- Add an evidence-backed PR `close` gate before detailed code review, with eight explicit reason codes, false-positive safeguards, blocking-default guidance, validator-enforced terminal artifacts, and remediation rejection for closed results.
+- Require every proposed or created Codex commit to include complete `Changes`, `Impact`, `Verification`, and `Residual limits` sections so the commit itself preserves behavioral scope, concrete effects, executed evidence, and remaining uncertainty.
+- Restore calibration coverage for the shipped escalation-ledger CLI by registering it in the shared helper self-test roster and restoring its executable package mode.
+
 ## 0.7.1
 
 - Add a bounded public HTTPS PR metadata fallback through the allowlisted, read-only `github_read.py` boundary for `github-network`, `github-auth`, `github-rate-limit`, and `command-timeout` failures; raw GitHub CLI stderr remains unpersisted and terminal diagnostics may include a safe `failure_reason` enum.

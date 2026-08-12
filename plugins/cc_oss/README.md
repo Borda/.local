@@ -224,6 +224,10 @@ Tiered parallel review of GitHub PR. Input always PR number.
 Tier 0  git diff --stat
         Scope detection — exits only if no Python or doc files changed
 
+        Acceptance gate — Stage 1 (reject, terminal) then Stage 2 (block,
+        non-terminal); reads PR description + known CI status before any
+        agent spawns. Full criteria: "Review stages" below.
+
 Tier 1  Codex pre-pass (~60 seconds)
         Independent diff review; surfaces obvious issues first
         If blocking issue found → report immediately, skip Tier 2
@@ -251,6 +255,45 @@ Tier 2  Parallel specialist agents (requires foundry plugin)
 
         --reply: oss:shepherd drafts contributor-facing comment from consolidated report (written to .temp/; user posts)
 ```
+
+**Review stages (acceptance gate):** `Gate:` header field is two states beyond `PASS` — reject is terminal (skips every tier, no agent spawned), block is not (full fanout still runs, the report just surfaces the fixable gap up front instead of burying it after N findings). Test: *could revising the code, not the goal, resolve this?* Yes → block. No → reject.
+
+<details>
+<summary><strong>Stage 1 — Reject (terminal, 8 grounds)</strong></summary>
+
+Aligned with close-without-merge practice in K8s/CPython/Rust/Django contributing docs. Every ground needs affirmative evidence, never suspicion alone.
+
+| Ground              | Test                                                                                                                                                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REJECT_GOAL`       | Stated goal factually/technically wrong regardless of diff quality — e.g. "raise this [0,1]-bounded metric above 1.0". Disagreeing with the approach is a normal review finding, not this.                                                                                |
+| `REJECT_CONDUCT`    | By-design adversarial/malicious contribution or Code of Conduct violation. Confirmed via a shared `foundry:challenger` check before rejecting — accidental (or confidence \<0.7) falls through as a normal finding.                                                       |
+| `REJECT_SCOPE`      | Out of project scope / against roadmap, maintainers already decided against this direction. Evidence: a `wontfix`/`invalid`/`declined`/`out-of-scope` label already applied, or an explicit "out of scope" statement in `CONTRIBUTING.md`/an ADR the PR directly matches. |
+| `REJECT_LICENSE`    | Incompatible license copied in, or plagiarized/copied source with no right to submit it. Not the same as a missing CLA/DCO signature (that's Stage 2, fixable). Confirmed via the same shared `foundry:challenger` check as conduct.                                      |
+| `REJECT_DUPLICATE`  | Another PR already merged solving this, or the linked issue already fixed upstream. Evidence: the linked issue is closed by a different, already-merged PR.                                                                                                               |
+| `REJECT_REVERTED`   | Reintroduces a previously reverted change without addressing why it was reverted. Evidence: a matching revert commit exists **and** the PR body doesn't reference or address it.                                                                                          |
+| `REJECT_SPAM`       | Spam/low-effort/AI-slop — no real change, hacktoberfest-farming pattern. Evidence needs both a trivially low-value diff **and** a generic/templated description — either alone isn't enough (a genuine one-line fix looks low-value too).                                 |
+| `REJECT_PHILOSOPHY` | Contradicts a documented design principle, not just a style preference — e.g. adding a GUI to a project whose docs state "CLI-only by design". Requires a citable doc line.                                                                                               |
+
+</details>
+
+<details>
+<summary><strong>Stage 2 — Block (non-terminal, full review still runs)</strong></summary>
+
+Default `[blocking]` tag per finding category — judgment still required, not automatic:
+
+| Category                                                                   | Default                                        | Nuance                                                                                                                                                                                             |
+| -------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI red / failing check                                                     | blocking                                       | Only a **major**/required-check failure. A single flaky-looking rerun blip is noted, not auto-blocking.                                                                                            |
+| Missing test coverage for new/changed logic                                | blocking                                       | —                                                                                                                                                                                                  |
+| Accidental security bug (careless, not by-design)                          | blocking                                       | By-design version is Stage 1 `REJECT_CONDUCT`, not this.                                                                                                                                           |
+| Breaking API change, no deprecation/migration path                         | blocking                                       | —                                                                                                                                                                                                  |
+| Missing docs for new/changed public behavior                               | blocking                                       | Missing CHANGELOG entry alone is **not** blocking — can land in a follow-up (`/oss:release`).                                                                                                      |
+| Perf regression                                                            | contextual                                     | A regression vs recent releases with no offsetting reason is bad; not blocking when the prior speed only existed because of a correctness bug and the "regression" is the cost of fixing it right. |
+| Merge conflicts                                                            | **not** blocking                               | `/oss:resolve`'s job — review doesn't gate on it.                                                                                                                                                  |
+| Incomplete implementation (TODOs in changed paths, missing error handling) | blocking                                       | —                                                                                                                                                                                                  |
+| Missing CLA/DCO signature                                                  | blocking, **only if the project requires one** | Check first — CLA-assistant/DCO-check bot status, or a signing mandate in `CONTRIBUTING.md`. No such requirement → not applicable.                                                                 |
+
+</details>
 
 **Typical scenarios:**
 
@@ -287,6 +330,8 @@ ______________________________________________________________________
 Apply review findings to codebase. Reads live PR comments, saved review report, or both — deduplicates, resolves conflicts, implements fixes.
 
 **Purpose:** Close gap between "reviewer said X" and "X in code." One command: open findings → committed fixes.
+
+**Reject-gate interlock:** if the newest `/oss:review` report for this PR carries `Gate: REJECT_<GROUND>` (any of the 8 grounds under "/review" above), resolve refuses to start unless the PR's head commit has changed since that review — a rejected premise isn't something a code fix resolves. `Gate: BLOCK` (e.g. red CI) and everything else proceed normally — resolve is exactly the fix path for those.
 
 **Invocation:**
 

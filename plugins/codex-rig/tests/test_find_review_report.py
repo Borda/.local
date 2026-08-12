@@ -40,6 +40,21 @@ def _write_report(root: Path, timestamp: str, *, unavailable: bool) -> Path:
     return result_path
 
 
+def _write_closed_report(root: Path, timestamp: str) -> Path:
+    """Create a PR-identified terminal close result that remediation must not consume."""
+    report_dir = root / timestamp
+    report_dir.mkdir()
+    (report_dir / "pr.json").write_text(
+        json.dumps({"number": 123, "url": "https://github.com/acme/widgets/pull/123"}), encoding="utf-8"
+    )
+    result_path = report_dir / "result.json"
+    result_path.write_text(
+        json.dumps({"metadata": {"scope": "pr", "review_status": "closed", "close_decision": {"code": "DUPLICATE"}}}),
+        encoding="utf-8",
+    )
+    return result_path
+
+
 def test_newer_unavailable_report_does_not_shadow_older_assessed_review(tmp_path: Path) -> None:
     """Keep automatic remediation bound to findings that were actually assessed."""
     finder = _load_finder()
@@ -77,3 +92,22 @@ def test_malformed_result_is_rejected_as_remediation_input(tmp_path: Path) -> No
 
     with pytest.raises(LookupError, match="invalid-review-report-rerun-code-review"):
         finder.require_assessed_review_result(malformed)
+
+
+def test_explicit_closed_report_is_rejected_as_remediation_input(tmp_path: Path) -> None:
+    """Do not treat a terminal proposal-level close decision as source findings."""
+    finder = _load_finder()
+    closed = _write_closed_report(tmp_path, "2026-08-10T11-00-00Z")
+
+    with pytest.raises(LookupError, match="matching-review-closed-not-remediable"):
+        finder.require_assessed_review_result(closed)
+
+
+def test_newer_closed_report_blocks_older_assessed_review(tmp_path: Path) -> None:
+    """Prevent remediation from reviving stale findings after a newer close decision."""
+    finder = _load_finder()
+    _write_report(tmp_path, "2026-08-10T10-00-00Z", unavailable=False)
+    _write_closed_report(tmp_path, "2026-08-10T11-00-00Z")
+
+    with pytest.raises(LookupError, match="matching-review-closed-not-remediable"):
+        finder.find_latest_review_report("123", [tmp_path])

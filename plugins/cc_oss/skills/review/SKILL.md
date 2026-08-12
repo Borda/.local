@@ -385,6 +385,80 @@ Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`
 
 `ISSUE_NUMS` empty → skip issue checks downstream.
 
+### Acceptance gate (PR mode only) — validate reject, then block
+
+Skip if `DIRECT_PATH_MODE=true`. Two ordered stages, cheap, before Step 2's expensive fanout. **Reject is terminal** — no code change fixes the premise, pipeline stops. **Block is not** — the premise is sound, current diff state has a fixable gap (red CI, a typo, a flaky test) — full fanout still runs, the report just surfaces the fixable gap up front instead of burying it in consolidator output. Test to pick the stage: *"could revising the code, not the goal, resolve this?"* Yes → block. No → reject.
+
+> **Why this gate exists**: Step 2's fanout costs ~120,851 tok/agent, up to ~11 agents — never spend that on a PR whose premise is already fatal. This gate must stay cheap (a `gh pr view` + at most one `foundry:challenger` call) — never grow it into anything resembling the full fanout it exists to avoid paying for.
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+IFS= read -r PR_LABELS < "${TMPDIR:-/tmp}/oss-review-pr-labels-${CSID}" 2>/dev/null || PR_LABELS=""
+IFS= read -r CHANGED_FILES < "${TMPDIR:-/tmp}/oss-review-changed-files-${CSID}" 2>/dev/null || CHANGED_FILES=""
+PR_BODY=$(gh pr view $CLEAN_ARGS --json body --jq .body 2>/dev/null)  # timeout: 6000
+PR_HEAD_SHA=$(gh pr view $CLEAN_ARGS --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
+echo "$PR_BODY" > "${TMPDIR:-/tmp}/oss-review-pr-body-${CSID}"
+echo "$PR_HEAD_SHA" > "${TMPDIR:-/tmp}/oss-review-pr-head-sha-${CSID}"
+
+# cheap mechanical signals for grounds 3/5/6 below — reuses data already fetched, one small gh call per linked issue
+SCOPE_LABEL_HIT=false
+case ",${PR_LABELS}," in *,wontfix,*|*,invalid,*|*,declined,*|*,out-of-scope,*) SCOPE_LABEL_HIT=true ;; esac
+
+DUPLICATE_HIT=false; DUPLICATE_REASON=""
+for N in $ISSUE_NUMS; do
+    _ISTATE=$(gh issue view "$N" --json state --jq .state 2>/dev/null)  # timeout: 6000
+    if [ "$_ISTATE" = "CLOSED" ]; then
+        _CLOSER=$(gh issue view "$N" --json closedByPullRequestsReferences --jq '.closedByPullRequestsReferences[0].number // empty' 2>/dev/null)  # timeout: 6000
+        [ -n "$_CLOSER" ] && [ "$_CLOSER" != "$CLEAN_ARGS" ] && { DUPLICATE_HIT=true; DUPLICATE_REASON="issue #$N already closed by #$_CLOSER"; }
+    fi
+done
+
+REVERT_CANDIDATE=$(git log --all --grep='^Revert' --oneline -- $CHANGED_FILES 2>/dev/null | head -3)  # timeout: 10000
+echo "scope_label=$SCOPE_LABEL_HIT duplicate=$DUPLICATE_HIT revert_candidate=${REVERT_CANDIDATE:+yes}"
+```
+
+**Description drift caution** — `PR_BODY` is a snapshot written at PR-open time; it drifts from what the diff actually does as commits land (further changes, or fixes pushed in response to earlier review feedback) and nobody edits the description to match. Judge every ground below against **current diff behavior**, not the stated text alone — read `CHANGED_FILES`/diff intent (already fetched in Step 0/1) alongside `PR_BODY`. Body says one thing, diff does another → trust the diff; a stale description is not itself a reject ground, note the mismatch in `Summary:` if it's material.
+
+**Stage 1 — Reject (terminal).** Eight grounds — aligned with close-without-merge practice in K8s/CPython/Rust/Django contributing docs. Every ground needs affirmative evidence, never suspicion alone — disagreement-with-approach is a `NEEDS_WORK`/`[blocking]` finding, stage 2 or full review territory, never a reject. Grounds 1–2 already had detail; 3–8 are the agreed expansion:
+
+1. **REJECT_GOAL** — stated goal factually/technically wrong even if well-intentioned. Test: does the goal — read from `PR_BODY`, cross-checked per the drift caution above — contradict a known invariant, spec, or domain fact — e.g. "raise this accuracy metric above 1.0" when the metric is bounded `[0,1]` by definition, goal is unreachable no matter how the code changes. Judge from PR description + package docs/spec, not the diff's mechanics. Orchestrator judgment only — no agent spawn.
+2. **REJECT_CONDUCT** — contribution by design adversarial, malicious, or a Code of Conduct violation (not an accidental bug). Never reject on suspicion alone: requires the `foundry:challenger` confirmation below.
+3. **REJECT_SCOPE** — out of project scope / against roadmap, maintainers already decided against this direction. Evidence: `SCOPE_LABEL_HIT=true` (maintainer already triaged `wontfix`/`invalid`/`declined`/`out-of-scope`), or an explicit "out of scope" statement in `CONTRIBUTING.md`/an ADR that the PR's stated intent directly matches — grep for it, don't assume. No documented evidence → not a reject, at most a `NEEDS_WORK` scope concern. Orchestrator judgment only.
+4. **REJECT_LICENSE** — license/provenance conflict: incompatible license copied in (e.g. GPL source pasted into a permissive-licensed project), or plagiarized/copied source the contributor has no right to submit. Not the same as a missing CLA/DCO signature — that's Stage 2 `[blocking]`, fixable by signing; this is the source itself being unlicensable. Requires the `foundry:challenger` confirmation below when suspected (explicit "ported from `<project>`" in `PR_BODY`, or a license header in the diff that conflicts with this repo's license).
+5. **REJECT_DUPLICATE** — another PR already merged solving this, or the linked issue already fixed upstream. Evidence: `DUPLICATE_HIT=true` (`$DUPLICATE_REASON`). No `ISSUE_NUMS` linked or issue still open → not this ground.
+6. **REJECT_REVERTED** — reintroduces a previously reverted change without addressing why it was reverted. Evidence: `REVERT_CANDIDATE` non-empty (a prior revert touched the same files) **and** `PR_BODY` doesn't reference or address that revert/its reason — a candidate alone is not enough, read the revert commit message and compare intent before rejecting. Orchestrator judgment only.
+7. **REJECT_SPAM** — spam/low-effort/AI-slop: no real change, hacktoberfest-farming pattern. Evidence needs both: diff is trivially low-value (whitespace/punctuation-only across the changed lines, no logic touched) **and** `PR_BODY` is generic/templated with no specifics tying it to this repo. Either alone is not enough — a genuine one-line critical fix is low-value-looking but not spam; judge the pairing, not the diff size alone. Orchestrator judgment only.
+8. **REJECT_PHILOSOPHY** — contradicts a documented design principle (not a style preference). Evidence: an explicit principle stated in `README.md`/`CONTRIBUTING.md`/an ADR that the PR's intent directly violates — e.g. adding a GUI to a project whose docs state "CLI-only by design". Cite the exact doc line in `Summary:` — no citable line, no reject. Orchestrator judgment only.
+
+**Challenger confirmation** (grounds 2 and 4 only — the two where accusing wrongdoing carries real reputational/legal stakes, so both share one call): only spawn when the orchestrator's own read of `PR_BODY`/diff/`CHANGED_FILES` raised a concrete suspicion for either — never spawn speculatively on every PR. Prompt: "Investigate PR #<N> (body: <PR_BODY>, diff: changed files) for two things: (1) is its intent a by-design malicious/adversarial contribution or Code of Conduct violation, vs. an accidental mistake; (2) is any changed content plagiarized or under an incompatible license the contributor has no right to submit, vs. original/properly licensed work. Read the diff and linked issue if any. Return ONLY: `{\"conduct\":{\"verdict\":\"BY_DESIGN\"|\"ACCIDENTAL\"|\"N/A\",\"confidence\":0.N},\"license\":{\"verdict\":\"CONFLICT\"|\"CLEAN\"|\"N/A\",\"confidence\":0.N},\"rationale\":\"<one sentence per flagged verdict>\"}`". `ACCIDENTAL`/`CLEAN`, `N/A`, or `confidence <0.7` on either axis → that ground is not a reject, falls through as a normal finding.
+
+Any ground confirmed:
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r PR_HEAD_SHA < "${TMPDIR:-/tmp}/oss-review-pr-head-sha-${CSID}" 2>/dev/null || PR_HEAD_SHA=""
+{ echo "GATE=REJECT_GOAL"; echo "GATE_SHA=${PR_HEAD_SHA}"; echo "GATE_REASON=<one-line evidence for the ground that fired>"; } > "${TMPDIR:-/tmp}/oss-review-gate-${CSID}"  # substitute the actual REJECT_<GROUND> code (GOAL/CONDUCT/SCOPE/LICENSE/DUPLICATE/REVERTED/SPAM/PHILOSOPHY)
+```
+<!-- policy-sibling: plugins/cc_oss/skills/review/SKILL.md, plugins/cc_oss/skills/resolve/SKILL.md — `Gate: REJECT_* @<sha>` line format, both sides must agree -->
+Skip Step 2–4 entirely. Orchestrator writes `$REPORT_DIR/review-report.md` itself (Write tool, same `---` header format as `templates/review-report.md`) with `Gate: REJECT_<GROUND> @<PR_HEAD_SHA>` (the `@<sha>` suffix is load-bearing — `/oss:resolve` parses it to refuse restarting on an unchanged, rejected PR; never omit it, regardless of which of the 8 grounds fired), `Outcome: N/A — rejected at gate`, `Summary:` stating the specific evidence (factual contradiction, challenger rationale, label/issue/revert citation, doc line quoted), `Next steps:` recommends closing the PR with that rationale (drafted for user, never auto-posted — `gh pr close`/comment forbidden by public-github.md read-only policy). Then jump straight to Step 5b's print sequence and Step 7's gate — no consolidator spawn needed, nothing to consolidate.
+
+No ground confirmed → proceed to Stage 2.
+
+**Stage 2 — Block (non-terminal).** Reuses `CI_RED`/`CI_FAILING_CHECKS` already computed in the CI STATUS check above — no new fetch. Red CI is the only mechanically-cheap block signal available pre-fanout; a typo or a flaky test can't be told apart from a real regression without actually reading the diff or a rerun, so those stay classification guidance for the full-review agents (below), not a pre-fanout check.
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+if [ "${CI_RED:-false}" = "true" ]; then
+    { echo "GATE=BLOCK"; echo "GATE_REASON=ci-red: ${CI_FAILING_CHECKS}"; } > "${TMPDIR:-/tmp}/oss-review-gate-${CSID}"
+else
+    { echo "GATE=PASS"; echo "GATE_REASON="; } > "${TMPDIR:-/tmp}/oss-review-gate-${CSID}"
+fi
+```
+
+`GATE=BLOCK` does **not** skip Step 2 — proceed to full fanout regardless, `Gate: BLOCK` is carried into the Step 5 report header alongside the normal `Outcome:` so the fixable blocker is visible immediately, not buried after N findings.
+
+**Classification guidance for full-review agents and the consolidator** (applies once fanout runs, whichever gate state): tag a finding `[blocking]` only when it is (a) objectively fixable by more commits and (b) actually prevents merge until resolved. Design/architecture disagreements are never `[blocking]` — those are `[medium]`/`[high]` `NEEDS_WORK` findings, and a goal-level disagreement should have been caught at Stage 1, not here. Per-category default: `<notes>` §Block-tier catalogue — canonical, don't re-derive per run.
+
 ### Direct report fast-path
 
 `DIRECT_PATH_MODE=true`:
@@ -619,6 +693,15 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 
 **IMPORTANT**: expand `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt. Un-expanded variables create wrong paths. The `## Source Files` footnote `Glob(... path="<EXPANDED_RUN_DIR>")` path must also be expanded to the literal `$RUN_DIR` value.
 
+Reload the Stage-2 gate verdict (Check 41: fresh shell — set by the acceptance gate in Step 1, must survive to here):
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+[ -f "${TMPDIR:-/tmp}/oss-review-gate-${CSID}" ] && . "${TMPDIR:-/tmp}/oss-review-gate-${CSID}"
+GATE="${GATE:-PASS}"; GATE_REASON="${GATE_REASON:-}"
+echo "Gate: $GATE ${GATE_REASON:+($GATE_REASON)}"
+```
+A reject-gate run never reaches this point (Step 5 is skipped entirely) — `GATE` here is always `PASS` or `BLOCK`.
+
 Select consolidator agent by `PR_TYPE` (lighter model for non-logic PRs):
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -641,7 +724,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r REVIEW_SKILL_DIR < "${TMPDIR:-/tmp}/review-skill-dir-${CSID}" 2>/dev/null || REVIEW_SKILL_DIR=""
 cat "$REVIEW_SKILL_DIR/templates/consolidator-prompt.md"  # timeout: 5000
 ```
-Template (loaded above). Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values; leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
+Template (loaded above). Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>`, `<GATE>` with literal expanded values (`<GATE>` = `$GATE` reloaded above, `PASS` or `BLOCK`); leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
 
 Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded:
 Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.`
@@ -769,16 +852,31 @@ Scenarios:
 3. --reply mode: existing review report + --reply flag → skip to Step 8, no agents spawned
 4. DOCS_TYPING scope: PR with only annotation-type .py changes (no logic) → Step 0 sets PR_TYPE=DOCS_TYPING, CHALLENGE_ENABLED=false, CONSOLIDATOR_AGENT=foundry:linting-expert; only linting-expert spawned; Step 5 uses linting-expert consolidator.
 5. TESTS_CI scope: PR with only test files + CI config → Step 0 sets PR_TYPE=TESTS_CI, CHALLENGE_ENABLED=false, CONSOLIDATOR_AGENT=foundry:qa-specialist; qa-specialist + linting-expert spawned; Step 5 uses qa-specialist consolidator.
+6. REJECT_GOAL: PR body states "make recall exceed 1.0" as the goal → gate finds the metric bounded [0,1] by spec, contradicts stated goal regardless of diff quality → skip Step 2–4, orchestrator writes report with Gate=REJECT_GOAL, no agents spawned.
+7. REJECT_CONDUCT: PR diff silently exfiltrates env vars to an external URL, body claims unrelated bugfix → gate spawns foundry:challenger, confirms `conduct.verdict=BY_DESIGN` at confidence ≥0.7 → skip Step 2–4, Gate=REJECT_CONDUCT. Contrast: same diff pattern but challenger returns `ACCIDENTAL` (e.g. leftover debug logging) → treat as normal `[critical]` finding, proceed to full fanout.
+8. REJECT_DUPLICATE: PR body says "Closes #40", `gh issue view 40` shows `state=CLOSED` closed by a different, already-merged PR → `DUPLICATE_HIT=true` → skip Step 2–4, Gate=REJECT_DUPLICATE, no agents spawned, no challenger needed (mechanical evidence, orchestrator judgment only).
 
 </calibration>
 
 <notes>
 
-- **PR review acceptance criteria — canonical here**: oss:shepherd cross-references these criteria; don't duplicate in shepherd. Shepherd defers to this file for acceptance thresholds, severity definitions.
+- **PR review acceptance criteria — canonical here**: oss:shepherd cross-references these criteria; don't duplicate in shepherd. Shepherd defers to this file for acceptance thresholds, severity definitions. Header is two-part: `Gate:` (`PASS` / `BLOCK` / `REJECT_<GROUND>` where GROUND is one of the 8 in Stage 1 — GOAL, CONDUCT, SCOPE, LICENSE, DUPLICATE, REVERTED, SPAM, PHILOSOPHY; reject is terminal and skips fanout, block isn't) and `Outcome:` (`APPROVE` / `NEEDS_WORK` / `REQUEST_CHANGES` from the full fanout, or `N/A — rejected at gate` when `Gate` is a `REJECT_*`). See Acceptance gate (Step 1).
+- **Block-tier catalogue** — per-category default for the `[blocking]` tag, applied by full-review agents once fanout runs (not automatic, judgment still required per row):
+  | Category | Default | Nuance |
+  | --- | --- | --- |
+  | CI red / failing check | `[blocking]` | only for a **major** failure (real required-check failure); a single flaky-looking rerun blip stays noted, not auto-blocking — see flaky-test rule above |
+  | Missing test coverage for new/changed logic | `[blocking]` | — |
+  | Accidental security bug (careless, not by-design) | `[blocking]` | by-design version is Stage 1 `REJECT_CONDUCT`, not this |
+  | Breaking API change, no deprecation/migration path | `[blocking]` | — |
+  | Missing docs for new/changed public behavior | `[blocking]` | missing CHANGELOG entry alone is **not** blocking — that can land in a follow-up (`/oss:release`), never gates merge by itself |
+  | Perf regression | **contextual, not automatic** | depends on scope: regressing 2× vs recent releases with no offsetting reason is bad; not blocking when the old speed only existed because of a prior correctness bug and the "regression" is the cost of doing it right — agent must state which case applies, not just report the delta |
+  | Merge conflicts | **not** `[blocking]` | out of review's scope — `/oss:resolve` handles it, oss:review doesn't gate on it |
+  | Incomplete implementation (TODOs in changed paths, missing error handling on new logic) | `[blocking]` | — |
+  | Missing CLA/DCO signature | `[blocking]` **only if the project requires one** | check first — CLA-assistant/DCO-check bot status, or a signing mandate in `CONTRIBUTING.md`; no such requirement in this project → not applicable, don't invent the rule |
 - Critical issues always surfaced regardless of scope
 - Skip sections with no issues — no padding. Isolated code without git context → skip OSS Checks and Performance Concerns unless evidence of perf issues (nested loops, I/O in tight loops) or OSS concerns (hardcoded secrets, new deps).
 - **Signal-to-noise gate**: Function/class ≤50 lines with 1–2 critical/high issues → max 2 additional medium/low findings. Rest as `[nit]` in "Minor Observations". First 3 findings reader sees = most impactful.
-- PR mode: check CI first — red → report without full review
+- PR mode: CI red sets `Gate: BLOCK` (Step 1) — review still proceeds through full fanout, the block is surfaced up front in the header, never a reason to skip review
 - Blocking issues need explicit `[blocking]` prefix
 - Follow-up chains:
   - `[blocking]` bugs or regressions → `/develop:fix` (requires `develop` plugin) to reproduce with test, apply targeted fix

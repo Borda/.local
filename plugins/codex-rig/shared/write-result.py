@@ -278,7 +278,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         "artifact_path": args.artifact_path,
         "metadata": metadata,
     }
-    if metadata.get("review_status") != "unavailable":
+    if metadata.get("review_status") not in {"unavailable", "closed"}:
         payload["recommendations"] = parse_items(args.recommendations)
         payload["follow_up"] = parse_items(args.follow_up)
     return payload

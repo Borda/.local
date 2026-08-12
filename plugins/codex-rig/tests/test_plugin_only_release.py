@@ -378,6 +378,21 @@ def test_commit_contract_requires_descriptive_user_facing_handoffs() -> None:
         assert required in contract
 
 
+def test_commit_contract_requires_detailed_changes_and_impacts() -> None:
+    """Prevent terse commit bodies that hide behavior or operational impact."""
+    contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    for required in (
+        "changes:",
+        "impact:",
+        "verification:",
+        "residual limits:",
+        "every meaningful behavioral, interface, workflow, policy, test, documentation, packaging, or operational change",
+        "state the concrete user, developer, runtime, compatibility, or maintenance effect",
+        "generic impact claims",
+    ):
+        assert required in contract
+
+
 def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
     """Keep calibration fixtures aligned with the recurrence escalation contract."""
     cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]

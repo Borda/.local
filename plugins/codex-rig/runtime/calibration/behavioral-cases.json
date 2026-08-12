@@ -302,6 +302,26 @@
     },
     {
       "expected_findings": [
+        "close-evidence-insufficient",
+        "ai-origin-not-close-ground",
+        "detailed-review-fallthrough-missing"
+      ],
+      "id": "code-review-close-spam-false-positive",
+      "prompt": "Assess an open PR review that stops before detailed source review with SPAM solely because the patch is small, lacks tests, and appears AI-generated, without two decisive evidence sources, a counterevidence check, or a project-specific reason showing no bona fide change.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "closed-review-not-remediable",
+        "stale-assessed-review-reused",
+        "close-disposition-misclassified-as-findings"
+      ],
+      "id": "code-remediate-closed-review-intake",
+      "prompt": "Assess remediation that receives a newer review_status=closed result with no source findings, ignores it, falls back to an older assessed review, and edits code from those stale findings.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
         "supplemental-thread-failure-blocks-source-review",
         "fork-checkout-fallback-missing",
         "verified-local-diff-missing",
@@ -984,6 +1004,17 @@
       ],
       "id": "manage-explicit-commit-request",
       "prompt": "Assess an agent run where the user explicitly says 'commit this', all relevant checks pass, the agent uses the required commit-message template, and then creates the local commit without asking again.",
+      "target": "manage"
+    },
+    {
+      "expected_findings": [
+        "commit-change-description-incomplete",
+        "commit-impact-missing",
+        "commit-verification-missing",
+        "commit-residual-limits-missing"
+      ],
+      "id": "manage-terse-commit-body",
+      "prompt": "Assess a proposed Codex commit whose body says only 'update review flow' before the co-author trailer. It omits meaningful change coverage, concrete impacts, executed verification results, and residual limits.",
       "target": "manage"
     },
     {
