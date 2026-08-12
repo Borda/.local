@@ -24,7 +24,7 @@ BENCHMARKS = ROOT / "benchmarks"
 OUTPUT_MANIFEST = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 POLICY_SEED = BENCHMARKS / "policy" / "provider-parity-methodology.json"
 POLICY_SEED_SHA256 = "1e5b1cad389513db9402ca2da39f58c1ff9b7cb36b0fdc4a23ce03886e12f1f1"
-EXPERIMENT_REVISION = "provider-parity-agent-worktree-executable-2026-08-10"
+EXPERIMENT_REVISION = "provider-parity-historical-patch-executable-2026-08-12"
 TASKS_BENCH = "benchmarks/suites/tasks-bench.json"
 TASKS_AGENTIC = "benchmarks/suites/tasks-agentic.json"
 CANONICAL_TARGET = (Path(os.sep) / "tmp" / "codemap-provider-parity-pl-2.6.5").resolve()
@@ -86,8 +86,8 @@ SUITE_METADATA: dict[str, dict[str, str]] = {
         "root_shape": "bare_list",
     },
     "benchmarks/suites/tasks-patch.json": {
-        "current_consumer": "run-claude-structural.py patch extension",
-        "generation_provenance": "committed_real_issue_prompts_reference_patch_and_test_oracle",
+        "current_consumer": "run-codex-structural.py task family PT; run-claude-agentic.py --study patch",
+        "generation_provenance": "committed_real_issue_prompts_hidden_reference_patch_test_fixture_and_executable_oracle",
         "root_shape": "object_with_tasks",
     },
     "benchmarks/suites/tasks-readcrop.json": {
@@ -246,6 +246,11 @@ def _artifact_hashes() -> dict[str, str]:
         "codemap_query": "plugins/codemap-py/src/codemap_py/query.py",
         "codex_query_skill": "plugins/codemap-py/codex-skills/query-code/SKILL.md",
         "provider_parity_contracts": "benchmarks/_bench_common/provider_parity_contracts.py",
+        "edit_patch_contracts": "benchmarks/_bench_common/edit_patch_contracts.py",
+        "mutation_isolation": "benchmarks/_bench_common/mutation_isolation.py",
+        "paid_lifecycle": "benchmarks/_bench_common/paid_lifecycle.py",
+        "presentation": "benchmarks/_bench_common/presentation.py",
+        "patch_index_locks": "benchmarks/suites/patch-index-locks.json",
         "run_all": "benchmarks/run-all.sh",
         "run_claude_agentic": "benchmarks/run-claude-agentic.py",
         "run_claude_structural": "benchmarks/run-claude-structural.py",
@@ -346,6 +351,7 @@ def _build_manifest() -> dict[str, Any]:
     }
     manifest["implementation_contract"]["artifact_sha256"] = _artifact_hashes()
     manifest["index"] = copy.deepcopy(INDEX_LOCK)
+    manifest["patch_index_contract"] = _load_json(BENCHMARKS / "suites" / "patch-index-locks.json")
     manifest["suite_integrity"] = _suite_integrity(suites)
     manifest["suites"] = suites
     return manifest

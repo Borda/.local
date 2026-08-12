@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from _bench_common import presentation
+from _bench_common.paid_lifecycle import paid_approval_token
 from _bench_common.presentation import fmt_time, fmt_tok
 
 _SENSITIVE_EVENT_KEYS = frozenset(
@@ -551,12 +552,14 @@ def print_unified_paid_command(
     model: str,
     selectors: Sequence[str],
     scope_sha256: str,
+    patch_pytest: str | None = None,
 ) -> None:
     """Print the exact shell-safe command authorized by a unified dry run."""
     quote = shlex.quote
     run_dir = Path("benchmarks") / "results" / f"codex-unified-{uuid4().hex[:12]}"
     print("PAID_COMMAND")
-    print("python3 benchmarks/run-codex-structural.py \\")
+    prefix = f"CODEMAP_BENCH_PATCH_PYTEST={quote(patch_pytest)} " if patch_pytest else ""
+    print(f"{prefix}python3 benchmarks/run-codex-structural.py \\")
     print(f"  --repo-path {quote(str(repo_path.resolve()))} \\")
     print(f"  --manifest-path {quote(str(manifest_path.resolve()))} \\")
     print(f"  --index-path {quote(str(index_path.resolve()))} \\")
@@ -567,7 +570,7 @@ def print_unified_paid_command(
         print(f"  --tasks {quote(','.join(selectors))} \\")
     print('  --auth-source "$HOME/.codex/auth.json" \\')
     print(f"  --run-dir {quote(str(run_dir))} \\")
-    print(f"  --paid-approval {scope_sha256}")
+    print(f"  --paid-approval {paid_approval_token(scope_sha256)}")
 
 
 ARM_ROW_STYLES = presentation.ARM_ROW_STYLES

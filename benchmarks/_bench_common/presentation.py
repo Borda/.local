@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 
@@ -14,6 +15,35 @@ ARM_ROW_STYLES = {
     "C_skill_required": "magenta",
     "C_strict": "magenta",
 }
+
+
+def format_artifact_block(**artifacts: str | Path) -> str:
+    """Format two or more durable artifact paths as a scannable terminal block.
+
+    Args:
+        **artifacts: Ordered artifact labels and their persisted paths.
+
+    Returns:
+        Plain, ANSI-free terminal text with one labeled artifact per line.
+
+    Raises:
+        ValueError: If fewer than two artifacts are supplied.
+    """
+    if len(artifacts) < 2:
+        raise ValueError("an artifact block requires at least two labeled paths")
+    return "ARTIFACTS:\n" + "\n".join(f" - {label}={path}" for label, path in artifacts.items())
+
+
+def format_quality(quality: float | None) -> str:
+    """Format a score in a six-character column.
+
+    Args:
+        quality: Score in the benchmark's continuous [0, 1] range, if available.
+    Returns:
+        A six-character display value such as ``"1.000 "`` or ``"0.258 "``.
+    """
+    score = "?" if quality is None else f"{float(quality):.3f}"
+    return score.ljust(6)
 
 
 def fmt_tok(v: float) -> str:

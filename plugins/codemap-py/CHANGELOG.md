@@ -2,6 +2,10 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.29.2
+
+- Clarify that complete structural lookup resolves only its graph fact: lifecycle-boundary edits must inspect source plus the named test/oracle and use one directional caller/callee query only when that responsibility remains unresolved.
+
 ## 0.29.1
 
 - Keep structural queries in the caller's current repository, define returned relative paths against that repository rather than the installed Skill directory, and stop redundant query/source verification after `query_complete: true`; Claude prefers the literal PATH-resolved `codemap-py query` command so headless permission matching does not reject environment expansion, while the installed absolute launcher remains an interactive fallback and query-code permits only those query commands plus the documented Read/Write rendering path.

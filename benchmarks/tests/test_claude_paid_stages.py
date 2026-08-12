@@ -89,7 +89,7 @@ def test_fix_single_loader_and_scope_preserve_the_shared_oracle_binding(script_r
     )
 
 
-def test_paid_readcrop_requires_fresh_directory_and_exact_scope_before_dispatch(
+def test_paid_readcrop_requires_fresh_directory_and_matching_scope_token_before_dispatch(
     script_run_agentic: Any,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -100,7 +100,8 @@ def test_paid_readcrop_requires_fresh_directory_and_exact_scope_before_dispatch(
     admission, so a stale scope or reused result directory had no safe recovery.
     """
     loaded = [_readcrop_row()]
-    scope = {"scope_sha256": "approved", "task_ids": ["RC-01"], "total_cells": 3}
+    scope_sha256 = "a" * 64
+    scope = {"scope_sha256": scope_sha256, "task_ids": ["RC-01"], "total_cells": 3}
     dispatched: list[dict[str, Any]] = []
     index_path = tmp_path / "index.json"
     index_path.write_text("{}", encoding="utf-8")
@@ -110,7 +111,7 @@ def test_paid_readcrop_requires_fresh_directory_and_exact_scope_before_dispatch(
     monkeypatch.setattr(script_run_agentic, "find_index", lambda _repo, index: Path(index))
     monkeypatch.setattr(script_run_agentic, "run_claude_paid_stage", lambda **kwargs: dispatched.append(kwargs))
 
-    with pytest.raises(ValueError, match=r"received --paid-approval: stale") as stale:
+    with pytest.raises(ValueError, match=r"received: stale") as stale:
         script_run_agentic.main(
             repo_path=tmp_path,
             index=index_path,
@@ -121,8 +122,13 @@ def test_paid_readcrop_requires_fresh_directory_and_exact_scope_before_dispatch(
             paid_approval="stale",
         )
 
-    assert "current scope: approved" in str(stale.value)
+    assert "ERROR: cannot start paid Claude readcrop stage." in str(stale.value)
+    assert "stale or missing --paid-approval" in str(stale.value)
+    assert "received: stale" in str(stale.value)
+    assert "required token: aaaaaaaaaaaaaaaa" in str(stale.value)
+    assert scope_sha256 not in str(stale.value)
     assert "--dry-run" in str(stale.value)
+    assert "python3 benchmarks/run-claude-agentic.py \\\n  --study readcrop \\\n" in str(stale.value)
     assert "No model call was made." in str(stale.value)
     assert dispatched == []
 
@@ -136,7 +142,7 @@ def test_paid_readcrop_requires_fresh_directory_and_exact_scope_before_dispatch(
             tasks=["RC-01"],
             model="haiku",
             run_dir=existing,
-            paid_approval="approved",
+            paid_approval="a" * 16,
         )
     assert dispatched == []
 
@@ -148,7 +154,7 @@ def test_paid_readcrop_requires_fresh_directory_and_exact_scope_before_dispatch(
         tasks=["RC-01"],
         model="haiku",
         run_dir=fresh,
-        paid_approval="approved",
+        paid_approval="a" * 16,
     )
     assert len(dispatched) == 1
     assert dispatched[0]["study"] == "readcrop"
@@ -196,6 +202,63 @@ def test_paid_scope_hashes_the_path_launcher_used_by_headless_claude(
     assert scope["treatment_sha256"]["bin/codemap-py"] == script_run_agentic._sha256_file(plugin / "bin" / "codemap-py")
 
 
+def test_paid_patch_scope_and_snapshot_close_over_shared_runtime_bytes(
+    script_run_agentic: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Claude Patch approval and artifacts bind the exact shared scorer/runtime closure."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    index = tmp_path / "index.json"
+    index.write_text("{}", encoding="utf-8")
+    plugin = tmp_path / "codemap-py"
+    for relative in (
+        ".claude-plugin/plugin.json",
+        "claude-skills/query-code/SKILL.md",
+        "bin/codemap-py",
+        "bin/scan-query",
+    ):
+        path = plugin / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative, encoding="utf-8")
+    contract = SimpleNamespace(task_id="PT-01", baseline_commit="a" * 40, provider_binding=lambda: {})
+    loaded = [{"task": {"id": "PT-01"}, "contract": contract}]
+    coordinates = {"PT-01": {"baseline_commit": "a" * 40, "index_sha256": "b" * 64, "raw_index_sha256": "b" * 64}}
+    monkeypatch.setattr(script_run_agentic, "_validate_parity_runtime", lambda *_args: None)
+    monkeypatch.setattr(script_run_agentic, "_repository_fingerprint", lambda _path: "fixture-commit")
+    monkeypatch.setattr(script_run_agentic.ModelRunner, "_codemap_plugin_dir", staticmethod(lambda: str(plugin)))
+    monkeypatch.setattr(script_run_agentic, "load_claude_patch_tasks", lambda *_args: loaded)
+    monkeypatch.setattr(script_run_agentic, "validate_patch_index_bundle", lambda *_args: coordinates)
+
+    scope = script_run_agentic._resolve_claude_paid_scope(
+        base_scope={
+            "provider": "claude",
+            "study": "patch",
+            "task_ids": ["PT-01"],
+            "historical_baselines": {"PT-01": "a" * 40},
+            "scope_sha256": "base",
+        },
+        repo_path=repo,
+        index_path=index,
+        model="haiku",
+    )
+    files = script_run_agentic._patch_snapshot_files()
+
+    assert set(files) == {
+        "claude-runner.py",
+        "paid-lifecycle.py",
+        "edit-patch-contracts.py",
+        "mutation-isolation.py",
+        "patch-index-locks.json",
+    }
+    assert scope["patch_test_runtime"]["invocation"] == "absolute pytest executable"
+    hashes = scope["implementation_sha256"]
+    assert hashes["claude_runner"] == script_run_agentic._sha256_file(files["claude-runner.py"])
+    assert hashes["paid_lifecycle"] == script_run_agentic._sha256_file(files["paid-lifecycle.py"])
+    assert hashes["edit_patch_contracts"] == script_run_agentic._sha256_file(files["edit-patch-contracts.py"])
+    assert hashes["mutation_isolation"] == script_run_agentic._sha256_file(files["mutation-isolation.py"])
+    assert hashes["patch_index_locks"] == script_run_agentic._sha256_file(files["patch-index-locks.json"])
+
+
 def test_paid_fix_multi_dispatches_the_shared_executable_contract_once(
     script_run_agentic: Any,
     monkeypatch: pytest.MonkeyPatch,
@@ -209,7 +272,7 @@ def test_paid_fix_multi_dispatches_the_shared_executable_contract_once(
     """
     contract = SimpleNamespace(task_id="FM-01", provider_binding=lambda: {"task": "fix-multi"})
     loaded = [{"task": {"id": "FM-01", "prompt": "Fix callers."}, "contract": contract}]
-    scope = {"scope_sha256": "approved", "task_ids": ["FM-01"], "total_cells": 3}
+    scope = {"scope_sha256": "b" * 64, "task_ids": ["FM-01"], "total_cells": 3}
     dispatched: list[dict[str, Any]] = []
     index_path = tmp_path / "index.json"
     index_path.write_text("{}", encoding="utf-8")
@@ -226,7 +289,7 @@ def test_paid_fix_multi_dispatches_the_shared_executable_contract_once(
         tasks=["FM-01"],
         model="haiku",
         run_dir=tmp_path / "fresh",
-        paid_approval="approved",
+        paid_approval="b" * 16,
     )
 
     assert len(dispatched) == 1
@@ -234,6 +297,134 @@ def test_paid_fix_multi_dispatches_the_shared_executable_contract_once(
     assert dispatched[0]["tasks"] == loaded
     assert dispatched[0]["scope"] == scope
     assert dispatched[0]["model"] == "haiku"
+
+
+def test_paid_patch_dispatches_the_shared_executable_contract_once(
+    script_run_agentic: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Patch tasks must use the existing paid lifecycle, not a second provider loop.
+
+    Regression: the historical patch prototype lived only in the old Claude
+    runner, leaving the canonical A/B/C adapter unable to select PT tasks.
+    """
+    contract = SimpleNamespace(task_id="PT-01", provider_binding=lambda: {"task": "patch"})
+    loaded = [{"task": {"id": "PT-01", "prompt": "Fix the regression."}, "contract": contract}]
+    scope = {"scope_sha256": "c" * 64, "task_ids": ["PT-01"], "total_cells": 3}
+    dispatched: list[dict[str, Any]] = []
+    index_path = tmp_path / "index.json"
+    index_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(script_run_agentic, "load_claude_patch_tasks", lambda *_args: loaded)
+    monkeypatch.setattr(script_run_agentic, "resolve_claude_patch_scope", lambda *_args: scope)
+    monkeypatch.setattr(script_run_agentic, "_resolve_claude_paid_scope", lambda **_kwargs: scope)
+    monkeypatch.setattr(script_run_agentic, "find_index", lambda _repo, index: Path(index))
+    monkeypatch.setattr(script_run_agentic, "run_claude_paid_stage", lambda **kwargs: dispatched.append(kwargs))
+
+    script_run_agentic.main(
+        repo_path=tmp_path,
+        index=index_path,
+        study="patch",
+        tasks=["PT-01"],
+        model="haiku",
+        run_dir=tmp_path / "fresh",
+        paid_approval="c" * 16,
+    )
+
+    assert len(dispatched) == 1
+    assert dispatched[0]["study"] == "patch"
+    assert dispatched[0]["tasks"] == loaded
+    assert dispatched[0]["scope"] == scope
+
+
+def test_patch_row_keeps_quality_separate_from_pooling_eligibility(script_run_agentic: Any) -> None:
+    """Claude Patch presentation avoids duplicating nonpoolability in quality."""
+    row = {
+        "study": "patch",
+        "task_id": "PT-01",
+        "arm": "A_plain",
+        "pooling_eligible": False,
+        "success": True,
+        "quality_score": 1.0,
+        "usage_complete": True,
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "command_calls": 1,
+        "elapsed_s": 1.0,
+        "primary_correct": True,
+        "codemap_used": False,
+        "execution": {"patch_applied": True, "targeted_test_passed": True},
+    }
+
+    rendered = script_run_agentic._format_claude_stage_row(row, completed=1, total=3)
+
+    assert rendered.startswith("(1/3) ✗")
+    assert "quality=1.000" in rendered
+    assert "^" not in rendered
+
+
+def test_claude_patch_strict_query_anchors_pt02_at_existing_class(script_run_agentic: Any) -> None:
+    """Claude PT-02 uses the same pre-fix structural anchor as Codex."""
+    assert script_run_agentic._PATCH_QUERY_ARGUMENTS["PT-02"] == ("symbol", "DistributedSamplerWrapper")
+
+
+def test_claude_patch_commands_preserve_the_admitted_pytest_runtime(
+    script_run_agentic: Any,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Patch launch and recovery commands retain the runtime bound into their scope.
+
+    Regression: the dry-run admitted an explicit historical pytest runtime but
+    printed a paid command without it, allowing the copied command to select a
+    different interpreter or fail before model execution.
+    """
+    pytest_executable = "/runtime with space/bin/pytest"
+    expected_assignment = f"{script_run_agentic.PATCH_PYTEST_ENV}='{pytest_executable}'"
+    script_run_agentic._print_claude_paid_command(
+        study="patch",
+        repo_path=tmp_path,
+        index_path=tmp_path / "index.json",
+        model="haiku",
+        task_ids=["PT-02"],
+        scope_sha256="a" * 64,
+        patch_pytest=pytest_executable,
+    )
+
+    paid_output = capsys.readouterr().out
+    assert paid_output.splitlines()[1].startswith(f"{expected_assignment} python3 ")
+    assert paid_output.splitlines()[-1] == "  --paid-approval aaaaaaaaaaaaaaaa"
+
+    script_run_agentic._require_claude_paid_request(
+        study="patch",
+        run_dir=tmp_path / "accepted",
+        paid_approval="a" * 16,
+        scope={
+            "scope_sha256": "a" * 64,
+            "task_ids": ["PT-02"],
+            "patch_test_runtime": {"pytest_executable": pytest_executable},
+        },
+        repo_path=tmp_path,
+        index_path=tmp_path / "index.json",
+        model="haiku",
+    )
+
+    with pytest.raises(ValueError) as stale:
+        script_run_agentic._require_claude_paid_request(
+            study="patch",
+            run_dir=tmp_path / "fresh",
+            paid_approval="stale",
+            scope={
+                "scope_sha256": "b" * 64,
+                "task_ids": ["PT-02"],
+                "patch_test_runtime": {"pytest_executable": pytest_executable},
+            },
+            repo_path=tmp_path,
+            index_path=tmp_path / "index.json",
+            model="haiku",
+        )
+
+    assert str(stale.value).count(expected_assignment) == 2
 
 
 def test_shared_paid_lifecycle_retains_completed_claude_cells_after_a_transport_failure(tmp_path: Path) -> None:
@@ -287,6 +478,7 @@ def test_paid_readcrop_fake_stream_persists_native_events_and_null_tool_usage(
     script_run_agentic: Any,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Claude ReadCrop persistence carries native usage rather than invented tool tokens.
 
@@ -351,6 +543,9 @@ def test_paid_readcrop_fake_stream_persists_native_events_and_null_tool_usage(
     assert all(row["raw_events"] == native_events for row in rows)
     assert rows[-1]["success"] is False  # valid answer, but C has no Codemap query in the fake stream
     assert entered == exited == ["A_plain", "B_auto", "C_strict"]
+    output = capsys.readouterr().out
+    assert f"ARTIFACTS:\n - telemetry={run_dir / 'telemetry.jsonl'}" in output
+    assert f" - metadata={run_dir / 'run-metadata.json'}" in output
     paid_lifecycle.verify_checksums(run_dir)
 
 
@@ -708,3 +903,22 @@ def test_paid_executable_stage_preserves_canonical_diff_oracle_and_workspace_cle
         hashlib.sha256(diff.encode("utf-8")).hexdigest() for diff in captured_diffs
     ]
     paid_lifecycle.verify_checksums(run_dir)
+
+
+@pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_strict"])
+def test_claude_patch_strict_prompt_requires_the_observed_exact_cli_query(script_run_agentic: Any, arm: str) -> None:
+    """Only Patch C_strict directs the required completed Codemap CLI query."""
+    query = "symbol DistributedSamplerWrapper"
+    item = {
+        "task": {"prompt": "Implement the minimal fix."},
+        "contract": SimpleNamespace(task_id="PT-02"),
+    }
+
+    prompt = script_run_agentic._claude_fix_prompt("patch", arm, item)
+
+    if arm == "C_strict":
+        assert f"`/codemap-py:query-code {query}`" in prompt
+        assert f"`codemap-py query {query}`" in prompt
+        assert "loading the Skill alone does not satisfy the treatment" in prompt
+    else:
+        assert f"`codemap-py query {query}`" not in prompt

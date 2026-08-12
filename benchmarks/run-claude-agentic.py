@@ -223,7 +223,7 @@ import sys
 import time
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
@@ -242,7 +242,7 @@ from _bench_common.benchmark_paths import RESULTS_DIR  # noqa: E402
 from _bench_common.claude_transport import MODEL_TIMEOUT, MODELS, parse_result_usage, stream_claude  # noqa: E402
 from _bench_common.codemap_discovery import codemap_bin_on_path, resolve_index_path  # noqa: E402
 from _bench_common import presentation  # noqa: E402
-from _bench_common.presentation import fmt_time, fmt_tok, make_progress  # noqa: E402
+from _bench_common.presentation import format_artifact_block, format_quality, fmt_time, fmt_tok, make_progress  # noqa: E402
 from _bench_common.python_source import extract_import_targets, iter_py_files, module_from_init_chain  # noqa: E402
 
 # Re-exported for call-site/test compatibility (tests reference it via this module's namespace).
@@ -277,18 +277,36 @@ from _bench_common.readcrop_contracts import (  # noqa: E402
     score_readcrop_answer,
 )
 from _bench_common.edit_patch_contracts import (  # noqa: E402
+    EditExecution,
+    EditTaskContract,
     FixMultiContract,
     FixSingleContract,
+    StageIdentity,
+    build_edit_task_contract,
+    build_patch_answer,
     build_fix_multi_contract,
     build_fix_single_contract,
+    score_edit_execution,
+    stage_contract_sha256,
+    validate_patch_index_bundle,
 )
 from _bench_common.mutation_isolation import (  # noqa: E402
+    PATCH_PYTEST_ENV,
+    create_patch_task_agent_workspace,
     create_executable_agent_workspace,
+    execute_patch_task_answer,
     execute_fix_multi_patch,
     execute_fix_single_patch,
+    patch_test_runtime_identity,
     relocate_frozen_index_for_worktree,
 )
-from _bench_common.paid_lifecycle import PaidStageCallbacks, run_paid_stage, write_checksums  # noqa: E402
+from _bench_common.paid_lifecycle import (  # noqa: E402
+    PaidStageCallbacks,
+    paid_approval_matches,
+    paid_approval_token,
+    run_paid_stage,
+    write_checksums,
+)
 
 _console = _Console()
 
@@ -296,9 +314,12 @@ PARITY_MANIFEST_PATH = Path(__file__).resolve().parent / "manifests" / "provider
 READCROP_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-readcrop.json"
 FIX_SINGLE_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-fix-single.json"
 FIX_MULTI_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-fix-multi.json"
+PATCH_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-patch.json"
+PATCH_INDEX_LOCKS_PATH = Path(__file__).resolve().parent / "suites" / "patch-index-locks.json"
 READCROP_ARMS = ("A_plain", "B_auto", "C_strict")
 FIX_SINGLE_ARMS = READCROP_ARMS
 FIX_MULTI_ARMS = READCROP_ARMS
+PATCH_ARMS = READCROP_ARMS
 LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
 _READCROP_ANSWER_RE = re.compile(r"BEGIN_READ_CROP_JSON\s*(?P<payload>\{.*?\})\s*END_READ_CROP_JSON", re.DOTALL)
 _FIX_SINGLE_QUERY_ARGUMENTS = {
@@ -320,6 +341,30 @@ _FIX_MULTI_QUERY_ARGUMENTS = {
     ),
     "FM-03": ("find-symbol", r"Strategy\.setup_environment$", "--exclude-tests", "--limit", "0"),
 }
+_PATCH_QUERY_ARGUMENTS = {
+    "PT-01": ("symbol", "FitLoop.setup_data"),
+    "PT-02": ("symbol", "DistributedSamplerWrapper"),
+    "PT-03": ("symbol", "ThroughputMonitor._update"),
+    "PT-04": ("symbol", "StochasticWeightAveraging.on_fit_start"),
+    "PT-05": ("symbol", "_TrainingEpochLoop.advance"),
+}
+
+
+def _patch_index_path(repo_path: Path, task_id: str) -> Path:
+    """Return the frozen historical index paired with one Patch baseline."""
+    return repo_path / ".cache" / "codemap" / "patch" / f"{task_id}.json"
+
+
+def _study_query_arguments(study: str) -> Mapping[str, tuple[str, ...]]:
+    """Return the one canonical strict-query map for an executable study."""
+    try:
+        return {
+            "fix-single": _FIX_SINGLE_QUERY_ARGUMENTS,
+            "fix-multi": _FIX_MULTI_QUERY_ARGUMENTS,
+            "patch": _PATCH_QUERY_ARGUMENTS,
+        }[study]
+    except KeyError as exc:
+        raise ValueError(f"unsupported Claude executable study {study!r}") from exc
 
 
 def _manifest_sha256(manifest_path: Path) -> str:
@@ -496,6 +541,8 @@ def _outside_workspace_path_evidence(
     The harness may safely expose the disposable checkout by absolute path,
     but only a successful external access can leak source bytes into an answer.
     Denied guesses remain diagnostic evidence without quarantining a clean cell.
+    Only tool fields that execute a command or name a filesystem target count;
+    written content is data rather than an access request.
     """
     if workspace_root is None:
         return [], []
@@ -514,13 +561,22 @@ def _outside_workspace_path_evidence(
             for block in content:
                 if not isinstance(block, Mapping) or block.get("type") != "tool_use":
                     continue
-                allowed_launchers = (
-                    _absolute_codemap_launchers(str(block.get("input", {}).get("command", "")))
-                    if block.get("name") == "Bash" and isinstance(block.get("input"), Mapping)
-                    else set()
+                tool_input = block.get("input")
+                if not isinstance(tool_input, Mapping):
+                    continue
+                command = str(tool_input.get("command", "")) if block.get("name") == "Bash" else ""
+                allowed_launchers = _absolute_codemap_launchers(command)
+                path_values = (
+                    (command,)
+                    if command
+                    else tuple(
+                        str(tool_input[field])
+                        for field in ("file_path", "path", "pattern")
+                        if isinstance(tool_input.get(field), str)
+                    )
                 )
                 block_paths: list[str] = []
-                for value in _tool_input_strings(block.get("input", {})):
+                for value in path_values:
                     variable_launchers = [
                         match.span()
                         for match in re.finditer(
@@ -757,7 +813,7 @@ def _load_claude_fix_tasks(
     tasks_path: Path,
     manifest_path: Path,
     selected_ids: Sequence[str] | None,
-    contract_builder: Callable[[Mapping[str, Any]], FixSingleContract | FixMultiContract],
+    contract_builder: Callable[[Mapping[str, Any]], FixSingleContract | FixMultiContract | EditTaskContract],
 ) -> list[dict[str, Any]]:
     """Load one canonical fix suite while preserving its manifest identity."""
     raw_tasks = load_task_suite(tasks_path)
@@ -823,6 +879,49 @@ def load_claude_fix_multi_tasks(
     )
 
 
+def _patch_stage_identity(tasks_path: Path, contracts: Sequence[EditTaskContract]) -> StageIdentity:
+    """Bind Claude Patch evidence to the selected suite and shared scorer bytes."""
+    return StageIdentity(
+        stage="patch",
+        revision="provider-parity-patch-v1",
+        task_suite_sha256=hashlib.sha256(tasks_path.read_bytes()).hexdigest(),
+        contract_sha256=stage_contract_sha256(contracts),
+    )
+
+
+def load_claude_patch_tasks(
+    tasks_path: Path = PATCH_TASKS_PATH,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    selected_ids: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Load historical Patch tasks with their provider-neutral stage identity."""
+    loaded = _load_claude_fix_tasks(
+        study="patch",
+        tasks_path=tasks_path,
+        manifest_path=manifest_path,
+        selected_ids=selected_ids,
+        contract_builder=build_edit_task_contract,
+    )
+    contracts = [item["contract"] for item in loaded]
+    if not all(isinstance(contract, EditTaskContract) for contract in contracts):
+        raise RuntimeError("patch task loader did not construct EditTaskContract values")
+    identity = _patch_stage_identity(tasks_path, contracts)
+    for item in loaded:
+        contract = item["contract"]
+        assert isinstance(contract, EditTaskContract)
+        item["stage_identity"] = identity
+        item["provider_binding"] = dict(contract.scientific_field_hashes(identity))
+    return loaded
+
+
+def _provider_binding(item: Mapping[str, Any]) -> Mapping[str, str]:
+    """Return the immutable provider fields carried by one stage task."""
+    binding = item.get("provider_binding")
+    if isinstance(binding, Mapping):
+        return {str(key): str(value) for key, value in binding.items()}
+    return item["contract"].provider_binding()
+
+
 def _resolve_claude_fix_scope(
     *, study: str, tasks: Sequence[Mapping[str, Any]], manifest_path: Path, tasks_path: Path
 ) -> dict[str, Any]:
@@ -840,8 +939,10 @@ def _resolve_claude_fix_scope(
         "arms": list(FIX_SINGLE_ARMS),
         "repetitions": 1,
         "total_cells": len(tasks) * len(FIX_SINGLE_ARMS),
-        "contracts": {item["contract"].task_id: dict(item["contract"].provider_binding()) for item in tasks},
+        "contracts": {item["contract"].task_id: dict(_provider_binding(item)) for item in tasks},
     }
+    if study == "patch":
+        payload["historical_baselines"] = {item["contract"].task_id: item["contract"].baseline_commit for item in tasks}
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
 
@@ -864,6 +965,15 @@ def resolve_claude_fix_multi_scope(
 ) -> dict[str, Any]:
     """Bind Claude planning to the shared Fix-Multi science contract."""
     return _resolve_claude_fix_scope(study="fix-multi", tasks=tasks, manifest_path=manifest_path, tasks_path=tasks_path)
+
+
+def resolve_claude_patch_scope(
+    tasks: Sequence[Mapping[str, Any]],
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    tasks_path: Path = PATCH_TASKS_PATH,
+) -> dict[str, Any]:
+    """Bind Claude Patch selection to each task's historical immutable contract."""
+    return _resolve_claude_fix_scope(study="patch", tasks=tasks, manifest_path=manifest_path, tasks_path=tasks_path)
 
 
 def _resolve_claude_paid_scope(
@@ -892,23 +1002,59 @@ def _resolve_claude_paid_scope(
     if any(not path.is_file() for path in treatment_paths):
         raise ValueError("canonical Claude paid stage treatment artifact is incomplete")
     payload = {key: value for key, value in base_scope.items() if key != "scope_sha256"}
+    source_binding: dict[str, Any] = {
+        "repo_path": str(repo_path),
+        "commit": _repository_fingerprint(repo_path),
+        "index_path": str(index_path),
+        "index_sha256": _sha256_file(index_path),
+    }
+    if base_scope.get("study") == "patch":
+        historical_baselines = base_scope.get("historical_baselines")
+        if not isinstance(historical_baselines, Mapping):
+            raise ValueError("Claude patch scope lacks its contract-bound historical baselines")
+        loaded = load_claude_patch_tasks(
+            PATCH_TASKS_PATH,
+            PARITY_MANIFEST_PATH,
+            [str(task_id) for task_id in base_scope["task_ids"]],
+        )
+        try:
+            coordinates = validate_patch_index_bundle(
+                repo_path, PATCH_INDEX_LOCKS_PATH, [item["contract"] for item in loaded]
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Claude patch stage input preflight failed: {exc}. No model call was made; "
+                "rebuild the frozen patch coordinates and rerun --dry-run."
+            ) from exc
+        if {task_id: coordinate["baseline_commit"] for task_id, coordinate in coordinates.items()} != dict(
+            historical_baselines
+        ):
+            raise ValueError("Claude patch index coordinates changed contract-bound historical baselines")
+        source_binding["patch_coordinates"] = coordinates
+        payload["patch_test_runtime"] = patch_test_runtime_identity()
     payload.update(
         {
             "model": model,
             "model_id": MODELS[model],
-            "source_binding": {
-                "repo_path": str(repo_path),
-                "commit": _repository_fingerprint(repo_path),
-                "index_path": str(index_path),
-                "index_sha256": _sha256_file(index_path),
-            },
+            "source_binding": source_binding,
             "implementation_sha256": {
+                "claude_runner": _sha256_file(Path(__file__)),
                 "paid_lifecycle": _sha256_file(Path(__file__).resolve().parent / "_bench_common" / "paid_lifecycle.py"),
                 "claude_transport": _sha256_file(
                     Path(__file__).resolve().parent / "_bench_common" / "claude_transport.py"
                 ),
                 "mutation_isolation": _sha256_file(
                     Path(__file__).resolve().parent / "_bench_common" / "mutation_isolation.py"
+                ),
+                **(
+                    {
+                        "edit_patch_contracts": _sha256_file(
+                            Path(__file__).resolve().parent / "_bench_common" / "edit_patch_contracts.py"
+                        ),
+                        "patch_index_locks": _sha256_file(PATCH_INDEX_LOCKS_PATH),
+                    }
+                    if base_scope.get("study") == "patch"
+                    else {}
                 ),
             },
             "treatment_sha256": {
@@ -935,17 +1081,19 @@ def _print_claude_paid_command(
     model: str,
     task_ids: Sequence[str],
     scope_sha256: str,
+    patch_pytest: str | None = None,
 ) -> None:
     """Print the exact paid command admitted by the current immutable scope."""
     print("PAID_COMMAND")
-    print("python3 benchmarks/run-claude-agentic.py \\")
+    prefix = f"{PATCH_PYTEST_ENV}={shlex.quote(patch_pytest)} " if patch_pytest else ""
+    print(f"{prefix}python3 benchmarks/run-claude-agentic.py \\")
     print(f"  --study {study} \\")
     print(f"  --repo-path {repo_path.resolve()} \\")
     print(f"  --index {index_path.resolve()} \\")
     print(f"  --model {model} \\")
     print(f"  --tasks {','.join(task_ids)} \\")
     print(f"  --run-dir {_suggested_claude_run_dir(study)} \\")
-    print(f"  --paid-approval {scope_sha256}")
+    print(f"  --paid-approval {paid_approval_token(scope_sha256)}")
 
 
 def _require_claude_paid_request(
@@ -959,39 +1107,52 @@ def _require_claude_paid_request(
     model: str,
 ) -> None:
     """Reject incomplete, stale, or overwrite-prone paid requests before Claude starts."""
+    paid_approval = None if paid_approval is None else str(paid_approval)
     expected = str(scope["scope_sha256"])
     task_ids = [str(task_id) for task_id in scope["task_ids"]]
-    if run_dir is None or paid_approval != expected or Path(run_dir).exists():
+    patch_runtime = scope.get("patch_test_runtime")
+    patch_pytest = (
+        str(patch_runtime["pytest_executable"]) if study == "patch" and isinstance(patch_runtime, Mapping) else None
+    )
+    prefix = f"{PATCH_PYTEST_ENV}={shlex.quote(patch_pytest)} " if patch_pytest else ""
+    approval_matches = paid_approval_matches(paid_approval, expected)
+    if run_dir is None or not approval_matches or Path(run_dir).exists():
         reasons: list[str] = []
         if run_dir is None:
             reasons.append("--run-dir is missing")
         elif Path(run_dir).exists():
             reasons.append(f"--run-dir already exists: {run_dir}")
-        if paid_approval != expected:
-            reasons.append(
-                f"stale or missing approval; received --paid-approval: {paid_approval}; current scope: {expected}"
-            )
+        if not approval_matches:
+            reasons.append("stale or missing --paid-approval")
         preflight_command = (
-            "python3 benchmarks/run-claude-agentic.py "
-            f"--study {study} --repo-path {repo_path.resolve()} --index {index_path.resolve()} --model {model} "
-            f"--tasks {','.join(task_ids)} --dry-run"
+            f"{prefix}python3 benchmarks/run-claude-agentic.py \\\n"
+            f"  --study {study} \\\n"
+            f"  --repo-path {repo_path.resolve()} \\\n"
+            f"  --index {index_path.resolve()} \\\n"
+            f"  --model {model} \\\n"
+            f"  --tasks {','.join(task_ids)} \\\n"
+            "  --dry-run"
         )
         fresh_run_dir = _suggested_claude_run_dir(study)
         paid_command = (
-            "python3 benchmarks/run-claude-agentic.py \\\n"
+            f"{prefix}python3 benchmarks/run-claude-agentic.py \\\n"
             f"  --study {study} \\\n"
             f"  --repo-path {repo_path.resolve()} \\\n"
             f"  --index {index_path.resolve()} \\\n"
             f"  --model {model} \\\n"
             f"  --tasks {','.join(task_ids)} \\\n"
             f"  --run-dir {fresh_run_dir} \\\n"
-            f"  --paid-approval {expected}"
+            f"  --paid-approval {paid_approval_token(expected)}"
         )
         raise ValueError(
-            f"cannot start paid Claude {study} stage: {'; '.join(reasons)}.\n"
-            "No model call was made. The current corrected paid command is:\n"
-            f"{paid_command}\n"
-            "To revalidate it without a model call, run:\n"
+            f"ERROR: cannot start paid Claude {study} stage.\n"
+            f"Reasons:\n{chr(10).join(f'  - {reason}' for reason in reasons)}\n"
+            f"  - received: {paid_approval or '(missing)'}\n"
+            f"  - required token: {paid_approval_token(expected)}\n"
+            "No model call was made.\n\n"
+            "Updated paid command (copy as-is):\n"
+            f"{paid_command}\n\n"
+            "No-model preflight (copy as-is):\n"
             f"{preflight_command}"
         )
 
@@ -1021,10 +1182,16 @@ def _run_claude_p1_stage(
         loaded = load_claude_fix_single_tasks(tasks_path, manifest_path, selected_ids)
         base_scope = resolve_claude_fix_single_scope(loaded, manifest_path, tasks_path)
         arms = FIX_SINGLE_ARMS
-    else:
+    elif study == "fix-multi":
         loaded = load_claude_fix_multi_tasks(tasks_path, manifest_path, selected_ids)
         base_scope = resolve_claude_fix_multi_scope(loaded, manifest_path, tasks_path)
         arms = FIX_MULTI_ARMS
+    elif study == "patch":
+        loaded = load_claude_patch_tasks(tasks_path, manifest_path, selected_ids)
+        base_scope = resolve_claude_patch_scope(loaded, manifest_path, tasks_path)
+        arms = PATCH_ARMS
+    else:
+        raise ValueError(f"unsupported Claude stage {study!r}")
 
     full_scope: Mapping[str, Any] | None = None
     index_path: Path | None = None
@@ -1051,6 +1218,7 @@ def _run_claude_p1_stage(
                 model=model,
                 task_ids=[str(item["contract"].task_id) for item in loaded],
                 scope_sha256=str(full_scope["scope_sha256"]),
+                patch_pytest=(str(full_scope["patch_test_runtime"]["pytest_executable"]) if study == "patch" else None),
             )
         return
     if repo_path is None or index_path is None or model is None or full_scope is None:
@@ -1107,7 +1275,7 @@ def _claude_fix_prompt(study: str, arm: str, item: Mapping[str, Any]) -> str:
     """Materialize one canonical executable Claude prompt with arm-only treatment text."""
     task = item["task"]
     task_id = str(item["contract"].task_id)
-    query_map = _FIX_SINGLE_QUERY_ARGUMENTS if study == "fix-single" else _FIX_MULTI_QUERY_ARGUMENTS
+    query_map = _study_query_arguments(study)
     query = " ".join(query_map[task_id])
     treatments = {
         "A_plain": "Codemap is absent and inaccessible. Use ordinary repository tools.",
@@ -1116,8 +1284,11 @@ def _claude_fix_prompt(study: str, arm: str, item: Mapping[str, Any]) -> str:
             "or dependency facts when useful."
         ),
         "C_strict": (
-            "Codemap is installed. Before editing, invoke the exact Skill query "
-            f"`/codemap-py:query-code {query}` and use direct source reads for runtime facts or final confirmation."
+            "Codemap is installed. Before any source read or edit, invoke the exact Skill query "
+            f"`/codemap-py:query-code {query}`. Then run `codemap-py query {query}` in Bash and wait for "
+            "its successful result. A C_strict cell is accepted only after the harness observes that exact completed "
+            "Codemap query; loading the Skill alone does not satisfy the treatment. Use direct source reads for runtime "
+            "facts or final confirmation."
         ),
     }
     try:
@@ -1204,6 +1375,7 @@ def _parse_claude_fix_cell(
     source_unchanged: bool,
     model: str,
     workspace_root: Path,
+    captured_diff: str | None = None,
 ) -> dict[str, Any]:
     """Combine Claude transport facts with provider-neutral patch execution evidence."""
     summary = _claude_event_summary(events)
@@ -1217,9 +1389,7 @@ def _parse_claude_fix_cell(
         or outside_paths
         or recovery_attempted
     )
-    expected_query = list(
-        (_FIX_SINGLE_QUERY_ARGUMENTS if study == "fix-single" else _FIX_MULTI_QUERY_ARGUMENTS)[item["contract"].task_id]
-    )
+    expected_query = list(_study_query_arguments(study)[item["contract"].task_id])
     strict_query = None if arm != "C_strict" else expected_query in codemap["successful_query_arguments"]
     compliance = {
         "A_plain": not contaminated,
@@ -1228,15 +1398,26 @@ def _parse_claude_fix_cell(
         and bool(codemap["codemap_successful_calls"])
         and bool(strict_query),
     }[arm]
-    path_ok = set(execution["changed_paths"]) == set(item["contract"].expected_paths)
-    primary = bool(execution["baseline_failed"] and execution["patch_applied"] and execution["targeted_test_passed"])
+    contract = item["contract"]
+    if isinstance(contract, EditTaskContract):
+        if captured_diff is None:
+            raise ValueError("Claude Patch telemetry requires its captured candidate diff")
+        scored = score_edit_execution(contract, build_patch_answer(captured_diff), EditExecution(**dict(execution)))
+        path_ok = scored.changed_path_boundary_passed
+        primary = scored.primary_correct
+        score_pooling_eligible = scored.pooling_eligible
+    else:
+        path_ok = set(execution["changed_paths"]) == set(contract.expected_paths)
+        primary = bool(
+            execution["baseline_failed"] and execution["patch_applied"] and execution["targeted_test_passed"]
+        )
+        score_pooling_eligible = primary and path_ok
     success = bool(
         usage.success and transport_error is None and compliance and workspace_cleanup_verified and not contaminated
     )
     pooling_eligible = bool(
         success
-        and primary
-        and path_ok
+        and score_pooling_eligible
         and execution["cleanup_verified"]
         and index_unchanged
         and source_unchanged
@@ -1287,22 +1468,32 @@ def _parse_claude_fix_cell(
         "workspace_cleanup_verified": workspace_cleanup_verified,
         "index_unchanged": index_unchanged,
         "source_unchanged": source_unchanged,
-        "provider_binding": dict(item["contract"].provider_binding()),
+        "provider_binding": dict(_provider_binding(item)),
         **summary,
     }
 
 
-def _source_pair_unchanged(repo_path: Path, index_path: Path, scope: Mapping[str, Any]) -> bool:
-    """Return whether one cell preserved the frozen source commit, status, and index bytes."""
+def _source_pair_unchanged(
+    repo_path: Path, index_path: Path, scope: Mapping[str, Any], *, task_id: str | None = None
+) -> bool:
+    """Return whether one cell preserved its frozen source commit, status, and index bytes."""
     status = subprocess.run(
         ["git", "-C", str(repo_path), "status", "--porcelain"], capture_output=True, text=True, check=False
     )
     expected = scope["source_binding"]
+    patch_coordinates = expected.get("patch_coordinates")
+    if task_id is not None and isinstance(patch_coordinates, Mapping):
+        coordinate = patch_coordinates.get(task_id)
+        if not isinstance(coordinate, Mapping):
+            return False
+        expected_index_sha256 = coordinate.get("index_sha256")
+    else:
+        expected_index_sha256 = expected["index_sha256"]
     return bool(
         status.returncode == 0
         and not status.stdout.strip()
         and _repository_fingerprint(repo_path) == expected["commit"]
-        and _sha256_file(index_path) == expected["index_sha256"]
+        and _sha256_file(index_path) == expected_index_sha256
     )
 
 
@@ -1313,6 +1504,18 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def _patch_snapshot_files() -> dict[str, Path]:
+    """Return the provider and shared implementation bytes frozen for a Claude Patch run."""
+    benchmarks = Path(__file__).resolve().parent
+    return {
+        "claude-runner.py": Path(__file__),
+        "paid-lifecycle.py": benchmarks / "_bench_common" / "paid_lifecycle.py",
+        "edit-patch-contracts.py": benchmarks / "_bench_common" / "edit_patch_contracts.py",
+        "mutation-isolation.py": benchmarks / "_bench_common" / "mutation_isolation.py",
+        "patch-index-locks.json": PATCH_INDEX_LOCKS_PATH,
+    }
+
+
 def _format_claude_stage_row(row: Mapping[str, Any], completed: int, total: int) -> str:
     """Render one compact canonical Claude stage row."""
     # ``success`` records transport/compliance completion. The leading glyph is
@@ -1320,8 +1523,7 @@ def _format_claude_stage_row(row: Mapping[str, Any], completed: int, total: int)
     # Retain the fallback for immutable telemetry created before paid stages
     # recorded ``pooling_eligible``.
     mark = "✓" if row.get("pooling_eligible", row["success"]) else "✗"
-    quality = row.get("quality_score")
-    quality_text = "?" if quality is None else f"{float(quality):.3f}"
+    quality_text = format_quality(row.get("quality_score"))
     usage_complete = row.get("usage_complete", True)
     input_text = fmt_tok(int(row["input_tokens"]))
     if not usage_complete:
@@ -1388,7 +1590,22 @@ def run_claude_paid_stage(
             row["pooling_eligible"] = row["success"]
             return row
 
-        workspace = create_executable_agent_workspace(repo_path, index_path, item["contract"].baseline_commit)
+        contract = item["contract"]
+        patch_workspace = None
+        patch_test_runtime = scope.get("patch_test_runtime") if study == "patch" else None
+        source_index = _patch_index_path(repo_path, contract.task_id) if study == "patch" else index_path
+        if study == "patch":
+            if not isinstance(contract, EditTaskContract):
+                raise RuntimeError("patch stage requires EditTaskContract values")
+            patch_workspace = create_patch_task_agent_workspace(
+                repo_path,
+                source_index,
+                contract,
+                runtime_identity=patch_test_runtime,
+            )
+            workspace = patch_workspace.workspace
+        else:
+            workspace = create_executable_agent_workspace(repo_path, source_index, contract.baseline_commit)
         if arm == "A_plain":
             workspace.index_path.unlink(missing_ok=True)
         events: list[dict[str, Any]] = []
@@ -1396,6 +1613,8 @@ def run_claude_paid_stage(
         transport_error: str | None = None
         diff = ""
         execution = None
+        agent_fixture_intact = True
+        agent_source_unchanged = True
         index_unchanged = arm == "A_plain"
         workspace_cleanup_verified = False
         try:
@@ -1408,11 +1627,24 @@ def run_claude_paid_stage(
             )
             diff = workspace.capture_diff()
             index_unchanged = index_unchanged or workspace.index_unchanged()
-            execution = (
-                execute_fix_single_patch(repo_path, item["contract"], diff)
-                if study == "fix-single"
-                else execute_fix_multi_patch(repo_path, item["contract"], diff)
-            )
+            if study == "patch":
+                assert patch_workspace is not None
+                answer = patch_workspace.capture_answer()
+                diff = answer.diff
+                agent_source_unchanged = patch_workspace.source_unchanged()
+                execution = execute_patch_task_answer(
+                    repo_path,
+                    contract,
+                    answer,
+                    index_path=source_index,
+                    runtime_identity=patch_test_runtime,
+                )
+                agent_fixture_intact = patch_workspace.fixture_intact()
+                execution = replace(execution, fixture_intact=execution.fixture_intact and agent_fixture_intact)
+            elif study == "fix-single":
+                execution = execute_fix_single_patch(repo_path, contract, diff)
+            else:
+                execution = execute_fix_multi_patch(repo_path, contract, diff)
         finally:
             workspace_cleanup_verified = workspace.cleanup()
         assert execution is not None
@@ -1426,9 +1658,15 @@ def run_claude_paid_stage(
             execution=execution.as_dict(),
             workspace_cleanup_verified=workspace_cleanup_verified,
             index_unchanged=index_unchanged,
-            source_unchanged=_source_pair_unchanged(repo_path, index_path, scope),
+            source_unchanged=(
+                agent_source_unchanged
+                and _source_pair_unchanged(repo_path, source_index, scope, task_id=contract.task_id)
+                if study == "patch"
+                else _source_pair_unchanged(repo_path, source_index, scope)
+            ),
             model=model,
             workspace_root=workspace.worktree,
+            captured_diff=diff,
         )
         # Preserve the actual candidate patch that the independent clean
         # workspace scored. This is additive telemetry: existing JSON readers
@@ -1442,7 +1680,7 @@ def run_claude_paid_stage(
     def validate_row(item: Mapping[str, Any], arm: str, row: Mapping[str, Any]) -> None:
         if row.get("task_id") != item["contract"].task_id or row.get("arm") != arm:
             raise ValueError("Claude paid stage returned a row for the wrong immutable cell")
-        if dict(row.get("provider_binding", {})) != dict(item["contract"].provider_binding()):
+        if dict(row.get("provider_binding", {})) != dict(_provider_binding(item)):
             raise ValueError("Claude paid stage changed provider-neutral contract fields")
         if row.get("tool_result_tokens") is not None:
             raise ValueError("Claude paid stage must retain unavailable tool-result tokens as null")
@@ -1459,6 +1697,17 @@ def run_claude_paid_stage(
         (inputs / manifest_path.name).write_bytes(manifest_path.read_bytes())
         (inputs / tasks_path.name).write_bytes(tasks_path.read_bytes())
         _write_json_atomic(inputs / "scope.json", scope)
+        if study == "patch":
+            patch_indexes = inputs / "patch-indexes"
+            patch_indexes.mkdir()
+            for item in tasks:
+                task_id = str(item["contract"].task_id)
+                (patch_indexes / f"{task_id}.json").write_bytes(_patch_index_path(repo_path, task_id).read_bytes())
+            shared = inputs / "shared"
+            shared.mkdir()
+            for name, source in _patch_snapshot_files().items():
+                (shared / name).write_bytes(source.read_bytes())
+            _write_json_atomic(inputs / "patch-runtime.json", scope["patch_test_runtime"])
         prompts = {
             item["contract"].task_id: {
                 arm: (
@@ -1472,7 +1721,7 @@ def run_claude_paid_stage(
 
     def emit_lifecycle(kind: str, payload: Mapping[str, Any]) -> None:
         if kind == "artifacts":
-            print(f"ARTIFACTS  telemetry={payload['telemetry_path']} metadata={payload['metadata_path']}")
+            print(format_artifact_block(telemetry=payload["telemetry_path"], metadata=payload["metadata_path"]))
         else:
             print(
                 f"SUMMARY  status={payload['status']} persisted_cells={payload['persisted_cells']}/{payload['total_cells']}"
@@ -4441,6 +4690,7 @@ def main(
     readcrop_tasks_path: Path = READCROP_TASKS_PATH,
     fix_single_tasks_path: Path = FIX_SINGLE_TASKS_PATH,
     fix_multi_tasks_path: Path = FIX_MULTI_TASKS_PATH,
+    patch_tasks_path: Path = PATCH_TASKS_PATH,
     manifest_path: Path = PARITY_MANIFEST_PATH,
     study: str = "agentic",
     model: str = None,
@@ -4465,8 +4715,9 @@ def main(
         readcrop_tasks_path: Locked source-contract task suite for ``--study readcrop``.
         fix_single_tasks_path: Locked single-file executable suite for ``--study fix-single``.
         fix_multi_tasks_path: Locked complete-caller task suite for ``--study fix-multi``.
+        patch_tasks_path: Locked historical executable task suite for ``--study patch``.
         manifest_path: Provider-neutral methodology lock defining the shared suite.
-        study: ``agentic`` historical runner or canonical ``readcrop``/``fix-single``/``fix-multi`` stage.
+        study: ``agentic`` historical runner or canonical ``readcrop``/``fix-single``/``fix-multi``/``patch`` stage.
         model: Run a single model tier (default: all — haiku/sonnet/opus).
         arm: Run one canonical or legacy arm. The default runs canonical A/B/C.
         run_all: Run all tasks in the selected arms.
@@ -4478,7 +4729,7 @@ def main(
         resolve_scope: Print the selected no-model scope as JSON and exit.
         dry_run: Print plan without running claude.
         run_dir: New immutable artifact directory required for a paid P1 stage.
-        paid_approval: Exact scope SHA-256 emitted by the current dry-run command.
+        paid_approval: Scope-prefix token emitted by the current dry-run command.
     """
     # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
     if index is not None:
@@ -4487,6 +4738,7 @@ def main(
     readcrop_tasks_path = Path(readcrop_tasks_path)
     fix_single_tasks_path = Path(fix_single_tasks_path)
     fix_multi_tasks_path = Path(fix_multi_tasks_path)
+    patch_tasks_path = Path(patch_tasks_path)
     manifest_path = Path(manifest_path)
     if repo_path is not None:
         repo_path = Path(repo_path)
@@ -4496,11 +4748,12 @@ def main(
         output = Path(output)
     selected_tasks = [part.strip() for part in tasks.split(",") if part.strip()] if isinstance(tasks, str) else tasks
 
-    if study in {"readcrop", "fix-single", "fix-multi"}:
+    if study in {"readcrop", "fix-single", "fix-multi", "patch"}:
         stage_tasks_path = {
             "readcrop": readcrop_tasks_path,
             "fix-single": fix_single_tasks_path,
             "fix-multi": fix_multi_tasks_path,
+            "patch": patch_tasks_path,
         }[study]
         _run_claude_p1_stage(
             study=study,
@@ -4517,7 +4770,7 @@ def main(
         )
         return
     if study != "agentic":
-        sys.exit("study must be 'agentic', 'readcrop', 'fix-single', or 'fix-multi'.")
+        sys.exit("study must be 'agentic', 'readcrop', 'fix-single', 'fix-multi', or 'patch'.")
 
     if not run_all and not tasks and not arm and not dry_run and not resolve_scope:
         sys.exit("Specify --run_all to run everything, or narrow with --tasks / --arm.")

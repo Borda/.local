@@ -16,7 +16,7 @@ Answer structural Python questions with the unified `codemap-py query` CLI.
 NOT for: rebuilding the index (use `/codemap-py:scan-codebase`), renaming symbols (use `/codemap-py:rename-refs`), or which tests cover or are affected by a change (use `/codemap-py:test-impact`).
 </objective>
 
-Skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, import, or source-slice fact remains unresolved. An explicit structural query or tool requirement overrides this skip; otherwise choose the smallest complete query.
+Skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, import, or source-slice fact remains unresolved. A lifecycle boundary—callback/hook, cancellation/exception, scheduling/cleanup, or state transfer—means source scope remains unresolved: inspect source plus the named test/oracle, then query `fn-rdeps` for caller or `fn-deps` for callee responsibility. An explicit structural query or tool requirement overrides this skip; otherwise choose the smallest complete query.
 
 <workflow>
 
@@ -77,7 +77,7 @@ Run the selected query set first; do not spend a call on an unconditional freshn
 
 Interpret `index`:
 
-- `query_complete: true`: answer immediately. Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep.
+- `query_complete: true`: the structural fact is complete. Answer immediately only when it settles the request. Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep for that graph fact.
 - Ordinary repository reads remain allowed only for a task-requested distinct independent AST/oracle view; label it separately, never as rechecking a complete Codemap result.
 - `query_complete: false`: name `completeness_reason`; search only gaps named
   by `degraded`, `not_covered`, `root_mismatch`, or `stale`.

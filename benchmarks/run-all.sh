@@ -9,11 +9,11 @@
 #   bash benchmarks/run-all.sh claude --agentic --dry-run  # shared 144-cell Claude agentic plan, no model
 #   bash benchmarks/run-all.sh claude --agentic --tasks=BA-02,BA-04,BA-12,BA-16 --dry-run  # selected nonpoolable Claude plan
 #   bash benchmarks/run-all.sh claude --agentic --repetitions=2 --dry-run  # scope-bound Claude repeat override
-#   bash benchmarks/run-all.sh codex --struct --dry-run  # unified 68-task/204-cell Codex plan, no model
+#   bash benchmarks/run-all.sh codex --struct --dry-run  # unified 73-task/219-cell Codex plan, no model
 #   bash benchmarks/run-all.sh codex --struct  # paid unified Codex task study
 #   bash benchmarks/run-all.sh codex --dry-run  # unified task + agentic Codex plans, no model
 #   bash benchmarks/run-all.sh codex   # paid unified task study, then paid agentic study
-#   bash benchmarks/run-all.sh codex --struct --tasks=RC,FS,FM [--dry-run]  # selected stage-native task families
+#   bash benchmarks/run-all.sh codex --struct --tasks=RC,FS,FM,PT [--dry-run]  # selected stage-native task families
 #   bash benchmarks/run-all.sh codex --agentic --dry-run  # shared 48-cell agentic plan, no model
 #   bash benchmarks/run-all.sh codex --agentic --tasks=BA-02,BA-04,BA-12,BA-16 --dry-run  # selected nonpoolable Codex plan
 #   bash benchmarks/run-all.sh codex --agentic --repetitions=2 --dry-run  # scope-bound repeat override
@@ -543,9 +543,59 @@ prepare_index_inputs() {
   echo "→ locked index: $INDEX_PATH ($index_sha)"
 }
 
+prepare_patch_index_inputs() {
+  local patch_locks="$ROOT/benchmarks/suites/patch-index-locks.json"
+  local -a patch_commits=(
+    8e805f9268043c9aa8f0d70800be537b56a93c19
+    aa0ee0d18d49c6b26f18d34a3473f177adefc262
+    9df1910f0833100478886bef0a08b450ff2d0c14
+    3876cc525d2678463199407ca48230d3eba09461
+    b15d394f2a9d36ccefba08328ac8dc2bd13e49b2
+  )
+  echo "== PREPARE frozen historical patch indexes =="
+  for commit in "${patch_commits[@]}"; do
+    if ! git -C "$REPO" cat-file -e "$commit^{commit}" 2>/dev/null; then
+      echo "→ fetch missing patch baseline $commit"
+      git -C "$REPO" fetch origin "$commit" || return "$?"
+    fi
+  done
+  if ! python3 "$INDEX_PREPARER" \
+    --prepare-patch-bundle \
+    --source-root "$REPO" \
+    --patch-locks-path "$patch_locks" \
+    --scan-index-bin "$ROOT/plugins/codemap-py/bin/scan-index"; then
+    echo "ERROR: historical patch indexes could not be prepared. Ensure the exact PT baseline commits are present, then rerun this no-model command." >&2
+    echo "git -C $REPO fetch origin 8e805f9268043c9aa8f0d70800be537b56a93c19 aa0ee0d18d49c6b26f18d34a3473f177adefc262 9df1910f0833100478886bef0a08b450ff2d0c14 3876cc525d2678463199407ca48230d3eba09461 b15d394f2a9d36ccefba08328ac8dc2bd13e49b2" >&2
+    echo "python3 benchmarks/prepare-codex-index.py --prepare-patch-bundle --source-root $REPO --patch-locks-path $patch_locks --scan-index-bin $ROOT/plugins/codemap-py/bin/scan-index" >&2
+    return 1
+  fi
+}
+
+patch_bundle_required() {
+  # Historical indexes are only consumed by the PT stage. The unqualified
+  # Codex task study includes every stage, while selected structural scopes
+  # expose their resolved IDs before input preparation.
+  if [ "$MODE" != "codex" ] || [ "$AGENTIC" = true ]; then
+    return 1
+  fi
+  if [ -z "$CODEX_TASKS" ]; then
+    return 0
+  fi
+  local task_id
+  for task_id in "${CODEX_SELECTION_TASK_IDS[@]}"; do
+    case "$task_id" in
+      PT-*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
 prepare_locked_inputs() {
   load_shared_structural_tasks || return "$?"
   prepare_index_inputs "$MANIFEST_PATH" "$METHODOLOGY_PATH"
+  if patch_bundle_required; then
+    prepare_patch_index_inputs
+  fi
 }
 
 prepare_claude_inputs() {
@@ -708,8 +758,8 @@ require_codex_paid_inputs() {
     echo "ERROR: active provider-parity manifest is missing: $MANIFEST_PATH" >&2
     exit 2
   fi
-  if [[ ! "${CODEX_PAID_APPROVAL:-}" =~ ^[0-9a-f]{64}$ ]]; then
-    echo "ERROR: paid Codex mode requires the 64-character aggregate SCOPE printed by --dry-run." >&2
+  if [[ ! "${CODEX_PAID_APPROVAL:-}" =~ ^[0-9a-f]{16,64}$ ]]; then
+    echo "ERROR: paid Codex mode requires the 16-character approval token (or longer matching prefix) printed by --dry-run." >&2
     print_codex_paid_guidance
     exit 2
   fi
@@ -782,8 +832,8 @@ print_codex_paid_guidance() {
 Review the exact no-model plan first:
   bash benchmarks/run-all.sh codex${mode_args} --dry-run
 
-Then launch the paid study with the aggregate SCOPE printed above:
-  CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-above> \\
+Then launch the paid study with the short approval token printed above:
+  CODEX_PAID_APPROVAL=<approval-token-printed-above> \\
   CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \\
     bash benchmarks/run-all.sh codex${mode_args}
 
@@ -878,7 +928,7 @@ Review both exact no-model plans first:
   bash benchmarks/run-all.sh codex --dry-run
 
 Then launch the paid structural and agentic studies from one frozen source:
-  CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-by-the-unified-dry-run> \
+  CODEX_PAID_APPROVAL=<approval-token-printed-by-the-unified-dry-run> \
   CODEX_AGENTIC_PAID_APPROVAL=$agentic_manifest_sha \
   CODEX_AUTH_SOURCE="\$HOME/.codex/auth.json" \
     bash benchmarks/run-all.sh codex
@@ -891,8 +941,8 @@ EOF
 require_codex_combined_paid_inputs() {
   local agentic_manifest_sha expected_launcher
   agentic_manifest_sha="$(sha256_file "$AGENTIC_MANIFEST_PATH")"
-  if [[ ! "${CODEX_PAID_APPROVAL:-}" =~ ^[0-9a-f]{64}$ ]] || [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$agentic_manifest_sha" ]; then
-    echo "ERROR: paid combined Codex mode requires the unified aggregate SCOPE and exact agentic approval." >&2
+  if [[ ! "${CODEX_PAID_APPROVAL:-}" =~ ^[0-9a-f]{16,64}$ ]] || [ "${CODEX_AGENTIC_PAID_APPROVAL:-}" != "$agentic_manifest_sha" ]; then
+    echo "ERROR: paid combined Codex mode requires the unified short approval token and exact agentic approval." >&2
     print_codex_combined_paid_guidance
     exit 2
   fi
@@ -960,7 +1010,7 @@ configure_codex_plan() {
   planned_cells="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["task_selection"]["default_total_cells"])' "$MANIFEST_PATH")"
   echo "== CODEX UNIFIED TASK STUDY =="
   echo "→ design: $planned_cells cells ($task_count tasks × A/B/C; stage-native scoring)"
-  echo "→ stages: 55 structural + 6 ReadCrop + 4 Fix-Single + 3 Fix-Multi"
+  echo "→ stages: 55 structural + 6 ReadCrop + 4 Fix-Single + 3 Fix-Multi + 5 Patch"
   echo "→ model: $codex_model; reasoning effort: $codex_reasoning_effort"
   echo "→ timeout: $coordinate_timeout seconds per cell, including retries"
   echo "→ manifest: $MANIFEST_PATH ($active_manifest_sha)"
@@ -1033,9 +1083,9 @@ run_codex_plan() {
 
 run_codex_study() {
   run_codex_plan || return "$?"
-  if [ "$CODEX_PAID_APPROVAL" != "$CODEX_EXECUTION_SCOPE_SHA" ]; then
-    echo "ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=$CODEX_EXECUTION_SCOPE_SHA" >&2
-    echo "Copy the aggregate SCOPE printed by the completed no-model preflight." >&2
+  if [[ "$CODEX_EXECUTION_SCOPE_SHA" != "$CODEX_PAID_APPROVAL"* ]]; then
+    echo "ERROR: paid Codex mode requires CODEX_PAID_APPROVAL=${CODEX_EXECUTION_SCOPE_SHA:0:16}" >&2
+    echo "Copy the short approval token printed by the completed no-model preflight." >&2
     return 2
   fi
   if [ -n "$CODEX_TASKS" ]; then
@@ -1049,7 +1099,7 @@ run_codex_study() {
     --invocation-launcher-path "$CODEX_INVOCATION_LAUNCHER" \
     --no-legend \
     --run-dir "$CODEX_RUN_DIR/benchmark" \
-    --paid-approval "$CODEX_EXECUTION_SCOPE_SHA"
+    --paid-approval "${CODEX_EXECUTION_SCOPE_SHA:0:16}"
 }
 
 run_codex_agentic_prepared_plan() {
@@ -1085,8 +1135,8 @@ run_codex_agentic_study() {
   echo "→ manifest: $AGENTIC_MANIFEST_PATH ($agentic_manifest_sha)"
   echo "→ scope: $AGENTIC_SCOPE_SHA"
   echo "ARTIFACTS:"
-  echo "→ telemetry=$CODEX_RUN_DIR/telemetry.jsonl"
-  echo "→ metadata=$CODEX_RUN_DIR/run-metadata.json"
+  echo " - telemetry=$CODEX_RUN_DIR/telemetry.jsonl"
+  echo " - metadata=$CODEX_RUN_DIR/run-metadata.json"
   configure_agentic_dispatch
   python3 "$AGENTIC_RUNNER" \
     "${AGENTIC_DISPATCH_ARGS[@]}" \

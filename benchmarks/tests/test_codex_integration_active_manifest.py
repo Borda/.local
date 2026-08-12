@@ -89,16 +89,17 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     assert controls["token_prompt_cache_policy"] == token_prompt_cache_policy
     assert task_selection["coordinate_timeout_seconds"] == 600
     assert task_selection["nonpoolable"] is True
-    assert task_selection["default_total_cells"] == 204
+    assert task_selection["default_total_cells"] == 219
     assert task_selection["stages"]["structural"]["allowed_task_ids"] == cells["structural_execution_task_ids"]
     assert task_selection["stages"]["structural"]["default_repetitions"] == 1
     assert task_selection["stages"]["structural"]["selected_repetitions"] == 3
     assert all(
-        task_selection["stages"][stage]["default_repetitions"] == 1 for stage in ("readcrop", "fix-single", "fix-multi")
+        task_selection["stages"][stage]["default_repetitions"] == 1
+        for stage in ("readcrop", "fix-single", "fix-multi", "patch")
     )
     assert all(
         task_selection["stages"][stage]["selected_repetitions"] == 1
-        for stage in ("readcrop", "fix-single", "fix-multi")
+        for stage in ("readcrop", "fix-single", "fix-multi", "patch")
     )
     assert "repetitions" not in task_selection
     assert "study_mode" not in task_selection
@@ -311,6 +312,8 @@ def test_integration_manifest_locks_plain_cli_and_skill_arms_and_artifacts() -> 
         "codex_stage_fix",
         "codex_stage_readcrop",
         "codex_stage_runtime",
+        "paid_lifecycle",
+        "presentation",
         "prepare_codex_index",
         "run_all",
         "run_codex_structural",
@@ -363,28 +366,28 @@ def test_integration_manifest_locks_unified_nonpoolable_task_selection() -> None
     manifest = _load(MANIFEST)
     scope = manifest["task_selection"]
 
-    stage_order = ["structural", "readcrop", "fix-single", "fix-multi"]
-    expected_stage_sizes = {"structural": 55, "readcrop": 6, "fix-single": 4, "fix-multi": 3}
+    stage_order = ["structural", "readcrop", "fix-single", "fix-multi", "patch"]
+    expected_stage_sizes = {"structural": 55, "readcrop": 6, "fix-single": 4, "fix-multi": 3, "patch": 5}
     flattened_ids = [task_id for stage in stage_order for task_id in scope["stages"][stage]["allowed_task_ids"]]
     assert scope["selector_option"] == "--tasks"
     assert scope["separator"] == ","
     assert scope["stage_order"] == stage_order
     assert {stage: len(scope["stages"][stage]["allowed_task_ids"]) for stage in stage_order} == expected_stage_sizes
     assert scope["allowed_task_ids"] == flattened_ids
-    assert len(scope["allowed_task_ids"]) == 68
-    assert scope["default_total_cells"] == 204
+    assert len(scope["allowed_task_ids"]) == 73
+    assert scope["default_total_cells"] == 219
     assert scope["allowed_families"] == list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in flattened_ids))
     assert scope["resolution_policy"] == {
         "exact_id_first": True,
         "family_match": "a family token selects every matching allowed ID",
-        "order": "resolved IDs preserve structural, ReadCrop, Fix-Single, then Fix-Multi stage order",
+        "order": "resolved IDs preserve structural, ReadCrop, Fix-Single, Fix-Multi, then Patch stage order",
         "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
         "reject": ["empty tokens", "unknown task IDs", "unknown families"],
     }
     assert scope["stages"]["structural"]["arms"] == ["A_plain", "B_direct_required", "C_skill_required"]
     assert scope["stages"]["structural"]["default_repetitions"] == 1
     assert scope["stages"]["structural"]["selected_repetitions"] == 3
-    for stage in ("readcrop", "fix-single", "fix-multi"):
+    for stage in ("readcrop", "fix-single", "fix-multi", "patch"):
         assert scope["stages"][stage]["arms"] == ["A_plain", "B_auto", "C_strict"]
         assert scope["stages"][stage]["default_repetitions"] == 1
         assert scope["stages"][stage]["selected_repetitions"] == 1
@@ -429,7 +432,7 @@ def test_integration_manifest_locks_unified_nonpoolable_task_selection() -> None
     assert "aggregate `SCOPE` printed by the matching full dry run" in human
     assert "## Paid selected-task command" in human
     selected_section = human.split("## Paid selected-task command", 1)[1].split("## Full execution", 1)[0]
-    assert "--tasks RC,FS,FM --dry-run" in selected_section
+    assert "--tasks RC,FS,FM,PT --dry-run" in selected_section
     assert "one exact `PAID_COMMAND` containing the aggregate approval" in selected_section
     assert f"CODEX_PAID_APPROVAL={_sha256(MANIFEST)}" not in selected_section
     assert "--resolve-tasks" not in selected_section

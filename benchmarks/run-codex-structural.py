@@ -2,9 +2,9 @@
 """Run the task-driven Codex provider-parity benchmark.
 
 Omitting ``--tasks`` executes the complete locked catalog: 55 structural
-questions, 6 ReadCrop tasks, 4 Fix-Single tasks, and 3 Fix-Multi tasks, for 68
-tasks and 204 A/B/C cells. Family selectors such as ``RC,FS,FM`` and mixed exact
-IDs route to native stage scorers. Codex agentic exploration remains in
+questions, 6 ReadCrop tasks, 4 Fix-Single tasks, 3 Fix-Multi tasks, and 5
+historical Patch tasks, for 73 tasks and 219 A/B/C cells. Family selectors such
+as ``RC,FS,FM,PT`` and mixed exact IDs route to native stage scorers. Codex agentic exploration remains in
 ``run-codex-agentic.py``.
 
 The 55 structural tasks are the former `bench`/real-codebase category, not a third benchmark type beside the task-driven structural and agentic runners.
@@ -75,7 +75,7 @@ The runner writes raw cells; it does not declare an advantage. The manifest
 analysis compares paired log input-token ratios and quality deltas, then applies
 failure, adoption, and compliance guardrails.
 
-Structural, ReadCrop, Fix-Single, and Fix-Multi keep separate telemetry,
+Structural, ReadCrop, Fix-Single, Fix-Multi, and Patch keep separate telemetry,
 metadata, input snapshots, scorers, and checksum ledgers. The aggregate root
 records lifecycle and scope only; unlike quality metrics are never pooled.
 
@@ -92,12 +92,12 @@ records lifecycle and scope only; unlike quality metrics are never pooled.
 Run the intended command with ``--dry-run`` first. The no-model preflight
 validates target, index, permission, direct-launcher, installed-Skill, and
 isolation contracts, prints the deterministic plan, then emits one aggregate
-``SCOPE`` and exact ``PAID_COMMAND``. Omit ``--tasks`` for all 68 tasks; use
-``--tasks RC,FS,FM`` for families or mixed exact IDs for a targeted run.
+``SCOPE`` and exact ``PAID_COMMAND``. Omit ``--tasks`` for all 73 tasks; use
+``--tasks RC,FS,FM,PT`` for families or mixed exact IDs for a targeted run.
 
 The emitted execution command has no Boolean paid flag. Absence of
 ``--dry-run`` means model execution and requires a private ``auth.json``, a
-fresh ``--run-dir``, and the exact aggregate ``--paid-approval`` SHA-256.
+fresh ``--run-dir``, and the aggregate ``--paid-approval`` token.
 
 Primary options:
 
@@ -111,7 +111,7 @@ Primary options:
   --dry-run              no-model admission, plan, scope, and paid command
   --auth-source          private auth source for model execution
   --run-dir              fresh aggregate artifact directory
-  --paid-approval        exact aggregate scope emitted by the dry run
+  --paid-approval        16-character aggregate token emitted by the dry run
 
 ## Requirements
 
@@ -184,9 +184,10 @@ from _bench_common.mutation_isolation import (  # noqa: E402
     ExecutableAgentWorkspace,
     _non_root_index_sha256,
     create_executable_agent_workspace,
+    patch_test_runtime_identity,
     relocate_frozen_index_for_worktree,
 )
-from _bench_common.paid_lifecycle import write_checksums  # noqa: E402
+from _bench_common.paid_lifecycle import paid_approval_matches, write_checksums  # noqa: E402
 from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
@@ -498,16 +499,45 @@ def _validate_locked_runtime(
     manifest_path: Path = PARITY_MANIFEST_PATH,
     diff_impact_stage: DiffImpactStageAdmission | None = None,
     index_relocation: Mapping[str, str] | None = None,
+    historical_runtime_coordinate: Mapping[str, str] | None = None,
 ) -> None:
-    """Fail closed unless the target repository and index match the frozen manifest."""
+    """Fail closed unless the target repository and index match a frozen runtime coordinate.
+
+    Ordinary structural and executable stages remain locked to the active
+    provider-parity manifest. Historical Patch tasks instead supply the
+    reviewed baseline commit, raw source-index digest, and scan version for
+    their individual frozen coordinate. This is deliberately an opt-in path:
+    a caller cannot relax the manifest lock merely by relocating an index.
+    """
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        expected_repo = manifest["target_source"]["commit"]
-        expected_index = manifest["index"]
+        manifest_index = manifest["index"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError("provider-parity manifest is unavailable or malformed") from exc
+    if historical_runtime_coordinate is None:
+        expected_repo = manifest["target_source"]["commit"]
+        expected_index = manifest_index
+    else:
+        expected_repo = historical_runtime_coordinate.get("baseline_commit")
+        raw_index_sha256 = historical_runtime_coordinate.get("raw_index_sha256")
+        scan_version = historical_runtime_coordinate.get("scan_version")
+        if (
+            not isinstance(expected_repo, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", expected_repo)
+            or not isinstance(raw_index_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", raw_index_sha256)
+            or not isinstance(scan_version, str)
+            or not scan_version.isdigit()
+        ):
+            raise ValueError("historical executable runtime coordinate is malformed")
+        expected_index = {
+            "raw_sha256": raw_index_sha256,
+            "git_sha": expected_repo,
+            "scan_version": int(scan_version),
+        }
     if _repo_sha(repo_path) != expected_repo:
-        raise ValueError(f"canonical Codex run requires target commit {expected_repo}")
+        scope = "historical Patch" if historical_runtime_coordinate is not None else "canonical Codex"
+        raise ValueError(f"{scope} run requires target commit {expected_repo}")
     if diff_impact_stage is None:
         if _git_porcelain_status(repo_path):
             raise ValueError("canonical Codex run requires a clean target worktree")
@@ -645,7 +675,7 @@ def _task_selection_contract(manifest_path: Path) -> dict[str, Any]:
         or not all(isinstance(family, str) and re.fullmatch(r"[A-Z]{2}", family) for family in allowed_families)
         or len(allowed_families) != len(set(allowed_families))
         or allowed_families != list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in execution_ids))
-        or stage_order != ["structural", "readcrop", "fix-single", "fix-multi"]
+        or stage_order != ["structural", "readcrop", "fix-single", "fix-multi", "patch"]
         or not isinstance(stages, Mapping)
         or set(stages) != set(stage_order)
         or type(coordinate_timeout) is not int
@@ -3321,8 +3351,15 @@ class CodexRunner:
         writable_workspace: Path | None = None,
         denied_workspace: Path | None = None,
         index_relocation: Mapping[str, str] | None = None,
+        historical_runtime_coordinate: Mapping[str, str] | None = None,
     ) -> ArmHome:
-        """Create and verify one arm home without invoking a model."""
+        """Create and verify one arm home without invoking a model.
+
+        ``historical_runtime_coordinate`` is reserved for the isolated Patch
+        stage, where the runner is temporarily bound to a reviewed historical
+        worktree and its relocated frozen index. All other callers retain the
+        active-manifest runtime contract.
+        """
         _validate_locked_runtime(
             self.repo_path,
             self.index_path,
@@ -3330,6 +3367,7 @@ class CodexRunner:
             self.manifest_path,
             diff_impact_stage,
             index_relocation,
+            historical_runtime_coordinate,
         )
         auth_state = self._ensure_auth_state()
         if auth_state is not None:
@@ -4534,7 +4572,7 @@ def main(
     if not dry_run:
         assert output_path is not None
         assert metadata_path is not None
-        print(f"ARTIFACTS  telemetry={output_path}  metadata={metadata_path}")
+        print(runtime.presentation.format_artifact_block(telemetry=output_path, metadata=metadata_path))
     task_arms = {
         (task["id"], repetition): (
             _manifest_arm_order(
@@ -5014,6 +5052,7 @@ def _run_unified_execution(
     from _bench_codex.stage_fix import run_fix_stage
     from _bench_codex.stage_readcrop import run_stage as run_readcrop_stage
 
+    paid_approval = None if paid_approval is None else str(paid_approval)
     selection = resolve_task_selection(manifest_path, tasks)
     if not dry_run:
         missing = [
@@ -5030,9 +5069,10 @@ def _run_unified_execution(
                 f"cannot start model execution; missing {', '.join(missing)}. "
                 "Run the same command with --dry-run and copy its PAID_COMMAND exactly."
             )
-        if not isinstance(paid_approval, str) or re.fullmatch(r"[0-9a-f]{64}", paid_approval) is None:
+        if not isinstance(paid_approval, str) or re.fullmatch(r"[0-9a-f]{16,64}", paid_approval) is None:
             raise ValueError(
-                "paid approval must be the 64-character aggregate scope printed by --dry-run. No model call was made."
+                "paid approval must be the 16-character token printed by --dry-run "
+                "or a longer matching lowercase SHA-256 prefix. No model call was made."
             )
     scope = _resolve_execution_scope(
         selection=selection,
@@ -5043,7 +5083,7 @@ def _run_unified_execution(
         index_path=index_path,
     )
     if not dry_run:
-        if paid_approval != scope["scope_sha256"]:
+        if not paid_approval_matches(paid_approval, str(scope["scope_sha256"])):
             raise ValueError(
                 "paid approval does not match the current aggregate scope. No model call was made. "
                 "Run the same command with --dry-run and copy its PAID_COMMAND exactly."
@@ -5127,6 +5167,11 @@ def _run_unified_execution(
             model=model,
             selectors=selection["selectors"],
             scope_sha256=scope["scope_sha256"],
+            patch_pytest=(
+                str(patch_test_runtime_identity()["pytest_executable"])
+                if any(stage["stage_id"] == "patch" for stage in scope["stages"])
+                else None
+            ),
         )
         return
 
@@ -5215,9 +5260,9 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
     """Dispatch one unified Codex benchmark, rendering, resolution, or rescore mode.
 
     Benchmark execution is task-driven. Omitting ``tasks`` executes all 55
-    structural, 6 ReadCrop, 4 Fix-Single, and 3 Fix-Multi tasks: 68 tasks and
-    204 A/B/C cells. Family selectors such as ``RC,FS,FM`` and mixed exact IDs
-    such as ``RC-01,FS-03,FM-02`` route to their native stage scorers while
+    structural, 6 ReadCrop, 4 Fix-Single, 3 Fix-Multi, and 5 Patch tasks: 73
+    tasks and 219 A/B/C cells. Family selectors such as ``RC,FS,FM,PT`` and
+    mixed exact IDs such as ``RC-01,FS-03,FM-02,PT-04`` route to their native stage scorers while
     retaining separate child artifacts. Absence of ``dry_run`` means model
     execution and therefore requires authentication, a fresh run directory,
     and the aggregate approval printed by the matching dry run.
@@ -5248,11 +5293,11 @@ def cli(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag wi
         auth_source: User-owned ``auth.json`` copied into the disposable home.
         invocation_launcher_path: Recorded launcher whose digest is revalidated.
         tasks: Optional comma-separated task families or exact IDs. Omit it for
-            the complete 68-task suite.
+            the complete 73-task suite.
         dry_run: Validate locked inputs and print the cell plan without a model call.
         no_legend: Suppress the output legend block.
         run_dir: Fresh aggregate artifact directory required for model execution.
-        paid_approval: Aggregate scope SHA-256 printed by the matching dry run.
+        paid_approval: Aggregate approval token printed by the matching dry run.
 
     Raises:
         SystemExit: With status ``2`` when flags are combined illegally, a

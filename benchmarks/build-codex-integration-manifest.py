@@ -94,6 +94,8 @@ def _artifact_hashes() -> dict[str, str]:
         "codex_stage_readcrop": "benchmarks/_bench_codex/stage_readcrop.py",
         "codex_stage_fix": "benchmarks/_bench_codex/stage_fix.py",
         "codex_stage_runtime": "benchmarks/_bench_codex/runtime.py",
+        "paid_lifecycle": "benchmarks/_bench_common/paid_lifecycle.py",
+        "presentation": "benchmarks/_bench_common/presentation.py",
         "prepare_codex_index": "benchmarks/prepare-codex-index.py",
     }
     return {name: _sha256(ROOT / relative_path) for name, relative_path in paths.items()}
@@ -305,6 +307,7 @@ def _task_selection_contract(source: dict[str, Any]) -> dict[str, Any]:
         "readcrop": suite_ids["benchmarks/suites/tasks-readcrop.json"],
         "fix-single": suite_ids["benchmarks/suites/tasks-fix-single.json"],
         "fix-multi": suite_ids["benchmarks/suites/tasks-fix-multi.json"],
+        "patch": suite_ids["benchmarks/suites/tasks-patch.json"],
     }
     task_ids = [task_id for stage_task_ids in stage_ids.values() for task_id in stage_task_ids]
     families = list(dict.fromkeys(task_id.split("-", 1)[0] for task_id in task_ids))
@@ -329,13 +332,13 @@ def _task_selection_contract(source: dict[str, Any]) -> dict[str, Any]:
         "nonpoolable": True,
         "pooling_eligibility": "ineligible",
         "purpose": (
-            "Task-family or exact-task selection across the frozen structural, ReadCrop, Fix-Single, and Fix-Multi "
+            "Task-family or exact-task selection across the frozen structural, ReadCrop, Fix-Single, Fix-Multi, and Patch "
             "stages; omitted selectors execute every supported task once."
         ),
         "resolution_policy": {
             "exact_id_first": True,
             "family_match": "a family token selects every matching allowed ID",
-            "order": "resolved IDs preserve structural, ReadCrop, Fix-Single, then Fix-Multi stage order",
+            "order": "resolved IDs preserve structural, ReadCrop, Fix-Single, Fix-Multi, then Patch stage order",
             "deduplicate": "selector tokens and overlapping expanded IDs are evaluated once",
             "reject": ["empty tokens", "unknown task IDs", "unknown families"],
         },
@@ -572,9 +575,9 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "## Unified execution scope",
         "",
         f"- Default execution: `{execution_tasks}` tasks and `{total_cells}` A/B/C cells.",
-        "- Stage partitions: `55` structural, `6` ReadCrop, `4` Fix-Single, and `3` Fix-Multi tasks.",
+        "- Stage partitions: `55` structural, `6` ReadCrop, `4` Fix-Single, `3` Fix-Multi, and `5` historical Patch tasks.",
         "- Omit `--tasks` to execute the complete supported suite once.",
-        "- Structural, ReadCrop, Fix-Single, and Fix-Multi retain separate child artifacts, native scorers, and nonpoolable quality records.",
+        "- Structural, ReadCrop, Fix-Single, Fix-Multi, and Patch retain separate child artifacts, native scorers, and nonpoolable quality records.",
         "- Model-cell failures are recorded by their native stage; integrity and interruption failures preserve completed child artifacts and stop later stages.",
         "",
         "## Structural methodology",
@@ -591,19 +594,19 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "- Exact task IDs are resolved before family tokens; family tokens select all matching frozen IDs.",
         "- Empty or unknown selectors fail closed; duplicate tokens and overlapping expansions are evaluated once.",
         "- Resolved IDs always follow frozen manifest order, independent of selector order.",
-        "- Omit `--tasks` for all 68 supported tasks; selected structural tasks retain three repetitions while RC/FS/FM tasks retain one repetition.",
+        "- Omit `--tasks` for all 73 supported tasks; selected structural tasks retain three repetitions while RC/FS/FM/PT tasks retain one repetition.",
         f"- Every stage uses three native arms and a `{task_selection['coordinate_timeout_seconds']}`-second coordinate limit.",
         "- Selected-task runs are explicitly nonpoolable and ineligible for confirmatory or product acceptance.",
         "- Task resolution prints a selection identity for inspection. Model execution is authorized only by the aggregate `SCOPE` printed by the matching full dry run.",
         "",
         "## Paid selected-task command",
         "",
-        "Replace `RC,FS,FM` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.",
+        "Replace `RC,FS,FM,PT` with an approved family, exact-ID, or mixed selector. The same selector must be used for dry-run and paid execution.",
         "",
         "Run the matching no-model dry run first. It validates every selected stage and prints one exact `PAID_COMMAND` containing the aggregate approval and a fresh run directory.",
         "",
         "```bash",
-        "python3 benchmarks/run-codex-structural.py --repo-path <locked-target> --index-path <locked-index> --marketplace-root <marketplace> --codemap-bin <absolute-launcher> --model gpt-5.6-luna --tasks RC,FS,FM --dry-run",
+        "python3 benchmarks/run-codex-structural.py --repo-path <locked-target> --index-path <locked-index> --marketplace-root <marketplace> --codemap-bin <absolute-launcher> --model gpt-5.6-luna --tasks RC,FS,FM,PT --dry-run",
         "```",
         "",
         "## Full execution",
@@ -614,7 +617,7 @@ def _human_bytes(manifest: dict[str, Any], machine_sha256: str) -> bytes:
         "bash benchmarks/run-all.sh codex --struct --dry-run",
         "```",
         "",
-        "After reviewing the 68-task/204-cell plan, copy the exact `PAID_COMMAND` printed by that dry run. Do not substitute the machine-manifest or selector-resolution digest for its aggregate approval.",
+        "After reviewing the 73-task/219-cell plan, copy the exact `PAID_COMMAND` printed by that dry run. Do not substitute the machine-manifest or selector-resolution digest for its aggregate approval.",
         "",
         "The aggregate approval binds the manifest, model, ordered tasks, and every native child scope. The runner rejects stale approval or an existing run directory before any model call. Runtime logs, telemetry, metadata, and checksums stay under the ignored `benchmarks/results/` directory unless deliberately exported for review.",
         "",

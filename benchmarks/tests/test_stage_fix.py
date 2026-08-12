@@ -16,9 +16,12 @@ import pytest
 
 
 BENCHMARKS = Path(__file__).resolve().parent.parent
+FIXTURE_SCOPE_SHA = "f" * 64
+FIXTURE_APPROVAL_TOKEN = FIXTURE_SCOPE_SHA[:16]
 sys.path.insert(0, str(BENCHMARKS))
 
-from _bench_common.edit_patch_contracts import build_fix_single_contract  # noqa: E402
+from _bench_common.edit_patch_contracts import EditExecution, build_edit_task_contract, build_fix_single_contract  # noqa: E402
+from _bench_common.provider_parity_contracts import load_task_suite  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -106,21 +109,27 @@ def test_paid_stage_request_explains_missing_flags_and_stale_scope(stage_fix: An
         "repo_path": tmp_path / "repo",
         "task_ids": ["FS-01", "FS-03"],
         "model": "gpt-5.6-luna",
-        "expected_scope": "fresh-scope",
+        "expected_scope": FIXTURE_SCOPE_SHA,
     }
 
     with pytest.raises(ValueError, match=r"missing --auth-source, --run-dir, --paid-approval"):
         stage_fix._require_paid_stage_request(**common, auth_source=None, run_dir=None, paid_approval=None)
-    with pytest.raises(ValueError, match=r"received --paid-approval: stale-scope") as error:
+    stage_fix._require_paid_stage_request(
+        **common,
+        auth_source=tmp_path / "auth.json",
+        run_dir=tmp_path / "run",
+        paid_approval=FIXTURE_APPROVAL_TOKEN,
+    )
+    with pytest.raises(ValueError, match=rf"received --paid-approval: {'e' * 16}") as error:
         stage_fix._require_paid_stage_request(
             **common,
             auth_source=tmp_path / "auth.json",
             run_dir=tmp_path / "run",
-            paid_approval="stale-scope",
+            paid_approval="e" * 16,
         )
 
     message = str(error.value)
-    assert "current scope: fresh-scope" in message
+    assert f"current scope: {FIXTURE_SCOPE_SHA}" in message
     assert "--tasks FS-01,FS-03 --dry-run" in message
     assert "No model call was made." in message
 
@@ -136,11 +145,55 @@ def test_scope_binds_the_validated_source_and_index(stage_fix: Any) -> None:
     assert first["scope_sha256"] != second["scope_sha256"]
 
 
+def test_patch_scope_and_snapshot_close_over_runtime_and_implementation(stage_fix: Any, tmp_path: Path) -> None:
+    """Patch approval and input archival bind every scorer/runtime byte and task index.
+
+    Regression: the initial historical-task stage bound only a task index and
+    launcher, leaving the shared scorer, mutable-worktree lifecycle, and
+    designated pytest runtime outside the immutable study coordinate.
+    """
+    task = {"contract": SimpleNamespace(task_id="PT-01", provider_binding=lambda: {})}
+    index = tmp_path / ".cache" / "codemap" / "patch" / "PT-01.json"
+    index.parent.mkdir(parents=True)
+    index.write_text("{}", encoding="utf-8")
+    source_binding = {
+        "patch_coordinates": {
+            "PT-01": {
+                "baseline_commit": "a" * 40,
+                "raw_index_sha256": "b" * 64,
+                "scan_version": "13",
+            }
+        }
+    }
+
+    scope = stage_fix._resolve_scope([task], "gpt-5.6-luna", source_binding)
+    files = stage_fix._patch_snapshot_files(tmp_path, [task])
+
+    assert set(files) == {
+        "codex-runtime.py",
+        "stage-fix.py",
+        "paid-lifecycle.py",
+        "edit-patch-contracts.py",
+        "mutation-isolation.py",
+        "patch-index-locks.json",
+        "patch-index-PT-01.json",
+    }
+    assert files["patch-index-PT-01.json"] == index
+    assert scope["patch_test_runtime"]["invocation"] == "absolute pytest executable"
+    hashes = scope["implementation_sha256"]
+    assert hashes["stage_fix"] == stage_fix._file_sha256(files["stage-fix.py"])
+    assert hashes["paid_lifecycle"] == stage_fix._file_sha256(files["paid-lifecycle.py"])
+    assert hashes["edit_patch_contracts"] == stage_fix._file_sha256(files["edit-patch-contracts.py"])
+    assert hashes["mutation_isolation"] == stage_fix._file_sha256(files["mutation-isolation.py"])
+    assert hashes["patch_index_locks"] == stage_fix._file_sha256(files["patch-index-locks.json"])
+
+
 def test_managed_input_recovery_preserves_the_invalid_target(stage_fix: Any) -> None:
     """Managed-target admission must recommend a recoverable reconstruction, never deletion."""
     recovery = stage_fix._stage_input_recovery(Path("/private/tmp/codemap-provider-parity-pl-2.6.5"))
 
-    assert "mv /private/tmp/codemap-provider-parity-pl-2.6.5" in recovery
+    assert "REPO_PATH=/private/tmp/codemap-provider-parity-pl-2.6.5" in recovery
+    assert 'mv "$REPO_PATH" "$REPO_PATH.invalid-$(date -u +%Y%m%dT%H%M%SZ)"' in recovery
     assert "run-all.sh codex --struct --tasks=FN-02 --dry-run" in recovery
     assert "rm -rf" not in recovery
 
@@ -153,7 +206,7 @@ def test_dry_run_emits_exact_paid_command_after_preflight(
     adapter = SimpleNamespace(close=lambda: None)
     monkeypatch.setattr(stage_fix, "load_fix_single_tasks", lambda *_args: [{"task": {}, "contract": contract}])
     monkeypatch.setattr(stage_fix, "_stage_source_binding", lambda *_args: {"source": "locked"})
-    monkeypatch.setattr(stage_fix, "_resolve_scope", lambda *_args: {"scope_sha256": "fixture-scope"})
+    monkeypatch.setattr(stage_fix, "_resolve_scope", lambda *_args: {"scope_sha256": FIXTURE_SCOPE_SHA})
     monkeypatch.setattr(
         stage_fix, "_structural", lambda: SimpleNamespace(CodexRunner=lambda *_args, **_kwargs: adapter)
     )
@@ -176,10 +229,10 @@ def test_dry_run_emits_exact_paid_command_after_preflight(
     )
 
     output = capsys.readouterr().out
-    assert "SCOPE   fixture-scope" in output
+    assert f"SCOPE   {FIXTURE_SCOPE_SHA}" in output
     assert "PAID_COMMAND" in output
     assert "--run-dir benchmarks/results/fresh-run" in output
-    assert "--paid-approval fixture-scope" in output
+    assert output.splitlines()[-1] == f"  --paid-approval {FIXTURE_APPROVAL_TOKEN}"
     assert "--tasks FS-01" in output
     assert "--study" not in output
     assert "--paid=True" not in output
@@ -205,7 +258,7 @@ def test_full_study_dry_run_emits_paid_command_without_task_selector(
         lambda _path: [{"id": contract.task_id} for contract in contracts],
     )
     monkeypatch.setattr(stage_fix, "_stage_source_binding", lambda *_args: {"source": "locked"})
-    monkeypatch.setattr(stage_fix, "_resolve_scope", lambda *_args: {"scope_sha256": "full-scope"})
+    monkeypatch.setattr(stage_fix, "_resolve_scope", lambda *_args: {"scope_sha256": FIXTURE_SCOPE_SHA})
     monkeypatch.setattr(
         stage_fix, "_structural", lambda: SimpleNamespace(CodexRunner=lambda *_args, **_kwargs: adapter)
     )
@@ -231,6 +284,266 @@ def test_full_study_dry_run_emits_paid_command_without_task_selector(
     assert "PLAN    FS-04 C_strict" in output
     assert "--run-dir benchmarks/results/full-run" in output
     assert "--tasks" not in output
+
+
+def test_patch_stage_preflights_each_distinct_task_baseline(
+    stage_fix: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Patch tasks must not reuse the first task's historical baseline.
+
+    Regression: executable preflight used only ``tasks[0]``. The real patch
+    suite deliberately spans several pre-fix commits, so that shortcut can
+    validate the wrong checkout and index for every later task.
+    """
+    contracts = [
+        SimpleNamespace(task_id="PT-01", baseline_commit="baseline-one", provider_binding=lambda: {}),
+        SimpleNamespace(task_id="PT-02", baseline_commit="baseline-two", provider_binding=lambda: {}),
+    ]
+    adapter = SimpleNamespace(close=lambda: None)
+    observed: list[str] = []
+    monkeypatch.setattr(
+        stage_fix,
+        "load_patch_tasks",
+        lambda _path, _selected: [{"task": {}, "contract": contract} for contract in contracts],
+    )
+    monkeypatch.setattr(
+        stage_fix, "load_task_suite", lambda _path: [{"id": contract.task_id} for contract in contracts]
+    )
+    monkeypatch.setattr(
+        stage_fix,
+        "_patch_stage_source_binding",
+        lambda *_args: {
+            "source": "locked",
+            "patch_coordinates": {
+                "PT-01": {"baseline_commit": "baseline-one", "raw_index_sha256": "a" * 64, "scan_version": "13"},
+                "PT-02": {"baseline_commit": "baseline-two", "raw_index_sha256": "b" * 64, "scan_version": "13"},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        stage_fix,
+        "_resolve_scope",
+        lambda *_args: {
+            "scope_sha256": FIXTURE_SCOPE_SHA,
+            "patch_test_runtime": stage_fix.patch_test_runtime_identity(),
+        },
+    )
+    monkeypatch.setattr(
+        stage_fix, "_structural", lambda: SimpleNamespace(CodexRunner=lambda *_args, **_kwargs: adapter)
+    )
+    monkeypatch.setattr(
+        stage_fix,
+        "preflight_executable_agent_workspace",
+        lambda _adapter, **kwargs: observed.append(
+            f"{kwargs['baseline_commit']}:{kwargs['historical_runtime_coordinate']['raw_index_sha256']}"
+            f":{kwargs['patch_contract'].task_id}"
+        ),
+    )
+
+    stage_fix.run_fix_stage(
+        study="patch",
+        repo_path=tmp_path / "repo",
+        selected=None,
+        dry_run=True,
+        resolve_scope=False,
+        auth_source=None,
+        run_dir=None,
+        paid_approval=None,
+        model="gpt-5.6-luna",
+        index_path=tmp_path / "repo/.cache/codemap/repo.json",
+        marketplace_root=BENCHMARKS.parent,
+        codemap_bin=BENCHMARKS.parent / "plugins/codemap-py/bin/codemap-py",
+    )
+
+    assert observed == [f"baseline-one:{'a' * 64}:PT-01", f"baseline-two:{'b' * 64}:PT-02"]
+
+
+def test_patch_preflight_reports_each_historical_baseline(
+    stage_fix: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Patch dry runs expose progress while each frozen baseline test executes.
+
+    Regression: Patch preflight ran five baseline/test fixtures before printing
+    its paid scope, making a correct no-model validation look stalled.
+    """
+    contracts = [
+        SimpleNamespace(task_id="PT-01", baseline_commit="baseline-one", provider_binding=lambda: {}),
+        SimpleNamespace(task_id="PT-02", baseline_commit="baseline-two", provider_binding=lambda: {}),
+    ]
+    adapter = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(
+        stage_fix,
+        "load_patch_tasks",
+        lambda _path, _selected: [{"task": {}, "contract": contract} for contract in contracts],
+    )
+    monkeypatch.setattr(
+        stage_fix,
+        "load_task_suite",
+        lambda _path: [{"id": contract.task_id} for contract in contracts],
+    )
+    monkeypatch.setattr(
+        stage_fix,
+        "_patch_stage_source_binding",
+        lambda *_args: {
+            "source": "locked",
+            "patch_coordinates": {
+                "PT-01": {"baseline_commit": "baseline-one", "raw_index_sha256": "a" * 64, "scan_version": "13"},
+                "PT-02": {"baseline_commit": "baseline-two", "raw_index_sha256": "b" * 64, "scan_version": "13"},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        stage_fix,
+        "_resolve_scope",
+        lambda *_args: {
+            "scope_sha256": FIXTURE_SCOPE_SHA,
+            "patch_test_runtime": stage_fix.patch_test_runtime_identity(),
+        },
+    )
+    monkeypatch.setattr(
+        stage_fix, "_structural", lambda: SimpleNamespace(CodexRunner=lambda *_args, **_kwargs: adapter)
+    )
+    monkeypatch.setattr(stage_fix, "preflight_executable_agent_workspace", lambda *_args, **_kwargs: None)
+
+    stage_fix.run_fix_stage(
+        study="patch",
+        repo_path=tmp_path / "repo",
+        selected=None,
+        dry_run=True,
+        resolve_scope=False,
+        auth_source=None,
+        run_dir=None,
+        paid_approval=None,
+        model="gpt-5.6-luna",
+        index_path=tmp_path / "repo/.cache/codemap/repo.json",
+        marketplace_root=BENCHMARKS.parent,
+        codemap_bin=BENCHMARKS.parent / "plugins/codemap-py/bin/codemap-py",
+    )
+
+    output = capsys.readouterr().out
+    assert "PREFLIGHT 1/2 PT-01 validating frozen baseline and tests..." in output
+    assert "PREFLIGHT 1/2 PT-01 ✓" in output
+    assert "PREFLIGHT 2/2 PT-02 validating frozen baseline and tests..." in output
+    assert "PREFLIGHT 2/2 PT-02 ✓" in output
+
+
+def test_patch_preflight_admits_clean_context_before_staging_fixture(
+    stage_fix: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex integration probes run before the frozen fixture dirties the worktree."""
+    task = next(task for task in load_task_suite(stage_fix.PATCH_TASKS_PATH) if task["id"] == "PT-01")
+    contract = build_edit_task_contract(task)
+    events: list[str] = []
+    workspace = SimpleNamespace(
+        worktree=tmp_path / "worktree",
+        index_relocation={},
+        cleanup=lambda: events.append("cleanup") or True,
+    )
+    home = SimpleNamespace(coordination_path=None, cleanup=lambda: None)
+
+    @contextlib.contextmanager
+    def bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+        yield
+
+    class Adapter:
+        """Record when each arm validates the still-clean historical worktree."""
+
+        def _prepare_verified_home(self, arm: str, **_kwargs: Any) -> Any:
+            events.append(f"prepare:{arm}")
+            return home
+
+    structural = stage_fix._structural()
+    monkeypatch.setattr(stage_fix, "create_executable_agent_workspace", lambda *_args, **_kwargs: workspace)
+    monkeypatch.setattr(
+        stage_fix,
+        "stage_patch_task_agent_workspace",
+        lambda *_args, **_kwargs: events.append("stage-fixture"),
+    )
+    monkeypatch.setattr(structural, "bind_executable_agent_workspace", bind_workspace)
+
+    stage_fix.preflight_executable_agent_workspace(
+        Adapter(),
+        source_repo=tmp_path / "source",
+        source_index=tmp_path / "index.json",
+        baseline_commit=contract.baseline_commit,
+        allow_historical_baseline=True,
+        historical_runtime_coordinate={
+            "baseline_commit": contract.baseline_commit,
+            "raw_index_sha256": "a" * 64,
+            "scan_version": "13",
+        },
+        patch_contract=contract,
+    )
+
+    assert events == [
+        "prepare:A_plain",
+        "prepare:B_direct_required",
+        "prepare:C_skill_required",
+        "stage-fixture",
+        "cleanup",
+    ]
+
+
+def test_patch_cell_scores_the_exact_captured_worktree_diff(stage_fix: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Historical Patch scoring must not rewrite direct-worktree diff bytes.
+
+    Regression: the inherited Fix-Single display normalizer can insert context
+    markers. A Patch result is a harness-captured Git diff, so changing it
+    would make the stored digest describe different candidate bytes.
+    """
+    task = next(task for task in load_task_suite(stage_fix.PATCH_TASKS_PATH) if task["id"] == "PT-01")
+    contract = build_edit_task_contract(task)
+    captured_diff = "diff --git a/example.py b/example.py\n@@ -1 +1 @@\n-old\n+new\n"
+    observed: dict[str, str] = {}
+    monkeypatch.setattr(
+        stage_fix.runtime,
+        "parse_codex_jsonl",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            output_text="",
+            success=True,
+            input_tokens=1,
+            cached_input_tokens=0,
+            output_tokens=1,
+            reasoning_output_tokens=0,
+            tool_result_tokens=0,
+            command_calls=0,
+            tool_elapsed_s=0.0,
+            codemap_calls=0,
+            codemap_observed_calls=0,
+            codemap_successful_calls=0,
+            codemap_direct_compact_successful_calls=0,
+            codemap_skill_compact_successful_calls=0,
+            codemap_errors=[],
+            skill_delivery_observed=False,
+            successful_query_arguments=[],
+            raw_events=[],
+        ),
+    )
+
+    def execute(_repo: Path, _contract: object, diff: str) -> EditExecution:
+        observed["diff"] = diff
+        return EditExecution(
+            patch_applied=True,
+            targeted_test_passed=True,
+            regression_test_passed=True,
+            changed_paths=contract.expected_paths,
+        )
+
+    row = stage_fix._parse_patch_cell(
+        "",
+        arm="A_plain",
+        item={"contract": contract, "provider_binding": {}},
+        skill_path=None,
+        repo_path=Path("."),
+        captured_diff=captured_diff,
+        answer_re=stage_fix._PATCH_ANSWER_RE,
+        query_arguments=stage_fix._PATCH_QUERY_ARGUMENTS,
+        execute_patch=execute,
+    )
+
+    assert observed["diff"] == captured_diff
+    assert row["patch_wire_normalized"] is False
+    assert row["execution"].get("recount_recoverable") is None
 
 
 def test_executable_cells_and_preflight_keep_permission_verification_enabled(
@@ -298,6 +611,124 @@ def test_executable_cells_and_preflight_keep_permission_verification_enabled(
     assert all(kwargs["denied_workspace"] == source_path for kwargs in preparation_kwargs)
 
 
+def test_patch_cell_excludes_a_clean_source_head_switch(
+    stage_fix: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Patch row is not comparable when the agent changed source ``HEAD`` cleanly."""
+    source = tmp_path / "source"
+    source.mkdir()
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir()
+    contract = build_edit_task_contract(
+        {
+            "id": "PT-fixture",
+            "type": "patch_task",
+            "prompt": "Fix it.",
+            "pre_fix_commit": "a" * 40,
+            "test_fixture_patch": "diff --git a/test_fixture.py b/test_fixture.py\nnew file mode 100644\n--- /dev/null\n+++ b/test_fixture.py\n@@ -0,0 +1 @@\n+def test_fixture() -> None:\n+    pass\n",
+            "test_command": "pytest test_fixture.py -q",
+            "gt_files_changed": ["src/example.py"],
+            "regression_test_commands": ["pytest test_regression.py -q"],
+            "scoreable": True,
+        }
+    )
+    workspace = SimpleNamespace(
+        worktree=workspace_path,
+        index_relocation={},
+        changed_paths=lambda: ("src/example.py",),
+        index_unchanged=lambda: True,
+        cleanup=lambda: True,
+    )
+    patch_workspace = SimpleNamespace(
+        workspace=workspace,
+        fixture_sha256_by_path={"tests/test_fixture.py": "fixture-sha"},
+        capture_answer=lambda: SimpleNamespace(diff="diff --git a/src/example.py b/src/example.py\n"),
+        fixture_intact=lambda: True,
+        source_unchanged=lambda: False,
+    )
+    home = SimpleNamespace(coordination_path=None, cleanup=lambda: None, codemap_skill_path=None, env={})
+
+    @contextlib.contextmanager
+    def bind_workspace(*_args: Any, **_kwargs: Any) -> Any:
+        yield
+
+    structural = stage_fix._structural()
+    monkeypatch.setattr(stage_fix, "create_executable_agent_workspace", lambda *_args, **_kwargs: workspace)
+    monkeypatch.setattr(stage_fix, "stage_patch_task_agent_workspace", lambda *_args, **_kwargs: patch_workspace)
+    monkeypatch.setattr(structural, "bind_executable_agent_workspace", bind_workspace)
+    prepared: list[dict[str, Any]] = []
+
+    class Adapter:
+        """Provide the minimum home and stream surface for one agent-cell exclusion test."""
+
+        def _prepare_verified_home(self, *_args: Any, **kwargs: Any) -> Any:
+            prepared.append(kwargs)
+            return home
+
+        def build_command(self, *_args: Any, **_kwargs: Any) -> list[str]:
+            return ["codex", "exec"]
+
+        def _subprocess(self, *_args: Any, **_kwargs: Any) -> str:
+            return ""
+
+    row = stage_fix.execute_executable_agent_cell(
+        adapter=Adapter(),
+        source_repo=source,
+        source_index=tmp_path / "patch-index.json",
+        baseline_commit=contract.baseline_commit,
+        native_arm="A_plain",
+        arm="A_plain",
+        prompt="fixture",
+        item={
+            "contract": contract,
+            "patch_test_runtime": stage_fix.patch_test_runtime_identity(),
+            "historical_runtime_coordinate": {
+                "baseline_commit": contract.baseline_commit,
+                "raw_index_sha256": "a" * 64,
+                "scan_version": "13",
+            },
+        },
+        parser=lambda *_args, **_kwargs: {
+            "success": True,
+            "primary_correct": True,
+            "pooling_eligible": True,
+            "answer_error": "",
+        },
+    )
+
+    assert row["pooling_eligible"] is False
+    assert row["primary_correct"] is False
+    assert row["agent_workspace"]["source_unchanged"] is False
+    assert "patch_fixture_admission" not in prepared[0]
+
+
+def test_patch_result_row_keeps_quality_separate_from_pooling_eligibility(stage_fix: Any) -> None:
+    """Patch presentation avoids duplicating nonpoolability in quality."""
+    row = {
+        "task_id": "PT-01",
+        "arm": "A_plain",
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "command_calls": 1,
+        "elapsed_s": 1.0,
+        "primary_correct": True,
+        "pooling_eligible": False,
+        "codemap_used": False,
+        "execution": {"recount_recoverable": False, "patch_applied": True, "targeted_test_passed": True},
+    }
+
+    rendered = stage_fix.format_executable_result_row(row, completed=1, total=3)
+
+    assert rendered.startswith("(1/3) ✗")
+    assert "quality=1.000" in rendered
+    assert "^" not in rendered
+
+
+def test_patch_strict_query_anchors_pt02_at_existing_class(stage_fix: Any) -> None:
+    """PT-02 must query its pre-fix class rather than the method the task adds."""
+    assert stage_fix._PATCH_QUERY_ARGUMENTS["PT-02"] == ("symbol", "DistributedSamplerWrapper")
+
+
 def test_rescore_fix_stage_reuses_captured_agent_worktree_diff(
     stage_fix: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -352,8 +783,8 @@ def test_executable_paid_stages_route_every_arm_row_through_shared_renderer(
         stage_fix, "_structural", lambda: SimpleNamespace(CodexRunner=lambda *_args, **_kwargs: adapter)
     )
     monkeypatch.setattr(stage_fix, loader, lambda *_args: [{"task": {}, "contract": contract}])
-    monkeypatch.setattr(stage_fix, scope, lambda *_args: {"scope_sha256": "fixture-scope"})
-    monkeypatch.setattr(stage_fix, "_resolve_scope", lambda *_args: {"scope_sha256": "fixture-scope"})
+    monkeypatch.setattr(stage_fix, scope, lambda *_args: {"scope_sha256": FIXTURE_SCOPE_SHA})
+    monkeypatch.setattr(stage_fix, "_resolve_scope", lambda *_args: {"scope_sha256": FIXTURE_SCOPE_SHA})
     monkeypatch.setattr(stage_fix, "_stage_source_binding", lambda *_args: {"source": "locked"})
     monkeypatch.setattr(stage_fix, "preflight_executable_agent_workspace", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
@@ -391,15 +822,15 @@ def test_executable_paid_stages_route_every_arm_row_through_shared_renderer(
         resolve_scope=False,
         auth_source=tmp_path / "auth.json",
         run_dir=tmp_path / study,
-        paid_approval="fixture-scope",
+        paid_approval=FIXTURE_APPROVAL_TOKEN,
         model="fixture-model",
     )
 
     assert [arm for _row, arm in rendered] == list(stage_fix.ARMS)
     assert all("quality=1.000" in row and "oracle=✓" in row for row, _arm in rendered)
     output = capsys.readouterr().out
-    assert f"ARTIFACTS\n\ttelemetry={tmp_path / study / 'telemetry.jsonl'}" in output
-    assert f"\tmetadata={tmp_path / study / 'run-metadata.json'}" in output
+    assert f"ARTIFACTS:\n - telemetry={tmp_path / study / 'telemetry.jsonl'}" in output
+    assert f" - metadata={tmp_path / study / 'run-metadata.json'}" in output
 
 
 @pytest.mark.parametrize("captured_diff", (None, "", "not a diff", {"not": "a diff"}))

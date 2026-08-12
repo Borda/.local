@@ -21,10 +21,14 @@ import ast
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from _bench_common.edit_patch_contracts import semantic_index_sha256
 
 
 def _cli_error(message: str) -> None:
@@ -189,17 +193,147 @@ def _replace_root(value: Any, source_root: str, locked_root: str) -> Any:
     return value
 
 
-def semantic_index_sha256(payload: dict[str, Any], source_root: Path) -> str:
-    """Return the graph identity after removing location and scan-time metadata.
+def _patch_index_locks(path: Path) -> dict[str, dict[str, Any]]:
+    """Load the reviewed per-task historical index identities."""
+    payload = _load_json(path)
+    if payload.get("schema_version") != "provider-parity-patch-index-locks-v1":
+        raise ValueError("patch index locks use an unsupported schema")
+    canonical_root = payload.get("canonical_scan_root")
+    if not isinstance(canonical_root, str) or not Path(canonical_root).is_absolute():
+        raise ValueError("patch index locks require an absolute canonical_scan_root")
+    tasks = payload.get("tasks")
+    if not isinstance(tasks, dict) or not tasks:
+        raise ValueError("patch index locks require a non-empty tasks object")
+    for task_id, lock in tasks.items():
+        if not isinstance(task_id, str) or not task_id.startswith("PT-") or not isinstance(lock, dict):
+            raise ValueError("patch index locks require PT task object entries")
+        if not isinstance(lock.get("baseline_commit"), str) or len(lock["baseline_commit"]) != 40:
+            raise ValueError(f"patch index lock {task_id} requires an exact baseline commit")
+        if not isinstance(lock.get("scan_version"), int) or isinstance(lock["scan_version"], bool):
+            raise ValueError(f"patch index lock {task_id} requires an integer scan_version")
+        if not isinstance(lock.get("module_count"), int) or lock["module_count"] < 1:
+            raise ValueError(f"patch index lock {task_id} requires a positive module_count")
+        for digest_field in ("raw_sha256_at_canonical_root", "semantic_sha256"):
+            value = lock.get(digest_field)
+            if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                raise ValueError(f"patch index lock {task_id} requires a lowercase {digest_field}")
+        if not isinstance(lock.get("scanned_at"), str) or not lock["scanned_at"]:
+            raise ValueError(f"patch index lock {task_id} requires scanned_at")
+    return tasks
 
-    The persisted index retains its runtime paths because the query process uses
-    them. The semantic lock intentionally excludes only the scanner's root and
-    timestamp metadata and replaces embedded runtime-root prefixes, so a graph
-    change still changes this digest.
+
+def _git(source_root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run one bounded Git operation against the explicit source object store."""
+    return subprocess.run(
+        ["git", "-C", str(source_root), *args],
+        check=check,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def prepare_patch_index_bundle(source_root: Path, locks_path: Path, scan_index_bin: Path) -> dict[str, str]:
+    """Build and verify one source-matched frozen Codemap index per patch task.
+
+    Historical tasks intentionally use different Git commits. Each graph is
+    therefore scanned in a detached temporary worktree, relocated to the clean
+    orchestration checkout, and admitted only when its semantic identity equals
+    the reviewed lock. The operation never changes the orchestration checkout's
+    HEAD or tracked files.
+
+    Args:
+        source_root: Clean Git checkout whose object store contains every baseline.
+        locks_path: Reviewed task-to-index identity JSON.
+        scan_index_bin: Checked-out ``scan-index`` executable.
+
+    Returns:
+        Mapping from task ID to the installed runtime index SHA-256.
+
+    Raises:
+        ValueError: If source, commit, scanner output, or index identity is invalid.
     """
-    semantic_payload = {key: value for key, value in payload.items() if key not in {"scan_root", "scanned_at"}}
-    normalized = _replace_root(semantic_payload, str(source_root.resolve()), "<runtime-root>")
-    return hashlib.sha256(json.dumps(normalized, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
+    source_root = source_root.resolve(strict=True)
+    locks_path = locks_path.resolve(strict=True)
+    scan_index_bin = scan_index_bin.resolve(strict=True)
+    if not (_git(source_root, "rev-parse", "--is-inside-work-tree").stdout.strip() == "true"):
+        raise ValueError("patch index source must be a Git worktree")
+    if _git(source_root, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        raise ValueError("patch index source must have no tracked changes")
+    locks = _patch_index_locks(locks_path)
+    installed: dict[str, str] = {}
+    bundle_dir = source_root / ".cache" / "codemap" / "patch"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    canonical_root = str(_load_json(locks_path)["canonical_scan_root"])
+    root = Path(tempfile.mkdtemp(prefix="codemap-patch-index-bundle-")).resolve(strict=True)
+    try:
+        for task_id, lock in sorted(locks.items()):
+            commit = lock.get("baseline_commit")
+            if not isinstance(commit, str) or len(commit) != 40:
+                raise ValueError(f"patch index lock {task_id} has no exact baseline commit")
+            if _git(source_root, "cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode != 0:
+                raise ValueError(
+                    f"patch baseline {commit} for {task_id} is unavailable; fetch the exact commit, then rerun "
+                    "python3 benchmarks/prepare-codex-index.py --prepare-patch-bundle"
+                )
+            worktree = root / task_id
+            created = False
+            try:
+                _git(source_root, "worktree", "add", "--detach", str(worktree), commit)
+                created = True
+                scan = subprocess.run(
+                    [str(scan_index_bin), "--root", str(worktree)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                if scan.returncode != 0:
+                    raise ValueError(f"scan-index failed for {task_id}: {scan.stderr.strip()[:500]}")
+                scanned_path = worktree / ".cache" / "codemap" / f"{worktree.name}.json"
+                payload = _load_json(scanned_path)
+                payload = _replace_root(payload, str(worktree), str(source_root))
+                payload.update(
+                    project=f"provider-parity-{task_id}",
+                    scan_root=str(source_root),
+                    scanned_at=lock.get("scanned_at"),
+                )
+                if payload.get("scan_version") != lock.get("scan_version"):
+                    raise ValueError(f"patch index scan_version drifted for {task_id}")
+                if len(payload.get("modules", [])) != lock.get("module_count"):
+                    raise ValueError(f"patch index module count drifted for {task_id}")
+                semantic_sha = semantic_index_sha256(payload, source_root)
+                if semantic_sha != lock.get("semantic_sha256"):
+                    raise ValueError(
+                        f"patch index semantic SHA-256 drifted for {task_id}: "
+                        f"expected {lock.get('semantic_sha256')}, got {semantic_sha}"
+                    )
+                encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+                digest = hashlib.sha256(encoded).hexdigest()
+                if str(source_root) == canonical_root and digest != lock.get("raw_sha256_at_canonical_root"):
+                    raise ValueError(f"patch index canonical raw SHA-256 drifted for {task_id}")
+                destination = bundle_dir / f"{task_id}.json"
+                with tempfile.NamedTemporaryFile(dir=bundle_dir, prefix=f".{task_id}.", delete=False) as handle:
+                    temporary = Path(handle.name)
+                    handle.write(encoded)
+                try:
+                    os.replace(temporary, destination)
+                finally:
+                    temporary.unlink(missing_ok=True)
+                installed[task_id] = digest
+            finally:
+                if created:
+                    _git(worktree, "reset", "--hard", "HEAD")
+                    _git(worktree, "clean", "-fdx")
+                    removal = _git(source_root, "worktree", "remove", str(worktree), check=False)
+                    registered = str(worktree) in _git(source_root, "worktree", "list", "--porcelain").stdout
+                    if removal.returncode != 0 or worktree.exists() or registered:
+                        raise ValueError(
+                            f"patch index worktree cleanup failed for {task_id}: {removal.stderr.strip()[:300]}"
+                        )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    return installed
 
 
 def prepare_index(
@@ -257,6 +391,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
     verify: bool = False,
     require_hash: bool = False,
     print_contract: bool = False,
+    prepare_patch_bundle: bool = False,
+    patch_locks_path: Path = None,
+    scan_index_bin: Path = None,
 ) -> None:
     """Prepare, verify, or describe one manifest-locked Codemap index.
 
@@ -271,6 +408,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         verify: Check an existing index against the active lock instead of installing a new one.
         require_hash: With ``--verify``, also require the exact manifest-locked index bytes.
         print_contract: Print the validated index contract as sorted JSON and exit.
+        prepare_patch_bundle: Build every manifest-locked historical patch index.
+        patch_locks_path: Reviewed per-task patch index identity JSON.
+        scan_index_bin: Checked-out scanner executable used for the patch bundle.
 
     Raises:
         SystemExit: With status 2 when a required argument for the selected mode is missing.
@@ -279,10 +419,9 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         >>> main.__name__
         'main'
     """
-    if manifest_path is None:
-        _cli_error("--manifest-path is required")
     # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
-    manifest_path = Path(manifest_path)
+    if manifest_path is not None:
+        manifest_path = Path(manifest_path)
     if index_path is not None:
         index_path = Path(index_path)
     if source_root is not None:
@@ -291,6 +430,19 @@ def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag w
         methodology_path = Path(methodology_path)
     if schema_path is not None:
         schema_path = Path(schema_path)
+    if patch_locks_path is not None:
+        patch_locks_path = Path(patch_locks_path)
+    if scan_index_bin is not None:
+        scan_index_bin = Path(scan_index_bin)
+
+    if prepare_patch_bundle:
+        if source_root is None or patch_locks_path is None or scan_index_bin is None:
+            _cli_error("--source-root, --patch-locks-path, and --scan-index-bin are required for patch preparation")
+        print(json.dumps(prepare_patch_index_bundle(source_root, patch_locks_path, scan_index_bin), sort_keys=True))
+        return
+
+    if manifest_path is None:
+        _cli_error("--manifest-path is required unless --prepare-patch-bundle is used")
 
     if print_contract:
         print(

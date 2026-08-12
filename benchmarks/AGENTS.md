@@ -2,7 +2,7 @@
 
 - Use Fire for every Python CLI. Add a study to an existing provider runner when it shares transport or isolation; keep stage-specific contracts and scorers in focused modules rather than creating a second launcher.
 - Interactive A/B/C result rows are a CLI contract: persist plain rows to a stage run log when that stage has one, and always route terminal output through the existing shared Rich arm renderer. Do not add direct `print()` paths for arm rows; redirected output must remain ANSI-free. Add a focused renderer-forwarding regression for every new stage or rescore path.
-- Never run paid models. Give the user an exact command with a freshly resolved `--paid-approval` SHA-256, then analyze only the artifact they provide.
+- Never run paid models. Give the user the exact command emitted by a fresh dry run with its 16-character `--paid-approval` token; retain the complete SHA-256 in benchmark provenance, then analyze only the artifact they provide.
 - Treat task suites, manifests, frozen repositories, indexes, and input snapshots as immutable benchmark coordinates. Regenerate generated manifests after contract or consumer changes; do not edit result artifacts.
 - Convert benchmark findings into generic production contracts; never copy benchmark task IDs, target repositories, prompt wording, expected answers, or task-specific source/symbol examples into shipped plugins, Skills, templates, or user-facing docs.
 - Keep A/B/C arms symmetric except for the documented treatment supplement. State Codemap's static-graph boundary: use it for compact symbol/dependency/importer/caller facts, not runtime validation, test execution, or edits.

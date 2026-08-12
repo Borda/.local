@@ -1,14 +1,16 @@
-"""Executable Fix-Single and Fix-Multi benchmark stages.
+"""Executable Fix-Single, Fix-Multi, and Patch benchmark stages.
 
 The structural runner supplies the established native Codex transport and
 disposable-home isolation. This module owns executable task contracts, prompts,
-patch scoring, offline rescoring, and Fix-Single/Fix-Multi stage execution.
+patch scoring, offline rescoring, and executable-stage dispatch.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+from dataclasses import replace
 from pathlib import Path
 import re
 import shlex
@@ -25,7 +27,9 @@ STRUCTURAL_PATH = BENCHMARKS / "run-codex-structural.py"
 PARITY_MANIFEST_PATH = BENCHMARKS / "manifests" / "codex-integration.json"
 FIX_SINGLE_TASKS_PATH = BENCHMARKS / "suites" / "tasks-fix-single.json"
 FIX_MULTI_TASKS_PATH = BENCHMARKS / "suites" / "tasks-fix-multi.json"
-_MANAGED_PARITY_REPO = Path("/private/tmp/codemap-provider-parity-pl-2.6.5")
+PATCH_TASKS_PATH = BENCHMARKS / "suites" / "tasks-patch.json"
+PATCH_INDEX_LOCKS_PATH = BENCHMARKS / "suites" / "patch-index-locks.json"
+_MANAGED_PARITY_REPO = (Path(os.sep) / "tmp" / "codemap-provider-parity-pl-2.6.5").resolve()
 ARMS = ("A_plain", "B_auto", "C_strict")
 NATIVE_ARMS = {"A_plain": "A_plain", "B_auto": "B_direct_required", "C_strict": "C_skill_required"}
 _FIX_SINGLE_QUERY_ARGUMENTS = {
@@ -49,27 +53,51 @@ _FIX_MULTI_QUERY_ARGUMENTS = {
 }
 _FIX_SINGLE_ANSWER_RE = re.compile(r"BEGIN_FIX_SINGLE_DIFF\s*(?P<diff>```diff\s*.*?```)", re.DOTALL)
 _FIX_MULTI_ANSWER_RE = re.compile(r"BEGIN_FIX_MULTI_DIFF\s*(?P<diff>```diff\s*.*?```)", re.DOTALL)
+_PATCH_ANSWER_RE = re.compile(r"BEGIN_PATCH_DIFF\s*(?P<diff>```diff\s*.*?```)", re.DOTALL)
+_PATCH_QUERY_ARGUMENTS = {
+    "PT-01": ("symbol", "FitLoop.setup_data"),
+    "PT-02": ("symbol", "DistributedSamplerWrapper"),
+    "PT-03": ("symbol", "ThroughputMonitor._update"),
+    "PT-04": ("symbol", "StochasticWeightAveraging.on_fit_start"),
+    "PT-05": ("symbol", "_TrainingEpochLoop.advance"),
+}
 
 sys.path.insert(0, str(BENCHMARKS))
 
 from _bench_common.edit_patch_contracts import (  # noqa: E402
+    EditExecution,
+    EditTaskContract,
+    StageIdentity,
     assess_patch_answer,
+    build_edit_task_contract,
+    build_patch_answer,
     build_fix_multi_contract,
     build_fix_single_contract,
+    score_edit_execution,
+    stage_contract_sha256,
+    validate_patch_index_bundle,
+    validate_provider_binding,
     validate_fix_multi_binding,
     validate_fix_single_binding,
 )
 from _bench_common.mutation_isolation import (  # noqa: E402
-    FixExecution,
+    PATCH_PYTEST_ENV,
+    create_executable_agent_workspace,
+    execute_patch_task_answer,
     execute_fix_multi_patch,
     execute_fix_single_patch,
+    patch_test_runtime_identity,
+    stage_patch_task_agent_workspace,
 )
 from _bench_common.paid_lifecycle import (  # noqa: E402
     PaidStageCallbacks,
+    paid_approval_matches,
+    paid_approval_token,
     run_paid_stage,
     verify_checksums,
     write_checksums,
 )
+from _bench_common.presentation import format_quality  # noqa: E402
 from . import runtime  # noqa: E402
 from _bench_common.provider_parity_contracts import (  # noqa: E402
     fresh_input_tokens,
@@ -141,9 +169,38 @@ def fix_multi_prompt(arm: str, task: Mapping[str, Any]) -> str:
     return _task_prompt(arm, task, query_arguments=_FIX_MULTI_QUERY_ARGUMENTS, study="fix-multi")
 
 
+def patch_prompt(arm: str, task: Mapping[str, Any]) -> str:
+    """Materialize a historical Patch task prompt for one treatment arm."""
+    return _task_prompt(arm, task, query_arguments=_PATCH_QUERY_ARGUMENTS, study="patch")
+
+
 def _sha256(value: Mapping[str, object]) -> str:
     """Return the canonical SHA-256 for one immutable contract payload."""
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    """Return the SHA-256 for one reviewed implementation or fixture file."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _patch_snapshot_files(repo_path: Path, tasks: list[dict[str, Any]]) -> dict[str, Path]:
+    """Return the complete reviewed Patch implementation and per-task input closure."""
+    shared = {
+        "codex-runtime.py": BENCHMARKS / "_bench_codex" / "runtime.py",
+        "stage-fix.py": Path(__file__),
+        "paid-lifecycle.py": BENCHMARKS / "_bench_common" / "paid_lifecycle.py",
+        "edit-patch-contracts.py": BENCHMARKS / "_bench_common" / "edit_patch_contracts.py",
+        "mutation-isolation.py": BENCHMARKS / "_bench_common" / "mutation_isolation.py",
+        "patch-index-locks.json": PATCH_INDEX_LOCKS_PATH,
+    }
+    shared.update(
+        {
+            f"patch-index-{item['contract'].task_id}.json": _patch_index_path(repo_path, item["contract"].task_id)
+            for item in tasks
+        }
+    )
+    return shared
 
 
 def load_fix_single_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]:
@@ -168,6 +225,69 @@ def load_fix_multi_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]
     if {item["contract"].task_id for item in loaded} != selected:
         raise ValueError("--tasks must select known fix-multi task IDs")
     return loaded
+
+
+def _patch_stage_identity(path: Path, contracts: list[EditTaskContract]) -> StageIdentity:
+    """Bind Patch provider evidence to the exact selected suite and scorer contract."""
+    return StageIdentity(
+        stage="patch",
+        revision="provider-parity-patch-v1",
+        task_suite_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        contract_sha256=stage_contract_sha256(contracts),
+    )
+
+
+def load_patch_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]:
+    """Load selected historical Patch tasks with stage-bound shared contracts."""
+    raw_tasks = [task for task in load_task_suite(path) if task["id"] in selected]
+    contracts = [build_edit_task_contract(task) for task in raw_tasks]
+    if {contract.task_id for contract in contracts} != selected:
+        raise ValueError("--tasks must select known patch task IDs")
+    identity = _patch_stage_identity(path, contracts)
+    return [
+        {
+            "task": task,
+            "contract": contract,
+            "stage_identity": identity,
+            "provider_binding": dict(contract.scientific_field_hashes(identity)),
+        }
+        for task, contract in zip(raw_tasks, contracts, strict=True)
+    ]
+
+
+def _provider_binding(item: Mapping[str, Any]) -> Mapping[str, str]:
+    """Return the stage-specific immutable provider fields for one executable cell."""
+    binding = item.get("provider_binding")
+    if isinstance(binding, Mapping):
+        return {str(key): str(value) for key, value in binding.items()}
+    return item["contract"].provider_binding()
+
+
+def _validate_binding(item: Mapping[str, Any], observed: Mapping[str, Any]) -> None:
+    """Reject provider evidence that drifts from its selected executable contract."""
+    contract = item.get("contract")
+    identity = item.get("stage_identity")
+    if isinstance(contract, EditTaskContract):
+        if not isinstance(identity, StageIdentity):
+            raise ValueError("patch task lacks its immutable stage identity")
+        validate_provider_binding(contract, identity, observed)
+        return
+    if contract.task_id.startswith("FS-"):
+        validate_fix_single_binding(contract, observed)
+        return
+    validate_fix_multi_binding(contract, observed)
+
+
+def _validate_stage_binding(study: str, item: Mapping[str, Any], observed: Mapping[str, Any]) -> None:
+    """Validate a row using the selected stage rather than fixture task-name conventions."""
+    contract = item["contract"]
+    if study == "fix-single":
+        validate_fix_single_binding(contract, observed)
+        return
+    if study == "fix-multi":
+        validate_fix_multi_binding(contract, observed)
+        return
+    _validate_binding(item, observed)
 
 
 def normalize_fix_single_patch_wire(diff: str) -> str:
@@ -201,7 +321,8 @@ def _parse_patch_cell(
     captured_diff: str | None,
     answer_re: re.Pattern[str],
     query_arguments: Mapping[str, tuple[str, ...]],
-    execute_patch: Callable[[Path, Any, str], FixExecution],
+    execute_patch: Callable[[Path, Any, str], Any],
+    agent_fixture_intact: bool | None = None,
 ) -> dict[str, Any]:
     """Normalize one native response and score its stage-owned executable patch."""
     skill_sha256 = hashlib.sha256(skill_path.read_bytes()).hexdigest() if skill_path else ""
@@ -212,14 +333,21 @@ def _parse_patch_cell(
     candidate_diff = normalized_diff = ""
     execution: dict[str, Any] = {
         "baseline_failed": False,
+        "baseline_target_failed": False,
+        "baseline_regressions_passed": False,
+        "fixture_intact": False,
+        "source_integrity": False,
+        "index_integrity": None,
         "patch_applied": False,
         "changed_paths": [],
         "targeted_test_passed": False,
+        "regression_test_passed": None,
         "recount_recoverable": False,
         "recount_oracle_passed": None,
         "cleanup_verified": False,
         "error": "answer unavailable",
     }
+    executed: Any | None = None
     if captured_diff is None and match is None:
         answer_error = "missing exact fenced diff envelope"
     else:
@@ -229,8 +357,23 @@ def _parse_patch_cell(
             )
             if not candidate_diff.startswith("diff --git "):
                 raise ValueError("captured executable patch must contain a unified diff")
-            normalized_diff = normalize_fix_single_patch_wire(candidate_diff)
-            execution = execute_patch(repo_path, contract, normalized_diff).as_dict()
+            # Historical Patch tasks transport the exact worktree diff. Their
+            # shared answer contract already validates it, so presentation
+            # normalization would change the measured candidate bytes.
+            normalized_diff = (
+                candidate_diff
+                if isinstance(contract, EditTaskContract)
+                else normalize_fix_single_patch_wire(candidate_diff)
+            )
+            executed = execute_patch(repo_path, contract, normalized_diff)
+            if isinstance(executed, EditExecution) and agent_fixture_intact is not None:
+                executed = replace(executed, fixture_intact=executed.fixture_intact and agent_fixture_intact)
+            # Test doubles and the shared edit executor both expose the same
+            # serialization contract; do not couple this adapter to one
+            # concrete execution value type.
+            execution = (
+                dict(executed.as_dict()) if callable(getattr(executed, "as_dict", None)) else dict(vars(executed))
+            )
         except ValueError as exc:
             answer_error = str(exc)
     codemap_observed_calls = getattr(parsed, "codemap_observed_calls", parsed.codemap_calls)
@@ -241,8 +384,20 @@ def _parse_patch_cell(
         "B_auto": True,
         "C_strict": parsed.codemap_skill_compact_successful_calls > 0,
     }[arm]
-    path_ok = set(execution["changed_paths"]) == set(contract.expected_paths)
-    primary = bool(execution["baseline_failed"] and execution["patch_applied"] and execution["targeted_test_passed"])
+    if isinstance(contract, EditTaskContract) and not answer_error:
+        if not isinstance(executed, EditExecution):
+            raise TypeError("patch executor must return EditExecution")
+        scored = score_edit_execution(contract, build_patch_answer(normalized_diff), executed)
+        path_ok = scored.changed_path_boundary_passed
+        primary = scored.primary_correct
+        pooling_eligible = scored.pooling_eligible
+    else:
+        path_ok = set(execution.get("changed_paths", ())) == set(contract.expected_paths)
+        baseline_failed = execution.get("baseline_failed", execution.get("baseline_target_failed", False))
+        primary = bool(
+            baseline_failed and execution.get("patch_applied", False) and execution.get("targeted_test_passed", False)
+        )
+        pooling_eligible = primary and path_ok
     strict_query_conformance = (
         None if arm != "C_strict" else list(query_arguments[contract.task_id]) in parsed.successful_query_arguments
     )
@@ -252,8 +407,7 @@ def _parse_patch_cell(
         "success": parsed.success and not answer_error and not contaminated and bool(execution["cleanup_verified"]),
         "primary_correct": primary,
         "pooling_eligible": bool(
-            primary
-            and path_ok
+            pooling_eligible
             and execution["cleanup_verified"]
             and not answer_error
             and compliance is not False
@@ -292,7 +446,7 @@ def _parse_patch_cell(
         "raw_events_sha256": hashlib.sha256(
             json.dumps(parsed.raw_events, separators=(",", ":"), sort_keys=True).encode("utf-8")
         ).hexdigest(),
-        "provider_binding": dict(contract.provider_binding()),
+        "provider_binding": dict(_provider_binding(item)),
     }
 
 
@@ -313,6 +467,7 @@ def parse_fix_single_cell(
         skill_path=skill_path,
         repo_path=repo_path,
         captured_diff=captured_diff,
+        agent_fixture_intact=None,
         answer_re=_FIX_SINGLE_ANSWER_RE,
         query_arguments=_FIX_SINGLE_QUERY_ARGUMENTS,
         execute_patch=execute_fix_single_patch,
@@ -336,9 +491,42 @@ def parse_fix_multi_cell(
         skill_path=skill_path,
         repo_path=repo_path,
         captured_diff=captured_diff,
+        agent_fixture_intact=None,
         answer_re=_FIX_MULTI_ANSWER_RE,
         query_arguments=_FIX_MULTI_QUERY_ARGUMENTS,
         execute_patch=execute_fix_multi_patch,
+    )
+
+
+def parse_patch_cell(
+    stream: str | bytes,
+    *,
+    arm: str,
+    item: Mapping[str, Any],
+    skill_path: Path | None,
+    repo_path: Path,
+    captured_diff: str | None = None,
+    agent_fixture_intact: bool | None = None,
+    patch_test_runtime: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Parse a historical Patch cell and score it with the shared fixture oracle."""
+    return _parse_patch_cell(
+        stream,
+        arm=arm,
+        item=item,
+        skill_path=skill_path,
+        repo_path=repo_path,
+        captured_diff=captured_diff,
+        agent_fixture_intact=agent_fixture_intact,
+        answer_re=_PATCH_ANSWER_RE,
+        query_arguments=_PATCH_QUERY_ARGUMENTS,
+        execute_patch=lambda source, contract, diff: execute_patch_task_answer(
+            source,
+            contract,
+            build_patch_answer(diff),
+            index_path=_patch_index_path(source, contract.task_id),
+            runtime_identity=patch_test_runtime,
+        ),
     )
 
 
@@ -348,8 +536,8 @@ def _stage_input_recovery(repo_path: Path) -> str:
         return (
             "The managed target's Git metadata is invalid or its locked index is stale. Preserve it by moving it aside, "
             "then let the no-model launcher reconstruct and verify the canonical pair:\n"
-            "mv /private/tmp/codemap-provider-parity-pl-2.6.5 "
-            '"/private/tmp/codemap-provider-parity-pl-2.6.5.invalid-$(date -u +%Y%m%dT%H%M%SZ)"\n'
+            f"REPO_PATH={shlex.quote(str(repo_path))}\n"
+            'mv "$REPO_PATH" "$REPO_PATH.invalid-$(date -u +%Y%m%dT%H%M%SZ)"\n'
             "bash benchmarks/run-all.sh codex --struct --tasks=FN-02 --dry-run"
         )
     return "Use the managed canonical repository and its manifest-locked index, then rerun this stage with --dry-run."
@@ -374,18 +562,55 @@ def _stage_source_binding(repo_path: Path, index_path: Path) -> dict[str, str]:
     }
 
 
-def _resolve_scope(tasks: list[dict[str, Any]], model: str, source_binding: Mapping[str, str]) -> dict[str, Any]:
+def _patch_index_path(repo_path: Path, task_id: str) -> Path:
+    """Return the immutable historical index paired with one Patch baseline."""
+    return repo_path / ".cache" / "codemap" / "patch" / f"{task_id}.json"
+
+
+def _patch_stage_source_binding(repo_path: Path, tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fingerprint every historical Patch baseline/index coordinate before admission."""
+    structural = _structural()
+    try:
+        bindings = validate_patch_index_bundle(repo_path, PATCH_INDEX_LOCKS_PATH, [item["contract"] for item in tasks])
+    except ValueError as exc:
+        raise ValueError(
+            f"patch-stage input preflight failed: {exc}.\n"
+            "No paid model call was started. Rebuild the frozen patch coordinates, then rerun with --dry-run."
+        ) from exc
+    return {
+        "repo_path": str(repo_path.resolve()),
+        "repo_sha256": hashlib.sha256(structural._repo_sha(repo_path).encode("utf-8")).hexdigest(),
+        "patch_coordinates": bindings,
+        "manifest_sha256": hashlib.sha256(PARITY_MANIFEST_PATH.read_bytes()).hexdigest(),
+    }
+
+
+def _resolve_scope(tasks: list[dict[str, Any]], model: str, source_binding: Mapping[str, Any]) -> dict[str, Any]:
     """Bind one selected executable stage to immutable contracts, scorer, and source inputs."""
     payload: dict[str, Any] = {
         "arms": ARMS,
         "model": model,
-        "stage_runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "invocation_launcher_sha256": hashlib.sha256(STRUCTURAL_PATH.read_bytes()).hexdigest(),
-        "lifecycle_sha256": hashlib.sha256((BENCHMARKS / "_bench_codex" / "runtime.py").read_bytes()).hexdigest(),
+        "stage_runner_sha256": _file_sha256(Path(__file__)),
+        "invocation_launcher_sha256": _file_sha256(STRUCTURAL_PATH),
+        "lifecycle_sha256": _file_sha256(BENCHMARKS / "_bench_codex" / "runtime.py"),
+        "implementation_sha256": {
+            "stage_fix": _file_sha256(Path(__file__)),
+            "structural_runner": _file_sha256(STRUCTURAL_PATH),
+            "paid_lifecycle": _file_sha256(BENCHMARKS / "_bench_common" / "paid_lifecycle.py"),
+        },
         "task_ids": [item["contract"].task_id for item in tasks],
-        "contracts": {item["contract"].task_id: dict(item["contract"].provider_binding()) for item in tasks},
+        "contracts": {item["contract"].task_id: dict(_provider_binding(item)) for item in tasks},
         "source_binding": dict(source_binding),
     }
+    if "patch_coordinates" in source_binding:
+        payload["implementation_sha256"].update(
+            {
+                "edit_patch_contracts": _file_sha256(BENCHMARKS / "_bench_common" / "edit_patch_contracts.py"),
+                "mutation_isolation": _file_sha256(BENCHMARKS / "_bench_common" / "mutation_isolation.py"),
+                "patch_index_locks": _file_sha256(PATCH_INDEX_LOCKS_PATH),
+            }
+        )
+        payload["patch_test_runtime"] = patch_test_runtime_identity()
     payload["scope_sha256"] = _sha256(payload)
     return payload
 
@@ -423,12 +648,13 @@ def _require_paid_stage_request(
             "Required form: --auth-source <auth.json> --run-dir <new-run-dir> "
             "--paid-approval <fresh-scope>."
         )
-    if paid_approval == expected_scope:
+    approval = None if paid_approval is None else str(paid_approval)
+    if paid_approval_matches(approval, expected_scope):
         return
     task_selector = f" --tasks {','.join(task_ids)}" if explicit_selection else ""
     raise ValueError(
         f"paid {study} approval does not match the current immutable scope.\n"
-        f"received --paid-approval: {paid_approval}\n"
+        f"received --paid-approval: {approval}\n"
         f"current scope: {expected_scope}\n"
         "The runner, lifecycle, or task contract changed after the earlier approval. "
         "No model call was made. Run the no-model preflight, then copy its emitted PAID_COMMAND exactly:\n"
@@ -454,12 +680,14 @@ def _print_paid_command(
     task_ids: list[str],
     scope_sha256: str,
     explicit_selection: bool,
+    patch_pytest: str | None = None,
 ) -> None:
     """Print the exact user-owned paid command admitted by a successful no-model preflight."""
     run_dir = _suggested_run_dir(study)
     tasks = ",".join(task_ids)
     print("PAID_COMMAND")
-    print("python3 benchmarks/run-codex-structural.py \\")
+    prefix = f"{PATCH_PYTEST_ENV}={shlex.quote(patch_pytest)} " if patch_pytest else ""
+    print(f"{prefix}python3 benchmarks/run-codex-structural.py \\")
     print(f"  --repo-path {repo_path.resolve()} \\")
     print(f"  --index-path {index_path.resolve()} \\")
     print(f"  --marketplace-root {marketplace_root.resolve()} \\")
@@ -469,7 +697,7 @@ def _print_paid_command(
         print(f"  --tasks {tasks} \\")
     print('  --auth-source "$HOME/.codex/auth.json" \\')
     print(f"  --run-dir {run_dir} \\")
-    print(f"  --paid-approval {scope_sha256}")
+    print(f"  --paid-approval {paid_approval_token(scope_sha256)}")
 
 
 def resolve_fix_single_scope(
@@ -483,6 +711,11 @@ def resolve_fix_multi_scope(
     tasks: list[dict[str, Any]], model: str, source_binding: Mapping[str, str]
 ) -> dict[str, Any]:
     """Resolve Fix-Multi's paid-execution scope authorization."""
+    return _resolve_scope(tasks, model, source_binding)
+
+
+def resolve_patch_scope(tasks: list[dict[str, Any]], model: str, source_binding: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve Patch paid execution against every immutable historical coordinate."""
     return _resolve_scope(tasks, model, source_binding)
 
 
@@ -514,7 +747,16 @@ def _load_fix_stage(
             parse_fix_multi_cell,
             validate_fix_multi_binding,
         )
-    raise ValueError("executable stage must be 'fix-single' or 'fix-multi'")
+    if study == "patch":
+        selected = selected or {str(task["id"]) for task in load_task_suite(PATCH_TASKS_PATH)}
+        return (
+            load_patch_tasks(PATCH_TASKS_PATH, selected),
+            PATCH_TASKS_PATH,
+            patch_prompt,
+            parse_patch_cell,
+            _validate_binding,
+        )
+    raise ValueError("executable stage must be 'fix-single', 'fix-multi', or 'patch'")
 
 
 def resolve_fix_stage_scope(
@@ -528,23 +770,30 @@ def resolve_fix_stage_scope(
     """Resolve one executable stage without constructing a model adapter."""
     tasks, _, _, _, _ = _load_fix_stage(study, selected)
     index_path = index_path or repo_path / ".cache" / "codemap" / f"{repo_path.name}.json"
-    return _resolve_scope(tasks, model, _stage_source_binding(repo_path, index_path))
+    source_binding = (
+        _patch_stage_source_binding(repo_path, tasks)
+        if study == "patch"
+        else _stage_source_binding(repo_path, index_path)
+    )
+    return _resolve_scope(tasks, model, source_binding)
 
 
 def format_executable_result_row(row: Mapping[str, Any], completed: int, total: int) -> str:
     """Render one executable cell row while retaining detailed evidence on disk."""
     elapsed_s = row.get("elapsed_s")
     elapsed_text = runtime.fmt_time(float(elapsed_s)) if isinstance(elapsed_s, (int, float)) else "?"
+    execution = row["execution"]
     recovery = ""
-    if row["execution"]["recount_recoverable"]:
+    if execution.get("recount_recoverable", False):
         recovery = " recount=✓"
-        if row["execution"]["recount_oracle_passed"] is not None:
-            recovery += f" recount-oracle={'✓' if row['execution']['recount_oracle_passed'] else '✗'}"
+        if execution.get("recount_oracle_passed") is not None:
+            recovery += f" recount-oracle={'✓' if execution['recount_oracle_passed'] else '✗'}"
+    quality = format_quality(1.0 if row["primary_correct"] else 0.0)
     return (
         f"({completed}/{total}) {'✓' if row['pooling_eligible'] else '✗'}  {row['task_id']} {row['arm']:<8} "
         f"in={runtime.fmt_tok(row['input_tokens']):>6} out={runtime.fmt_tok(row['output_tokens']):>5} cmd={row['command_calls']:>2} "
-        f"time={elapsed_text:>5} quality={'1.000' if row['primary_correct'] else '0.000'} "
-        f"patch={'✓' if row['execution']['patch_applied'] else '✗'} oracle={'✓' if row['execution']['targeted_test_passed'] else '✗'} "
+        f"time={elapsed_text:>5} quality={quality} "
+        f"patch={'✓' if execution['patch_applied'] else '✗'} oracle={'✓' if execution['targeted_test_passed'] else '✗'} "
         f"codemap={'✓' if row['codemap_used'] else '✗'}{recovery}"
     )
 
@@ -568,7 +817,19 @@ def execute_executable_agent_cell(
 ) -> dict[str, Any]:
     """Run one writable agent cell and score the captured canonical Git diff."""
     structural = _structural()
-    workspace = structural.create_executable_agent_workspace(source_repo, source_index, baseline_commit)
+    contract = item.get("contract")
+    is_patch_task = isinstance(contract, EditTaskContract)
+    workspace = (
+        create_executable_agent_workspace(
+            source_repo,
+            source_index,
+            baseline_commit,
+            require_source_baseline=False,
+        )
+        if is_patch_task
+        else structural.create_executable_agent_workspace(source_repo, source_index, baseline_commit)
+    )
+    patch_workspace = None
     home = None
     row: dict[str, Any] | None = None
     started = time.monotonic()
@@ -577,22 +838,40 @@ def execute_executable_agent_cell(
     index_unchanged = False
     try:
         with structural.bind_executable_agent_workspace(adapter, workspace):
-            home = adapter._prepare_verified_home(
-                native_arm,
-                writable_workspace=workspace.worktree,
-                denied_workspace=source_repo,
-                index_relocation=workspace.index_relocation,
-            )
+            home_kwargs: dict[str, Any] = {
+                "writable_workspace": workspace.worktree,
+                "denied_workspace": source_repo,
+                "index_relocation": workspace.index_relocation,
+            }
+            historical_coordinate = item.get("historical_runtime_coordinate")
+            if historical_coordinate is not None:
+                if not isinstance(historical_coordinate, Mapping):
+                    raise ValueError("Patch task historical runtime coordinate is malformed")
+                home_kwargs["historical_runtime_coordinate"] = historical_coordinate
+            home = adapter._prepare_verified_home(native_arm, **home_kwargs)
+            if is_patch_task:
+                patch_workspace = stage_patch_task_agent_workspace(
+                    source_repo,
+                    workspace,
+                    contract,
+                    runtime_identity=item.get("patch_test_runtime"),
+                )
             stream = adapter._subprocess(adapter.build_command(prompt), home.env, working_directory=workspace.worktree)
-            captured_diff, changed_paths = workspace.capture_diff(), workspace.changed_paths()
-            row = parser(
-                stream,
-                arm=arm,
-                item=item,
-                skill_path=home.codemap_skill_path if arm == "C_strict" else None,
-                repo_path=source_repo,
-                captured_diff=captured_diff,
+            captured_diff = (
+                patch_workspace.capture_answer().diff if patch_workspace is not None else workspace.capture_diff()
             )
+            changed_paths = workspace.changed_paths()
+            parser_kwargs: dict[str, Any] = {
+                "arm": arm,
+                "item": item,
+                "skill_path": home.codemap_skill_path if arm == "C_strict" else None,
+                "repo_path": source_repo,
+                "captured_diff": captured_diff,
+            }
+            if patch_workspace is not None:
+                parser_kwargs["agent_fixture_intact"] = patch_workspace.fixture_intact()
+                parser_kwargs["patch_test_runtime"] = item.get("patch_test_runtime")
+            row = parser(stream, **parser_kwargs)
             index_unchanged = workspace.index_unchanged()
     finally:
         try:
@@ -602,8 +881,10 @@ def execute_executable_agent_cell(
                 home.cleanup()
         finally:
             workspace_cleanup_verified = workspace.cleanup()
-    source_unchanged = structural._repo_sha(source_repo) == baseline_commit and not structural._git_porcelain_status(
-        source_repo
+    source_unchanged = (
+        patch_workspace.source_unchanged()
+        if patch_workspace is not None
+        else not structural._git_porcelain_status(source_repo) and structural._repo_sha(source_repo) == baseline_commit
     )
     if row is None:
         raise RuntimeError("executable agent cell did not produce a scoreable result")
@@ -637,29 +918,94 @@ def execute_executable_agent_cell(
 
 
 def preflight_executable_agent_workspace(
-    adapter: Any, *, source_repo: Path, source_index: Path, baseline_commit: str
+    adapter: Any,
+    *,
+    source_repo: Path,
+    source_index: Path,
+    baseline_commit: str,
+    allow_historical_baseline: bool = False,
+    historical_runtime_coordinate: Mapping[str, str] | None = None,
+    patch_test_runtime: Mapping[str, str] | None = None,
+    patch_contract: EditTaskContract | None = None,
 ) -> None:
-    """Validate writable-worktree permissions for every arm without a model call."""
+    """Validate writable-worktree permissions for every arm without a model call.
+
+    Historical Patch preflight supplies the reviewed per-task baseline/index
+    coordinate; ordinary executable stages continue to use the active manifest.
+    """
+    if patch_test_runtime is not None and dict(patch_test_runtime) != patch_test_runtime_identity():
+        raise ValueError("Patch task pytest runtime changed after scope admission")
     structural = _structural()
-    workspace = structural.create_executable_agent_workspace(source_repo, source_index, baseline_commit)
+    workspace = (
+        create_executable_agent_workspace(source_repo, source_index, baseline_commit, require_source_baseline=False)
+        if allow_historical_baseline
+        else structural.create_executable_agent_workspace(source_repo, source_index, baseline_commit)
+    )
     try:
         for native_arm in NATIVE_ARMS.values():
             with structural.bind_executable_agent_workspace(adapter, workspace):
-                home = adapter._prepare_verified_home(
-                    native_arm,
-                    writable_workspace=workspace.worktree,
-                    denied_workspace=source_repo,
-                    index_relocation=workspace.index_relocation,
-                )
+                home_kwargs: dict[str, Any] = {
+                    "writable_workspace": workspace.worktree,
+                    "denied_workspace": source_repo,
+                    "index_relocation": workspace.index_relocation,
+                }
+                if historical_runtime_coordinate is not None:
+                    home_kwargs["historical_runtime_coordinate"] = historical_runtime_coordinate
+                home = adapter._prepare_verified_home(native_arm, **home_kwargs)
             try:
                 pass
             finally:
                 if home.coordination_path is not None:
                     structural._cleanup_coordination_root(home.coordination_path)
                 home.cleanup()
+        if patch_contract is not None:
+            stage_patch_task_agent_workspace(
+                source_repo,
+                workspace,
+                patch_contract,
+                runtime_identity=patch_test_runtime,
+            )
     finally:
         if not workspace.cleanup():
             raise RuntimeError("executable agent workspace preflight cleanup failed")
+
+
+def _preflight_stage_workspaces(
+    adapter: Any,
+    *,
+    study: str,
+    repo_path: Path,
+    default_index_path: Path,
+    tasks: list[dict[str, Any]],
+    report_progress: Callable[[int, int, str, str], None] | None = None,
+) -> None:
+    """Preflight task baselines and every distinct workspace coordinate without a model call."""
+    pairs: set[tuple[str, Path]] = set()
+    coordinates: list[tuple[dict[str, Any], Path]] = []
+    for item in tasks:
+        contract = item["contract"]
+        source_index = _patch_index_path(repo_path, contract.task_id) if study == "patch" else default_index_path
+        pair = (contract.baseline_commit, source_index)
+        if pair in pairs:
+            continue
+        pairs.add(pair)
+        coordinates.append((item, source_index))
+    for position, (item, source_index) in enumerate(coordinates, start=1):
+        contract = item["contract"]
+        if report_progress is not None:
+            report_progress(position, len(coordinates), contract.task_id, "start")
+        preflight_executable_agent_workspace(
+            adapter,
+            source_repo=repo_path,
+            source_index=source_index,
+            baseline_commit=contract.baseline_commit,
+            allow_historical_baseline=study == "patch",
+            historical_runtime_coordinate=(item.get("historical_runtime_coordinate") if study == "patch" else None),
+            patch_test_runtime=item.get("patch_test_runtime") if study == "patch" else None,
+            patch_contract=contract if study == "patch" else None,
+        )
+        if report_progress is not None:
+            report_progress(position, len(coordinates), contract.task_id, "complete")
 
 
 def run_fix_stage(
@@ -680,10 +1026,30 @@ def run_fix_stage(
 ) -> None:
     """Run one complete executable study or an explicitly selected task subset."""
     explicit_selection = selected is not None
-    tasks, suite_path, prompt, parser, validate = _load_fix_stage(study, selected)
+    tasks, suite_path, prompt, parser, _validate = _load_fix_stage(study, selected)
     index_path = index_path or repo_path / ".cache" / "codemap" / f"{repo_path.name}.json"
-    source_binding = _stage_source_binding(repo_path, index_path)
+    source_binding = (
+        _patch_stage_source_binding(repo_path, tasks)
+        if study == "patch"
+        else _stage_source_binding(repo_path, index_path)
+    )
+    if study == "patch":
+        patch_coordinates = source_binding.get("patch_coordinates")
+        if not isinstance(patch_coordinates, Mapping):
+            raise ValueError("patch-stage input preflight has no historical runtime coordinates")
+        for item in tasks:
+            task_id = item["contract"].task_id
+            coordinate = patch_coordinates.get(task_id)
+            if not isinstance(coordinate, Mapping):
+                raise ValueError(f"patch-stage input preflight has no historical runtime coordinate for {task_id}")
+            item["historical_runtime_coordinate"] = dict(coordinate)
     admitted = _resolve_scope(tasks, model, source_binding)
+    if study == "patch":
+        patch_test_runtime = admitted.get("patch_test_runtime")
+        if not isinstance(patch_test_runtime, Mapping):
+            raise ValueError("patch-stage scope has no designated pytest runtime")
+        for item in tasks:
+            item["patch_test_runtime"] = dict(patch_test_runtime)
     if resolve_scope:
         print(json.dumps(admitted, sort_keys=True))
         return
@@ -709,11 +1075,23 @@ def run_fix_stage(
     )
     if dry_run:
         try:
-            preflight_executable_agent_workspace(
+
+            def report_preflight_progress(position: int, total: int, task_id: str, status: str) -> None:
+                """Render long-running Patch baseline admission without changing its outcome."""
+                if study != "patch":
+                    return
+                if status == "start":
+                    print(f"PREFLIGHT {position}/{total} {task_id} validating frozen baseline and tests...")
+                else:
+                    print(f"PREFLIGHT {position}/{total} {task_id} ✓")
+
+            _preflight_stage_workspaces(
                 adapter,
-                source_repo=repo_path,
-                source_index=index_path,
-                baseline_commit=tasks[0]["contract"].baseline_commit,
+                study=study,
+                repo_path=repo_path,
+                default_index_path=index_path,
+                tasks=tasks,
+                report_progress=report_preflight_progress,
             )
         finally:
             adapter.close()
@@ -732,15 +1110,17 @@ def run_fix_stage(
                 task_ids=[item["contract"].task_id for item in tasks],
                 scope_sha256=admitted["scope_sha256"],
                 explicit_selection=explicit_selection,
+                patch_pytest=(str(admitted["patch_test_runtime"]["pytest_executable"]) if study == "patch" else None),
             )
         return
     assert run_dir is not None
     try:
-        preflight_executable_agent_workspace(
+        _preflight_stage_workspaces(
             adapter,
-            source_repo=repo_path,
-            source_index=index_path,
-            baseline_commit=tasks[0]["contract"].baseline_commit,
+            study=study,
+            repo_path=repo_path,
+            default_index_path=index_path,
+            tasks=tasks,
         )
     except BaseException:
         adapter.close()
@@ -748,6 +1128,11 @@ def run_fix_stage(
 
     def prepare_run(destination: Path) -> None:
         """Archive immutable stage inputs before the first native cell."""
+        shared_files = (
+            _patch_snapshot_files(repo_path, tasks)
+            if study == "patch"
+            else {"codex-runtime.py": BENCHMARKS / "_bench_codex" / "runtime.py"}
+        )
         adapter.create_input_snapshot(
             destination,
             tasks_path=suite_path,
@@ -756,15 +1141,19 @@ def run_fix_stage(
             invocation_launcher_path=STRUCTURAL_PATH,
             tasks=[item["task"] for item in tasks],
             arms=tuple(NATIVE_ARMS.values()),
-            additional_shared_files={"codex-runtime.py": BENCHMARKS / "_bench_codex" / "runtime.py"},
+            additional_shared_files=shared_files,
         )
+        if study == "patch":
+            (destination / "inputs" / "patch-runtime.json").write_text(
+                json.dumps(admitted["patch_test_runtime"], indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
 
     def run_cell(item: Mapping[str, Any], arm: str) -> Mapping[str, Any]:
         """Execute one stage-owned task and arm inside the shared lifecycle."""
         return execute_executable_agent_cell(
             adapter=adapter,
             source_repo=repo_path,
-            source_index=index_path,
+            source_index=(_patch_index_path(repo_path, item["contract"].task_id) if study == "patch" else index_path),
             baseline_commit=item["contract"].baseline_commit,
             native_arm=NATIVE_ARMS[arm],
             arm=arm,
@@ -780,7 +1169,11 @@ def run_fix_stage(
     def emit_lifecycle(event: str, values: Mapping[str, Any]) -> None:
         """Print concise lifecycle evidence without adding ANSI escape codes."""
         if event == "artifacts":
-            print(f"ARTIFACTS\n\ttelemetry={values['telemetry_path']}\n\tmetadata={values['metadata_path']}")
+            print(
+                runtime.presentation.format_artifact_block(
+                    telemetry=values["telemetry_path"], metadata=values["metadata_path"]
+                )
+            )
         else:
             print(
                 f"SUMMARY  status={values['status']}  persisted_cells={values['persisted_cells']}/{values['total_cells']}"
@@ -793,7 +1186,7 @@ def run_fix_stage(
         metadata={"stage_id": study, "scope": admitted},
         callbacks=PaidStageCallbacks(
             run_cell=run_cell,
-            validate_row=lambda item, _arm, row: validate(item["contract"], row["provider_binding"]),
+            validate_row=lambda item, _arm, row: _validate_stage_binding(study, item, row["provider_binding"]),
             prepare_run=prepare_run,
             persist_metadata=persist_metadata,
             emit_lifecycle=emit_lifecycle,
@@ -818,7 +1211,7 @@ def rescore_fix_stage(source_dir: Path, output_dir: Path, repo_path: Path, *, st
     persisted_stage = source_metadata.get("stage_id")
     if study is None:
         study = persisted_stage
-    if study not in {"fix-single", "fix-multi"} or persisted_stage not in {None, study}:
+    if study not in {"fix-single", "fix-multi", "patch"} or persisted_stage not in {None, study}:
         raise ValueError("offline executable rescore requires one consistent fix stage_id")
     source_rows = [
         json.loads(line) for line in (source_dir / "telemetry.jsonl").read_text(encoding="utf-8").splitlines() if line
@@ -826,18 +1219,24 @@ def rescore_fix_stage(source_dir: Path, output_dir: Path, repo_path: Path, *, st
     if not source_rows:
         raise ValueError("executable-stage result has no telemetry rows")
     selected = {str(row.get("task_id")) for row in source_rows}
-    loader, suite_path, parser, validate = (
-        (load_fix_single_tasks, FIX_SINGLE_TASKS_PATH, parse_fix_single_cell, validate_fix_single_binding)
-        if study == "fix-single"
-        else (load_fix_multi_tasks, FIX_MULTI_TASKS_PATH, parse_fix_multi_cell, validate_fix_multi_binding)
-    )
+    if study == "fix-single":
+        loader, suite_path, parser = load_fix_single_tasks, FIX_SINGLE_TASKS_PATH, parse_fix_single_cell
+    elif study == "fix-multi":
+        loader, suite_path, parser = load_fix_multi_tasks, FIX_MULTI_TASKS_PATH, parse_fix_multi_cell
+    else:
+        loader, suite_path, parser = load_patch_tasks, PATCH_TASKS_PATH, parse_patch_cell
     tasks = {item["contract"].task_id: item for item in loader(suite_path, selected)}
     for source_row in source_rows:
         captured_diff = source_row.get("captured_diff")
         if not isinstance(captured_diff, str) or not captured_diff.startswith("diff --git "):
             raise ValueError("source executable-stage telemetry lacks a captured Git diff")
     output_dir.mkdir(parents=True)
-    print(f"ARTIFACTS\n\ttelemetry={output_dir / 'telemetry.jsonl'}\n\tmetadata={output_dir / 'run-metadata.json'}")
+    print(
+        runtime.presentation.format_artifact_block(
+            telemetry=output_dir / "telemetry.jsonl",
+            metadata=output_dir / "run-metadata.json",
+        )
+    )
     persisted = 0
     with (output_dir / "telemetry.jsonl").open("x", encoding="utf-8") as output:
         for source_row in source_rows:
@@ -845,7 +1244,7 @@ def rescore_fix_stage(source_dir: Path, output_dir: Path, repo_path: Path, *, st
             if task_id not in tasks or arm not in ARMS or not isinstance(raw_events, list):
                 raise ValueError("source executable-stage telemetry lacks a replayable task, arm, or native events")
             item = tasks[task_id]
-            validate(item["contract"], source_row.get("provider_binding", {}))
+            _validate_stage_binding(study, item, source_row.get("provider_binding", {}))
             skill_path = (
                 source_dir / "inputs/C_skill_required/codemap-py/codex-skills/query-code/SKILL.md"
                 if arm == "C_strict"

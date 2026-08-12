@@ -121,7 +121,8 @@ def batch_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
 
     _write_executable(
         bin_dir / "git",
-        f'''if [[ "$*" == *"ls-files --stage -- ."* ]]; then exec "{REAL_GIT}" "$@"; fi
+        f'''if [ -n "${{FAIL_ON_GIT_FETCH:-}}" ] && [[ "$*" == *" fetch "* ]]; then exit 42; fi
+if [[ "$*" == *"ls-files --stage -- ."* ]]; then exec "{REAL_GIT}" "$@"; fi
 printf "fixture-head\\n"''',
     )
     _write_executable(
@@ -132,6 +133,10 @@ if [[ "$*" == *"--resolve-tasks"* ]]; then
   if [[ "$*" == *"INVALID"* ]]; then
     printf "invalid task selector\\n" >&2
     exit 2
+  fi
+  if [[ "$*" == *"PT-01"* ]]; then
+    printf '{{"task_ids":["PT-01"],"total_cells":3,"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
+    exit 0
   fi
   printf '{{"task_ids":["DI-01","GR-01"],"total_cells":6,"scope_sha256":"{SELECTED_SCOPE_SHA}"}}\\n'
   exit 0
@@ -199,6 +204,8 @@ if [[ "$*" == *"run-codex-structural.py"* && "$*" == *"--dry-run"* ]]; then
   printf "PLAN    FN-02  rep=1  A_plain\\n"
   if [[ "$*" == *"--tasks DI,GR"* ]]; then
     printf "SCOPE   {SELECTED_SCOPE_SHA}\\n"
+  elif [[ "$*" == *"--tasks PT-01"* ]]; then
+    printf "SCOPE   {SELECTED_SCOPE_SHA}\\n"
   elif [[ "$*" != *"--tasks FN-02"* ]]; then
     printf "SCOPE   {DEFAULT_SCOPE_SHA}\\n"
   fi
@@ -239,7 +246,7 @@ if [[ "$*" == *"--auth-source"* ]]; then
     printf "{{}}\\n" > "$structural_run_dir/run-metadata.json"
     printf "PLAN    FN-02  rep=1  A_plain\\n"
     printf "RESULT  completed  FN-02  rep=1  A_plain  in=1  out=1  time=1s  quality=1.0  compliance:✓\\n"
-    printf "ARTIFACTS  telemetry=%s/telemetry.jsonl  metadata=%s/run-metadata.json\\n" "$structural_run_dir" "$structural_run_dir"
+    printf "ARTIFACTS:\\n - telemetry=%s/telemetry.jsonl\\n - metadata=%s/run-metadata.json\\n" "$structural_run_dir" "$structural_run_dir"
   fi
 fi""",
     )
@@ -411,7 +418,7 @@ def test_codex_default_dry_run_dispatches_structural_then_agentic_without_paid_i
     assert all("--output-path" not in line for line in agentic_calls)
     assert all("--render-results" not in line for line in codex_calls)
     assert "PLAN " in completed.stdout
-    assert "204 cells" in completed.stdout
+    assert "219 cells" in completed.stdout
     assert completed.stdout.count(f"SCOPE   {DEFAULT_SCOPE_SHA}") == 1
     assert "48 cells" in completed.stdout
 
@@ -918,6 +925,51 @@ def test_codex_tasks_dry_run_dispatches_resolved_scope(
     assert completed.stdout.count(f"SCOPE   {SELECTED_SCOPE_SHA}") == 1
 
 
+@pytest.mark.parametrize(
+    ("mode", "args"),
+    [
+        ("smoke", ()),
+        ("claude", ("--struct", "--dry-run")),
+        ("codex", ("--agentic", "--dry-run")),
+        ("codex", ("--struct", "--tasks=DI,GR", "--dry-run")),
+    ],
+    ids=["smoke", "claude-structural", "codex-agentic", "codex-non-patch-selection"],
+)
+def test_non_patch_no_model_modes_do_not_prepare_historical_patch_indexes(
+    batch_env: tuple[dict[str, str], Path],
+    mode: str,
+    args: tuple[str, ...],
+) -> None:
+    """Historical PT indexes stay out of legacy and non-PT no-model paths."""
+    env, call_log = batch_env
+    env["FAIL_ON_GIT_FETCH"] = "1"
+    env["FAIL_WHEN_ARGS_CONTAIN"] = "--prepare-patch-bundle"
+
+    completed = _run_batch(mode, env, *args)
+
+    assert completed.returncode == 0, completed.stderr
+    calls = call_log.read_text(encoding="utf-8")
+    assert "--prepare-patch-bundle" not in calls
+
+
+@pytest.mark.parametrize(
+    "args",
+    [("--struct", "--tasks=PT-01", "--dry-run"), ("--dry-run",)],
+    ids=["selected-patch", "unified-codex"],
+)
+def test_patch_and_unified_codex_dry_runs_prepare_historical_patch_indexes(
+    batch_env: tuple[dict[str, str], Path],
+    args: tuple[str, ...],
+) -> None:
+    """PT selections and the unified Codex study require the locked PT bundle."""
+    env, call_log = batch_env
+
+    completed = _run_batch("codex", env, *args)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "--prepare-patch-bundle" in call_log.read_text(encoding="utf-8")
+
+
 def test_codex_rejects_removed_diagnostic_switch(
     batch_env: tuple[dict[str, str], Path],
 ) -> None:
@@ -1269,7 +1321,7 @@ def test_codex_paid_rejection_prints_actionable_launch_guidance(
 
     assert completed.returncode == 2
     assert "bash benchmarks/run-all.sh codex --struct --dry-run" in completed.stderr
-    assert "CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-above>" in completed.stderr
+    assert "CODEX_PAID_APPROVAL=<approval-token-printed-above>" in completed.stderr
     assert "CODEX_AUTH_SOURCE=" in completed.stderr
     assert 'CODEX_AUTH_SOURCE="$HOME/.codex/auth.json"' in completed.stderr
     assert str(Path.home()) not in completed.stderr
@@ -1301,7 +1353,7 @@ def test_codex_default_paid_rejection_requires_both_scope_approvals_before_dispa
     completed = _run_batch("codex", env)
 
     assert completed.returncode == 2
-    assert "CODEX_PAID_APPROVAL=<aggregate-SCOPE-printed-by-the-unified-dry-run>" in completed.stderr
+    assert "CODEX_PAID_APPROVAL=<approval-token-printed-by-the-unified-dry-run>" in completed.stderr
     assert f"CODEX_AGENTIC_PAID_APPROVAL={AGENTIC_MANIFEST_SHA}" in completed.stderr
     assert "bash benchmarks/run-all.sh codex --dry-run" in completed.stderr
     assert "benchmarks/manifests/codex-integration.md" in completed.stderr
@@ -1330,7 +1382,7 @@ def test_combined_paid_run_defers_exact_aggregate_match_until_structural_preflig
     # Paid study output is intentionally merged into the persisted/rendered stream.
     # The completed preflight exposes the exact replacement approval before the
     # stale value is rejected; direct-runner tests cover the full PAID_COMMAND.
-    assert f"CODEX_PAID_APPROVAL={DEFAULT_SCOPE_SHA}" in completed.stdout
+    assert f"CODEX_PAID_APPROVAL={DEFAULT_SCOPE_SHA[:16]}" in completed.stdout
     calls = call_log.read_text(encoding="utf-8").splitlines()
     assert any("run-codex-structural.py" in line and "--dry-run" in line for line in calls)
     assert not any("run-codex-structural.py" in line and "--auth-source" in line for line in calls)
@@ -1442,7 +1494,7 @@ def test_paid_codex_tasks_runs_only_resolved_scope(
 ) -> None:
     """A paid selected run uses the resolver scope for approval and cells."""
     env, call_log = batch_env
-    env["CODEX_PAID_APPROVAL"] = SELECTED_SCOPE_SHA
+    env["CODEX_PAID_APPROVAL"] = SELECTED_SCOPE_SHA[:16]
     env["CODEX_RUN_DIR"] = str(Path(env["CODEX_RUN_DIR"]).with_name("codex-selected-run"))
 
     completed = _run_batch("codex", env, "--struct", "--tasks=DI,GR")
@@ -1455,7 +1507,7 @@ def test_paid_codex_tasks_runs_only_resolved_scope(
     ]
     assert len(codex_calls) == 3
     paid = next(line for line in codex_calls if "--auth-source" in line)
-    assert f"--paid-approval {SELECTED_SCOPE_SHA}" in paid
+    assert _option_value(paid, "--paid-approval") == SELECTED_SCOPE_SHA[:16]
     assert "--dry-run" not in paid
     assert "--no-legend" in paid
     assert "--tasks DI,GR" in paid
@@ -1524,7 +1576,8 @@ def test_paid_codex_noninteractive_output_and_artifact_log_remain_plain(
     assert "PLAN " not in completed.stdout
     assert "PLAN " in run_log
     assert "RESULT  completed" in completed.stdout
-    assert "ARTIFACTS  telemetry=" in completed.stdout
+    assert "ARTIFACTS:" in completed.stdout
+    assert " - telemetry=" in completed.stdout
     assert "RESULT_RENDERER" not in script
     assert "render-codex-results.py" not in script
     assert (

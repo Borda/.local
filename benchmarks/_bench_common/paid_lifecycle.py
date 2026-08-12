@@ -12,11 +12,34 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Generic, TypeVar
 
 
 Task = TypeVar("Task")
 Arm = TypeVar("Arm")
+PAID_APPROVAL_PREFIX_LENGTH = 16
+_SCOPE_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def paid_approval_token(scope_sha256: str) -> str:
+    """Return the canonical short token for one complete immutable scope hash.
+
+    The token is a copy/paste guard, not a secret or cryptographic credential.
+    Full SHA-256 remains stored in scope metadata; sixteen hexadecimal characters
+    provide a 64-bit stale-scope discriminator for the single current scope.
+    """
+    if _SCOPE_SHA256_RE.fullmatch(scope_sha256) is None:
+        raise ValueError("scope SHA-256 must contain 64 lowercase hexadecimal characters")
+    return scope_sha256[:PAID_APPROVAL_PREFIX_LENGTH]
+
+
+def paid_approval_matches(received: str | None, scope_sha256: str) -> bool:
+    """Accept an unambiguous lowercase prefix or legacy full hash for one current scope."""
+    paid_approval_token(scope_sha256)
+    if received is None or re.fullmatch(r"[0-9a-f]{16,64}", received) is None:
+        return False
+    return scope_sha256.startswith(received)
 
 
 @dataclass(frozen=True)

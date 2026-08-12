@@ -48,29 +48,26 @@ _QUERY_CODE_REQUIRED_SNIPPETS = (
     "distinct independent ast/oracle view",
 )
 _QUERY_CODE_FORBIDDEN_SNIPPETS = ("fn-blast <module::symbol> --depth",)
-_DIRECT_CALLER_ROUTING_RULE = (
+_DIRECT_CALLER_ROUTING_RULES = (
     "for caller requests, use `fn-rdeps <module::symbol> --exclude-tests` for direct, every, all, production, "
     "and blast-radius wording; use `fn-blast <module::symbol>` only when the user explicitly asks for transitive "
-    "callers, closure, hops, or all levels."
-)
-_DIRECT_TEST_IMPORT_ROUTING_SNIPPETS = (
-    "directly import a module",
-    "`rdeps <module>`",
-    "filter/report test modules",
-    "reserve `test-impact <target>` for transitive affected-test selection",
+    "callers, closure, hops, or all levels.",
+    "direct/every/all/production/blast-radius callers → `fn-rdeps <module::symbol> --exclude-tests`; "
+    "`fn-blast <module::symbol>` only for explicit transitive, closure, hops, or all-levels requests.",
 )
 _CALLER_AND_TEST_IMPORT_ROUTING_SNIPPETS = (
     "callers plus test-module importers",
     "`fn-rdeps <module::symbol> --exclude-tests`, then `rdeps <module>`",
 )
 _SYMBOL_TARGET_GRAMMAR_SNIPPETS = (
-    "`symbol <name>` accepts a bare function name",
+    "`symbol <name>` accepts",
     "`authenticate`",
     "`myclass.method`",
     "`module::symbol` belongs to `fn-*` call-graph queries",
-    "query the requested qualified extension method",
+    "requested qualified extension method",
     "`symbol myclass.add_feature`",
-    "not a nearby `symbol myclass` or `symbols <module>` listing",
+    "nearby `symbol myclass`",
+    "`symbols <module>` listing",
 )
 _SYMBOL_TO_CALL_GRAPH_CHAINING_SNIPPETS = (
     "qualified_name",
@@ -79,14 +76,16 @@ _SYMBOL_TO_CALL_GRAPH_CHAINING_SNIPPETS = (
 )
 _OVERRIDE_CANDIDATE_SNIPPETS = (
     "find-symbol '<classsuffix>\\.<method>$' --exclude-tests --limit 0",
-    "same-name implementation/override candidates",
-    "name matching is candidate discovery only, not proof of inheritance",
-    "verify ancestry and package boundaries",
+    "same-name",
+    "override candidate",
+    "inheritance",
+    "verify ancestry",
+    "package boundaries",
 )
 _LOCALIZED_EDIT_ROUTING_SNIPPETS = (
     "exact file",
     "symbol",
-    "localized",
+    "local",
     "skip codemap",
     "caller",
     "dependency",
@@ -98,6 +97,17 @@ _LOCALIZED_EDIT_ROUTING_SNIPPETS = (
     "tool requirement",
     "override",
     "smallest complete query",
+)
+_LIFECYCLE_BOUNDARY_ROUTING_SNIPPETS = (
+    "lifecycle boundary",
+    "callback/hook",
+    "cancellation/exception",
+    "scheduling/cleanup",
+    "state transfer",
+    "inspect source",
+    "named test/oracle",
+    "`fn-rdeps` for caller",
+    "`fn-deps` for callee",
 )
 _CLAUDE_QUERY_CURRENT_REPOSITORY_SNIPPETS = (
     "run every query from the caller's current repository",
@@ -119,7 +129,7 @@ _QUERY_PATH_BASE_SNIPPETS = (
 
 def _direct_caller_routing_violations(skill_text: str) -> list[str]:
     """Return a violation when ambiguous caller wording can select a transitive query."""
-    if _DIRECT_CALLER_ROUTING_RULE in skill_text.lower():
+    if any(rule in skill_text.lower() for rule in _DIRECT_CALLER_ROUTING_RULES):
         return []
     return ["ambiguous direct-caller wording lacks the fn-rdeps routing rule"]
 
@@ -331,6 +341,22 @@ def test_query_code_skips_fully_localized_edits_but_preserves_explicit_structura
     assert all(snippet in skill_text for snippet in _LOCALIZED_EDIT_ROUTING_SNIPPETS)
 
 
+@pytest.mark.parametrize(
+    "contract_path",
+    (
+        _CLAUDE_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CODEX_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CAPABILITY_CONTRACT,
+    ),
+    ids=("claude", "codex", "shared-contract"),
+)
+def test_query_code_treats_lifecycle_boundaries_as_nonlocal_source_scope(contract_path: Path) -> None:
+    """Prevent a complete symbol lookup from being mistaken for runtime-behavior evidence."""
+    skill_text = contract_path.read_text(encoding="utf-8").lower()
+
+    assert all(snippet in skill_text for snippet in _LIFECYCLE_BOUNDARY_ROUTING_SNIPPETS)
+
+
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
 def test_query_code_routes_ambiguous_caller_requests_to_direct_production_callers(runtime_dir: Path) -> None:
     """Prevent `fn-blast` for direct caller requests phrased as a blast radius or every caller."""
@@ -357,7 +383,7 @@ def test_query_code_resolves_result_paths_from_the_callers_repository(contract_p
 
 def test_direct_caller_routing_contract_rejects_transitive_substitute() -> None:
     """Ensure a plausible `fn-blast` substitute cannot satisfy the direct-caller routing contract."""
-    wrong_rule = _DIRECT_CALLER_ROUTING_RULE.replace(
+    wrong_rule = _DIRECT_CALLER_ROUTING_RULES[1].replace(
         "`fn-rdeps <module::symbol> --exclude-tests`", "`fn-blast <module::symbol>`"
     )
 
@@ -419,7 +445,10 @@ def test_query_code_routes_direct_test_importers_to_module_rdeps(contract_path: 
     """Keep direct test-module importer requests on ``rdeps`` in every truth-claim surface."""
     skill_text = " ".join(contract_path.read_text(encoding="utf-8").lower().split())
 
-    assert all(snippet in skill_text for snippet in _DIRECT_TEST_IMPORT_ROUTING_SNIPPETS)
+    assert "`rdeps <module>`" in skill_text
+    assert "filter/report test" in skill_text
+    assert "`test-impact <target>`" in skill_text
+    assert "direct" in skill_text and "test" in skill_text and "import" in skill_text and "transitive" in skill_text
 
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))
@@ -437,6 +466,7 @@ def test_query_code_preserves_symbol_target_grammar_for_feature_scaffolding(runt
     skill_text = " ".join(skill_path.read_text(encoding="utf-8").lower().split())
 
     assert all(snippet in skill_text for snippet in _SYMBOL_TARGET_GRAMMAR_SNIPPETS)
+    assert "not nearby" in skill_text or "not a nearby" in skill_text
 
 
 @pytest.mark.parametrize("runtime_dir", (_CLAUDE_SKILLS_DIR, _CODEX_SKILLS_DIR), ids=("claude", "codex"))

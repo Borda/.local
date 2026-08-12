@@ -45,12 +45,13 @@ from _bench_common.readcrop_contracts import (  # noqa: E402
 )
 from _bench_common.paid_lifecycle import (  # noqa: E402
     PaidStageCallbacks,
+    paid_approval_matches,
     run_paid_stage,
     verify_checksums,
     write_checksums,
 )
 from . import runtime  # noqa: E402
-from _bench_common.presentation import fmt_time, fmt_tok  # noqa: E402
+from _bench_common.presentation import format_artifact_block, fmt_time, fmt_tok  # noqa: E402
 
 
 def _load_structural() -> Any:
@@ -553,7 +554,7 @@ def run_paid(
         """Persist human-readable lifecycle lines without ANSI escape sequences."""
         if event == "artifacts":
             emit_progress(
-                run_log, f"ARTIFACTS\n\ttelemetry={values['telemetry_path']}\n\tmetadata={values['metadata_path']}"
+                run_log, format_artifact_block(telemetry=values["telemetry_path"], metadata=values["metadata_path"])
             )
         else:
             emit_progress(
@@ -643,11 +644,12 @@ def run_stage(
     missing = [flag for flag, value in required.items() if value is None]
     if missing:
         raise ValueError(f"paid read-crop execution requires {', '.join(missing)}")
-    if paid_approval != scope["scope_sha256"]:
+    approval = None if paid_approval is None else str(paid_approval)
+    if not paid_approval_matches(approval, scope["scope_sha256"]):
         task_ids = ",".join(item["contract"].task_id for item in tasks)
         raise ValueError(
             "paid read-crop scope inputs changed after aggregate approval.\n"
-            f"approved child scope: {paid_approval}\n"
+            f"approved child scope: {approval}\n"
             f"current child scope: {scope['scope_sha256']}\n"
             "The runner, manifest, lifecycle, or task contract changed while the earlier run was active. "
             "No model call was made. Run this no-model preflight and copy its emitted PAID_COMMAND exactly:\n"

@@ -11,7 +11,7 @@ from __future__ import annotations
 import ast
 import copy
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 from pathlib import Path
@@ -115,6 +115,9 @@ class EditTaskContract:
     prompt_sha256: str
     baseline_commit: str
     expected_paths: tuple[str, ...]
+    test_fixture_patch: str
+    fixture_paths: tuple[str, ...]
+    test_fixture_patch_sha256: str
     targeted_test_command: str
     regression_test_commands: tuple[str, ...]
     diagnostic_keywords: tuple[str, ...]
@@ -154,6 +157,18 @@ class EditExecution:
     targeted_test_passed: bool
     regression_test_passed: bool | None
     changed_paths: tuple[str, ...]
+    baseline_target_failed: bool = True
+    baseline_regressions_passed: bool = True
+    fixture_intact: bool = True
+    source_integrity: bool = True
+    index_integrity: bool | None = None
+    cleanup_verified: bool = True
+    command_evidence: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        """Return JSON-safe execution evidence for either provider adapter."""
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -894,16 +909,22 @@ def build_edit_task_contract(task: Mapping[str, Any]) -> EditTaskContract:
     targeted_test_command = _required_string(task, "test_command")
     expected_paths = _required_string_sequence(task, "gt_files_changed")
     regression_test_commands = _required_string_sequence(task, "regression_test_commands")
+    test_fixture_patch = _required_string(task, "test_fixture_patch")
+    fixture_paths = _unified_diff_paths(test_fixture_patch)
+    if set(expected_paths) & set(fixture_paths):
+        raise ValueError("test_fixture_patch paths must not overlap gt_files_changed")
     diagnostic_keywords = _optional_string_sequence(task, "expected_patch_keywords")
     answer_contract = {
-        "format": "one_fenced_unified_diff",
-        "required_fence": "diff",
+        "format": "harness_captured_git_diff",
+        "capture": "git_diff_binary_no_ext_diff",
         "requires_apply": True,
     }
     oracle = {
         "primary": ("patch_applied", "targeted_test_passed"),
         "safety": "regression_test_passed",
         "expected_paths": expected_paths,
+        "test_fixture_patch_sha256": hashlib.sha256(test_fixture_patch.encode("utf-8")).hexdigest(),
+        "fixture_paths": fixture_paths,
         "targeted_test_command": targeted_test_command,
         "regression_test_commands": regression_test_commands,
     }
@@ -914,6 +935,9 @@ def build_edit_task_contract(task: Mapping[str, Any]) -> EditTaskContract:
         prompt_sha256=prompt_hash(task),
         baseline_commit=baseline_commit,
         expected_paths=expected_paths,
+        test_fixture_patch=test_fixture_patch,
+        fixture_paths=fixture_paths,
+        test_fixture_patch_sha256=hashlib.sha256(test_fixture_patch.encode("utf-8")).hexdigest(),
         targeted_test_command=targeted_test_command,
         regression_test_commands=regression_test_commands,
         diagnostic_keywords=diagnostic_keywords,
@@ -941,7 +965,12 @@ def assess_patch_answer(text: str) -> PatchAnswer:
     diff = diff[1:]
     if diff.endswith("\n"):
         diff = diff[:-1]
-    if not diff.startswith("diff --git "):
+    return build_patch_answer(diff)
+
+
+def build_patch_answer(diff: str) -> PatchAnswer:
+    """Validate a captured direct-worktree diff as the same answer contract."""
+    if not isinstance(diff, str) or not diff or not diff.startswith("diff --git "):
         raise ValueError("patch answer must contain a unified diff")
     return PatchAnswer(diff=diff, sha256=hashlib.sha256(diff.encode("utf-8")).hexdigest())
 
@@ -957,8 +986,16 @@ def score_edit_execution(contract: EditTaskContract, answer: PatchAnswer, execut
     changed_paths = _normalized_paths(execution.changed_paths)
     expected_paths = set(contract.expected_paths)
     changed_path_boundary_passed = set(changed_paths) == expected_paths
-    primary_correct = execution.patch_applied and execution.targeted_test_passed
-    safety_passed = execution.regression_test_passed is True
+    lifecycle_intact = (
+        execution.baseline_target_failed
+        and execution.baseline_regressions_passed
+        and execution.fixture_intact
+        and execution.source_integrity
+        and execution.index_integrity is not False
+        and execution.cleanup_verified
+    )
+    primary_correct = lifecycle_intact and execution.patch_applied and execution.targeted_test_passed
+    safety_passed = lifecycle_intact and execution.regression_test_passed is True
     diagnostics = MappingProxyType(
         {
             "expected_path_recall": _recall(expected_paths, set(changed_paths)),
@@ -1009,6 +1046,8 @@ def stage_contract_sha256(contracts: Sequence[EditTaskContract]) -> str:
                     "prompt_sha256": contract.prompt_sha256,
                     "baseline_commit": contract.baseline_commit,
                     "expected_paths": contract.expected_paths,
+                    "test_fixture_patch_sha256": contract.test_fixture_patch_sha256,
+                    "fixture_paths": contract.fixture_paths,
                     "targeted_test_command": contract.targeted_test_command,
                     "regression_test_commands": contract.regression_test_commands,
                     "answer_contract_sha256": contract.answer_contract_sha256,
@@ -1020,6 +1059,100 @@ def stage_contract_sha256(contracts: Sequence[EditTaskContract]) -> str:
             ],
         }
     )
+
+
+def semantic_index_sha256(payload: Mapping[str, Any], source_root: Path) -> str:
+    """Hash graph content after removing only runtime-root and scan-time metadata."""
+    runtime_root = str(source_root.resolve())
+
+    def replace_root(value: Any) -> Any:
+        """Replace embedded runtime-root prefixes without changing structure."""
+        if isinstance(value, str):
+            return value.replace(runtime_root, "<runtime-root>")
+        if isinstance(value, list):
+            return [replace_root(item) for item in value]
+        if isinstance(value, dict):
+            return {key: replace_root(item) for key, item in value.items()}
+        return value
+
+    semantic_payload = {key: value for key, value in payload.items() if key not in {"scan_root", "scanned_at"}}
+    normalized = replace_root(semantic_payload)
+    return hashlib.sha256(json.dumps(normalized, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def validate_patch_index_bundle(
+    source_root: Path, locks_path: Path, contracts: Sequence[EditTaskContract]
+) -> dict[str, dict[str, str]]:
+    """Validate selected historical indexes against shared task and graph locks.
+
+    The preparation utility and both provider adapters call this same boundary.
+    It rejects a post-build byte change, a source-root mismatch, a task/baseline
+    mismatch, or semantic graph drift before a model is started.
+
+    Args:
+        source_root: Clean orchestration checkout containing the task indexes.
+        locks_path: Reviewed patch-index lock document.
+        contracts: Selected provider-neutral Patch contracts.
+
+    Returns:
+        Per-task immutable source/index coordinates for scope hashing.
+
+    Raises:
+        ValueError: If a lock or installed historical index is missing or drifts.
+    """
+    source_root = source_root.resolve(strict=True)
+    locks_path = locks_path.resolve(strict=True)
+    try:
+        document = json.loads(locks_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"patch index locks are unreadable: {locks_path}") from exc
+    if not isinstance(document, dict) or document.get("schema_version") != "provider-parity-patch-index-locks-v1":
+        raise ValueError("patch index locks use an unsupported schema")
+    canonical_root = document.get("canonical_scan_root")
+    locks = document.get("tasks")
+    if not isinstance(canonical_root, str) or not Path(canonical_root).is_absolute() or not isinstance(locks, dict):
+        raise ValueError("patch index locks require an absolute canonical root and tasks object")
+    task_ids = [contract.task_id for contract in contracts]
+    if not task_ids or len(task_ids) != len(set(task_ids)):
+        raise ValueError("patch index validation requires unique selected contracts")
+    coordinates: dict[str, dict[str, str]] = {}
+    for contract in contracts:
+        lock = locks.get(contract.task_id)
+        if not isinstance(lock, dict) or lock.get("baseline_commit") != contract.baseline_commit:
+            raise ValueError(f"patch index lock baseline does not match {contract.task_id}")
+        index_path = source_root / ".cache" / "codemap" / "patch" / f"{contract.task_id}.json"
+        try:
+            index_bytes = index_path.read_bytes()
+            payload = json.loads(index_bytes)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"patch index is unreadable for {contract.task_id}: {index_path}") from exc
+        if not isinstance(payload, dict) or payload.get("scan_root") != str(source_root):
+            raise ValueError(f"patch index scan_root does not match source for {contract.task_id}")
+        expected_fields = {
+            "project": f"provider-parity-{contract.task_id}",
+            "scanned_at": lock.get("scanned_at"),
+            "scan_version": lock.get("scan_version"),
+        }
+        if any(payload.get(field) != value for field, value in expected_fields.items()):
+            raise ValueError(f"patch index metadata drifted for {contract.task_id}")
+        modules = payload.get("modules")
+        if not isinstance(modules, list) or len(modules) != lock.get("module_count"):
+            raise ValueError(f"patch index module count drifted for {contract.task_id}")
+        semantic_sha256 = semantic_index_sha256(payload, source_root)
+        if semantic_sha256 != lock.get("semantic_sha256"):
+            raise ValueError(f"patch index semantic SHA-256 drifted for {contract.task_id}")
+        raw_sha256 = hashlib.sha256(index_bytes).hexdigest()
+        if str(source_root) == canonical_root and raw_sha256 != lock.get("raw_sha256_at_canonical_root"):
+            raise ValueError(f"patch index raw SHA-256 drifted for {contract.task_id}")
+        coordinates[contract.task_id] = {
+            "baseline_commit": contract.baseline_commit,
+            "index_path": str(index_path),
+            "index_sha256": raw_sha256,
+            "raw_index_sha256": raw_sha256,
+            "semantic_index_sha256": semantic_sha256,
+            "scan_version": str(lock["scan_version"]),
+        }
+    return coordinates
 
 
 def _required_string(task: Mapping[str, Any], field: str) -> str:
@@ -1048,6 +1181,24 @@ def _optional_string_sequence(task: Mapping[str, Any], field: str) -> tuple[str,
     if len(set(value)) != len(value):
         raise ValueError(f"task {field} must not contain duplicates")
     return tuple(value)
+
+
+def _unified_diff_paths(diff: str) -> tuple[str, ...]:
+    """Return the unique paths added or changed by one trusted fixture diff."""
+    paths: list[str] = []
+    for line in diff.splitlines():
+        if not line.startswith("+++ "):
+            continue
+        path = line.removeprefix("+++ ")
+        if path == "/dev/null":
+            continue
+        if not path.startswith("b/"):
+            raise ValueError("test_fixture_patch must contain Git-style b/ paths")
+        paths.append(path[2:])
+    normalized = _normalized_paths(paths)
+    if not normalized:
+        raise ValueError("test_fixture_patch must change at least one path")
+    return normalized
 
 
 def _normalized_paths(paths: Sequence[str]) -> tuple[str, ...]:

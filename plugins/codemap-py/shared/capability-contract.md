@@ -94,7 +94,7 @@ extended quality/coverage/test-graph query family (`mock-rdeps`, `undocumented`,
 into the per-command table format documented in each roster's SKILL.md (list/pair/fenced-code/etc.
 per subcommand — rendering choice is runtime-specific, not a truth claim).
 
-Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep.
+Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep merely to re-derive the complete structural fact. An edit may still need source and its named test/oracle to establish runtime behavior.
 
 **Exit codes**: `0` success incl. valid empty result (e.g. `path` → null with
 `reason: "no-import-path"`); `1` index/runtime failure; `2` bad subcommand/flag; `3` requested
@@ -105,7 +105,7 @@ with a "requires vN+ index" message (upgrade path: re-run auto-build or `scan-co
 `query_complete`/`exhaustive`, `not_covered`, `degraded`, and `confidence` are consumed.
 
 **Caveats**:
-- Skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, import, or source-slice fact remains unresolved. An explicit structural query or tool requirement overrides this skip; otherwise choose the smallest complete query.
+- Skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, import, or source-slice fact remains unresolved. A lifecycle boundary—callback/hook, cancellation/exception, scheduling/cleanup, or state transfer—leaves source scope unresolved: inspect source and the named test/oracle, then query `fn-rdeps` for caller or `fn-deps` for callee responsibility. An explicit structural query or tool requirement overrides this skip; otherwise choose the smallest complete query.
 - Auto-builds/refreshes a missing or stale index unless `SCAN_NO_AUTOBUILD=1` is set, in which case
   a missing index is a hard refusal (exit non-zero) rather than a silent skip.
 - Direction matters: `rdeps` = callers/blast-radius, `deps` = forward imports — swapping them is the

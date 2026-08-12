@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 from types import ModuleType
 
 import pytest
@@ -104,6 +105,146 @@ def test_semantic_index_identity_is_stable_across_runtime_roots(tmp_path: Path) 
         second_payload, second_root
     )
     assert payload["scan_root"] != second_payload["scan_root"]
+
+
+def test_patch_index_bundle_builds_each_exact_historical_graph_at_the_runtime_root(tmp_path: Path) -> None:
+    """Patch tasks must never reuse the current-revision graph for historical source."""
+    module = _load_script()
+    source = tmp_path / "source"
+    source.mkdir()
+    subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
+    (source / "demo.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(source), "add", "demo.py"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "-c",
+            "user.name=Bench",
+            "-c",
+            "user.email=bench@example.invalid",
+            "commit",
+            "-m",
+            "baseline",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    semantic_payload = {
+        "scan_version": 13,
+        "scanned_at": "locked",
+        "project": "provider-parity-PT-01",
+        "scan_root": str(source.resolve()),
+        "modules": [{"file": f"{source.resolve()}/demo.py"}],
+    }
+    locks = tmp_path / "locks.json"
+    locks.write_text(
+        json.dumps(
+            {
+                "schema_version": "provider-parity-patch-index-locks-v1",
+                "canonical_scan_root": "/different/canonical/root",
+                "tasks": {
+                    "PT-01": {
+                        "baseline_commit": commit,
+                        "module_count": 1,
+                        "raw_sha256_at_canonical_root": "0" * 64,
+                        "scan_version": 13,
+                        "scanned_at": "locked",
+                        "semantic_sha256": module.semantic_index_sha256(semantic_payload, source),
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    scanner = tmp_path / "scan-index"
+    scanner.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        "root = pathlib.Path(sys.argv[sys.argv.index('--root') + 1]).resolve()\n"
+        "path = root / '.cache/codemap' / f'{root.name}.json'\n"
+        "path.parent.mkdir(parents=True)\n"
+        "path.write_text(json.dumps({'scan_version': 13, 'scanned_at': 'fresh', 'project': root.name, "
+        "'scan_root': str(root), 'modules': [{'file': str(root / 'demo.py')}]}))\n",
+        encoding="utf-8",
+    )
+    scanner.chmod(0o755)
+
+    installed = module.prepare_patch_index_bundle(source, locks, scanner)
+
+    index_path = source / ".cache/codemap/patch/PT-01.json"
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    assert installed == {"PT-01": hashlib.sha256(index_path.read_bytes()).hexdigest()}
+    assert payload["scan_root"] == str(source.resolve())
+    assert payload["modules"][0]["file"] == f"{source.resolve()}/demo.py"
+    assert (
+        subprocess.run(
+            ["git", "-C", str(source), "status", "--porcelain", "--untracked-files=no"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        == ""
+    )
+
+
+def test_patch_index_bundle_fails_before_scanning_when_baseline_object_is_missing(tmp_path: Path) -> None:
+    """A paid patch scope cannot begin when its exact source object is unavailable."""
+    module = _load_script()
+    source = tmp_path / "source"
+    source.mkdir()
+    subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
+    locks = tmp_path / "locks.json"
+    locks.write_text(
+        json.dumps(
+            {
+                "schema_version": "provider-parity-patch-index-locks-v1",
+                "canonical_scan_root": "/canonical",
+                "tasks": {
+                    "PT-01": {
+                        "baseline_commit": "a" * 40,
+                        "module_count": 1,
+                        "raw_sha256_at_canonical_root": "b" * 64,
+                        "scan_version": 13,
+                        "scanned_at": "locked",
+                        "semantic_sha256": "c" * 64,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    scanner = tmp_path / "scan-index"
+    scanner.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+    scanner.chmod(0o755)
+
+    with pytest.raises(ValueError, match="fetch the exact commit"):
+        module.prepare_patch_index_bundle(source, locks, scanner)
+
+    assert not (source / ".cache/codemap/patch/PT-01.json").exists()
+
+
+def test_patch_index_bundle_rejects_incomplete_lock_rows_before_scanning(tmp_path: Path) -> None:
+    """A partial provenance row cannot become a runnable historical index."""
+    module = _load_script()
+    locks = tmp_path / "locks.json"
+    locks.write_text(
+        json.dumps(
+            {
+                "schema_version": "provider-parity-patch-index-locks-v1",
+                "canonical_scan_root": "/canonical",
+                "tasks": {"PT-01": {"baseline_commit": "a" * 40}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="scan_version"):
+        module._patch_index_locks(locks)
 
 
 def test_prepare_index_uses_semantic_lock_without_rewriting_runtime_root(tmp_path: Path) -> None:

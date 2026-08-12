@@ -162,9 +162,9 @@ def test_codex_manifest_uses_generic_task_selection_contract() -> None:
 
     assert selection["selector_option"] == "--tasks"
     assert selection["separator"] == ","
-    assert selection["stage_order"] == ["structural", "readcrop", "fix-single", "fix-multi"]
-    assert selection["default_total_cells"] == 204
-    assert len(selection["allowed_task_ids"]) == 68
+    assert selection["stage_order"] == ["structural", "readcrop", "fix-single", "fix-multi", "patch"]
+    assert selection["default_total_cells"] == 219
+    assert len(selection["allowed_task_ids"]) == 73
     assert "study_mode" not in selection
     assert "repetitions" not in selection
     assert "arms" not in selection
@@ -447,6 +447,11 @@ def test_methodology_manifest_locks_luna_high_and_exact_implementation_identitie
         "codemap_graph": _sha256(ROOT / "plugins/codemap-py/src/codemap_py/graph.py"),
         "codemap_query": _sha256(ROOT / "plugins/codemap-py/src/codemap_py/query.py"),
         "codex_query_skill": _sha256(ROOT / "plugins/codemap-py/codex-skills/query-code/SKILL.md"),
+        "edit_patch_contracts": _sha256(BENCHMARKS / "_bench_common" / "edit_patch_contracts.py"),
+        "mutation_isolation": _sha256(BENCHMARKS / "_bench_common" / "mutation_isolation.py"),
+        "paid_lifecycle": _sha256(BENCHMARKS / "_bench_common" / "paid_lifecycle.py"),
+        "presentation": _sha256(BENCHMARKS / "_bench_common" / "presentation.py"),
+        "patch_index_locks": _sha256(BENCHMARKS / "suites" / "patch-index-locks.json"),
         "provider_parity_contracts": _sha256(BENCHMARKS / "_bench_common" / "provider_parity_contracts.py"),
         "run_all": _sha256(BENCHMARKS / "run-all.sh"),
         "run_claude_agentic": _sha256(BENCHMARKS / "run-claude-agentic.py"),

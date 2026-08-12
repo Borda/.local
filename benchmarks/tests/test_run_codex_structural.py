@@ -2657,6 +2657,68 @@ def test_locked_runtime_admits_only_a_provenance_bound_worktree_index(
         )
 
 
+def test_historical_runtime_coordinate_uses_patch_baseline_not_main_manifest(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Patch worktrees validate their reviewed coordinate without weakening manifest stages."""
+    source_root = tmp_path / "source"
+    worktree_root = tmp_path / "historical-worktree"
+    baseline_commit = "a" * 40
+    index_path = worktree_root / ".cache" / "codemap" / "historical-worktree.json"
+    index_path.parent.mkdir(parents=True)
+    frozen_bytes = json.dumps(
+        {
+            "git_sha": baseline_commit,
+            "modules": {"pkg": ["symbol"]},
+            "scan_root": str(source_root),
+            "scan_version": 13,
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    derived_bytes, relocation = script_run_codex.relocate_frozen_index_for_worktree(
+        frozen_bytes,
+        source_root=source_root,
+        worktree_root=worktree_root,
+    )
+    index_path.write_bytes(derived_bytes)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "target_source": {"commit": "b" * 40},
+                "index": {"raw_sha256": "c" * 64, "git_sha": "b" * 40, "scan_version": 13},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(script_run_codex, "_repo_sha", lambda _path: baseline_commit)
+    monkeypatch.setattr(script_run_codex, "_git_porcelain_status", lambda _path: {})
+    coordinate = {
+        "baseline_commit": baseline_commit,
+        "raw_index_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
+        "scan_version": "13",
+    }
+
+    script_run_codex._validate_locked_runtime(
+        worktree_root,
+        index_path,
+        "C_skill_required",
+        manifest_path,
+        index_relocation=relocation,
+        historical_runtime_coordinate=coordinate,
+    )
+
+    with pytest.raises(ValueError, match="historical Patch run requires target commit"):
+        script_run_codex._validate_locked_runtime(
+            worktree_root,
+            index_path,
+            "C_skill_required",
+            manifest_path,
+            index_relocation=relocation,
+            historical_runtime_coordinate={**coordinate, "baseline_commit": "d" * 40},
+        )
+
+
 def test_result_exposes_native_telemetry_and_turn_limit_capability(script_run_codex: Any, tmp_path: Path) -> None:
     """Every result keeps measurable Codex-native fields and the turn-limit gap."""
     runner = script_run_codex.CodexRunner(
@@ -3045,7 +3107,9 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     assert sum(line == "LEGEND" for line in stdout.splitlines()) == 1
     assert sum(line == "END LEGEND" for line in stdout.splitlines()) == 1
     assert all(not line.startswith("LEGEND  ") for line in stdout.splitlines())
-    assert stdout.count(f"ARTIFACTS  telemetry={output_path}") == 1
+    assert stdout.count("ARTIFACTS:") == 1
+    assert f" - telemetry={output_path}" in stdout
+    assert f" - metadata={tmp_path / 'admission-metadata.json'}" in stdout
     assert stdout.count(str(tmp_path / "admission-metadata.json")) == 1
     result_rows = [line for line in stdout.splitlines() if line.startswith("(")]
     assert len(result_rows) == 2
@@ -5825,36 +5889,40 @@ def test_unified_paid_command_preserves_the_supplied_absolute_manifest_path(
         model="gpt-5.6-luna",
         selectors=("RC", "FS-03"),
         scope_sha256="a" * 64,
+        patch_pytest="/opt/bench runtime/bin/pytest",
     )
 
     command = capsys.readouterr().out
     assert f"--manifest-path '{custom_manifest.resolve()}'" in command
+    assert command.splitlines()[1].startswith("CODEMAP_BENCH_PATCH_PYTEST='/opt/bench runtime/bin/pytest' python3")
     assert "--tasks RC,FS-03" in command
     assert "--study" not in command
     assert "--paid " not in command
     assert "--task-id" not in command
+    assert command.splitlines()[-1] == "  --paid-approval aaaaaaaaaaaaaaaa"
 
 
 def test_resolve_task_selection_without_selectors_plans_all_stage_cells(script_run_codex: Any) -> None:
-    """Omitting --tasks must plan the complete 68-task, 204-cell benchmark."""
+    """Omitting --tasks must plan the complete 73-task, 219-cell benchmark."""
     scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, None)
     stage_task_ids = {stage["stage_id"]: stage["task_ids"] for stage in scope["stages"]}
 
-    assert len(scope["task_ids"]) == 68
-    assert scope["total_tasks"] == 68
-    assert scope["total_cells"] == 204
-    assert {task_id[:2] for task_id in scope["task_ids"]} >= {"RC", "FS", "FM"}
+    assert len(scope["task_ids"]) == 73
+    assert scope["total_tasks"] == 73
+    assert scope["total_cells"] == 219
+    assert {task_id[:2] for task_id in scope["task_ids"]} >= {"RC", "FS", "FM", "PT"}
     assert stage_task_ids == {
         "structural": scope["task_ids"][:55],
         "readcrop": [f"RC-{number:02d}" for number in range(1, 7)],
         "fix-single": [f"FS-{number:02d}" for number in range(1, 5)],
         "fix-multi": [f"FM-{number:02d}" for number in range(1, 4)],
+        "patch": [f"PT-{number:02d}" for number in range(1, 6)],
     }
 
 
 def test_resolve_task_selection_partitions_mixed_families_and_ids_once(script_run_codex: Any) -> None:
     """Mixed selectors deduplicate before dispatching every task to its native scorer."""
-    scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, "FM-02,RC,FS-03,RC-01,FM")
+    scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, "FM-02,RC,PT-03,FS-03,RC-01,FM,PT")
     stage_task_ids = {stage["stage_id"]: stage["task_ids"] for stage in scope["stages"]}
 
     assert scope["task_ids"] == [
@@ -5863,13 +5931,37 @@ def test_resolve_task_selection_partitions_mixed_families_and_ids_once(script_ru
         "FM-01",
         "FM-02",
         "FM-03",
+        "PT-01",
+        "PT-02",
+        "PT-03",
+        "PT-04",
+        "PT-05",
     ]
-    assert scope["total_cells"] == 30
+    assert scope["total_cells"] == 45
     assert stage_task_ids == {
         "readcrop": [f"RC-{number:02d}" for number in range(1, 7)],
         "fix-single": ["FS-03"],
         "fix-multi": ["FM-01", "FM-02", "FM-03"],
+        "patch": [f"PT-{number:02d}" for number in range(1, 6)],
     }
+
+
+def test_resolve_task_selection_routes_one_exact_patch_task_to_its_native_stage(script_run_codex: Any) -> None:
+    """An exact PT selector must not expand to the Patch family or structural loop."""
+    scope = script_run_codex.resolve_task_selection(MANIFEST_PATH, "PT-01")
+
+    assert scope["task_ids"] == ["PT-01"]
+    assert scope["total_tasks"] == 1
+    assert scope["total_cells"] == 3
+    assert scope["stages"] == [
+        {
+            "stage_id": "patch",
+            "task_ids": ["PT-01"],
+            "repetitions": 1,
+            "arms": ["A_plain", "B_auto", "C_strict"],
+            "total_cells": 3,
+        }
+    ]
 
 
 def test_unified_scope_digest_changes_with_each_stage_partition(script_run_codex: Any) -> None:
@@ -5929,7 +6021,7 @@ def test_unified_paid_execution_uses_one_counter_across_native_stage_rows(
         "total_cells": 12,
         "stages": stages,
     }
-    scope = {**selection, "scope_sha256": "a" * 64}
+    scope = {**selection, "scope_sha256": "1234567890123456" + "a" * 48}
 
     def emit_stage_rows(stage_id: str) -> None:
         """Emit one native three-arm block through the production renderer."""
@@ -5955,7 +6047,7 @@ def test_unified_paid_execution_uses_one_counter_across_native_stage_rows(
         auth_source=tmp_path / "auth.json",
         invocation_launcher_path=None,
         run_dir=tmp_path / "run",
-        paid_approval="a" * 64,
+        paid_approval=1234567890123456,
         dry_run=False,
         show_legend=True,
     )
