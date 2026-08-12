@@ -97,7 +97,7 @@ Role checks:
 - Behavioral metrics measure supplied observations only. `fixture-selftest` validates scoring; live Codex quality requires replacing/appending live-prompt observations.
 - Missing route coverage is `insufficient-evidence`, never acceptance; `require_live_routes=true` exits nonzero.
 - Compare thresholds with `gate_metrics_raw`, not rounded display.
-- Paid paired campaigns: `../../runtime/calibration/run_live_ab.py`; plans by default, executes only `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API key env, no `CI`/`GITHUB_ACTIONS`.
+- Paid paired campaigns: `../../runtime/calibration/run_live_ab.py`; plans by default, executes only `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API key env, no `CI`/`GITHUB_ACTIONS`. An executing paid campaign applies the networked CLI approval contract in `../../shared/native-skill-contract.md`: run the complete owning command with external network approval because it spawns `codex exec`; in a Codex exec call set `sandbox_permissions="require_escalated"` with a narrow paid-calibration justification, and never enable persistent workspace network access or approve only the nested `codex` executable. Planning and offline scoring remain sandboxed.
 - Each live task names a canonical role. Plugin layout prepends the exact packaged role card to both prompts; source layout preserves project-instruction plus source-agent prompt construction. Tool pairs can accept a candidate passing an executable gate when the successfully invoked baseline fails; infrastructure timeout is never a candidate win.
 - Sol critical-only unless paired quality exceeds Terra configured minimum; tie retains Terra.
 - Do not claim currency savings from `normalized-token-v1`; need dated authoritative model-specific price.
@@ -140,6 +140,8 @@ When calibration expectations change, update together:
 - `../../runtime/calibration/live-route-policy.json`
 - `../../runtime/calibration/live-ab-tasks.json`
 - `../../runtime/calibration/run_live_ab.py`
+
+Behavioral coverage includes networked CLI owning-command approval for paid live execution.
 
 ## Output Contract
 

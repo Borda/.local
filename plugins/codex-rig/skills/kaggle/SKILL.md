@@ -40,9 +40,11 @@ Create `.reports/codex/kaggle/<timestamp>/` and keep the active plan current. Re
 
 Prefer the authenticated `kaggle` CLI over the competition page for anything the CLI can read. Competition pages are login-walled and often return partial content; the CLI reads real file names, sizes, and the actual sample submission.
 
+Apply the networked CLI approval contract in `../../shared/native-skill-contract.md` to every `kaggle` invocation, including probes, help, listings, and downloads: execute the complete owning command with external network approval from its first attempt. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow Kaggle-read/download justification; never enable persistent workspace network access or approve only a nested executable. The user's Kaggle task authorizes requesting the runtime permission, not bypassing its prompt. Kaggle CLI installation and authentication are user-owned prerequisites; never run an installer or authentication setup from this workflow.
+
 **CLI probe.** `command -v kaggle`, then `kaggle competitions list -p 1` — succeeds only with valid credentials, and needs no rules acceptance, so it separates an auth failure from a rules failure. Record the resulting state in `profile.md` as `ready`, `unauthorized`, or `absent`. Absence is never fatal: fall back to the page and user-supplied facts, and record the degraded grounding as a residual limit.
 
-- `absent` — offer `pip install kaggle` and ask before installing.
+- `absent` — do not install it. Ask the user to install and authenticate the Kaggle CLI, then rerun the workflow; use page or user-supplied evidence only when the requested mode can tolerate degraded grounding.
 - `unauthorized` — instruct the user to create a token at `https://www.kaggle.com/settings` (API → Create New Token), place it at `~/.kaggle/kaggle.json` with `chmod 600`, or export `KAGGLE_USERNAME`/`KAGGLE_KEY`. Never fabricate or request a pasted token.
 
 **Credential secrecy — hard constraint.** The token value never enters this run's context, any artifact, or any delegated agent's prompt. Forbidden regardless of who asks: reading `~/.kaggle/kaggle.json` by any tool, `cat`/`head`/`grep`/`jq` on it, `kaggle config view`, `env | grep KAGGLE`, echoing `$KAGGLE_KEY`/`$KAGGLE_API_TOKEN`, quoting a pasted token back, or writing any of it into a notebook cell, `profile.md`, gate log, or result artifact. The `kaggle` binary reads credentials from the environment on its own — the workflow needs the CLI to work, never the secret's value. Verify auth by exit code alone (`kaggle competitions list -p 1 >/dev/null 2>&1`), never by inspecting the file. A token pasted into chat is compromised: do not repeat it, and tell the user to rotate it.
@@ -163,7 +165,7 @@ Pass only when all applicable gates pass, no grounded fields are silently guesse
 
 ## Calibration Hooks
 
-Review calibration when this workflow changes grounding, mode routing, model selection, or notebook acceptance. Relevant cases cover invented competition schema, missing submission validation, full-mode sections leaking into EDA-only mode, inference notebooks retraining, and unsupported runtime-success claims. If calibration files are intentionally unchanged, explain why in the manage/review artifact.
+Review calibration when this workflow changes grounding, mode routing, model selection, network approval, or notebook acceptance. Relevant cases cover invented competition schema, missing submission validation, full-mode sections leaking into EDA-only mode, inference notebooks retraining, unsupported runtime-success claims, and networked CLI owning-command approval. If calibration files are intentionally unchanged, explain why in the manage/review artifact.
 
 ## Output Contract
 

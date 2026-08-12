@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.4
+
+- Accept canonical `Review Findings and Merge Blocks` sections by using regex control sequences as regex tokens instead of matching their backslash spellings literally.
+- Derive mechanical review tier and evidence through one shipped routing helper shared by the code-review producer and validator, eliminating model-authored file/line arithmetic drift.
+- Keep shell network access blocked by default while requiring scoped external-network approval for the complete command owning every intentional `gh` or `kaggle` call, GitHub collector fetch/HTTPS path, Codex Git marketplace add/upgrade, and paid live `codex exec` calibration.
+- Keep missing Kaggle CLI installation and authentication user-owned: Codex Rig reports the prerequisite and never runs or authorizes an installer.
+- Require the complete PR collector command to own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic instead of approving a standalone `gh` command.
+- Retry one unapproved sandbox-shaped `github-network` collection failure through the runtime approval mechanism before reporting review or remediation evidence unavailable.
+
 ## 0.7.3
 
 - Require abstractions to reduce reader-visible concepts, keep ordinary Python imports at module scope, and prefer concrete fixture state plus ordinary helpers over nested fixture factories or meaningless aliases.
@@ -31,7 +40,7 @@
 
 - Ground the `kaggle` workflow through the authenticated Kaggle CLI: probe availability and credentials separately from rules acceptance, then read the real file listing, leaderboard range, and sample submission instead of a login-walled competition page.
 - Rank CLI evidence above the fetched page for file names, data schema, and submission format while the page stays authoritative for problem narrative and metric definition.
-- Offer installation and token setup instead of failing when the CLI is absent or unauthorized, and record degraded grounding as a residual limit.
+- Suggest user-owned CLI installation and token setup instead of failing when the CLI is absent or unauthorized, and record degraded grounding as a residual limit.
 - Fail any run that downloads a full competition or dataset archive without first listing file sizes and asking.
 
 ## 0.6.0
@@ -63,7 +72,7 @@
 - Make the unavailable-result writer omit normal recommendations and follow-up fields, preserve conservative `checkout-state.json` evidence when a local checkout command fails, and validate that end-to-end artifact branch.
 - Keep assessed merge-review and remediation strictly open-PR-only: an advanced or diverged base remains fail-closed for open PRs, while merged or closed PRs may be collected only as raw diagnostic evidence through GitHub's pull ref, exact SHA verification, and detached local checkout.
 - Bound production `gh` command memory use with spooled output buffers, reject oversized responses before exposing them to callers, and keep calibration fixtures aligned with the stricter result and PR-identity contracts.
-- Keep Codex marketplace refresh/install as its explicit non-`gh` lifecycle exception because it manages local Codex plugins rather than GitHub data reads.
+- Keep Codex Git marketplace add/upgrade as its explicit non-`gh` lifecycle exception because it refreshes the snapshot used to manage local Codex plugins.
 
 ## 0.4.8
 

@@ -91,11 +91,11 @@
   "observed_live_calls": 57,
   "pricing_basis": "normalized-token-v1:uncached+0.1*cached+4*output",
   "reasoning_effort": "high",
+  "schema_version": 1,
   "sol_role_selection": {
     "mode": "bounded-read-only-advisory",
     "parent_model": "gpt-5.6-terra",
     "parent_owns_final_acceptance": true,
     "requires_explicit_user_request_or_agent_selection": true
-  },
-  "schema_version": 1
+  }
 }

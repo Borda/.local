@@ -37,6 +37,8 @@ reuse the path through a shell variable; shell variables do not persist across t
 - `report`: `.reports/**` or `.reports/codex/**` artifact.
 - `ecosystem`: downstream/API/dependency impact; current external claims need live web evidence. Do not invoke `gh` outside `github_read.py`.
 
+For every `github_read.py` or `collect_pr.py` execution, apply the networked CLI approval contract in `../../shared/native-skill-contract.md`: run the complete owning command with external network approval from its first attempt. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow read-only GitHub justification; never enable persistent workspace network access or approve only the nested `gh` executable. Runtime web tools used for ecosystem evidence keep their own permission path and do not receive shell escalation.
+
 Unsupported/ambiguous mode => fail with usage note, unless pasted evidence supports `local`.
 
 ### 03: Capture scope and source inventory before drawing conclusions
@@ -142,7 +144,7 @@ Optional checks:
 Update calibration when routing or evidence expectations change:
 
 - benchmark patterns: `analyse`
-- behavioral cases: unsupported claims, stale-source caveats, duplicate/related-item handling
+- behavioral cases: unsupported claims, stale-source caveats, duplicate/related-item handling, networked CLI owning-command approval
 
 ## Output Contract
 

@@ -41,7 +41,7 @@ Use the supplied `range`; when absent, run `git describe --tags --abbrev=0` as a
 Retain that literal release range in workflow state, run `git log --oneline <release-range>` as argv, and write stdout
 to `<run-directory>/commits.txt`. Record range or log collection failure instead of treating empty output as success.
 
-When current GitHub release metadata is required, use `python PLUGIN_ROOT/shared/github_read.py --out <run-directory>/github-release.json -- gh release view <tag-or-url> --json <fields>`. It prefers `gh`; a public `api.github.com` fallback is allowed only for public REST resources and cannot supply private release evidence. Never invoke `gh` directly.
+When current GitHub release metadata is required, use `python PLUGIN_ROOT/shared/github_read.py --out <run-directory>/github-release.json -- gh release view <tag-or-url> --json <fields>`. It prefers `gh`; a public `api.github.com` fallback is allowed only for public REST resources and cannot supply private release evidence. Never invoke `gh` directly. Apply the networked CLI approval contract in `../../shared/native-skill-contract.md`: run this complete owning command with external network approval from its first attempt; in a Codex exec call set `sandbox_permissions="require_escalated"` with a narrow read-only GitHub justification, and never enable persistent workspace network access or approve only the nested `gh` executable.
 
 Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`; collect `commit` scope for the retained release range into
 `<run-directory>/range`. Collection failure is evidence gap, not empty release.
@@ -116,7 +116,7 @@ Release readiness requires all five shared gates + shared artifact validator unl
 
 On SemVer, deprecation, changelog, or release-blocker policy change, update calibration:
 
-- behavioral cases: missing migration, wrong SemVer, unreleased API removal, artifact validator bypass
+- behavioral cases: missing migration, wrong SemVer, unreleased API removal, artifact validator bypass, networked CLI owning-command approval
 - benchmark patterns: `release`
 
 ## Output Contract

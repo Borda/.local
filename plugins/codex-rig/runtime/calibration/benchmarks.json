@@ -417,6 +417,7 @@
       "unresolved-review-threads.json",
       "T2 risk-routed specialist fan-out",
       "review-routing.json",
+      "review_routing.py",
       "schema version 2",
       "Codex rollout logs",
       "specialist-manifest.json",

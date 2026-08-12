@@ -70,6 +70,8 @@ missing approval, ambiguous source, foreign marketplace, or unverified active pa
 
 After approval, use only commands confirmed by authoritative help:
 
+Apply the networked CLI approval contract in `../../shared/native-skill-contract.md` to each Git marketplace add/upgrade command or to the complete `sync_codex.py` wrapper that owns one: execute that complete owning command with external network approval from its first attempt. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow approved-marketplace lifecycle justification; never enable persistent workspace network access or request a broad `codex` prefix. This runtime permission is separate from the explicit lifecycle approval above and never expands the allowed marketplace, plugin, ref, or mutation scope. Local marketplace/plugin listing remains sandboxed because it reads configured state without intentionally refreshing remote data. `codex plugin add` installs from the configured marketplace snapshot and receives no separate network escalation; when the complete sync wrapper runs it, the wrapper is already approved because it also owns marketplace add/upgrade.
+
 ```bash
 codex plugin marketplace add Borda/AI-Rig
 # Optional reproducible release pin:
@@ -119,6 +121,8 @@ and after-state identity.
 Behavioral coverage includes dry-run default, missing approval, unavailable JSON output, duplicate active selections,
 same-version byte drift, source-unavailable cache validation, failed marketplace refresh, stale thin links, and
 preservation of unknown external agent files.
+
+Networked CLI owning-command approval is required calibration coverage for Git marketplace add/upgrade behavior.
 
 ## Output Contract
 

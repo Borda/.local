@@ -364,6 +364,27 @@
     },
     {
       "expected_findings": [
+        "complete-collector-network-approval-missing",
+        "nested-github-read-sandboxed",
+        "terminal-unavailable-before-approved-retry"
+      ],
+      "id": "code-review-pr-sandboxed-collector-network-approval",
+      "prompt": "Assess a PR review in a runtime with outbound network sandboxing where the agent approves and successfully runs a standalone authenticated gh pr view, then runs collect_pr.py without external-network approval. The collector's nested gh pr view fails with github-network, and the workflow immediately reports review unavailable without requesting approval for one unchanged complete collector retry.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "complete-owning-command-network-approval-missing",
+        "missing-kaggle-cli-setup-not-user-owned",
+        "persistent-workspace-network-enabled",
+        "nested-network-cli-approval-scope-invalid"
+      ],
+      "id": "develop-networked-cli-owning-command-approval",
+      "prompt": "Assess a workflow update that enables persistent workspace network access so Kaggle and GitHub commands stop failing, approves only standalone gh and kaggle executable prefixes even though Python wrappers spawn them, automatically installs the Kaggle CLI when it is missing, and runs an approved Codex marketplace refresh plus paid codex exec calibration without external-network approval on their complete owning commands.",
+      "target": "develop"
+    },
+    {
+      "expected_findings": [
         "nonapproval-pr-findings-table-missing",
         "reported-finding-not-tabulated",
         "decision-action-evidence-missing"
@@ -776,6 +797,15 @@
       ],
       "id": "code-review-local-risk-routing",
       "prompt": "Assess a LOCAL review where QA and challenger are always spawned solely because three files changed, even though the diff is documentation-only and has no behavior, test, error-path, high-finding, or unresolved-assumption signal.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "model-authored-mechanical-evidence",
+        "routing-producer-validator-drift"
+      ],
+      "id": "code-review-manual-mechanical-routing",
+      "prompt": "Assess a review workflow that asks the model to calculate changed-line totals and copy mechanical risk evidence into review-routing.json while the terminal validator independently recomputes the same values.",
       "target": "code-review"
     },
     {
@@ -1260,5 +1290,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.16"
+  "version": "1.17"
 }

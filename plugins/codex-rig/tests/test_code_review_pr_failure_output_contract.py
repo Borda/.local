@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 CODE_REVIEW_SKILL = PLUGIN_ROOT / "skills" / "code-review" / "SKILL.md"
+CODE_REMEDIATE_SKILL = PLUGIN_ROOT / "skills" / "code-remediate" / "SKILL.md"
+BEHAVIORAL_CASES = PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json"
 
 
 def _terminal_failure_gate() -> str:
@@ -41,3 +44,43 @@ def test_terminal_pr_collection_failure_is_review_unavailable_not_merge_decision
     assert "`collection_failure=" in terminal_gate
     assert "For retryable `github-network`, `github-rate-limit`, or `command-timeout`" in skill
     assert "suggest filing a Codex Rig bug" in skill
+
+
+def test_pr_review_approves_the_complete_collector_before_terminal_network_failure() -> None:
+    """Require network approval to cover the collector and its nested GitHub reads."""
+    skill = CODE_REVIEW_SKILL.read_text(encoding="utf-8")
+
+    assert "execute the complete collector command with approved external network access" in skill
+    assert '`sandbox_permissions="require_escalated"`' in skill
+    assert "never request a broad `python` approval prefix" in skill
+    assert "A direct approval for `gh pr view` does not cover `gh` spawned by the collector" in skill
+    assert "Only after that approved collector attempt fails" in skill
+    assert skill.index("execute the complete collector command") < skill.index(
+        "**Terminal review-unavailable output gate:**"
+    )
+
+
+def test_pr_remediation_approves_the_complete_collector_before_terminal_network_failure() -> None:
+    """Keep PR remediation from repeating the review collector's sandbox failure."""
+    skill = CODE_REMEDIATE_SKILL.read_text(encoding="utf-8")
+
+    assert "execute the complete collector command with approved external network access" in skill
+    assert '`sandbox_permissions="require_escalated"`' in skill
+    assert "never request a broad `python` approval prefix" in skill
+    assert "A direct approval for `gh pr view` does not cover `gh` spawned by the collector" in skill
+    assert "Only after that approved collector attempt fails" in skill
+    assert skill.index("execute the complete collector command") < skill.index("Findings intake:")
+
+
+def test_calibration_covers_sandboxed_collector_network_approval() -> None:
+    """Keep behavioral calibration aligned with the collector approval contract."""
+    payload = json.loads(BEHAVIORAL_CASES.read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in payload["cases"]}
+
+    case = cases["code-review-pr-sandboxed-collector-network-approval"]
+    assert case["target"] == "code-review"
+    assert case["expected_findings"] == [
+        "complete-collector-network-approval-missing",
+        "nested-github-read-sandboxed",
+        "terminal-unavailable-before-approved-retry",
+    ]

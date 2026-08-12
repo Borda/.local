@@ -39,8 +39,17 @@ import hashlib
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
+
+
+# Keep the installed skill helper importable when pytest loads this validator by file path.
+SKILL_DIRECTORY = Path(__file__).resolve().parent
+if str(SKILL_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SKILL_DIRECTORY))
+
+from review_routing import derive_mechanical_risk  # noqa: E402
 
 REQUIRED_SECTIONS = (
     "Decision Summary",
@@ -256,74 +265,6 @@ def _event_payloads(rows: list[dict[str, Any]], event_type: str) -> list[dict[st
     ]
 
 
-def _path_tokens(path: str) -> set[str]:
-    """Split a repository path into exact lowercase risk tokens."""
-    return {token for token in re.split(r"[/._-]+", path.lower()) if token}
-
-
-def _mechanical_risk(out_dir: Path) -> tuple[str, list[str], set[str]]:
-    """Derive a minimum review tier and mandatory signals from collected diff facts."""
-    paths: set[str] = set()
-    for filename in ("files.txt", "untracked.txt"):
-        path = out_dir / filename
-        if path.exists():
-            paths.update(line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
-    changed_lines = 0
-    unknown_size_rows = 0
-    numstat = out_dir / "numstat.txt"
-    if numstat.exists():
-        for line in numstat.read_text(encoding="utf-8").splitlines():
-            parts = line.split("\t", 2)
-            if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-                changed_lines += int(parts[0]) + int(parts[1])
-            elif len(parts) >= 2:
-                unknown_size_rows += 1
-
-    lower_paths = {path.lower() for path in paths}
-    evidence = [f"files={len(paths)}", f"changed_lines={changed_lines}", f"unknown_size_rows={unknown_size_rows}"]
-    broad_names = {"pyproject.toml", "package.json", "cargo.toml", "uv.lock", "poetry.lock", "package-lock.json"}
-    security_parts = {"auth", "authentication", "credential", "credentials", "security"}
-    high_risk_parts = security_parts | {"migration", "migrations"}
-    high_paths = sorted(
-        path
-        for path in lower_paths
-        if path.startswith(".github/workflows/")
-        or high_risk_parts.intersection(_path_tokens(path))
-        or "deserial" in Path(path).name
-    )
-    config_paths = sorted(
-        path
-        for path in lower_paths
-        if path in broad_names or path.endswith(("config.toml", "config.yaml", "config.yml"))
-    )
-    if high_paths:
-        tier = "HIGH_RISK"
-        evidence.append("high_risk_paths=" + ",".join(high_paths))
-    elif len(paths) >= 8 or config_paths or unknown_size_rows:
-        tier = "BROAD"
-        if config_paths:
-            evidence.append("config_or_dependency_paths=" + ",".join(config_paths))
-    elif len(paths) < 3 and changed_lines < 50:
-        tier = "TRIVIAL"
-    else:
-        tier = "LOCAL"
-
-    mandatory_signals: set[str] = set()
-    if any(path.startswith("tests/") or "/tests/" in path for path in lower_paths):
-        mandatory_signals.add("test_or_error_path")
-    if any(any(marker in path for marker in ("tensor", "dataset", "dataloader", "data/")) for path in lower_paths):
-        mandatory_signals.update({"data_tensor_boundary", "axis_data_steward"})
-    if any(path.startswith(".github/") for path in lower_paths):
-        mandatory_signals.add("axis_cicd_steward")
-    if any(path.endswith((".md", ".rst")) or path.startswith("docs/") for path in lower_paths):
-        mandatory_signals.add("axis_doc_scribe")
-    if high_paths and any(
-        security_parts.intersection(_path_tokens(path)) or "deserial" in Path(path).name for path in high_paths
-    ):
-        mandatory_signals.add("axis_security_auditor")
-    return tier, evidence, mandatory_signals
-
-
 def _validate_routing(out_dir: Path, risk_tier: str) -> set[str]:
     """Derive triggered specialist roles from explicit review-risk signals."""
     routing = _load_json(out_dir / "review-routing.json")
@@ -331,7 +272,7 @@ def _validate_routing(out_dir: Path, risk_tier: str) -> set[str]:
         raise SystemExit("review-routing-schema-version")
     if routing.get("risk_tier") != risk_tier:
         raise SystemExit("review-routing-risk-tier-mismatch")
-    mechanical_tier, mechanical_evidence, mandatory_signals = _mechanical_risk(out_dir)
+    mechanical_tier, mechanical_evidence, mandatory_signals = derive_mechanical_risk(out_dir)
     tier_rank = {"TRIVIAL": 0, "LOCAL": 1, "BROAD": 2, "HIGH_RISK": 3}
     if tier_rank[risk_tier] < tier_rank[mechanical_tier]:
         raise SystemExit(f"review-routing-tier-underclassified:{mechanical_tier}:{risk_tier}")
@@ -420,7 +361,7 @@ def _table_cells(line: str) -> list[str] | None:
 def _action_table_rows(notes_text: str) -> list[list[str]]:
     """Extract the canonical review findings and merge blocks table rows."""
     section = re.search(
-        rf"^## {re.escape(ACTION_TABLE_SECTION)}\\s*$\\n(?P<body>.*?)(?=^## |\\Z)",
+        rf"^## {re.escape(ACTION_TABLE_SECTION)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
         notes_text,
         re.MULTILINE | re.DOTALL,
     )
