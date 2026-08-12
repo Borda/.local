@@ -1,43 +1,46 @@
 ---
 name: session
-description: 'Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks "what was I working on", "any pending items", "what''s in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only); `dump`/`restore` are not modes here — that is `foundry:carryover`, which runs inline and can read conversation history.'
-argument-hint: "resume | archive <text> | summary"
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+description: 'Session state that outlives a context reset — `dump` sweeps the live conversation and writes a compact handover doc (goal, decisions + why, lessons, standing instructions, files-touched table, outstanding items, next step), then prints `/clear`; the `session-restore.js` SessionStart hook re-injects it automatically. `park` stashes a diverging idea mid-session without derailing; `sweep` audits the conversation for unlanded work. TRIGGER when: user says "dump the session", "handover before clear", "save state before clearing", "carry this over", "I want to clear but keep the plan", "park this for later", "what did we defer", "anything unfinished before I close". SKIP: surviving auto-compact at 85% (that is the skill contract in `.temp/state/skill-contract.md` per `compaction.md`, written by the running skill); reviving a *finished* conversation (Claude Code native `/resume`).'
+argument-hint: "dump [name] | recall [name] | list | park <idea> | sweep | drop <item>"
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, AskUserQuestion
 effort: low
 model: sonnet
-context: fork
 ---
 
 <objective>
 
-Track open-loop ideas, deferred questions, diverging threads — no loss to context compaction or session end. Three on-demand commands (`resume`, `archive`, `summary`) plus behavioral parking rule writing `session-open-*.md` memory files as items arise.
+Carry the *durable* part of a session across `/clear`, and hold open loops until they land. `dump` composes a small handover doc from the live conversation, writes it to `.claude/state/session/<slug>.md`, and ends by printing `/clear`. The `session-restore.js` hook (SessionStart, matcher `clear`) injects that doc into the fresh session, so restore is free. Implementation detail — diffs, tool output, exploration transcript, abandoned approaches — is dropped on purpose; only the decision that settled an approach survives.
 
-NOT for: general persistent notes or diary entries (use .notes/ directly); managing task lists (use TaskCreate/TaskUpdate tools).
+Runs **inline, never `context: fork`**. The conversation history *is* the authoritative source for what changed, what was decided, and what never landed; a forked run would see none of it.
+
+NOT for: auto-compact survival (`compaction.md` skill contract); reviving a finished conversation (native `/resume`). Boundary table in the notes section below.
 
 </objective>
 
 <inputs>
 
-- **$ARGUMENTS**: required. Three modes:
-  - `resume` (alias: `pending`) — list all open `session-open-*.md` memory files for this project, grouped by age; items ≥ 14 days get `⚠ stale` prefix; items ≥ 30 days deleted silently before listing
-  - `archive <partial-text>` — fuzzy-match parked item by name or content, delete memory file, append audit entry to `.notes/logs/session-archive.jsonl`
-  - `summary` — compact session digest: completed tasks, parked items, recent git commits since session start; follows output-routing rule (≤10 lines → terminal; longer → `.temp/output-session-summary-<date>.md`)
+- **$ARGUMENTS**: required. Six modes:
+  - `dump [name]` — sweep, compose and write the handover doc, set the `LATEST` pointer, print the `/clear` next step. `name` optional; unnamed dumps derive a slug from branch + UTC timestamp.
+  - `recall [name]` — print a stored handover into context and mark it consumed. Named, or `LATEST` when omitted. Manual path for the dumps the hook skips.
+  - `list` — table of stored handovers (slug, age, consumed) plus the open parked items.
+  - `park <idea>` — append one open-loop item to `.claude/state/session/PARKED.md`. No dump needed; works any time.
+  - `sweep` — read the conversation for unlanded ideas, unanswered questions and pending tasks; report them and offer to park.
+  - `drop <item>` — fuzzy-match a parked item and remove it, logging the closure.
 
 </inputs>
 
 <constants>
 
-- Memory dir: resolved via `resolve_memory_dir.py` (canonical; see snippet below)
-- Canonical MEMORY_DIR snippet (use in every bash block that needs the path):
-  ```bash
-  MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
-  [ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
-  ```
-- File pattern: `session-open-*.md`
-- Resolution log: `.notes/logs/session-archive.jsonl` (legacy `.claude/logs/session-archive.jsonl` read-only fallback for historical entries)
-- Stale threshold: 14 days (add `⚠ stale` prefix when listing)
-- Delete threshold: 30 days (silently remove before listing)
-- Max open items: 10 (surface list and ask to archive before parking new ones)
+- Store dir: `.claude/state/session/` (project-local; `.claude/state/` is gitignored, same as `session-context.md`)
+- Item store: `.claude/state/session/PARKED.md` — one bullet per open item; survives every dump, never auto-deleted
+- Pointer file: `.claude/state/session/LATEST` — plain text, the slug of the most recent unconsumed dump. Blank or missing = nothing pending.
+- Closure log: `.claude/state/session/dropped.jsonl` — one JSON line per `drop`
+- Doc size cap: ~1.5K tokens (~75 lines). Compress prose, never drop a decision.
+- Hook auto-restore window: unconsumed **and** `created` within 30 min. Outside it, `recall` is the manual path.
+- Hook truncation threshold: ~8000 chars — above it the hook injects `## Goal` + files table + `## Next step` + a `→ /foundry:session recall <slug>` pointer instead of the whole doc.
+- Stale threshold: 14 days (`⚠ stale` prefix when listing) — applies to handover docs **and** parked items
+- Delete threshold: 30 days — handover docs only, swept during `list`. **Parked items are never auto-deleted**; only `drop` removes one.
+- Files-table row cap: 25 (over that, group by directory and state the elided count)
 
 </constants>
 
@@ -54,269 +57,277 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/load_shared_doc.py" foundr
 Extract first word of `$ARGUMENTS` as `MODE`.
 
 If `MODE` matches:
-- `resume` or `pending` → **Mode: resume**
-- `archive` → **Mode: archive**
-- `summary` → **Mode: summary**
+- `dump` (alias: `save`) → **Mode: dump**
+- `recall` (aliases: `restore`, `load`) → **Mode: recall**
+- `list` → **Mode: list**
+- `park` → **Mode: park**
+- `sweep` → **Mode: sweep**
+- `drop` (alias: `archive`) → **Mode: drop**
 
-**Unsupported flag check** — after extracting mode token, scan `$ARGUMENTS` for remaining `--<token>` patterns. If found: print `! Unknown flag(s): \`--<token>\`. Supported modes: resume, archive, summary.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
+**Unsupported flag check** — after extracting the mode token, scan `$ARGUMENTS` for remaining `--<token>` patterns. If found: print `! Unknown flag(s): \`--<token>\`. Supported modes: dump, recall, list, park, sweep, drop.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
 
-Otherwise (empty, unrecognized, misspelled — including `dump`/`restore`, which are not modes here): use `AskUserQuestion`:
+Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 
 > "Which session mode did you want?"
-> Options: (a) `resume` — list all open parked items, (b) `archive <name>` — close a parked item by name, (c) `summary` — compact digest of this session's work, (d) none of these — I want `/carryover dump` or `/carryover restore` instead (full handover doc across a `/clear`, not a parked item)
+> Options: (a) `dump [name]` — write the handover doc now, (b) `park <idea>` — stash one open loop without derailing, (c) `sweep` — audit the conversation for unlanded work, (d) `list` — stored handovers and open items
 
-## Step 1 / Mode: resume (list pending items)
+## Step 1 / Mode: dump
 
-### Substep 1a: Resolve the memory directory
-
-Derive `MEMORY_DIR` using the canonical snippet defined in `<constants>` above. Run that snippet here; do not duplicate it. `echo "$MEMORY_DIR"` to surface the resolved path.
-
-### Substep 1b: Age-out expired items (≥ 30 days) silently
+### Substep 1a: Derive slug and timestamp
 
 ```bash
-# MEMORY_DIR — must re-derive here; shell state lost across Bash calls
-MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
-[ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
-# log before delete for audit trail
-find "$MEMORY_DIR" -name "session-open-*.md" -mtime +30 2>/dev/null | while IFS= read -r f; do
-    echo "Removing aged file: $f"
-    rm "$f"
-done # timeout: 5000
-echo "cleanup done"
+git branch --show-current 2>/dev/null; date -u +%Y-%m-%dT%H:%M:%SZ; date -u +%Y-%m-%dT%H-%M-%SZ  # timeout: 5000
 ```
 
-### Substep 1c: Collect remaining items and compute age
+Three lines out: branch, ISO `created` stamp, filesystem-safe stamp. Slug: `<name>` from `$ARGUMENTS` when given (lowercase, non-alphanumerics → `-`); otherwise `<branch with / → ->-<filesystem-safe stamp>`. Empty branch (detached HEAD) → `detached`. Reject a `name` containing `/` or `..` — re-ask via `AskUserQuestion` rather than writing outside the store dir. `LATEST`, `PARKED`, `dropped` are reserved slugs; re-ask on those too.
 
-**Primary source (current)**: Read `.claude/state/session-context.md` if it exists. Extract all bullets under `## Parked items` section — each is a current parked item. Use item's `Raised:` date for age computation.
+### Substep 1b: Sweep for unlanded work
 
-**Legacy source (backwards-compat)**: List `session-open-*.md` files via Bash (Glob with absolute paths outside project root may return empty on restricted installs — Bash `ls` reliable fallback):
-```bash
-MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # re-derive: fresh shell
-ls "$MEMORY_DIR"/session-open-*.md 2>/dev/null  # timeout: 5000
-```
-For each file path returned, read with Read tool to extract `name` and `description` frontmatter fields and item body. Show legacy items alongside current items in output. If `ls` returns no files, skip — no legacy items.
+Run **Step 5 / Mode: sweep** internally, plus Read `.claude/state/session/PARKED.md` (skip silently if absent). The union becomes the doc's `## Outstanding` section. Nothing found and no parked items → omit the section.
 
-Compute age in days per file using `session_age_files.py` (cross-platform; output `<age>\t<path>` per line): <!-- file: session_age_files.py — consumers: foundry:session Substep 1c -->
+### Substep 1c: Gather file evidence
 
 ```bash
-# MEMORY_DIR — must re-derive here; shell state lost across Bash calls
-MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
-[ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
-python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/session_age_files.py" "$MEMORY_DIR" # timeout: 5000
+git diff --stat HEAD 2>/dev/null; echo "--- committed since session start ---"; git log --name-only --pretty=format:'%h %s' --since="8 hours ago" 2>/dev/null | head -60  # timeout: 5000
 ```
 
-### Substep 1d: Render grouped list
+> git parses the relative date itself — no BSD/GNU `date` flag split needed.
 
-Group by age bucket:
+**Sourcing precedence for the files table** — union of four sources, in this order:
 
-- **This session** — files modified today (age = 0)
-- **Earlier (`<date>`)** — files modified on prior dates, grouped by modification date
+1. **Conversation history — authoritative.** Every `Edit`/`Write` of this session is visible to this skill; that is the touched-file list, and the only source that also knows *what* each change was (`Change`) and whether it landed (`State`).
+2. `git diff --stat HEAD` → the `Ref` column (`+N/-M`). A file with no diff entry and no commit is `Ref: uncommitted-new`, or dropped when it was temp scratch.
+3. `git log --name-only --since=…` → files already committed this session, which no longer appear in `git diff HEAD`.
+4. `.claude/state/session-context.md` → `## Files Modified This Session` — **fallback only**. `task-log.js` writes that section from its PreCompact branch, which fires at the 85% auto-compact threshold; a session dumping before any compaction has no such section, or a stale one from a prior session. Read it only when sources 1–3 come up empty.
 
-Apply `⚠ stale` prefix to items with age ≥ 14 days.
+**Column rules**: `Change` ≤6 words, what changed, never why (why belongs in `## Decisions`). `State` ∈ `done` / `wip` / `needs-test` / `reverted`. Cap 25 rows — over that, group by directory and state the elided count explicitly, never silently truncate (`quality-gates.md`). Scratchpad and `.temp/` paths are never rows; they belong in `## Artifacts`.
 
-Print in this format:
+### Substep 1d: Gather artifacts and open tasks
+
+```bash
+find .temp .reports .experiments .developments -maxdepth 2 -type d -mtime -1 2>/dev/null | head -20  # timeout: 5000
+```
+
+Call `TaskList` for tasks still `in_progress` or `pending` — they feed `## Next step` and `## Outstanding`, not a section of their own (task state survives on its own).
+
+### Substep 1e: Compose the doc
+
+Fill this template. Omit any section with nothing real in it — an empty heading is noise the next session pays for.
 
 ```markdown
-## Session Pending — <today's date>
+---
+slug: <slug>
+created: <ISO8601-UTC>
+consumed: false
+branch: <git branch>
+---
 
-### This session
-- [ ] <item name> — <description>
+## Goal
+<the task/plan in 1–3 lines>
 
-### Earlier (<YYYY-MM-DD>)
-- [ ] ⚠ stale — <item name> — <description>
+## Decisions
+- <decision> — why: <reason>
 
-→ /session archive <slug> to close an item
-→ /session summary for a full session digest
+## Lessons / corrections
+- <correction received> — rule going forward: <rule>
+
+## Standing instructions
+- <programmatic-level directive that must keep applying>
+
+## Files touched
+
+| File | Change | State | Ref |
+| --- | --- | --- | --- |
+| `path/to/a.py` | added retry guard | done | +42/-3 |
+| `path/to/b.md` | README sync | wip | +8/-0 |
+
+## Outstanding
+- **<slug>** — <one-line summary>. Why: <one sentence>. Next: <what to ask or do>.
+
+## Artifacts
+
+| Path | Kind | Note |
+| --- | --- | --- |
+| `.reports/<skill>/<ts>/report.md` | report | consolidated findings |
+| `.temp/<skill>/<ts>/` | run-dir | agent handover files |
+
+## Next step
+<single concrete next action>
+
+## Dropped deliberately
+implementation detail, tool output, exploration transcript
 ```
 
-If no files exist, print: `No pending session items.`
+**Written in ultra-caveman tier** (`plugins/CLAUDE.md` §Writing Style) — this doc is re-injected into a fresh context on every restore, so every word is a recurring cost. Explicit exclusions: no diffs, no code bodies, no command output, no per-file reasoning, no history of abandoned approaches — only the decision that settled them.
 
-End resume mode output with a `## Confidence` block per quality-gates.md — score based on: memory sources resolved without error, age computation succeeded, legacy file enumeration returned a result (even empty).
+### Substep 1f: Write the doc and the pointer
 
-## Step 2 / Mode: archive (close a parked item)
+Use the **Write tool** for both (it creates `.claude/state/session/` on demand; no `mkdir` permission gap):
 
-### Substep 2a: Locate memory directory and list candidates
+1. `.claude/state/session/<slug>.md` — the composed doc. A slug that already exists is overwritten only after `AskUserQuestion` confirms; otherwise append `-2`, `-3`, … .
+2. `.claude/state/session/LATEST` — the slug alone, one line.
 
-Derive MEMORY_DIR using canonical snippet from `<constants>`. Candidates come from two sources:
-1. **Current**: bullets under `## Parked items` in `.claude/state/session-context.md` (if exists)
-2. **Legacy**: Glob tool with pattern `session-open-*.md` in MEMORY_DIR
+`PARKED.md` is **not** cleared by a dump — the doc copies items, it does not consume them. An item leaves only via `drop`.
 
-Combine both into a single candidate list for fuzzy matching in Substep 2b.
+### Substep 1g: Print the next step
 
-### Substep 2b: Fuzzy-match the target item
+Terminal only, short. Confirm the path, the row count of the files table, then:
 
-Extract `<partial-text>` from `$ARGUMENTS` (everything after `archive `).
+```text
+→ .claude/state/session/<slug>.md (N files, M decisions, K outstanding)
+Next: clear the context. I cannot run it for you — Claude Code exposes no programmatic slash invocation, so the line below is yours to send. The SessionStart hook re-injects this doc automatically on the other side.
 
-Search candidates from Substep 2a. For `session-open-*.md` files: Grep with partial text, match against file basenames. For session-context.md bullets: match `<partial-text>` against slug or summary text. Select best match — if ambiguous (2+ equally close matches), list them and ask user to disambiguate before proceeding.
-
-Track match source:
-```bash
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-MATCHED_SOURCE="file"          # "file" for session-open-*.md, "context" for session-context.md
-MATCHED_FILE="<full path>"     # only when MATCHED_SOURCE="file"
-MATCHED_SLUG="<slug>"
-ITEM_NAME="<name>"
-printf '%s\n' "$MATCHED_SOURCE" "$MATCHED_FILE" "$MATCHED_SLUG" "$ITEM_NAME" \
-    > "${TMPDIR:-/tmp}/session-match-${CSID}.txt"
+/clear
 ```
 
-### Substep 2c: Remove the matched item
+The literal `/clear` is the **last line of the reply** — nothing after it, so it is one copy away.
 
-**If `MATCHED_SOURCE="file"`** (legacy `session-open-*.md`):
+End with a `## Confidence` block per `quality-gates.md` — score on: files table backed by conversation evidence (not guessed), decisions captured with their reasons, sweep run before composing, next step concrete enough to act on cold.
+
+## Step 2 / Mode: recall
+
+### Substep 2a: Resolve the target
+
+Named → `.claude/state/session/<name>.md`. Unnamed → read `.claude/state/session/LATEST` (Read tool) and use the slug it holds; blank or missing → print `No pending handover. → /foundry:session list` and stop.
+
+Missing target file → print the miss and fall through to a `list` render so the user sees what does exist.
+
+### Substep 2b: Print it into context
+
+Read the doc and print its body verbatim, frontmatter stripped, under a one-line banner naming the slug and its age. **Terminal only — never route this to a file**: landing it in context *is* the mechanism, and output-routing to `.temp/` would defeat it.
+
+### Substep 2c: Mark consumed
+
+1. Edit tool on the doc: `consumed: false` → `consumed: true` (frontmatter only).
+2. Write tool on `.claude/state/session/LATEST`: empty content. The hook treats blank and missing alike, so nothing re-injects on the next `/clear`.
+
+End with a `## Confidence` block per `quality-gates.md` — score on: target resolved unambiguously, doc printed intact, consumed marker written.
+
+## Step 3 / Mode: list
+
+### Substep 3a: Sweep expired handover docs (≥ 30 days)
+
 ```bash
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS=$'\n' read -r MATCHED_SOURCE MATCHED_FILE MATCHED_SLUG ITEM_NAME \
-    < "${TMPDIR:-/tmp}/session-match-${CSID}.txt"
-rm "$MATCHED_FILE"  # timeout: 5000
-echo "deleted"
+find .claude/state/session -maxdepth 1 -name '*.md' ! -name 'PARKED.md' -mtime +30 -delete 2>/dev/null; echo "sweep done"  # timeout: 5000
 ```
 
-**If `MATCHED_SOURCE="context"`** (bullet in `session-context.md`):
-Use Edit tool to remove the matched bullet line from `.claude/state/session-context.md`. Remove only the bullet matching `MATCHED_SLUG` — leave other bullets unchanged.
+> `PARKED.md` excluded by name — parked items have no TTL, only `drop` removes them.
 
-### Substep 2d: Append audit entry to resolution log
+### Substep 3b: Collect and render
 
-Ensure log directory exists:
+Glob `.claude/state/session/*.md` **excluding `PARKED.md`** (it holds bullets, not frontmatter), Read each one's frontmatter for `slug`, `created`, `consumed`, `branch`. Age comes from `created`, not file mtime — marking a doc consumed rewrites the file and would reset mtime. Read `PARKED.md` separately for the items table; its ages come from each bullet's `Raised:` date.
 
-```bash
-mkdir -p .notes/logs # timeout: 5000
+```markdown
+## Session store — <today's date>
+
+### Handovers
+
+| Slug | Age | Branch | Consumed |
+| --- | --- | --- | --- |
+| `plan-x` | 12 min | main | no |
+| `⚠ stale refactor-auth` | 16 d | feat/auth | yes |
+
+### Parked (<N> open)
+
+- [ ] **retry-backoff** — revisit exponential vs linear. Raised: 2026-08-10.
+- [ ] ⚠ stale **split-ratio** — 80/20 vs 70/30 never settled. Raised: 2026-07-20.
+
+→ /foundry:session recall <slug> to print a handover back into context
+→ /foundry:session drop <item> to close a parked item
 ```
 
-Append one-line JSON entry atomically with bash redirection, using `ITEM_NAME` resolved in Substep 2b. Entry format: `{"ts":"<ISO8601-UTC>","item":"<name>","action":"archived"}`
+`⚠ stale` prefix at ≥ 14 days, both tables. Nothing in either → `No stored handovers, no parked items.`
+
+End with a `## Confidence` block per `quality-gates.md` — score on: glob returned a result (even empty), every frontmatter parsed, ages computed from `created` / `Raised:`.
+
+## Step 4 / Mode: park
+
+Payload is everything after `park ` in `$ARGUMENTS`. Empty payload → run **Mode: sweep** instead and offer its findings as parking candidates, rather than asking for text the conversation already holds.
+
+Derive a short kebab slug from the payload, then Read `.claude/state/session/PARKED.md` (absent → start a fresh file with the `# Parked items` heading) and Edit/Write one bullet appended at the end:
+
+```markdown
+# Parked items
+
+- **<short slug>** — <one-line summary>. Raised: <YYYY-MM-DD>. Why: <one sentence>. Next: <what to ask or do when revisiting>.
+```
+
+Date from `date -u +%Y-%m-%d` (fold into any bash call this step already makes). Slug already present → update that bullet rather than adding a near-duplicate, and say so.
+
+Print one line: `Parked: <slug>` plus the current open count. Terminal only.
+
+## Step 5 / Mode: sweep
+
+Read the **conversation**, not the filesystem. Nothing to run — the history is already in context. Collect, in this order:
+
+| Type | Trigger |
+| --- | --- |
+| Unanswered question | Claude asked, user sent a new top-level request instead of answering |
+| Deferred exploration | "come back to that", "park this", "later" — idea named, not pursued |
+| Diverging idea | feature/design idea raised while solving something else |
+| Unfinished task | `TaskList` entry still `pending` / `in_progress` |
+| Stated-but-unlanded | a change discussed and agreed, with no Edit/Write backing it in this session |
+
+Call `TaskList` for the fourth row. Detection stays **behavioural** — a new top-level request without an answer to the prior question — never semantic-similarity scoring.
+
+Render:
+
+```markdown
+## Unlanded — <N> items
+
+| # | Item | Type | Why it did not land |
+| --- | --- | --- | --- |
+| 1 | retry backoff shape | deferred | user said "later, after the bench lands" |
+```
+
+Then `AskUserQuestion`: (a) park all · (b) park a subset (list the numbers) · (c) skip. Selecting (a) or (b) runs **Mode: park** for each chosen item in the same turn.
+
+Sweep sees the **current conversation only**. A finished session's unlanded ideas are unreachable — native `/resume` revives the conversation itself; this skill never mines transcript JSONL.
+
+End with a `## Confidence` block per `quality-gates.md` — score on: every row traceable to a concrete conversation turn (not inferred), `TaskList` consulted, no already-landed work listed as outstanding.
+
+## Step 6 / Mode: drop
+
+### Substep 6a: Fuzzy-match the target
+
+Match everything after `drop ` against the slugs and summaries in `.claude/state/session/PARKED.md`. Ambiguous (2+ equally close) → list them and `AskUserQuestion` to disambiguate. No match → render the parked list and stop.
+
+### Substep 6b: Remove the bullet and log the closure
+
+Edit tool on `PARKED.md` — remove only the matched bullet, leave the rest untouched. Then append one audit line:
 
 ```bash
-export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-IFS=$'\n' read -r MATCHED_SOURCE MATCHED_FILE MATCHED_SLUG ITEM_NAME \
-    < "${TMPDIR:-/tmp}/session-match-${CSID}.txt"
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-# jq escapes ITEM_NAME safely; prevents injection
-jq -n --arg ts "$TS" --arg item "$ITEM_NAME" '{"ts":$ts,"item":$item,"action":"archived"}' >> .notes/logs/session-archive.jsonl  # timeout: 5000
+jq -n --arg ts "$TS" --arg item "<matched slug>" '{"ts":$ts,"item":$item,"action":"dropped"}' >> .claude/state/session/dropped.jsonl  # timeout: 5000
 ```
 
-### Substep 2e: Confirm to user
+> jq escapes the slug — a bullet holding quotes or braces can never break the log line.
 
-Print: `Archived: $ITEM_NAME` (substituting the value resolved in Substep 2b) — one line, terminal only.
+Print `Dropped: <slug>` plus the remaining open count. Terminal only.
 
-End with `## Confidence` block per quality-gates.md — score based on match quality (did fuzzy-match find right item; was archive entry written cleanly).
-
-## Step 3 / Mode: summary (session digest)
-
-### Substep 3a: Collect completed tasks
-
-Call TaskList (or use TaskCreate/TaskUpdate context) to get tasks with status `completed` from this session. Extract subject lines.
-
-### Substep 3b: Collect parked items
-
-Read from two sources and merge:
-
-1. **Current** (primary) — Read `.claude/state/session-context.md` if present (written by the `PreCompact` hook). Extract all bullets under the `## Parked items` heading; each bullet's slug and one-line description become a parked-item entry. If the file does not exist, skip silently.
-2. **Legacy** (backwards-compat) — Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with pattern `session-open-*.md` in MEMORY_DIR to list candidates. Read each matched file with Read tool for `name` and `description`.
-
-Combine both sources into a single parked-items list. De-duplicate by slug — when an item appears in both, prefer the `session-context.md` entry (newer, hook-maintained). Carry both into Substep 3e composition under the same `### Parked / Pending` section.
-
-### Substep 3c: Collect recent git commits
-
-```bash
-OS=$(uname -s)
-SINCE=$([ "$OS" = "Darwin" ] && date -u -v-8H '+%Y-%m-%dT%H:%M:%SZ' || date -u -d '8 hours ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')
-git log --oneline --since="$SINCE" | head -20 || true # timeout: 3000; empty OK (no commits in window)
-```
-
-### Substep 3d: Collect archived items from this session
-
-Use Read tool with `limit=20` on `.notes/logs/session-archive.jsonl` and (legacy) `.claude/logs/session-archive.jsonl` — skip either if it does not exist; merge entries from both.
-
-Filter entries with `ts` matching today's date.
-
-### Substep 3e: Compose and route the digest
-
-Draft digest:
-
-```markdown
-## Session Summary — <date>
-
-### Completed
-- <task 1>
-- <task 2>
-
-### Parked / Pending (<N> items)
-- [ ] <item> — <description>
-
-### Archived this session
-- <item> — <ts>
-
-### Recent commits
-- <hash> <message>
-```
-
-Output-routing rule: ≤ 10 lines → terminal only. If longer:
-
-```bash
-mkdir -p .temp/
-OUTPUT=".temp/output-session-summary-$(date +%Y-%m-%d).md"
-# anti-overwrite: increment counter
-if [ -f "$OUTPUT" ]; then
-    n=2
-    while [ -f "${OUTPUT%.md}-$n.md" ]; do n=$((n + 1)); done
-    OUTPUT="${OUTPUT%.md}-$n.md"
-fi
-```
-
-Write to `$OUTPUT`, print compact terminal summary with `→ file`.
-
-End with `## Confidence` block per quality-gates.md — score based on summary completeness (all completed tasks captured, parked items current, git log resolved).
-
-Follow-up gate (`AskUserQuestion`):
-(a) `/session archive <item>` — archive a completed item
-(b) Add item to parking lot (specify which)
-(c) Skip
+End with a `## Confidence` block per `quality-gates.md` — score on: match unambiguous, only the matched bullet removed, audit line appended.
 
 </workflow>
 
 <notes>
 
-**`context: fork`** — reads/writes files only; fork avoids polluting parent context with file listings and session state.
+**Why not one command.** A skill cannot invoke `/clear` — Claude Code exposes no programmatic slash invocation (that is Agent SDK `query()` only), and neither keybindings, `UserPromptSubmit`, nor `UserPromptExpansion` can trigger one either. So `dump` + `/clear` stays two steps; the mechanism buys its keep by making the *third* step (restore) automatic.
 
-**Three session-state mechanisms — they do not overlap.** `dump`/`restore` are not modes of this skill: a forked run sees no conversation history, so it cannot compose a carryover. That work lives entirely in `foundry:carryover`; the fallback question above is the only place this skill mentions it, as a pointer for anyone who guesses `session dump`.
+**Why inline, not forked.** `context: fork` skills cannot read conversation history. The files table's `Change` and `State` columns, the decisions, the lessons and the whole of `sweep` come from that history — a forked run would have nothing to write.
+
+**Two state mechanisms — they do not overlap.**
 
 | Mechanism | Survives | Trigger | Store |
 | --- | --- | --- | --- |
-| Parked items (`session`) | open loops, deferred ideas | automatic, behavioral | `session-context.md` `## Parked items` |
 | Skill contract (`compaction.md`) | in-flight skill phase state | auto-compact at 85% | `.temp/state/skill-contract.md` |
-| Carryover (`carryover`) | plan, decisions, lessons, files table | explicit `dump` before `/clear` | `.claude/state/carryover/` |
+| Session handover (this skill) | plan, decisions, lessons, files table, open loops | explicit `dump` before `/clear` | `.claude/state/session/` |
 
-**Automatic parking behavior (core behavioral rule — no command needed)**
+**Restore is best-effort, dump is not.** The hook injects only when the pointer exists, the doc is unconsumed, and it is under 30 minutes old — a deliberately narrow window, so an old dump never ambushes an unrelated session. Everything outside it is reachable by `/foundry:session recall <slug>`, which has no age gate. The four cases that land there: dumped and walked away (>30 min); doc over ~8K chars (hook injects the head plus a pointer); fresh terminal rather than a `/clear` (the matcher is `clear`); wanting the same doc a second time (the first restore set `consumed: true`).
 
-During any session, Claude proactively appends open-loop items to **`.claude/state/session-context.md`** (project-scoped state file maintained by PreCompact hook) as they arise.
+**`recall`, not `resume`.** Claude Code's native `/resume` revives a whole past conversation — strictly better recall than any document. This mode name stays clear of it deliberately; the two are not alternatives.
 
-> **Why not auto-memory?** Project CLAUDE.md `Memory Policy` forbids auto-writes under `~/.claude/projects/.../memory/`. Session state belongs in project-scoped state file so it stays with repo, survives compaction, never pollutes auto-memory. `resume` / `archive` / `summary` modes above continue reading **legacy** `session-open-*.md` files (created by older versions) for backwards compatibility, but **new items are never written there**.
+**Parking is a command, not a behaviour.** The predecessor made parking an automatic behavioural rule documented only inside this file, which loads only on invocation — so it never fired, and the store held zero items for four months. `park` is now an explicit mode with an explicit store. Nothing writes to `PARKED.md` unless the user asks for it, and no TTL deletes from it.
 
-| Item type | Trigger | Entry format |
-| --- | --- | --- |
-| Unanswered clarifying question | User sends new top-level request before answering Claude's prior clarifying question | `"User raised: <idea>. Pending: <question asked>."` |
-| Deferred exploration | "let's come back to that", "park this for later", idea mentioned but not pursued | `"Deferred: <idea>. Context: <one sentence why deferred>."` |
-| Diverging idea mid-task | New feature/design idea mentioned while solving something else | `"Side idea: <idea>. Raised while: <what we were doing>."` |
-
-**Topic-shift detection rule**: trigger strictly behavioural — user submits new top-level request without answering Claude's prior question (not follow-up or clarification). No semantic similarity scoring.
-
-**Entry format**: append a bullet under a `## Parked items` section (create the section if absent):
-
-```markdown
-## Parked items
-
-- **<short slug>** — <one-line summary>. Raised: <YYYY-MM-DD>. Why: <one sentence>. How to apply: <what to ask or do when revisiting>.
-```
-
-Written to: `.claude/state/session-context.md` (project-local; tracked or gitignored per project policy).
-
-**Pollution guard**: before parking new item, count bullets under `## Parked items`. If count ≥ 10, surface full list and ask user to archive some (via `/session archive <slug>`) before appending a new one.
-
-**TTL policy**: items ≥ 14 days listed with `⚠ stale`. Items ≥ 30 days deleted silently during `resume`. TTL thresholds fixed global values — not configurable.
-
-**Session-start behavior**: open-loop items NOT surfaced automatically at session start. Appear only when `/session resume` explicitly invoked. Don't add session-start hygiene step for this in CLAUDE.md.
-
-**Resolution log**: `.notes/logs/session-archive.jsonl` is project-local, append-only (legacy `.claude/logs/session-archive.jsonl` read-only fallback for historical entries). Stays in git-tracked project directory as audit trail; separate from home-scoped memory files intentionally.
-
-**Scope**: parked ideas scoped to current project only — don't appear across projects. Project isolation enforced by file location (`.claude/state/session-context.md` lives inside the project's working tree).
+**Scope**: the store is project-local — `.claude/state/session/` lives inside the working tree, so nothing leaks across projects.
 
 </notes>

@@ -1,8 +1,8 @@
-"""Subprocess tests for ``hooks/carryover-restore.js``.
+"""Subprocess tests for ``hooks/session-restore.js``.
 
 The hook fires on ``SessionStart`` with matcher ``clear``.  It reads
-``<cwd>/.claude/state/carryover/LATEST`` — resolving ``cwd`` from the hook
-payload, never ``process.cwd()`` — and injects the carryover document that
+``<cwd>/.claude/state/session/LATEST`` — resolving ``cwd`` from the hook
+payload, never ``process.cwd()`` — and injects the handover document that
 pointer names back into the fresh session as raw stdout.
 
 Behavioural areas covered:
@@ -16,7 +16,7 @@ Behavioural areas covered:
 * **Consumption** — a successful injection rewrites ``consumed: true`` and
   unlinks the pointer, so a second ``/clear`` re-injects nothing.
 * **Size guard** — above ~8000 chars only ``## Goal``, the files table,
-  ``## Next step`` and a ``/carryover restore`` pointer are injected.
+  ``## Next step`` and a ``/foundry:session recall`` pointer are injected.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-HOOK = "carryover-restore.js"
+HOOK = "session-restore.js"
 
 pytestmark = pytest.mark.skipif(
     subprocess.run(["node", "--version"], capture_output=True, timeout=5).returncode != 0,
@@ -44,7 +44,7 @@ def _iso(minutes_ago: float = 0) -> str:
     return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def write_carryover(
+def write_handover(
     project: Path,
     slug: str = "plan-x",
     *,
@@ -53,11 +53,11 @@ def write_carryover(
     filler: str = "",
     pointer: str | None = None,
 ) -> Path:
-    """Create a carryover doc plus its ``LATEST`` pointer under *project*.
+    """Create a handover doc plus its ``LATEST`` pointer under *project*.
 
     Args:
         project: Directory standing in for the hook payload's ``cwd``.
-        slug: Carryover slug — also the document's basename.
+        slug: Handover slug — also the document's basename.
         consumed: Raw value written to the ``consumed`` frontmatter field.
         created: ISO8601 stamp; defaults to now.
         filler: Extra body text appended under ``## Decisions``, used to
@@ -65,12 +65,12 @@ def write_carryover(
         pointer: Contents of ``LATEST``; defaults to *slug*.
 
     Returns:
-        Path of the carryover document.
+        Path of the handover document.
     """
-    carry_dir = project / ".claude" / "state" / "carryover"
-    carry_dir.mkdir(parents=True, exist_ok=True)
-    (carry_dir / "LATEST").write_text(f"{slug if pointer is None else pointer}\n", encoding="utf8")
-    doc = carry_dir / f"{slug}.md"
+    store_dir = project / ".claude" / "state" / "session"
+    store_dir.mkdir(parents=True, exist_ok=True)
+    (store_dir / "LATEST").write_text(f"{slug if pointer is None else pointer}\n", encoding="utf8")
+    doc = store_dir / f"{slug}.md"
     doc.write_text(
         "\n".join(
             [
@@ -82,7 +82,7 @@ def write_carryover(
                 "---",
                 "",
                 "## Goal",
-                "ship the carryover mechanism",
+                "ship the session handover mechanism",
                 "",
                 "## Decisions",
                 "- inline skill — why: a fork sees no conversation history",
@@ -92,7 +92,7 @@ def write_carryover(
                 "",
                 "| File | Change | State | Ref |",
                 "| --- | --- | --- | --- |",
-                "| `carryover-restore.js` | added SessionStart hook | done | +150/-0 |",
+                "| `session-restore.js` | added SessionStart hook | done | +150/-0 |",
                 "",
                 "## Next step",
                 "run the pytest suite",
@@ -117,7 +117,7 @@ def payload(project: Path | None, **overrides) -> dict:
 
 
 def test_no_pointer_is_silent(run_hook, tmp_path: Path) -> None:
-    (tmp_path / ".claude" / "state" / "carryover").mkdir(parents=True)
+    (tmp_path / ".claude" / "state" / "session").mkdir(parents=True)
     result = run_hook(HOOK, payload(tmp_path))
     assert result.returncode == 0
     assert result.stdout == ""
@@ -130,7 +130,7 @@ def test_missing_cwd_is_silent(run_hook) -> None:
 
 
 def test_other_event_is_silent(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path)
+    write_handover(tmp_path)
     result = run_hook(HOOK, payload(tmp_path, hook_event_name="SessionEnd"))
     assert result.returncode == 0
     assert result.stdout == ""
@@ -138,7 +138,7 @@ def test_other_event_is_silent(run_hook, tmp_path: Path) -> None:
 
 def test_other_source_is_silent(run_hook, tmp_path: Path) -> None:
     """``matcher: clear`` filters in production; the in-code gate is a second line."""
-    write_carryover(tmp_path)
+    write_handover(tmp_path)
     result = run_hook(HOOK, payload(tmp_path, source="startup"))
     assert result.returncode == 0
     assert result.stdout == ""
@@ -146,30 +146,30 @@ def test_other_source_is_silent(run_hook, tmp_path: Path) -> None:
 
 def test_absent_source_still_injects(run_hook, tmp_path: Path) -> None:
     """Source gate is lenient — a payload without the field must not silently no-op."""
-    write_carryover(tmp_path)
+    write_handover(tmp_path)
     data = payload(tmp_path)
     del data["source"]
     result = run_hook(HOOK, data)
-    assert "[carryover] restored" in result.stdout
+    assert "[session] restored" in result.stdout
 
 
 def test_blank_pointer_is_silent(run_hook, tmp_path: Path) -> None:
-    """``/carryover restore`` empties LATEST rather than deleting it."""
-    write_carryover(tmp_path, pointer="")
+    """``/foundry:session recall`` empties LATEST rather than deleting it."""
+    write_handover(tmp_path, pointer="")
     result = run_hook(HOOK, payload(tmp_path))
     assert result.returncode == 0
     assert result.stdout == ""
 
 
 def test_traversal_pointer_is_silent(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path, pointer="../../../etc/passwd")
+    write_handover(tmp_path, pointer="../../../etc/passwd")
     result = run_hook(HOOK, payload(tmp_path))
     assert result.returncode == 0
     assert result.stdout == ""
 
 
 def test_pointer_to_missing_doc_is_silent(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path, pointer="does-not-exist")
+    write_handover(tmp_path, pointer="does-not-exist")
     result = run_hook(HOOK, payload(tmp_path))
     assert result.returncode == 0
     assert result.stdout == ""
@@ -193,25 +193,25 @@ def test_malformed_stdin_is_silent() -> None:
 
 
 def test_consumed_doc_is_silent(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path, consumed="true")
+    write_handover(tmp_path, consumed="true")
     result = run_hook(HOOK, payload(tmp_path))
     assert result.stdout == ""
 
 
 def test_expired_doc_is_silent(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path, created=_iso(minutes_ago=31))
+    write_handover(tmp_path, created=_iso(minutes_ago=31))
     result = run_hook(HOOK, payload(tmp_path))
     assert result.stdout == ""
 
 
 def test_doc_just_inside_window_injects(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path, created=_iso(minutes_ago=29))
+    write_handover(tmp_path, created=_iso(minutes_ago=29))
     result = run_hook(HOOK, payload(tmp_path))
-    assert "[carryover] restored" in result.stdout
+    assert "[session] restored" in result.stdout
 
 
 def test_unparseable_created_is_silent(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path, created="whenever")
+    write_handover(tmp_path, created="whenever")
     result = run_hook(HOOK, payload(tmp_path))
     assert result.stdout == ""
 
@@ -220,9 +220,9 @@ def test_unparseable_created_is_silent(run_hook, tmp_path: Path) -> None:
 
 
 def test_fresh_doc_injects_full_body(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path)
+    write_handover(tmp_path)
     out = run_hook(HOOK, payload(tmp_path)).stdout
-    assert "[carryover] restored from `plan-x`" in out
+    assert "[session] restored from `plan-x`" in out
     assert "branch main" in out
     assert "## Decisions" in out
     assert "## Files touched" in out
@@ -230,7 +230,7 @@ def test_fresh_doc_injects_full_body(run_hook, tmp_path: Path) -> None:
 
 
 def test_injection_strips_frontmatter(run_hook, tmp_path: Path) -> None:
-    write_carryover(tmp_path)
+    write_handover(tmp_path)
     out = run_hook(HOOK, payload(tmp_path)).stdout
     assert "slug: plan-x" not in out
     assert "consumed:" not in out
@@ -238,37 +238,37 @@ def test_injection_strips_frontmatter(run_hook, tmp_path: Path) -> None:
 
 def test_oversized_doc_injects_head_only(run_hook, tmp_path: Path) -> None:
     filler = "- filler decision line, repeated for bulk\n" * 220
-    write_carryover(tmp_path, slug="big-x", filler=filler)
+    write_handover(tmp_path, slug="big-x", filler=filler)
     out = run_hook(HOOK, payload(tmp_path)).stdout
     assert "filler decision line" not in out
     assert "## Goal" in out
     assert "## Files touched" in out
     assert "## Next step" in out
-    assert "/carryover restore big-x" in out
+    assert "/foundry:session recall big-x" in out
 
 
 # ── Consumption ───────────────────────────────────────────────────────────────
 
 
 def test_injection_marks_consumed_and_clears_pointer(run_hook, tmp_path: Path) -> None:
-    doc = write_carryover(tmp_path)
+    doc = write_handover(tmp_path)
     run_hook(HOOK, payload(tmp_path))
     assert "consumed: true" in doc.read_text(encoding="utf8")
-    assert not (tmp_path / ".claude" / "state" / "carryover" / "LATEST").exists()
+    assert not (tmp_path / ".claude" / "state" / "session" / "LATEST").exists()
 
 
 def test_second_clear_is_idempotent(run_hook, tmp_path: Path) -> None:
-    doc = write_carryover(tmp_path)
+    doc = write_handover(tmp_path)
     first = run_hook(HOOK, payload(tmp_path))
     second = run_hook(HOOK, payload(tmp_path))
-    assert "[carryover] restored" in first.stdout
+    assert "[session] restored" in first.stdout
     assert second.stdout == ""
     assert "consumed: true" in doc.read_text(encoding="utf8")
 
 
 def test_consumption_rewrites_only_the_flag(run_hook, tmp_path: Path) -> None:
     """The rewrite must round-trip the doc — closing ``---`` delimiter and body intact."""
-    doc = write_carryover(tmp_path)
+    doc = write_handover(tmp_path)
     before = doc.read_text(encoding="utf8")
     run_hook(HOOK, payload(tmp_path))
     after = doc.read_text(encoding="utf8")

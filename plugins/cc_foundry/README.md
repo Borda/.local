@@ -24,7 +24,6 @@ ______________________________________________________________________
   - [`/foundry:profile`](#foundryprofile)
   - [`/foundry:distill`](#foundrydistill)
   - [`/foundry:session`](#foundrysession)
-  - [`/foundry:carryover`](#foundrycarryover)
   - [`/foundry:create`](#foundrycreate)
   - [`/foundry:humanizer`](#foundryhumanizer)
 - [Agents reference](#agents-reference)
@@ -404,41 +403,28 @@ ______________________________________________________________________
 
 ### `/foundry:session`
 
-Parking lot for open-loop ideas + unanswered questions mid-session. Parks items automatically as they arise; three on-demand commands manage them.
+Session state that outlives a context reset — a handover document plus a parking lot for open loops. `dump` sweeps the live conversation and composes goal, decisions + why, lessons, standing instructions, a files-touched table, outstanding items and an artifacts table, writes it to `.claude/state/session/<slug>.md`, and ends by printing `/clear` as the last line of the reply. The `session-restore.js` hook injects that document back on the other side, so restore costs nothing.
 
 ```text
-/foundry:session resume           # list all pending parked items for this project
-/foundry:session archive <text>   # fuzzy-match and close a parked item
-/foundry:session summary          # session digest: completed tasks, parked items, recent commits
+/foundry:session dump [name]     # sweep, write the handover doc, then print /clear
+/foundry:session recall [name]   # print a stored handover back into context (named, or latest)
+/foundry:session list            # handovers (slug / age / consumed) + open parked items
+/foundry:session park <idea>     # stash one open loop without derailing the current task
+/foundry:session sweep           # audit the conversation for unlanded ideas and questions
+/foundry:session drop <item>     # close a parked item and log the closure
 ```
 
-**Auto-invokes when:** user asks "what was I working on", "any pending items", "remind me where we left off", "what did we defer" — resume mode only.
+**Auto-invokes when:** user says "dump the session", "handover before clear", "save state before clearing", "carry this over", "park this for later", "what did we defer", "anything unfinished before I close".
 
-Items stored in project-scoped memory (`~/.claude/projects/<slug>/memory/session-open-*.md`). Items older than 14 days marked stale; older than 30 days deleted silently on `resume`.
+Runs **inline, not forked** — the conversation history is the authoritative source for what changed, what was decided, and what never landed. Implementation detail (diffs, tool output, exploration transcript, abandoned approaches) is dropped on purpose.
 
-**Automatic parking** (no command needed): new top-level request sent before answering Claude's prior clarifying question, or deferral like "let's come back to that" — Claude parks open item automatically so not lost to context compaction.
+The hook auto-restores only an **unconsumed** handover **under 30 minutes old**, so an old dump never ambushes an unrelated session; anything outside that window is reachable via `recall`, which has no age gate. Over ~8000 chars the hook injects `## Goal` + files table + `## Next step` + a pointer instead of the whole doc. Handover docs older than 14 days list as `⚠ stale`; older than 30 days are swept during `list`.
 
-`dump` and `restore` are **not** modes of `/foundry:session` — that is `/foundry:carryover`. `session` is `context: fork`, so it cannot read the conversation history a carryover is composed from; its fallback "which mode?" question names `/foundry:carryover` for anyone who guesses `session dump`.
+Parked items live in `.claude/state/session/PARKED.md`, are copied into every dump rather than consumed by it, and have **no TTL** — only `drop` removes one, appending an audit line to `dropped.jsonl`. Parking is an explicit command, not an automatic behaviour.
 
-______________________________________________________________________
+The mode is `recall`, not `resume`, to stay clear of Claude Code's native `/resume` — which revives a whole past conversation and is the better tool whenever it applies.
 
-### `/foundry:carryover`
-
-Handover document across a context reset. `dump` composes goal, decisions + why, lessons, standing instructions, a files-touched table and an artifacts table from the live conversation, writes it to `.claude/state/carryover/<slug>.md`, and ends by printing `/clear` as the last line of the reply. The `carryover-restore.js` hook injects that document back on the other side, so restore costs nothing.
-
-```text
-/foundry:carryover dump [name]      # write the handover doc, then print /clear
-/foundry:carryover restore [name]   # print a stored carryover back into context (named, or latest)
-/foundry:carryover list             # slug / age / consumed table
-```
-
-**Auto-invokes when:** user says "dump the session", "session dump", "handover before clear", "save state before clearing", "carry this over".
-
-Runs **inline, not forked** — the conversation history is the authoritative source for what changed and why. Implementation detail (diffs, tool output, exploration transcript, abandoned approaches) is dropped on purpose.
-
-The hook auto-restores only an **unconsumed** carryover **under 30 minutes old**, so an old dump never ambushes an unrelated session; anything outside that window is reachable via `restore`, which has no age gate. Over ~8000 chars the hook injects `## Goal` + files table + `## Next step` + a pointer instead of the whole doc. Docs older than 14 days list as `⚠ stale`; older than 30 days are swept during `list`.
-
-**Not** the parking lot (`/foundry:session`) and **not** auto-compact survival (the skill contract in `.temp/state/skill-contract.md`, per `rules/compaction.md`) — all three are distinguished in a boundary table in both skills.
+**Not** auto-compact survival (the skill contract in `.temp/state/skill-contract.md`, per `rules/compaction.md`) — the two are distinguished in a boundary table in the skill.
 
 ______________________________________________________________________
 
@@ -780,7 +766,7 @@ plugins/cc_foundry/
 │   └── permissions-deny.json    deny-list merged by /foundry:setup
 ├── agents/                      10 specialist agent files (flat — a nested `agents/<x>/y.md` would register as a dispatchable `foundry:<x>:y` agent)
 ├── references/                  agent sidecar fragments (`references/<agent>/*.md`), `cat`-loaded on demand; deliberately outside `agents/` so they are never scanned as agents
-├── skills/                      12 skill directories (audit, brainstorm, calibrate, carryover, create, distill, humanizer, investigate, manage, profile, session, setup)
+├── skills/                      11 skill directories (audit, brainstorm, calibrate, create, distill, humanizer, investigate, manage, profile, session, setup)
 ├── rules/                       13 rule files symlinked to ~/.claude/rules/foundry-*.md by /foundry:setup (+ 10 on-demand bodies in rules/_full/)
 ├── CLAUDE.src.md                workflow rules; /foundry:setup Step 10 copies → ~/.claude/CLAUDE.md
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol
@@ -796,7 +782,7 @@ plugins/cc_foundry/
     ├── agent-router.js          PreToolUse Agent hook; 3-tier routing fallback (worktree → cache → local)
     ├── commit-guard.js          PreToolUse Bash guard; git commit is prompt-discipline only, not hook-gated; git push --force blocked unconditionally on any branch, regular push gated by a sentinel requiring AskUserQuestion each time (no auto-arm)
     ├── sentinel-read-allow.js   PreToolUse Bash; auto-allows blueprint idioms ($(cat "${TMPDIR:-/tmp}/…") sentinel reads, $(date -u +FMT) stamps, substitution-free `IFS= read -r VAR < sentinel` form) when every segment is read-only — kills "Contains expansion" prompts for pre-canned skill code; everything else falls through to normal permission checks; propagated to all sibling plugins
-    ├── carryover-restore.js     SessionStart matcher `clear`; reads `<cwd>/.claude/state/carryover/LATEST` from the hook payload's own `cwd`, and injects that carryover doc as raw stdout (the documented SessionStart context channel) when it is unconsumed and under 30 min old — then marks it consumed and unlinks the pointer so a second `/clear` never re-injects; over ~8000 chars only `## Goal` + files table + `## Next step` + a `/carryover restore` pointer go in; every other path is a silent exit 0, so it can never block a session start
+    ├── session-restore.js       SessionStart matcher `clear`; reads `<cwd>/.claude/state/session/LATEST` from the hook payload's own `cwd`, and injects that handover doc as raw stdout (the documented SessionStart context channel) when it is unconsumed and under 30 min old — then marks it consumed and unlinks the pointer so a second `/clear` never re-injects; over ~8000 chars only `## Goal` + files table + `## Next step` + a `/foundry:session recall` pointer go in; every other path is a silent exit 0, so it can never block a session start
     ├── md-compress.js           normalizes markdown whitespace/table-padding in place on Edit
     ├── batch-nudge.js           PreToolUse/PostToolUse/UserPromptSubmit; tracks a streak of sequential batchable calls (Read/Grep/Glob, read-only Bash prefixes) separated by model-round-trip-sized gaps (≥1.5s); at streak 4, nudges via PostToolUse exit 2 (stderr feedback, never blocks — PreToolUse always exits 0)
     ├── enforce-audit-header.js  PreToolUse AskUserQuestion; denies `/foundry:audit`'s follow-up gate until Step 5 has written `$RUN_DIR/summary.jsonl`, so the fix-level question is never asked from an ad-hoc summary; recognises the gate by its fixed option labels, so `! BREAKING` acknowledgments and flag prompts pass through; silent unless an audit run is in flight; once the aggregate exists, additionally nudges (never blocks) via `additionalContext` if the reply never rendered the report header as a table — see `report-header-table.js`
@@ -907,7 +893,6 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 | `test_purge_plugin_cache.py`      | `purge_plugin_cache.py`      | 17    | Report-vs-apply contract, seven deletion guards, `--expect-count` abort, argument rejection                                                                                      |
 | `test_resolve_memory_dir.py`      | `resolve_memory_dir.py`      | 10    | Path slugification, `PROJECT_ROOT` override, git fallback, missing-git fallback                                                                                                  |
 | `test_resolve_plugin_root.py`     | `resolve_plugin_root.py`     | 9     | Registry lookup, cache-scan fallback, orphaned-version skip, security gates (cache-dir + manifest-name)                                                                          |
-| `test_session_age_files.py`       | `session_age_files.py`       | 8     | File listing, age computation, glob filtering, missing-dir handling                                                                                                              |
 | `test_get_plugin_install_path.py` | `get_plugin_install_path.py` | 7     | Registry lookup, multiple-entry tie-breaking, missing plugin exit code                                                                                                           |
 | `test_classify_resolver_sites.py` | `classify_resolver_sites.py` | 5     | Directory scan for extractable/non-extractable resolver sites, CLI report + `--list-extractable` — maintainer-only, ad hoc invocation, not wired into any skill                  |
 | `test_c33_dir_resolution.py`      | _(C33 dir-resolution logic)_ | 4     | Latest-version selection, older-version exclusion, no-cache fallback                                                                                                             |

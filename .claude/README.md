@@ -228,7 +228,7 @@ Key relationships:
 | **calibrate**        | 🟠 foundry  | `/foundry:calibrate [<scope>...] [--fast \| --full] [--ab-test \| --apply] [--skip-gate]` | Synthetic benchmarks measuring recall vs confidence bias; `--apply` applies proposals; `--ab-test` compares A/B; `routing` and `communication` modes available                                                                                                                                                            |
 | **brainstorm**       | 🟠 foundry  | `/foundry:brainstorm <idea> \| breakdown <tree-or-spec>`                                  | Two modes: (1) **idea** — clarifying questions → build divergent branch tree (deepen, close, merge, up to 10 ops) → save tree doc → curator review → gate; (2) **breakdown** — auto-detects input: tree (`Status: tree`) → distillation questions → section-by-section spec; spec (`Status: draft`) → ordered action plan |
 | **investigate**      | 🟠 foundry  | `/foundry:investigate <symptom>`                                                          | Systematic diagnosis for unknown failures — env, tools, hooks, CI divergence; ranks hypotheses and hands off to right skill                                                                                                                                                                                               |
-| **session**          | 🟠 foundry  | `/foundry:session [resume\|archive\|summary]`                                             | Parking lot for diverging ideas — auto-parks unanswered questions and deferred threads; `resume` shows pending, `archive` closes, `summary` digests session                                                                                                                                                               |
+| **session**          | 🟠 foundry  | `/foundry:session [dump\|recall\|list\|park\|sweep\|drop]`                                | Session state across a `/clear` — `dump` sweeps the conversation and writes a handover doc the `session-restore.js` hook re-injects; `park`/`drop` manage the open-loop store; `recall` is the manual fallback                                                                                                            |
 | **distill**          | 🟠 foundry  | `/foundry:distill`                                                                        | One-time snapshot: suggest new agents/skills, review roster, prune memory, or consolidate lessons                                                                                                                                                                                                                         |
 | **oss:setup**        | 🟢 oss      | `/oss:setup [--approve]`                                                                  | Links the oss plugin's rules as `~/.claude/rules/oss-*.md`; rules only — no `settings.json` or Codex changes                                                                                                                                                                                                              |
 | **oss:review**       | 🟢 oss      | `/oss:review [file\|PR#] [--reply]`                                                       | Parallel review across arch, tests, perf, docs, lint, security, API; `--reply` drafts contributor comment                                                                                                                                                                                                                 |
@@ -474,13 +474,15 @@ Each mode enforces validation gate *before* writing implementation code:
 /investigate "uv run pytest can't find conftest.py"
 ```
 
-**`/session` — Session parking lot**
+**`/session` — Session handover + parking lot**
 
 ```text
-/session            # auto-parks current diverging ideas and open questions
-/session resume     # show all pending parked items
-/session archive    # close all pending items
-/session summary    # digest of what happened this session
+/session dump       # sweep the conversation, write the handover doc, print /clear
+/session recall     # print a stored handover back into context (manual fallback)
+/session list       # stored handovers + open parked items
+/session park <idea>  # stash one open loop without derailing the current task
+/session sweep      # audit the conversation for unlanded ideas and questions
+/session drop <item>  # close a parked item
 ```
 
 ## 🧭 Native Claude Code skills

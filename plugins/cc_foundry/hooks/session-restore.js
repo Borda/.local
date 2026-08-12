@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// carryover-restore.js — SessionStart hook (matcher: clear)
+// session-restore.js — SessionStart hook (matcher: clear)
 //
 // PURPOSE
-//   `/foundry:carryover dump` writes a compact handover doc to
-//   <cwd>/.claude/state/carryover/<slug>.md and points LATEST at its slug.
+//   `/foundry:session dump` writes a compact handover doc to
+//   <cwd>/.claude/state/session/<slug>.md and points LATEST at its slug.
 //   A skill cannot invoke /clear (no programmatic slash invocation outside the
 //   Agent SDK), so the user sends it manually. This hook closes the loop from
 //   the other side: on the fresh session it injects that doc back into context,
@@ -21,11 +21,11 @@
 //   3. Frontmatter says consumed: false.
 //   4. Frontmatter `created` parses and is within 30 minutes of now.
 //   Any gate failing → exit 0 with no stdout. Silence is the correct outcome:
-//   almost every /clear has no pending carryover.
+//   almost every /clear has no pending handover.
 //
 // SIZE GUARD
 //   Over MAX_INJECT_CHARS the doc is not injected whole — only ## Goal, the
-//   files table, ## Next step, and a `/carryover restore <slug>` pointer. A
+//   files table, ## Next step, and a `/foundry:session recall <slug>` pointer. A
 //   context reset that immediately re-imports 8K+ chars defeats its own purpose.
 //
 // CONSUMPTION
@@ -43,7 +43,7 @@ const path = require("path");
 
 const MAX_AGE_MS = 30 * 60 * 1000; // auto-restore window
 const MAX_INJECT_CHARS = 8000; // above this, head + pointer only
-const CARRYOVER_SUBDIR = path.join(".claude", "state", "carryover");
+const STORE_SUBDIR = path.join(".claude", "state", "session");
 
 /**
  * Split a doc into its frontmatter block and body. Returns null when there is no leading `---` block.
@@ -93,15 +93,15 @@ function buildOutput(slug, body, fields, docPath) {
   const age = ageMinutes(Date.parse(fields.created));
   const branch = fields.branch ? `, branch ${fields.branch}` : "";
   if (body.length <= MAX_INJECT_CHARS) {
-    return `[carryover] restored from \`${slug}\` — dumped ${age} min ago${branch}. Source: ${docPath}\n\n${body.trim()}\n`;
+    return `[session] restored from \`${slug}\` — dumped ${age} min ago${branch}. Source: ${docPath}\n\n${body.trim()}\n`;
   }
   const head = [section(body, "## Goal"), section(body, "## Files touched"), section(body, "## Next step")]
     .filter(Boolean)
     .join("\n\n");
   return (
-    `[carryover] restored from \`${slug}\` — dumped ${age} min ago${branch}. ` +
+    `[session] restored from \`${slug}\` — dumped ${age} min ago${branch}. ` +
     `Doc is ${body.length} chars, injecting head only. Source: ${docPath}\n\n` +
-    `${head}\n\n→ /carryover restore ${slug} for the full document\n`
+    `${head}\n\n→ /foundry:session recall ${slug} for the full document\n`
   );
 }
 
@@ -126,13 +126,13 @@ process.stdin.on("end", () => {
     const cwd = data.cwd;
     if (!cwd || typeof cwd !== "string") process.exit(0);
 
-    const dir = path.join(cwd, CARRYOVER_SUBDIR);
+    const dir = path.join(cwd, STORE_SUBDIR);
     const latestPath = path.join(dir, "LATEST");
     if (!fs.existsSync(latestPath)) process.exit(0);
 
     const slug = fs.readFileSync(latestPath, "utf8").trim();
-    // Blank LATEST = consumed by `/carryover restore`, which empties rather than deletes it.
-    // Reject separators/traversal so the pointer can never reach outside the carryover dir.
+    // Blank LATEST = consumed by `/foundry:session recall`, which empties rather than deletes it.
+    // Reject separators/traversal so the pointer can never reach outside the store dir.
     if (!slug || slug.includes("/") || slug.includes("\\") || slug.includes("..")) process.exit(0);
 
     const docPath = path.join(dir, `${slug}.md`);
@@ -148,7 +148,7 @@ process.stdin.on("end", () => {
     const createdMs = Date.parse(fields.created || "");
     if (Number.isNaN(createdMs) || Date.now() - createdMs > MAX_AGE_MS) process.exit(0);
 
-    process.stdout.write(buildOutput(slug, split.body, fields, path.join(CARRYOVER_SUBDIR, `${slug}.md`)));
+    process.stdout.write(buildOutput(slug, split.body, fields, path.join(STORE_SUBDIR, `${slug}.md`)));
 
     try {
       markConsumed(docPath, split);

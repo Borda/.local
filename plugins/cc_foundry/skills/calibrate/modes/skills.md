@@ -101,7 +101,6 @@ Modes evaluated for calibration but deferred — significant barriers. `/audit` 
 - `/develop:feature`/`/develop:fix`/`/develop:refactor`/`/develop:debug` — full dev lifecycle; requires git, tests, linting; blast-radius sub-task calibratable via `/codemap-py:query-code` (`fn-blast`) above
 - `/research:topic` — SOTA literature search; depends on live web results; no deterministic ground truth
 - `/investigate` — open-ended diagnosis; output varies completely by symptom
-- `/session` — session lifecycle management; no quality signal to measure
 - `/foundry:session` — session lifecycle management — no quality signal; output fully context-dependent
 - `/calibrate` itself — meta-calibration circular
 - `/research:run` — sustained iteration loop with live metric commands and git state

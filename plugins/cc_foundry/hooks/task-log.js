@@ -80,10 +80,6 @@
 //       "## Skill Compaction Contract" section so a skill's per-compaction contract
 //       survives unsummarized. Observational — a missing/unreadable contract is
 //       swallowed and never blocks compaction.
-//     • Carries the foundry:session "## Parked items" section over verbatim: the full
-//       rewrite is built fresh each compaction, so the section is extracted from the prior
-//       session-context.md and re-emitted once (idempotent — no duplicate accumulation)
-//       to keep parked items alive across compaction. Missing section swallowed.
 //
 //   UserPromptSubmit
 //     • Clears state/tools/ so the 🔧 line resets immediately at new-prompt start —
@@ -520,20 +516,6 @@ process.stdin.on("end", () => {
               lines.push(contract);
             }
           } catch (_) {}
-          // Preserve the foundry:session parking lot verbatim. The session skill writes a
-          // "## Parked items" section into THIS same file; the full rewrite above would otherwise
-          // clobber it on every compaction — the exact case parking guards against. Extract from
-          // the CURRENT file (read before the overwrite below) and re-emit once, so repeated
-          // compactions never accumulate duplicate sections. Observational — a missing/unreadable
-          // file is swallowed and never blocks compaction.
-          try {
-            const prior = fs.readFileSync(path.join(stateDir, "session-context.md"), "utf8");
-            const parked = extractSection(prior, "## Parked items");
-            if (parked) {
-              lines.push("");
-              lines.push(parked);
-            }
-          } catch (_) {}
           fs.writeFileSync(path.join(stateDir, "session-context.md"), lines.join("\n") + "\n");
         } catch (_) {}
       }
@@ -858,25 +840,6 @@ function readAgentInfo(root, agentType) {
     } catch (_) {}
   }
   return { model: "inherit", color: null }; // built-in types (general-purpose) or missing file
-}
-
-// extractSection — return a markdown section (the heading line through the line before the next
-// "## " heading, or EOF) with trailing blank lines trimmed. Returns "" when the heading is absent.
-// Used by PreCompact to carry the foundry:session "## Parked items" section across a full rewrite.
-function extractSection(content, heading) {
-  const src = content.split("\n");
-  const start = src.findIndex((l) => l.trim() === heading);
-  if (start === -1) return "";
-  let end = src.length;
-  for (let i = start + 1; i < src.length; i++) {
-    if (/^## /.test(src[i])) {
-      end = i;
-      break;
-    }
-  }
-  const section = src.slice(start, end);
-  while (section.length > 0 && section[section.length - 1].trim() === "") section.pop();
-  return section.join("\n");
 }
 
 function appendLog(logFile, dir, entry) {

@@ -7,7 +7,7 @@ Triggered when `$ARGUMENTS == "prune"`. Locate, evaluate, and trim project memor
 **Find memory file:**
 
 <!-- Note: if the auto-memory path convention changes, update this slug derivation. -->
-<!-- Slug-divergence guard: `resolve_memory_dir.py` is the single source of truth for the memory directory and `MEMORY.md` filename. Any consumer that reads or writes session/project memory (e.g. `foundry:session`, distill's `memory` mode — `modes/memory.md`) MUST resolve the same path via this script — do NOT hardcode an alternate slug or filename here or elsewhere; divergence causes silent split-brain between writer and reader. -->
+<!-- Slug-divergence guard: `resolve_memory_dir.py` is the single source of truth for the memory directory and `MEMORY.md` filename. Any consumer that reads or writes project memory (e.g. distill's `memory` mode — `modes/memory.md`) MUST resolve the same path via this script — do NOT hardcode an alternate slug or filename here or elsewhere; divergence causes silent split-brain between writer and reader. -->
 
 ```bash
 # timeout: 5000

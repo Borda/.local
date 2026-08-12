@@ -20,7 +20,7 @@ Block format and placement rule: see `compaction-contract.md`.
 
 Hook rides auto-compact (85% context threshold) — no manual trigger. Compaction timing best-effort; only verbatim survival of *whatever contract exists* is deterministic.
 
-> Manual sibling: `/foundry:carryover dump` before an explicit `/clear`. Contract = automatic, in-flight skill phase state, `.temp/state/skill-contract.md`; carryover = explicit, plan/decisions/lessons/files table, `.claude/state/carryover/`. Different trigger, different payload — never substitutes for the other.
+> Manual sibling: `/foundry:session dump` before an explicit `/clear`. Contract = automatic, in-flight skill phase state, `.temp/state/skill-contract.md`; session handover = explicit, plan/decisions/lessons/files table/open loops, `.claude/state/session/`. Different trigger, different payload — never substitutes for the other.
 
 ### `keep:` semantics
 
