@@ -5,7 +5,7 @@ description: >-
   mocks, fixtures, subprocesses, and static gaps. Trigger for "what depends on", "who calls", "imports of",
   "dependency graph", or "blast radius". Skip for renames, text search, non-Python repositories, or index rebuilds.
 argument-hint: "<rdeps|deps|path|central|coupled|symbol|symbols|find-symbol|fn-rdeps|fn-deps|fn-blast|diff-impact|test-impact|mock-rdeps|fixture-rdeps|fixture-graph|subprocess-deps|subprocess-rdeps|coverage|coverage-gap|undocumented> ..."
-allowed-tools: Bash, Read, Write
+allowed-tools: Bash(codemap-py query:*), Bash(*/bin/codemap-py* query:*), Read, Write
 model: haiku
 effort: low
 ---
@@ -22,11 +22,13 @@ Skip Codemap when an exact file and symbol are supplied for a localized edit and
 
 ## Choose the smallest complete query set
 
-Direction matters: "affected if X changes" means reverse dependencies.
+Direction matters: "affected if X changes" means reverse dependencies. Run every query from the caller's current repository: its current working directory determines the project index. Do not `cd` into `$CLAUDE_PLUGIN_ROOT` or any plugin directory.
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" query --compact <subcommand> [arguments]
+codemap-py query --compact <subcommand> [arguments]
 ```
+
+The enabled plugin adds its version-matched `bin/` directory to the Bash tool's `PATH`. In an interactive installation where that command is unavailable, invoke the installed plugin's absolute `bin/codemap-py` launcher as one standalone command and accept the host's normal permission prompt; do not prepend `cd`, `export`, or another shell command.
 
 | Goal | Query subcommand |
 | --- | --- |
@@ -75,8 +77,7 @@ Run the selected query set first; do not spend a call on an unconditional freshn
 
 Interpret `index`:
 
-- `query_complete: true`: answer immediately; no re-query or grep/read
-  verification.
+- `query_complete: true`: answer immediately. Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep.
 - Ordinary repository reads remain allowed only for a task-requested distinct independent AST/oracle view; label it separately, never as rechecking a complete Codemap result.
 - `query_complete: false`: name `completeness_reason`; search only gaps named
   by `degraded`, `not_covered`, `root_mismatch`, or `stale`.

@@ -94,6 +94,8 @@ extended quality/coverage/test-graph query family (`mock-rdeps`, `undocumented`,
 into the per-command table format documented in each roster's SKILL.md (list/pair/fenced-code/etc.
 per subcommand — rendering choice is runtime-specific, not a truth claim).
 
+Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep.
+
 **Exit codes**: `0` success incl. valid empty result (e.g. `path` → null with
 `reason: "no-import-path"`); `1` index/runtime failure; `2` bad subcommand/flag; `3` requested
 module/symbol not indexed; a query requiring a newer index generation than what's on disk exits

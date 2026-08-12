@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -98,6 +99,22 @@ _LOCALIZED_EDIT_ROUTING_SNIPPETS = (
     "override",
     "smallest complete query",
 )
+_CLAUDE_QUERY_CURRENT_REPOSITORY_SNIPPETS = (
+    "run every query from the caller's current repository",
+    "codemap-py query --compact <subcommand> [arguments]",
+    "do not `cd` into `$claude_plugin_root`",
+)
+_CLAUDE_QUERY_COMMAND_LITERAL = "codemap-py query --compact <subcommand> [arguments]"
+_CLAUDE_QUERY_BASH_PATTERNS = (
+    "codemap-py query:*",
+    "*/bin/codemap-py* query:*",
+)
+_CLAUDE_QUERY_ALLOWED_TOOLS = "allowed-tools: Bash(codemap-py query:*), Bash(*/bin/codemap-py* query:*), Read, Write"
+_QUERY_PATH_BASE_SNIPPETS = (
+    "complete-query paths are caller-repo-relative",
+    "never skill-relative",
+    "do not re-query/read/grep",
+)
 
 
 def _direct_caller_routing_violations(skill_text: str) -> list[str]:
@@ -105,6 +122,27 @@ def _direct_caller_routing_violations(skill_text: str) -> list[str]:
     if _DIRECT_CALLER_ROUTING_RULE in skill_text.lower():
         return []
     return ["ambiguous direct-caller wording lacks the fn-rdeps routing rule"]
+
+
+def _claude_query_current_repository_violations(skill_text: str) -> list[str]:
+    """Return violations when the Claude query skill can leave the caller repository."""
+    normalized = skill_text.lower()
+    violations = [
+        f"missing current-repository query contract: {snippet}"
+        for snippet in _CLAUDE_QUERY_CURRENT_REPOSITORY_SNIPPETS
+        if snippet.lower() not in normalized
+    ]
+    if re.search(r"(?m)^\s*cd\s+", skill_text):
+        violations.append("forbidden current-directory change in query-code command")
+    return violations
+
+
+def _claude_query_frontmatter_violations(skill_text: str) -> list[str]:
+    """Return violations when query-code can invoke arbitrary Bash instead of its read-only CLI surface."""
+    frontmatter = skill_text.split("---", 2)[1]
+    if _CLAUDE_QUERY_ALLOWED_TOOLS in frontmatter:
+        return []
+    return ["query-code must allow only the PATH or installed absolute `codemap-py query` launchers, Read, and Write"]
 
 
 # --------------------------------------------------------------------------------------
@@ -301,6 +339,22 @@ def test_query_code_routes_ambiguous_caller_requests_to_direct_production_caller
     assert _direct_caller_routing_violations(skill_text) == []
 
 
+@pytest.mark.parametrize(
+    "contract_path",
+    (
+        _CLAUDE_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CODEX_SKILLS_DIR / "query-code" / "SKILL.md",
+        _CAPABILITY_CONTRACT,
+    ),
+    ids=("claude", "codex", "shared-contract"),
+)
+def test_query_code_resolves_result_paths_from_the_callers_repository(contract_path: Path) -> None:
+    """Prevent complete query results from being re-read relative to an installed Skill directory."""
+    skill_text = " ".join(contract_path.read_text(encoding="utf-8").lower().split())
+
+    assert all(snippet in skill_text for snippet in _QUERY_PATH_BASE_SNIPPETS)
+
+
 def test_direct_caller_routing_contract_rejects_transitive_substitute() -> None:
     """Ensure a plausible `fn-blast` substitute cannot satisfy the direct-caller routing contract."""
     wrong_rule = _DIRECT_CALLER_ROUTING_RULE.replace(
@@ -309,6 +363,46 @@ def test_direct_caller_routing_contract_rejects_transitive_substitute() -> None:
 
     assert _direct_caller_routing_violations(wrong_rule) == [
         "ambiguous direct-caller wording lacks the fn-rdeps routing rule"
+    ]
+
+
+def test_claude_query_code_runs_from_the_callers_repository() -> None:
+    """Keep installed-plugin execution from redirecting structural queries into the plugin checkout."""
+    skill_text = (_CLAUDE_SKILLS_DIR / "query-code" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert _claude_query_current_repository_violations(skill_text) == []
+
+
+def test_claude_current_repository_contract_rejects_plugin_root_directory_change() -> None:
+    """Prove the launcher stays safe only while the caller repository remains the working directory."""
+    stale = 'cd "$CLAUDE_PLUGIN_ROOT"\n"${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" query --compact rdeps package.module'
+
+    violations = _claude_query_current_repository_violations(stale)
+
+    assert any("forbidden current-directory change" in violation for violation in violations)
+
+
+def test_claude_query_code_limits_bash_to_the_query_cli() -> None:
+    """Prevent query-code from rebuilding indexes or using unrelated shell recovery commands."""
+    skill_text = (_CLAUDE_SKILLS_DIR / "query-code" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert _claude_query_frontmatter_violations(skill_text) == []
+
+
+def test_claude_query_permission_pattern_matches_the_literal_path_launcher() -> None:
+    """Ensure the restricted Bash pattern admits the non-expanding primary command."""
+    command_pattern = f"{_CLAUDE_QUERY_BASH_PATTERNS[0].removesuffix(':*')}*"
+
+    assert fnmatchcase(_CLAUDE_QUERY_COMMAND_LITERAL, command_pattern)
+    assert not fnmatchcase(_CLAUDE_QUERY_COMMAND_LITERAL.replace(" query ", " index "), command_pattern)
+
+
+def test_claude_query_frontmatter_rejects_unrestricted_bash() -> None:
+    """Prove the frontmatter contract rejects the historical unrestricted Bash allowance."""
+    stale = "---\nallowed-tools: Bash, Read, Write\n---\n"
+
+    assert _claude_query_frontmatter_violations(stale) == [
+        "query-code must allow only the PATH or installed absolute `codemap-py query` launchers, Read, and Write"
     ]
 
 

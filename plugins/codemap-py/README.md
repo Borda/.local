@@ -196,32 +196,15 @@ Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0
 >
 > Good integration needs three things: (1) **skill-first protocol** — agent calls `/codemap-py:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap-py queries per task; (3) **hard stop on `query_complete: true`** — when index says list complete for query direction, write answer immediate, no more tool calls. `query_complete` direction-scoped: `deps`/`symbols` query on healthy module can be complete while another file degraded, but `rdeps`/`central`/`path` require zero degraded files. Legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle. Skipping any — especially ignoring completeness flag — primary cause of regressions flipping codemap-py benefit into liability. Wiring itself ships pre-built in `/develop` and `/oss`; run `/codemap-py:integration check` to confirm it's present and current rather than hand-editing skill files.
 
-### Real-world proof: daily-work benchmark
+### Executable workflow evidence
 
-Benchmarks above measure **discovery phase** — enumerating callers, assessing blast radius before code written. `fix_multicaller` suite extends coverage to **edit phase**: real signature change where all callers must update in one pass.
+The provider-neutral benchmark now extends structural discovery into minimal source selection, localized fixes, and multi-file affected-surface edits. Claude and Codex use the same committed prompts, frozen task contracts, A/B/C treatment semantics, disposable Git worktrees, ordinary patch application, exact changed-path gates, independent behavior oracles, and cleanup checks; only provider transport and native usage accounting differ.
 
-**Benchmark scope**: 7 tasks in `benchmarks/run-claude-agentic.py` across two families. Both use archive/restore isolation — demo codebase copied per arm run, agent edits copy, `diff -ru` captured against original. No git required; original codebase never mutated.
+The complete ReadCrop and localized-fix suites are accepted for both providers. ReadCrop preserves answer quality while generally reducing strict-arm context and command use. Localized fixes preserve executable quality but intentionally retain neutral and unfavorable efficiency cells: when an exact file and symbol leave no unresolved caller, dependency, import, test-impact, or source-slice fact, the installed guidance skips Codemap instead of paying for forced retrieval. Revised multi-file evidence is heterogeneous: Claude Haiku and Sonnet show strong strict-arm reductions on the valid FM-03 affected-surface pair, Sonnet strict fails FM-01 where plain passes, and Codex strict preserves correctness but does not reduce aggregate input. The benchmark therefore supports adaptive structural retrieval rather than a universal multi-file advantage.
 
-| Family                          | Tasks                          | What it tests                                                                 | Scored by                                           |
-| ------------------------------- | ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------- |
-| `fix_single` (FS-01–FS-04)      | Single-file bug fix            | Validates archive/restore isolation; `EarlyStopping`/`ModelCheckpoint` guards | Diff keyword recall (`erec`)                        |
-| `fix_multicaller` (FM-01–FM-03) | Signature change + all callers | codemap-py `fn-rdeps` enumerates callers before editing; plain arm must grep  | Diff keyword recall (`erec`) + file recall (`rrec`) |
+This evidence supports adaptive routing, not universal token savings. `fn-rdeps` reports incoming call edges for a qualified symbol but does not enumerate subclass overrides. For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to find same-name implementation candidates, then inspect source to verify ancestry and package boundaries. Name matching is candidate discovery only, not proof of inheritance.
 
-`fn-rdeps` reports incoming call edges for a qualified symbol; it does not enumerate subclass overrides. For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to find same-name implementation/override candidates, then inspect each source to verify ancestry and package boundaries. Name matching is candidate discovery only, not proof of inheritance.
-
-Only public Claude Code plugin benchmark measuring edit-phase caller coverage — not just structural discovery.
-
-```bash
-# Fix-multicaller: the codemap-py vs plain edit-assist test
-python benchmarks/run-claude-agentic.py \
-    --repo-path /path/to/pytorch-lightning/src/lightning \
-    --tasks "['FM-01','FM-02','FM-03']" --run-all --model haiku --report
-
-# Fix-single: validates the archive/restore isolation mechanism
-python benchmarks/run-claude-agentic.py \
-    --repo-path /path/to/pytorch-lightning/src/lightning \
-    --tasks "['FS-01','FS-02','FS-03','FS-04']" --run-all --model haiku
-```
+Exact task definitions, artifact checksums, unfavorable cells, validity limits, and reproducible dry-run commands live in the [benchmark documentation](../../benchmarks/README.md#fix-task-benchmark-families-agentic-benchmark). Benchmark task IDs and fixture-specific examples intentionally stay out of the shipped Skill contract.
 
 ______________________________________________________________________
 
@@ -239,9 +222,11 @@ codemap-py not standalone tool — primary value = structural context fed into `
 | `/develop:fix`      | Active — per target function                 | `fn-rdeps` fires for direct callers of bug's target function (`module::function` from ARGUMENTS or auto-derived from `checkpoint.md` after Step 1)                                            |
 | `/develop:feature`  | Active (integration) / Passive (new surface) | Integration target (`module::function` supplied): `fn-rdeps` fires for direct callers. Module-only target: `rdeps` for importers. Net-new surface (no existing symbol): central baseline only |
 
-### Expected benefits per skill (based on benchmark data — haiku/sonnet, 28-task suite)
+### Historical structural-suite results by skill
 
 <!-- result-sync: summary derived from ../../benchmarks/README.md#multi-model-results-real-codebase-benchmark; changes require bidirectional updates or an explicit divergence note. -->
+
+The table below summarizes the historical 28-task Haiku/Sonnet structural suite; it is not a current per-task guarantee. The current executable evidence above supersedes blanket routing claims: use Codemap when a structural fact remains unresolved, retain plain-tool parity for already-localized work, and expect task-level variance. Full provenance and limitations remain in the [benchmark report](../../benchmarks/README.md#multi-model-results-real-codebase-benchmark).
 
 | Skill task type             | Token savings (codemap-py vs plain) | Accuracy lift                                                                                    |
 | --------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -326,7 +311,7 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install codemap-py@borda-ai-rig
 ```
 
-That's it. No build step and no manual plugin-cache path or shell `PATH` setup: use the namespaced Claude or Codex skills, which resolve the installed package root themselves.
+That's it. No build step and no manual plugin-cache path or shell `PATH` setup: use the namespaced Claude or Codex skills. Claude plugins add their `bin/` directory to the Bash tool's PATH, so the Skill prefers that version-matched `codemap-py` launcher and may request normal interactive approval for an installed absolute-launcher fallback; Codex resolves the installed package root directly.
 
 For a source checkout, run `python plugins/codemap-py/scripts/codemap_py_entry.py index|query|doctor`. Windows invokes this Python entrypoint directly; macOS and Linux may also use the POSIX `bin/codemap-py` launcher.
 
@@ -676,6 +661,8 @@ ______________________________________________________________________
 
 **Auto-invokes when:** user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "blast radius of".
 
+The installed Claude query Skill invokes its installed `codemap-py` launcher from the caller's current repository; it never changes into the plugin directory, so index discovery remains bound to the repository being investigated.
+
 The skill runs the selected query first instead of paying for an unconditional freshness probe. In normal mode the CLI may perform its bounded incremental self-heal. Python files can still change mid-task; stale results carry explicit completeness metadata.
 
 Set `SCAN_NO_AUTOBUILD=1` to disable implicit writes: an existing index is queried exactly as-is, with no refresh or self-heal, and a missing index fails with structured guidance pointing at `/codemap-py:scan-codebase`. An explicit user-requested `codemap-py index` remains allowed.
@@ -706,6 +693,8 @@ Retrieve function or class source by name instead of reading the full file — a
 | `find-symbol <pattern>`          | Regex search across all symbol qualified_names in index                                                                  |
 
 `symbol` accepts bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. To chain a `symbol` result into a function-level query, compose its returned `module` and `qualified_name` exactly as `<module>::<qualified_name>`; for example, use `mypackage.module::MyClass.method`, not the bare method suffix. `find-symbol` and `symbol` cap results at 20 default — pass `--limit 0` to retrieve all matches before counting or ranking.
+
+Every relative `path` returned by a query is relative to the caller repository root that supplied the index, never the installed Skill directory. When `query_complete: true`, use the returned result directly rather than re-querying or reading/grepping the same source for verification.
 
 For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to find same-name implementation/override candidates. Name matching is candidate discovery only, not proof of inheritance; inspect each source to verify ancestry and package boundaries before treating it as an override.
 
