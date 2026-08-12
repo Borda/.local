@@ -7,21 +7,15 @@ patch scoring, offline rescoring, and Fix-Single/Fix-Multi stage execution.
 
 from __future__ import annotations
 
-import ast
-import copy
-from dataclasses import asdict, dataclass
 import hashlib
 import json
 from pathlib import Path
 import re
 import shlex
-import shutil
-import subprocess
 import sys
-import tempfile
 import time
-from types import ModuleType, SimpleNamespace
-from typing import Any, Callable, Mapping, Optional
+from types import ModuleType
+from typing import Any, Callable, Mapping
 from uuid import uuid4
 
 
@@ -51,34 +45,35 @@ _FIX_MULTI_QUERY_ARGUMENTS = {
         "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_checkpoint",
         "--exclude-tests",
     ),
-    "FM-03": ("find-symbol", r"Strategy\.setup$", "--exclude-tests", "--limit", "0"),
+    "FM-03": ("find-symbol", r"Strategy\.setup_environment$", "--exclude-tests", "--limit", "0"),
 }
 _FIX_SINGLE_ANSWER_RE = re.compile(r"BEGIN_FIX_SINGLE_DIFF\s*(?P<diff>```diff\s*.*?```)", re.DOTALL)
 _FIX_MULTI_ANSWER_RE = re.compile(r"BEGIN_FIX_MULTI_DIFF\s*(?P<diff>```diff\s*.*?```)", re.DOTALL)
-_FIX_BASELINE_COMMIT = "be98784a1a03581b7051a355ae1084fd352d7cea"
-_FIX_SINGLE_SCORER_VERSION = "provider-neutral-fix-single-score-v1"
 
 sys.path.insert(0, str(BENCHMARKS))
 
 from _bench_common.edit_patch_contracts import (  # noqa: E402
-    FixMultiContract,
     assess_patch_answer,
     build_fix_multi_contract,
-    run_fix_multi_oracle,
+    build_fix_single_contract,
     validate_fix_multi_binding,
+    validate_fix_single_binding,
 )
-from . import runtime  # noqa: E402
-from .runtime import (  # noqa: E402
+from _bench_common.mutation_isolation import (  # noqa: E402
+    FixExecution,
+    execute_fix_multi_patch,
+    execute_fix_single_patch,
+)
+from _bench_common.paid_lifecycle import (  # noqa: E402
     PaidStageCallbacks,
     run_paid_stage,
     verify_checksums,
     write_checksums,
 )
+from . import runtime  # noqa: E402
 from _bench_common.provider_parity_contracts import (  # noqa: E402
-    canonical_task_hash,
     fresh_input_tokens,
     load_task_suite,
-    prompt_hash,
     token_accounting_inconsistent,
 )
 
@@ -146,84 +141,9 @@ def fix_multi_prompt(arm: str, task: Mapping[str, Any]) -> str:
     return _task_prompt(arm, task, query_arguments=_FIX_MULTI_QUERY_ARGUMENTS, study="fix-multi")
 
 
-@dataclass(frozen=True)
-class FixSingleContract:
-    """Immutable Fix-Single identity, boundary, and independent behavior oracle."""
-
-    task_id: str
-    canonical_task_sha256: str
-    prompt_sha256: str
-    baseline_commit: str
-    expected_paths: tuple[str, ...]
-    oracle_id: str
-    oracle_sha256: str
-    scorer_sha256: str
-
-    def provider_binding(self) -> Mapping[str, str]:
-        """Return the task fields every provider transport must preserve exactly."""
-        return {
-            "canonical_task_sha256": self.canonical_task_sha256,
-            "prompt_sha256": self.prompt_sha256,
-            "baseline_commit": self.baseline_commit,
-            "oracle_sha256": self.oracle_sha256,
-            "scorer_sha256": self.scorer_sha256,
-        }
-
-
-_FIX_SINGLE_ORACLES: Mapping[str, Mapping[str, str]] = {
-    "FS-01": {"path": "src/lightning/pytorch/callbacks/early_stopping.py", "oracle": "early_stopping_patience"},
-    "FS-02": {"path": "src/lightning/pytorch/callbacks/early_stopping.py", "oracle": "early_stopping_min_delta"},
-    "FS-03": {
-        "path": "src/lightning/pytorch/callbacks/model_checkpoint.py",
-        "oracle": "model_checkpoint_duplicate_step",
-    },
-    "FS-04": {
-        "path": "src/lightning/pytorch/callbacks/model_checkpoint.py",
-        "oracle": "model_checkpoint_save_top_k_zero_warning",
-    },
-}
-
-
 def _sha256(value: Mapping[str, object]) -> str:
     """Return the canonical SHA-256 for one immutable contract payload."""
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-
-
-def build_fix_single_contract(task: Mapping[str, Any]) -> FixSingleContract:
-    """Freeze one original scaffold task and its independently maintained oracle."""
-    task_id = task.get("id")
-    if not isinstance(task_id, str) or task_id not in _FIX_SINGLE_ORACLES or task.get("type") != "fix_single":
-        raise ValueError("unknown fix-single task")
-    expected_files = task.get("expected_files")
-    if not isinstance(expected_files, list) or len(expected_files) != 1 or not isinstance(expected_files[0], str):
-        raise ValueError(f"task {task_id} must name exactly one expected file")
-    oracle = _FIX_SINGLE_ORACLES[task_id]
-    path = oracle["path"]
-    if Path(path).name != expected_files[0]:
-        raise ValueError(f"task {task_id} expected file disagrees with its executable boundary")
-    return FixSingleContract(
-        task_id=task_id,
-        canonical_task_sha256=canonical_task_hash(task),
-        prompt_sha256=prompt_hash(task),
-        baseline_commit=_FIX_BASELINE_COMMIT,
-        expected_paths=(path,),
-        oracle_id=oracle["oracle"],
-        oracle_sha256=_sha256(
-            {
-                "oracle_id": oracle["oracle"],
-                "path": path,
-                "baseline_commit": _FIX_BASELINE_COMMIT,
-                "semantics": "candidate-method microexecution with dependency-free fakes",
-            }
-        ),
-        scorer_sha256=_sha256({"version": _FIX_SINGLE_SCORER_VERSION, "primary": "executable_behavior_and_exact_path"}),
-    )
-
-
-def validate_fix_single_binding(contract: FixSingleContract, observed: Mapping[str, object]) -> None:
-    """Reject provider evidence that changes a Fix-Single scientific field."""
-    if dict(observed) != dict(contract.provider_binding()):
-        raise ValueError("provider adapter changed fix-single scientific fields")
 
 
 def load_fix_single_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]:
@@ -248,284 +168,6 @@ def load_fix_multi_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]
     if {item["contract"].task_id for item in loaded} != selected:
         raise ValueError("--tasks must select known fix-multi task IDs")
     return loaded
-
-
-def _load_class(tree: ast.Module, name: str) -> ast.ClassDef:
-    """Return one candidate class definition or fail closed."""
-    node = next((item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == name), None)
-    if node is None:
-        raise ValueError(f"candidate is missing class {name}")
-    return node
-
-
-def _load_method(tree: ast.Module, class_name: str, method_name: str) -> ast.FunctionDef:
-    """Return one candidate method definition or fail closed."""
-    node = next(
-        (
-            item
-            for item in _load_class(tree, class_name).body
-            if isinstance(item, ast.FunctionDef) and item.name == method_name
-        ),
-        None,
-    )
-    if node is None:
-        raise ValueError(f"candidate is missing method {class_name}.{method_name}")
-    return node
-
-
-def _compile_function(node: ast.FunctionDef, namespace: dict[str, Any]) -> Callable[..., Any]:
-    """Compile one candidate method with its trusted fake dependencies."""
-    copied = copy.deepcopy(node)
-    copied.decorator_list = []
-    module = ast.Module(body=[copied], type_ignores=[])
-    ast.fix_missing_locations(module)
-    exec(compile(module, "<candidate-method>", "exec"), namespace)  # noqa: S102
-    return namespace[copied.name]
-
-
-def _load_early_stopping(tree: ast.Module) -> type[Any]:
-    """Compile EarlyStopping with only the initializer's required fake runtime names."""
-    class_node = _load_class(tree, "EarlyStopping")
-
-    class Callback:
-        """Minimal callback base supporting candidate initialization."""
-
-        def __init__(self) -> None:
-            pass
-
-    namespace = {
-        "Any": Any,
-        "Callable": Callable,
-        "Optional": Optional,
-        "Tensor": object,
-        "Callback": Callback,
-        "EarlyStoppingReason": SimpleNamespace(NOT_STOPPED="not-stopped"),
-        "MisconfigurationException": ValueError,
-        "override": lambda function: function,
-        "pl": SimpleNamespace(),
-        "rank_prefixed_message": lambda *args: "",
-        "rank_zero_warn": lambda *args, **kwargs: None,
-        "torch": SimpleNamespace(
-            inf=float("inf"),
-            lt=lambda left, right: left < right,
-            gt=lambda left, right: left > right,
-            tensor=lambda value: value,
-        ),
-    }
-    module = ast.Module(body=[copy.deepcopy(class_node)], type_ignores=[])
-    ast.fix_missing_locations(module)
-    exec(compile(module, "<candidate-early-stopping>", "exec"), namespace)  # noqa: S102
-    return namespace["EarlyStopping"]
-
-
-def _check_patience(tree: ast.Module) -> bool:
-    """Require invalid patience rejection while preserving the positive case."""
-    candidate = _load_early_stopping(tree)
-    try:
-        candidate("metric", patience=0)
-    except ValueError as exc:
-        invalid_rejected = str(exc) == "patience must be >= 1, got 0"
-    else:
-        invalid_rejected = False
-    try:
-        candidate("metric", patience=1)
-    except Exception:
-        valid_accepted = False
-    else:
-        valid_accepted = True
-    return invalid_rejected and valid_accepted
-
-
-def _check_min_delta(tree: ast.Module) -> bool:
-    """Require invalid min_delta rejection while preserving zero."""
-    candidate = _load_early_stopping(tree)
-    try:
-        candidate("metric", min_delta=-0.1)
-    except ValueError as exc:
-        invalid_rejected = str(exc) == "min_delta must be >= 0, got -0.1"
-    else:
-        invalid_rejected = False
-    try:
-        candidate("metric", min_delta=0.0)
-    except Exception:
-        valid_accepted = False
-    else:
-        valid_accepted = True
-    return invalid_rejected and valid_accepted
-
-
-def _check_duplicate_checkpoint(tree: ast.Module) -> bool:
-    """Require a duplicate global-step save to skip the second trainer save."""
-    save = _load_method(tree, "ModelCheckpoint", "_save_checkpoint")
-    saved: list[tuple[str, bool]] = []
-    notices: list[str] = []
-    state = SimpleNamespace(_last_global_step_saved=0, save_weights_only=False, _last_checkpoint_saved="")
-    trainer = SimpleNamespace(
-        global_step=7,
-        is_global_zero=False,
-        loggers=[],
-        save_checkpoint=lambda path, weights_only: saved.append((path, weights_only)),
-    )
-    function = _compile_function(save, {"proxy": lambda value: value, "rank_zero_info": notices.append})
-    function(state, trainer, "first.ckpt")
-    function(state, trainer, "second.ckpt")
-    return saved == [("first.ckpt", False)] and bool(notices)
-
-
-def _check_save_top_k_warning(tree: ast.Module) -> bool:
-    """Require the no-checkpoint warning while retaining legal positive setup."""
-    validator = _load_method(tree, "ModelCheckpoint", "__validate_init_configuration")
-    warnings: list[str] = []
-    function = _compile_function(
-        validator, {"MisconfigurationException": ValueError, "rank_zero_warn": warnings.append}
-    )
-    zero = SimpleNamespace(
-        save_top_k=0, _every_n_train_steps=0, _every_n_epochs=0, _train_time_interval=None, monitor="metric"
-    )
-    positive = SimpleNamespace(
-        save_top_k=1, _every_n_train_steps=0, _every_n_epochs=0, _train_time_interval=None, monitor="metric"
-    )
-    function(zero)
-    zero_warned = warnings == [
-        "ModelCheckpoint(save_top_k=0) is set: no checkpoints will be saved. Pass save_top_k=-1 to save all checkpoints."
-    ]
-    warnings.clear()
-    function(positive)
-    return zero_warned and not warnings
-
-
-def run_fix_single_oracle(repo_path: Path, contract: FixSingleContract) -> bool:
-    """Return whether the candidate source satisfies the selected Fix-Single oracle."""
-    source_path = repo_path / contract.expected_paths[0]
-    if not source_path.is_file():
-        raise ValueError(f"candidate source is missing: {contract.expected_paths[0]}")
-    checks: Mapping[str, Callable[[ast.Module], bool]] = {
-        "early_stopping_patience": _check_patience,
-        "early_stopping_min_delta": _check_min_delta,
-        "model_checkpoint_duplicate_step": _check_duplicate_checkpoint,
-        "model_checkpoint_save_top_k_zero_warning": _check_save_top_k_warning,
-    }
-    return checks[contract.oracle_id](ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path)))
-
-
-@dataclass(frozen=True)
-class FixExecution:
-    """Patch-application and oracle evidence from one candidate lifecycle."""
-
-    baseline_failed: bool
-    patch_applied: bool
-    changed_paths: tuple[str, ...]
-    targeted_test_passed: bool
-    recount_recoverable: bool
-    recount_oracle_passed: bool | None
-    cleanup_verified: bool
-    error: str | None
-
-    def as_dict(self) -> dict[str, object]:
-        """Return JSON-safe evidence."""
-        return asdict(self)
-
-
-def _patch_git(repo_path: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run one bounded local Git command against an explicit repository path."""
-    return subprocess.run(
-        ["git", "-C", str(repo_path), *args], check=check, capture_output=True, text=True, timeout=120
-    )
-
-
-def _verify_patch_source_baseline(repo_path: Path, baseline_commit: str) -> None:
-    """Reject a dirty or wrong-revision source before a mutable scoring worktree."""
-    try:
-        head = _patch_git(repo_path, "rev-parse", "HEAD").stdout.strip()
-    except subprocess.CalledProcessError as exc:
-        raise ValueError("source repository must be a readable Git checkout") from exc
-    if head != baseline_commit:
-        raise ValueError(f"source revision {head!r} does not match {baseline_commit!r}")
-    if _patch_git(repo_path, "status", "--porcelain").stdout.strip():
-        raise ValueError("source repository must be clean before a patch cell")
-
-
-def execute_executable_patch(
-    repo_path: Path, *, baseline_commit: str, oracle: Callable[[Path], bool], diff: str
-) -> FixExecution:
-    """Apply a bounded candidate patch and record primary plus diagnostic evidence."""
-    source = repo_path.resolve()
-    _verify_patch_source_baseline(source, baseline_commit)
-    root = Path(tempfile.mkdtemp(prefix="codemap-executable-patch-"))
-    worktree = root / "repo"
-    baseline_failed = patch_applied = targeted_test_passed = recount_recoverable = cleanup_verified = created = False
-    changed_paths: tuple[str, ...] = ()
-    recount_oracle_passed: bool | None = None
-    error: str | None = None
-    try:
-        _patch_git(source, "worktree", "add", "--detach", str(worktree), baseline_commit)
-        created = True
-        baseline_failed = not oracle(worktree)
-        if not baseline_failed:
-            error = "baseline unexpectedly satisfies the task oracle"
-        if baseline_failed:
-            patch_path = root / "candidate.diff"
-            patch_path.write_text(diff, encoding="utf-8")
-            check = _patch_git(worktree, "apply", "--check", str(patch_path), check=False)
-            if check.returncode != 0:
-                recount_recoverable = (
-                    _patch_git(worktree, "apply", "--check", "--recount", str(patch_path), check=False).returncode == 0
-                )
-                if recount_recoverable:
-                    _patch_git(worktree, "apply", "--recount", "--whitespace=nowarn", str(patch_path))
-                    recount_oracle_passed = oracle(worktree)
-                error = f"patch does not apply cleanly: {check.stderr.strip()[:300]}"
-            else:
-                _patch_git(worktree, "apply", "--whitespace=nowarn", str(patch_path))
-                patch_applied = True
-                changed_paths = tuple(
-                    line for line in _patch_git(worktree, "diff", "--name-only").stdout.splitlines() if line.strip()
-                )
-                targeted_test_passed = oracle(worktree)
-    except (OSError, ValueError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-        error = str(exc)[:1000]
-    finally:
-        try:
-            if created:
-                _patch_git(worktree, "reset", "--hard", "HEAD")
-                _patch_git(source, "worktree", "remove", str(worktree))
-            cleanup_verified = (
-                not worktree.exists()
-                and str(worktree) not in _patch_git(source, "worktree", "list", "--porcelain").stdout
-            )
-        except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
-            error = error or f"cleanup failed: {exc}"
-        shutil.rmtree(root, ignore_errors=True)
-    return FixExecution(
-        baseline_failed,
-        patch_applied,
-        changed_paths,
-        targeted_test_passed,
-        recount_recoverable,
-        recount_oracle_passed,
-        cleanup_verified,
-        error,
-    )
-
-
-def execute_fix_single_patch(repo_path: Path, contract: FixSingleContract, diff: str) -> FixExecution:
-    """Score one Fix-Single patch in an isolated clean worktree."""
-    return execute_executable_patch(
-        repo_path,
-        baseline_commit=contract.baseline_commit,
-        oracle=lambda worktree: run_fix_single_oracle(worktree, contract),
-        diff=diff,
-    )
-
-
-def execute_fix_multi_patch(repo_path: Path, contract: FixMultiContract, diff: str) -> FixExecution:
-    """Score one Fix-Multi patch in an isolated clean worktree."""
-    return execute_executable_patch(
-        repo_path,
-        baseline_commit=contract.baseline_commit,
-        oracle=lambda worktree: run_fix_multi_oracle(worktree, contract),
-        diff=diff,
-    )
 
 
 def normalize_fix_single_patch_wire(diff: str) -> str:

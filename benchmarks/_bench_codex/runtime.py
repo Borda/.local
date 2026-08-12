@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -13,12 +13,13 @@ from pathlib import Path
 import re
 import shlex
 import sys
-from typing import Any, Generic, TextIO, TypeVar
+from typing import Any, TextIO
 from uuid import uuid4
 
 from rich.console import Console
 from rich.panel import Panel
 
+from _bench_common import presentation
 from _bench_common.presentation import fmt_time, fmt_tok
 
 _SENSITIVE_EVENT_KEYS = frozenset(
@@ -540,40 +541,6 @@ def parse_codex_jsonl(
     return result
 
 
-Task = TypeVar("Task")
-Arm = TypeVar("Arm")
-
-
-@dataclass(frozen=True)
-class PaidStageCallbacks(Generic[Task, Arm]):
-    """Stage-specific work and presentation hooks for one paid lifecycle.
-
-    ``prepare_run`` creates stage-local durable inputs after the exclusive run
-    directory exists. ``emit_lifecycle`` receives plain structured events that
-    a stage may append to its run log and print. ``emit_row`` owns row
-    formatting and may forward the rendered row to the shared terminal renderer.
-    """
-
-    run_cell: Callable[[Task, Arm], Mapping[str, Any]]
-    validate_row: Callable[[Task, Arm, Mapping[str, Any]], None]
-    prepare_run: Callable[[Path], None]
-    persist_metadata: Callable[[Path, Mapping[str, Any]], None]
-    emit_lifecycle: Callable[[str, Mapping[str, Any]], None]
-    emit_row: Callable[[Mapping[str, Any], int, int, Arm], None]
-    write_checksums: Callable[[Path], None]
-    close_adapter: Callable[[], None]
-
-
-def write_checksums(run_dir: Path) -> None:
-    """Write SHA-256 digests for every retained artifact except the ledger itself."""
-    ledger = run_dir / "checksums.sha256"
-    files = [path for path in sorted(run_dir.rglob("*")) if path.is_file() and path != ledger]
-    entries = "".join(
-        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(run_dir).as_posix()}\n" for path in files
-    )
-    (run_dir / "checksums.sha256").write_text(entries, encoding="utf-8")
-
-
 def print_unified_paid_command(
     *,
     repo_path: Path,
@@ -603,102 +570,7 @@ def print_unified_paid_command(
     print(f"  --paid-approval {scope_sha256}")
 
 
-def verify_checksums(run_dir: Path) -> None:
-    """Raise when a retained artifact no longer matches the lifecycle ledger."""
-    root = run_dir.resolve()
-    ledger = root / "checksums.sha256"
-    try:
-        lines = ledger.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        raise ValueError("lifecycle checksum ledger is unavailable") from exc
-    for line in lines:
-        digest, separator, relative = line.partition("  ")
-        if not separator or len(digest) != 64 or not relative:
-            raise ValueError("lifecycle checksum ledger contains an invalid entry")
-        candidate = Path(relative)
-        if candidate.is_absolute() or ".." in candidate.parts:
-            raise ValueError("lifecycle checksum ledger contains an unsafe path")
-        try:
-            path = (root / candidate).resolve(strict=True)
-        except OSError as exc:
-            raise ValueError(f"lifecycle checksum mismatch: {relative}") from exc
-        if not path.is_relative_to(root):
-            raise ValueError("lifecycle checksum ledger contains an unsafe path")
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-            raise ValueError(f"lifecycle checksum mismatch: {relative}")
-
-
-def run_paid_stage(
-    *,
-    tasks: Sequence[Task],
-    arms: Sequence[Arm],
-    run_dir: Path,
-    metadata: Mapping[str, Any],
-    callbacks: PaidStageCallbacks[Task, Arm],
-) -> Path:
-    """Run, persist, and finalize one exclusive paid stage in task-by-arm order.
-
-    Every successful cell is written and flushed before its metadata progress
-    record and presentation callback. Failures retain the preceding cells,
-    persist a final error status, refresh checksums, close the adapter, and
-    then propagate the original exception.
-    """
-    run_dir = Path(run_dir)
-    lifecycle_metadata = dict(metadata)
-    total_cells = len(tasks) * len(arms)
-    metadata_path = run_dir / "run-metadata.json"
-    telemetry_path = run_dir / "telemetry.jsonl"
-    directory_created = False
-    try:
-        run_dir.mkdir(parents=True, exist_ok=False)
-        directory_created = True
-        lifecycle_metadata.update(status="running", persisted_cells=0)
-        callbacks.persist_metadata(metadata_path, lifecycle_metadata)
-        callbacks.prepare_run(run_dir)
-        callbacks.emit_lifecycle(
-            "artifacts",
-            {"metadata_path": str(metadata_path), "telemetry_path": str(telemetry_path)},
-        )
-        with telemetry_path.open("x", encoding="utf-8") as telemetry:
-            for task in tasks:
-                for arm in arms:
-                    row = callbacks.run_cell(task, arm)
-                    callbacks.validate_row(task, arm, row)
-                    telemetry.write(json.dumps(dict(row), sort_keys=True) + "\n")
-                    telemetry.flush()
-                    lifecycle_metadata["persisted_cells"] = int(lifecycle_metadata["persisted_cells"]) + 1
-                    callbacks.persist_metadata(metadata_path, lifecycle_metadata)
-                    callbacks.emit_row(row, int(lifecycle_metadata["persisted_cells"]), total_cells, arm)
-        lifecycle_metadata["status"] = "completed"
-        callbacks.persist_metadata(metadata_path, lifecycle_metadata)
-        return run_dir
-    except BaseException as exc:
-        if directory_created:
-            lifecycle_metadata["status"] = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
-            lifecycle_metadata["error"] = {"type": type(exc).__name__, "message": str(exc)[:1000]}
-            callbacks.persist_metadata(metadata_path, lifecycle_metadata)
-        raise
-    finally:
-        if directory_created:
-            callbacks.emit_lifecycle(
-                "summary",
-                {
-                    "persisted_cells": int(lifecycle_metadata.get("persisted_cells", 0)),
-                    "status": lifecycle_metadata.get("status", "failed"),
-                    "total_cells": total_cells,
-                },
-            )
-            callbacks.write_checksums(run_dir)
-        callbacks.close_adapter()
-
-
-ARM_ROW_STYLES = {
-    "A_plain": "yellow",
-    "B_direct_required": "cyan",
-    "C_skill_required": "magenta",
-    "B_auto": "cyan",
-    "C_strict": "magenta",
-}
+ARM_ROW_STYLES = presentation.ARM_ROW_STYLES
 ARM_ROW_ANSI_CODES = {
     "A_plain": "33",
     "B_direct_required": "36",
@@ -813,10 +685,7 @@ def _map_progress_row(row: str) -> str:
 def print_arm_row(row: str, arm: str) -> None:
     """Print an arm row with scoped progress and interactive Rich color."""
     row = _map_progress_row(row)
-    if _CONSOLE.is_terminal:
-        _CONSOLE.print(row, style=ARM_ROW_STYLES[arm], markup=False, soft_wrap=True)
-        return
-    print(row)
+    presentation.print_arm_row(row, arm, console=_CONSOLE)
 
 
 def _result_arm(row: str) -> str | None:

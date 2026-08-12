@@ -14,19 +14,7 @@ FROZEN_REPO = Path("/private/tmp/codemap-provider-parity-pl-2.6.5")
 BENCHMARKS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARKS))
 
-
-def _runner() -> object:
-    """Return the private Fix stage without invoking its CLI."""
-    from _bench_codex import stage_fix
-
-    return stage_fix
-
-
-_RUNNER = _runner()
-
-
-build_fix_multi_contract = _RUNNER.build_fix_multi_contract
-run_fix_multi_oracle = _RUNNER.run_fix_multi_oracle
+from _bench_common.edit_patch_contracts import build_fix_multi_contract, run_fix_multi_oracle  # noqa: E402
 
 
 def _contract(task_id: str) -> object:
@@ -89,25 +77,52 @@ def _complete_early_stopping_else_source(source: str) -> str:
     return source.replace(normal_path, dry_run_branch)
 
 
-def _complete_strategy_source(source: str, *, is_base: bool) -> str:
-    """Return one FM-03 source with its verbose contract and required propagation or log."""
+def _complete_early_stopping_negative_guard_source(source: str) -> str:
+    """Return FM-01 source using an equivalent negative guard around mutations."""
     source = source.replace(
-        'def setup(self, trainer: "pl.Trainer") -> None:',
-        'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:',
+        'def _run_early_stopping_check(self, trainer: "pl.Trainer") -> None:',
+        'def _run_early_stopping_check(self, trainer: "pl.Trainer", dry_run: bool = False) -> None:',
+    ).replace("self._run_early_stopping_check(trainer)", "self._run_early_stopping_check(trainer, dry_run=False)")
+    normal_path = (
+        "        trainer.should_stop = trainer.should_stop or should_stop\n"
+        "        if should_stop:\n"
+        "            self.stopped_epoch = trainer.current_epoch\n"
+        "            self.stopping_reason_message = reason\n"
+        "        if reason and self.verbose:\n"
+        "            self._log_info(trainer, reason, self.log_rank_zero_only)\n"
+    )
+    guarded_path = (
+        "        if dry_run:\n"
+        '            log.info(f"dry run: should_stop={should_stop}, reason={reason}")\n'
+        "        if not dry_run:\n"
+        "            trainer.should_stop = trainer.should_stop or should_stop\n"
+        "            if should_stop:\n"
+        "                self.stopped_epoch = trainer.current_epoch\n"
+        "                self.stopping_reason_message = reason\n"
+        "        if reason and self.verbose:\n"
+        "            self._log_info(trainer, reason, self.log_rank_zero_only)\n"
+    )
+    return source.replace(normal_path, guarded_path)
+
+
+def _complete_strategy_environment_source(source: str, *, is_base: bool) -> str:
+    """Return one FM-03 source with cooperative verbose environment propagation."""
+    source = source.replace(
+        "def setup_environment(self) -> None:",
+        "def setup_environment(self, verbose: bool = False) -> None:",
         1,
     )
     if is_base:
         return source.replace(
-            'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n',
-            'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n'
+            "        assert self.accelerator is not None\n",
             "        if verbose:\n"
-            '            log.debug("setting up strategy")\n',
+            '            log.debug("setting up strategy environment")\n'
+            "        assert self.accelerator is not None\n",
             1,
         )
     return source.replace(
-        'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n',
-        'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n'
-        "        super().setup(trainer, verbose=verbose)\n",
+        "super().setup_environment()",
+        "super().setup_environment(verbose=verbose)",
         1,
     )
 
@@ -140,15 +155,13 @@ def test_frozen_baseline_fails_every_complete_caller_oracle(task_id: str) -> Non
     assert run_fix_multi_oracle(FROZEN_REPO, _contract(task_id)) is False
 
 
-def test_strategy_contract_expands_the_stale_four_file_scaffold_to_all_declared_overrides() -> None:
-    """The independent oracle follows the prompt's six overrides, not its stale file hint."""
+def test_strategy_contract_covers_every_cooperative_environment_override() -> None:
+    """The independent oracle covers the base plus every production cooperative override."""
     contract = _contract("FM-03")
 
-    assert len(contract.expected_paths) == 7
-    assert contract.expected_paths[-2:] == (
-        "src/lightning/pytorch/strategies/single_xla.py",
-        "src/lightning/pytorch/strategies/xla.py",
-    )
+    assert len(contract.expected_paths) == 6
+    assert contract.expected_paths[-1] == "src/lightning/pytorch/strategies/xla.py"
+    assert "src/lightning/pytorch/strategies/single_xla.py" not in contract.expected_paths
 
 
 def test_fix_multi_prompts_preserve_discovery_as_the_measured_work() -> None:
@@ -187,11 +200,57 @@ def test_early_stopping_contract_requires_explicit_callers_and_observable_decisi
 
     assert run_fix_multi_oracle(tmp_path, contract) is True
 
+    target.write_text(
+        complete.replace(
+            'log.info(f"dry run: should_stop={should_stop}, reason={reason}")',
+            'message = f"dry run: should_stop={should_stop}, reason={reason}"\n            log.info(message)',
+        ),
+        encoding="utf-8",
+    )
+    assert run_fix_multi_oracle(tmp_path, contract) is True
+
+    target.write_text(
+        complete.replace(
+            'log.info(f"dry run: should_stop={should_stop}, reason={reason}")',
+            'log_message = f"dry run: should_stop={should_stop}, reason={reason}"\n'
+            "            self._log_info(trainer, log_message, self.log_rank_zero_only)",
+        ),
+        encoding="utf-8",
+    )
+    assert run_fix_multi_oracle(tmp_path, contract) is True
+
     target.write_text(complete.replace("trainer, dry_run=False)", "trainer)", 1), encoding="utf-8")
     assert run_fix_multi_oracle(tmp_path, contract) is False
 
     target.write_text(
         complete.replace('log.info(f"dry run: should_stop={should_stop}, reason={reason}")', 'log.info("dry run")'),
+        encoding="utf-8",
+    )
+    assert run_fix_multi_oracle(tmp_path, contract) is False
+
+    target.write_text(
+        complete.replace(
+            'log.info(f"dry run: should_stop={should_stop}, reason={reason}")',
+            'if reason:\n                log.info(f"dry run: should_stop={should_stop}, reason={reason}")',
+        ),
+        encoding="utf-8",
+    )
+    assert run_fix_multi_oracle(tmp_path, contract) is False
+
+    target.write_text(
+        complete.replace(
+            'log.info(f"dry run: should_stop={should_stop}, reason={reason}")',
+            'if self.verbose:\n                log.info(f"dry run: should_stop={should_stop}, reason={reason}")',
+        ),
+        encoding="utf-8",
+    )
+    assert run_fix_multi_oracle(tmp_path, contract) is False
+
+    target.write_text(
+        complete.replace(
+            'log.info(f"dry run: should_stop={should_stop}, reason={reason}")',
+            'log.info("dry run: should_stop={should_stop}, reason={reason}")',
+        ),
         encoding="utf-8",
     )
     assert run_fix_multi_oracle(tmp_path, contract) is False
@@ -228,14 +287,36 @@ def test_early_stopping_contract_accepts_semantically_equivalent_else_branch(tmp
 
 
 @pytest.mark.skipif(not FROZEN_REPO.is_dir(), reason="frozen benchmark repository is unavailable")
-def test_strategy_contract_requires_every_override_to_forward_verbose(tmp_path: Path) -> None:
-    """FM-03 accepts the complete base-and-override propagation patch and rejects one missing forward."""
+def test_early_stopping_contract_accepts_semantically_equivalent_negative_guard(tmp_path: Path) -> None:
+    """FM-01 accepts a negative guard when all persistent mutations stay inside it."""
+    contract = _contract("FM-01")
+    _copy_contract_sources(FROZEN_REPO, tmp_path, contract)
+    target = tmp_path / contract.expected_paths[0]
+    complete = _complete_early_stopping_negative_guard_source(target.read_text(encoding="utf-8"))
+    target.write_text(complete, encoding="utf-8")
+
+    assert run_fix_multi_oracle(tmp_path, contract) is True
+
+    target.write_text(
+        complete.replace(
+            "        if not dry_run:\n            trainer.should_stop = trainer.should_stop or should_stop\n",
+            "        trainer.should_stop = trainer.should_stop or should_stop\n        if not dry_run:\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    assert run_fix_multi_oracle(tmp_path, contract) is False
+
+
+@pytest.mark.skipif(not FROZEN_REPO.is_dir(), reason="frozen benchmark repository is unavailable")
+def test_strategy_contract_requires_every_environment_override_to_forward_verbose(tmp_path: Path) -> None:
+    """FM-03 accepts cooperative propagation and rejects a missing forward."""
     contract = _contract("FM-03")
     _copy_contract_sources(FROZEN_REPO, tmp_path, contract)
     for relative_path in contract.expected_paths:
         target = tmp_path / relative_path
         target.write_text(
-            _complete_strategy_source(
+            _complete_strategy_environment_source(
                 target.read_text(encoding="utf-8"),
                 is_base=relative_path.endswith("strategies/strategy.py"),
             ),
@@ -246,7 +327,66 @@ def test_strategy_contract_requires_every_override_to_forward_verbose(tmp_path: 
 
     incomplete = tmp_path / contract.expected_paths[1]
     incomplete.write_text(
-        incomplete.read_text(encoding="utf-8").replace("        super().setup(trainer, verbose=verbose)\n", "", 1),
+        incomplete.read_text(encoding="utf-8").replace(
+            "super().setup_environment(verbose=verbose)", "super().setup_environment()", 1
+        ),
+        encoding="utf-8",
+    )
+    assert run_fix_multi_oracle(tmp_path, contract) is False
+
+
+@pytest.mark.skipif(not FROZEN_REPO.is_dir(), reason="frozen benchmark repository is unavailable")
+def test_strategy_contract_ignores_harmless_method_docstring_changes(tmp_path: Path) -> None:
+    """FM-03 preserves behavior when only the base environment-method docstring changes."""
+    contract = _contract("FM-03")
+    _copy_contract_sources(FROZEN_REPO, tmp_path, contract)
+    for relative_path in contract.expected_paths:
+        target = tmp_path / relative_path
+        target.write_text(
+            _complete_strategy_environment_source(
+                target.read_text(encoding="utf-8"),
+                is_base=relative_path.endswith("strategies/strategy.py"),
+            ),
+            encoding="utf-8",
+        )
+
+    base = tmp_path / "src/lightning/pytorch/strategies/strategy.py"
+    base.write_text(
+        base.read_text(encoding="utf-8").replace(
+            "Setup any processes or distributed connections.", "Prepare the strategy environment.", 1
+        ),
+        encoding="utf-8",
+    )
+
+    assert run_fix_multi_oracle(tmp_path, contract) is True
+
+
+@pytest.mark.skipif(not FROZEN_REPO.is_dir(), reason="frozen benchmark repository is unavailable")
+def test_strategy_contract_rejects_deleted_behavior_and_full_setup_calls(tmp_path: Path) -> None:
+    """FM-03 cannot pass by deleting existing behavior or invoking the non-cooperative full setup."""
+    contract = _contract("FM-03")
+    _copy_contract_sources(FROZEN_REPO, tmp_path, contract)
+    for relative_path in contract.expected_paths:
+        target = tmp_path / relative_path
+        target.write_text(
+            _complete_strategy_environment_source(
+                target.read_text(encoding="utf-8"),
+                is_base=relative_path.endswith("strategies/strategy.py"),
+            ),
+            encoding="utf-8",
+        )
+
+    ddp = tmp_path / "src/lightning/pytorch/strategies/ddp.py"
+    complete = ddp.read_text(encoding="utf-8")
+    ddp.write_text(complete.replace("        self.setup_distributed()\n", "", 1), encoding="utf-8")
+    assert run_fix_multi_oracle(tmp_path, contract) is False
+
+    ddp.write_text(
+        complete.replace(
+            "        super().setup_environment(verbose=verbose)\n",
+            "        super().setup_environment(verbose=verbose)\n        super().setup(None, verbose=verbose)\n",
+            1,
+        ),
         encoding="utf-8",
     )
     assert run_fix_multi_oracle(tmp_path, contract) is False

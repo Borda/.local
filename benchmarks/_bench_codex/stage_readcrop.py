@@ -43,13 +43,13 @@ from _bench_common.readcrop_contracts import (  # noqa: E402
     score_readcrop_answer,
     validate_provider_binding,
 )
-from . import runtime  # noqa: E402
-from .runtime import (  # noqa: E402
+from _bench_common.paid_lifecycle import (  # noqa: E402
     PaidStageCallbacks,
     run_paid_stage,
     verify_checksums,
     write_checksums,
 )
+from . import runtime  # noqa: E402
 from _bench_common.presentation import fmt_time, fmt_tok  # noqa: E402
 
 

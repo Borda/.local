@@ -5,6 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 
+ARM_ROW_STYLES = {
+    "A_plain": "yellow",
+    "B_auto": "cyan",
+    "B_direct": "cyan",
+    "B_direct_required": "cyan",
+    "C_skill": "magenta",
+    "C_skill_required": "magenta",
+    "C_strict": "magenta",
+}
+
+
 def fmt_tok(v: float) -> str:
     """Format a token count with a k/M unit suffix.
 
@@ -55,6 +66,27 @@ def fmt_time(seconds: float) -> str:
     """
     minutes, secs = divmod(int(round(seconds)), 60)
     return f"{minutes}m{secs}s" if minutes else f"{secs}s"
+
+
+def print_arm_row(row: str, arm: str, *, console: Any) -> None:
+    """Render one benchmark arm row with Rich color only on interactive terminals.
+
+    Args:
+        row: Fully formatted plain-text result row.
+        arm: Canonical benchmark arm label.
+        console: Rich console configured by the provider runner.
+
+    Raises:
+        ValueError: If the row uses an unknown benchmark arm.
+    """
+    try:
+        style = ARM_ROW_STYLES[arm]
+    except KeyError as exc:
+        raise ValueError(f"unknown benchmark arm {arm!r}") from exc
+    if console.is_terminal:
+        console.print(row, style=style, markup=False, highlight=False, soft_wrap=True)
+        return
+    print(row)
 
 
 def make_progress(console: Any):

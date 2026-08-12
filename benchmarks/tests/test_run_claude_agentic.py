@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -253,6 +255,22 @@ class TestProviderParityTaskIntegration:
         assert "Skill(codemap:query-code)" in script_run_agentic.ModelRunner._ARM_ALLOWED["C_strict"][1]
         assert "must use Codemap at least once" not in runner._system_prompt("fix", "B_auto")
         assert "must use Codemap at least once" in runner._system_prompt("fix", "C_strict")
+
+    def test_canonical_stage_prompts_use_one_current_skill_contract(
+        self, script_run_agentic: Any, tmp_path: Path
+    ) -> None:
+        """Canonical Claude stages must not mix legacy launchers with the installed Skill contract."""
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path)
+
+        for task_type in ("read_crop", "fix_single", "fix_multicaller"):
+            auto = runner._system_prompt(task_type, "B_auto")
+            strict = runner._system_prompt(task_type, "C_strict")
+
+            assert "/codemap-py:query-code" in auto
+            assert "scan-query" not in auto
+            assert "/codemap:query-code" not in auto
+            assert "loading the Skill alone" in strict
+            assert "complete its underlying `codemap-py query`" in strict
 
     def test_default_dry_run_schedules_the_full_canonical_matrix(
         self, tmp_index: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], script_run_agentic: Any
@@ -941,6 +959,31 @@ class TestProviderParityTaskIntegration:
         assert script_run_agentic._invokes_scan_query("scan-query symbol Trainer")
         assert script_run_agentic._invokes_scan_query("cd /repo && /plugin/bin/scan-query rdeps module")
         assert not script_run_agentic._invokes_scan_query("echo scan-query symbol Trainer")
+
+    @pytest.mark.parametrize(
+        "quoted_pattern",
+        [r"'Strategy\.setup_environment$'", r'"Strategy\.setup_environment$"'],
+        ids=["single-quoted", "double-quoted"],
+    )
+    def test_query_arguments_normalize_shell_quoted_patterns(
+        self, script_run_agentic: Any, quoted_pattern: str
+    ) -> None:
+        """Exact-query evidence strips shell quotes while retaining query arguments and existing filters."""
+        command = f"codemap-py query find-symbol {quoted_pattern} --exclude-tests --limit 0 --compact 2>/dev/null"
+
+        assert script_run_agentic._query_arguments_from_bash(command) == (
+            "find-symbol",
+            r"Strategy\.setup_environment$",
+            "--exclude-tests",
+            "--limit",
+            "0",
+        )
+
+    def test_query_arguments_preserve_unquoted_legacy_arguments(self, script_run_agentic: Any) -> None:
+        """Shell parsing preserves the legacy unquoted tail while dropping compact and redirection tokens."""
+        assert script_run_agentic._query_arguments_from_bash(
+            "scan-query symbol Trainer --with-imports --compact 2>/dev/null"
+        ) == ("symbol", "Trainer", "--with-imports")
 
     def test_required_compliance_credits_only_codemap_entry_points(self, script_run_agentic: Any) -> None:
         """An unrelated Skill call cannot satisfy C; Codemap Skill or scan-query can."""
@@ -1981,6 +2024,24 @@ class TestArmToolPermissions:
         disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["A_plain"]
         assert "Bash(scan-query:*)" in disallowed[1]
 
+    @pytest.mark.parametrize("arm", ["B_auto", "C_strict"])
+    def test_canonical_treatments_preapprove_the_path_codemap_query_cli(
+        self, script_run_agentic: Any, arm: str
+    ) -> None:
+        """The direct frozen query is not denied by Claude's outer Bash policy."""
+        allowed = script_run_agentic.ModelRunner._ARM_ALLOWED[arm][1]
+
+        assert "Bash(codemap-py query:*)" in allowed
+        assert "Bash(*/bin/codemap-py* query:*)" in allowed
+
+    @pytest.mark.parametrize("arm", ["A_plain", "B_auto", "C_strict"])
+    def test_canonical_cells_disallow_unmetered_nested_agents(self, script_run_agentic: Any, arm: str) -> None:
+        """Parent-row token accounting remains complete by excluding child sessions."""
+        disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED[arm][1]
+
+        assert "Agent" in disallowed
+        assert "Task" in disallowed
+
 
 # ModelRunner — config isolation (--setting-sources / --plugin-dir / --mcp-config)
 # ===========================================================================
@@ -2807,6 +2868,47 @@ class TestSubprocessEnv:
         env = script_run_agentic.ModelRunner._subprocess_env(arm)
         assert "CLAUDE_PLUGIN_ROOT" not in env
 
+    @pytest.mark.parametrize("arm", ["plain", "A_plain", "semble", ""])
+    def test_codemap_bin_path_absent_for_non_codemap_arms(
+        self, script_run_agentic: Any, monkeypatch: pytest.MonkeyPatch, arm: str
+    ) -> None:
+        """A/plain environments cannot inherit the benchmark-injected Codemap launcher.
+
+        Regression: `_subprocess_env` previously prepended the plugin cache `bin/`
+        directory before checking the arm, contradicting A's absent-tool control.
+        """
+        monkeypatch.setattr(
+            script_run_agentic,
+            "codemap_bin_on_path",
+            lambda env: env.update(PATH=f"/sentinel/codemap-bin:{env.get('PATH', '')}") or env,
+        )
+
+        env = script_run_agentic.ModelRunner._subprocess_env(arm)
+
+        assert "/sentinel/codemap-bin" not in env.get("PATH", "")
+
+    @pytest.mark.parametrize("arm", ["codemap", "combined", "B_auto", "C_strict"])
+    def test_codemap_bin_path_present_for_codemap_arms(
+        self, script_run_agentic: Any, monkeypatch: pytest.MonkeyPatch, arm: str
+    ) -> None:
+        """Codemap treatments receive the benchmark-injected launcher path."""
+        monkeypatch.setattr(
+            script_run_agentic,
+            "codemap_bin_on_path",
+            lambda env, plugin_root: env.update(PATH=f"{plugin_root}/bin:{env.get('PATH', '')}") or env,
+        )
+
+        env = script_run_agentic.ModelRunner._subprocess_env(arm)
+
+        assert env["PATH"].startswith(f"{script_run_agentic.ModelRunner._codemap_plugin_dir()}/bin:")
+
+    def test_codemap_bin_path_uses_the_locked_repository_fixture(self, script_run_agentic: Any) -> None:
+        """A mutable user-cache installation cannot replace the scope-locked launcher."""
+        env = script_run_agentic.ModelRunner._subprocess_env("C_strict")
+        expected = Path(script_run_agentic.ModelRunner._codemap_plugin_dir()) / "bin"
+
+        assert Path(env["PATH"].split(os.pathsep)[0]).resolve() == expected.resolve()
+
 
 # ===========================================================================
 # _seed_index_cache — index present in fix-task sandbox (review H-3)
@@ -3237,6 +3339,44 @@ class TestRunTargetedTest:
         (tmp_path / "test_bad.py").write_text("def test_bad():\n    assert False\n")
         runner = self._runner(script_run_agentic, tmp_path)
         assert runner._run_targeted_test(tmp_path, "test_bad.py") is False
+
+
+@pytest.mark.parametrize(("writable", "expected"), [(False, []), (True, ["--permission-mode", "acceptEdits"])])
+def test_stage_transport_enables_native_edits_only_for_executable_workspaces(
+    script_run_agentic: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    writable: bool,
+    expected: list[str],
+) -> None:
+    """Headless fix cells authorize native edits without making ReadCrop writable.
+
+    Regression: executable Claude cells inherited the default interactive
+    permission mode, so every Edit/Write request was denied until timeout.
+    """
+    commands: list[list[str]] = []
+
+    def stream(cmd: list[str], **_kwargs: Any) -> Any:
+        commands.append(cmd)
+        return SimpleNamespace(error=None, stderr="", returncode=0, exc_timeout=False, elapsed_s=0.1)
+
+    monkeypatch.setattr(script_run_agentic, "stream_claude", stream)
+    runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path, timeout=1)
+
+    runner.run_stage_events(
+        prompt="Inspect the fixture.",
+        system_prompt="Use only the fixture.",
+        arm="A_plain",
+        cwd=tmp_path,
+        writable=writable,
+    )
+
+    permission_flags = (
+        commands[0][commands[0].index("--permission-mode") : commands[0].index("--permission-mode") + 2]
+        if "--permission-mode" in commands[0]
+        else []
+    )
+    assert permission_flags == expected
 
 
 # ===========================================================================

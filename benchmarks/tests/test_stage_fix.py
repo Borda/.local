@@ -16,6 +16,9 @@ import pytest
 
 
 BENCHMARKS = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BENCHMARKS))
+
+from _bench_common.edit_patch_contracts import build_fix_single_contract  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -506,7 +509,7 @@ def test_fix_single_preserves_optional_and_forced_query_controls(
 ) -> None:
     """B permits zero use while C remains an ineligible forced-query negative control."""
     task = next(iter(stage_fix.load_task_suite(stage_fix.FIX_SINGLE_TASKS_PATH)))
-    contract = stage_fix.build_fix_single_contract(task)
+    contract = build_fix_single_contract(task)
     parsed = SimpleNamespace(
         success=True,
         output_text="summary",
@@ -590,7 +593,7 @@ def test_fix_single_preserves_optional_and_forced_query_controls(
                 "--exclude-tests",
             ],
         ),
-        ("FM-03", ["find-symbol", r"Strategy\.setup$", "--exclude-tests", "--limit", "0"]),
+        ("FM-03", ["find-symbol", r"Strategy\.setup_environment$", "--exclude-tests", "--limit", "0"]),
     ),
 )
 def test_fix_multi_strict_prompt_and_conformance_use_task_specific_argv(

@@ -4000,7 +4000,7 @@ def test_print_arm_row_colors_only_interactive_output(
             rich_calls.append((row, kwargs))
 
     monkeypatch.setattr(codex_runtime, "_CONSOLE", FixtureConsole())
-    monkeypatch.setattr(codex_runtime, "print", plain_calls.append, raising=False)
+    monkeypatch.setattr(codex_runtime.presentation, "print", plain_calls.append, raising=False)
 
     codex_runtime.print_arm_row("progress fixture", "B_direct_required")
 
@@ -4010,7 +4010,7 @@ def test_print_arm_row_colors_only_interactive_output(
         assert rich_calls == [
             (
                 "progress fixture",
-                {"style": "cyan", "markup": False, "soft_wrap": True},
+                {"style": "cyan", "markup": False, "highlight": False, "soft_wrap": True},
             )
         ]
     if plain_calls:
@@ -5941,7 +5941,7 @@ def test_unified_paid_execution_uses_one_counter_across_native_stage_rows(
     monkeypatch.setattr(script_run_codex, "main", lambda **_kwargs: emit_stage_rows("structural"))
     monkeypatch.setattr(readcrop_stage, "run_stage", lambda **_kwargs: emit_stage_rows("readcrop"))
     monkeypatch.setattr(fix_stage, "run_fix_stage", lambda study, **_kwargs: emit_stage_rows(study))
-    monkeypatch.setattr(script_run_codex.runtime, "write_checksums", lambda _path: None)
+    monkeypatch.setattr(script_run_codex, "write_checksums", lambda _path: None)
 
     script_run_codex._run_unified_execution(
         repo_path=tmp_path,

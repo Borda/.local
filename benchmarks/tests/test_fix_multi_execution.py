@@ -59,25 +59,24 @@ def _complete_early_stopping_source(source: str) -> str:
     )
 
 
-def _complete_strategy_source(source: str, *, is_base: bool) -> str:
-    """Return one FM-03 source with the verbose parameter and its required behavior."""
+def _complete_strategy_environment_source(source: str, *, is_base: bool) -> str:
+    """Return one FM-03 source with cooperative verbose environment propagation."""
     source = source.replace(
-        'def setup(self, trainer: "pl.Trainer") -> None:',
-        'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:',
+        "def setup_environment(self) -> None:",
+        "def setup_environment(self, verbose: bool = False) -> None:",
         1,
     )
     if is_base:
         return source.replace(
-            'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n',
-            'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n'
+            "        assert self.accelerator is not None\n",
             "        if verbose:\n"
-            '            log.debug("setting up strategy")\n',
+            '            log.debug("setting up strategy environment")\n'
+            "        assert self.accelerator is not None\n",
             1,
         )
     return source.replace(
-        'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n',
-        'def setup(self, trainer: "pl.Trainer", verbose: bool = False) -> None:\n'
-        "        super().setup(trainer, verbose=verbose)\n",
+        "super().setup_environment()",
+        "super().setup_environment(verbose=verbose)",
         1,
     )
 
@@ -156,15 +155,15 @@ def test_incomplete_early_stopping_patch_is_scored_false_and_cleaned() -> None:
 
 
 @pytest.mark.skipif(not FROZEN_REPO.is_dir(), reason="frozen benchmark repository is unavailable")
-def test_complete_strategy_patch_is_applied_scored_and_cleaned() -> None:
-    """A seven-file FM-03 patch proves lifecycle scoring requires every declared override."""
+def test_complete_strategy_environment_patch_is_applied_scored_and_cleaned() -> None:
+    """A six-file FM-03 patch proves lifecycle scoring requires every cooperative override."""
     contract = _contract_for("FM-03")
     before = {
         relative_path: (FROZEN_REPO / relative_path).read_text(encoding="utf-8")
         for relative_path in contract.expected_paths
     }
     after = {
-        relative_path: _complete_strategy_source(
+        relative_path: _complete_strategy_environment_source(
             source,
             is_base=relative_path.endswith("strategies/strategy.py"),
         )
@@ -181,22 +180,24 @@ def test_complete_strategy_patch_is_applied_scored_and_cleaned() -> None:
 
 
 @pytest.mark.skipif(not FROZEN_REPO.is_dir(), reason="frozen benchmark repository is unavailable")
-def test_incomplete_strategy_patch_is_scored_false_and_cleaned() -> None:
-    """FM-03 lifecycle scoring rejects a patch that omits one override's verbose forwarding."""
+def test_incomplete_strategy_environment_patch_is_scored_false_and_cleaned() -> None:
+    """FM-03 lifecycle scoring rejects one stale cooperative override."""
     contract = _contract_for("FM-03")
     before = {
         relative_path: (FROZEN_REPO / relative_path).read_text(encoding="utf-8")
         for relative_path in contract.expected_paths
     }
     after = {
-        relative_path: _complete_strategy_source(
+        relative_path: _complete_strategy_environment_source(
             source,
             is_base=relative_path.endswith("strategies/strategy.py"),
         )
         for relative_path, source in before.items()
     }
     missing_forward = contract.expected_paths[-1]
-    after[missing_forward] = after[missing_forward].replace("        super().setup(trainer, verbose=verbose)\n", "", 1)
+    after[missing_forward] = after[missing_forward].replace(
+        "super().setup_environment(verbose=verbose)", "super().setup_environment()", 1
+    )
 
     result = execute_fix_multi_patch(FROZEN_REPO, contract, _patch_for_sources(before, after))
 

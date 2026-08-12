@@ -76,12 +76,12 @@ SUITE_METADATA: dict[str, dict[str, str]] = {
         "root_shape": "bare_list",
     },
     "benchmarks/suites/tasks-fix-multi.json": {
-        "current_consumer": "run-codex-structural.py --study fix-multi; optional input to run-claude-agentic.py",
+        "current_consumer": "run-codex-structural.py task family FM; run-claude-agentic.py --study fix-multi",
         "generation_provenance": "committed_static_prompts_external_complete_caller_oracle",
         "root_shape": "bare_list",
     },
     "benchmarks/suites/tasks-fix-single.json": {
-        "current_consumer": "run-codex-structural.py --study fix-single; optional input to run-claude-agentic.py",
+        "current_consumer": "run-codex-structural.py task family FS; run-claude-agentic.py --study fix-single",
         "generation_provenance": "committed_static_prompts_external_executable_oracle",
         "root_shape": "bare_list",
     },
@@ -91,7 +91,7 @@ SUITE_METADATA: dict[str, dict[str, str]] = {
         "root_shape": "object_with_tasks",
     },
     "benchmarks/suites/tasks-readcrop.json": {
-        "current_consumer": "run-codex-structural.py --study readcrop; optional input to run-claude-agentic.py",
+        "current_consumer": "run-codex-structural.py task family RC; run-claude-agentic.py --study readcrop",
         "generation_provenance": "committed_static_prompts_source_validated_answer_contract",
         "root_shape": "bare_list",
     },

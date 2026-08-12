@@ -9,14 +9,15 @@ the mutation lifecycle is owned by the runner boundary in P0.4.
 from __future__ import annotations
 
 import ast
+import copy
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
 import re
-from types import MappingProxyType
-from typing import Any
+from types import MappingProxyType, SimpleNamespace
+from typing import Any, Callable, Optional
 
 from .provider_parity_contracts import canonical_task_hash, prompt_hash
 
@@ -25,17 +26,38 @@ _SHA256_RE = re.compile(r"[0-9a-f]{64}$")
 _GIT_COMMIT_RE = re.compile(r"[0-9a-f]{40}$")
 _DIFF_FENCE_RE = re.compile(r"```diff\\s*\\n(?P<diff>.*?)\\n?```", re.DOTALL)
 _SCORER_VERSION = "provider-neutral-edit-score-v1"
-_FIX_MULTI_SCORER_VERSION = "provider-neutral-fix-multi-score-v2"
+_FIX_MULTI_SCORER_VERSION = MappingProxyType(
+    {
+        "FM-01": "provider-neutral-fix-multi-score-v4",
+        "FM-02": "provider-neutral-fix-multi-score-v2",
+        "FM-03": "provider-neutral-fix-multi-score-v4",
+    }
+)
 _FIX_MULTI_BASELINE_COMMIT = "be98784a1a03581b7051a355ae1084fd352d7cea"
+_FIX_SINGLE_SCORER_VERSION = "provider-neutral-fix-single-score-v1"
+_FIX_SINGLE_BASELINE_COMMIT = "be98784a1a03581b7051a355ae1084fd352d7cea"
 _FIX_MULTI_ROOT = "src/lightning/pytorch"
 _FIX_MULTI_PATHS = {
     "FM-01": (f"{_FIX_MULTI_ROOT}/callbacks/early_stopping.py",),
     "FM-02": (f"{_FIX_MULTI_ROOT}/callbacks/model_checkpoint.py",),
     "FM-03": tuple(
         f"{_FIX_MULTI_ROOT}/strategies/{name}.py"
-        for name in ("strategy", "ddp", "fsdp", "deepspeed", "model_parallel", "single_xla", "xla")
+        for name in ("strategy", "ddp", "fsdp", "deepspeed", "model_parallel", "xla")
     ),
 }
+# These hashes bind each normalized method body to the frozen 2.6.5 baseline.
+# Normalization removes only the requested log or forwarded keyword, so an
+# otherwise deleted, reordered, or rewritten setup path cannot pass the oracle.
+_SETUP_ENVIRONMENT_BODY_SHA256 = MappingProxyType(
+    {
+        "Strategy": "24d96c3bc5817f5d6b37604feb598f2248585db56dd266f58cebb481673ffe9a",
+        "DDPStrategy": "5be57537682e822525a6a5c2b18d74d30aa1dcf13006bcf63262674eecf839eb",
+        "FSDPStrategy": "301ee5b12d4016bd672bda377bd3dcff160f6f9d243f970d98a6b5da787684ea",
+        "DeepSpeedStrategy": "85e23b65cbb7bd2a83dc1bbdc24cf6c67db6fde61a1073c790ac3886613d55a3",
+        "ModelParallelStrategy": "8cdba6c0597af96ec59e91d3315ea389c870a8a291561916be840b91707ddc8f",
+        "XLAStrategy": "c2f6d1d993218a9078b7fbaaf3df80777d72b5f675628c95c408ff1c40e3d4e7",
+    }
+)
 _EXCLUSIONS = MappingProxyType(
     {
         "excluded_from_pooling_when": (
@@ -170,6 +192,248 @@ class FixMultiContract:
         )
 
 
+@dataclass(frozen=True)
+class FixSingleContract:
+    """Immutable single-file contract shared by provider transports.
+
+    The contract freezes the original task, the one permitted source path, and
+    the independent microexecution oracle. Provider-specific runners may only
+    transport this coordinate and report a captured patch.
+    """
+
+    task_id: str
+    canonical_task_sha256: str
+    prompt_sha256: str
+    baseline_commit: str
+    expected_paths: tuple[str, ...]
+    oracle_id: str
+    oracle_sha256: str
+    scorer_sha256: str
+
+    def provider_binding(self) -> Mapping[str, str]:
+        """Return science-bearing fields every provider transport must preserve."""
+        return MappingProxyType(
+            {
+                "canonical_task_sha256": self.canonical_task_sha256,
+                "prompt_sha256": self.prompt_sha256,
+                "baseline_commit": self.baseline_commit,
+                "oracle_sha256": self.oracle_sha256,
+                "scorer_sha256": self.scorer_sha256,
+            }
+        )
+
+
+_FIX_SINGLE_ORACLES: Mapping[str, Mapping[str, str]] = MappingProxyType(
+    {
+        "FS-01": {"path": "src/lightning/pytorch/callbacks/early_stopping.py", "oracle": "early_stopping_patience"},
+        "FS-02": {"path": "src/lightning/pytorch/callbacks/early_stopping.py", "oracle": "early_stopping_min_delta"},
+        "FS-03": {
+            "path": "src/lightning/pytorch/callbacks/model_checkpoint.py",
+            "oracle": "model_checkpoint_duplicate_step",
+        },
+        "FS-04": {
+            "path": "src/lightning/pytorch/callbacks/model_checkpoint.py",
+            "oracle": "model_checkpoint_save_top_k_zero_warning",
+        },
+    }
+)
+
+
+def build_fix_single_contract(task: Mapping[str, Any]) -> FixSingleContract:
+    """Freeze one original scaffold task and its independently maintained oracle."""
+    task_id = task.get("id")
+    if not isinstance(task_id, str) or task_id not in _FIX_SINGLE_ORACLES or task.get("type") != "fix_single":
+        raise ValueError("unknown fix-single task")
+    expected_files = task.get("expected_files")
+    if not isinstance(expected_files, list) or len(expected_files) != 1 or not isinstance(expected_files[0], str):
+        raise ValueError(f"task {task_id} must name exactly one expected file")
+    oracle = _FIX_SINGLE_ORACLES[task_id]
+    path = oracle["path"]
+    if Path(path).name != expected_files[0]:
+        raise ValueError(f"task {task_id} expected file disagrees with its executable boundary")
+    return FixSingleContract(
+        task_id=task_id,
+        canonical_task_sha256=canonical_task_hash(task),
+        prompt_sha256=prompt_hash(task),
+        baseline_commit=_FIX_SINGLE_BASELINE_COMMIT,
+        expected_paths=(path,),
+        oracle_id=oracle["oracle"],
+        oracle_sha256=_sha256(
+            {
+                "oracle_id": oracle["oracle"],
+                "path": path,
+                "baseline_commit": _FIX_SINGLE_BASELINE_COMMIT,
+                "semantics": "candidate-method microexecution with dependency-free fakes",
+            }
+        ),
+        scorer_sha256=_sha256({"version": _FIX_SINGLE_SCORER_VERSION, "primary": "executable_behavior_and_exact_path"}),
+    )
+
+
+def validate_fix_single_binding(contract: FixSingleContract, observed: Mapping[str, object]) -> None:
+    """Reject provider evidence that changes a Fix-Single scientific field."""
+    if dict(observed) != dict(contract.provider_binding()):
+        raise ValueError("provider adapter changed fix-single scientific fields")
+
+
+def _load_class(tree: ast.Module, name: str) -> ast.ClassDef:
+    """Return one candidate class definition or fail closed."""
+    node = next((item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == name), None)
+    if node is None:
+        raise ValueError(f"candidate is missing class {name}")
+    return node
+
+
+def _load_method(tree: ast.Module, class_name: str, method_name: str) -> ast.FunctionDef:
+    """Return one candidate method definition or fail closed."""
+    node = next(
+        (
+            item
+            for item in _load_class(tree, class_name).body
+            if isinstance(item, ast.FunctionDef) and item.name == method_name
+        ),
+        None,
+    )
+    if node is None:
+        raise ValueError(f"candidate is missing method {class_name}.{method_name}")
+    return node
+
+
+def _compile_function(node: ast.FunctionDef, namespace: dict[str, Any]) -> Callable[..., Any]:
+    """Compile one candidate method with its trusted fake dependencies."""
+    copied = copy.deepcopy(node)
+    copied.decorator_list = []
+    module = ast.Module(body=[copied], type_ignores=[])
+    ast.fix_missing_locations(module)
+    exec(compile(module, "<candidate-method>", "exec"), namespace)  # noqa: S102
+    return namespace[copied.name]
+
+
+def _load_early_stopping(tree: ast.Module) -> type[Any]:
+    """Compile EarlyStopping with only its initializer's required fake runtime names."""
+    class_node = _load_class(tree, "EarlyStopping")
+
+    class Callback:
+        """Minimal callback base supporting candidate initialization."""
+
+        def __init__(self) -> None:
+            pass
+
+    namespace = {
+        "Any": Any,
+        "Callable": Callable,
+        "Optional": Optional,
+        "Tensor": object,
+        "Callback": Callback,
+        "EarlyStoppingReason": SimpleNamespace(NOT_STOPPED="not-stopped"),
+        "MisconfigurationException": ValueError,
+        "override": lambda function: function,
+        "pl": SimpleNamespace(),
+        "rank_prefixed_message": lambda *args: "",
+        "rank_zero_warn": lambda *args, **kwargs: None,
+        "torch": SimpleNamespace(
+            inf=float("inf"),
+            lt=lambda left, right: left < right,
+            gt=lambda left, right: left > right,
+            tensor=lambda value: value,
+        ),
+    }
+    module = ast.Module(body=[copy.deepcopy(class_node)], type_ignores=[])
+    ast.fix_missing_locations(module)
+    exec(compile(module, "<candidate-early-stopping>", "exec"), namespace)  # noqa: S102
+    return namespace["EarlyStopping"]
+
+
+def _check_patience(tree: ast.Module) -> bool:
+    """Require invalid patience rejection while preserving the positive case."""
+    candidate = _load_early_stopping(tree)
+    try:
+        candidate("metric", patience=0)
+    except ValueError as exc:
+        invalid_rejected = str(exc) == "patience must be >= 1, got 0"
+    else:
+        invalid_rejected = False
+    try:
+        candidate("metric", patience=1)
+    except Exception:
+        valid_accepted = False
+    else:
+        valid_accepted = True
+    return invalid_rejected and valid_accepted
+
+
+def _check_min_delta(tree: ast.Module) -> bool:
+    """Require invalid min_delta rejection while preserving zero."""
+    candidate = _load_early_stopping(tree)
+    try:
+        candidate("metric", min_delta=-0.1)
+    except ValueError as exc:
+        invalid_rejected = str(exc) == "min_delta must be >= 0, got -0.1"
+    else:
+        invalid_rejected = False
+    try:
+        candidate("metric", min_delta=0.0)
+    except Exception:
+        valid_accepted = False
+    else:
+        valid_accepted = True
+    return invalid_rejected and valid_accepted
+
+
+def _check_duplicate_checkpoint(tree: ast.Module) -> bool:
+    """Require a duplicate global-step save to skip the second trainer save."""
+    save = _load_method(tree, "ModelCheckpoint", "_save_checkpoint")
+    saved: list[tuple[str, bool]] = []
+    notices: list[str] = []
+    state = SimpleNamespace(_last_global_step_saved=0, save_weights_only=False, _last_checkpoint_saved="")
+    trainer = SimpleNamespace(
+        global_step=7,
+        is_global_zero=False,
+        loggers=[],
+        save_checkpoint=lambda path, weights_only: saved.append((path, weights_only)),
+    )
+    function = _compile_function(save, {"proxy": lambda value: value, "rank_zero_info": notices.append})
+    function(state, trainer, "first.ckpt")
+    function(state, trainer, "second.ckpt")
+    return saved == [("first.ckpt", False)] and bool(notices)
+
+
+def _check_save_top_k_warning(tree: ast.Module) -> bool:
+    """Require the no-checkpoint warning while retaining legal positive setup."""
+    validator = _load_method(tree, "ModelCheckpoint", "__validate_init_configuration")
+    warnings: list[str] = []
+    function = _compile_function(
+        validator, {"MisconfigurationException": ValueError, "rank_zero_warn": warnings.append}
+    )
+    zero = SimpleNamespace(
+        save_top_k=0, _every_n_train_steps=0, _every_n_epochs=0, _train_time_interval=None, monitor="metric"
+    )
+    positive = SimpleNamespace(
+        save_top_k=1, _every_n_train_steps=0, _every_n_epochs=0, _train_time_interval=None, monitor="metric"
+    )
+    function(zero)
+    zero_warned = warnings == [
+        "ModelCheckpoint(save_top_k=0) is set: no checkpoints will be saved. Pass save_top_k=-1 to save all checkpoints."
+    ]
+    warnings.clear()
+    function(positive)
+    return zero_warned and not warnings
+
+
+def run_fix_single_oracle(repo_path: Path, contract: FixSingleContract) -> bool:
+    """Return whether the candidate source satisfies the selected Fix-Single oracle."""
+    source_path = repo_path / contract.expected_paths[0]
+    if not source_path.is_file():
+        raise ValueError(f"candidate source is missing: {contract.expected_paths[0]}")
+    checks: Mapping[str, Callable[[ast.Module], bool]] = {
+        "early_stopping_patience": _check_patience,
+        "early_stopping_min_delta": _check_min_delta,
+        "model_checkpoint_duplicate_step": _check_duplicate_checkpoint,
+        "model_checkpoint_save_top_k_zero_warning": _check_save_top_k_warning,
+    }
+    return checks[contract.oracle_id](ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path)))
+
+
 def build_fix_multi_contract(task: Mapping[str, Any]) -> FixMultiContract:
     """Freeze one canonical multi-file task and its complete-caller oracle."""
     task_id = task.get("id")
@@ -185,7 +449,9 @@ def build_fix_multi_contract(task: Mapping[str, Any]) -> FixMultiContract:
         baseline_commit=_FIX_MULTI_BASELINE_COMMIT,
         expected_paths=_FIX_MULTI_PATHS[task_id],
         oracle_sha256=_sha256(oracle),
-        scorer_sha256=_sha256({"version": _FIX_MULTI_SCORER_VERSION, "primary": "complete_callers_and_ast_contract"}),
+        scorer_sha256=_sha256(
+            {"version": _FIX_MULTI_SCORER_VERSION[task_id], "primary": "complete_callers_and_ast_contract"}
+        ),
     )
 
 
@@ -242,25 +508,31 @@ def _check_model_checkpoint(tree: ast.Module) -> bool:
 
 
 def _check_strategy_callers(trees: Mapping[str, ast.Module]) -> bool:
-    """Require the base and every declared override to propagate verbose."""
+    """Require cooperative environment setup propagation without changing existing behavior."""
     names = {
         f"{_FIX_MULTI_ROOT}/strategies/strategy.py": "Strategy",
         f"{_FIX_MULTI_ROOT}/strategies/ddp.py": "DDPStrategy",
         f"{_FIX_MULTI_ROOT}/strategies/fsdp.py": "FSDPStrategy",
         f"{_FIX_MULTI_ROOT}/strategies/deepspeed.py": "DeepSpeedStrategy",
         f"{_FIX_MULTI_ROOT}/strategies/model_parallel.py": "ModelParallelStrategy",
-        f"{_FIX_MULTI_ROOT}/strategies/single_xla.py": "SingleDeviceXLAStrategy",
         f"{_FIX_MULTI_ROOT}/strategies/xla.py": "XLAStrategy",
     }
-    methods = {path: _method(_class(trees[path], name), "setup") for path, name in names.items()}
+    methods = {path: _method(_class(trees[path], name), "setup_environment") for path, name in names.items()}
     base_path = f"{_FIX_MULTI_ROOT}/strategies/strategy.py"
     return (
         _parameter_false(methods[base_path], "verbose")
-        and _verbose_log_present(methods[base_path])
+        and _verbose_environment_log_precedes_device_setup(methods[base_path])
         and all(
-            _parameter_false(method, "verbose") and _super_verbose_call_present(method)
+            _parameter_false(method, "verbose")
+            and _super_verbose_environment_call_present(method)
+            and not _super_setup_call_present(method)
             for path, method in methods.items()
             if path != base_path
+        )
+        and all(
+            _normalized_setup_environment_body_sha256(method, is_base=path == base_path)
+            == _SETUP_ENVIRONMENT_BODY_SHA256[names[path]]
+            for path, method in methods.items()
         )
     )
 
@@ -351,40 +623,158 @@ def _observe_only_dry_run_branch(method: ast.FunctionDef) -> bool:
         for node in method.body
         if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "dry_run"
     ]
-    if len(branches) != 1:
+    if not _has_unconditionally_logged_dry_run_decision(method):
         return False
-    branch = branches[0]
-    branch_index = method.body.index(branch)
-    prior_text = "\n".join(ast.unparse(node) for node in method.body[:branch_index])
-    dry_run_text = "\n".join(ast.unparse(node) for node in branch.body)
-    following_text = "\n".join(ast.unparse(node) for node in method.body[branch_index + 1 :])
-    returns_from_dry_run = any(isinstance(node, ast.Return) for node in branch.body)
-    if returns_from_dry_run:
-        normal_path_text = "\n".join(ast.unparse(node) for node in branch.orelse) + following_text
-    elif branch.orelse:
-        normal_path_text = "\n".join(ast.unparse(node) for node in branch.orelse)
-    else:
+
+    if len(branches) == 1:
+        branch = branches[0]
+        branch_index = method.body.index(branch)
+        prior_text = "\n".join(ast.unparse(node) for node in method.body[:branch_index])
+        dry_run_text = "\n".join(ast.unparse(node) for node in branch.body)
+        following_text = "\n".join(ast.unparse(node) for node in method.body[branch_index + 1 :])
+        returns_from_dry_run = any(isinstance(node, ast.Return) for node in branch.body)
+        if returns_from_dry_run:
+            normal_path_text = "\n".join(ast.unparse(node) for node in branch.orelse) + following_text
+        elif branch.orelse:
+            normal_path_text = "\n".join(ast.unparse(node) for node in branch.orelse)
+        else:
+            return _normal_mutations_stay_under_negative_guard(method)
+        writes_state = "trainer.should_stop" in dry_run_text or "self.stopped_epoch" in dry_run_text
+        mutated_before_branch = "trainer.should_stop" in prior_text or "self.stopped_epoch" in prior_text
+        dry_run_falls_through_to_mutation = not returns_from_dry_run and (
+            "trainer.should_stop" in following_text or "self.stopped_epoch" in following_text
+        )
+        preserves_normal_mutations = (
+            "trainer.should_stop" in normal_path_text and "self.stopped_epoch" in normal_path_text
+        )
+        return (
+            not writes_state
+            and not mutated_before_branch
+            and not dry_run_falls_through_to_mutation
+            and preserves_normal_mutations
+        )
+
+    return _normal_mutations_stay_under_negative_guard(method)
+
+
+def _normal_mutations_stay_under_negative_guard(method: ast.FunctionDef) -> bool:
+    """Require all persistent state writes to stay below one ``if not dry_run`` guard."""
+    negative_guards = [
+        node
+        for node in method.body
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.UnaryOp)
+        and isinstance(node.test.op, ast.Not)
+        and isinstance(node.test.operand, ast.Name)
+        and node.test.operand.id == "dry_run"
+    ]
+    if len(negative_guards) != 1 or negative_guards[0].orelse:
         return False
-    writes_state = "trainer.should_stop" in dry_run_text or "self.stopped_epoch" in dry_run_text
-    mutated_before_branch = "trainer.should_stop" in prior_text or "self.stopped_epoch" in prior_text
-    dry_run_falls_through_to_mutation = not returns_from_dry_run and (
-        "trainer.should_stop" in following_text or "self.stopped_epoch" in following_text
-    )
-    preserves_normal_mutations = "trainer.should_stop" in normal_path_text and "self.stopped_epoch" in normal_path_text
-    has_decision_log = any(
-        isinstance(node, ast.Call)
-        and ("log." in ast.unparse(node.func) or "_log_info" in ast.unparse(node.func))
-        and "should_stop" in ast.unparse(node)
-        and "reason" in ast.unparse(node)
-        for node in ast.walk(branch)
-    )
+    normal_path_text = "\n".join(ast.unparse(node) for node in negative_guards[0].body)
+    outside_guard_text = "\n".join(ast.unparse(node) for node in method.body if node is not negative_guards[0])
     return (
-        not writes_state
-        and not mutated_before_branch
-        and not dry_run_falls_through_to_mutation
-        and preserves_normal_mutations
-        and has_decision_log
+        "trainer.should_stop" in normal_path_text
+        and "self.stopped_epoch" in normal_path_text
+        and "trainer.should_stop" not in outside_guard_text
+        and "self.stopped_epoch" not in outside_guard_text
     )
+
+
+def _has_unconditionally_logged_dry_run_decision(method: ast.FunctionDef) -> bool:
+    """Require dry-run logging that always exposes the computed decision values."""
+    parents = {child: parent for parent in ast.walk(method) for child in ast.iter_child_nodes(parent)}
+    for branch in ast.walk(method):
+        if not isinstance(branch, ast.If) or not isinstance(branch.test, ast.Name) or branch.test.id != "dry_run":
+            continue
+        for node in ast.walk(branch):
+            if not isinstance(node, ast.Call) or not _is_dry_run_body_node(node, branch, parents):
+                continue
+            if _is_decision_gated(node, parents) or not _is_log_call(node):
+                continue
+            if _decision_log_references_computed_values(node, method, parents):
+                return True
+    return False
+
+
+def _is_dry_run_body_node(node: ast.AST, branch: ast.If, parents: Mapping[ast.AST, ast.AST]) -> bool:
+    """Return whether a node occurs on the true path of one ``if dry_run`` branch."""
+    current = node
+    while parents.get(current) is not branch:
+        parent = parents.get(current)
+        if parent is None:
+            return False
+        current = parent
+    return current in branch.body
+
+
+def _is_decision_gated(node: ast.AST, parents: Mapping[ast.AST, ast.AST]) -> bool:
+    """Return whether a log is conditional on ``reason`` or ``verbose``."""
+    current = node
+    while (parent := parents.get(current)) is not None:
+        if isinstance(parent, ast.If):
+            gate_names = {name.id for name in ast.walk(parent.test) if isinstance(name, ast.Name)}
+            gate_attributes = {
+                attribute.attr for attribute in ast.walk(parent.test) if isinstance(attribute, ast.Attribute)
+            }
+            if gate_names & {"reason", "verbose"} or gate_attributes & {"reason", "verbose"}:
+                return True
+        current = parent
+    return False
+
+
+def _is_log_call(node: ast.Call) -> bool:
+    """Return whether one call uses the callback's normal log boundary."""
+    return "log." in ast.unparse(node.func) or "_log_info" in ast.unparse(node.func)
+
+
+def _decision_log_references_computed_values(
+    node: ast.Call, method: ast.FunctionDef, parents: Mapping[ast.AST, ast.AST]
+) -> bool:
+    """Require a log argument to interpolate both values directly or through one local message."""
+    values = [*node.args, *(keyword.value for keyword in node.keywords)]
+    if any(_interpolates_decision_values(value) for value in values):
+        return True
+    for value in values:
+        for name in ast.walk(value):
+            if not isinstance(name, ast.Name):
+                continue
+            assigned_value = _nearest_ungated_assignment_value(method, node, name.id, parents)
+            if assigned_value is not None and _interpolates_decision_values(assigned_value):
+                return True
+    return False
+
+
+def _nearest_ungated_assignment_value(
+    method: ast.FunctionDef, call: ast.Call, name: str, parents: Mapping[ast.AST, ast.AST]
+) -> ast.expr | None:
+    """Return the nearest prior local assignment that can reach an unconditional log."""
+    assignments: list[tuple[int, ast.expr]] = []
+    for node in ast.walk(method):
+        if _is_decision_gated(node, parents) or getattr(node, "lineno", 0) >= call.lineno:
+            continue
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name for target in node.targets
+        ):
+            assignments.append((node.lineno, node.value))
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+            and node.value
+        ):
+            assignments.append((node.lineno, node.value))
+    return max(assignments, default=(-1, None), key=lambda assignment: assignment[0])[1]
+
+
+def _interpolates_decision_values(value: ast.expr) -> bool:
+    """Return whether one f-string exposes both decision values in the required message form."""
+    if not isinstance(value, ast.JoinedStr):
+        return False
+    names = {name.id for name in ast.walk(value) if isinstance(name, ast.Name)}
+    literals = "".join(
+        part.value for part in value.values if isinstance(part, ast.Constant) and isinstance(part.value, str)
+    )
+    return {"should_stop", "reason"}.issubset(names) and "should_stop=" in literals
 
 
 def _reason_log_precedes_save(method: ast.FunctionDef) -> bool:
@@ -414,16 +804,37 @@ def _reason_log_precedes_save(method: ast.FunctionDef) -> bool:
     return False
 
 
-def _verbose_log_present(method: ast.FunctionDef) -> bool:
-    """Require verbose-gated base setup logging without fixing message wording."""
-    return any(
-        isinstance(node, ast.If) and "verbose" in ast.unparse(node.test) and "log.debug" in ast.unparse(node)
-        for node in method.body
+def _verbose_environment_log_precedes_device_setup(method: ast.FunctionDef) -> bool:
+    """Require one verbose-gated debug log before the existing device setup call."""
+    verbose_logs = [
+        index
+        for index, node in enumerate(method.body)
+        if isinstance(node, ast.If) and "verbose" in ast.unparse(node.test) and "log.debug" in ast.unparse(node)
+    ]
+    device_setup = [index for index, node in enumerate(method.body) if "accelerator.setup_device" in ast.unparse(node)]
+    return len(verbose_logs) == 1 and len(device_setup) == 1 and verbose_logs[0] < device_setup[0]
+
+
+def _super_verbose_environment_call_present(method: ast.FunctionDef) -> bool:
+    """Require exactly one cooperative environment setup call carrying verbose."""
+    calls = [
+        node
+        for node in ast.walk(method)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "setup_environment"
+        and isinstance(node.func.value, ast.Call)
+        and isinstance(node.func.value.func, ast.Name)
+        and node.func.value.func.id == "super"
+    ]
+    return len(calls) == 1 and any(
+        keyword.arg == "verbose" and isinstance(keyword.value, ast.Name) and keyword.value.id == "verbose"
+        for keyword in calls[0].keywords
     )
 
 
-def _super_verbose_call_present(method: ast.FunctionDef) -> bool:
-    """Require an override to pass verbose into immediate base setup."""
+def _super_setup_call_present(method: ast.FunctionDef) -> bool:
+    """Reject the behavior-breaking full setup call from environment overrides."""
     return any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
@@ -431,12 +842,41 @@ def _super_verbose_call_present(method: ast.FunctionDef) -> bool:
         and isinstance(node.func.value, ast.Call)
         and isinstance(node.func.value.func, ast.Name)
         and node.func.value.func.id == "super"
-        and any(
-            keyword.arg == "verbose" and isinstance(keyword.value, ast.Name) and keyword.value.id == "verbose"
-            for keyword in node.keywords
-        )
         for node in ast.walk(method)
     )
+
+
+def _normalized_setup_environment_body_sha256(method: ast.FunctionDef, *, is_base: bool) -> str:
+    """Hash pre-existing behavior after removing only requested changes and the docstring."""
+    body = copy.deepcopy(method.body)
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body.pop(0)
+    if is_base:
+        body = [
+            node
+            for node in body
+            if not (
+                isinstance(node, ast.If) and "verbose" in ast.unparse(node.test) and "log.debug" in ast.unparse(node)
+            )
+        ]
+    else:
+        for node in ast.walk(ast.Module(body=body, type_ignores=[])):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "setup_environment"
+                and isinstance(node.func.value, ast.Call)
+                and isinstance(node.func.value.func, ast.Name)
+                and node.func.value.func.id == "super"
+            ):
+                node.keywords = [keyword for keyword in node.keywords if keyword.arg != "verbose"]
+    payload = ast.dump(ast.Module(body=body, type_ignores=[]), include_attributes=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def build_edit_task_contract(task: Mapping[str, Any]) -> EditTaskContract:

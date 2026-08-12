@@ -35,27 +35,37 @@ def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
     return None
 
 
-def codemap_bin_on_path(env: dict[str, str]) -> dict[str, str]:
-    """Prepend the newest installed codemap-py ``bin/`` dir to ``env['PATH']`` (in place).
+def codemap_bin_on_path(env: dict[str, str], plugin_root: Path) -> dict[str, str]:
+    """Prepend one explicit, scope-locked Codemap plugin ``bin/`` to ``PATH``.
 
     Plugin ``bin/`` dirs are not reliably added to PATH in ``claude -p`` mode, so runners
-    inject the codemap ``bin/`` explicitly to keep ``scan-query`` reachable inside skill
-    Bash calls. Mutates and returns the same dict for convenient chaining.
+    inject the benchmark fixture explicitly. Never discover a mutable user-cache version:
+    doing so would let the process execute bytes absent from the paid scope hash. Mutates
+    and returns the same dict for convenient chaining.
 
     Args:
         env: Environment mapping to augment (typically ``os.environ.copy()``).
+        plugin_root: Locked ``plugins/codemap-py`` directory supplied by the runner.
 
     Returns:
-        The same ``env`` dict, with ``PATH`` prepended when a bin dir was found.
+        The same ``env`` dict with the locked ``bin/`` directory prepended.
+
+    Raises:
+        FileNotFoundError: If the locked ``codemap-py`` launcher is missing.
 
     Examples:
-        >>> "PATH" in codemap_bin_on_path({"PATH": "/usr/bin"})
+        >>> import pathlib, tempfile
+        >>> root = pathlib.Path(tempfile.mkdtemp())
+        >>> (root / "bin").mkdir()
+        >>> _ = (root / "bin" / "codemap-py").write_text("")
+        >>> codemap_bin_on_path({"PATH": "/usr/bin"}, root)["PATH"].startswith(str(root / "bin"))
         True
     """
-    plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap-py"
-    bin_dirs = sorted(plugin_cache.glob("*/bin"), reverse=True)  # latest version first
-    if bin_dirs:
-        env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")
+    plugin_root = plugin_root.resolve()
+    launcher = plugin_root / "bin" / "codemap-py"
+    if not launcher.is_file():
+        raise FileNotFoundError(f"locked Codemap launcher not found: {launcher}")
+    env["PATH"] = str(launcher.parent) + os.pathsep + env.get("PATH", "")
     return env
 
 

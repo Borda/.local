@@ -216,6 +216,7 @@ import inspect
 import json
 import os
 import re
+import shlex
 import statistics
 import subprocess
 import sys
@@ -240,6 +241,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bench_common.benchmark_paths import RESULTS_DIR  # noqa: E402
 from _bench_common.claude_transport import MODEL_TIMEOUT, MODELS, parse_result_usage, stream_claude  # noqa: E402
 from _bench_common.codemap_discovery import codemap_bin_on_path, resolve_index_path  # noqa: E402
+from _bench_common import presentation  # noqa: E402
 from _bench_common.presentation import fmt_time, fmt_tok, make_progress  # noqa: E402
 from _bench_common.python_source import extract_import_targets, iter_py_files, module_from_init_chain  # noqa: E402
 
@@ -274,17 +276,50 @@ from _bench_common.readcrop_contracts import (  # noqa: E402
     parse_readcrop_answer,
     score_readcrop_answer,
 )
-from _bench_common.edit_patch_contracts import build_fix_multi_contract  # noqa: E402
+from _bench_common.edit_patch_contracts import (  # noqa: E402
+    FixMultiContract,
+    FixSingleContract,
+    build_fix_multi_contract,
+    build_fix_single_contract,
+)
+from _bench_common.mutation_isolation import (  # noqa: E402
+    create_executable_agent_workspace,
+    execute_fix_multi_patch,
+    execute_fix_single_patch,
+    relocate_frozen_index_for_worktree,
+)
+from _bench_common.paid_lifecycle import PaidStageCallbacks, run_paid_stage, write_checksums  # noqa: E402
 
 _console = _Console()
 
 PARITY_MANIFEST_PATH = Path(__file__).resolve().parent / "manifests" / "provider-parity-methodology.json"
 READCROP_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-readcrop.json"
+FIX_SINGLE_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-fix-single.json"
 FIX_MULTI_TASKS_PATH = Path(__file__).resolve().parent / "suites" / "tasks-fix-multi.json"
 READCROP_ARMS = ("A_plain", "B_auto", "C_strict")
+FIX_SINGLE_ARMS = READCROP_ARMS
 FIX_MULTI_ARMS = READCROP_ARMS
 LEGACY_EXPERIMENT_REVISION = "legacy-unversioned"
 _READCROP_ANSWER_RE = re.compile(r"BEGIN_READ_CROP_JSON\s*(?P<payload>\{.*?\})\s*END_READ_CROP_JSON", re.DOTALL)
+_FIX_SINGLE_QUERY_ARGUMENTS = {
+    "FS-01": ("symbol", "EarlyStopping.__init__"),
+    "FS-02": ("symbol", "EarlyStopping.__init__"),
+    "FS-03": ("symbol", "ModelCheckpoint._save_checkpoint"),
+    "FS-04": ("symbol", "ModelCheckpoint.__init__"),
+}
+_FIX_MULTI_QUERY_ARGUMENTS = {
+    "FM-01": (
+        "fn-rdeps",
+        "lightning.pytorch.callbacks.early_stopping::EarlyStopping._run_early_stopping_check",
+        "--exclude-tests",
+    ),
+    "FM-02": (
+        "fn-rdeps",
+        "lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_checkpoint",
+        "--exclude-tests",
+    ),
+    "FM-03": ("find-symbol", r"Strategy\.setup_environment$", "--exclude-tests", "--limit", "0"),
+}
 
 
 def _manifest_sha256(manifest_path: Path) -> str:
@@ -331,6 +366,7 @@ def load_claude_readcrop_tasks(
     repo_path: Path,
     tasks_path: Path = READCROP_TASKS_PATH,
     manifest_path: Path = PARITY_MANIFEST_PATH,
+    selected_ids: Sequence[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Load the locked ReadCrop suite with source-anchored shared contracts."""
     raw_tasks = load_task_suite(tasks_path)
@@ -349,8 +385,11 @@ def load_claude_readcrop_tasks(
     if suite.get("semantic_suite_sha256") != semantic_suite_hash(raw_tasks):
         raise ValueError("read-crop suite identity drifted")
     rows = {row.get("id"): row for row in suite.get("tasks", []) if isinstance(row, Mapping)}
+    wanted = set(selected_ids or [str(task["id"]) for task in raw_tasks])
     loaded: list[dict[str, Any]] = []
     for task in raw_tasks:
+        if task["id"] not in wanted:
+            continue
         row = rows.get(task["id"])
         if not isinstance(row, Mapping) or row.get("canonical_task_sha256") != canonical_task_hash(task):
             raise ValueError(f"read-crop task identity drifted for {task['id']}")
@@ -358,15 +397,21 @@ def load_claude_readcrop_tasks(
             raise ValueError(f"read-crop prompt identity drifted for {task['id']}")
         source = extract_readcrop_symbol_source(repo_path, str(task["primary_module"]), str(task["symbol"]))
         loaded.append({"task": task, "source": source, "contract": build_readcrop_contract(task, source=source)})
+    if {item["contract"].task_id for item in loaded} != wanted:
+        raise ValueError("--tasks must select known read-crop task IDs")
     return loaded
 
 
 def readcrop_prompt(arm: str, task: Mapping[str, Any]) -> str:
     """Build the shared strict answer envelope with an arm-only tool supplement."""
+    symbol = str(task["symbol"])
     supplements = {
         "A_plain": "Codemap is absent and inaccessible. Use ordinary repository tools.",
-        "B_auto": "Codemap is installed and available through /codemap:query-code; use it when useful.",
-        "C_strict": "Codemap is installed and available through /codemap:query-code. Use Codemap at least once.",
+        "B_auto": "Codemap is installed and available through /codemap-py:query-code; use it when useful.",
+        "C_strict": (
+            "Codemap is installed. Before reading source, invoke the exact Skill query "
+            f"`/codemap-py:query-code symbol {symbol}`. The benchmark verifies its completed frozen CLI query."
+        ),
     }
     try:
         supplement = supplements[arm]
@@ -388,43 +433,218 @@ def readcrop_prompt(arm: str, task: Mapping[str, Any]) -> str:
     return f"{supplement}\n\n{task['prompt']}\n\n{envelope}"
 
 
-def parse_claude_readcrop_events(events: Sequence[Mapping[str, Any]], *, arm: str, contract: Any) -> dict[str, Any]:
+def _tool_result_text(content: Any) -> str:
+    """Return one Claude tool result as plain text for success classification."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(str(item.get("text", "")) if isinstance(item, Mapping) else str(item) for item in content)
+    return str(content)
+
+
+def _query_arguments_from_bash(command: str) -> tuple[str, ...] | None:
+    """Return canonical Codemap query arguments from one executable Bash command.
+
+    The decision-grade treatment credits only the stable PATH command
+    ``codemap-py query ...``, its installable absolute launcher, or the legacy
+    ``scan-query ...`` launcher. A Skill invocation remains insufficient until
+    its underlying CLI command completes against the frozen checkout.
+    """
+    boundary = r"(?:^|&&|\|\||;|\|)\s*"
+    environment = r"(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+    launcher = (
+        r"(?:codemap-py|/[^\s'\"`|;&()<>]*/bin/codemap-py|\$\{CLAUDE_PLUGIN_ROOT:-plugins/codemap-py\}/bin/codemap-py)"
+    )
+    command_token = rf'(?:"{launcher}"|{launcher})'
+    canonical = re.search(rf"{boundary}{environment}{command_token}\s+query\s+([^\n;&|]+)", command)
+    if canonical is not None:
+        return _command_arguments(canonical.group(1))
+    legacy = re.search(rf"{boundary}{environment}(?:\S*/)?scan-query\s+([^\n;&|]+)", command)
+    return _command_arguments(legacy.group(1)) if legacy is not None else None
+
+
+def _command_arguments(value: str) -> tuple[str, ...]:
+    """Drop shell-only redirections from one already-isolated command tail."""
+    return tuple(token for token in shlex.split(value) if token != "--compact" and not re.match(r"(?:\d?>|>&)", token))
+
+
+def _absolute_codemap_launchers(command: str) -> set[Path]:
+    """Return absolute plugin launchers that are permitted outside one worktree."""
+    return {
+        Path(path).resolve()
+        for path in re.findall(r"(?<![A-Za-z0-9_.-])(/[^\s'\"`|;&()<>]*/bin/codemap-py)(?=\"?\s+query\b)", command)
+    }
+
+
+def _tool_input_strings(value: Any) -> Iterator[str]:
+    """Yield string leaves from a native Claude tool-input object."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, Mapping):
+        for nested in value.values():
+            yield from _tool_input_strings(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _tool_input_strings(nested)
+
+
+def _outside_workspace_path_evidence(
+    events: Sequence[Mapping[str, Any]], workspace_root: Path | None
+) -> tuple[list[str], list[str]]:
+    """Return attempted and successful absolute accesses outside the checkout.
+
+    The harness may safely expose the disposable checkout by absolute path,
+    but only a successful external access can leak source bytes into an answer.
+    Denied guesses remain diagnostic evidence without quarantining a clean cell.
+    """
+    if workspace_root is None:
+        return [], []
+    root = workspace_root.resolve()
+    benign_shell_endpoints = {Path("/dev/null"), Path("/dev/stdout"), Path("/dev/stderr")}
+    attempted: list[str] = []
+    successful: list[str] = []
+    attempted_seen: set[str] = set()
+    successful_seen: set[str] = set()
+    pending: dict[str, list[str]] = {}
+    for event in events:
+        content = event.get("message", {}).get("content", [])
+        if not isinstance(content, list):
+            continue
+        if event.get("type") == "assistant":
+            for block in content:
+                if not isinstance(block, Mapping) or block.get("type") != "tool_use":
+                    continue
+                allowed_launchers = (
+                    _absolute_codemap_launchers(str(block.get("input", {}).get("command", "")))
+                    if block.get("name") == "Bash" and isinstance(block.get("input"), Mapping)
+                    else set()
+                )
+                block_paths: list[str] = []
+                for value in _tool_input_strings(block.get("input", {})):
+                    variable_launchers = [
+                        match.span()
+                        for match in re.finditer(
+                            re.escape("${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"), value
+                        )
+                    ]
+                    for path_match in re.finditer(r"(?<![A-Za-z0-9_.-])/(?:[^\s'\"`|;&()<>]+)", value):
+                        # A slash after a glob or shell expansion terminator continues a relative token.
+                        if path_match.start() and value[path_match.start() - 1] in "*?]})":
+                            continue
+                        raw_path = path_match.group()
+                        if any(
+                            start <= path_match.start() and path_match.end() <= end for start, end in variable_launchers
+                        ):
+                            continue
+                        candidate = Path(raw_path).resolve()
+                        if (
+                            candidate in benign_shell_endpoints
+                            or candidate in allowed_launchers
+                            or candidate.is_relative_to(root)
+                        ):
+                            continue
+                        normalized = str(candidate)
+                        if normalized not in attempted_seen:
+                            attempted_seen.add(normalized)
+                            attempted.append(normalized)
+                        if normalized not in block_paths:
+                            block_paths.append(normalized)
+                if block_paths:
+                    pending[str(block.get("id", ""))] = block_paths
+        elif event.get("type") == "user":
+            for block in content:
+                if not isinstance(block, Mapping) or block.get("type") != "tool_result":
+                    continue
+                paths = pending.pop(str(block.get("tool_use_id", "")), [])
+                result_text = _tool_result_text(block.get("content", ""))
+                if block.get("is_error") or "<tool_use_error>" in result_text:
+                    continue
+                for normalized in paths:
+                    if normalized in successful_seen:
+                        continue
+                    successful_seen.add(normalized)
+                    successful.append(normalized)
+    return attempted, successful
+
+
+def _frozen_index_recovery_attempted(events: Sequence[Mapping[str, Any]]) -> bool:
+    """Return whether native tool input tried to rebuild the frozen index."""
+    recovery = re.compile(r"(?:\bcodemap-py\s+(?:scan|index)\b|\bscan-index\b|\bscan\s+--incremental\b)")
+    for event in events:
+        if event.get("type") != "assistant":
+            continue
+        content = event.get("message", {}).get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, Mapping) or block.get("type") != "tool_use":
+                continue
+            if any(recovery.search(value) for value in _tool_input_strings(block.get("input", {}))):
+                return True
+    return False
+
+
+def _claude_codemap_evidence(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Count completed underlying Codemap CLI queries, never wrapper launches.
+
+    A successful Claude ``Skill`` result only proves that the wrapper ran; it
+    does not prove that its nested command accessed the frozen index. Canonical
+    C-strict evidence therefore requires a matching successful Bash result for
+    ``codemap-py query`` or legacy ``scan-query``.
+    """
+    pending: dict[str, tuple[str, ...]] = {}
+    observed = 0
+    skill_launches = 0
+    query_skill_launches = 0
+    successful_arguments: list[list[str]] = []
+    for event in events:
+        content = event.get("message", {}).get("content", [])
+        if not isinstance(content, list):
+            continue
+        if event.get("type") == "assistant":
+            for block in content:
+                if not isinstance(block, Mapping) or block.get("type") != "tool_use":
+                    continue
+                name = block.get("name")
+                tool_input = block.get("input")
+                if not isinstance(tool_input, Mapping):
+                    continue
+                if name == "Skill" and "codemap" in str(tool_input.get("skill", "")):
+                    skill_launches += 1
+                    if str(tool_input.get("skill", "")) == "codemap-py:query-code":
+                        query_skill_launches += 1
+                arguments = _query_arguments_from_bash(str(tool_input.get("command", ""))) if name == "Bash" else None
+                if arguments is not None:
+                    observed += 1
+                    pending[str(block.get("id", ""))] = arguments
+        elif event.get("type") == "user":
+            for block in content:
+                if not isinstance(block, Mapping) or block.get("type") != "tool_result":
+                    continue
+                arguments = pending.pop(str(block.get("tool_use_id", "")), None)
+                if arguments is None:
+                    continue
+                result_text = _tool_result_text(block.get("content", ""))
+                if not block.get("is_error") and "<tool_use_error>" not in result_text:
+                    successful_arguments.append(list(arguments))
+    return {
+        "codemap_calls": observed,
+        "codemap_successful_calls": len(successful_arguments),
+        "codemap_skill_launches": skill_launches,
+        "codemap_query_skill_launches": query_skill_launches,
+        "successful_query_arguments": successful_arguments,
+    }
+
+
+def parse_claude_readcrop_events(
+    events: Sequence[Mapping[str, Any]], *, arm: str, contract: Any, workspace_root: Path | None = None
+) -> dict[str, Any]:
     """Normalize Claude stream-json events without estimating unavailable tool payload tokens."""
     if arm not in READCROP_ARMS:
         raise ValueError(f"unsupported Claude read-crop arm {arm!r}")
-    output_text = ""
-    codemap_calls = 0
-    command_calls = 0
-    usage = None
-    raw_events: list[Mapping[str, Any]] = []
-    for event in events:
-        raw_events.append(event)
-        if event.get("type") == "assistant":
-            content = event.get("message", {}).get("content", [])
-            if not isinstance(content, list):
-                continue
-            for block in content:
-                if not isinstance(block, Mapping):
-                    continue
-                if block.get("type") == "text" and isinstance(block.get("text"), str):
-                    output_text += block["text"]
-                if block.get("type") != "tool_use":
-                    continue
-                command_calls += 1
-                name = block.get("name")
-                tool_input = block.get("input")
-                if (
-                    name == "Skill"
-                    and isinstance(tool_input, Mapping)
-                    and "codemap" in str(tool_input.get("skill", ""))
-                ):
-                    codemap_calls += 1
-                if name == "Bash" and isinstance(tool_input, Mapping):
-                    command = str(tool_input.get("command", ""))
-                    if re.search(r"(?:^|/)scan-query\s+symbol\s+\S", command):
-                        codemap_calls += 1
-        elif event.get("type") == "result":
-            usage = parse_result_usage(dict(event))
+    summary = _claude_event_summary(events)
+    output_text = summary["output_text"]
+    native_usage = summary.pop("usage")
     match = _READCROP_ANSWER_RE.search(output_text)
     answer_error = ""
     score = None
@@ -435,15 +655,30 @@ def parse_claude_readcrop_events(events: Sequence[Mapping[str, Any]], *, arm: st
             score = score_readcrop_answer(contract, parse_readcrop_answer(match.group("payload")))
         except ValueError as exc:
             answer_error = str(exc)
-    native_usage = usage if usage is not None else parse_result_usage({})
     tool_result_tokens = None
     ReadcropUsage(native_usage.input_tokens, tool_result_tokens)
-    contaminated = arm == "A_plain" and codemap_calls > 0
-    compliance = {"A_plain": not contaminated, "B_auto": True, "C_strict": codemap_calls > 0}[arm]
+    codemap = _claude_codemap_evidence(events)
+    codemap_calls = int(codemap["codemap_calls"])
+    codemap_successful_calls = int(codemap["codemap_successful_calls"])
+    attempted_outside_paths, outside_paths = _outside_workspace_path_evidence(events, workspace_root)
+    recovery_attempted = _frozen_index_recovery_attempted(events)
+    contaminated = bool(
+        (arm == "A_plain" and (codemap_calls > 0 or int(codemap["codemap_skill_launches"]) > 0))
+        or outside_paths
+        or recovery_attempted
+    )
+    strict_query = None if arm != "C_strict" else ["symbol", contract.symbol] in codemap["successful_query_arguments"]
+    compliance = {
+        "A_plain": not contaminated,
+        "B_auto": True,
+        "C_strict": bool(codemap["codemap_query_skill_launches"])
+        and bool(codemap_successful_calls)
+        and bool(strict_query),
+    }[arm]
     return {
         "task_id": contract.task_id,
         "arm": arm,
-        "success": native_usage.success and not answer_error and not contaminated,
+        "success": native_usage.success and not answer_error and compliance and not contaminated,
         "answer_error": answer_error,
         "primary_correct": score.primary_correct if score is not None else False,
         "quality_score": score.quality_score if score is not None else None,
@@ -464,17 +699,23 @@ def parse_claude_readcrop_events(events: Sequence[Mapping[str, Any]], *, arm: st
         ),
         "output_tokens": native_usage.output_tokens,
         "tool_result_tokens": tool_result_tokens,
-        "command_calls": command_calls,
+        "command_calls": summary["command_calls"],
         "codemap_calls": codemap_calls,
-        "codemap_used": codemap_calls > 0,
+        "codemap_successful_calls": codemap_successful_calls,
+        "codemap_skill_launches": codemap["codemap_skill_launches"],
+        "codemap_query_skill_launches": codemap["codemap_query_skill_launches"],
+        "codemap_attempted": codemap_calls > 0,
+        "codemap_used": codemap_successful_calls > 0,
+        "successful_query_arguments": codemap["successful_query_arguments"],
+        "strict_query_conformance": strict_query,
         "compliance": compliance,
         "contaminated": contaminated,
+        "attempted_outside_workspace_paths": attempted_outside_paths,
+        "outside_workspace_paths": outside_paths,
+        "frozen_index_recovery_attempted": recovery_attempted,
+        "pooling_eligible": bool(native_usage.success and not answer_error and compliance and not contaminated),
         "native_subtype": native_usage.subtype,
-        "output_text": output_text,
-        "raw_events": raw_events,
-        "raw_events_sha256": hashlib.sha256(
-            json.dumps(raw_events, separators=(",", ":"), sort_keys=True).encode("utf-8")
-        ).hexdigest(),
+        **summary,
         "provider_binding": dict(contract.provider_binding()),
     }
 
@@ -510,32 +751,15 @@ def resolve_readcrop_scope(
     return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
 
 
-def _run_readcrop_no_model(
-    *, repo_path: Path | None, tasks_path: Path, manifest_path: Path, dry_run: bool, resolve_scope: bool
-) -> None:
-    """Resolve or print the source-bound Claude ReadCrop plan without launching Claude."""
-    if repo_path is None:
-        sys.exit("repo_path is required for source-bound Claude read-crop planning.")
-    if not dry_run and not resolve_scope:
-        sys.exit("Claude read-crop adapter is no-model only; choose --dry-run or --resolve-scope.")
-    loaded = load_claude_readcrop_tasks(Path(repo_path), tasks_path, manifest_path)
-    scope = resolve_readcrop_scope(loaded, manifest_path, tasks_path)
-    if resolve_scope:
-        print(json.dumps(scope, sort_keys=True))
-        return
-    print("READCROP PREFLIGHT (no model)")
-    for item in loaded:
-        for arm in READCROP_ARMS:
-            print(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}")
-    print(f"SCOPE   {scope['scope_sha256']}")
-
-
-def load_claude_fix_multi_tasks(
-    tasks_path: Path = FIX_MULTI_TASKS_PATH,
-    manifest_path: Path = PARITY_MANIFEST_PATH,
-    selected_ids: Sequence[str] | None = None,
+def _load_claude_fix_tasks(
+    *,
+    study: str,
+    tasks_path: Path,
+    manifest_path: Path,
+    selected_ids: Sequence[str] | None,
+    contract_builder: Callable[[Mapping[str, Any]], FixSingleContract | FixMultiContract],
 ) -> list[dict[str, Any]]:
-    """Load canonical Fix-Multi tasks with the provider-neutral contract owner."""
+    """Load one canonical fix suite while preserving its manifest identity."""
     raw_tasks = load_task_suite(tasks_path)
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -544,13 +768,14 @@ def load_claude_fix_multi_tasks(
     suites = manifest.get("suites") if isinstance(manifest, Mapping) else None
     if not isinstance(suites, list):
         raise ValueError("provider-parity manifest requires suites")
-    suite = next((item for item in suites if item.get("path") == "benchmarks/suites/tasks-fix-multi.json"), None)
+    relative_suite_path = f"benchmarks/suites/tasks-{study}.json"
+    suite = next((item for item in suites if item.get("path") == relative_suite_path), None)
     if not isinstance(suite, Mapping):
-        raise ValueError("provider-parity manifest lacks the fix-multi suite")
+        raise ValueError(f"provider-parity manifest lacks the {study} suite")
     if suite.get("ordered_task_ids") != [task["id"] for task in raw_tasks]:
-        raise ValueError("fix-multi task order drifted")
+        raise ValueError(f"{study} task order drifted")
     if suite.get("semantic_suite_sha256") != semantic_suite_hash(raw_tasks):
-        raise ValueError("fix-multi suite identity drifted")
+        raise ValueError(f"{study} suite identity drifted")
     rows = {row.get("id"): row for row in suite.get("tasks", []) if isinstance(row, Mapping)}
     wanted = set(selected_ids or [str(task["id"]) for task in raw_tasks])
     loaded: list[dict[str, Any]] = []
@@ -559,13 +784,77 @@ def load_claude_fix_multi_tasks(
             continue
         row = rows.get(task["id"])
         if not isinstance(row, Mapping) or row.get("canonical_task_sha256") != canonical_task_hash(task):
-            raise ValueError(f"fix-multi task identity drifted for {task['id']}")
+            raise ValueError(f"{study} task identity drifted for {task['id']}")
         if row.get("prompt_sha256") != prompt_hash(task):
-            raise ValueError(f"fix-multi prompt identity drifted for {task['id']}")
-        loaded.append({"task": task, "contract": build_fix_multi_contract(task)})
+            raise ValueError(f"{study} prompt identity drifted for {task['id']}")
+        loaded.append({"task": task, "contract": contract_builder(task)})
     if {item["contract"].task_id for item in loaded} != wanted:
-        raise ValueError("--tasks must select known fix-multi task IDs")
+        raise ValueError(f"--tasks must select known {study} task IDs")
     return loaded
+
+
+def load_claude_fix_single_tasks(
+    tasks_path: Path = FIX_SINGLE_TASKS_PATH,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    selected_ids: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Load canonical Fix-Single tasks with the provider-neutral contract owner."""
+    return _load_claude_fix_tasks(
+        study="fix-single",
+        tasks_path=tasks_path,
+        manifest_path=manifest_path,
+        selected_ids=selected_ids,
+        contract_builder=build_fix_single_contract,
+    )
+
+
+def load_claude_fix_multi_tasks(
+    tasks_path: Path = FIX_MULTI_TASKS_PATH,
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    selected_ids: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Load canonical Fix-Multi tasks with the provider-neutral contract owner."""
+    return _load_claude_fix_tasks(
+        study="fix-multi",
+        tasks_path=tasks_path,
+        manifest_path=manifest_path,
+        selected_ids=selected_ids,
+        contract_builder=build_fix_multi_contract,
+    )
+
+
+def _resolve_claude_fix_scope(
+    *, study: str, tasks: Sequence[Mapping[str, Any]], manifest_path: Path, tasks_path: Path
+) -> dict[str, Any]:
+    """Bind one Claude fix suite to provider-neutral task contracts."""
+    task_ids = [str(item["contract"].task_id) for item in tasks]
+    if not task_ids or len(set(task_ids)) != len(task_ids):
+        raise ValueError(f"Claude {study} scope requires unique selected task IDs")
+    payload: dict[str, Any] = {
+        "provider": "claude",
+        "study": study,
+        "manifest_sha256": _manifest_sha256(manifest_path),
+        "suite_sha256": hashlib.sha256(tasks_path.read_bytes()).hexdigest(),
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "task_ids": task_ids,
+        "arms": list(FIX_SINGLE_ARMS),
+        "repetitions": 1,
+        "total_cells": len(tasks) * len(FIX_SINGLE_ARMS),
+        "contracts": {item["contract"].task_id: dict(item["contract"].provider_binding()) for item in tasks},
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def resolve_claude_fix_single_scope(
+    tasks: Sequence[Mapping[str, Any]],
+    manifest_path: Path = PARITY_MANIFEST_PATH,
+    tasks_path: Path = FIX_SINGLE_TASKS_PATH,
+) -> dict[str, Any]:
+    """Bind Claude planning to the shared Fix-Single science contract."""
+    return _resolve_claude_fix_scope(
+        study="fix-single", tasks=tasks, manifest_path=manifest_path, tasks_path=tasks_path
+    )
 
 
 def resolve_claude_fix_multi_scope(
@@ -574,41 +863,651 @@ def resolve_claude_fix_multi_scope(
     tasks_path: Path = FIX_MULTI_TASKS_PATH,
 ) -> dict[str, Any]:
     """Bind Claude planning to the shared Fix-Multi science contract."""
-    task_ids = [str(item["contract"].task_id) for item in tasks]
-    if not task_ids or len(set(task_ids)) != len(task_ids):
-        raise ValueError("Claude fix-multi scope requires unique selected task IDs")
-    payload: dict[str, Any] = {
-        "provider": "claude",
-        "study": "fix-multi",
-        "manifest_sha256": _manifest_sha256(manifest_path),
-        "suite_sha256": hashlib.sha256(tasks_path.read_bytes()).hexdigest(),
-        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "task_ids": task_ids,
-        "arms": list(FIX_MULTI_ARMS),
-        "repetitions": 1,
-        "total_cells": len(tasks) * len(FIX_MULTI_ARMS),
-        "contracts": {item["contract"].task_id: dict(item["contract"].provider_binding()) for item in tasks},
-    }
+    return _resolve_claude_fix_scope(study="fix-multi", tasks=tasks, manifest_path=manifest_path, tasks_path=tasks_path)
+
+
+def _resolve_claude_paid_scope(
+    *,
+    base_scope: Mapping[str, Any],
+    repo_path: Path,
+    index_path: Path,
+    model: str,
+) -> dict[str, Any]:
+    """Bind one Claude paid stage to runtime, transport, and treatment bytes."""
+    if model not in MODELS:
+        raise ValueError(f"Claude paid stage model must be one of {', '.join(MODELS)}")
+    repo_path = repo_path.resolve(strict=True)
+    index_path = index_path.resolve(strict=True)
+    _validate_parity_runtime(repo_path, index_path)
+    plugin_root_text = ModelRunner._codemap_plugin_dir()
+    if plugin_root_text is None:
+        raise ValueError("canonical Claude paid stage requires the repository Codemap plugin fixture")
+    plugin_root = Path(plugin_root_text)
+    treatment_paths = (
+        plugin_root / ".claude-plugin" / "plugin.json",
+        plugin_root / "claude-skills" / "query-code" / "SKILL.md",
+        plugin_root / "bin" / "codemap-py",
+        plugin_root / "bin" / "scan-query",
+    )
+    if any(not path.is_file() for path in treatment_paths):
+        raise ValueError("canonical Claude paid stage treatment artifact is incomplete")
+    payload = {key: value for key, value in base_scope.items() if key != "scope_sha256"}
+    payload.update(
+        {
+            "model": model,
+            "model_id": MODELS[model],
+            "source_binding": {
+                "repo_path": str(repo_path),
+                "commit": _repository_fingerprint(repo_path),
+                "index_path": str(index_path),
+                "index_sha256": _sha256_file(index_path),
+            },
+            "implementation_sha256": {
+                "paid_lifecycle": _sha256_file(Path(__file__).resolve().parent / "_bench_common" / "paid_lifecycle.py"),
+                "claude_transport": _sha256_file(
+                    Path(__file__).resolve().parent / "_bench_common" / "claude_transport.py"
+                ),
+                "mutation_isolation": _sha256_file(
+                    Path(__file__).resolve().parent / "_bench_common" / "mutation_isolation.py"
+                ),
+            },
+            "treatment_sha256": {
+                path.relative_to(plugin_root).as_posix(): _sha256_file(path) for path in treatment_paths
+            },
+        }
+    )
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {**payload, "scope_sha256": hashlib.sha256(encoded).hexdigest()}
 
 
-def _run_fix_multi_no_model(
-    *, tasks_path: Path, manifest_path: Path, selected_ids: Sequence[str] | None, dry_run: bool, resolve_scope: bool
+def _suggested_claude_run_dir(study: str) -> Path:
+    """Return a collision-resistant result path without reserving it."""
+    from uuid import uuid4
+
+    return Path("benchmarks") / "results" / f"claude-{study}-{uuid4().hex[:12]}"
+
+
+def _print_claude_paid_command(
+    *,
+    study: str,
+    repo_path: Path,
+    index_path: Path,
+    model: str,
+    task_ids: Sequence[str],
+    scope_sha256: str,
 ) -> None:
-    """Resolve or print the contract-bound Claude Fix-Multi plan without Claude."""
-    if not dry_run and not resolve_scope:
-        sys.exit("Claude fix-multi adapter is no-model only; choose --dry-run or --resolve-scope.")
-    loaded = load_claude_fix_multi_tasks(tasks_path, manifest_path, selected_ids)
-    scope = resolve_claude_fix_multi_scope(loaded, manifest_path, tasks_path)
+    """Print the exact paid command admitted by the current immutable scope."""
+    print("PAID_COMMAND")
+    print("python3 benchmarks/run-claude-agentic.py \\")
+    print(f"  --study {study} \\")
+    print(f"  --repo-path {repo_path.resolve()} \\")
+    print(f"  --index {index_path.resolve()} \\")
+    print(f"  --model {model} \\")
+    print(f"  --tasks {','.join(task_ids)} \\")
+    print(f"  --run-dir {_suggested_claude_run_dir(study)} \\")
+    print(f"  --paid-approval {scope_sha256}")
+
+
+def _require_claude_paid_request(
+    *,
+    study: str,
+    run_dir: Path | None,
+    paid_approval: str | None,
+    scope: Mapping[str, Any],
+    repo_path: Path,
+    index_path: Path,
+    model: str,
+) -> None:
+    """Reject incomplete, stale, or overwrite-prone paid requests before Claude starts."""
+    expected = str(scope["scope_sha256"])
+    task_ids = [str(task_id) for task_id in scope["task_ids"]]
+    if run_dir is None or paid_approval != expected or Path(run_dir).exists():
+        reasons: list[str] = []
+        if run_dir is None:
+            reasons.append("--run-dir is missing")
+        elif Path(run_dir).exists():
+            reasons.append(f"--run-dir already exists: {run_dir}")
+        if paid_approval != expected:
+            reasons.append(
+                f"stale or missing approval; received --paid-approval: {paid_approval}; current scope: {expected}"
+            )
+        preflight_command = (
+            "python3 benchmarks/run-claude-agentic.py "
+            f"--study {study} --repo-path {repo_path.resolve()} --index {index_path.resolve()} --model {model} "
+            f"--tasks {','.join(task_ids)} --dry-run"
+        )
+        fresh_run_dir = _suggested_claude_run_dir(study)
+        paid_command = (
+            "python3 benchmarks/run-claude-agentic.py \\\n"
+            f"  --study {study} \\\n"
+            f"  --repo-path {repo_path.resolve()} \\\n"
+            f"  --index {index_path.resolve()} \\\n"
+            f"  --model {model} \\\n"
+            f"  --tasks {','.join(task_ids)} \\\n"
+            f"  --run-dir {fresh_run_dir} \\\n"
+            f"  --paid-approval {expected}"
+        )
+        raise ValueError(
+            f"cannot start paid Claude {study} stage: {'; '.join(reasons)}.\n"
+            "No model call was made. The current corrected paid command is:\n"
+            f"{paid_command}\n"
+            "To revalidate it without a model call, run:\n"
+            f"{preflight_command}"
+        )
+
+
+def _run_claude_p1_stage(
+    *,
+    study: str,
+    repo_path: Path | None,
+    index: Path | None,
+    tasks_path: Path,
+    manifest_path: Path,
+    selected_ids: Sequence[str] | None,
+    model: str | None,
+    run_dir: Path | None,
+    paid_approval: str | None,
+    dry_run: bool,
+    resolve_scope: bool,
+) -> None:
+    """Dispatch one canonical Claude P1 stage without duplicating its execution loop."""
+    if study == "readcrop":
+        if repo_path is None:
+            raise ValueError("Claude ReadCrop requires --repo-path for its source-bound oracle")
+        loaded = load_claude_readcrop_tasks(repo_path, tasks_path, manifest_path, selected_ids)
+        base_scope = resolve_readcrop_scope(loaded, manifest_path, tasks_path)
+        arms = READCROP_ARMS
+    elif study == "fix-single":
+        loaded = load_claude_fix_single_tasks(tasks_path, manifest_path, selected_ids)
+        base_scope = resolve_claude_fix_single_scope(loaded, manifest_path, tasks_path)
+        arms = FIX_SINGLE_ARMS
+    else:
+        loaded = load_claude_fix_multi_tasks(tasks_path, manifest_path, selected_ids)
+        base_scope = resolve_claude_fix_multi_scope(loaded, manifest_path, tasks_path)
+        arms = FIX_MULTI_ARMS
+
+    full_scope: Mapping[str, Any] | None = None
+    index_path: Path | None = None
+    if repo_path is not None and model is not None:
+        index_path = find_index(repo_path, index)
+        full_scope = _resolve_claude_paid_scope(
+            base_scope=base_scope, repo_path=repo_path, index_path=index_path, model=model
+        )
+    visible_scope = full_scope or base_scope
     if resolve_scope:
-        print(json.dumps(scope, sort_keys=True))
+        print(json.dumps(dict(visible_scope), sort_keys=True))
         return
-    print("FIX-MULTI PREFLIGHT (no model)")
-    for item in loaded:
-        for arm in FIX_MULTI_ARMS:
-            print(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}")
-    print(f"SCOPE   {scope['scope_sha256']}")
+    if dry_run:
+        print(f"{study.upper()} PREFLIGHT (no model)")
+        for item in loaded:
+            for arm in arms:
+                print(f"PLAN    {item['contract'].task_id:<6} rep=1  {arm}")
+        print(f"SCOPE   {visible_scope['scope_sha256']}")
+        if full_scope is not None and repo_path is not None and index_path is not None and model is not None:
+            _print_claude_paid_command(
+                study=study,
+                repo_path=repo_path,
+                index_path=index_path,
+                model=model,
+                task_ids=[str(item["contract"].task_id) for item in loaded],
+                scope_sha256=str(full_scope["scope_sha256"]),
+            )
+        return
+    if repo_path is None or index_path is None or model is None or full_scope is None:
+        raise ValueError(
+            f"Claude {study} paid execution requires --repo-path, --index, and --model. "
+            "No model call was made; rerun with those inputs and --dry-run for the exact command."
+        )
+    _require_claude_paid_request(
+        study=study,
+        run_dir=run_dir,
+        paid_approval=paid_approval,
+        scope=full_scope,
+        repo_path=repo_path,
+        index_path=index_path,
+        model=model,
+    )
+    assert run_dir is not None
+    run_claude_paid_stage(
+        study=study,
+        tasks=loaded,
+        repo_path=repo_path,
+        index_path=index_path,
+        manifest_path=manifest_path,
+        tasks_path=tasks_path,
+        model=model,
+        run_dir=run_dir,
+        scope=full_scope,
+    )
+
+
+@contextlib.contextmanager
+def _claude_readcrop_workspace(
+    repo_path: Path, index_path: Path, arm: str
+) -> Iterator[tuple[Path, Mapping[str, str] | None]]:
+    """Yield an index-free A copy or root-relocated B/C copy for ReadCrop."""
+    import shutil
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="claude-readcrop-") as temporary:
+        cwd = Path(temporary) / repo_path.name
+        shutil.copytree(repo_path, cwd, ignore=shutil.ignore_patterns(".cache", ".git"), symlinks=True)
+        relocation: Mapping[str, str] | None = None
+        if arm != "A_plain":
+            derived_bytes, relocation = relocate_frozen_index_for_worktree(
+                index_path.read_bytes(), source_root=repo_path, worktree_root=cwd
+            )
+            derived_path = cwd / ".cache" / "codemap" / f"{cwd.name}.json"
+            derived_path.parent.mkdir(parents=True, exist_ok=True)
+            derived_path.write_bytes(derived_bytes)
+        yield cwd, relocation
+
+
+def _claude_fix_prompt(study: str, arm: str, item: Mapping[str, Any]) -> str:
+    """Materialize one canonical executable Claude prompt with arm-only treatment text."""
+    task = item["task"]
+    task_id = str(item["contract"].task_id)
+    query_map = _FIX_SINGLE_QUERY_ARGUMENTS if study == "fix-single" else _FIX_MULTI_QUERY_ARGUMENTS
+    query = " ".join(query_map[task_id])
+    treatments = {
+        "A_plain": "Codemap is absent and inaccessible. Use ordinary repository tools.",
+        "B_auto": (
+            "Codemap is installed through /codemap-py:query-code and may be used for static symbol, caller, importer, "
+            "or dependency facts when useful."
+        ),
+        "C_strict": (
+            "Codemap is installed. Before editing, invoke the exact Skill query "
+            f"`/codemap-py:query-code {query}` and use direct source reads for runtime facts or final confirmation."
+        ),
+    }
+    try:
+        treatment = treatments[arm]
+    except KeyError as exc:
+        raise ValueError(f"unsupported Claude {study} arm {arm!r}") from exc
+    return (
+        f"{treatment}\n\n{task['prompt']}\n\n"
+        "You are inside a benchmark-owned disposable checkout. Implement the minimal complete change directly in "
+        "the checkout. Do not invoke Git, commit, reset, clean, change benchmark metadata, or return a diff. Modify "
+        "only task-required source paths. Codemap is a frozen static graph: never use it to validate runtime behavior, "
+        "execute tests, or apply edits. Finish with a concise summary; the harness captures and scores the Git diff."
+    )
+
+
+def _claude_event_summary(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Normalize provider-native usage, assistant text, and raw event identity."""
+    usage = None
+    partial_input = 0
+    partial_cache_creation = 0
+    partial_cache_read = 0
+    seen_message_ids: set[str] = set()
+    output_text = ""
+    command_calls = 0
+    for event in events:
+        if event.get("type") == "result":
+            usage = parse_result_usage(dict(event))
+        message = event.get("message", {})
+        if event.get("type") != "assistant" or not isinstance(message, Mapping):
+            continue
+        content = message.get("content", [])
+        message_id = message.get("id")
+        native_usage = message.get("usage")
+        if isinstance(message_id, str) and message_id not in seen_message_ids and isinstance(native_usage, Mapping):
+            seen_message_ids.add(message_id)
+            partial_input += int(native_usage.get("input_tokens", 0))
+            partial_cache_creation += int(native_usage.get("cache_creation_input_tokens", 0))
+            partial_cache_read += int(native_usage.get("cache_read_input_tokens", 0))
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, Mapping):
+                continue
+            if block.get("type") == "text" and isinstance(block.get("text"), str):
+                output_text += str(block["text"])
+            elif block.get("type") == "tool_use":
+                command_calls += 1
+    usage_complete = usage is not None
+    if usage is None:
+        usage = parse_result_usage(
+            {
+                "usage": {
+                    "input_tokens": partial_input,
+                    "cache_creation_input_tokens": partial_cache_creation,
+                    "cache_read_input_tokens": partial_cache_read,
+                }
+            }
+        )
+    raw_events = [dict(event) for event in events]
+    return {
+        "usage": usage,
+        "usage_complete": usage_complete,
+        "usage_source": "result" if usage_complete else ("partial_stream" if usage.input_tokens else "unavailable"),
+        "output_text": output_text,
+        "command_calls": command_calls,
+        "raw_events": raw_events,
+        "raw_events_sha256": hashlib.sha256(
+            json.dumps(raw_events, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _parse_claude_fix_cell(
+    *,
+    study: str,
+    item: Mapping[str, Any],
+    arm: str,
+    events: Sequence[Mapping[str, Any]],
+    elapsed_s: float,
+    transport_error: str | None,
+    execution: Mapping[str, Any],
+    workspace_cleanup_verified: bool,
+    index_unchanged: bool,
+    source_unchanged: bool,
+    model: str,
+    workspace_root: Path,
+) -> dict[str, Any]:
+    """Combine Claude transport facts with provider-neutral patch execution evidence."""
+    summary = _claude_event_summary(events)
+    usage = summary.pop("usage")
+    codemap = _claude_codemap_evidence(events)
+    codemap_calls = int(codemap["codemap_calls"])
+    attempted_outside_paths, outside_paths = _outside_workspace_path_evidence(events, workspace_root)
+    recovery_attempted = _frozen_index_recovery_attempted(events)
+    contaminated = bool(
+        (arm == "A_plain" and (codemap_calls > 0 or int(codemap["codemap_skill_launches"]) > 0))
+        or outside_paths
+        or recovery_attempted
+    )
+    expected_query = list(
+        (_FIX_SINGLE_QUERY_ARGUMENTS if study == "fix-single" else _FIX_MULTI_QUERY_ARGUMENTS)[item["contract"].task_id]
+    )
+    strict_query = None if arm != "C_strict" else expected_query in codemap["successful_query_arguments"]
+    compliance = {
+        "A_plain": not contaminated,
+        "B_auto": True,
+        "C_strict": bool(codemap["codemap_query_skill_launches"])
+        and bool(codemap["codemap_successful_calls"])
+        and bool(strict_query),
+    }[arm]
+    path_ok = set(execution["changed_paths"]) == set(item["contract"].expected_paths)
+    primary = bool(execution["baseline_failed"] and execution["patch_applied"] and execution["targeted_test_passed"])
+    success = bool(
+        usage.success and transport_error is None and compliance and workspace_cleanup_verified and not contaminated
+    )
+    pooling_eligible = bool(
+        success
+        and primary
+        and path_ok
+        and execution["cleanup_verified"]
+        and index_unchanged
+        and source_unchanged
+        and not contaminated
+    )
+    return {
+        "study": study,
+        "task_id": item["contract"].task_id,
+        "arm": arm,
+        "model": model,
+        "success": success,
+        "primary_correct": primary,
+        "quality_score": 1.0 if primary else 0.0,
+        "pooling_eligible": pooling_eligible,
+        "input_tokens": usage.input_tokens,
+        "cache_creation_tokens": usage.cache_creation_tokens,
+        "cache_read_tokens": usage.cache_read_tokens,
+        "cached_input_tokens": usage.cache_creation_tokens + usage.cache_read_tokens,
+        "fresh_input_tokens": fresh_input_tokens(
+            usage.input_tokens, usage.cache_creation_tokens + usage.cache_read_tokens
+        ),
+        "token_accounting_inconsistent": token_accounting_inconsistent(
+            usage.input_tokens, usage.cache_creation_tokens + usage.cache_read_tokens
+        ),
+        "output_tokens": usage.output_tokens,
+        "tool_result_tokens": None,
+        "cost_usd": usage.cost_usd,
+        "elapsed_s": elapsed_s,
+        "command_calls": summary["command_calls"],
+        "codemap_calls": codemap_calls,
+        "codemap_successful_calls": codemap["codemap_successful_calls"],
+        "codemap_skill_launches": codemap["codemap_skill_launches"],
+        "codemap_query_skill_launches": codemap["codemap_query_skill_launches"],
+        "codemap_attempted": codemap_calls > 0,
+        "codemap_used": bool(codemap["codemap_successful_calls"]),
+        "successful_query_arguments": codemap["successful_query_arguments"],
+        "strict_query_conformance": strict_query,
+        "compliance": compliance,
+        "contaminated": contaminated,
+        "attempted_outside_workspace_paths": attempted_outside_paths,
+        "outside_workspace_paths": outside_paths,
+        "frozen_index_recovery_attempted": recovery_attempted,
+        "transport_error": transport_error,
+        "native_subtype": usage.subtype,
+        "execution": dict(execution),
+        "patch_generated": bool(execution["changed_paths"]),
+        "changed_path_boundary_passed": path_ok,
+        "workspace_cleanup_verified": workspace_cleanup_verified,
+        "index_unchanged": index_unchanged,
+        "source_unchanged": source_unchanged,
+        "provider_binding": dict(item["contract"].provider_binding()),
+        **summary,
+    }
+
+
+def _source_pair_unchanged(repo_path: Path, index_path: Path, scope: Mapping[str, Any]) -> bool:
+    """Return whether one cell preserved the frozen source commit, status, and index bytes."""
+    status = subprocess.run(
+        ["git", "-C", str(repo_path), "status", "--porcelain"], capture_output=True, text=True, check=False
+    )
+    expected = scope["source_binding"]
+    return bool(
+        status.returncode == 0
+        and not status.stdout.strip()
+        and _repository_fingerprint(repo_path) == expected["commit"]
+        and _sha256_file(index_path) == expected["index_sha256"]
+    )
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
+    """Atomically replace one durable JSON artifact in its existing directory."""
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _format_claude_stage_row(row: Mapping[str, Any], completed: int, total: int) -> str:
+    """Render one compact canonical Claude stage row."""
+    # ``success`` records transport/compliance completion. The leading glyph is
+    # intentionally stricter: it is the comparable-result admission signal.
+    # Retain the fallback for immutable telemetry created before paid stages
+    # recorded ``pooling_eligible``.
+    mark = "✓" if row.get("pooling_eligible", row["success"]) else "✗"
+    quality = row.get("quality_score")
+    quality_text = "?" if quality is None else f"{float(quality):.3f}"
+    usage_complete = row.get("usage_complete", True)
+    input_text = fmt_tok(int(row["input_tokens"]))
+    if not usage_complete:
+        input_text = f">{input_text}" if row["input_tokens"] else "?"
+    output_text = fmt_tok(int(row["output_tokens"])) if usage_complete else "?"
+    base = (
+        f"({completed}/{total}) {mark}  {str(row['task_id']):<6} {str(row['arm']):<8} "
+        f"in={input_text:>6} out={output_text:>5} "
+        f"cmd={int(row['command_calls']):>2} time={fmt_time(float(row['elapsed_s'])):>5} quality={quality_text}"
+    )
+    if row["study"] == "readcrop":
+        return f"{base} correct={'✓' if row['primary_correct'] else '✗'} codemap={'✓' if row['codemap_used'] else '✗'}"
+    execution = row["execution"]
+    return (
+        f"{base} patch={'✓' if execution['patch_applied'] else '✗'} "
+        f"oracle={'✓' if execution['targeted_test_passed'] else '✗'} codemap={'✓' if row['codemap_used'] else '✗'}"
+    )
+
+
+def run_claude_paid_stage(
+    *,
+    study: str,
+    tasks: Sequence[Mapping[str, Any]],
+    repo_path: Path,
+    index_path: Path,
+    manifest_path: Path,
+    tasks_path: Path,
+    model: str,
+    run_dir: Path,
+    scope: Mapping[str, Any],
+) -> Path:
+    """Execute one Claude P1 stage through the shared paid lifecycle.
+
+    ReadCrop uses a stripped disposable source copy. Executable stages use a
+    benchmark-owned Git worktree for model edits and a second clean worktree
+    for ordinary patch application plus the independent oracle. All stages
+    persist native raw events and null tool-result tokens when Claude does not
+    expose that usage partition.
+    """
+    runner = ModelRunner(model, MODELS[model], repo_path, timeout=MODEL_TIMEOUT[model])
+
+    def run_cell(item: Mapping[str, Any], arm: str) -> Mapping[str, Any]:
+        if study == "readcrop":
+            with _claude_readcrop_workspace(repo_path, index_path, arm) as (cwd, relocation):
+                events, elapsed_s, transport_error = runner.run_stage_events(
+                    prompt=readcrop_prompt(arm, item["task"]),
+                    system_prompt="Extract only the requested Python source contract with minimal repository reads.",
+                    arm=arm,
+                    cwd=cwd,
+                )
+            row = parse_claude_readcrop_events(events, arm=arm, contract=item["contract"], workspace_root=cwd)
+            row.update(
+                study=study,
+                model=model,
+                elapsed_s=elapsed_s,
+                cost_usd=parse_result_usage(
+                    next((dict(e) for e in reversed(events) if e.get("type") == "result"), {})
+                ).cost_usd,
+                transport_error=transport_error,
+                source_unchanged=_source_pair_unchanged(repo_path, index_path, scope),
+                index_relocation=dict(relocation) if relocation is not None else None,
+            )
+            row["success"] = bool(row["success"] and transport_error is None and row["source_unchanged"])
+            row["pooling_eligible"] = row["success"]
+            return row
+
+        workspace = create_executable_agent_workspace(repo_path, index_path, item["contract"].baseline_commit)
+        if arm == "A_plain":
+            workspace.index_path.unlink(missing_ok=True)
+        events: list[dict[str, Any]] = []
+        elapsed_s = 0.0
+        transport_error: str | None = None
+        diff = ""
+        execution = None
+        index_unchanged = arm == "A_plain"
+        workspace_cleanup_verified = False
+        try:
+            events, elapsed_s, transport_error = runner.run_stage_events(
+                prompt=_claude_fix_prompt(study, arm, item),
+                system_prompt="Implement the requested source fix in the disposable checkout and avoid unrelated edits.",
+                arm=arm,
+                cwd=workspace.worktree,
+                writable=True,
+            )
+            diff = workspace.capture_diff()
+            index_unchanged = index_unchanged or workspace.index_unchanged()
+            execution = (
+                execute_fix_single_patch(repo_path, item["contract"], diff)
+                if study == "fix-single"
+                else execute_fix_multi_patch(repo_path, item["contract"], diff)
+            )
+        finally:
+            workspace_cleanup_verified = workspace.cleanup()
+        assert execution is not None
+        row = _parse_claude_fix_cell(
+            study=study,
+            item=item,
+            arm=arm,
+            events=events,
+            elapsed_s=elapsed_s,
+            transport_error=transport_error,
+            execution=execution.as_dict(),
+            workspace_cleanup_verified=workspace_cleanup_verified,
+            index_unchanged=index_unchanged,
+            source_unchanged=_source_pair_unchanged(repo_path, index_path, scope),
+            model=model,
+            workspace_root=workspace.worktree,
+        )
+        # Preserve the actual candidate patch that the independent clean
+        # workspace scored. This is additive telemetry: existing JSON readers
+        # retain their schema while rescoring can verify identical input bytes.
+        row.update(
+            captured_diff=diff,
+            captured_diff_sha256=hashlib.sha256(diff.encode("utf-8")).hexdigest(),
+        )
+        return row
+
+    def validate_row(item: Mapping[str, Any], arm: str, row: Mapping[str, Any]) -> None:
+        if row.get("task_id") != item["contract"].task_id or row.get("arm") != arm:
+            raise ValueError("Claude paid stage returned a row for the wrong immutable cell")
+        if dict(row.get("provider_binding", {})) != dict(item["contract"].provider_binding()):
+            raise ValueError("Claude paid stage changed provider-neutral contract fields")
+        if row.get("tool_result_tokens") is not None:
+            raise ValueError("Claude paid stage must retain unavailable tool-result tokens as null")
+        if study != "readcrop":
+            captured_diff = row.get("captured_diff")
+            if not isinstance(captured_diff, str):
+                raise ValueError("Claude executable stage must persist its captured candidate diff")
+            if row.get("captured_diff_sha256") != hashlib.sha256(captured_diff.encode("utf-8")).hexdigest():
+                raise ValueError("Claude executable stage captured-diff SHA-256 does not match its bytes")
+
+    def prepare_run(path: Path) -> None:
+        inputs = path / "inputs"
+        inputs.mkdir()
+        (inputs / manifest_path.name).write_bytes(manifest_path.read_bytes())
+        (inputs / tasks_path.name).write_bytes(tasks_path.read_bytes())
+        _write_json_atomic(inputs / "scope.json", scope)
+        prompts = {
+            item["contract"].task_id: {
+                arm: (
+                    readcrop_prompt(arm, item["task"]) if study == "readcrop" else _claude_fix_prompt(study, arm, item)
+                )
+                for arm in READCROP_ARMS
+            }
+            for item in tasks
+        }
+        _write_json_atomic(inputs / "prompts.json", prompts)
+
+    def emit_lifecycle(kind: str, payload: Mapping[str, Any]) -> None:
+        if kind == "artifacts":
+            print(f"ARTIFACTS  telemetry={payload['telemetry_path']} metadata={payload['metadata_path']}")
+        else:
+            print(
+                f"SUMMARY  status={payload['status']} persisted_cells={payload['persisted_cells']}/{payload['total_cells']}"
+            )
+
+    def emit_row(row: Mapping[str, Any], completed: int, total: int, arm: str) -> None:
+        text = _format_claude_stage_row(row, completed, total)
+        presentation.print_arm_row(text, arm, console=_console)
+
+    metadata = {
+        "provider": "claude",
+        "study": study,
+        "model": model,
+        "model_id": MODELS[model],
+        "scope_sha256": scope["scope_sha256"],
+        "scope": dict(scope),
+        "planned_cells": len(tasks) * len(READCROP_ARMS),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return run_paid_stage(
+        tasks=tasks,
+        arms=READCROP_ARMS,
+        run_dir=run_dir,
+        metadata=metadata,
+        callbacks=PaidStageCallbacks(
+            run_cell=run_cell,
+            validate_row=validate_row,
+            prepare_run=prepare_run,
+            persist_metadata=_write_json_atomic,
+            emit_lifecycle=emit_lifecycle,
+            emit_row=emit_row,
+            write_checksums=write_checksums,
+            close_adapter=lambda: None,
+        ),
+    )
 
 
 def resolve_agentic_scope(
@@ -1780,34 +2679,40 @@ class ModelRunner:
     # semble blocks the Skill tool, plain blocks both structural entry points.
     _ARM_DISALLOWED: dict[str, list[str]] = {
         "codemap": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
-        "B_auto": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
-        "C_strict": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
+        "B_auto": ["--disallowed-tools", "Agent,Task,mcp__semble__search,mcp__semble__find_related"],
+        "C_strict": ["--disallowed-tools", "Agent,Task,mcp__semble__search,mcp__semble__find_related"],
         "semble": ["--disallowed-tools", "Skill"],
         "plain": ["--disallowed-tools", "Skill,mcp__semble__search,mcp__semble__find_related"],
         "A_plain": [
             "--disallowed-tools",
-            "Skill,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*)",
+            "Skill,Agent,Task,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*)",
         ],
         "combined": [],
     }
 
     # Tools pre-approved per arm via --allowedTools. In headless -p mode a tool the arm relies
-    # on MUST be pre-approved here or it is permission-denied (returns <tool_use_error>). The
-    # codemap/combined arms' PRIMARY discriminator is the /codemap:query-code Skill, so the Skill
-    # tool itself must be pre-approved — without it every codemap Skill call was denied and the
-    # run fell back to grep (codemap_skill_errored), making the arm unmeasurable. Both the codemap
-    # and codemap-py plugin namespaces are allowed because the agent may invoke either; the skill's
-    # own internal Bash/Read calls are governed by its allowed-tools frontmatter, not this list, so
-    # pre-approving the Skill alone is sufficient (verified end-to-end).
+    # on MUST be pre-approved here or it is permission-denied (returns <tool_use_error>). Canonical
+    # P1 C treatment evidence is a completed direct ``codemap-py query`` Bash call. Match the
+    # production Skill's absolute-launcher form (including its closing quote) as well as the PATH
+    # form; a successful Skill wrapper alone does not prove its nested call used the frozen index.
     _CODEMAP_SKILLS = "Skill(codemap:query-code),Skill(codemap-py:query-code)"
     _ARM_ALLOWED: dict[str, list[str]] = {
-        "codemap": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
-        "B_auto": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
-        "C_strict": ["--allowedTools", f"Bash(scan-query:*),{_CODEMAP_SKILLS}"],
+        "codemap": [
+            "--allowedTools",
+            f"Bash(scan-query:*),Bash(codemap-py query:*),Bash(*/bin/codemap-py* query:*),{_CODEMAP_SKILLS}",
+        ],
+        "B_auto": [
+            "--allowedTools",
+            f"Bash(scan-query:*),Bash(codemap-py query:*),Bash(*/bin/codemap-py* query:*),{_CODEMAP_SKILLS}",
+        ],
+        "C_strict": [
+            "--allowedTools",
+            f"Bash(scan-query:*),Bash(codemap-py query:*),Bash(*/bin/codemap-py* query:*),{_CODEMAP_SKILLS}",
+        ],
         "semble": ["--allowedTools", "mcp__semble__search,mcp__semble__find_related"],
         "combined": [
             "--allowedTools",
-            f"Bash(scan-query:*),mcp__semble__search,mcp__semble__find_related,{_CODEMAP_SKILLS}",
+            f"Bash(scan-query:*),Bash(codemap-py query:*),Bash(*/bin/codemap-py* query:*),mcp__semble__search,mcp__semble__find_related,{_CODEMAP_SKILLS}",
         ],
     }
 
@@ -1892,7 +2797,11 @@ Grep, Glob, Bash, and Read remain available.
 
 If /codemap:query-code returns <tool_use_error>, run one Grep/Bash fallback for the same query."""
 
-    _C_STRICT_SUPPLEMENT = "\n\nYou must use Codemap at least once for structural investigation."
+    _C_STRICT_SUPPLEMENT = (
+        "\n\nYou must use Codemap at least once for structural investigation. When the task supplies an exact "
+        "`/codemap-py:query-code` invocation, load that Skill and complete its underlying `codemap-py query` before "
+        "using other source tools; loading the Skill alone does not satisfy the requirement."
+    )
 
     _SEMBLE_SUPPLEMENT = """
 
@@ -1944,10 +2853,11 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         "(pass offset/limit) — never read the whole file if the symbol is a small part of it."
     )
     _READCROP_CODEMAP = (
-        "\n\n## codemap installed — extract the symbol directly\n"
-        "Run `scan-query symbol <Name> --with-imports` (via Bash) to get JUST that symbol's source "
-        "with its imports — a fraction of the tokens of the full file. Do NOT Read the whole module "
-        "file. The `symbols[].source` field is the authoritative source; render the contract from it."
+        "\n\n## Codemap integration\n"
+        "The installed `/codemap-py:query-code` Skill can extract one symbol with its imports. Invoke the Skill when "
+        "the treatment or unresolved structural question requires it, then follow its current `codemap-py query` "
+        "syntax. Its completed symbol source is authoritative structural evidence; do not read an entire module "
+        "when that result is complete."
     )
     _READCROP_SEMBLE = (
         "\n\n## semble installed — search then read the chunk\n"
@@ -1968,10 +2878,10 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         "Apply the fix with Edit."
     )
     _FIXSINGLE_CODEMAP = (
-        "\n\n## codemap installed\n"
-        "Use `scan-query symbol <Name>` (via Bash) to locate and read the target symbol "
-        "before editing. For single-file fixes, codemap's symbol extraction shows the relevant "
-        "code without reading the whole file."
+        "\n\n## Codemap integration\n"
+        "The installed `/codemap-py:query-code` Skill can extract a target symbol without reading the whole file. "
+        "Invoke it when the treatment or an unresolved structural question requires it, then follow its current "
+        "`codemap-py query` syntax. For automatic use, retain the Skill's localized-edit skip rule."
     )
     _FIXSINGLE_SEMBLE = (
         "\n\n## semble installed\n"
@@ -1995,12 +2905,11 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
     # advantage" framing. That steering was the measured signal and manufactured the tool-call
     # gap (review N3, mirroring C-4 for the rdep supplements).
     _FIXMULTI_CODEMAP = (
-        "\n\n## codemap installed\n"
-        "The /codemap:query-code skill (via the Skill tool) answers caller / import-graph "
-        "questions from a pre-built structural index.\n"
-        "Syntax — colon separator, never a space:\n"
-        "  /codemap:query-code rdeps <primary_module> [--exclude-tests]\n"
-        "Grep, Glob, Bash, and Read remain available."
+        "\n\n## Codemap integration\n"
+        "The installed `/codemap-py:query-code` Skill answers caller and import-graph questions from a pre-built "
+        "structural index. Invoke the Skill when the treatment or unresolved affected-surface question requires it, "
+        "then follow its current `codemap-py query` syntax. Grep, Glob, Bash, and Read remain available for distinct "
+        "source/runtime facts."
     )
     _FIXMULTI_SEMBLE = (
         "\n\n## semble installed\n"
@@ -2068,6 +2977,64 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         self.model_id = model_id
         self.repo_path = repo_path
         self.timeout = timeout
+
+    def run_stage_events(
+        self,
+        *,
+        prompt: str,
+        system_prompt: str,
+        arm: str,
+        cwd: Path,
+        writable: bool = False,
+    ) -> tuple[list[dict[str, Any]], float, str | None]:
+        """Run one canonical stage prompt through the shared Claude transport.
+
+        This method is the provider seam used by ReadCrop, Fix-Single, and
+        Fix-Multi. It constructs Claude's isolated arm invocation, while
+        ``stream_claude`` remains the sole subprocess/event loop. Raw events are
+        returned losslessly for stage-owned normalization and artifact capture.
+
+        Args:
+            prompt: Exact user task and answer/edit contract.
+            system_prompt: Arm-neutral role and execution constraints.
+            arm: Canonical ``A_plain``, ``B_auto``, or ``C_strict`` treatment.
+            cwd: Benchmark-owned disposable repository visible to Claude.
+            writable: Use native edit-accepting mode for an isolated executable
+                worktree; leave read-only studies in the default mode.
+
+        Returns:
+            Raw events, elapsed seconds, and a bounded transport error or
+            ``None`` after a normal provider exit.
+        """
+        import tempfile
+
+        permission_flags = ["--permission-mode", "acceptEdits"] if writable else []
+        cmd = [
+            *self._CMD,
+            "--model",
+            self.model_id,
+            *permission_flags,
+            *self._arm_isolation_flags(arm),
+            *self._ARM_DISALLOWED.get(arm, []),
+            *self._ARM_ALLOWED.get(arm, []),
+            "--system-prompt",
+            system_prompt,
+            prompt,
+        ]
+        preamble_flag = Path(tempfile.gettempdir()) / f"codemap-preamble-{cwd.name}"
+        preamble_flag.unlink(missing_ok=True)
+        events: list[dict[str, Any]] = []
+        outcome = stream_claude(
+            cmd,
+            timeout=self.timeout,
+            cwd=cwd,
+            env=self._subprocess_env(arm),
+            on_event=lambda event, _timestamp: events.append(dict(event)),
+        )
+        error = outcome.error or (outcome.stderr.strip()[:300] if outcome.stderr and outcome.returncode else None)
+        if outcome.exc_timeout or (outcome.returncode is not None and outcome.returncode < 0):
+            error = error or f"timeout ({self.timeout}s)"
+        return events, outcome.elapsed_s, error
 
     @contextlib.contextmanager
     def _effective_cwd(
@@ -2316,12 +3283,12 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
 
     @classmethod
     def _subprocess_env(cls, arm: str = "") -> dict[str, str]:
-        """Return os.environ augmented with codemap PATH and the benchmark's build opt-out.
+        """Return an arm-isolated environment with Codemap exposed only to its treatments.
 
         Plugin bin/ directories are not reliably added to PATH in ``claude -p`` mode, so the
         codemap ``bin/`` dir is injected explicitly to keep ``scan-query`` reachable inside skill
         Bash calls. For the codemap and combined arms ``SCAN_NO_AUTOBUILD=1`` is set so the
-        /codemap:query-code Step 0 never runs ``scan-index --incremental`` inside the measured
+        /codemap-py:query-code Step 0 never runs ``scan-index --incremental`` inside the measured
         window — the benchmark builds the index out of band (review N2 / H-3). A genuinely
         missing index then fails loudly instead of being silently rebuilt mid-task.
 
@@ -2346,12 +3313,14 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             A copy of the process environment with PATH (and, for structural arms, the opt-out
             and CLAUDE_PLUGIN_ROOT).
         """
-        env = codemap_bin_on_path(os.environ.copy())
+        env = os.environ.copy()
         if arm in ("codemap", "combined", "B_auto", "C_strict"):
-            env["SCAN_NO_AUTOBUILD"] = "1"
             plugin_dir = cls._codemap_plugin_dir()
-            if plugin_dir:
-                env["CLAUDE_PLUGIN_ROOT"] = plugin_dir
+            if not plugin_dir:
+                raise RuntimeError(f"Codemap plugin fixture is required for {arm} but is unavailable")
+            codemap_bin_on_path(env, Path(plugin_dir))
+            env["SCAN_NO_AUTOBUILD"] = "1"
+            env["CLAUDE_PLUGIN_ROOT"] = plugin_dir
         return env
 
     def _stream_events(
@@ -3470,6 +4439,7 @@ def main(
     index: Path = None,
     tasks_file: Path = Path("benchmarks/suites/tasks-agentic.json"),
     readcrop_tasks_path: Path = READCROP_TASKS_PATH,
+    fix_single_tasks_path: Path = FIX_SINGLE_TASKS_PATH,
     fix_multi_tasks_path: Path = FIX_MULTI_TASKS_PATH,
     manifest_path: Path = PARITY_MANIFEST_PATH,
     study: str = "agentic",
@@ -3483,6 +4453,8 @@ def main(
     scope_sha256: str = None,
     resolve_scope: bool = False,
     dry_run: bool = False,
+    run_dir: Path = None,
+    paid_approval: str = None,
 ) -> None:
     """Codemap skill benchmark — agent exploration cost with vs without structural context.
 
@@ -3491,9 +4463,10 @@ def main(
         index: Explicit index path (auto-discovered if omitted).
         tasks_file: Task definition file.
         readcrop_tasks_path: Locked source-contract task suite for ``--study readcrop``.
+        fix_single_tasks_path: Locked single-file executable suite for ``--study fix-single``.
         fix_multi_tasks_path: Locked complete-caller task suite for ``--study fix-multi``.
         manifest_path: Provider-neutral methodology lock defining the shared suite.
-        study: ``agentic`` historical runner or a no-model shared-contract adapter.
+        study: ``agentic`` historical runner or canonical ``readcrop``/``fix-single``/``fix-multi`` stage.
         model: Run a single model tier (default: all — haiku/sonnet/opus).
         arm: Run one canonical or legacy arm. The default runs canonical A/B/C.
         run_all: Run all tasks in the selected arms.
@@ -3504,37 +4477,47 @@ def main(
         scope_sha256: Exact derived scope hash required for nondefault repetitions.
         resolve_scope: Print the selected no-model scope as JSON and exit.
         dry_run: Print plan without running claude.
+        run_dir: New immutable artifact directory required for a paid P1 stage.
+        paid_approval: Exact scope SHA-256 emitted by the current dry-run command.
     """
     # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
     if index is not None:
         index = Path(index)
     tasks_file = Path(tasks_file)
     readcrop_tasks_path = Path(readcrop_tasks_path)
+    fix_single_tasks_path = Path(fix_single_tasks_path)
     fix_multi_tasks_path = Path(fix_multi_tasks_path)
     manifest_path = Path(manifest_path)
+    if repo_path is not None:
+        repo_path = Path(repo_path)
+    if run_dir is not None:
+        run_dir = Path(run_dir)
     if output is not None:
         output = Path(output)
+    selected_tasks = [part.strip() for part in tasks.split(",") if part.strip()] if isinstance(tasks, str) else tasks
 
-    if study == "readcrop":
-        _run_readcrop_no_model(
+    if study in {"readcrop", "fix-single", "fix-multi"}:
+        stage_tasks_path = {
+            "readcrop": readcrop_tasks_path,
+            "fix-single": fix_single_tasks_path,
+            "fix-multi": fix_multi_tasks_path,
+        }[study]
+        _run_claude_p1_stage(
+            study=study,
             repo_path=repo_path,
-            tasks_path=readcrop_tasks_path,
+            index=index,
+            tasks_path=stage_tasks_path,
             manifest_path=manifest_path,
-            dry_run=dry_run,
-            resolve_scope=resolve_scope,
-        )
-        return
-    if study == "fix-multi":
-        _run_fix_multi_no_model(
-            tasks_path=fix_multi_tasks_path,
-            manifest_path=manifest_path,
-            selected_ids=tasks,
+            selected_ids=selected_tasks,
+            model=model,
+            run_dir=run_dir,
+            paid_approval=paid_approval,
             dry_run=dry_run,
             resolve_scope=resolve_scope,
         )
         return
     if study != "agentic":
-        sys.exit("study must be 'agentic', 'readcrop', or 'fix-multi'.")
+        sys.exit("study must be 'agentic', 'readcrop', 'fix-single', or 'fix-multi'.")
 
     if not run_all and not tasks and not arm and not dry_run and not resolve_scope:
         sys.exit("Specify --run_all to run everything, or narrow with --tasks / --arm.")
@@ -3558,8 +4541,8 @@ def main(
         )
     except ValueError as exc:
         sys.exit(str(exc))
-    if tasks:
-        all_tasks = [t for t in all_tasks if t.id in tasks]
+    if selected_tasks:
+        all_tasks = [t for t in all_tasks if t.id in selected_tasks]
     if not all_tasks:
         sys.exit("No tasks to run.")
 
@@ -3679,4 +4662,12 @@ def main(
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    try:
+        fire.Fire(main)
+    except ValueError as exc:
+        message = f"ERROR: {exc}"
+        if _console.is_terminal:
+            _console.print(_Text(message, style="bold red"))
+        else:
+            print(message, file=sys.stderr)
+        raise SystemExit(2) from None

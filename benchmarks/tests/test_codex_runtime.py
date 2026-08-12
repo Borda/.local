@@ -28,6 +28,15 @@ def _load() -> Any:
     return module
 
 
+def _load_lifecycle() -> Any:
+    """Return the provider-neutral paid lifecycle owner."""
+    if str(BENCHMARKS) not in sys.path:
+        sys.path.insert(0, str(BENCHMARKS))
+    from _bench_common import paid_lifecycle
+
+    return paid_lifecycle
+
+
 def _callbacks(
     lifecycle: Any,
     events: list[tuple[str, Any]],
@@ -66,7 +75,7 @@ def _callbacks(
 
 def test_paid_stage_runs_exact_task_arm_order_and_persists_every_cell(tmp_path: Path) -> None:
     """The lifecycle preserves canonical order and durable per-cell progress."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     events: list[tuple[str, Any]] = []
     run_dir = tmp_path / "runs" / "stage"
 
@@ -116,7 +125,7 @@ def test_paid_stage_runs_exact_task_arm_order_and_persists_every_cell(tmp_path: 
 
 def test_paid_stage_failure_persists_error_summary_and_finalizes_callbacks(tmp_path: Path) -> None:
     """A failed later cell retains the last durable row and closes the adapter."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     events: list[tuple[str, Any]] = []
     run_dir = tmp_path / "failed"
 
@@ -143,7 +152,7 @@ def test_paid_stage_failure_persists_error_summary_and_finalizes_callbacks(tmp_p
 
 def test_paid_stage_rejects_an_invalid_row_before_telemetry_persistence(tmp_path: Path) -> None:
     """Binding validation cannot leave an unvalidated row in durable telemetry."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     events: list[tuple[str, Any]] = []
     run_dir = tmp_path / "rejected"
 
@@ -165,7 +174,7 @@ def test_paid_stage_rejects_an_invalid_row_before_telemetry_persistence(tmp_path
 
 def test_paid_stage_marks_keyboard_interrupt_as_interrupted_and_finalizes(tmp_path: Path) -> None:
     """Interrupts retain completed cells and run the same durable finalizers."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     events: list[tuple[str, Any]] = []
     run_dir = tmp_path / "interrupted"
 
@@ -196,7 +205,7 @@ def test_paid_stage_marks_keyboard_interrupt_as_interrupted_and_finalizes(tmp_pa
 
 def test_paid_stage_rejects_an_existing_run_directory_and_still_closes_adapter(tmp_path: Path) -> None:
     """A run path is reserved exclusively even when setup cannot begin."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     events: list[tuple[str, Any]] = []
     run_dir = tmp_path / "occupied"
     run_dir.mkdir()
@@ -215,7 +224,7 @@ def test_paid_stage_rejects_an_existing_run_directory_and_still_closes_adapter(t
 
 def test_checksum_ledger_detects_retained_artifact_changes(tmp_path: Path) -> None:
     """The shared ledger covers lifecycle evidence and rejects later tampering."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     telemetry = tmp_path / "telemetry.jsonl"
     telemetry.write_text('{"task_id": "T01"}\n', encoding="utf-8")
     metadata = tmp_path / "run-metadata.json"
@@ -233,7 +242,7 @@ def test_checksum_ledger_detects_retained_artifact_changes(tmp_path: Path) -> No
 
 def test_checksum_ledger_rejects_a_path_outside_the_run_directory(tmp_path: Path) -> None:
     """Checksum verification never resolves a ledger entry outside its run root."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     (tmp_path / "checksums.sha256").write_text(f"{'0' * 64}  ../outside.jsonl\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="unsafe path"):
@@ -242,7 +251,7 @@ def test_checksum_ledger_rejects_a_path_outside_the_run_directory(tmp_path: Path
 
 def test_root_checksum_ledger_covers_each_child_stage_ledger(tmp_path: Path) -> None:
     """A unified run cannot hide changed stage telemetry behind a child ledger."""
-    lifecycle = _load()
+    lifecycle = _load_lifecycle()
     child = tmp_path / "readcrop"
     child.mkdir()
     telemetry = child / "telemetry.jsonl"

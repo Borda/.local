@@ -1122,7 +1122,8 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
     Returns:
         Environment dict for subprocess.Popen.
     """
-    env = codemap_bin_on_path(os.environ.copy())
+    plugin_root = Path(__file__).resolve().parents[1] / "plugins" / "codemap-py"
+    env = codemap_bin_on_path(os.environ.copy(), plugin_root)
     env["CODEMAP_INDEX"] = str(index_path)
     env["CODEMAP_ENABLED"] = "true"
     env["CODEMAP_LOGGING"] = "false"

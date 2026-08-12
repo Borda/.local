@@ -12,7 +12,7 @@
     ],
     "id": "FM-01",
     "primary_module": "lightning.pytorch.callbacks.early_stopping",
-    "prompt": "In `EarlyStopping` (`lightning/pytorch/callbacks/early_stopping.py`): add a `dry_run: bool = False` parameter to `_run_early_stopping_check`. When `dry_run=True`, log what would happen (should_stop and reason) but do NOT set `trainer.should_stop` or update `self.stopped_epoch` \u2014 i.e. observe-only mode. Find all callers of `_run_early_stopping_check` in the same file and update their call sites to pass `dry_run=False` explicitly (to preserve current behaviour and document intent). Update the method signature and all call sites.",
+    "prompt": "In `EarlyStopping` (`lightning/pytorch/callbacks/early_stopping.py`): add a `dry_run: bool = False` parameter to `_run_early_stopping_check`. When `dry_run=True`, log what would happen; the message must interpolate both the computed boolean as `should_stop={should_stop}` and the `reason` value. Do NOT set `trainer.should_stop` or update `self.stopped_epoch` in observe-only mode. Find all callers of `_run_early_stopping_check` in the same file and update their call sites to pass `dry_run=False` explicitly (to preserve current behaviour and document intent). Update the method signature and all call sites.",
     "requires_reset": true,
     "type": "fix_multicaller"
   },
@@ -42,17 +42,16 @@
       "fsdp.py",
       "deepspeed.py",
       "model_parallel.py",
-      "single_xla.py",
       "xla.py"
     ],
     "expected_patch_keywords": [
       "verbose",
-      "def setup",
-      "super().setup"
+      "def setup_environment",
+      "super().setup_environment"
     ],
     "id": "FM-03",
     "primary_module": "lightning.pytorch.strategies.strategy",
-    "prompt": "In `Strategy.setup` (`lightning/pytorch/strategies/strategy.py`): add a `verbose: bool = False` parameter to the base class `setup` method. When `verbose=True`, log (via `log.debug`) that setup is beginning. Discover every production class under `src/lightning/pytorch/strategies/` that overrides `setup`; update each override to add `verbose: bool = False` and pass it through to `super().setup(trainer, verbose=verbose)`. Treat same-name symbol search as candidate discovery only and verify the inheritance and package boundary from source before editing.",
+    "prompt": "In `Strategy.setup_environment` (`lightning/pytorch/strategies/strategy.py`), add a `verbose: bool = False` parameter. When `verbose=True`, log via `log.debug` that strategy-environment setup is beginning before device setup. Discover every production class under `src/lightning/pytorch/strategies/` that overrides `setup_environment`; update each override to add `verbose: bool = False` and forward it through its existing cooperative call as `super().setup_environment(verbose=verbose)`. Preserve every override's existing ordering and strategy-specific behavior. Do not change `Strategy.setup` or add calls to `super().setup`. Treat same-name symbol search as candidate discovery only and verify inheritance and the production package boundary from source before editing.",
     "requires_reset": true,
     "type": "fix_multicaller"
   }

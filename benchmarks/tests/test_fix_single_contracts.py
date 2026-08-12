@@ -13,20 +13,11 @@ FROZEN_REPO = Path("/private/tmp/codemap-provider-parity-pl-2.6.5")
 BENCHMARKS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARKS))
 
-
-def _runner() -> object:
-    """Return the private Fix stage without invoking its CLI."""
-    from _bench_codex import stage_fix
-
-    return stage_fix
-
-
-_RUNNER = _runner()
-
-
-build_fix_single_contract = _RUNNER.build_fix_single_contract
-run_fix_single_oracle = _RUNNER.run_fix_single_oracle
-validate_fix_single_binding = _RUNNER.validate_fix_single_binding
+from _bench_common.edit_patch_contracts import (  # noqa: E402
+    build_fix_single_contract,
+    run_fix_single_oracle,
+    validate_fix_single_binding,
+)
 
 
 def _tasks() -> dict[str, dict[str, object]]:

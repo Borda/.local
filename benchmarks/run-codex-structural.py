@@ -180,6 +180,13 @@ else:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _bench_codex import runtime  # noqa: E402
+from _bench_common.mutation_isolation import (  # noqa: E402
+    ExecutableAgentWorkspace,
+    _non_root_index_sha256,
+    create_executable_agent_workspace,
+    relocate_frozen_index_for_worktree,
+)
+from _bench_common.paid_lifecycle import write_checksums  # noqa: E402
 from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
@@ -196,6 +203,13 @@ from _bench_common.provider_parity_contracts import (  # noqa: E402
     semantic_suite_hash,
     token_accounting_inconsistent,
     treatment_adherence,
+)
+
+
+__all__ = (
+    "ExecutableAgentWorkspace",
+    "create_executable_agent_workspace",
+    "relocate_frozen_index_for_worktree",
 )
 
 
@@ -883,134 +897,6 @@ class ArmHome:
 
     def __exit__(self, *_exc: object) -> None:
         self.cleanup()
-
-
-@dataclass
-class ExecutableAgentWorkspace:
-    """One benchmark-owned editable worktree and its private index copy."""
-
-    source: Path
-    root: Path
-    worktree: Path
-    index_path: Path
-    baseline_commit: str
-    index_relocation: Mapping[str, str]
-
-    def index_unchanged(self) -> bool:
-        """Return whether the model left the derived frozen graph untouched."""
-        try:
-            current_sha256 = hashlib.sha256(self.index_path.read_bytes()).hexdigest()
-        except OSError:
-            return False
-        return current_sha256 == self.index_relocation["derived_index_sha256"]
-
-    def capture_diff(self) -> str:
-        """Return the canonical Git diff produced by the agent's direct edits."""
-        return _workspace_git(self.worktree, "diff", "--binary", "--no-ext-diff").stdout
-
-    def changed_paths(self) -> tuple[str, ...]:
-        """Return the exact tracked paths changed by the agent."""
-        return tuple(
-            line for line in _workspace_git(self.worktree, "diff", "--name-only").stdout.splitlines() if line.strip()
-        )
-
-    def cleanup(self) -> bool:
-        """Restore and remove only this known disposable worktree, else fail closed."""
-        try:
-            _workspace_git(self.worktree, "reset", "--hard", "HEAD")
-            _workspace_git(self.source, "worktree", "remove", str(self.worktree))
-            cleaned = (
-                not self.worktree.exists()
-                and str(self.worktree) not in _workspace_git(self.source, "worktree", "list", "--porcelain").stdout
-            )
-        except (OSError, subprocess.SubprocessError):
-            cleaned = False
-        if cleaned:
-            shutil.rmtree(self.root, ignore_errors=True)
-        return cleaned
-
-
-def _workspace_git(repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run one bounded Git command against a benchmark-owned disposable repository."""
-    return subprocess.run(
-        ["git", "-C", str(repo_path), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-
-
-def _non_root_index_sha256(payload: Mapping[str, Any]) -> str:
-    """Hash index content after excluding its environment-specific scan root."""
-    normalized = dict(payload)
-    normalized.pop("scan_root", None)
-    return hashlib.sha256(json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-
-
-def relocate_frozen_index_for_worktree(
-    frozen_bytes: bytes, *, source_root: Path, worktree_root: Path
-) -> tuple[bytes, dict[str, str]]:
-    """Relocate only ``scan_root`` in a frozen index for a byte-identical worktree.
-
-    The structural graph remains immutable. This derived copy merely tells
-    Codemap that the checked-out baseline is now available at *worktree_root*,
-    preventing its deliberate root-mismatch completeness guard from rejecting
-    an otherwise identical source tree. The caller records both index hashes
-    and rejects a cell if the model changes the derived copy.
-    """
-    try:
-        frozen_payload = json.loads(frozen_bytes)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("executable agent workspace index must be valid JSON") from exc
-    if not isinstance(frozen_payload, dict):
-        raise ValueError("executable agent workspace index must be a JSON object")
-    expected_root = str(source_root.resolve())
-    if frozen_payload.get("scan_root") != expected_root:
-        raise ValueError("executable agent workspace index scan_root must match the frozen source repository")
-    derived_payload = dict(frozen_payload)
-    derived_payload["scan_root"] = str(worktree_root.resolve())
-    frozen_content_sha256 = _non_root_index_sha256(frozen_payload)
-    if _non_root_index_sha256(derived_payload) != frozen_content_sha256:
-        raise RuntimeError("executable index relocation changed frozen graph content")
-    derived_bytes = (json.dumps(derived_payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    return derived_bytes, {
-        "frozen_index_sha256": hashlib.sha256(frozen_bytes).hexdigest(),
-        "derived_index_sha256": hashlib.sha256(derived_bytes).hexdigest(),
-        "non_root_content_sha256": frozen_content_sha256,
-        "source_scan_root": expected_root,
-        "worktree_scan_root": str(worktree_root.resolve()),
-    }
-
-
-def create_executable_agent_workspace(source: Path, index_path: Path, baseline_commit: str) -> ExecutableAgentWorkspace:
-    """Create an editable worktree with a root-relocated immutable graph copy."""
-    source = source.resolve(strict=True)
-    index_path = index_path.resolve(strict=True)
-    if not index_path.is_relative_to(source):
-        raise ValueError("executable agent workspace requires an index inside the frozen source repository")
-    if _repo_sha(source) != baseline_commit or _git_porcelain_status(source):
-        raise ValueError("executable agent workspace requires a clean frozen source repository")
-    root = Path(tempfile.mkdtemp(prefix="codemap-executable-agent-")).resolve(strict=True)
-    worktree = root / "repo"
-    copied_index = worktree / ".cache" / "codemap" / f"{worktree.name}.json"
-    try:
-        _workspace_git(source, "worktree", "add", "--detach", str(worktree), baseline_commit)
-        copied_index.parent.mkdir(parents=True, exist_ok=True)
-        derived_bytes, index_relocation = relocate_frozen_index_for_worktree(
-            index_path.read_bytes(), source_root=source, worktree_root=worktree
-        )
-        copied_index.write_bytes(derived_bytes)
-        if hashlib.sha256(copied_index.read_bytes()).hexdigest() != index_relocation["derived_index_sha256"]:
-            raise RuntimeError("executable agent workspace derived index write is incomplete")
-        return ExecutableAgentWorkspace(source, root, worktree, copied_index, baseline_commit, index_relocation)
-    except BaseException:
-        if worktree.exists():
-            with contextlib.suppress(OSError, subprocess.SubprocessError):
-                _workspace_git(worktree, "reset", "--hard", "HEAD")
-                _workspace_git(source, "worktree", "remove", str(worktree))
-        shutil.rmtree(root, ignore_errors=True)
-        raise
 
 
 @contextlib.contextmanager
@@ -5282,7 +5168,7 @@ def _run_unified_execution(
             finally:
                 _annotate_stage_metadata(child_dir, stage_id)
                 if child_dir.is_dir():
-                    runtime.write_checksums(child_dir)
+                    write_checksums(child_dir)
             stage_record["status"] = "completed"
             aggregate_completed += int(stage["total_cells"])
             _write_unified_metadata(metadata_path, metadata)
@@ -5296,7 +5182,7 @@ def _run_unified_execution(
     finally:
         metadata["completed_at"] = _utc_now()
         _write_unified_metadata(metadata_path, metadata)
-        runtime.write_checksums(run_dir)
+        write_checksums(run_dir)
         print(f"SUMMARY  status={metadata['status']}  stages={len(metadata['stages'])}/{len(scope['stages'])}")
     print(f"done: {run_dir}")
 
