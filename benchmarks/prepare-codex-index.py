@@ -183,9 +183,23 @@ def verify_index(
 
 
 def _replace_root(value: Any, source_root: str, locked_root: str) -> Any:
-    """Replace scanner-root prefixes recursively without changing structure."""
+    """Replace scanner-root path prefixes recursively without changing structure.
+
+    Only a string that *is* the scan root, or a path beneath it, is rewritten. The
+    previous bare ``str.replace`` rewrote every occurrence in every string, so a
+    content field that merely mentions the checkout path (a docstring first line, a
+    captured subprocess argument) was edited too — and those rewritten bytes are the
+    ones hashed and installed, which makes the installed index disagree with the
+    source it was scanned from. Anchoring on the ``os.sep`` boundary additionally
+    keeps a sibling directory whose name merely extends the root (``…/repo-other``
+    beside ``…/repo``) out of the locked tree; a bare ``startswith`` would fold it in.
+    """
     if isinstance(value, str):
-        return value.replace(source_root, locked_root)
+        if value == source_root:
+            return locked_root
+        if value.startswith(source_root + os.sep):
+            return locked_root + value[len(source_root) :]
+        return value
     if isinstance(value, list):
         return [_replace_root(item, source_root, locked_root) for item in value]
     if isinstance(value, dict):
@@ -231,6 +245,92 @@ def _git(source_root: Path, *args: str, check: bool = True) -> subprocess.Comple
         text=True,
         timeout=120,
     )
+
+
+def _release_worktree(source_root: Path, worktree: Path, task_id: str) -> str:
+    """Detach one temporary patch worktree; return a failure description, or "" when clean.
+
+    Every Git call here is deliberately unchecked and the outcome is *returned* rather
+    than raised: this runs on the cleanup path, where a raising subprocess replaces
+    whatever failure is already unwinding (a semantic-drift ValueError surfaced as
+    "cleanup failed", hiding the drift that actually invalidated the run). The caller
+    decides whether the cleanup failure is the only failure and may be raised.
+    """
+    _git(worktree, "reset", "--hard", "HEAD", check=False)
+    _git(worktree, "clean", "-fdx", check=False)
+    removal = _git(source_root, "worktree", "remove", str(worktree), check=False)
+    registered = str(worktree) in _git(source_root, "worktree", "list", "--porcelain", check=False).stdout
+    if removal.returncode != 0 or worktree.exists() or registered:
+        return f"patch index worktree cleanup failed for {task_id}: {removal.stderr.strip()[:300]}"
+    return ""
+
+
+def _install_patch_task_index(  # noqa: PLR0913 — 7 immutable coordinates of one task's index; a
+    # config object would only rename them
+    *,
+    source_root: Path,
+    worktree: Path,
+    task_id: str,
+    lock: dict[str, Any],
+    scan_index_bin: Path,
+    bundle_dir: Path,
+    canonical_root: str,
+) -> str:
+    """Scan one prepared worktree, verify it against *lock*, install it, and return its SHA-256.
+
+    Raises:
+        ValueError: If the scanner fails or the graph drifts from the reviewed lock.
+    """
+    scan = subprocess.run(
+        [str(scan_index_bin), "--root", str(worktree)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if scan.returncode != 0:
+        raise ValueError(f"scan-index failed for {task_id}: {scan.stderr.strip()[:500]}")
+    scanned_path = worktree / ".cache" / "codemap" / f"{worktree.name}.json"
+    payload = _load_json(scanned_path)
+    payload = _replace_root(payload, str(worktree), str(source_root))
+    payload.update(
+        project=f"provider-parity-{task_id}",
+        scan_root=str(source_root),
+        scanned_at=lock.get("scanned_at"),
+    )
+    if payload.get("scan_version") != lock.get("scan_version"):
+        raise ValueError(f"patch index scan_version drifted for {task_id}")
+    if len(payload.get("modules", [])) != lock.get("module_count"):
+        raise ValueError(f"patch index module count drifted for {task_id}")
+    semantic_sha = semantic_index_sha256(payload, source_root)
+    if semantic_sha != lock.get("semantic_sha256"):
+        raise ValueError(
+            f"patch index semantic SHA-256 drifted for {task_id}: "
+            f"expected {lock.get('semantic_sha256')}, got {semantic_sha}"
+        )
+    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    digest = hashlib.sha256(encoded).hexdigest()
+    # The raw byte lock is root-dependent, so it can only be checked on the machine whose
+    # checkout path the lock was recorded at. Off that path the check used to disappear
+    # silently, leaving the operator believing a byte-identity guarantee that never ran.
+    if str(source_root) == canonical_root:
+        if digest != lock.get("raw_sha256_at_canonical_root"):
+            raise ValueError(f"patch index canonical raw SHA-256 drifted for {task_id}")
+    else:
+        print(
+            f"WARNING: raw byte-identity check skipped for {task_id}: source root {source_root} is not "
+            f"the canonical root {canonical_root}; only semantic graph identity was verified",
+            file=sys.stderr,
+        )
+    destination = bundle_dir / f"{task_id}.json"
+    with tempfile.NamedTemporaryFile(dir=bundle_dir, prefix=f".{task_id}.", delete=False) as handle:
+        temporary = Path(handle.name)
+        handle.write(encoded)
+    try:
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return digest
 
 
 def prepare_patch_index_bundle(source_root: Path, locks_path: Path, scan_index_bin: Path) -> dict[str, str]:
@@ -281,56 +381,27 @@ def prepare_patch_index_bundle(source_root: Path, locks_path: Path, scan_index_b
             try:
                 _git(source_root, "worktree", "add", "--detach", str(worktree), commit)
                 created = True
-                scan = subprocess.run(
-                    [str(scan_index_bin), "--root", str(worktree)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
+                installed[task_id] = _install_patch_task_index(
+                    source_root=source_root,
+                    worktree=worktree,
+                    task_id=task_id,
+                    lock=lock,
+                    scan_index_bin=scan_index_bin,
+                    bundle_dir=bundle_dir,
+                    canonical_root=canonical_root,
                 )
-                if scan.returncode != 0:
-                    raise ValueError(f"scan-index failed for {task_id}: {scan.stderr.strip()[:500]}")
-                scanned_path = worktree / ".cache" / "codemap" / f"{worktree.name}.json"
-                payload = _load_json(scanned_path)
-                payload = _replace_root(payload, str(worktree), str(source_root))
-                payload.update(
-                    project=f"provider-parity-{task_id}",
-                    scan_root=str(source_root),
-                    scanned_at=lock.get("scanned_at"),
-                )
-                if payload.get("scan_version") != lock.get("scan_version"):
-                    raise ValueError(f"patch index scan_version drifted for {task_id}")
-                if len(payload.get("modules", [])) != lock.get("module_count"):
-                    raise ValueError(f"patch index module count drifted for {task_id}")
-                semantic_sha = semantic_index_sha256(payload, source_root)
-                if semantic_sha != lock.get("semantic_sha256"):
-                    raise ValueError(
-                        f"patch index semantic SHA-256 drifted for {task_id}: "
-                        f"expected {lock.get('semantic_sha256')}, got {semantic_sha}"
-                    )
-                encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
-                digest = hashlib.sha256(encoded).hexdigest()
-                if str(source_root) == canonical_root and digest != lock.get("raw_sha256_at_canonical_root"):
-                    raise ValueError(f"patch index canonical raw SHA-256 drifted for {task_id}")
-                destination = bundle_dir / f"{task_id}.json"
-                with tempfile.NamedTemporaryFile(dir=bundle_dir, prefix=f".{task_id}.", delete=False) as handle:
-                    temporary = Path(handle.name)
-                    handle.write(encoded)
-                try:
-                    os.replace(temporary, destination)
-                finally:
-                    temporary.unlink(missing_ok=True)
-                installed[task_id] = digest
-            finally:
-                if created:
-                    _git(worktree, "reset", "--hard", "HEAD")
-                    _git(worktree, "clean", "-fdx")
-                    removal = _git(source_root, "worktree", "remove", str(worktree), check=False)
-                    registered = str(worktree) in _git(source_root, "worktree", "list", "--porcelain").stdout
-                    if removal.returncode != 0 or worktree.exists() or registered:
-                        raise ValueError(
-                            f"patch index worktree cleanup failed for {task_id}: {removal.stderr.strip()[:300]}"
-                        )
+            except BaseException:
+                # A cleanup failure must never displace the failure already unwinding:
+                # the drift/scan error is the diagnosis the operator needs, so it is
+                # re-raised and the cleanup problem is reported alongside it.
+                if created and (failure := _release_worktree(source_root, worktree, task_id)):
+                    print(f"WARNING: {failure}", file=sys.stderr)
+                raise
+            else:
+                # Nothing else in flight, so a leaked worktree is itself the failure:
+                # leaving it registered would dirty the orchestration checkout.
+                if failure := _release_worktree(source_root, worktree, task_id):
+                    raise ValueError(failure)
     finally:
         shutil.rmtree(root, ignore_errors=True)
     return installed

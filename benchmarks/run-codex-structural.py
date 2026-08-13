@@ -188,6 +188,7 @@ from _bench_common.mutation_isolation import (  # noqa: E402
     relocate_frozen_index_for_worktree,
 )
 from _bench_common.paid_lifecycle import paid_approval_matches, write_checksums  # noqa: E402
+from _bench_common.process_group import NEW_PROCESS_GROUP, terminate_process_group  # noqa: E402
 from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     EvaluationResult,
@@ -1349,6 +1350,14 @@ def _cleanup_coordination_root(coordination_root: Path) -> None:
         coordination_root.rmdir()
     except OSError as exc:
         raise ValueError("Codemap coordination root cleanup failed") from exc
+
+
+# Declared stage surface: supported replacements for stage-module reach-ins into
+# private names. Each delegates rather than aliases, so tests patching the private
+# attribute are still observed through the public one.
+def cleanup_coordination_root(coordination_root: Path) -> None:
+    """Remove only a validated, idle rwgate skeleton."""
+    _cleanup_coordination_root(coordination_root)
 
 
 def _shell_environment(home: ArmHome) -> dict[str, str]:
@@ -2684,6 +2693,9 @@ class CodexRun:
     skill_delivery_observed: bool = False
     codemap_errors: int = 0
     fallback_calls: int = 0
+    # Nonzero means the provider reported usage this parser could not read as a
+    # token count, so this row's cost is an undercount rather than a cheap cell.
+    malformed_usage: int = 0
     compliance: bool | None = None
     treatment_adherence: bool = False
     codemap_delivery: str = "none"
@@ -2719,7 +2731,16 @@ class LockedQueryFitness:
 
 
 def _arm_compliance(arm: str, evidence: runtime.CodexParseResult | CodexRun) -> bool | None:
-    """Evaluate the transport-specific required-use contract for one arm."""
+    """Evaluate the transport-specific required-use contract for one arm.
+
+    Scope of the claim: the ``_skill_`` / ``_direct_`` prefixes are configured by
+    construction, not observed — the parser labels a query "skill" only because
+    the C home supplied a ``skill_path`` (see ``runtime.parse_codex_jsonl``). Both
+    branches prove "a successful canonical compact query ran in a verified home
+    for this arm"; the stream cannot tell B and C apart, since both end in the
+    same ``$CODEMAP_BIN`` command. Never read C compliance as proof the Skill was
+    read — ``skill_delivery_observed`` is the separate observational signal.
+    """
     if arm == "B_direct_required":
         return evidence.codemap_direct_compact_successful_calls > 0
     if arm == "C_skill_required":
@@ -2933,7 +2954,11 @@ def _pooling_ineligibility_reasons(run: CodexRun) -> tuple[str, ...]:
         reasons.append("targeted")
     if run.diagnostic_only:
         reasons.append("diagnostic_only")
-    if run.arm in {"B_direct_required", "C_skill_required"} and run.compliance is not True:
+    # Only the strict arm carries a required-use contract. B is an optional-use canary on
+    # both providers, so a zero-query B cell is compliant and stays poolable; excluding it
+    # here dropped exactly the cells where the model declined to query, which biased the
+    # pooled B result toward the runs that happened to use Codemap.
+    if run.arm == "C_skill_required" and run.compliance is not True:
         reasons.append("required_use_missing")
     return tuple(reasons)
 
@@ -3064,6 +3089,27 @@ class CodexRunner:
         self._runtime_snapshot_hashes: dict[Path, str] = {}
         self._runtime_snapshot_modes: dict[Path, int] = {}
         self._runtime_evidence_path: Path | None = None
+        # Every coordination-root cleanup failure, from every call site. The same
+        # operation used to be suppressed at three sites, raised at two, and promoted to
+        # cell contamination at one — so a leak on a suppressed path left no trace at all.
+        self.coordination_cleanup_errors: list[str] = []
+
+    def _cleanup_coordination(self, coordination_path: Path | None) -> str | None:
+        """Remove one coordination root, recording rather than discarding a failure.
+
+        Never raises: every call site is inside a ``finally`` block, where raising would
+        mask the exception that carries the real cause. The returned message lets a
+        cell-scoped caller additionally promote the failure to contamination.
+        """
+        if coordination_path is None:
+            return None
+        try:
+            _cleanup_coordination_root(coordination_path)
+        except ValueError as exc:
+            message = f"coordination cleanup failed for {coordination_path}: {exc}"
+            self.coordination_cleanup_errors.append(message)
+            return message
+        return None
 
     def _bind_runtime_snapshot(
         self,
@@ -3343,6 +3389,17 @@ class CodexRunner:
             reasoning_effort=self.reasoning_effort,
         )
 
+    # Declared stage surface (see module-level note): delegating replacements for
+    # stage-module reach-ins. `run_stream` avoids the name `subprocess` so it
+    # cannot be confused with the stdlib module.
+    def prepare_verified_home(self, arm: str, **kwargs: Any) -> ArmHome:
+        """Create and verify one arm home."""
+        return self._prepare_verified_home(arm, **kwargs)
+
+    def run_stream(self, command: list[str], env: Mapping[str, str], **kwargs: Any) -> str:
+        """Run one Codex attempt and return its raw stream."""
+        return self._subprocess(command, env, **kwargs)
+
     def _prepare_verified_home(
         self,
         arm: str,
@@ -3488,10 +3545,8 @@ class CodexRunner:
                 home=home,
                 source_paths=(runtime_plugin_sources or bound_sources).values(),
             )
-            if home is not None and home.coordination_path is not None:
-                with contextlib.suppress(ValueError):
-                    _cleanup_coordination_root(home.coordination_path)
             if home is not None:
+                self._cleanup_coordination(home.coordination_path)
                 home.cleanup()
             raise
         assert home is not None
@@ -3554,9 +3609,7 @@ class CodexRunner:
                         raise RuntimeError(f"B_direct_required expected query mutated the locked index for {task_id}")
         finally:
             try:
-                if home.coordination_path is not None:
-                    with contextlib.suppress(ValueError):
-                        _cleanup_coordination_root(home.coordination_path)
+                self._cleanup_coordination(home.coordination_path)
             finally:
                 home.cleanup()
 
@@ -3631,8 +3684,7 @@ class CodexRunner:
                 coordination_path = home.coordination_path
                 if coordination_path is not None and coordination_path not in cleaned_coordination_paths:
                     cleaned_coordination_paths.add(coordination_path)
-                    with contextlib.suppress(ValueError):
-                        _cleanup_coordination_root(coordination_path)
+                    self._cleanup_coordination(coordination_path)
                 home.cleanup()
 
     def probe_arm(
@@ -3652,8 +3704,7 @@ class CodexRunner:
             return probe_arm_home(home)
         finally:
             try:
-                if home.coordination_path is not None:
-                    _cleanup_coordination_root(home.coordination_path)
+                self._cleanup_coordination(home.coordination_path)
             finally:
                 home.cleanup()
 
@@ -3682,8 +3733,7 @@ class CodexRunner:
                         )
                     finally:
                         try:
-                            if home.coordination_path is not None:
-                                _cleanup_coordination_root(home.coordination_path)
+                            self._cleanup_coordination(home.coordination_path)
                         finally:
                             home.cleanup()
             finally:
@@ -3846,11 +3896,10 @@ class CodexRunner:
                         self._auth_state.refresh_from_home(home.path)
                     except (RuntimeError, ValueError) as exc:
                         auth_state_error = str(exc)
-                if home.coordination_path is not None:
-                    try:
-                        _cleanup_coordination_root(home.coordination_path)
-                    except ValueError as exc:
-                        postflight_error = postflight_error or str(exc)
+                # Cell-scoped escalation on top of the shared recording policy: a leak
+                # here contaminates this cell's measurement, not just the run's hygiene.
+                cleanup_error = self._cleanup_coordination(home.coordination_path)
+                postflight_error = postflight_error or cleanup_error
                 home.cleanup()
         run.thread_id = parsed.thread_id
         run.output_text = parsed.output_text
@@ -3878,6 +3927,7 @@ class CodexRunner:
             "skill_delivery_observed",
             "codemap_errors",
             "fallback_calls",
+            "malformed_usage",
             "successful_query_arguments",
         ):
             setattr(run, field_name, getattr(parsed, field_name))
@@ -3934,25 +3984,23 @@ class CodexRunner:
         timeout: float | None = None,
         working_directory: Path | None = None,
     ) -> str:
-        """Run one Codex attempt within the coordinate's remaining budget."""
+        """Run one Codex attempt within the coordinate's remaining budget.
+
+        The child runs in its own process group so a timeout kills the descendants too.
+        Killing only the direct child left grandchildren alive, still consuming paid
+        budget outside the measured window.
+        """
         attempt_timeout = self.timeout if timeout is None else timeout
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(  # noqa: S603 - benchmark-owned argv, no shell
                 command,
                 cwd=working_directory or self.repo_path,
                 env=dict(env),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=attempt_timeout,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            return json.dumps(
-                {
-                    "type": "error",
-                    "error": f"timeout ({attempt_timeout}s)",
-                    "error_type": "timeout",
-                }
+                errors="replace",
+                **NEW_PROCESS_GROUP,
             )
         except OSError as exc:
             return json.dumps(
@@ -3962,16 +4010,32 @@ class CodexRunner:
                     "error_type": "launch_os_error",
                 }
             )
-        if completed.returncode != 0:
+        try:
+            stdout, stderr = process.communicate(timeout=attempt_timeout)
+        except subprocess.TimeoutExpired:
+            terminate_process_group(process)
+            # Whatever the agent streamed before the kill is real evidence: the usage
+            # events it already emitted are what it already billed. Discarding them
+            # persisted a timed-out cell as 0 tokens despite genuine spend.
+            stdout, stderr = process.communicate()
             terminal = json.dumps(
                 {
                     "type": "error",
-                    "error": completed.stderr.strip()[:300] or f"non-zero exit {completed.returncode}",
+                    "error": f"timeout ({attempt_timeout}s)",
+                    "error_type": "timeout",
+                }
+            )
+            return ((stdout or "") + "\n" + terminal).lstrip()
+        if process.returncode != 0:
+            terminal = json.dumps(
+                {
+                    "type": "error",
+                    "error": (stderr or "").strip()[:300] or f"non-zero exit {process.returncode}",
                     "error_type": "non_zero_exit",
                 }
             )
-            return (completed.stdout + "\n" + terminal).lstrip()
-        return completed.stdout
+            return ((stdout or "") + "\n" + terminal).lstrip()
+        return stdout or ""
 
 
 def _arm_envelope(arm: str) -> str:
@@ -4000,6 +4064,11 @@ def _arm_envelope(arm: str) -> str:
             "Additional reads and shell work are allowed only as separate native items and are ignored for credit."
         )
     raise ValueError(f"unknown benchmark arm {arm!r}")
+
+
+def arm_envelope(arm: str) -> str:
+    """Return arm-only tool availability instructions (declared stage surface)."""
+    return _arm_envelope(arm)
 
 
 def _append_run(output_path: Path, run: CodexRun, *, execution_index: int) -> None:

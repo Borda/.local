@@ -262,6 +262,7 @@ from _bench_common.provider_parity_contracts import (  # noqa: E402
     ARM_CONTRACTS,
     PARITY_TIMEOUT_SECONDS,
     canonical_task_hash,
+    deterministic_arm_order,
     fresh_input_tokens,
     load_task_policies,
     load_task_suite,
@@ -739,10 +740,23 @@ def parse_claude_readcrop_events(
         "primary_correct": score.primary_correct if score is not None else False,
         "quality_score": score.quality_score if score is not None else None,
         "quality_components": dict(score.quality_components) if score is not None else {},
-        "parameter_recall": score.parameter_recall if score is not None else 0.0,
+        # POLICY — unscoreable cell: every recall field is None, none is zero.
+        # Previously an unparsable answer wrote 0.0 into parameter_recall and
+        # keyword_recall_diagnostic but None into the two behavior fields, so the
+        # same failure was averaged INTO two means and omitted FROM the other two.
+        # None is now uniform, matching quality_score/quality_components in this
+        # same row: a 0.0 recall asserts a measurement that never happened, while
+        # None says the answer could not be scored at all. None therefore means
+        # "not scoreable OR not applicable"; `answer_error` and `quality_score`
+        # disambiguate the two, and `success`/`primary_correct` (both False here)
+        # carry the failure so it is never mistaken for a passing cell.
+        # Downstream means must report the unscoreable count alongside the mean.
+        # Mirrors the Codex lane (_bench_codex/stage_readcrop.py) so the two
+        # providers cannot disagree on what a failed cell means.
+        "parameter_recall": score.parameter_recall if score is not None else None,
         "behavior_fact_recall": score.behavior_fact_recall if score is not None else None,
         "behavior_facts_correct": score.behavior_facts_correct if score is not None else None,
-        "keyword_recall_diagnostic": score.keyword_recall if score is not None else 0.0,
+        "keyword_recall_diagnostic": score.keyword_recall if score is not None else None,
         "input_tokens": native_usage.input_tokens,
         "cache_creation_tokens": native_usage.cache_creation_tokens,
         "cache_read_tokens": native_usage.cache_read_tokens,
@@ -3337,8 +3351,21 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             if task.requires_reset:
                 import subprocess as _sp
 
+                # The excludes mirror the copytree ignore list above. Without them the diff
+                # reports every top-level entry the sandbox never received (.git) and every
+                # cache tree the sandbox was seeded with selectively (.cache) as a
+                # difference — artifact bloat at best, and a spurious `+` line in fix
+                # scoring the moment anything writes under .cache during the run.
                 proc = _sp.run(
-                    ["diff", "-ru", "--no-dereference", str(self.repo_path), str(cwd)],
+                    [
+                        "diff",
+                        "-ru",
+                        "--no-dereference",
+                        "--exclude=.git",
+                        "--exclude=.cache",
+                        str(self.repo_path),
+                        str(cwd),
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -3401,25 +3428,42 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         _test_capture: list[Optional[bool]] = []
 
         _MAX_API_RETRIES = 2
-        with self._effective_cwd(task, arm, _diff_capture, _test_capture) as cwd:
-            # Each benchmark task is an independent agent session. Clear the
-            # inject-preamble session-once flag so each task receives the
-            # codemap status line regardless of inter-task timing.
-            _flag = Path(tempfile.gettempdir()) / f"codemap-preamble-{cwd.name}"
-            _flag.unlink(missing_ok=True)
+        for attempt in range(_MAX_API_RETRIES + 1):
+            # Every attempt gets its own sandbox. Reusing one copy across retries let a
+            # failed attempt's edits — and any file it created — survive into the next
+            # one, so a retry no longer started from the task's baseline tree and its
+            # captured diff mixed both attempts' work.
+            _diff_capture = []
+            _test_capture = []
+            with self._effective_cwd(task, arm, _diff_capture, _test_capture) as cwd:
+                # Each benchmark task is an independent agent session. Clear the
+                # inject-preamble session-once flag so each task receives the
+                # codemap status line regardless of inter-task timing.
+                _flag = Path(tempfile.gettempdir()) / f"codemap-preamble-{cwd.name}"
+                _flag.unlink(missing_ok=True)
 
-            for attempt in range(_MAX_API_RETRIES + 1):
                 result = BenchmarkRun(
                     arm=arm, task_id=task.id, task_type=task.type, model=self.model_short, success=False
                 )
                 self._stream_events(cmd, result, update_fn=update_fn, cwd=cwd, arm=arm)
                 # 0-token result = API connectivity failure (ConnectionRefused / FailedToOpenSocket);
-                # retry up to 2 times before surfacing as error.
-                if result.input_tokens == 0 and result.output_tokens == 0 and attempt < _MAX_API_RETRIES:
-                    result.error = f"api_failure_retry_{attempt + 1}"
-                    time.sleep(2**attempt)  # exponential backoff: 1s, 2s
-                    continue
-                break
+                # retry up to 2 times before surfacing as error. A wall-clock kill also leaves
+                # 0 tokens (the killed process never emits its `result` event) but has already
+                # burned a full timeout of paid model work — never retry it.
+                timed_out = result.elapsed_s >= self.timeout or (result.error or "").startswith("timeout")
+                retrying = (
+                    result.input_tokens == 0
+                    and result.output_tokens == 0
+                    and not timed_out
+                    and attempt < _MAX_API_RETRIES
+                )
+            # The sandbox is torn down before the backoff so a retry never waits with the
+            # previous attempt's copy still on disk.
+            if retrying:
+                result.error = f"api_failure_retry_{attempt + 1}"
+                time.sleep(2**attempt)  # exponential backoff: 1s, 2s
+                continue
+            break
         if _diff_capture:
             result.agent_diff = _diff_capture[0]
         if _test_capture:
@@ -3965,11 +4009,33 @@ def score_fix(
 
 
 def _median_metrics(rlist: list[BenchmarkRun]) -> dict[str, float | None]:
-    ok = [r for r in rlist if r.success]
-    if not ok:
+    """Return one cell's success-only medians alongside its failure count and all-runs spend.
+
+    Medians taken over successful runs only let a failure-heavy arm read as the cheap,
+    fast one: a cell where two of three runs died at the wall-clock limit reported the
+    survivor's cost and elapsed time, and the two that burned a full paid timeout each
+    left no trace in the numbers. ``n_runs``/``n_failures`` and the ``*_all`` aggregates
+    (which include failed runs) therefore accompany every cell, and a cell whose runs all
+    failed now reports that spend instead of collapsing to an empty dict. Quality medians
+    stay success-only — a failed run has no answer to score.
+    """
+    if not rlist:
         return {}
+    ok = [r for r in rlist if r.success]
+    spend: dict[str, float | None] = {
+        "n_runs": len(rlist),
+        "n_failures": len(rlist) - len(ok),
+        "success_rate": len(ok) / len(rlist),
+        "tool_calls_all": statistics.median([r.tools.total for r in rlist]),
+        "input_tokens_all": statistics.median([r.input_tokens for r in rlist]),
+        "cost_usd_all": statistics.median([run_cost_usd(r) for r in rlist]),
+        "elapsed_s_all": statistics.median([r.elapsed_s for r in rlist]),
+    }
+    if not ok:
+        return spend
     chunk_vals = [r.quality.chunk_hit_rate for r in ok if r.quality.chunk_hit_rate is not None]
     return {
+        **spend,
         "tool_calls": statistics.median([r.tools.total for r in ok]),
         "input_tokens": statistics.median([r.input_tokens for r in ok]),
         "cost_usd": statistics.median([run_cost_usd(r) for r in ok]),
@@ -3981,7 +4047,6 @@ def _median_metrics(rlist: list[BenchmarkRun]) -> dict[str, float | None]:
         "delta": statistics.median([r.quality.delta for r in ok]),
         # None when no run in the cell carried a semble corpus (plain / codemap arms).
         "chunk_hit_rate": statistics.median(chunk_vals) if chunk_vals else None,
-        "success_rate": len(ok) / len(rlist),
     }
 
 
@@ -4339,16 +4404,43 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
     )
 
 
+def _agentic_arm_order(task: Task, model_short: str, arms: list[str], rep: int) -> tuple[str, ...]:
+    """Return the execution order of *arms* for one task/model/repetition block.
+
+    Only the canonical A/B/C set is counterbalanced, through the same revision-bound
+    policy the structural lanes use. Any other arm set (a single arm, a legacy pair) is
+    order-invariant or has no shared policy, so the caller's declared order stands.
+    """
+    if set(arms) != set(AGENTIC_ARMS) or len(arms) != len(AGENTIC_ARMS):
+        return tuple(arms)
+    return deterministic_arm_order(
+        task.experiment_revision or LEGACY_EXPERIMENT_REVISION,
+        "claude",
+        model_short,
+        task.id,
+        rep + 1,
+    )
+
+
 def _iter_combos(
     tasks: list[Task],
     models: list[tuple[str, str]],
     arms: list[str],
     repeat: int,
 ) -> Iterator[tuple[Task, str, str, str, int]]:
+    """Yield every (task, model, arm, repetition) cell in counterbalanced execution order.
+
+    A fixed A→B→C sequence confounds arm with position: anything that drifts across a
+    block — provider-side load, rate limiting, machine state — hits the arms in the same
+    order every time, and the elapsed-time comparison inherits that drift as if it were
+    an arm effect. The structural lanes already counterbalance via the shared
+    revision-bound policy; the agentic lane now reuses it, keyed by repetition as well so
+    repeated blocks of one cell do not replay a single order.
+    """
     for task in tasks:
         for model_short, model_id in models:
-            for arm in arms:
-                for rep in range(repeat):
+            for rep in range(repeat):
+                for arm in _agentic_arm_order(task, model_short, arms, rep):
                     yield task, model_short, model_id, arm, rep
 
 

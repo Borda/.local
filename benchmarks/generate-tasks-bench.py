@@ -2432,11 +2432,19 @@ _ORACLE_BACKED_CQ_CHECKS: frozenset[str] = frozenset({"undocumented", "uncovered
 def _update_is_oracle_backed(task: dict) -> bool:
     """Return True when this task's refreshed ground truth is AST-oracle-derived, not circular.
 
-    Oracle-backed: fn_call_graph / develop_blast_radius (qualified AST caller oracle), review-assistance
-    tasks whose every command has an AST oracle, and the ``undocumented`` (AST docstring oracle) and
-    ``uncovered`` (AST test-reference oracle) code_quality checks. Everything else — symbol line ranges,
-    coupled / xrefs_broken / combined_health, and historical real_issue provenance — is scan-query-derived
-    or static and therefore not refreshable under a plain update.
+    Oracle-backed: every member of :data:`_ORACLE_BACKED_TYPES` — fn_call_graph and
+    develop_blast_radius (qualified AST caller oracle) plus the diff_impact / graph_central /
+    graph_path / graph_fn_blast / module_blast_radius / debug_from_trace series (AST-oracle-only by
+    construction) — along with review-assistance tasks whose every command has an AST oracle, and the
+    ``undocumented`` (AST docstring oracle) and ``uncovered`` (AST test-reference oracle) code_quality
+    checks.
+
+    Everything else is excluded, but not all for the same reason. Symbol line ranges, coupled /
+    xrefs_broken / combined_health, and historical real_issue provenance are genuinely
+    scan-query-derived or static. ``feature_scaffolding`` is not: :func:`_validate_feature` opens with
+    ``del sq, index`` and validates purely against the local source AST. It is held back from plain
+    ``--update`` as conservatism, not because its provenance is circular — so its exclusion is safe to
+    revisit, while the others are not.
 
     Examples:
         >>> _update_is_oracle_backed({"type": "fn_call_graph"})

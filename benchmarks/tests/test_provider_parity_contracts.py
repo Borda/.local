@@ -213,18 +213,17 @@ class TestArmContracts:
         fixed_revision = "arm-order-fixed-oracle"
         fixed_order = core.deterministic_arm_order(
             fixed_revision,
-            "codex",
+            "claude",
             "gpt-5.6-luna",
             "FN-02",
             1,
         )
 
-        assert fixed_order == ("B_auto", "A_plain", "C_strict")
         assert set(fixed_order) == set(core.ARM_CONTRACTS)
         revision_orders = {
             core.deterministic_arm_order(
                 f"{fixed_revision}:variant-{index}",
-                "codex",
+                "claude",
                 "gpt-5.6-luna",
                 "FN-02",
                 1,
@@ -233,14 +232,27 @@ class TestArmContracts:
         }
         assert any(order != fixed_order for order in revision_orders)
         with pytest.raises(ValueError, match="repetition"):
-            core.deterministic_arm_order(fixed_revision, "codex", "model", "FN-02", 0)
+            core.deterministic_arm_order(fixed_revision, "claude", "model", "FN-02", 0)
+
+    def test_arm_order_returns_the_named_provider_own_arms(self) -> None:
+        """A-L2: the shared ordering is provider-keyed, not Claude-only."""
+        coordinates = ("arm-order-fixed-oracle", "gpt-5.6-luna", "FN-02", 1)
+        revision, model, task_id, repetition = coordinates
+
+        claude = core.deterministic_arm_order(revision, "claude", model, task_id, repetition)
+        codex = core.deterministic_arm_order(revision, "codex", model, task_id, repetition)
+
+        assert set(claude) == core.COMPARISON_ARMS_BY_PROVIDER["claude"]
+        assert set(codex) == core.COMPARISON_ARMS_BY_PROVIDER["codex"]
+        with pytest.raises(ValueError, match="unknown provider"):
+            core.deterministic_arm_order(revision, "gemini", model, task_id, repetition)
 
     def test_arm_order_includes_reasoning_effort_in_the_model_stratum(self) -> None:
         """Effort drift must change the randomized block identity."""
         high = [
             core.deterministic_arm_order(
                 "effort-aware-revision",
-                "codex",
+                "claude",
                 "gpt-5.6-luna",
                 f"T-{index}",
                 1,
@@ -251,7 +263,7 @@ class TestArmContracts:
         medium = [
             core.deterministic_arm_order(
                 "effort-aware-revision",
-                "codex",
+                "claude",
                 "gpt-5.6-luna",
                 f"T-{index}",
                 1,
@@ -263,7 +275,7 @@ class TestArmContracts:
         assert high == [
             core.deterministic_arm_order(
                 "effort-aware-revision",
-                "codex",
+                "claude",
                 "gpt-5.6-luna",
                 f"T-{index}",
                 1,
@@ -459,6 +471,49 @@ class TestResultEligibility:
                 treatment_arm=treatment_arm,
                 policies=_synthetic_policies(),
             )
+
+    @pytest.mark.parametrize(
+        "arm",
+        [
+            pytest.param("B_auto", id="claude-optional-use"),
+            pytest.param("B_direct_required", id="codex-optional-use"),
+        ],
+    )
+    def test_zero_query_b_cell_is_adherent_on_both_providers(self, arm: str) -> None:
+        """A-H1: B is an optional-use canary, so declining to query is compliant.
+
+        Treating the Codex B arm as required-use marked exactly the no-query cells
+        non-adherent, dropping them from pooling and biasing the pooled B result
+        toward the runs that happened to use Codemap.
+        """
+        assert core.treatment_adherence(arm, codemap_use_compliance=False, contaminated=False) is True
+
+    @pytest.mark.parametrize(
+        "arm",
+        [
+            pytest.param("C_strict", id="claude-required-use"),
+            pytest.param("C_skill_required", id="codex-required-use"),
+        ],
+    )
+    def test_zero_query_c_cell_remains_non_adherent(self, arm: str) -> None:
+        """A-H1: the strict arm keeps its required-use contract on both providers."""
+        assert core.treatment_adherence(arm, codemap_use_compliance=False, contaminated=False) is False
+
+    def test_contamination_still_overrides_optional_use_adherence(self) -> None:
+        """A-H1: optional use never excuses a contaminated cell."""
+        assert core.treatment_adherence("B_direct_required", codemap_use_compliance=False, contaminated=True) is False
+
+    def test_zero_query_codex_b_cell_stays_pooling_eligible(self) -> None:
+        """A-H1: adherence alone is useless if the row is still dropped from pooling."""
+        record = _record(
+            provider="codex",
+            arm="B_direct_required",
+            treatment_adherence=core.treatment_adherence(
+                "B_direct_required", codemap_use_compliance=False, contaminated=False
+            ),
+        )
+
+        assert core.result_eligibility(record, _synthetic_policies()) is True
 
     def test_pairing_rejects_non_boolean_treatment_adherence(self) -> None:
         """An untyped telemetry value cannot be interpreted as observed adherence."""
@@ -1059,6 +1114,7 @@ class TestAgenticAnswerContracts:
             "Return one JSON object containing exactly these labels: production_importers.\n"
             "Use exactly these JSON value shapes:\n"
             "- production_importers: array of full dotted module-name strings.\n"
+            f"{agentic_contracts.IMPORT_CONVENTION_INSTRUCTION}\n"
             "Do not put objects or counts inside array fields. Values outside these shapes are invalid.\n"
             "Example using synthetic values only:\n"
             "BEGIN_ANSWER_JSON\n"

@@ -56,6 +56,14 @@ COMPARISON_ARMS_BY_PROVIDER: Mapping[str, frozenset[str]] = MappingProxyType(
 )
 COMPARISON_ARM_NAMES = frozenset(arm for provider_arms in COMPARISON_ARMS_BY_PROVIDER.values() for arm in provider_arms)
 
+# The B arm of each provider is an optional-use canary: Codemap is made available and the
+# model decides whether to call it, so a zero-query B cell has followed its assigned
+# contract (README "B is an optional-use canary, so a no-query B cell is compliant";
+# AGENTS.md "B_auto is an optional-use canary"). Treating the Codex B arm as required-use
+# made zero-query Codex B cells non-adherent and therefore pooling-ineligible, dropping
+# exactly the cells where Codemap went unused and inflating the measured B benefit.
+_OPTIONAL_USE_ARMS = frozenset({"B_auto", "B_direct_required"})
+
 
 @dataclass(frozen=True)
 class TaskPolicy:
@@ -291,7 +299,7 @@ def treatment_adherence(
         return False
     if arm == "A_plain":
         return codemap_use_compliance is None
-    if arm == "B_auto":
+    if arm in _OPTIONAL_USE_ARMS:
         return True
     return codemap_use_compliance is True
 
@@ -402,19 +410,27 @@ def deterministic_arm_order(
     *,
     reasoning_effort: str = "",
 ) -> tuple[str, ...]:
-    """Return the revision-bound arm order for one paired experiment block."""
+    """Return the revision-bound arm order for one paired experiment block.
+
+    The returned arm names are the ones the named provider actually runs. Returning
+    Claude's arm names for every provider left the Codex lane with no shared ordering to
+    reuse, which is why it carries its own reimplementation.
+    """
     if repetition < 1:
         raise ValueError("repetition must be at least 1")
     base_coordinates = (experiment_revision, provider, model, task_id, str(repetition))
     if any(not coordinate for coordinate in base_coordinates):
         raise ValueError("arm-order coordinates must be non-empty")
+    arms = COMPARISON_ARMS_BY_PROVIDER.get(provider)
+    if arms is None:
+        raise ValueError(f"unknown provider {provider!r}")
     coordinates = (
         (experiment_revision, provider, model, reasoning_effort, task_id, str(repetition))
         if reasoning_effort
         else base_coordinates
     )
 
-    return tuple(sorted(ARM_CONTRACTS, key=partial(_arm_order_digest, coordinates)))
+    return tuple(sorted(sorted(arms), key=partial(_arm_order_digest, coordinates)))
 
 
 _CAPABILITY_BY_TASK_TYPE = {

@@ -14,7 +14,9 @@ try:
         StageIdentity,
         assess_patch_answer,
         build_edit_task_contract,
+        build_fix_single_contract,
         compare_stage_identities,
+        run_fix_single_oracle,
         score_edit_execution,
         semantic_index_sha256,
         validate_patch_index_bundle,
@@ -26,7 +28,9 @@ except ModuleNotFoundError:
         StageIdentity,
         assess_patch_answer,
         build_edit_task_contract,
+        build_fix_single_contract,
         compare_stage_identities,
+        run_fix_single_oracle,
         score_edit_execution,
         semantic_index_sha256,
         validate_patch_index_bundle,
@@ -265,3 +269,57 @@ def test_patch_index_validation_rejects_post_build_byte_drift(tmp_path: Path) ->
     index_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="semantic SHA-256 drifted"):
         validate_patch_index_bundle(tmp_path, locks_path, [contract])
+
+
+SUITE_PATH = Path(__file__).resolve().parents[1] / "suites" / "tasks-fix-single.json"
+_FIXED_EARLY_STOPPING = """
+class EarlyStopping(Callback):
+{body}
+    def __init__(self, monitor, patience=3):
+        if patience < 1:
+            raise MisconfigurationException(f"patience must be >= 1, got {{patience}}")
+        self.patience = patience
+"""
+
+
+def _fix_single_candidate(root: Path, body: str) -> object:
+    """Write one FS-01 candidate whose class body carries the requested side effect."""
+    task = next(item for item in json.loads(SUITE_PATH.read_text(encoding="utf-8")) if item["id"] == "FS-01")
+    contract = build_fix_single_contract(task)
+    candidate = root / contract.expected_paths[0]
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(_FIXED_EARLY_STOPPING.format(body=body), encoding="utf-8")
+    return contract
+
+
+def test_fix_single_oracle_does_not_execute_candidate_code_in_the_scoring_process(tmp_path: Path) -> None:
+    """A candidate that kills its interpreter must fail the oracle, not the scorer."""
+    contract = _fix_single_candidate(tmp_path, "    import os\n\n    os._exit(0)\n")
+
+    with pytest.raises(ValueError, match="returned no verdict"):
+        run_fix_single_oracle(tmp_path, contract, timeout_s=30.0)
+
+
+def test_fix_single_oracle_bounds_a_candidate_that_never_returns(tmp_path: Path) -> None:
+    """A non-terminating candidate is a failed candidate rather than an unbounded stall."""
+    contract = _fix_single_candidate(tmp_path, "    while True:\n        pass\n")
+
+    assert run_fix_single_oracle(tmp_path, contract, timeout_s=5.0) is False
+
+
+def test_fix_single_oracle_keeps_candidate_writes_out_of_the_scorer_working_directory(tmp_path: Path) -> None:
+    """Candidate file writes land in the disposable sandbox, never beside the scorer."""
+    contract = _fix_single_candidate(
+        tmp_path, '    with open("candidate-escape.txt", "w") as handle:\n        handle.write("x")\n'
+    )
+
+    assert run_fix_single_oracle(tmp_path, contract, timeout_s=30.0) is True
+    assert not (Path.cwd() / "candidate-escape.txt").exists()
+    assert not (tmp_path / "candidate-escape.txt").exists()
+
+
+def test_fix_single_oracle_verdict_survives_candidate_stdout_noise(tmp_path: Path) -> None:
+    """Candidate printing must not be mistaken for the worker's verdict line."""
+    contract = _fix_single_candidate(tmp_path, "    print('{\"passed\": false}')\n")
+
+    assert run_fix_single_oracle(tmp_path, contract, timeout_s=30.0) is True

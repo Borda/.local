@@ -107,9 +107,8 @@ def test_semantic_index_identity_is_stable_across_runtime_roots(tmp_path: Path) 
     assert payload["scan_root"] != second_payload["scan_root"]
 
 
-def test_patch_index_bundle_builds_each_exact_historical_graph_at_the_runtime_root(tmp_path: Path) -> None:
-    """Patch tasks must never reuse the current-revision graph for historical source."""
-    module = _load_script()
+def _patch_bundle_source(tmp_path: Path) -> tuple[Path, str, Path]:
+    """Create a one-commit source checkout plus a stub scanner; return source, commit, scanner."""
     source = tmp_path / "source"
     source.mkdir()
     subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
@@ -134,33 +133,6 @@ def test_patch_index_bundle_builds_each_exact_historical_graph_at_the_runtime_ro
     commit = subprocess.run(
         ["git", "-C", str(source), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
     ).stdout.strip()
-    semantic_payload = {
-        "scan_version": 13,
-        "scanned_at": "locked",
-        "project": "provider-parity-PT-01",
-        "scan_root": str(source.resolve()),
-        "modules": [{"file": f"{source.resolve()}/demo.py"}],
-    }
-    locks = tmp_path / "locks.json"
-    locks.write_text(
-        json.dumps(
-            {
-                "schema_version": "provider-parity-patch-index-locks-v1",
-                "canonical_scan_root": "/different/canonical/root",
-                "tasks": {
-                    "PT-01": {
-                        "baseline_commit": commit,
-                        "module_count": 1,
-                        "raw_sha256_at_canonical_root": "0" * 64,
-                        "scan_version": 13,
-                        "scanned_at": "locked",
-                        "semantic_sha256": module.semantic_index_sha256(semantic_payload, source),
-                    }
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
     scanner = tmp_path / "scan-index"
     scanner.write_text(
         "#!/usr/bin/env python3\n"
@@ -173,6 +145,57 @@ def test_patch_index_bundle_builds_each_exact_historical_graph_at_the_runtime_ro
         encoding="utf-8",
     )
     scanner.chmod(0o755)
+    return source, commit, scanner
+
+
+def _locked_semantic_sha256(module: ModuleType, source: Path) -> str:
+    """Return the semantic identity the stub scanner's graph carries once relocated to *source*."""
+    return module.semantic_index_sha256(
+        {
+            "scan_version": 13,
+            "scanned_at": "locked",
+            "project": "provider-parity-PT-01",
+            "scan_root": str(source.resolve()),
+            "modules": [{"file": f"{source.resolve()}/demo.py"}],
+        },
+        source,
+    )
+
+
+def _write_patch_locks(path: Path, *, commit: str, canonical_root: str, semantic_sha256: str) -> Path:
+    """Write a single-task patch lock document and return its path."""
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "provider-parity-patch-index-locks-v1",
+                "canonical_scan_root": canonical_root,
+                "tasks": {
+                    "PT-01": {
+                        "baseline_commit": commit,
+                        "module_count": 1,
+                        "raw_sha256_at_canonical_root": "0" * 64,
+                        "scan_version": 13,
+                        "scanned_at": "locked",
+                        "semantic_sha256": semantic_sha256,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_patch_index_bundle_builds_each_exact_historical_graph_at_the_runtime_root(tmp_path: Path) -> None:
+    """Patch tasks must never reuse the current-revision graph for historical source."""
+    module = _load_script()
+    source, commit, scanner = _patch_bundle_source(tmp_path)
+    locks = _write_patch_locks(
+        tmp_path / "locks.json",
+        commit=commit,
+        canonical_root="/different/canonical/root",
+        semantic_sha256=_locked_semantic_sha256(module, source),
+    )
 
     installed = module.prepare_patch_index_bundle(source, locks, scanner)
 
@@ -190,6 +213,99 @@ def test_patch_index_bundle_builds_each_exact_historical_graph_at_the_runtime_ro
         ).stdout
         == ""
     )
+
+
+def test_patch_index_bundle_warns_when_the_raw_byte_lock_cannot_be_checked(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Off the canonical checkout path the skipped byte-identity check must be announced."""
+    module = _load_script()
+    source, commit, scanner = _patch_bundle_source(tmp_path)
+    locks = _write_patch_locks(
+        tmp_path / "locks.json",
+        commit=commit,
+        canonical_root="/different/canonical/root",
+        semantic_sha256=_locked_semantic_sha256(module, source),
+    )
+
+    module.prepare_patch_index_bundle(source, locks, scanner)
+
+    assert "raw byte-identity check skipped for PT-01" in capsys.readouterr().err
+
+
+def test_patch_index_bundle_reports_graph_drift_even_when_cleanup_also_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failing worktree release must not displace the drift that invalidated the run."""
+    module = _load_script()
+    source, commit, scanner = _patch_bundle_source(tmp_path)
+    locks = _write_patch_locks(
+        tmp_path / "locks.json", commit=commit, canonical_root="/different/canonical/root", semantic_sha256="d" * 64
+    )
+    released = module._release_worktree
+    monkeypatch.setattr(
+        module,
+        "_release_worktree",
+        lambda root, worktree, task_id: released(root, worktree, task_id) or "cleanup exploded",
+    )
+
+    with pytest.raises(ValueError, match="semantic SHA-256 drifted"):
+        module.prepare_patch_index_bundle(source, locks, scanner)
+
+    assert "cleanup exploded" in capsys.readouterr().err
+
+
+def test_patch_index_bundle_raises_when_cleanup_is_the_only_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A leaked worktree on an otherwise clean pass must still fail the bundle."""
+    module = _load_script()
+    source, commit, scanner = _patch_bundle_source(tmp_path)
+    locks = _write_patch_locks(
+        tmp_path / "locks.json",
+        commit=commit,
+        canonical_root="/different/canonical/root",
+        semantic_sha256=_locked_semantic_sha256(module, source),
+    )
+    released = module._release_worktree
+    monkeypatch.setattr(
+        module,
+        "_release_worktree",
+        lambda root, worktree, task_id: released(root, worktree, task_id) or "cleanup failed for PT-01",
+    )
+
+    with pytest.raises(ValueError, match="cleanup failed for PT-01"):
+        module.prepare_patch_index_bundle(source, locks, scanner)
+
+
+def test_replace_root_rewrites_path_prefixes_without_touching_content(tmp_path: Path) -> None:
+    """Only the scan root and paths beneath it are relocated; prose and siblings stay verbatim."""
+    module = _load_script()
+    payload = {
+        "scan_root": "/scan/repo",
+        "modules": [
+            {
+                "file": "/scan/repo/src/demo.py",
+                "docstring_first_line": "Reads defaults from /scan/repo/setup.cfg at import time.",
+                "neighbour": "/scan/repo-other/src/demo.py",
+                "imports": ["/scan/repo/src/helper.py", "relative/path.py"],
+            }
+        ],
+    }
+
+    rewritten = module._replace_root(payload, "/scan/repo", "/locked/root")
+
+    assert rewritten == {
+        "scan_root": "/locked/root",
+        "modules": [
+            {
+                "file": "/locked/root/src/demo.py",
+                "docstring_first_line": "Reads defaults from /scan/repo/setup.cfg at import time.",
+                "neighbour": "/scan/repo-other/src/demo.py",
+                "imports": ["/locked/root/src/helper.py", "relative/path.py"],
+            }
+        ],
+    }
 
 
 def test_patch_index_bundle_fails_before_scanning_when_baseline_object_is_missing(tmp_path: Path) -> None:

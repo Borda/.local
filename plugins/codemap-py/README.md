@@ -71,25 +71,25 @@ codemap-py query --compact rdeps mypackage.auth    # what breaks if auth changes
 
 Output prepended to agent spawn prompt as structural context. Agent starts refactor knowing full blast radius — no cold exploration, no mid-refactor surprise that `middleware.py` also imports `auth`. Across benchmark runs on pytorch-lightning, codemap-py cuts tool calls 50–80% while improving structural-recall metrics on import-graph tasks.
 
-**Agentic benchmark (import-graph tasks on pytorch-lightning):** 2026-08-04 run killed by user at 62/144 cells (BA-01..BA-07 of 16 tasks; BA-08..BA-16 never ran) — preliminary, not a confirmatory result. Single repetition, target `pytorch-lightning` 2.6.5, three arms: `A_plain` (no tooling), `B_auto` (model chooses tools, may call the codemap-py skill), `C_required` (skill mandatory).
+**Agentic benchmark (import-graph tasks on pytorch-lightning):** 2026-08-04 run killed by user at 62/144 cells (BA-01..BA-07 of 16 tasks; BA-08..BA-16 never ran) — preliminary, not a confirmatory result. Single repetition, target `pytorch-lightning` 2.6.5, three arms: `A_plain` (no tooling), `B_auto` (model chooses tools, may call the codemap-py skill), `C_strict` (skill mandatory) — recorded as `C_required` in the frozen artifact, which is the name that run predates.
 
 <a id="claude-agentic-2026-08-04"></a>
 
 <!-- result-sync: duplicated in ../../benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished; changes require bidirectional updates or an explicit divergence note. -->
 
-| Model     | Arm        |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |
-| --------- | ---------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: |
-| Haiku 4.5 | A_plain    |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |
-| Haiku 4.5 | B_auto     |   7 | **281.3k** | **3.6k** | **0.091** |  **48.0** | **0.86** | **0.86** |
-| Haiku 4.5 | C_required |   7 |     362.1k |     4.2k |     0.097 |      57.2 |     0.85 |     0.85 |
-| Sonnet 5  | A_plain    |   7 |     722.4k |    17.8k |     0.636 |     179.3 |     0.97 |     0.97 |
-| Sonnet 5  | B_auto     |   7 | **251.6k** | **4.3k** | **0.310** |  **57.3** | **1.00** | **1.00** |
-| Sonnet 5  | C_required |   7 |     370.0k |     4.9k |     0.311 |      60.1 |     0.97 |     0.97 |
-| Opus 5    | A_plain    |   7 |     238.3k |     9.2k |     0.497 |     116.8 |     0.57 |     0.57 |
-| Opus 5    | B_auto     |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** |
-| Opus 5    | C_required |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |
+| Model     | Arm                       |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |
+| --------- | ------------------------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: |
+| Haiku 4.5 | A_plain                   |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |
+| Haiku 4.5 | B_auto                    |   7 | **281.3k** | **3.6k** | **0.091** |  **48.0** | **0.86** | **0.86** |
+| Haiku 4.5 | C_strict (was C_required) |   7 |     362.1k |     4.2k |     0.097 |      57.2 |     0.85 |     0.85 |
+| Sonnet 5  | A_plain                   |   7 |     722.4k |    17.8k |     0.636 |     179.3 |     0.97 |     0.97 |
+| Sonnet 5  | B_auto                    |   7 | **251.6k** | **4.3k** | **0.310** |  **57.3** | **1.00** | **1.00** |
+| Sonnet 5  | C_strict (was C_required) |   7 |     370.0k |     4.9k |     0.311 |      60.1 |     0.97 |     0.97 |
+| Opus 5    | A_plain                   |   7 |     238.3k |     9.2k |     0.497 |     116.8 |     0.57 |     0.57 |
+| Opus 5    | B_auto                    |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** |
+| Opus 5    | C_strict (was C_required) |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |
 
-Bold = best comparable value within each model tier and column (lower is better for tok/cost/elapsed s, higher for erec/rrec). `erec`/`rrec` = exposure/report recall of expected reverse-dependencies. Codemap-py arms cost less than `A_plain` on every axis for Haiku and Sonnet. **Opus splits**: `C_required` wins cost/tokens/elapsed, `B_auto` wins recall — `B_auto` costs more than plain (299.6k tokens / $0.529 vs 238.3k / $0.497) because opus calls the codemap-py skill and then keeps exploring with bash/grep on top of it instead of substituting for manual search, while `C_required` (skill mandatory, no plain-exploration path available) drops opus to 173.6k tokens / $0.344, the cheapest cell in the table. Full breakdown and caveats: [`benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished).
+Bold = best comparable value within each model tier and column (lower is better for tok/cost/elapsed s, higher for erec/rrec). `erec`/`rrec` = exposure/report recall of expected reverse-dependencies. Codemap-py arms cost less than `A_plain` on every axis for Haiku and Sonnet. **Opus splits**: `C_strict` wins cost/tokens/elapsed, `B_auto` wins recall — `B_auto` costs more than plain (299.6k tokens / $0.529 vs 238.3k / $0.497) because opus calls the codemap-py skill and then keeps exploring with bash/grep on top of it instead of substituting for manual search, while `C_strict` (skill mandatory, no plain-exploration path available) drops opus to 173.6k tokens / $0.344, the cheapest cell in the table. Full breakdown and caveats: [`benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished`](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#agentic-blast-radius-run--2026-08-04-unfinished).
 
 **Codex agentic study (completed 2026-08-07):** 16 shared import-graph tasks × one repetition × `A_plain`, `B_auto`, and `C_strict` = 48/48 completed cells on `pytorch-lightning` 2.6.5 with `gpt-5.6-luna` at high effort, codemap-py 0.28.7, codex-rig 0.4.6, and observed Codex CLI 0.146.1.
 

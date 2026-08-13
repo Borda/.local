@@ -284,6 +284,38 @@ class SandboxError(Exception):
     """
 
 
+# pytest's own exit codes. Only 0 (all passed) and 1 (tests failed) carry a test result;
+# 2-5 mean pytest could not deliver one (interrupted, internal error, bad usage, nothing
+# collected). Reading "not 0" as "tests failed" turned a missing plugin or a bad argument
+# into a silent zero for every patch task, because the identical error recurred after the
+# patch and was scored as an unfixed failure.
+PYTEST_EXIT_ALL_PASSED = 0
+PYTEST_EXIT_TESTS_FAILED = 1
+_PYTEST_RESULT_EXIT_CODES = frozenset({PYTEST_EXIT_ALL_PASSED, PYTEST_EXIT_TESTS_FAILED})
+_PYTEST_EXIT_MEANINGS = {
+    2: "interrupted",
+    3: "internal error",
+    4: "usage error",
+    5: "no tests collected",
+}
+
+
+def _pin_pytest_interpreter(argv: list[str]) -> list[str]:
+    """Rewrite a leading bare ``pytest`` to ``sys.executable -m pytest``.
+
+    Leaves any other command untouched, including an argv that already names an
+    interpreter explicitly.
+    """
+    if argv and Path(argv[0]).name in {"pytest", "py.test"}:
+        return [sys.executable, "-m", "pytest", *argv[1:]]
+    return argv
+
+
+def _describe_pytest_exit(returncode: int) -> str:
+    """Describe one non-result pytest exit code for a sandbox error message."""
+    return _PYTEST_EXIT_MEANINGS.get(returncode, "unknown pytest failure")
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -3241,6 +3273,7 @@ class DiffImpactStager:
         self.repo_path = Path(repo_path)
         self.stage_spec = stage_spec
         self._touched: list[Path] = []
+        self.revert_error: str | None = None
 
     def _rel_paths(self) -> list[str]:
         """Return the repo-relative paths named by the stage spec (deduplicated, order-preserving)."""
@@ -3291,19 +3324,34 @@ class DiffImpactStager:
                 self._touched.append(fpath)
 
     def revert(self) -> None:
-        """Restore every touched path via ``git checkout -- <path>`` (best-effort, never raises)."""
+        """Restore every touched path via ``git checkout -- <path>``.
+
+        Never raises, so it is safe from ``__enter__``'s failure path and from
+        ``__exit__`` while another exception propagates. The git result is no longer
+        discarded: a failed revert leaves the *shared* target tree carrying the staged
+        synthetic change, which every later task then sees as a dirty tree far from the
+        task that caused it. The failure is recorded in ``revert_error`` and the touched
+        paths are retained, so ``__exit__`` can escalate and the evidence survives.
+        """
         rels = self._rel_paths()
         if not rels:
             return
         try:
-            subprocess.run(
+            restored = subprocess.run(
                 ["git", "-C", str(self.repo_path), "checkout", "--", *rels],
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
-        except (subprocess.SubprocessError, OSError):
-            pass
+        except (subprocess.SubprocessError, OSError) as exc:
+            self.revert_error = f"git checkout raised: {exc}"
+            return
+        if restored.returncode != 0:
+            self.revert_error = (
+                f"git checkout exited {restored.returncode} for {', '.join(rels)}: {restored.stderr.strip()[:300]}"
+            )
+            return
+        self.revert_error = None
         self._touched = []
 
     def __enter__(self) -> "DiffImpactStager":
@@ -3321,6 +3369,15 @@ class DiffImpactStager:
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         # Revert runs whether the arms succeeded or raised — the change must never outlive the task.
         self.revert()
+        if self.revert_error is None:
+            return
+        # The shared tree is still mutated. Escalate so the run stops here rather than
+        # letting every later task inherit the contamination, but never mask an
+        # in-flight exception that is already carrying the real cause.
+        if exc_type is None:
+            raise DirtyTreeError(
+                f"staged diff-impact change was not reverted; target tree is still mutated: {self.revert_error}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -3397,14 +3454,20 @@ class PatchSandbox:
         self.last_mutation_evidence: dict[str, Any] = {}
 
     def _test_argv(self) -> list[str]:
-        """Build the pytest argv from the task's test_command or failing_test."""
+        """Build the pytest argv from the task's test_command or failing_test.
+
+        A bare ``pytest`` resolves against ``PATH`` and can select an interpreter other
+        than the one running the harness — three benchmark lanes were resolving pytest
+        three different ways while their results were compared as one measurement. The
+        binary is pinned to ``sys.executable -m pytest`` here, matching the codex lane.
+        """
         cmd = self.task.get("test_command")
         if cmd:
-            return shlex.split(cmd)
+            return _pin_pytest_interpreter(shlex.split(cmd))
         failing = self.task.get("failing_test")
         if not failing:
             raise SandboxError(f"task {self.task['id']}: no test_command or failing_test")
-        return ["pytest", failing, "-x"]
+        return [sys.executable, "-m", "pytest", failing, "-x"]
 
     def run(self, diff_text: str) -> bool:
         """Apply *diff_text* at the pre-fix commit and run the failing test.
@@ -3447,20 +3510,33 @@ class PatchSandbox:
                 text=True,
                 timeout=600,
             )
-            if baseline.returncode == 0:
+            if baseline.returncode not in _PYTEST_RESULT_EXIT_CODES:
+                # pytest never produced a test result, so neither run is evidence about
+                # the patch. Surfacing this as a sandbox error keeps the cell unscored
+                # instead of recording a fabricated failure.
+                raise SandboxError(
+                    f"task {self.task['id']}: baseline pytest exited {baseline.returncode} "
+                    f"({_describe_pytest_exit(baseline.returncode)}); "
+                    f"no baseline test result: {baseline.stderr.strip()[:300]}"
+                )
+            if baseline.returncode == PYTEST_EXIT_ALL_PASSED:
                 # Test already passes before the patch — cannot validate the fix.
                 return False
 
             # Apply the diff. Prefer `git apply` (respects a/ b/ prefixes); fall back to patch -p1.
+            # `--reject` is deliberately absent: it applies the hunks it can and still exits
+            # non-zero, which left the fallback re-applying the same file onto an already
+            # half-patched tree. The tree is reset between attempts for the same reason.
             patch_file = worktree / ".patch-bench.diff"
             patch_file.write_text(diff_text)
             applied = subprocess.run(
-                ["git", "-C", str(worktree), "apply", "--reject", "--whitespace=nowarn", str(patch_file)],
+                ["git", "-C", str(worktree), "apply", "--whitespace=nowarn", str(patch_file)],
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
             if applied.returncode != 0:
+                self._reset_worktree(worktree)
                 fallback = subprocess.run(
                     ["patch", "-p1", "-i", str(patch_file)],
                     cwd=str(worktree),
@@ -3472,6 +3548,10 @@ class PatchSandbox:
                     # Patch did not apply — count as a failed patch, not a sandbox error.
                     return False
 
+            # Remove the harness's own scratch files so they cannot be collected as tests
+            # or read as source by the scored run.
+            self._clean_patch_artifacts(worktree)
+
             test = subprocess.run(
                 [*self._test_argv(), "--timeout=60", "-q"],
                 cwd=str(worktree),
@@ -3479,7 +3559,13 @@ class PatchSandbox:
                 text=True,
                 timeout=600,
             )
-            return test.returncode == 0
+            if test.returncode not in _PYTEST_RESULT_EXIT_CODES:
+                raise SandboxError(
+                    f"task {self.task['id']}: post-patch pytest exited {test.returncode} "
+                    f"({_describe_pytest_exit(test.returncode)}); "
+                    f"no post-patch test result: {test.stderr.strip()[:300]}"
+                )
+            return test.returncode == PYTEST_EXIT_ALL_PASSED
 
         try:
             return cell.run(evaluate)
@@ -3495,6 +3581,24 @@ class PatchSandbox:
                 "cleanup_error": evidence.cleanup_error,
                 "restored": evidence.restored,
             }
+
+    def _reset_worktree(self, worktree: Path) -> None:
+        """Discard any partially applied hunks before the fallback apply attempt."""
+        reset = subprocess.run(
+            ["git", "-C", str(worktree), "checkout", "--", "."],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if reset.returncode != 0:
+            raise SandboxError(
+                f"task {self.task['id']}: worktree reset before fallback apply failed: {reset.stderr.strip()}"
+            )
+
+    def _clean_patch_artifacts(self, worktree: Path) -> None:
+        """Remove the harness diff file and any ``.rej``/``.orig`` files it produced."""
+        for path in [worktree / ".patch-bench.diff", *worktree.rglob("*.rej"), *worktree.rglob("*.orig")]:
+            path.unlink(missing_ok=True)
 
     def _allocate_worktree(self) -> Path:
         """Allocate a unique private worktree path for one attempt or retry."""

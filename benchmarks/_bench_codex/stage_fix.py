@@ -14,9 +14,11 @@ from dataclasses import replace
 from pathlib import Path
 import re
 import shlex
+import subprocess
 import sys
 import time
 from types import ModuleType
+from collections.abc import Iterable
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
@@ -29,7 +31,18 @@ FIX_SINGLE_TASKS_PATH = BENCHMARKS / "suites" / "tasks-fix-single.json"
 FIX_MULTI_TASKS_PATH = BENCHMARKS / "suites" / "tasks-fix-multi.json"
 PATCH_TASKS_PATH = BENCHMARKS / "suites" / "tasks-patch.json"
 PATCH_INDEX_LOCKS_PATH = BENCHMARKS / "suites" / "patch-index-locks.json"
-_MANAGED_PARITY_REPO = (Path(os.sep) / "tmp" / "codemap-provider-parity-pl-2.6.5").resolve()
+_MANAGED_PARITY_REPO_NAME = "codemap-provider-parity-pl-2.6.5"
+# The canonical managed target is the *root* temp directory, not the per-user one:
+# `suites/patch-index-locks.json` locks `canonical_scan_root` to
+# `/private/tmp/codemap-provider-parity-pl-2.6.5`, which is what `/tmp` resolves to on the
+# canonical macOS host. `tempfile.gettempdir()` honours $TMPDIR and would silently point
+# at a different directory, so it cannot be used here. The env override keeps the path
+# overridable on a host where the root temp dir is wrong (Windows especially, where the
+# old `Path(os.sep) / "tmp"` resolved to the drive root).
+_MANAGED_PARITY_REPO = Path(
+    os.environ.get("CODEMAP_PARITY_REPO")
+    or f"{os.sep}tmp{os.sep}{_MANAGED_PARITY_REPO_NAME}"  # portable-paths: canonical-target
+).resolve()
 ARMS = ("A_plain", "B_auto", "C_strict")
 NATIVE_ARMS = {"A_plain": "A_plain", "B_auto": "B_direct_required", "C_strict": "C_skill_required"}
 _FIX_SINGLE_QUERY_ARGUMENTS = {
@@ -142,7 +155,7 @@ def _task_prompt(
         )
     elif arm == "C_strict":
         supplement = (
-            _structural()._arm_envelope("C_skill_required")
+            _structural().arm_envelope("C_skill_required")
             + f' The required canonical query is exactly `"$CODEMAP_BIN" query --compact {shlex.join(query_arguments[task_id])}`.'
             + _executable_codemap_boundary()
         )
@@ -203,6 +216,35 @@ def _patch_snapshot_files(repo_path: Path, tasks: list[dict[str, Any]]) -> dict[
     return shared
 
 
+def assert_query_arguments_cover(
+    task_ids: Iterable[str], query_arguments: Mapping[str, tuple[str, ...]], study: str
+) -> None:
+    """Fail closed when the C_strict query table does not cover every selected task.
+
+    The table is a second source of truth beside the suite, and the prompt that reads it
+    is rendered only once paid execution is already under way — so a task added to the
+    suite without a matching row crashed mid-run, after spending. A dry run renders every
+    prompt, which exercises this too, but the explicit check names the missing IDs.
+
+    Args:
+        task_ids: Task identifiers selected for this stage.
+        query_arguments: The stage's locked C_strict query table.
+        study: Stage name used in the error message.
+
+    Raises:
+        ValueError: If any selected task has no locked canonical query.
+
+    Examples:
+        >>> assert_query_arguments_cover(["A"], {"A": ("symbol", "X")}, "fix-single")
+        >>> assert_query_arguments_cover(["B"], {"A": ("symbol", "X")}, "fix-single")
+        Traceback (most recent call last):
+        ValueError: fix-single C_strict query table is missing locked queries for: B
+    """
+    missing = sorted(set(task_ids) - set(query_arguments))
+    if missing:
+        raise ValueError(f"{study} C_strict query table is missing locked queries for: {', '.join(missing)}")
+
+
 def load_fix_single_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]:
     """Load selected immutable Fix-Single tasks with their executable contracts."""
     loaded = [
@@ -212,6 +254,7 @@ def load_fix_single_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]
     ]
     if {item["contract"].task_id for item in loaded} != selected:
         raise ValueError("--tasks must select known fix-single task IDs")
+    assert_query_arguments_cover(selected, _FIX_SINGLE_QUERY_ARGUMENTS, "fix-single")
     return loaded
 
 
@@ -224,6 +267,7 @@ def load_fix_multi_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]
     ]
     if {item["contract"].task_id for item in loaded} != selected:
         raise ValueError("--tasks must select known fix-multi task IDs")
+    assert_query_arguments_cover(selected, _FIX_MULTI_QUERY_ARGUMENTS, "fix-multi")
     return loaded
 
 
@@ -243,6 +287,7 @@ def load_patch_tasks(path: Path, selected: set[str]) -> list[dict[str, Any]]:
     contracts = [build_edit_task_contract(task) for task in raw_tasks]
     if {contract.task_id for contract in contracts} != selected:
         raise ValueError("--tasks must select known patch task IDs")
+    assert_query_arguments_cover(selected, _PATCH_QUERY_ARGUMENTS, "patch")
     identity = _patch_stage_identity(path, contracts)
     return [
         {
@@ -330,6 +375,9 @@ def _parse_patch_cell(
     contract = item["contract"]
     match = answer_re.search(parsed.output_text)
     answer_error = ""
+    # Harness-side failure, kept distinct from `answer_error` (model-side failure) so a
+    # broken sandbox is never published as a wrong answer.
+    infra_error = ""
     candidate_diff = normalized_diff = ""
     execution: dict[str, Any] = {
         "baseline_failed": False,
@@ -351,6 +399,10 @@ def _parse_patch_cell(
     if captured_diff is None and match is None:
         answer_error = "missing exact fenced diff envelope"
     else:
+        # Two different failures used to land in one field. A malformed model answer is
+        # evidence about the model; a git/worktree failure inside the executor is evidence
+        # about the harness. Collapsing them scored infrastructure breakage as a wrong
+        # answer, and any non-ValueError aborted the whole paid run mid-flight.
         try:
             candidate_diff = (
                 captured_diff if captured_diff is not None else assess_patch_answer(match.group("diff")).diff
@@ -365,18 +417,26 @@ def _parse_patch_cell(
                 if isinstance(contract, EditTaskContract)
                 else normalize_fix_single_patch_wire(candidate_diff)
             )
-            executed = execute_patch(repo_path, contract, normalized_diff)
-            if isinstance(executed, EditExecution) and agent_fixture_intact is not None:
-                executed = replace(executed, fixture_intact=executed.fixture_intact and agent_fixture_intact)
-            # Test doubles and the shared edit executor both expose the same
-            # serialization contract; do not couple this adapter to one
-            # concrete execution value type.
-            execution = (
-                dict(executed.as_dict()) if callable(getattr(executed, "as_dict", None)) else dict(vars(executed))
-            )
         except ValueError as exc:
             answer_error = str(exc)
-    codemap_observed_calls = getattr(parsed, "codemap_observed_calls", parsed.codemap_calls)
+        if not answer_error:
+            try:
+                executed = execute_patch(repo_path, contract, normalized_diff)
+                if isinstance(executed, EditExecution) and agent_fixture_intact is not None:
+                    executed = replace(executed, fixture_intact=executed.fixture_intact and agent_fixture_intact)
+                # Test doubles and the shared edit executor both expose the same
+                # serialization contract; do not couple this adapter to one
+                # concrete execution value type.
+                execution = (
+                    dict(executed.as_dict()) if callable(getattr(executed, "as_dict", None)) else dict(vars(executed))
+                )
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                infra_error = f"{type(exc).__name__}: {exc}"
+                execution = {**execution, "error": infra_error}
+    # Declared field on CodexParseResult (default 0). The old getattr fallback
+    # silently substituted a different metric, codemap_calls, whenever an object
+    # lacked the attribute — which only ever happened for an incomplete test double.
+    codemap_observed_calls = parsed.codemap_observed_calls
     codemap_used = codemap_observed_calls > 0
     contaminated = arm == "A_plain" and codemap_used
     compliance = {
@@ -397,28 +457,45 @@ def _parse_patch_cell(
         primary = bool(
             baseline_failed and execution.get("patch_applied", False) and execution.get("targeted_test_passed", False)
         )
-        pooling_eligible = primary and path_ok
+        # Mirrors the Patch stage exactly: `primary_correct` asks only whether the target
+        # was fixed, and regression safety enters through pooling eligibility
+        # (edit_patch_contracts `pooling_eligible = primary and safety and path`). A patch
+        # that fixes its target while breaking every regression is no longer pooled.
+        # Vacuously true for a contract declaring no regression commands, so this moves
+        # no existing score.
+        safety_passed = execution.get("regression_test_passed", True) is True
+        pooling_eligible = primary and safety_passed and path_ok
     strict_query_conformance = (
         None if arm != "C_strict" else list(query_arguments[contract.task_id]) in parsed.successful_query_arguments
     )
     return {
         "task_id": contract.task_id,
         "arm": arm,
-        "success": parsed.success and not answer_error and not contaminated and bool(execution["cleanup_verified"]),
+        "success": parsed.success
+        and not answer_error
+        and not infra_error
+        and not contaminated
+        and bool(execution["cleanup_verified"]),
         "primary_correct": primary,
         "pooling_eligible": bool(
             pooling_eligible
             and execution["cleanup_verified"]
             and not answer_error
+            and not infra_error
             and compliance is not False
             and strict_query_conformance is not False
         ),
         "changed_path_boundary_passed": path_ok,
         "answer_error": answer_error,
+        "infra_error": infra_error,
         "patch_wire_normalized": bool(
             captured_diff is None and match is not None and not answer_error and normalized_diff != candidate_diff
         ),
         "patch_transport": "agent_worktree" if captured_diff is not None else "response_envelope",
+        # Persisted so an offline rescore can replay the live scoring inputs exactly.
+        # It is observed in the agent's own workspace and is not recoverable from the
+        # task item, so omitting it made a rescore score a different question.
+        "agent_fixture_intact": agent_fixture_intact,
         "execution": execution,
         "input_tokens": parsed.input_tokens,
         "cached_input_tokens": parsed.cached_input_tokens,
@@ -552,7 +629,7 @@ def _stage_source_binding(repo_path: Path, index_path: Path) -> dict[str, str]:
         raise ValueError(
             f"executable-stage input preflight failed: {exc}\n"
             "No paid model call was started. " + _stage_input_recovery(repo_path)
-        ) from None
+        ) from exc
     return {
         "repo_path": str(repo_path.resolve()),
         "repo_sha256": hashlib.sha256(structural._repo_sha(repo_path).encode("utf-8")).hexdigest(),
@@ -730,7 +807,11 @@ def _load_fix_stage(
 ]:
     """Load one executable stage and its native prompt, parser, and validator."""
     if study == "fix-single":
-        selected = selected or {str(task["id"]) for task in load_task_suite(FIX_SINGLE_TASKS_PATH)}
+        # `is None` on purpose: an explicitly empty selection means "no tasks", but
+        # truthiness turned it into "every task in the suite".
+        selected = (
+            {str(task["id"]) for task in load_task_suite(FIX_SINGLE_TASKS_PATH)} if selected is None else selected
+        )
         return (
             load_fix_single_tasks(FIX_SINGLE_TASKS_PATH, selected),
             FIX_SINGLE_TASKS_PATH,
@@ -739,7 +820,7 @@ def _load_fix_stage(
             validate_fix_single_binding,
         )
     if study == "fix-multi":
-        selected = selected or {str(task["id"]) for task in load_task_suite(FIX_MULTI_TASKS_PATH)}
+        selected = {str(task["id"]) for task in load_task_suite(FIX_MULTI_TASKS_PATH)} if selected is None else selected
         return (
             load_fix_multi_tasks(FIX_MULTI_TASKS_PATH, selected),
             FIX_MULTI_TASKS_PATH,
@@ -748,7 +829,7 @@ def _load_fix_stage(
             validate_fix_multi_binding,
         )
     if study == "patch":
-        selected = selected or {str(task["id"]) for task in load_task_suite(PATCH_TASKS_PATH)}
+        selected = {str(task["id"]) for task in load_task_suite(PATCH_TASKS_PATH)} if selected is None else selected
         return (
             load_patch_tasks(PATCH_TASKS_PATH, selected),
             PATCH_TASKS_PATH,
@@ -848,7 +929,7 @@ def execute_executable_agent_cell(
                 if not isinstance(historical_coordinate, Mapping):
                     raise ValueError("Patch task historical runtime coordinate is malformed")
                 home_kwargs["historical_runtime_coordinate"] = historical_coordinate
-            home = adapter._prepare_verified_home(native_arm, **home_kwargs)
+            home = adapter.prepare_verified_home(native_arm, **home_kwargs)
             if is_patch_task:
                 patch_workspace = stage_patch_task_agent_workspace(
                     source_repo,
@@ -856,7 +937,7 @@ def execute_executable_agent_cell(
                     contract,
                     runtime_identity=item.get("patch_test_runtime"),
                 )
-            stream = adapter._subprocess(adapter.build_command(prompt), home.env, working_directory=workspace.worktree)
+            stream = adapter.run_stream(adapter.build_command(prompt), home.env, working_directory=workspace.worktree)
             captured_diff = (
                 patch_workspace.capture_answer().diff if patch_workspace is not None else workspace.capture_diff()
             )
@@ -877,7 +958,7 @@ def execute_executable_agent_cell(
         try:
             if home is not None:
                 if home.coordination_path is not None:
-                    structural._cleanup_coordination_root(home.coordination_path)
+                    structural.cleanup_coordination_root(home.coordination_path)
                 home.cleanup()
         finally:
             workspace_cleanup_verified = workspace.cleanup()
@@ -951,13 +1032,12 @@ def preflight_executable_agent_workspace(
                 }
                 if historical_runtime_coordinate is not None:
                     home_kwargs["historical_runtime_coordinate"] = historical_runtime_coordinate
-                home = adapter._prepare_verified_home(native_arm, **home_kwargs)
-            try:
-                pass
-            finally:
-                if home.coordination_path is not None:
-                    structural._cleanup_coordination_root(home.coordination_path)
-                home.cleanup()
+                home = adapter.prepare_verified_home(native_arm, **home_kwargs)
+            # The home is prepared purely to prove it can be, then torn down. The empty
+            # `try: pass` / `finally:` that used to wrap this teardown expressed nothing.
+            if home.coordination_path is not None:
+                structural.cleanup_coordination_root(home.coordination_path)
+            home.cleanup()
         if patch_contract is not None:
             stage_patch_task_agent_workspace(
                 source_repo,
@@ -1238,56 +1318,92 @@ def rescore_fix_stage(source_dir: Path, output_dir: Path, repo_path: Path, *, st
         )
     )
     persisted = 0
-    with (output_dir / "telemetry.jsonl").open("x", encoding="utf-8") as output:
-        for source_row in source_rows:
-            task_id, arm, raw_events = source_row.get("task_id"), source_row.get("arm"), source_row.get("raw_events")
-            if task_id not in tasks or arm not in ARMS or not isinstance(raw_events, list):
-                raise ValueError("source executable-stage telemetry lacks a replayable task, arm, or native events")
-            item = tasks[task_id]
-            _validate_stage_binding(study, item, source_row.get("provider_binding", {}))
-            skill_path = (
-                source_dir / "inputs/C_skill_required/codemap-py/codex-skills/query-code/SKILL.md"
-                if arm == "C_strict"
-                else None
+    # A crash mid-write used to leave the run directory with no run-metadata.json at
+    # all, so a half-written rescore was indistinguishable from one that never ran.
+    # The readcrop sibling already had this shape; mirror it here.
+    try:
+        with (output_dir / "telemetry.jsonl").open("x", encoding="utf-8") as output:
+            for source_row in source_rows:
+                task_id, arm, raw_events = (
+                    source_row.get("task_id"),
+                    source_row.get("arm"),
+                    source_row.get("raw_events"),
+                )
+                if task_id not in tasks or arm not in ARMS or not isinstance(raw_events, list):
+                    raise ValueError("source executable-stage telemetry lacks a replayable task, arm, or native events")
+                item = tasks[task_id]
+                _validate_stage_binding(study, item, source_row.get("provider_binding", {}))
+                skill_path = (
+                    source_dir / "inputs/C_skill_required/codemap-py/codex-skills/query-code/SKILL.md"
+                    if arm == "C_strict"
+                    else None
+                )
+                if skill_path is not None and not skill_path.is_file():
+                    raise ValueError("source executable-stage snapshot lacks the frozen Codemap Skill")
+                captured_diff = source_row["captured_diff"]
+                reparse_kwargs: dict[str, Any] = {}
+                if study == "patch":
+                    # The live run passes both of these; a rescore that omitted them was
+                    # re-executing the oracle against different inputs and could therefore
+                    # PASS a cell the live run FAILED.
+                    reparse_kwargs["agent_fixture_intact"] = source_row.get("agent_fixture_intact")
+                    reparse_kwargs["patch_test_runtime"] = item.get("patch_test_runtime")
+                row = parser(
+                    (json.dumps(event, sort_keys=True) for event in raw_events),
+                    arm=arm,
+                    item=item,
+                    skill_path=skill_path,
+                    repo_path=repo_path,
+                    captured_diff=captured_diff,
+                    **reparse_kwargs,
+                )
+                for field in ("input_tokens", "cached_input_tokens", "output_tokens", "tool_result_tokens"):
+                    if source_row.get(field) != row[field]:
+                        raise ValueError(f"source executable-stage native {field} changed during reparse")
+                # The divergence guard covered only token fields, so a rescore could silently
+                # publish a different verdict than the run it claims to reproduce.
+                for field in ("primary_correct", "pooling_eligible", "success"):
+                    if field in source_row and source_row.get(field) != row[field]:
+                        raise ValueError(f"source executable-stage {field} changed during reparse")
+                row["elapsed_s"] = source_row.get("elapsed_s")
+                row["source_telemetry_row_sha256"] = hashlib.sha256(
+                    json.dumps(source_row, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
+                output.write(json.dumps(row, sort_keys=True) + "\n")
+                output.flush()
+                persisted += 1
+                _print_executable_result_row(row, completed=persisted, total=len(source_rows))
+        (output_dir / "run-metadata.json").write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "kind": f"offline-{study}-reparse-v2",
+                    "source_run_dir": str(source_dir.resolve()),
+                    "source_checksums_sha256": hashlib.sha256(
+                        (source_dir / "checksums.sha256").read_bytes()
+                    ).hexdigest(),
+                    "rescorer_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                    "persisted_cells": persisted,
+                },
+                indent=2,
+                sort_keys=True,
             )
-            if skill_path is not None and not skill_path.is_file():
-                raise ValueError("source executable-stage snapshot lacks the frozen Codemap Skill")
-            captured_diff = source_row["captured_diff"]
-            row = parser(
-                (json.dumps(event, sort_keys=True) for event in raw_events),
-                arm=arm,
-                item=item,
-                skill_path=skill_path,
-                repo_path=repo_path,
-                captured_diff=captured_diff,
-            )
-            for field in ("input_tokens", "cached_input_tokens", "output_tokens", "tool_result_tokens"):
-                if source_row.get(field) != row[field]:
-                    raise ValueError(f"source executable-stage native {field} changed during reparse")
-            row["elapsed_s"] = source_row.get("elapsed_s")
-            row["source_telemetry_row_sha256"] = hashlib.sha256(
-                json.dumps(source_row, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            ).hexdigest()
-            output.write(json.dumps(row, sort_keys=True) + "\n")
-            output.flush()
-            persisted += 1
-            _print_executable_result_row(row, completed=persisted, total=len(source_rows))
-    (output_dir / "run-metadata.json").write_text(
-        json.dumps(
-            {
-                "status": "completed",
-                "kind": f"offline-{study}-reparse-v2",
-                "source_run_dir": str(source_dir.resolve()),
-                "source_checksums_sha256": hashlib.sha256((source_dir / "checksums.sha256").read_bytes()).hexdigest(),
-                "rescorer_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                "persisted_cells": persisted,
-            },
-            indent=2,
-            sort_keys=True,
+            + "\n",
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
-    write_checksums(output_dir)
+        write_checksums(output_dir)
+    except BaseException:
+        (output_dir / "run-metadata.json").write_text(
+            json.dumps(
+                {"status": "failed", "kind": f"offline-{study}-reparse-v2", "persisted_cells": persisted},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        print(f"SUMMARY  status=failed  persisted_cells={persisted}/{len(source_rows)}")
+        write_checksums(output_dir)
+        raise
     print(f"SUMMARY  status=completed  persisted_cells={persisted}/{len(source_rows)}")
     return output_dir

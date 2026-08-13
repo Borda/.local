@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -68,6 +69,11 @@ def _se_task(start_line: int = 100, qname: str = "Trainer.fit") -> dict:
     }
 
 
+def _is_pytest_argv(command: list[str]) -> bool:
+    """Return whether one argv invokes pytest through the pinned interpreter."""
+    return command[:3] == [sys.executable, "-m", "pytest"]
+
+
 def test_patch_sandbox_recreates_a_unique_worktree_for_each_retry(
     script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -85,7 +91,7 @@ def test_patch_sandbox_recreates_a_unique_worktree_for_each_retry(
         nonlocal test_calls
         if "worktree" in command and "add" in command:
             Path(command[-2]).mkdir()
-        elif command[:1] == ["pytest"]:
+        elif _is_pytest_argv(command):
             test_calls += 1
             return SimpleNamespace(returncode=1 if test_calls % 2 else 0, stderr="")
         elif "worktree" in command and "remove" in command:
@@ -938,6 +944,321 @@ class TestDiffImpactStagerResilience:
             stager.__enter__()
         # a.py was written by the first edit; __enter__ must have reverted it before propagating.
         assert (repo / "pkg" / "a.py").read_text() == "def foo():\n    return 1\n"
+
+    def test_successful_revert_records_no_error(self, script_run_bench: Any, tmp_path: Any) -> None:
+        """B-M14: the ordinary path leaves the tree clean and the error slot empty."""
+        repo = self._git_repo(tmp_path)
+        stage = [{"file": "pkg/a.py", "append": "\n# staged change\n"}]
+
+        with script_run_bench.DiffImpactStager(repo, stage) as stager:
+            assert (repo / "pkg" / "a.py").read_text().endswith("# staged change\n")
+
+        assert stager.revert_error is None
+        assert (repo / "pkg" / "a.py").read_text() == "def foo():\n    return 1\n"
+
+    def test_failed_revert_escalates_instead_of_silently_leaking(
+        self, script_run_bench: Any, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-M14: a failed revert leaves the shared tree mutated, so it must not pass silently.
+
+        Before the fix the git result was discarded entirely: the staged synthetic change
+        survived into every later task, which then saw an unexplained dirty tree far from
+        the task that caused it.
+        """
+        import subprocess as real_subprocess
+
+        repo = self._git_repo(tmp_path)
+        stage = [{"file": "pkg/a.py", "append": "\n# staged change\n"}]
+        real_run = real_subprocess.run
+
+        def run(command: list[str], **kwargs: Any) -> Any:
+            if "checkout" in command:
+                return SimpleNamespace(returncode=1, stderr="checkout refused", stdout="")
+            return real_run(command, **kwargs)
+
+        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+
+        with pytest.raises(script_run_bench.DirtyTreeError, match="still mutated"):
+            with script_run_bench.DiffImpactStager(repo, stage):
+                pass
+
+    def test_failed_revert_does_not_mask_an_in_flight_exception(
+        self, script_run_bench: Any, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-M14: escalation must never replace the exception carrying the real cause."""
+        import subprocess as real_subprocess
+
+        repo = self._git_repo(tmp_path)
+        stage = [{"file": "pkg/a.py", "append": "\n# staged change\n"}]
+        real_run = real_subprocess.run
+
+        def run(command: list[str], **kwargs: Any) -> Any:
+            if "checkout" in command:
+                return SimpleNamespace(returncode=1, stderr="checkout refused", stdout="")
+            return real_run(command, **kwargs)
+
+        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+
+        with pytest.raises(RuntimeError, match="original cause"):
+            with script_run_bench.DiffImpactStager(repo, stage):
+                raise RuntimeError("original cause")
+
+
+# ===========================================================================
+# PatchSandbox — baseline semantics, apply isolation, interpreter pinning
+# ===========================================================================
+
+
+class TestPatchSandboxExitCodes:
+    """pytest exit codes 2-5 carry no test result and must not score as a failed patch."""
+
+    @staticmethod
+    def _sandbox(script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, codes: list[int]) -> Any:
+        """Build a PatchSandbox whose pytest invocations return ``codes`` in order."""
+        remaining = list(codes)
+
+        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            root = tmp_path / f"attempt-{len(list(tmp_path.iterdir()))}"
+            root.mkdir()
+            return str(root)
+
+        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            if "worktree" in command and "add" in command:
+                Path(command[-2]).mkdir()
+            elif _is_pytest_argv(command):
+                return SimpleNamespace(returncode=remaining.pop(0), stderr="boom", stdout="")
+            elif "worktree" in command and "remove" in command:
+                worktree = Path(command[-1])
+                for path in worktree.iterdir():
+                    path.unlink()
+                worktree.rmdir()
+            return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        return script_run_bench.PatchSandbox(
+            tmp_path,
+            {
+                "id": "PT-fixture",
+                "pre_fix_commit": "a" * 40,
+                "test_command": "pytest tests/test_fixture.py::test_fix -x",
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            pytest.param(2, id="interrupted"),
+            pytest.param(3, id="internal-error"),
+            pytest.param(4, id="usage-error-missing-plugin"),
+            pytest.param(5, id="no-tests-collected"),
+        ],
+    )
+    def test_baseline_non_result_exit_raises_sandbox_error(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int
+    ) -> None:
+        """B-H1: a baseline that produced no test result is a sandbox error, not a failed patch.
+
+        Exit 4 is the in-tree trigger: ``--timeout=60`` requires pytest-timeout, and
+        without the plugin every patch task scored a silent zero.
+        """
+        sandbox = self._sandbox(script_run_bench, tmp_path, monkeypatch, [code])
+
+        with pytest.raises(script_run_bench.SandboxError, match="baseline pytest exited"):
+            sandbox.run("diff --git a/a.py b/a.py\n")
+
+    def test_baseline_exit_one_is_a_valid_baseline_failure(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H1: exit 1 means the target test genuinely fails, so scoring proceeds."""
+        sandbox = self._sandbox(script_run_bench, tmp_path, monkeypatch, [1, 0])
+
+        assert sandbox.run("diff --git a/a.py b/a.py\n") is True
+
+    def test_baseline_exit_zero_reports_an_already_passing_test(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H1: a test that already passes cannot validate a fix."""
+        sandbox = self._sandbox(script_run_bench, tmp_path, monkeypatch, [0])
+
+        assert sandbox.run("diff --git a/a.py b/a.py\n") is False
+
+    def test_post_patch_non_result_exit_raises_sandbox_error(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H1: the same rule applies after the patch — no result means no evidence."""
+        sandbox = self._sandbox(script_run_bench, tmp_path, monkeypatch, [1, 4])
+
+        with pytest.raises(script_run_bench.SandboxError, match="post-patch pytest exited"):
+            sandbox.run("diff --git a/a.py b/a.py\n")
+
+    def test_post_patch_exit_one_scores_a_failed_patch(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H1: exit 1 after patching is a genuine failed fix."""
+        sandbox = self._sandbox(script_run_bench, tmp_path, monkeypatch, [1, 1])
+
+        assert sandbox.run("diff --git a/a.py b/a.py\n") is False
+
+
+class TestPatchSandboxApply:
+    """The apply path must not leave a half-patched tree or harness residue."""
+
+    def test_git_apply_runs_without_reject(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H2: ``--reject`` partially applies and still exits non-zero.
+
+        The fallback then re-applied the same file onto the already-mutated tree.
+        """
+        commands: list[list[str]] = []
+
+        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            root = tmp_path / "attempt"
+            root.mkdir()
+            return str(root)
+
+        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            commands.append(command)
+            if "worktree" in command and "add" in command:
+                Path(command[-2]).mkdir()
+            elif _is_pytest_argv(command):
+                return SimpleNamespace(returncode=1 if len(commands) < 3 else 0, stderr="", stdout="")
+            elif "worktree" in command and "remove" in command:
+                worktree = Path(command[-1])
+                for path in worktree.iterdir():
+                    path.unlink()
+                worktree.rmdir()
+            return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        sandbox = script_run_bench.PatchSandbox(
+            tmp_path,
+            {"id": "PT-fixture", "pre_fix_commit": "a" * 40, "failing_test": "tests/t.py::t"},
+        )
+
+        sandbox.run("diff --git a/a.py b/a.py\n")
+
+        apply_commands = [command for command in commands if "apply" in command]
+        assert apply_commands, "expected a git apply invocation"
+        assert all("--reject" not in command for command in apply_commands)
+
+    def test_tree_is_reset_before_the_fallback_apply(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H2: a failed ``git apply`` must not leave hunks behind for ``patch -p1``."""
+        commands: list[list[str]] = []
+
+        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            root = tmp_path / "attempt"
+            root.mkdir()
+            return str(root)
+
+        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            commands.append(command)
+            if "worktree" in command and "add" in command:
+                Path(command[-2]).mkdir()
+                return SimpleNamespace(returncode=0, stderr="", stdout="")
+            if _is_pytest_argv(command):
+                return SimpleNamespace(returncode=1 if len(commands) < 3 else 0, stderr="", stdout="")
+            if "apply" in command:
+                return SimpleNamespace(returncode=1, stderr="hunk rejected", stdout="")
+            if "worktree" in command and "remove" in command:
+                worktree = Path(command[-1])
+                for path in worktree.iterdir():
+                    path.unlink()
+                worktree.rmdir()
+            return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        sandbox = script_run_bench.PatchSandbox(
+            tmp_path,
+            {"id": "PT-fixture", "pre_fix_commit": "a" * 40, "failing_test": "tests/t.py::t"},
+        )
+
+        sandbox.run("diff --git a/a.py b/a.py\n")
+
+        checkout_index = next(
+            index for index, command in enumerate(commands) if "checkout" in command and "--" in command
+        )
+        fallback_index = next(index for index, command in enumerate(commands) if command[:1] == ["patch"])
+        assert checkout_index < fallback_index
+
+    def test_patch_artifacts_are_removed_before_the_scored_run(
+        self, script_run_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H2: the diff file and any ``.rej`` residue must not survive into the scored test."""
+        seen_during_test: list[list[str]] = []
+
+        def mkdtemp(*_args: Any, **_kwargs: Any) -> str:
+            root = tmp_path / "attempt"
+            root.mkdir()
+            return str(root)
+
+        def run(command: list[str], **_kwargs: Any) -> SimpleNamespace:
+            if "worktree" in command and "add" in command:
+                worktree = Path(command[-2])
+                worktree.mkdir()
+                return SimpleNamespace(returncode=0, stderr="", stdout="")
+            if _is_pytest_argv(command):
+                worktree = tmp_path / "attempt" / "repo"
+                seen_during_test.append(sorted(path.name for path in worktree.iterdir()))
+                return SimpleNamespace(returncode=1 if len(seen_during_test) == 1 else 0, stderr="", stdout="")
+            if "apply" in command:
+                worktree = tmp_path / "attempt" / "repo"
+                (worktree / "a.py.rej").write_text("rejected hunk")
+                return SimpleNamespace(returncode=0, stderr="", stdout="")
+            if "worktree" in command and "remove" in command:
+                worktree = Path(command[-1])
+                for path in worktree.iterdir():
+                    path.unlink()
+                worktree.rmdir()
+            return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+        monkeypatch.setattr(script_run_bench.tempfile, "mkdtemp", mkdtemp)
+        monkeypatch.setattr(script_run_bench.subprocess, "run", run)
+        sandbox = script_run_bench.PatchSandbox(
+            tmp_path,
+            {"id": "PT-fixture", "pre_fix_commit": "a" * 40, "failing_test": "tests/t.py::t"},
+        )
+
+        sandbox.run("diff --git a/a.py b/a.py\n")
+
+        assert ".patch-bench.diff" not in seen_during_test[-1]
+        assert "a.py.rej" not in seen_during_test[-1]
+
+
+class TestPytestInterpreterPinning:
+    """B-M18: all lanes must resolve pytest through one interpreter."""
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["pytest", "tests/t.py", "-x"], id="bare-pytest"),
+            pytest.param(["py.test", "tests/t.py"], id="legacy-alias"),
+            pytest.param(["/usr/local/bin/pytest", "tests/t.py"], id="absolute-path"),
+        ],
+    )
+    def test_bare_pytest_is_pinned_to_the_running_interpreter(self, script_run_bench: Any, argv: list[str]) -> None:
+        """A PATH-resolved pytest can select a different interpreter than the harness."""
+        assert script_run_bench._pin_pytest_interpreter(argv)[:3] == [sys.executable, "-m", "pytest"]
+
+    def test_a_non_pytest_command_is_left_untouched(self, script_run_bench: Any) -> None:
+        """Only pytest invocations are rewritten."""
+        argv = ["tox", "-e", "py311"]
+
+        assert script_run_bench._pin_pytest_interpreter(argv) == argv
+
+    def test_failing_test_argv_uses_the_pinned_interpreter(self, script_run_bench: Any) -> None:
+        """The ``failing_test`` path builds its argv from the running interpreter too."""
+        sandbox = script_run_bench.PatchSandbox(
+            Path("/repo"),
+            {"id": "PT-fixture", "pre_fix_commit": "a" * 40, "failing_test": "tests/t.py::t"},
+        )
+
+        assert sandbox._test_argv() == [sys.executable, "-m", "pytest", "tests/t.py::t", "-x"]
 
 
 # ===========================================================================

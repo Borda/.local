@@ -152,6 +152,7 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import os
 import platform
 import re
@@ -247,6 +248,18 @@ class TimingStats:
     median_ms: float
     max_ms: float
     n: int
+    # Runs excluded from the statistics above, reported rather than folded in.
+    # `failed` = the command exited non-zero, so its latency measures how fast it broke.
+    # `timed_out` = the run hit the subprocess deadline; that is censored data (the true
+    # duration is only known to exceed the limit), so substituting the deadline as if it
+    # were an observation biases the median toward the deadline.
+    failed: int = 0
+    timed_out: int = 0
+
+    @property
+    def measured(self) -> int:
+        """Return the number of runs that actually produced a latency observation."""
+        return self.n - self.failed - self.timed_out
 
 
 @dataclass
@@ -506,6 +519,11 @@ def cold_greps(repo_path: Path, *cmds: list[str]) -> int:
     All commands are run with ``cwd=repo_path`` and their output is discarded.
     The function is used only for counting — it measures how many subprocess
     calls a cold grep baseline requires, not what the commands return.
+
+    The return value is therefore ``len(cmds)`` **by construction**: it reports the size
+    of the planned grep plan, not search work observed to be necessary. Callers must
+    label it as a planned-invocation count so it is not read as a measurement beside the
+    genuinely measured codemap query counts.
 
     Args:
         repo_path: Working directory passed to each subprocess call.
@@ -1003,7 +1021,14 @@ def time_command(cmd: list[str], n: int = 5, cwd: str | None = None) -> TimingSt
     """Time a single command over ``n`` repeated runs and return sorted wall-clock statistics.
 
     Timings are sorted before computing the median to eliminate cold-start
-    outliers.  Timed-out runs are recorded as 30,000 ms (the subprocess timeout).
+    outliers.
+
+    Only successful runs contribute a latency observation. A command that exits
+    non-zero is discarded and counted in ``failed``: an instantly-failing command
+    otherwise recorded an excellent latency, which is how a broken command could look
+    like the fastest one measured. A timed-out run is discarded and counted in
+    ``timed_out``: its true duration is only known to exceed the deadline, so feeding
+    the deadline into the median treats censored data as an observation.
 
     Args:
         cmd: Command to run, formatted as a list of strings for
@@ -1013,21 +1038,36 @@ def time_command(cmd: list[str], n: int = 5, cwd: str | None = None) -> TimingSt
             process directory.
 
     Returns:
-        :class:`TimingStats` with ``min_ms``, ``median_ms``, ``max_ms`` (all in
-        milliseconds, rounded to 2 decimal places), and ``n`` (run count).
+        :class:`TimingStats` over the successful runs, with ``failed`` and
+        ``timed_out`` counts. All statistics are ``nan`` when no run succeeded —
+        never silently zero, which would read as an infinitely fast command.
     """
     timings: list[float] = []
+    failed = timed_out = 0
     for _ in range(n):
         start = time.perf_counter()
         try:
-            _run(cmd, cwd=cwd)
+            completed = _run(cmd, cwd=cwd)
         except subprocess.TimeoutExpired:
-            timings.append(30_000.0)
+            timed_out += 1
             continue
-        timings.append((time.perf_counter() - start) * 1000)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        if completed.returncode != 0:
+            failed += 1
+            continue
+        timings.append(elapsed_ms)
+    if not timings:
+        return TimingStats(
+            min_ms=math.nan, median_ms=math.nan, max_ms=math.nan, n=n, failed=failed, timed_out=timed_out
+        )
     timings.sort()
     return TimingStats(
-        min_ms=round(timings[0], 2), median_ms=round(statistics.median(timings), 2), max_ms=round(timings[-1], 2), n=n
+        min_ms=round(timings[0], 2),
+        median_ms=round(statistics.median(timings), 2),
+        max_ms=round(timings[-1], 2),
+        n=n,
+        failed=failed,
+        timed_out=timed_out,
     )
 
 
@@ -1061,17 +1101,40 @@ def time_commands(cmds: list[list[str]], n: int = 3, cwd: str | None = None) -> 
         True
     """
     timings: list[float] = []
+    failed = timed_out = 0
     for _ in range(n):
         start = time.perf_counter()
+        sequence_failed = sequence_timed_out = False
         for cmd in cmds:
             try:
-                _run(cmd, cwd=cwd)
+                completed = _run(cmd, cwd=cwd)
             except subprocess.TimeoutExpired:
-                pass
-        timings.append((time.perf_counter() - start) * 1000)
+                sequence_timed_out = True
+                continue
+            if completed.returncode != 0:
+                sequence_failed = True
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        # A sequence whose commands failed or were censored is not a latency
+        # observation for the work the sequence is supposed to represent.
+        if sequence_timed_out:
+            timed_out += 1
+            continue
+        if sequence_failed:
+            failed += 1
+            continue
+        timings.append(elapsed_ms)
+    if not timings:
+        return TimingStats(
+            min_ms=math.nan, median_ms=math.nan, max_ms=math.nan, n=n, failed=failed, timed_out=timed_out
+        )
     timings.sort()
     return TimingStats(
-        min_ms=round(timings[0], 2), median_ms=round(statistics.median(timings), 2), max_ms=round(timings[-1], 2), n=n
+        min_ms=round(timings[0], 2),
+        median_ms=round(statistics.median(timings), 2),
+        max_ms=round(timings[-1], 2),
+        n=n,
+        failed=failed,
+        timed_out=timed_out,
     )
 
 
@@ -1392,7 +1455,10 @@ def render_report(
                     {
                         "Scenario": f"{scen} {r_item.name}",
                         "Value": f"{val:.1f}×",
-                        "Notes": f"{res.get('total_cold_calls', '?')} cold / {res.get('total_warm_calls', '?')} warm",
+                        "Notes": (
+                            f"{res.get('total_cold_planned_calls', '?')} cold / "
+                            f"{res.get('total_warm_planned_calls', '?')} warm (planned invocations)"
+                        ),
                     }
                 )
         lines.append("## Call Savings\n")
@@ -1957,13 +2023,20 @@ def run_measure_calls(repo_path: Path, scan_query_bin: Path, index_path: Path) -
         suite="calls",
         passed=passed,
         result={
-            "total_cold_calls": total_cold,
-            "total_warm_calls": total_warm,
+            # Planned, not observed. The cold commands are executed once each, but their
+            # output and exit codes are discarded and the returned figure is `len(cmds)`
+            # by construction — it is the size of the planned grep plan, not a count of
+            # search work observed to be necessary. The warm side is likewise the number
+            # of queries the task declares. Naming them `*_planned_calls` keeps them from
+            # reading as measurements alongside the genuinely measured codemap counts.
+            "total_cold_planned_calls": total_cold,
+            "total_warm_planned_calls": total_warm,
             "leverage_ratio": round(leverage_ratio, 2),
+            "counts_are": "planned_invocations_not_observed_search_work",
             "task_count": len(tasks),
         },
         threshold=THRESHOLDS["C3"],
-        notes=f"cold={total_cold} calls; warm={total_warm}; ratio={leverage_ratio:.1f}x",
+        notes=f"cold={total_cold} planned calls; warm={total_warm} planned; ratio={leverage_ratio:.1f}x",
     )
     results.append(r)
 

@@ -14,8 +14,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
+import tempfile
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, Callable, Optional
 
@@ -24,7 +28,6 @@ from .provider_parity_contracts import canonical_task_hash, prompt_hash
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}$")
 _GIT_COMMIT_RE = re.compile(r"[0-9a-f]{40}$")
-_DIFF_FENCE_RE = re.compile(r"```diff\\s*\\n(?P<diff>.*?)\\n?```", re.DOTALL)
 _SCORER_VERSION = "provider-neutral-edit-score-v1"
 _FIX_MULTI_SCORER_VERSION = MappingProxyType(
     {
@@ -182,6 +185,32 @@ class EditScore:
     diagnostics: Mapping[str, float]
 
 
+def _regression_binding(commands: tuple[str, ...]) -> dict[str, str]:
+    """Return the locked regression-command binding entry, or nothing when unused.
+
+    The key is emitted only for a contract that actually declares regression commands.
+    ``provider_binding`` is persisted into result artifacts and compared byte-for-byte on
+    rescore, so unconditionally adding a key would invalidate every historical row for a
+    field none of those rows ever used.
+
+    Args:
+        commands: Frozen regression test commands declared by the contract.
+
+    Returns:
+        ``{"regression_test_commands_sha256": <digest>}`` when commands exist, else ``{}``.
+
+    Examples:
+        >>> _regression_binding(())
+        {}
+        >>> sorted(_regression_binding(("pytest tests/test_a.py",)))
+        ['regression_test_commands_sha256']
+    """
+    if not commands:
+        return {}
+    payload = "\n".join(commands).encode("utf-8")
+    return {"regression_test_commands_sha256": hashlib.sha256(payload).hexdigest()}
+
+
 @dataclass(frozen=True)
 class FixMultiContract:
     """Immutable multi-caller contract shared by provider transports."""
@@ -193,6 +222,7 @@ class FixMultiContract:
     expected_paths: tuple[str, ...]
     oracle_sha256: str
     scorer_sha256: str
+    regression_test_commands: tuple[str, ...] = ()
 
     def provider_binding(self) -> Mapping[str, str]:
         """Return science-bearing fields every provider must preserve."""
@@ -203,6 +233,7 @@ class FixMultiContract:
                 "baseline_commit": self.baseline_commit,
                 "oracle_sha256": self.oracle_sha256,
                 "scorer_sha256": self.scorer_sha256,
+                **_regression_binding(self.regression_test_commands),
             }
         )
 
@@ -224,6 +255,7 @@ class FixSingleContract:
     oracle_id: str
     oracle_sha256: str
     scorer_sha256: str
+    regression_test_commands: tuple[str, ...] = ()
 
     def provider_binding(self) -> Mapping[str, str]:
         """Return science-bearing fields every provider transport must preserve."""
@@ -234,6 +266,7 @@ class FixSingleContract:
                 "baseline_commit": self.baseline_commit,
                 "oracle_sha256": self.oracle_sha256,
                 "scorer_sha256": self.scorer_sha256,
+                **_regression_binding(self.regression_test_commands),
             }
         )
 
@@ -435,18 +468,124 @@ def _check_save_top_k_warning(tree: ast.Module) -> bool:
     return zero_warned and not warnings
 
 
-def run_fix_single_oracle(repo_path: Path, contract: FixSingleContract) -> bool:
-    """Return whether the candidate source satisfies the selected Fix-Single oracle."""
-    source_path = repo_path / contract.expected_paths[0]
-    if not source_path.is_file():
-        raise ValueError(f"candidate source is missing: {contract.expected_paths[0]}")
-    checks: Mapping[str, Callable[[ast.Module], bool]] = {
+_FIX_SINGLE_CHECKS: Mapping[str, Callable[[ast.Module], bool]] = MappingProxyType(
+    {
         "early_stopping_patience": _check_patience,
         "early_stopping_min_delta": _check_min_delta,
         "model_checkpoint_duplicate_step": _check_duplicate_checkpoint,
         "model_checkpoint_save_top_k_zero_warning": _check_save_top_k_warning,
     }
-    return checks[contract.oracle_id](ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path)))
+)
+
+
+def run_fix_single_check(oracle_id: str, source: str, filename: str) -> bool:
+    """Evaluate one Fix-Single oracle against candidate source in the current process.
+
+    This is the in-process core of the oracle and the entry point the sandbox worker
+    imports. Production scoring never calls it directly: model-authored source is
+    micro-executed, so :func:`run_fix_single_oracle` runs it in a separate process
+    instead of inside the scorer.
+
+    Args:
+        oracle_id: Selected executable oracle from :data:`_FIX_SINGLE_CHECKS`.
+        source: Candidate module source text.
+        filename: Reporting filename used for the parsed candidate.
+
+    Returns:
+        Whether the candidate satisfies the selected oracle.
+
+    Examples:
+        >>> candidate = '''
+        ... class EarlyStopping(Callback):
+        ...     def __init__(self, monitor, patience=3):
+        ...         if patience < 1:
+        ...             raise MisconfigurationException(f"patience must be >= 1, got {patience}")
+        ...         self.patience = patience
+        ... '''
+        >>> run_fix_single_check("early_stopping_patience", candidate, "<candidate>")
+        True
+    """
+    if oracle_id not in _FIX_SINGLE_CHECKS:
+        raise ValueError(f"unknown fix-single oracle {oracle_id!r}")
+    return _FIX_SINGLE_CHECKS[oracle_id](ast.parse(source, filename=filename))
+
+
+# The worker reaches its own package through argv rather than an inherited PYTHONPATH so
+# the child can stay in isolated mode. The verdict carries a parent-generated token because
+# candidate code may print to stdout, and an untokenized last line would be ambiguous.
+_FIX_SINGLE_WORKER_SOURCE = """
+import json
+import sys
+
+sys.path.insert(0, sys.argv[1])
+request = json.loads(sys.stdin.read())
+from _bench_common.edit_patch_contracts import run_fix_single_check
+
+try:
+    verdict = {"passed": bool(run_fix_single_check(request["oracle_id"], request["source"], request["filename"]))}
+except BaseException as exc:
+    verdict = {"error": f"{type(exc).__name__}: {exc}"}
+print(request["token"] + json.dumps(verdict))
+"""
+# A candidate that neither returns nor terminates is a failed candidate, not an unbounded
+# scorer stall; the deadline is generous next to the microexecution it bounds.
+_FIX_SINGLE_ORACLE_TIMEOUT_S = 120.0
+
+
+def _fix_single_worker_verdict(oracle_id: str, source: str, filename: str, *, timeout_s: float) -> bool:
+    """Run one Fix-Single oracle in a contained child process and return its verdict."""
+    token = f"fix-single-verdict-{os.urandom(8).hex()}:"
+    request = json.dumps({"oracle_id": oracle_id, "source": source, "filename": filename, "token": token})
+    package_root = str(Path(__file__).resolve().parent.parent)
+    with tempfile.TemporaryDirectory(prefix="codemap-fix-single-oracle-") as sandbox:
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", _FIX_SINGLE_WORKER_SOURCE, package_root],
+                input=request,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                cwd=sandbox,
+                env={"PATH": os.environ.get("PATH", "")},
+                timeout=timeout_s,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return False
+    verdicts = [line for line in completed.stdout.splitlines() if line.startswith(token)]
+    if not verdicts:
+        detail = (completed.stderr or completed.stdout).strip()[:300]
+        raise ValueError(f"fix-single oracle worker returned no verdict (exit {completed.returncode}): {detail}")
+    verdict = json.loads(verdicts[-1][len(token) :])
+    if "error" in verdict:
+        raise ValueError(f"fix-single candidate execution failed: {verdict['error']}")
+    return bool(verdict["passed"])
+
+
+def run_fix_single_oracle(
+    repo_path: Path, contract: FixSingleContract, *, timeout_s: float = _FIX_SINGLE_ORACLE_TIMEOUT_S
+) -> bool:
+    """Return whether the candidate source satisfies the selected Fix-Single oracle.
+
+    The oracle micro-executes model-authored source, so it runs in a separate isolated
+    interpreter with an empty working directory, a minimal environment, and a deadline
+    rather than inside the scoring process. Only the candidate text crosses the boundary;
+    the verdict is unchanged, so oracle and scorer identity hashes are untouched.
+
+    Args:
+        repo_path: Worktree holding the candidate source.
+        contract: Fix-Single contract naming the expected path and executable oracle.
+        timeout_s: Deadline for the candidate microexecution.
+
+    Returns:
+        Whether the candidate satisfies its oracle; a candidate that exceeds the deadline
+        has not satisfied it.
+    """
+    source_path = repo_path / contract.expected_paths[0]
+    if not source_path.is_file():
+        raise ValueError(f"candidate source is missing: {contract.expected_paths[0]}")
+    source = source_path.read_text(encoding="utf-8")
+    return _fix_single_worker_verdict(contract.oracle_id, source, str(source_path), timeout_s=timeout_s)
 
 
 def build_fix_multi_contract(task: Mapping[str, Any]) -> FixMultiContract:

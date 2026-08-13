@@ -54,24 +54,35 @@ from . import runtime  # noqa: E402
 from _bench_common.presentation import format_artifact_block, fmt_time, fmt_tok  # noqa: E402
 
 
-def _load_structural() -> Any:
-    """Load the existing structural isolation adapter by its local filename."""
-    main_module = sys.modules.get("__main__")
-    if main_module is not None and Path(getattr(main_module, "__file__", "")).resolve() == STRUCTURAL_PATH:
-        return main_module
-    module = sys.modules.get("_codex_readcrop_structural")
-    if module is not None:
-        return module
+_STRUCTURAL_MODULE: Any = None
+
+
+def _structural() -> Any:
+    """Return the structural isolation adapter, loading it on first use.
+
+    This used to run at module import (``_structural = _load_structural()``), so
+    merely importing this stage executed the whole 5000-line structural runner —
+    including its import-time side effects — even for callers that only wanted a
+    prompt string or a scope hash. Loading is deferred here instead; the module
+    is still resolved by source path rather than name, because test suites
+    execute the runner under generated module names.
+    """
+    global _STRUCTURAL_MODULE
+    if _STRUCTURAL_MODULE is not None:
+        return _STRUCTURAL_MODULE
+    for module in tuple(sys.modules.values()):
+        module_file = getattr(module, "__file__", None)
+        if module_file is not None and Path(module_file).resolve() == STRUCTURAL_PATH:
+            _STRUCTURAL_MODULE = module
+            return module
     spec = importlib.util.spec_from_file_location("_codex_readcrop_structural", STRUCTURAL_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError("cannot load Codex structural isolation adapter")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    _STRUCTURAL_MODULE = module
     return module
-
-
-_structural = _load_structural()
 
 
 def load_readcrop_tasks(tasks_path: Path, manifest_path: Path, repo_path: Path) -> list[dict[str, Any]]:
@@ -154,11 +165,15 @@ def readcrop_prompt(arm: str, task: Mapping[str, Any]) -> str:
         if not isinstance(symbol, str) or not symbol:
             raise ValueError("C_strict read-crop task requires a symbol")
         supplement = (
-            _structural._arm_envelope("C_skill_required")
+            _structural().arm_envelope("C_skill_required")
             + f' The required canonical query is exactly `"$CODEMAP_BIN" query --compact symbol {symbol}`.'
             + codemap_boundary
         )
-    assert supplement is not None
+    if supplement is None:
+        # An `assert` here vanished under `python -O`, and the arm would then be
+        # rendered into the prompt as the literal string "None". A new arm added
+        # to ARMS without a matching supplement must fail loudly instead.
+        raise ValueError(f"read-crop arm {arm!r} has no availability supplement")
     parameter_requirement = (
         "each exact required source parameter"
         if task.get("required_parameters") is not None
@@ -192,7 +207,10 @@ def parse_readcrop_stream(stream: str | bytes, *, arm: str, contract: Any, skill
     strict_query_conformance = (
         None if arm != "C_strict" else ["symbol", contract.symbol] in parsed.successful_query_arguments
     )
-    codemap_observed_calls = getattr(parsed, "codemap_observed_calls", parsed.codemap_calls)
+    # Declared field on CodexParseResult (default 0). The old getattr fallback
+    # silently substituted a different metric, codemap_calls, whenever an object
+    # lacked the attribute — which only ever happened for an incomplete test double.
+    codemap_observed_calls = parsed.codemap_observed_calls
     contaminated = arm == "A_plain" and codemap_observed_calls > 0
     # Compliance measures only each arm's availability contract. The stricter
     # C query/Skill requirements remain independent diagnostics in telemetry.
@@ -209,16 +227,30 @@ def parse_readcrop_stream(stream: str | bytes, *, arm: str, contract: Any, skill
         "primary_correct": score.primary_correct if score is not None else False,
         "quality_score": score.quality_score if score is not None else None,
         "quality_components": dict(score.quality_components) if score is not None else {},
-        "parameter_recall": score.parameter_recall if score is not None else 0.0,
+        # POLICY — unscoreable cell: every recall field is None, none is zero.
+        # Previously an unparsable answer wrote 0.0 into parameter_recall and
+        # keyword_recall_diagnostic but None into the two behavior fields, so the
+        # same failure was averaged INTO two means and omitted FROM the other two.
+        # None is now uniform, matching quality_score/quality_components in this
+        # same row: a 0.0 recall asserts a measurement that never happened, while
+        # None says the answer could not be scored at all. None therefore means
+        # "not scoreable OR not applicable"; `answer_error` and `quality_score`
+        # disambiguate the two, and `success`/`primary_correct` (both False here)
+        # carry the failure so it is never mistaken for a passing cell.
+        # Downstream means must report the unscoreable count alongside the mean.
+        "parameter_recall": score.parameter_recall if score is not None else None,
         "behavior_fact_recall": score.behavior_fact_recall if score is not None else None,
         "behavior_facts_correct": score.behavior_facts_correct if score is not None else None,
-        "keyword_recall_diagnostic": score.keyword_recall if score is not None else 0.0,
+        "keyword_recall_diagnostic": score.keyword_recall if score is not None else None,
         "input_tokens": parsed.input_tokens,
         "cached_input_tokens": parsed.cached_input_tokens,
         "fresh_input_tokens": fresh_input_tokens(parsed.input_tokens, parsed.cached_input_tokens),
         "token_accounting_inconsistent": token_accounting_inconsistent(parsed.input_tokens, parsed.cached_input_tokens),
         "output_tokens": parsed.output_tokens,
         "reasoning_output_tokens": parsed.reasoning_output_tokens,
+        # Nonzero means the provider reported usage the parser could not read, so
+        # this row's cost is an undercount rather than a genuinely cheap cell.
+        "malformed_usage": parsed.malformed_usage,
         "tool_result_tokens": parsed.tool_result_tokens,
         "command_calls": parsed.command_calls,
         "tool_elapsed_s": parsed.tool_elapsed_s,
@@ -461,7 +493,7 @@ def preflight_isolation(
     structural_manifest_path: Path,
 ) -> None:
     """Exercise the established disposable A/B/C homes without a model or auth."""
-    adapter = _structural.CodexRunner(
+    adapter = _structural().CodexRunner(
         model,
         repo_path,
         index_path=index_path,
@@ -491,7 +523,8 @@ def run_paid(
 ) -> Path:
     """Execute a human-authorized selected calibration in isolated native homes."""
     run_log = run_dir / "run.log"
-    adapter = _structural.CodexRunner(
+    structural = _structural()
+    adapter = structural.CodexRunner(
         model,
         repo_path,
         index_path=index_path,
@@ -521,10 +554,10 @@ def run_paid(
 
     def run_cell(item: Mapping[str, Any], arm: str) -> Mapping[str, Any]:
         """Execute and parse one source-extraction arm in its verified home."""
-        home = adapter._prepare_verified_home(_NATIVE_ARMS[arm])
+        home = adapter.prepare_verified_home(_NATIVE_ARMS[arm])
         started = time.monotonic()
         try:
-            stream = adapter._subprocess(adapter.build_command(readcrop_prompt(arm, item["task"])), home.env)
+            stream = adapter.run_stream(adapter.build_command(readcrop_prompt(arm, item["task"])), home.env)
             row = parse_readcrop_stream(
                 stream,
                 arm=arm,
@@ -537,7 +570,7 @@ def run_paid(
         finally:
             try:
                 if home.coordination_path is not None:
-                    _structural._cleanup_coordination_root(home.coordination_path)
+                    structural.cleanup_coordination_root(home.coordination_path)
             finally:
                 home.cleanup()
 

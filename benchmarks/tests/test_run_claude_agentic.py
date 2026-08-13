@@ -1908,15 +1908,52 @@ class TestAggregate:
         out = script_run_agentic.aggregate([good, bad], ["T01"], model_short="haiku")
         assert out["T01"]["plain"]["success_rate"] == pytest.approx(0.5)
 
-    def test_all_success_false_returns_empty_arm_dict(self, script_run_agentic: Any) -> None:
-        """aggregate returns {} for an arm when all runs in the cell failed.
+    def test_all_success_false_reports_spend_without_quality_medians(self, script_run_agentic: Any) -> None:
+        """aggregate keeps an all-failed cell's spend but computes no success-only medians.
 
-        Scenario: every run timed out; no valid median can be computed;
-        the arm entry must be absent or empty rather than containing NaN.
+        Scenario: every run in the cell timed out. The cell used to collapse to {},
+        hiding the paid timeouts entirely; it must now report the run/failure counts
+        and all-runs spend while the success-only medians stay absent.
         """
-        bad = self._make_run(script_run_agentic, "T01", "plain", "haiku", success=False)
+        bad = self._make_run(script_run_agentic, "T01", "plain", "haiku", success=False, elapsed_s=300.0)
         out = script_run_agentic.aggregate([bad], ["T01"], model_short="haiku")
-        assert out["T01"].get("plain", {}) == {}
+        cell = out["T01"]["plain"]
+        assert cell["n_runs"] == 1
+        assert cell["n_failures"] == 1
+        assert cell["success_rate"] == pytest.approx(0.0)
+        assert cell["elapsed_s_all"] == pytest.approx(300.0)
+        assert "elapsed_s" not in cell
+        assert "erec" not in cell
+
+    def test_failure_count_accompanies_success_only_medians(self, script_run_agentic: Any) -> None:
+        """aggregate reports how many runs failed next to the medians they were excluded from.
+
+        Scenario: two of three runs failed; the median is still the survivor's, but the
+        cell must state that it rests on one run out of three.
+        """
+        good = self._make_run(script_run_agentic, "T01", "codemap", "haiku", success=True, elapsed_s=5.0)
+        bad_one = self._make_run(script_run_agentic, "T01", "codemap", "haiku", success=False, elapsed_s=300.0)
+        bad_two = self._make_run(script_run_agentic, "T01", "codemap", "haiku", success=False, elapsed_s=300.0)
+        out = script_run_agentic.aggregate([good, bad_one, bad_two], ["T01"], model_short="haiku")
+        cell = out["T01"]["codemap"]
+        assert cell["elapsed_s"] == pytest.approx(5.0)
+        assert cell["n_runs"] == 3
+        assert cell["n_failures"] == 2
+
+    def test_all_runs_aggregates_include_failed_runs(self, script_run_agentic: Any) -> None:
+        """aggregate's ``*_all`` metrics span every run, so a failure-heavy arm cannot read as cheap.
+
+        Scenario: one fast success and two wall-clock failures; the success-only median
+        elapsed time is the survivor's, while the all-runs median reflects the timeouts.
+        """
+        good = self._make_run(script_run_agentic, "T01", "codemap", "haiku", success=True, elapsed_s=5.0)
+        bad_one = self._make_run(script_run_agentic, "T01", "codemap", "haiku", success=False, elapsed_s=300.0)
+        bad_two = self._make_run(script_run_agentic, "T01", "codemap", "haiku", success=False, elapsed_s=300.0)
+        out = script_run_agentic.aggregate([good, bad_one, bad_two], ["T01"], model_short="haiku")
+        cell = out["T01"]["codemap"]
+        assert cell["elapsed_s"] == pytest.approx(5.0)
+        assert cell["elapsed_s_all"] == pytest.approx(300.0)
+        assert cell["input_tokens_all"] == pytest.approx(1000.0)
 
     def test_multiple_tasks_segregated_correctly(self, script_run_agentic: Any) -> None:
         """aggregate groups metrics per task_id independently.
@@ -1929,6 +1966,153 @@ class TestAggregate:
         out = script_run_agentic.aggregate([run_t1, run_t2], ["T01", "T02"], model_short="haiku")
         assert out["T01"]["plain"]["input_tokens"] == pytest.approx(100.0)
         assert out["T02"]["plain"]["input_tokens"] == pytest.approx(999.0)
+
+
+# ===========================================================================
+# parse_claude_readcrop_events — unscoreable-cell recall policy
+# ===========================================================================
+
+
+class TestReadcropUnscoreableRecallFields:
+    """An unscoreable read-crop answer must report no recall measurement at all."""
+
+    @staticmethod
+    def _row_without_answer_envelope(script_agentic: Any) -> dict:
+        """Parse a completed run whose output carries no strict answer envelope."""
+        contract = script_agentic.build_readcrop_contract(
+            {
+                "id": "RC-fixture",
+                "type": "read_crop",
+                "prompt": "Describe Example.method.",
+                "symbol": "Example.method",
+                "expected_keywords": ["value"],
+            },
+            source="def method(self, value: int) -> None:\n    pass\n",
+        )
+        events = [
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "no envelope here"}]}},
+            {
+                "type": "result",
+                "subtype": "success",
+                "usage": {
+                    "input_tokens": 10,
+                    "cache_creation_input_tokens": 2,
+                    "cache_read_input_tokens": 1,
+                    "output_tokens": 3,
+                },
+            },
+        ]
+        return script_agentic.parse_claude_readcrop_events(events, arm="A_plain", contract=contract)
+
+    def test_every_recall_field_is_none_when_the_answer_cannot_be_scored(self, script_run_agentic: Any) -> None:
+        """No recall field may hold 0.0 on an unscoreable cell — that asserts a measurement never taken.
+
+        Scenario: a completed run with no answer envelope. Two fields used to be 0.0
+        and two None, so the same failure was averaged into two means and omitted from
+        the other two. Mirrors the Codex lane policy in _bench_codex/stage_readcrop.py.
+        """
+        row = self._row_without_answer_envelope(script_run_agentic)
+
+        assert row["answer_error"] == "missing strict read-crop answer envelope"
+        assert row["parameter_recall"] is None
+        assert row["behavior_fact_recall"] is None
+        assert row["behavior_facts_correct"] is None
+        assert row["keyword_recall_diagnostic"] is None
+
+    def test_the_unscoreable_cell_still_carries_its_failure(self, script_run_agentic: Any) -> None:
+        """None recall must never read as a passing cell — success and primary_correct stay False."""
+        row = self._row_without_answer_envelope(script_run_agentic)
+
+        assert row["success"] is False
+        assert row["primary_correct"] is False
+        assert row["quality_score"] is None
+        assert row["quality_components"] == {}
+
+
+# ===========================================================================
+# _iter_combos — execution order
+# ===========================================================================
+
+
+class TestIterCombosArmOrder:
+    """Canonical agentic blocks must be counterbalanced, not run in a fixed A→B→C order."""
+
+    @staticmethod
+    def _orders(script_agentic: Any, tasks: list[Any], arms: list[str], repeat: int) -> list[list[str]]:
+        """Return the arm sequence of each (task, model, repetition) block, in execution order."""
+        blocks: list[list[str]] = []
+        for index, (_task, _model_short, _model_id, arm, _rep) in enumerate(
+            script_agentic._iter_combos(tasks, [("haiku", "id")], arms, repeat)
+        ):
+            if index % len(arms) == 0:
+                blocks.append([])
+            blocks[-1].append(arm)
+        return blocks
+
+    def test_canonical_arms_follow_the_shared_deterministic_order(self, script_run_agentic: Any) -> None:
+        """Each canonical block runs in the revision-bound order the structural lanes use.
+
+        Scenario: two tasks, one model, one repetition; every block must match
+        ``deterministic_arm_order`` for its own coordinates rather than the declared list.
+        """
+        tasks = [
+            _make_task(script_run_agentic, id="BA-01", experiment_revision=ACTIVE_REVISION),
+            _make_task(script_run_agentic, id="BA-03", experiment_revision=ACTIVE_REVISION),
+        ]
+        arms = list(script_run_agentic.AGENTIC_ARMS)
+
+        blocks = self._orders(script_run_agentic, tasks, arms, repeat=1)
+
+        assert blocks == [
+            list(script_run_agentic.deterministic_arm_order(ACTIVE_REVISION, "claude", "haiku", "BA-01", 1)),
+            list(script_run_agentic.deterministic_arm_order(ACTIVE_REVISION, "claude", "haiku", "BA-03", 1)),
+        ]
+        assert blocks != [arms, arms]
+
+    def test_repetitions_of_one_cell_do_not_replay_a_single_order(self, script_run_agentic: Any) -> None:
+        """The repetition index is an ordering coordinate, so repeated blocks differ.
+
+        Scenario: one task run twice; the two blocks must carry the two distinct
+        repetition-keyed orders rather than the same sequence twice.
+        """
+        tasks = [_make_task(script_run_agentic, id="BA-01", experiment_revision=ACTIVE_REVISION)]
+        arms = list(script_run_agentic.AGENTIC_ARMS)
+
+        blocks = self._orders(script_run_agentic, tasks, arms, repeat=2)
+
+        assert blocks == [
+            list(script_run_agentic.deterministic_arm_order(ACTIVE_REVISION, "claude", "haiku", "BA-01", 1)),
+            list(script_run_agentic.deterministic_arm_order(ACTIVE_REVISION, "claude", "haiku", "BA-01", 2)),
+        ]
+
+    @pytest.mark.parametrize(
+        "arms",
+        [
+            pytest.param(["A_plain"], id="single-canonical-arm"),
+            pytest.param(["plain", "codemap"], id="legacy-arm-pair"),
+        ],
+    )
+    def test_non_canonical_arm_sets_keep_the_declared_order(self, script_run_agentic: Any, arms: list[str]) -> None:
+        """Arm sets with no shared ordering policy run exactly as the caller declared them."""
+        tasks = [_make_task(script_run_agentic, id="BA-01", experiment_revision=ACTIVE_REVISION)]
+
+        blocks = self._orders(script_run_agentic, tasks, arms, repeat=1)
+
+        assert blocks == [arms]
+
+    def test_every_cell_is_still_scheduled_exactly_once(self, script_run_agentic: Any) -> None:
+        """Counterbalancing reorders the matrix without adding or dropping a cell."""
+        tasks = [
+            _make_task(script_run_agentic, id="BA-01", experiment_revision=ACTIVE_REVISION),
+            _make_task(script_run_agentic, id="BA-02", experiment_revision=ACTIVE_REVISION),
+        ]
+        arms = list(script_run_agentic.AGENTIC_ARMS)
+
+        combos = list(script_run_agentic._iter_combos(tasks, [("haiku", "id")], arms, 2))
+
+        assert sorted((task.id, model, arm, rep) for task, model, _id, arm, rep in combos) == sorted(
+            (task.id, "haiku", arm, rep) for task in tasks for arm in arms for rep in range(2)
+        )
 
 
 # ===========================================================================
@@ -2103,6 +2287,130 @@ class TestConfigIsolation:
     def test_plain_arm_gets_no_extra_tools(self, script_run_agentic: Any) -> None:
         """The control arm re-supplies nothing — no plugin, no MCP."""
         assert script_run_agentic.ModelRunner._arm_isolation_flags("plain") == []
+
+
+class TestZeroTokenRetryPredicate:
+    """ModelRunner.run retry loop: fast connectivity failures retry, wall-clock timeouts never."""
+
+    @staticmethod
+    def _runner_and_task(script_run_agentic: Any, tmp_path: Path) -> tuple[Any, Any]:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        runner = script_run_agentic.ModelRunner("haiku", "fixture-model", repo, timeout=600)
+        task = script_run_agentic.Task(id="fixture", type="fix", prompt="answer")
+        return runner, task
+
+    def test_timeout_by_elapsed_alone_is_not_retried(
+        self, script_run_agentic: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """0 tokens with elapsed >= timeout runs exactly once, even when no timeout error string was recorded."""
+        runner, task = self._runner_and_task(script_run_agentic, tmp_path)
+        calls: list[str] = []
+
+        def timeout_stream(
+            _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
+        ) -> None:
+            calls.append(arm)
+            result.elapsed_s = 600.0
+
+        monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", timeout_stream):
+            runner.run(task, "plain")
+
+        assert calls == ["plain"]
+
+    def test_timeout_by_error_string_alone_is_not_retried(
+        self, script_run_agentic: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """0 tokens with a recorded timeout error runs exactly once and keeps the error, even with small elapsed."""
+        runner, task = self._runner_and_task(script_run_agentic, tmp_path)
+        calls: list[str] = []
+
+        def timeout_stream(
+            _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
+        ) -> None:
+            calls.append(arm)
+            result.elapsed_s = 5.0
+            result.error = "timeout (600s)"
+
+        monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", timeout_stream):
+            result = runner.run(task, "plain")
+
+        assert calls == ["plain"]
+        assert result.error == "timeout (600s)"
+
+    def test_fast_zero_token_failure_still_retries(
+        self, script_run_agentic: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A fast 0-token exit (connectivity failure) is retried up to the 3-attempt budget."""
+        runner, task = self._runner_and_task(script_run_agentic, tmp_path)
+        calls: list[str] = []
+
+        def failing_stream(
+            _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
+        ) -> None:
+            calls.append(arm)
+            result.elapsed_s = 0.5
+
+        monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", failing_stream):
+            runner.run(task, "plain")
+
+        assert len(calls) == 3
+
+    def test_each_retry_attempt_gets_a_fresh_sandbox(
+        self, script_run_agentic: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A retry must start from the baseline tree, not from the failed attempt's leftovers.
+
+        Scenario: three 0-token attempts, each writing a file into its sandbox. Every
+        attempt must receive a distinct sandbox that carries no file from its predecessor.
+        """
+        runner, task = self._runner_and_task(script_run_agentic, tmp_path)
+        sandboxes: list[Path] = []
+        inherited: list[bool] = []
+
+        def editing_stream(
+            _self: Any, cmd: list[str], result: Any, update_fn: Any = None, cwd: Any = None, arm: str = ""
+        ) -> None:
+            inherited.append((cwd / "agent-edit.txt").exists())
+            (cwd / "agent-edit.txt").write_text("edited\n", encoding="utf-8")
+            sandboxes.append(cwd)
+            result.elapsed_s = 0.5
+
+        monkeypatch.setattr(script_run_agentic.time, "sleep", lambda _s: None)
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", editing_stream):
+            runner.run(task, "plain")
+
+        assert len(sandboxes) == 3
+        assert len(set(sandboxes)) == 3
+        assert inherited == [False, False, False]
+
+    def test_captured_diff_ignores_the_directories_the_sandbox_never_copies(
+        self, script_run_agentic: Any, tmp_path: Path
+    ) -> None:
+        """The post-run diff must mirror the copytree ignore list instead of reporting it as change.
+
+        Scenario: the repo carries .git and .cache trees that copytree skips; only the
+        agent's real edit may appear in the captured diff.
+        """
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (repo / ".cache" / "codemap").mkdir(parents=True)
+        (repo / ".cache" / "codemap" / "index.json").write_text("{}\n", encoding="utf-8")
+        (repo / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+        runner = script_run_agentic.ModelRunner("haiku", "fixture-model", repo, timeout=600)
+        task = script_run_agentic.Task(id="fixture", type="fix", prompt="answer", requires_reset=True)
+        captured: list[str] = []
+
+        with runner._effective_cwd(task, "plain", captured, []) as cwd:
+            (cwd / "module.py").write_text("VALUE = 2\n", encoding="utf-8")
+
+        # Without the excludes, diff reports both skipped trees as "Only in <repo>: …".
+        assert "module.py" in captured[0]
+        assert "Only in" not in captured[0]
 
     def test_codemap_fixture_is_independent_of_empty_user_cache(
         self, script_run_agentic: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

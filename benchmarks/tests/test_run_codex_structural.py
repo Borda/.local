@@ -2773,10 +2773,8 @@ def test_subprocess_timeout_and_nonzero_exit_keep_distinct_error_types(
     """Transport timeout and nonzero exit remain separately diagnosable."""
     runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
 
-    def timeout(*_args: Any, **_kwargs: Any) -> None:
-        raise script_run_codex.subprocess.TimeoutExpired(["codex"], 600)
-
-    monkeypatch.setattr(script_run_codex.subprocess, "run", timeout)
+    monkeypatch.setattr(script_run_codex.subprocess, "Popen", _FakePopen.factory(timeout_after_streaming=""))
+    monkeypatch.setattr(script_run_codex, "terminate_process_group", lambda _process: None)
     timed_out = codex_runtime.parse_codex_jsonl(runner._subprocess(["codex"], {}))
 
     assert timed_out.incomplete is True
@@ -2784,18 +2782,168 @@ def test_subprocess_timeout_and_nonzero_exit_keep_distinct_error_types(
 
     monkeypatch.setattr(
         script_run_codex.subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            returncode=7,
-            stdout=_completed_stream(output="partial answer"),
-            stderr="CLI failed",
-        ),
+        "Popen",
+        _FakePopen.factory(returncode=7, stdout=_completed_stream(output="partial answer"), stderr="CLI failed"),
     )
     nonzero = codex_runtime.parse_codex_jsonl(runner._subprocess(["codex"], {}))
 
     assert nonzero.output_text == "partial answer"
     assert nonzero.incomplete is True
     assert nonzero.error_type == "non_zero_exit"
+
+
+class _FakePopen:
+    """Minimal ``subprocess.Popen`` stand-in for transport tests.
+
+    Reproduces the one behavior that matters here: on a timeout the pipes still hold
+    whatever the child streamed before the kill, so the second ``communicate()`` after
+    the kill returns it.
+    """
+
+    def __init__(
+        self,
+        *_args: Any,
+        returncode: int = 0,
+        stdout: str = "",
+        stderr: str = "",
+        timeout_after_streaming: str | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        self.pid = 4321
+        self.returncode = returncode
+        self._stdout = stdout
+        self._stderr = stderr
+        self._timeout_after_streaming = timeout_after_streaming
+        self._timed_out = False
+        self.killed = False
+
+    @classmethod
+    def factory(cls, **config: Any) -> Any:
+        """Return a Popen-shaped callable bound to one fixed outcome."""
+        return lambda *args, **kwargs: cls(*args, **{**kwargs, **config})
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        """Return buffered output, raising once when the fixture models a timeout."""
+        if self._timeout_after_streaming is not None and not self._timed_out:
+            self._timed_out = True
+            raise subprocess.TimeoutExpired(["codex"], timeout or 600)
+        if self._timed_out:
+            return self._timeout_after_streaming or "", self._stderr
+        return self._stdout, self._stderr
+
+    def kill(self) -> None:
+        """Record that the direct child was killed."""
+        self.killed = True
+
+
+def test_failed_coordination_cleanup_is_recorded_not_silently_dropped(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-M9: the same cleanup used to be suppressed at some sites and escalated at others.
+
+    A suppressed failure left the coordination root behind with no trace anywhere,
+    so a leak was invisible until something later tripped over it.
+    """
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    coordination = tmp_path / "coordination"
+
+    def refuse(_path: Path) -> None:
+        raise ValueError("directory not empty")
+
+    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", refuse)
+
+    message = runner._cleanup_coordination(coordination)
+
+    assert message is not None
+    assert runner.coordination_cleanup_errors == [message]
+    assert "directory not empty" in message
+
+
+def test_successful_coordination_cleanup_records_nothing(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-M9: the ordinary path stays silent."""
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", lambda _path: None)
+
+    assert runner._cleanup_coordination(tmp_path / "coordination") is None
+    assert runner.coordination_cleanup_errors == []
+
+
+def test_coordination_cleanup_never_raises_from_a_finally_block(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-M9: raising from cleanup would mask the exception carrying the real cause."""
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+
+    def refuse(_path: Path) -> None:
+        raise ValueError("directory not empty")
+
+    monkeypatch.setattr(script_run_codex, "_cleanup_coordination_root", refuse)
+
+    try:
+        raise RuntimeError("original cause")
+    except RuntimeError as exc:
+        runner._cleanup_coordination(tmp_path / "coordination")
+        assert str(exc) == "original cause"
+
+
+def test_timed_out_transport_preserves_streamed_usage_events(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-H3: a wall-clock kill must not erase the usage the agent already billed.
+
+    The timeout branch previously returned an error envelope only, discarding the
+    stdout captured before the kill. Every usage event streamed up to that point was
+    lost, so a timed-out cell persisted as 0 tokens despite genuine spend.
+    """
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    streamed = _completed_stream(output="partial answer")
+    monkeypatch.setattr(script_run_codex.subprocess, "Popen", _FakePopen.factory(timeout_after_streaming=streamed))
+    monkeypatch.setattr(script_run_codex, "terminate_process_group", lambda _process: None)
+
+    parsed = codex_runtime.parse_codex_jsonl(runner._subprocess(["codex"], {}))
+
+    assert parsed.error_type == "timeout"
+    assert parsed.output_text == "partial answer"
+
+
+def test_timed_out_transport_kills_the_whole_process_group(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-M15: killing only the direct child leaves descendants burning paid budget."""
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    terminated: list[Any] = []
+    monkeypatch.setattr(script_run_codex.subprocess, "Popen", _FakePopen.factory(timeout_after_streaming=""))
+    monkeypatch.setattr(script_run_codex, "terminate_process_group", terminated.append)
+
+    runner._subprocess(["codex"], {})
+
+    assert len(terminated) == 1
+
+
+def test_transport_child_starts_in_its_own_process_group(script_run_codex: Any) -> None:
+    """B-M15: the Popen keywords must actually detach the child."""
+    group = script_run_codex.NEW_PROCESS_GROUP
+
+    assert group.get("start_new_session") is True or "creationflags" in group
+
+
+def test_transport_decodes_undecodable_bytes_instead_of_raising(
+    script_run_codex: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B-L13: text mode without an error policy raises on malformed provider bytes."""
+    runner = script_run_codex.CodexRunner("fixture-model", tmp_path)
+    captured: dict[str, Any] = {}
+
+    def popen(*args: Any, **kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return _FakePopen(*args, **{**kwargs, "stdout": "", "stderr": ""})
+
+    monkeypatch.setattr(script_run_codex.subprocess, "Popen", popen)
+    runner._subprocess(["codex"], {})
+
+    assert captured["errors"] == "replace"
 
 
 def test_main_dry_run_never_requires_or_writes_output(
@@ -3100,8 +3248,11 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     assert metadata["cell_outcomes"]["compliance_failed"] == 1
     assert metadata["cell_outcomes"]["locked_query_nonconforming"] == 1
     assert "semantic_query_failed" not in metadata["cell_outcomes"]
-    assert metadata["artifacts"]["canonical_telemetry_pooling_eligible"] is False
-    assert metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"] == ["required_use_missing"]
+    # A-H1: B is an optional-use canary, so a no-query B cell keeps its pooling
+    # eligibility. Its non-compliance is still observed and reported above as
+    # `compliance_failed`; only the survivorship-inducing exclusion is gone.
+    assert metadata["artifacts"]["canonical_telemetry_pooling_eligible"] is True
+    assert metadata["artifacts"]["canonical_telemetry_pooling_ineligibility_reasons"] == []
     stdout = capsys.readouterr().out
     assert stdout.count("quality=    ?") == 2
     assert sum(line == "LEGEND" for line in stdout.splitlines()) == 1
@@ -3114,6 +3265,44 @@ def test_main_records_cell_failures_and_continues_after_smoke(
     result_rows = [line for line in stdout.splitlines() if line.startswith("(")]
     assert len(result_rows) == 2
     assert str(output_path) not in "\n".join(result_rows)
+
+
+def test_pooling_still_excludes_a_non_compliant_strict_cell(script_run_codex: Any) -> None:
+    """A-H1: relaxing B must not relax C's required-use contract.
+
+    Pins the other side of the same predicate: the strict arm keeps
+    ``required_use_missing`` when it makes no successful query.
+    """
+    run = script_run_codex.CodexRun(
+        arm="C_skill_required",
+        task_id="first",
+        task_type="demo",
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        success=True,
+        scoreable=True,
+        input_tokens=1,
+        output_tokens=1,
+        compliance=False,
+    )
+
+    assert "required_use_missing" in script_run_codex._pooling_ineligibility_reasons(run)
+
+
+def test_pooling_admits_a_non_compliant_optional_use_cell(script_run_codex: Any) -> None:
+    """A-H1: a zero-query B cell carries no required-use exclusion."""
+    run = script_run_codex.CodexRun(
+        arm="B_direct_required",
+        task_id="first",
+        task_type="demo",
+        model=script_run_codex.PARITY_CODEX_MODEL,
+        success=True,
+        scoreable=True,
+        input_tokens=1,
+        output_tokens=1,
+        compliance=False,
+    )
+
+    assert script_run_codex._pooling_ineligibility_reasons(run) == ()
 
 
 def test_main_stops_after_three_equivalent_unknown_infrastructure_failures(

@@ -11,16 +11,30 @@ import ast
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 import json
 from pathlib import Path
+import re
 from types import MappingProxyType
 from typing import Any
 
 from .provider_parity_contracts import materialize_task_prompt
+from .python_source import extract_import_targets
 
 
 AGENTIC_ARMS = ("A_plain", "B_auto", "C_strict")
 DEFAULT_REPETITIONS = 1
+
+# The oracle's single import-resolution convention, stated to the model in every scored
+# prompt. Without it an honest answer under an equally defensible reading (crediting only
+# the concrete submodule, or only the package) loses points for a disclosure gap rather
+# than for being wrong.
+IMPORT_CONVENTION_INSTRUCTION = (
+    "Import convention: a `from a.b import c` statement counts as importing the package `a.b`, "
+    "and additionally the submodule `a.b.c` when `a.b.c` is itself a module in this repository. "
+    "`import a.b` counts as importing `a.b`. Only modules that exist in this repository count; "
+    "third-party and standard-library imports are ignored."
+)
 
 _ANSWER_FIELDS = frozenset(
     {
@@ -165,6 +179,7 @@ def answer_format_instruction(task: Mapping[str, Any]) -> str:
             f"Return one JSON object containing exactly these labels: {labels}.",
             "Use exactly these JSON value shapes:",
             *specs,
+            IMPORT_CONVENTION_INSTRUCTION,
             "Do not put objects or counts inside array fields. Values outside these shapes are invalid.",
             "Example using synthetic values only:",
             "BEGIN_ANSWER_JSON",
@@ -379,6 +394,11 @@ def score_answer(
     evidence = score_evidence_metrics(
         oracle, exposure_text=exposure_text, report_text=report_text, tool_calls=tool_calls
     )
+    # Unweighted mean over declared fields. Enum and small-cardinality fields therefore
+    # carry a guessable floor (a blind pick on `risk_tier` scores 0.25 of its component,
+    # `isolation_verdict` 0.5), so absolute aqs levels sit above true zero-work. The floor
+    # is identical in every arm, so between-arm aqs deltas are unaffected; only the
+    # absolute level is inflated, and README reports it with that caveat.
     quality_score = sum(components.values()) / len(components)
     return AnswerScore(
         scored=True,
@@ -410,13 +430,36 @@ def score_evidence_metrics(
         raise ValueError("tool_calls must be a non-negative integer")
     expected_importers = oracle.expected.get("production_importers", ())
     expected_count = max(len(expected_importers), 1)
-    exposure_hits = sum(name in exposure_text for name in expected_importers)
-    report_hits = sum(name in report_text for name in expected_importers)
+    exposure_hits = sum(_mentions_module(exposure_text, name) for name in expected_importers)
+    report_hits = sum(_mentions_module(report_text, name) for name in expected_importers)
     return EvidenceMetrics(
         erec=exposure_hits / expected_count,
         rrec=report_hits / expected_count,
         deff=exposure_hits / max(tool_calls, 1),
     )
+
+
+@lru_cache(maxsize=4096)
+def _module_mention_re(name: str) -> re.Pattern[str]:
+    """Compile a whole-name matcher for one dotted module name.
+
+    The guards reject only characters that *continue* a dotted identifier, so a
+    module named at the end of a sentence still counts. A blanket ``(?![\\w.])``
+    would drop ``... imports pkg.core.`` purely for its full stop.
+    """
+    escaped = re.escape(name)
+    return re.compile(rf"(?<!\w)(?<!\w\.){escaped}(?!\w)(?!\.\w)")
+
+
+def _mentions_module(text: str, name: str) -> bool:
+    """Return whether ``text`` names ``name`` as a whole dotted module.
+
+    Plain substring containment handed out free evidence credit: an expected importer
+    such as ``pkg.core`` scored a hit inside the unrelated ``pkg.core_utils``, and a
+    short name embedded in any longer dotted path scored before the model did any
+    work.
+    """
+    return _module_mention_re(name).search(text) is not None
 
 
 def _answer_field_spec(field: str, params: Mapping[str, Any]) -> tuple[str, Any]:
@@ -666,39 +709,18 @@ def _is_test_path_part(part: str) -> bool:
 
 
 def _import_targets(tree: ast.Module, module: str, is_package: bool, all_names: set[str]) -> set[str]:
-    """Resolve static import statements to known local module names only."""
+    """Resolve static import statements to known local module names only.
+
+    Delegates to the shared :func:`python_source.extract_import_targets` so the agentic
+    oracle credits imports under exactly the convention the MB/GR oracles use: a
+    ``from a.b import c`` statement credits the package ``a.b`` *and* the submodule
+    ``a.b.c`` whenever either is a known local module. Crediting only the concrete
+    submodule when one happens to resolve made package credit all-or-nothing, so a
+    single mixed statement (one submodule alias plus one plain symbol) silently
+    dropped the package importer the task existed to find.
+    """
     package = module if is_package else module.rpartition(".")[0]
-    targets: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            targets.update(alias.name for alias in node.names if alias.name in all_names)
-        elif isinstance(node, ast.ImportFrom):
-            base = _relative_import_base(node, package)
-            if not base:
-                continue
-            concrete_targets = set()
-            for alias in node.names:
-                candidate = f"{base}.{alias.name}"
-                if candidate in all_names:
-                    concrete_targets.add(candidate)
-            if concrete_targets:
-                targets.update(concrete_targets)
-            elif base in all_names:
-                targets.add(base)
-    return targets
-
-
-def _relative_import_base(node: ast.ImportFrom, package: str) -> str:
-    """Resolve an ``ImportFrom`` base without guessing dynamic package state."""
-    if node.level == 0:
-        return node.module or ""
-    package_parts = package.split(".") if package else []
-    if node.level > len(package_parts) + 1:
-        return ""
-    prefix = package_parts[: len(package_parts) - (node.level - 1)]
-    if node.module:
-        prefix.extend(node.module.split("."))
-    return ".".join(prefix)
+    return extract_import_targets(tree, package=package, keep=all_names, credit_submodules=True)
 
 
 def _reverse_imports(modules: Mapping[str, _SourceModule]) -> dict[str, set[str]]:

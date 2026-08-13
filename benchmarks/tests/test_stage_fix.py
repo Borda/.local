@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import importlib.util
 import inspect
 import json
@@ -448,7 +449,7 @@ def test_patch_preflight_admits_clean_context_before_staging_fixture(
     class Adapter:
         """Record when each arm validates the still-clean historical worktree."""
 
-        def _prepare_verified_home(self, arm: str, **_kwargs: Any) -> Any:
+        def prepare_verified_home(self, arm: str, **_kwargs: Any) -> Any:
             events.append(f"prepare:{arm}")
             return home
 
@@ -569,16 +570,16 @@ def test_executable_cells_and_preflight_keep_permission_verification_enabled(
         yield
 
     class Adapter:
-        """Capture the private home preparation performed by executable cells."""
+        """Capture the home preparation performed by executable cells."""
 
-        def _prepare_verified_home(self, *_args: Any, **kwargs: Any) -> Any:
+        def prepare_verified_home(self, *_args: Any, **kwargs: Any) -> Any:
             preparation_kwargs.append(kwargs)
             return home
 
         def build_command(self, *_args: Any, **_kwargs: Any) -> list[str]:
             return ["codex", "exec"]
 
-        def _subprocess(self, *_args: Any, **_kwargs: Any) -> str:
+        def run_stream(self, *_args: Any, **_kwargs: Any) -> str:
             return ""
 
     structural = stage_fix._structural()
@@ -661,14 +662,14 @@ def test_patch_cell_excludes_a_clean_source_head_switch(
     class Adapter:
         """Provide the minimum home and stream surface for one agent-cell exclusion test."""
 
-        def _prepare_verified_home(self, *_args: Any, **kwargs: Any) -> Any:
+        def prepare_verified_home(self, *_args: Any, **kwargs: Any) -> Any:
             prepared.append(kwargs)
             return home
 
         def build_command(self, *_args: Any, **_kwargs: Any) -> list[str]:
             return ["codex", "exec"]
 
-        def _subprocess(self, *_args: Any, **_kwargs: Any) -> str:
+        def run_stream(self, *_args: Any, **_kwargs: Any) -> str:
             return ""
 
     row = stage_fix.execute_executable_agent_cell(
@@ -886,6 +887,7 @@ def test_strict_executable_patch_rejects_noncanonical_query_use_from_pooling(
         command_calls=1,
         tool_elapsed_s=None,
         codemap_calls=1,
+        codemap_observed_calls=1,
         codemap_successful_calls=1,
         codemap_direct_compact_successful_calls=0,
         codemap_skill_compact_successful_calls=1,
@@ -952,6 +954,7 @@ def test_fix_single_preserves_optional_and_forced_query_controls(
         command_calls=0,
         tool_elapsed_s=None,
         codemap_calls=0,
+        codemap_observed_calls=0,
         codemap_successful_calls=0,
         codemap_direct_compact_successful_calls=0,
         codemap_skill_compact_successful_calls=0,
@@ -1048,6 +1051,7 @@ def test_fix_multi_strict_prompt_and_conformance_use_task_specific_argv(
         command_calls=1,
         tool_elapsed_s=None,
         codemap_calls=1,
+        codemap_observed_calls=1,
         codemap_successful_calls=1,
         codemap_direct_compact_successful_calls=0,
         codemap_skill_compact_successful_calls=1,
@@ -1114,6 +1118,7 @@ def test_fix_multi_changed_path_boundary_uses_unordered_set_semantics(
         command_calls=0,
         tool_elapsed_s=None,
         codemap_calls=0,
+        codemap_observed_calls=0,
         codemap_successful_calls=0,
         codemap_direct_compact_successful_calls=0,
         codemap_skill_compact_successful_calls=0,
@@ -1180,3 +1185,136 @@ def test_fix_stage_execution_is_controlled_only_by_dry_run(stage_fix: Any) -> No
 
     assert "dry_run" in parameters
     assert "paid" not in parameters
+
+
+def _fm_parsed() -> SimpleNamespace:
+    """Return a minimal successful parse result for a Fix-Multi cell."""
+    return SimpleNamespace(
+        success=True,
+        output_text="summary",
+        input_tokens=10,
+        cached_input_tokens=2,
+        output_tokens=3,
+        reasoning_output_tokens=1,
+        tool_result_tokens=None,
+        command_calls=0,
+        tool_elapsed_s=None,
+        codemap_calls=0,
+        codemap_observed_calls=0,
+        codemap_successful_calls=0,
+        codemap_direct_compact_successful_calls=0,
+        codemap_skill_compact_successful_calls=0,
+        codemap_errors=0,
+        skill_delivery_observed=False,
+        successful_query_arguments=[],
+        raw_events=[],
+    )
+
+
+def _fm_execution(contract: Any, **overrides: Any) -> dict[str, Any]:
+    """Return a passing Fix-Multi execution dict with optional overrides."""
+    execution = {
+        "baseline_failed": True,
+        "patch_applied": True,
+        "changed_paths": list(contract.expected_paths),
+        "targeted_test_passed": True,
+        "recount_recoverable": False,
+        "recount_oracle_passed": None,
+        "cleanup_verified": True,
+        "error": "",
+    }
+    execution.update(overrides)
+    return execution
+
+
+def _fm_row(stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, execution: dict[str, Any]) -> Any:
+    """Score one Fix-Multi cell against a supplied execution dict."""
+    task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
+    contract = stage_fix.build_fix_multi_contract(task)
+    monkeypatch.setattr(stage_fix.runtime, "parse_codex_jsonl", lambda *_args, **_kwargs: _fm_parsed())
+    monkeypatch.setattr(
+        stage_fix, "execute_fix_multi_patch", lambda *_args, **_kwargs: SimpleNamespace(as_dict=lambda: execution)
+    )
+    return stage_fix.parse_fix_multi_cell(
+        "{}",
+        arm="A_plain",
+        item={"contract": contract},
+        skill_path=None,
+        repo_path=tmp_path,
+        captured_diff="diff --git a/a.py b/a.py\n",
+    )
+
+
+def test_broken_regressions_remove_a_fix_cell_from_pooling(
+    stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """B-H4: a patch that fixes its target while breaking regressions is not pooled.
+
+    Mirrors the Patch stage, where regression safety enters through pooling
+    eligibility rather than through ``primary_correct``.
+    """
+    task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
+    contract = stage_fix.build_fix_multi_contract(task)
+    execution = _fm_execution(contract, regression_test_passed=False)
+
+    row = _fm_row(stage_fix, monkeypatch, tmp_path, execution)
+
+    assert row["primary_correct"] is True
+    assert row["changed_path_boundary_passed"] is True
+    assert row["pooling_eligible"] is False
+
+
+def test_passing_regressions_keep_a_fix_cell_poolable(
+    stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """B-H4: declared regressions that still pass leave the cell eligible."""
+    task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
+    contract = stage_fix.build_fix_multi_contract(task)
+    execution = _fm_execution(contract, regression_test_passed=True)
+
+    row = _fm_row(stage_fix, monkeypatch, tmp_path, execution)
+
+    assert row["pooling_eligible"] is True
+
+
+def test_a_contract_without_regression_commands_is_unaffected(
+    stage_fix: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """B-H4: the new gate must move no score for the tasks that declare no commands.
+
+    Every current FS/FM task declares none, so the execution dict carries no
+    ``regression_test_passed`` key at all and the gate passes vacuously.
+    """
+    task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
+    contract = stage_fix.build_fix_multi_contract(task)
+
+    assert contract.regression_test_commands == ()
+    row = _fm_row(stage_fix, monkeypatch, tmp_path, _fm_execution(contract))
+
+    assert row["pooling_eligible"] is True
+
+
+def test_regression_commands_are_absent_from_an_undeclared_provider_binding(stage_fix: Any) -> None:
+    """B-H4: the locked binding gains a key only for a contract that declares commands.
+
+    ``provider_binding`` is persisted into result artifacts and compared byte-for-byte
+    on rescore, so an unconditional key would invalidate every historical row.
+    """
+    task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
+    contract = stage_fix.build_fix_multi_contract(task)
+
+    assert "regression_test_commands_sha256" not in contract.provider_binding()
+
+
+def test_declared_regression_commands_are_locked_into_the_provider_binding(stage_fix: Any) -> None:
+    """B-H4: declared commands become a science-bearing coordinate."""
+    task = next(task for task in stage_fix.load_task_suite(stage_fix.FIX_MULTI_TASKS_PATH) if task["id"] == "FM-03")
+    contract = stage_fix.build_fix_multi_contract(task)
+    declared = dataclasses.replace(contract, regression_test_commands=("pytest tests/test_a.py",))
+    other = dataclasses.replace(contract, regression_test_commands=("pytest tests/test_b.py",))
+
+    assert "regression_test_commands_sha256" in declared.provider_binding()
+    assert (
+        declared.provider_binding()["regression_test_commands_sha256"]
+        != other.provider_binding()["regression_test_commands_sha256"]
+    )

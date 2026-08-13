@@ -352,8 +352,11 @@ def test_rv05_exposes_independent_and_codemap_static_oracle_views_without_confla
         pytest.param("A_plain", None, False, True, id="plain-adheres-without-codemap"),
         pytest.param("A_plain", None, True, False, id="plain-contamination-breaks-adherence"),
         pytest.param("B_auto", None, False, True, id="optional-no-call-adheres"),
-        pytest.param("B_direct_required", True, False, True, id="direct-required-use-observed"),
-        pytest.param("B_direct_required", False, False, False, id="direct-required-use-missing"),
+        pytest.param("B_direct_required", True, False, True, id="direct-optional-use-observed"),
+        # A-H1: B is an optional-use canary on both providers, so a no-query B cell is
+        # adherent. Its non-compliance is still recorded separately as observed evidence.
+        pytest.param("B_direct_required", False, False, True, id="direct-optional-no-call-adheres"),
+        pytest.param("B_direct_required", False, True, False, id="direct-contamination-breaks-adherence"),
         pytest.param("C_skill_required", True, False, True, id="skill-required-use-observed"),
         pytest.param("C_skill_required", True, True, False, id="skill-contamination-breaks-adherence"),
     ],

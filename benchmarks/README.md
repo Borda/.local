@@ -15,7 +15,7 @@ Empirical validation for the `codemap` plugin. Provider ownership is explicit in
 
 These are separate, nonpoolable strata. `A_plain` versus `C_strict` is decision-grade; `B_auto` is an optional-use canary. The complete task suites and unfavorable cells remain in the reported artifacts rather than being filtered to favor Codemap. Exact artifacts, scorer replays, limitations, and the P1 closure decision are documented below and in the active provider-parity expansion plan.
 
-The final Fix-Multi gate is complete as a bounded W3 stratum. FM-02 remains accepted from the existing evidence. The checksum-valid `benchmarks/results/claude-fix-multi-f16f4b86418d` artifact remains immutable diagnostic provenance: FM-01 omitted the explicit `should_stop` dry-run field and the original FM-03 required an invalid `Strategy.setup`/`super()` contract. The canonical FM-03 task now uses cooperative `Strategy.setup_environment` propagation. Final paid artifacts are `benchmarks/results/claude-fix-multi-f2719755cb23` (Haiku), `benchmarks/results/claude-fix-multi-243a7e2174ea` (Sonnet), and `benchmarks/results/codex-unified-91752e388e4e/fix-multi` (Luna); all transport, patch, path, lifecycle, and integrity checks pass. Artifact glyphs and stored quality labels are immutable. A prospective scorer replay classifies all Haiku FM-01 A/B/C rows as failures under the final reason/verbose gate, Sonnet FM-01 A/B as passes and C as a verbose-gated failure, Haiku/Sonnet FM-03 A/B/C as semantic passes (including harmless method-docstring changes), and all Codex FM-01/FM-03 cells as passes. Valid A/C efficiency comparisons therefore exclude incomplete pairs. This closes P1.3/P1 as a harness and heterogeneous-evidence milestone, not as a universal multi-file efficiency claim.
+The final Fix-Multi gate is complete as a bounded W3 stratum. FM-02 remains accepted from the existing evidence. The checksum-valid `benchmarks/results/claude-fix-multi-f16f4b86418d` artifact remains immutable diagnostic provenance: FM-01 omitted the explicit `should_stop` dry-run field and the original FM-03 required an invalid `Strategy.setup`/`super()` contract. The canonical FM-03 task now uses cooperative `Strategy.setup_environment` propagation. Final paid artifacts are `benchmarks/results/claude-fix-multi-f2719755cb23` (Haiku), `benchmarks/results/claude-fix-multi-243a7e2174ea` (Sonnet), and `benchmarks/results/codex-unified-91752e388e4e/fix-multi` (Luna); all transport, patch, path, lifecycle, and integrity checks pass. Artifact glyphs and stored quality labels are immutable. A prospective scorer replay classifies all Haiku FM-01 A/B/C rows as failures under the final reason/verbose gate, Sonnet FM-01 A/B as passes and C as a verbose-gated failure, Haiku/Sonnet FM-03 A/B/C as semantic passes (including harmless method-docstring changes), and all Codex FM-01/FM-03 cells as passes. Valid A/C efficiency comparisons therefore exclude incomplete pairs. That validity gate was defined after the outcomes were observed and is not pre-registered in the locked policy, so every Fix-Multi efficiency ratio in this file is exploratory-only; the correctness verdicts are unaffected. This closes P1.3/P1 as a harness and heterogeneous-evidence milestone, not as a universal multi-file efficiency claim.
 
 ```bash
 # Regenerate and inspect the fresh Claude scope before any paid run.
@@ -129,6 +129,14 @@ Bold = best comparable arm value per column (higher is better for semantic score
 
 Relative to `A_plain`, `C_strict` used paired geometric-mean `0.337×` input, `0.306×` output, and `0.359×` elapsed time, with lower input on 15/16 tasks. Its mean semantic-score delta was `+0.0969` with 8 wins, 7 ties, and one loss. Relative to `B_auto`, C used paired geometric-mean `0.466×` input, `0.513×` output, and `0.548×` elapsed time, with lower input on 15/16 tasks; its mean score was `+0.0885` higher with 7 wins, 8 ties, and one loss. The latest result strengthens the descriptive B6 quality-and-efficiency finding, but one repetition, one repository/model, optional B adoption in only 10/16 cells, and seven diagnostic answers prohibit a general causal or pooling claim. All 329 listed checksums verify; raw and canonical telemetry SHA-256 are both `efa48c3477d5ace8824cd0d9ae3fbee8c9603bbe8e79f64175be07ca96f00b3e`, metadata is `9fd0d512f4b666f14b840e14f27ba9e18ce6957d2213f40f90224b8f545fa436`, manifest is `739485475e38209613c94f3008ff394c31548325d322981fa6be9788285eff62`, and scope is `049670fbdbb6a02fba1e03ff3ad0c62a2d886f275afde2c3b7add6afb4bdd358`.
 
+##### Agentic measurement caveats
+
+These apply to every agentic result table in this file, on both providers, and to the frozen artifacts behind them. They do not apply to the structural lanes.
+
+- **Arm order and provider cache.** Every published agentic run executed the arms in fixed `A_plain` → `B_auto` → `C_strict` order per task, with no per-cell provider prompt-cache reset. The agentic lanes were never counterbalanced. Elapsed time is the metric most exposed to this: a later arm inherits a warmed provider cache, so elapsed headlines above overstate how much of the reduction is attributable to the treatment. Input-token ratios are much less exposed but not immune. Read the elapsed figures as order-confounded rather than as a clean treatment effect.
+- **EREC/RREC absolutes.** The scorer behind the frozen artifacts credited an expected module when its name appeared anywhere inside the exposure or report text, including as a substring of an unrelated dotted name. Every `1.0000` recall reading above therefore includes free credit. The rule now anchors whole dotted names. The bias is arm-symmetric, so A/B/C deltas survive; the absolute values in frozen artifacts do not.
+- **Quality-score floor.** The semantic score is an unweighted mean over components, several of which are enumerated fields a model can hit without doing the work. Absolute `aqs` and mean-semantic-score values therefore sit above true zero-work performance. This too is arm-symmetric.
+
 The stopped directory `results/codex-agentic-20260804T205639Z` is infrastructure-only evidence with zero model cells. The launcher previously opened its console capture inside the new result directory before the runner's strict launcher-only admission check, so the runner rejected the launcher's own file. Console capture now uses a private temporary file outside the result directory, while the strict admission invariant remains unchanged. Any supported-entrypoint failure preserves the reported artifact and prints the exact dry-run command plus a fresh timestamped paid command; reuse of an existing result directory remains forbidden.
 
 The stopped directory `results/codex-agentic-20260805T122121Z` contains 14 successful transport rows but is infrastructure/scoring diagnostic evidence only. Runtime identity drift stopped admission before the fifteenth cell, and the superseded response path conflated strict-envelope failure with absent semantic and raw-text evidence. The prospective runner freezes plugin source bytes before the first cell, preserves identity evidence even when initial C admission fails, and records semantic validity, diagnostic recovery, pooling eligibility, EREC, RREC, and DEFF as separate fields.
@@ -161,7 +169,7 @@ CODEX_PAID_APPROVAL="$(shasum -a 256 benchmarks/manifests/codex-integration.json
 Modes:
 
 - `smoke` — validate the frozen active index, run the deterministic query check, and execute Claude and Codex dry-run/preflight paths. It invokes no model.
-- `claude` — validate the shared methodology lock and frozen index, then run the same locked 55 structural tasks as Codex across every canonical coordinate (`A_plain`, `B_auto`, `C_strict`) for each Claude model tier before the agentic batch. The shared revision-bound policy counterbalances arm order per task. Runner infrastructure failures stop the batch; individual cell outcomes remain recorded by their runner.
+- `claude` — validate the shared methodology lock and frozen index, then run the same locked 55 structural tasks as Codex across every canonical coordinate (`A_plain`, `B_auto`, `C_strict`) for each Claude model tier before the agentic batch. The shared revision-bound policy assigns a deterministic hash-randomized arm order per task; it is not counterbalanced, because nothing distributes the six A/B/C permutations evenly across the task set. Only `run-codex-structural.py` counterbalances, by rotating the locked task ordinal through the six permutations. Runner infrastructure failures stop the batch; individual cell outcomes remain recorded by their runner.
 - `claude --struct [--dry-run]` — run or plan only the shared 55-task canonical Claude structural matrix with the same deterministic per-task arm-order policy; the agentic preflight and batch are excluded. Direct `run-claude-structural.py` calls retain their legacy arm and 60-task defaults unless `--provider-parity` is explicit.
 - `claude --agentic --dry-run` — validate the shared 16-task methodology, resolve the exact one-repeat 144-cell scope across three Claude model tiers, and print the complete no-model plan. `--repetitions=N` derives and passes a distinct scope SHA-256; the same flag without `--agentic` is rejected.
 - `claude --agentic` — run only the shared 16-task canonical A/B/C Claude study. The default is one repetition; a higher explicit repetition is admitted only with the launcher's exact derived scope SHA-256.
@@ -200,7 +208,7 @@ At paid launch, the runner freezes a run-scoped source bundle containing the ben
 
 The append-only `telemetry.jsonl` is the execution record. Rows retain `execution_index` and the actual randomized arm order so interrupted runs can be audited without rewriting history. The runner rejects existing raw/metadata artifacts for a new run; partial runs are audit-only and are never resumed, pooled, or re-scored as confirmatory evidence. Before setup, paid `run-all.sh` execution copies itself to a mode-`0500` private launcher under the new run directory and re-executes that snapshot. The runner archives the exact launcher bytes, validates the manifest-bound SHA-256 before and after every cell and at completion, and fails the run if those bytes drift. A successful run also emits `telemetry-canonical.jsonl`, an atomically written derived view sorted by locked task position, repetition, and fixed treatment order. Human labels are `A_plain`, `B_direct`, and `C_skill`; machine telemetry and manifest IDs remain `A_plain`, `B_direct_required`, and `C_skill_required`. Terminal summaries and later paired analysis use the canonical view; raw and canonical files are never pooled or silently substituted. `run-metadata.json` records the canonical artifact status and SHA-256 alongside the raw telemetry hash.
 
-The human result line uses fixed columns and compact units (`k` = 1,000; `M` = 1,000,000). Each top-level smoke, Codex paid, or diagnostic paid section emits exactly one shared terminal legend; nested preflight/study sections do not repeat it. Legends use `A_plain`, `B_direct`, and `C_skill` for plain, direct CLI, and installed Skill. The console reports gross input only; cached and fresh remain raw telemetry fields (`fresh = gross - cached` when consistent). `quality` is continuous fitness in `[0, 1]`; `treatment:✓|✗` answers treatment adherence; `codemap-used:✓|✗` answers observed Codemap use. The observed Codex CLI exposes no supported per-cell provider prompt-cache reset/disable, so six-permutation counterbalancing mitigates order exposure without claiming cache elimination. Machine telemetry and manifest IDs remain `A_plain`, `B_direct_required`, and `C_skill_required`.
+The human result line uses fixed columns and compact units (`k` = 1,000; `M` = 1,000,000). Each top-level smoke, Codex paid, or diagnostic paid section emits exactly one shared terminal legend; nested preflight/study sections do not repeat it. Legends use `A_plain`, `B_direct`, and `C_skill` for plain, direct CLI, and installed Skill. The console reports gross input only; cached and fresh remain raw telemetry fields (`fresh = gross - cached` when consistent). `quality` is continuous fitness in `[0, 1]`; `treatment:✓|✗` answers treatment adherence; `codemap-used:✓|✗` answers observed Codemap use. The observed Codex CLI exposes no supported per-cell provider prompt-cache reset/disable, so this runner's six-permutation counterbalancing mitigates order exposure without claiming cache elimination. That balance is specific to `run-codex-structural.py`; the shared policy other lanes use randomizes order deterministically without balancing the permutations, and the agentic lanes are not covered by this paragraph. Machine telemetry and manifest IDs remain `A_plain`, `B_direct_required`, and `C_skill_required`.
 
 The installed-Skill treatment binds a compact Skill and requires one successful canonical query; an explicit full-Skill file read is optional audit telemetry, not productive-use ceremony. The direct CLI remains intentionally bare, but top-level CLI help and query help expose valid subcommands and explicit count semantics. `undocumented` distinguishes declaration totals from unique symbols; `uncovered` identifies its static-query coverage semantics. These usability fixes are part of the shared product surface and are tested independently from the paid provider study.
 
@@ -227,10 +235,22 @@ python benchmarks/run-claude-agentic.py "$REPO" --run-all --report
 </details>
 
 - **Order**: validate frozen index → query (gates the index, no LLM) → real-codebase → agentic. Per-benchmark options live in each section's **Quick start** below.
-- **Scale**: real-codebase = 55 × 2 × 3 = 330 model runs; Claude agentic default = 16 × 3 × 3 = 144; Codex agentic default = 16 × 3 = 48. These are separate provider studies with shared task, prompt, oracle, and scorer contracts.
+
+- **Scale**, by regime — `tasks-bench.json` holds 60 structural tasks, of which 5 are the RI series, so the count depends on which regime is running:
+
+  - legacy default (no profile, RI gated out) = 55 × 2 legacy arms × 3 tiers = 330 model runs
+  - legacy `--profile release` (RI included) = 60 × 2 × 3 = 360
+  - provider-parity structural (`--provider-parity`, RI excluded from the shared population) = 55 × 3 canonical arms × 3 tiers, of which 45 tasks are preregistered headline blocks and 10 are diagnostics
+  - Claude agentic default = 16 × 3 × 3 = 144; Codex agentic default = 16 × 3 = 48
+
+  These are separate provider studies with shared task, prompt, oracle, and scorer contracts.
+
 - **Model tiers** (`MODELS` map in each runner): `haiku` → `claude-haiku-4-5`, `sonnet` → `claude-sonnet-5`, `opus` → `claude-opus-5`.
+
 - **Agentic arms**: canonical runs use `A_plain`, `B_auto`, and `C_strict`. Legacy Claude `semble` / `combined` arms remain explicit historical compatibility paths and need the semble MCP configured.
+
 - **Cheaper option**: swap the three bench lines for the tiered strategy (`--tiered`, see [Cost profiles](#cost-profiles)) — full suite on haiku, dev subset on sonnet, only cross-tier disagreements on opus.
+
 - **Results** land in `benchmarks/results/` — `code-<date>.md`, `bench-<model>-<ts>.jsonl`, and agentic JSON (`.md` with `--report`).
 
 ## Contents
@@ -548,6 +568,8 @@ The full matrix (60 tasks × 2 arms × 3 model tiers) is expensive. Three cost l
 
 - **release** (`--profile release`) — the full matrix, including the RI (real_issue) series. RI is gated to release (or an explicit `--tasks`/`--task-type` selection) because those runs are ~2M-token outliers — the plain arm greps the whole tree — and would dominate the cost of a routine run.
 
+  RI task provenance is a snapshot, not a reproducible derivation. `generate-tasks-real-issues.py` selects its issues from live GitHub ordered by most-recently-updated, so rerunning it later yields a different issue set as upstream activity reorders the query. The committed RI-01..RI-05 task objects are the record; treat the generator as the tool that produced that snapshot on one day rather than as a reproducible oracle. RI is outside the shared provider-parity population for this reason among others.
+
 - **tiered** (`--tiered`, a release companion) — spend opus budget only where it adjudicates. Run one tier per invocation, escalating:
 
   ```bash
@@ -834,23 +856,25 @@ Omitting `--tasks` runs all 73 locked tasks (219 A/B/C cells); use an explicit f
 
 `code-2026-08-04.json` / `code-2026-08-04.md` — killed by user at 62/144 cells (BA-01..BA-07 of 16 tasks; BA-08..BA-16 never ran). Single repetition (n=1), target `pytorch-lightning` 2.6.5. Numbers below describe what ran, not a confirmatory result.
 
+Rows below use the canonical arm name with the retired one in parentheses: `C_strict` was called `C_required` when this run was frozen, and `benchmarks/results/code-2026-08-04.json` still records the old string — search that artifact for `C_required`, not `C_strict`. The [agentic measurement caveats](#agentic-measurement-caveats) apply to this table: the arms ran in fixed A→B→C order against a warm provider cache, and the `erec`/`rrec`/`aqs` columns carry the substring-credit and unweighted-mean inflation described there.
+
 <!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#claude-agentic-2026-08-04; update both files or record an explicit divergence note. -->
 
-| Model  | Arm        |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |      aqs |  correct |
-| ------ | ---------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: | -------: | -------: |
-| haiku  | A_plain    |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |     0.27 | **0.00** |
-| haiku  | B_auto     |   7 | **281.3k** | **3.6k** | **0.091** |  **48.0** | **0.86** | **0.86** | **0.35** | **0.00** |
-| haiku  | C_required |   7 |     362.1k |     4.2k |     0.097 |      57.2 |     0.85 |     0.85 |     0.30 | **0.00** |
-| sonnet | A_plain    |   7 |     722.4k |    17.8k |     0.636 |     179.3 |     0.97 |     0.97 |     0.51 |     0.00 |
-| sonnet | B_auto     |   7 | **251.6k** | **4.3k** | **0.310** |  **57.3** | **1.00** | **1.00** | **0.58** | **0.14** |
-| sonnet | C_required |   7 |     370.0k |     4.9k |     0.311 |      60.1 |     0.97 |     0.97 |     0.57 | **0.14** |
-| opus   | A_plain    |   7 |     238.3k |     9.2k |     0.497 |     116.8 |     0.57 |     0.57 |     0.32 |     0.00 |
-| opus   | B_auto     |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** | **0.61** |     0.00 |
-| opus   | C_required |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |     0.49 | **0.17** |
+| Model  | Arm                       |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |      aqs |  correct |
+| ------ | ------------------------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: | -------: | -------: |
+| haiku  | A_plain                   |   7 |     674.6k |     9.8k |     0.171 |     136.0 |     0.70 |     0.69 |     0.27 | **0.00** |
+| haiku  | B_auto                    |   7 | **281.3k** | **3.6k** | **0.091** |  **48.0** | **0.86** | **0.86** | **0.35** | **0.00** |
+| haiku  | C_strict (was C_required) |   7 |     362.1k |     4.2k |     0.097 |      57.2 |     0.85 |     0.85 |     0.30 | **0.00** |
+| sonnet | A_plain                   |   7 |     722.4k |    17.8k |     0.636 |     179.3 |     0.97 |     0.97 |     0.51 |     0.00 |
+| sonnet | B_auto                    |   7 | **251.6k** | **4.3k** | **0.310** |  **57.3** | **1.00** | **1.00** | **0.58** | **0.14** |
+| sonnet | C_strict (was C_required) |   7 |     370.0k |     4.9k |     0.311 |      60.1 |     0.97 |     0.97 |     0.57 | **0.14** |
+| opus   | A_plain                   |   7 |     238.3k |     9.2k |     0.497 |     116.8 |     0.57 |     0.57 |     0.32 |     0.00 |
+| opus   | B_auto                    |   7 |     299.6k |     6.2k |     0.529 |      88.0 | **1.00** | **1.00** | **0.61** |     0.00 |
+| opus   | C_strict (was C_required) |   6 | **173.6k** | **2.9k** | **0.344** |  **54.9** |     0.83 |     0.83 |     0.49 | **0.17** |
 
-Bold = best value per model per column (lower is better for tok/cost/elapsed s, higher for erec/rrec/aqs/correct); ties bolded on both rows. `erec`/`rrec` = exposure/report recall of expected reverse-dependencies; `aqs` = mean `answer_quality_score`; `correct` = exact-match `answer_correct` fraction. Opus `C_required` n=6 — one cell excluded (`answer_error`).
+Bold = best value per model per column (lower is better for tok/cost/elapsed s, higher for erec/rrec/aqs/correct); ties bolded on both rows. `erec`/`rrec` = exposure/report recall of expected reverse-dependencies; `aqs` = mean `answer_quality_score`; `correct` = exact-match `answer_correct` fraction. Opus `C_strict` n=6 — one cell excluded (`answer_error`).
 
-**No single arm wins everywhere.** `B_auto` sweeps every metric on haiku and sonnet — cheapest and best recall, meaning the skill genuinely substitutes for manual exploration on those two models. Opus splits: `C_required` wins cost/tokens/elapsed/correct, `B_auto` wins recall/quality — opus under `B_auto` pays extra to explore on top of the skill without recovering any recall `C_required` didn't already have, making `C_required` the stronger opus arm on this partial data. Opus `A_plain` erec (0.57) is partly a markdown-fence parse artifact (fixed this session, not yet applied to this snapshot — see `rescore-claude-agentic.py`) but not entirely: 2 of 3 failing cells have genuinely malformed answer shapes even after unfencing. Full breakdown, per-cell `answer_error` list, and caveats: `code-2026-08-04.md`.
+**No single arm wins everywhere.** `B_auto` sweeps every metric on haiku and sonnet — cheapest and best recall, meaning the skill genuinely substitutes for manual exploration on those two models. Opus splits: `C_strict` wins cost/tokens/elapsed/correct, `B_auto` wins recall/quality — opus under `B_auto` pays extra to explore on top of the skill without recovering any recall `C_strict` didn't already have, making `C_strict` the stronger opus arm on this partial data. Opus `A_plain` erec (0.57) is partly a markdown-fence parse artifact (fixed this session, not yet applied to this snapshot — see `rescore-claude-agentic.py`) but not entirely: 2 of 3 failing cells have genuinely malformed answer shapes even after unfencing. Full breakdown, per-cell `answer_error` list, and caveats: `code-2026-08-04.md`.
 
 ### Codex integration study (A/B/C)
 
@@ -947,6 +971,8 @@ The revised canonical FM-03 task targets cooperative `Strategy.setup_environment
 #### Current Fix-Multi W3 acceptance — 2026-08-12
 
 The revised six-cell scopes completed with valid immutable artifacts: Claude Haiku `benchmarks/results/claude-fix-multi-f2719755cb23`, Claude Sonnet `benchmarks/results/claude-fix-multi-243a7e2174ea`, and Codex Luna `benchmarks/results/codex-unified-91752e388e4e/fix-multi`. Stored row glyphs and quality values remain exactly as emitted. Independent prospective replay corrects only the semantic interpretation of harmless method-docstring changes and the FM-01 decision-log verbosity gate; it does not rewrite telemetry or manufacture favorable rows.
+
+**! The Fix-Multi efficiency ratios in this section are exploratory-only.** The scorer revision that decides which A/C pairs count as valid was written after the outcomes were observed and is not pre-registered in the locked policy JSON. It excludes one Claude-favorable pair (Haiku FM-01) and one incomplete pair (Sonnet FM-01) while retaining pairs that read against Codemap (both Codex rows), so the direction of the post-hoc gate is not one-sided — but a validity rule chosen with the results in view cannot support a confirmatory efficiency claim. The correctness verdicts and the retained failures stand; only the C/A ratios carry this label.
 
 | Provider/model | Task  | Valid A/C semantic result                                 | C/A gross input | C/A output | C/A commands | C/A elapsed | Admission judgment                                       |
 | -------------- | ----- | --------------------------------------------------------- | --------------: | ---------: | -----------: | ----------: | -------------------------------------------------------- |

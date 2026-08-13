@@ -123,6 +123,11 @@ class FixExecution:
     recount_oracle_passed: bool | None
     cleanup_verified: bool
     error: str | None
+    # Whether the contract's regression commands still pass after the candidate patch.
+    # Vacuously ``True`` for a contract declaring no regression commands, matching the
+    # patch stage's own ``all(...)`` over an empty command set, so a task that declares
+    # none is neither credited nor penalized for regression safety.
+    regression_test_passed: bool | None = True
 
     def as_dict(self) -> dict[str, object]:
         """Return JSON-safe execution evidence."""
@@ -360,13 +365,28 @@ def _verified_patch_task_source(repo_path: Path, baseline_commit: str) -> tuple[
 
 
 def execute_executable_patch(
-    repo_path: Path, *, baseline_commit: str, oracle: Callable[[Path], bool], diff: str
+    repo_path: Path,
+    *,
+    baseline_commit: str,
+    oracle: Callable[[Path], bool],
+    diff: str,
+    regression_test_commands: Sequence[str] = (),
 ) -> FixExecution:
     """Apply a candidate patch in a clean scoring worktree and retain diagnostics.
 
     Normal application and the independent oracle determine the primary result.
     ``--recount`` is recorded only to explain a malformed candidate; it never
     upgrades ``patch_applied`` or the primary score.
+
+    Args:
+        repo_path: Frozen benchmark repository holding the baseline commit.
+        baseline_commit: Commit the scoring worktree is detached at.
+        oracle: Independent behavior oracle; ``True`` when the task is satisfied.
+        diff: Candidate patch text.
+        regression_test_commands: Frozen commands that must still pass after the patch.
+            Empty for a contract that declares none, which leaves
+            ``regression_test_passed`` vacuously ``True`` exactly as the patch stage's
+            ``all(...)`` over an empty command set does.
     """
     source = repo_path.resolve()
     _verified_source_baseline(source, baseline_commit)
@@ -376,6 +396,10 @@ def execute_executable_patch(
     changed_paths: tuple[str, ...] = ()
     recount_oracle_passed: bool | None = None
     error: str | None = None
+    # Vacuously true until a declared regression command actually fails: a contract with
+    # no regression commands must not be penalized, and a patch that never applied has
+    # broken nothing.
+    regression_test_passed: bool | None = True
     try:
         _workspace_git(source, "worktree", "add", "--detach", str(worktree), baseline_commit)
         created = True
@@ -402,6 +426,8 @@ def execute_executable_patch(
                     line for line in _workspace_git(worktree, "diff", "--name-only").stdout.splitlines() if line.strip()
                 )
                 targeted_test_passed = oracle(worktree)
+                regressions = _run_test_commands(worktree, regression_test_commands, "candidate_regression")
+                regression_test_passed = all(item["returncode"] == 0 for item in regressions.values())
     except (OSError, ValueError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
         error = str(exc)[:1000]
     finally:
@@ -426,6 +452,7 @@ def execute_executable_patch(
         recount_oracle_passed,
         cleanup_verified,
         error,
+        regression_test_passed=regression_test_passed,
     )
 
 
@@ -436,6 +463,7 @@ def execute_fix_single_patch(repo_path: Path, contract: FixSingleContract, diff:
         baseline_commit=contract.baseline_commit,
         oracle=lambda worktree: run_fix_single_oracle(worktree, contract),
         diff=diff,
+        regression_test_commands=contract.regression_test_commands,
     )
 
 
@@ -446,6 +474,7 @@ def execute_fix_multi_patch(repo_path: Path, contract: FixMultiContract, diff: s
         baseline_commit=contract.baseline_commit,
         oracle=lambda worktree: run_fix_multi_oracle(worktree, contract),
         diff=diff,
+        regression_test_commands=contract.regression_test_commands,
     )
 
 

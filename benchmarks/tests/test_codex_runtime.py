@@ -73,6 +73,137 @@ def _callbacks(
     )
 
 
+def _native_command(command: str, *, exit_code: int = 0, output: str = "", item_id: str = "cmd") -> str:
+    """Render one completed native command item as a JSONL event line."""
+    return json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "id": item_id,
+                "command": command,
+                "aggregated_output": output,
+                "status": "completed" if exit_code == 0 else "failed",
+                "exit_code": exit_code,
+            },
+        }
+    )
+
+
+_QUERY_COMMAND = "/bin/zsh -lc '\"$CODEMAP_BIN\" query --compact symbol Example.method'"
+_QUERY_OUTPUT = '{"index":{"query_complete":true,"compact":true}}'
+_TERMINAL = json.dumps({"type": "turn.completed", "status": "completed"})
+
+
+def test_fallback_counts_search_and_read_items_but_not_unrelated_commands() -> None:
+    """B-M1: fallback means the agent searched by hand, not that any command ran."""
+    runtime = _load()
+    stream = "\n".join(
+        (
+            _native_command(_QUERY_COMMAND, exit_code=1, item_id="failed-query"),
+            _native_command("/bin/zsh -lc 'rg \"pkg.core\" src'", item_id="search"),
+            _native_command("/bin/zsh -lc 'git status --short'", item_id="unrelated"),
+            _native_command("/bin/zsh -lc 'pytest tests/test_core.py'", item_id="tests"),
+            _TERMINAL,
+        )
+    )
+
+    parsed = runtime.parse_codex_jsonl(stream)
+
+    assert parsed.codemap_errors == 1
+    assert parsed.command_calls == 4
+    assert parsed.fallback_calls == 1
+
+
+def test_legacy_assistant_tool_use_block_attributes_a_codemap_query() -> None:
+    """B-M2: the compatibility path could never credit a Codemap call before."""
+    runtime = _load()
+    stream = "\n".join(
+        (
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "input": {"command": '"$CODEMAP_BIN" query --compact symbol Example.method'},
+                            }
+                        ]
+                    },
+                }
+            ),
+            _TERMINAL,
+        )
+    )
+
+    parsed = runtime.parse_codex_jsonl(stream)
+
+    assert parsed.command_calls == 1
+    assert parsed.codemap_calls == 1
+    assert parsed.codemap_direct_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected_input", "expected_output", "expected_malformed"),
+    [
+        pytest.param({"input_tokens": 1200, "output_tokens": 34}, 1200, 34, 0, id="native-integers"),
+        pytest.param({"input_tokens": "1200", "output_tokens": 34.0}, 1200, 34, 0, id="coerced-string-and-float"),
+        pytest.param({"input_tokens": "n/a", "output_tokens": 34}, 0, 34, 1, id="unreadable-input-flagged"),
+        pytest.param({"input_tokens": -5, "output_tokens": 1.5}, 0, 0, 2, id="impossible-counts-flagged"),
+    ],
+)
+def test_malformed_usage_is_coerced_or_counted_never_silently_zeroed(
+    usage: dict[str, Any], expected_input: int, expected_output: int, expected_malformed: int
+) -> None:
+    """B-M3: provider schema drift must not degrade a paid turn into a free run."""
+    runtime = _load()
+    stream = "\n".join((json.dumps({"type": "turn.completed", "status": "completed", "usage": usage}),))
+
+    parsed = runtime.parse_codex_jsonl(stream)
+
+    assert parsed.input_tokens == expected_input
+    assert parsed.output_tokens == expected_output
+    assert parsed.malformed_usage == expected_malformed
+
+
+def test_usage_events_are_treated_as_cumulative_not_additive() -> None:
+    """B-M4: pins the documented cumulative-within-a-turn assumption (README)."""
+    runtime = _load()
+    stream = "\n".join(
+        (
+            json.dumps({"type": "turn.progress", "usage": {"input_tokens": 100, "output_tokens": 10}}),
+            json.dumps(
+                {"type": "turn.completed", "status": "completed", "usage": {"input_tokens": 250, "output_tokens": 25}}
+            ),
+        )
+    )
+
+    parsed = runtime.parse_codex_jsonl(stream)
+
+    assert parsed.input_tokens == 250
+    assert parsed.output_tokens == 25
+    assert parsed.malformed_usage == 0
+
+
+def test_skill_versus_direct_attribution_follows_configuration_not_the_stream(tmp_path: Path) -> None:
+    """B-M5: identical bytes are labelled skill or direct purely by the caller's arm."""
+    runtime = _load()
+    stream = "\n".join((_native_command(_QUERY_COMMAND, output=_QUERY_OUTPUT, item_id="query"), _TERMINAL))
+    skill_path = tmp_path / "SKILL.md"
+    skill_path.write_text("---\nname: query-code\n---\n", encoding="utf-8")
+
+    direct = runtime.parse_codex_jsonl(stream)
+    skill = runtime.parse_codex_jsonl(stream, skill_path=skill_path)
+
+    assert direct.codemap_direct_compact_successful_calls == 1
+    assert direct.codemap_skill_compact_successful_calls == 0
+    assert skill.codemap_skill_compact_successful_calls == 1
+    assert skill.codemap_direct_compact_successful_calls == 0
+    assert skill.skill_delivery_observed is False
+
+
 def test_paid_stage_runs_exact_task_arm_order_and_persists_every_cell(tmp_path: Path) -> None:
     """The lifecycle preserves canonical order and durable per-cell progress."""
     lifecycle = _load_lifecycle()

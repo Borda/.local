@@ -27,7 +27,13 @@ POLICY_SEED_SHA256 = "1e5b1cad389513db9402ca2da39f58c1ff9b7cb36b0fdc4a23ce03886e
 EXPERIMENT_REVISION = "provider-parity-historical-patch-executable-2026-08-12"
 TASKS_BENCH = "benchmarks/suites/tasks-bench.json"
 TASKS_AGENTIC = "benchmarks/suites/tasks-agentic.json"
-CANONICAL_TARGET = (Path(os.sep) / "tmp" / "codemap-provider-parity-pl-2.6.5").resolve()
+# Root temp dir, not the per-user one: patch-index-locks.json locks canonical_scan_root
+# to /private/tmp/codemap-provider-parity-pl-2.6.5. tempfile.gettempdir() honours $TMPDIR
+# and would name a different directory.
+CANONICAL_TARGET = Path(
+    os.environ.get("CODEMAP_PARITY_REPO")
+    or f"{os.sep}tmp{os.sep}codemap-provider-parity-pl-2.6.5"  # portable-paths: canonical-target
+).resolve()
 INDEX_LOCK = {
     "change_reason": (
         "Scanner schema 13 preserves static reverse-import edges for relative imports and known from-package "

@@ -35,6 +35,60 @@ def _python_strings(path: Path) -> list[tuple[int, str]]:
     ]
 
 
+# A line carrying this marker documents a deliberate, reviewed root-temp path — the
+# canonical parity target, whose value is locked in suites/patch-index-locks.json and so
+# cannot follow $TMPDIR. The point of the marker is that the exemption is visible and
+# justified in the source, unlike an assembled literal the gate simply could not see.
+EXEMPTION_MARKER = "portable-paths: canonical-target"
+
+
+def _assembled_root_temp_dirs(path: Path) -> list[tuple[int, str]]:
+    """Return root-temp paths assembled from ``os.sep`` rather than written as literals.
+
+    A literal scan cannot see these: the separator arrives from ``os.sep`` and only the
+    bare segment ``"tmp"`` appears as a string, so the assembled path slipped the gate
+    while still hardcoding ``/tmp`` — and resolving to the drive root on Windows.
+    Covers both ``Path(os.sep) / "tmp"`` and the f-string ``f"{os.sep}tmp{os.sep}..."``.
+    """
+    source_lines = path.read_text(encoding="utf-8").splitlines()
+    tree = ast.parse("\n".join(source_lines), filename=str(path))
+
+    def exempt(lineno: int) -> bool:
+        """Return whether the reported line carries the documented exemption marker."""
+        return EXEMPTION_MARKER in source_lines[lineno - 1] if 0 < lineno <= len(source_lines) else False
+
+    violations: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        assembled = False
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            left = node.left
+            assembled = (
+                isinstance(node.right, ast.Constant)
+                and node.right.value in {"tmp", "temp"}
+                and isinstance(left, ast.Call)
+                and isinstance(left.func, ast.Name)
+                and left.func.id == "Path"
+                and len(left.args) == 1
+                and isinstance(left.args[0], ast.Attribute)
+                and left.args[0].attr == "sep"
+            )
+        elif isinstance(node, ast.JoinedStr):
+            parts = [
+                value.value.attr
+                if isinstance(value, ast.FormattedValue) and isinstance(value.value, ast.Attribute)
+                else value.value
+                if isinstance(value, ast.Constant)
+                else None
+                for value in node.values
+            ]
+            assembled = parts[:2] == ["sep", "tmp"]
+        if assembled and not exempt(node.lineno):
+            violations.append(
+                (node.lineno, f"assembled root temp path; use tempfile.gettempdir() or mark '{EXEMPTION_MARKER}'")
+            )
+    return violations
+
+
 def find_violations(path: Path) -> list[tuple[int, str]]:
     """Return forbidden absolute-path literals in one governed source file."""
     if path.suffix == ".py":
@@ -43,11 +97,14 @@ def find_violations(path: Path) -> list[tuple[int, str]]:
         lines = list(enumerate(path.read_text(encoding="utf-8").splitlines(), start=1))
     else:
         return []
-    return [
+    found = [
         (line_number, line.strip())
         for line_number, line in lines
         if not line.lstrip().startswith("#") and FORBIDDEN_PATH.search(line)
     ]
+    if path.suffix == ".py":
+        found.extend(_assembled_root_temp_dirs(path))
+    return sorted(found)
 
 
 def _default_sources() -> list[Path]:

@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+try:  # imported as a package member (benchmarks._bench_common.claude_transport)
+    from .process_group import NEW_PROCESS_GROUP, terminate_process_group
+except ImportError:  # loaded standalone by file path; the benchmarks dir is on sys.path
+    from _bench_common.process_group import NEW_PROCESS_GROUP, terminate_process_group
+
 # Short tier name → concrete model id, shared by the agentic and real-codebase runners.
 MODELS: dict[str, str] = {
     "haiku": "claude-haiku-4-5",
@@ -123,10 +128,14 @@ def stream_claude(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="replace",
             cwd=str(cwd),
             env=env,
+            **NEW_PROCESS_GROUP,
         )
-        kill_timer = threading.Timer(timeout, proc.kill)
+        # The kill must reach the whole tree: killing only the direct child left the
+        # descendants it spawned alive, consuming paid budget outside the measured window.
+        kill_timer = threading.Timer(timeout, terminate_process_group, args=(proc,))
         kill_timer.start()
         try:
             assert proc.stdout is not None

@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -88,6 +89,9 @@ class CodexParseResult:
     error_type: str = ""
     raw_events: list[dict[str, Any]] = field(default_factory=list)
     malformed_lines: int = 0
+    # Count of usage fields that could not be read as a token count. A nonzero
+    # value means the reported cost of this turn is an undercount, not a cheap run.
+    malformed_usage: int = 0
     raw_usage: dict[str, Any] = field(default_factory=dict)
     item_counts: dict[str, int] = field(default_factory=dict)
     tool_elapsed_s: float | None = None
@@ -146,8 +150,62 @@ def _redact_provider_error(value: Any) -> str:
     return _redact_sensitive_text(str(value))
 
 
-def _as_int(value: Any) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+def _coerce_usage_int(value: Any) -> tuple[int, bool]:
+    """Return one non-negative usage count plus whether the field was malformed.
+
+    The previous ``_as_int`` returned ``0`` for every non-``int`` value, so a
+    provider schema change that emitted ``"1234"`` or ``1234.0`` silently
+    degraded a paid turn into a free-looking run with no signal anywhere. A
+    numeric string or integral float is real usage and is coerced; anything that
+    cannot represent a non-negative token count is reported as malformed so the
+    caller can surface it instead of persisting a fabricated zero.
+
+    An absent field is *not* malformed: most Codex usage events omit
+    ``reasoning_output_tokens``, and flagging those would make the counter
+    useless.
+    """
+    if value is None:
+        return 0, False
+    number: int | None = None
+    if isinstance(value, bool):
+        number = None
+    elif isinstance(value, int):
+        number = value
+    elif isinstance(value, float):
+        number = int(value) if math.isfinite(value) and value.is_integer() else None
+    elif isinstance(value, str):
+        try:
+            number = int(value.strip())
+        except ValueError:
+            number = None
+    if number is None or number < 0:
+        return 0, True
+    return number, False
+
+
+def _ingest_usage(result: CodexParseResult, usage: Mapping[str, Any]) -> None:
+    """Fold one native usage event into the turn totals and count schema drift.
+
+    ``max()`` rather than a running sum is deliberate: ``benchmarks/README.md``
+    records that native Codex input usage is *cumulative within a turn*, so each
+    usage event restates the turn total and summing would multiply the reported
+    cost. That semantic is an assumption about the provider, pinned here only by
+    a synthetic fixture in ``tests/test_codex_runtime.py``
+    (``test_usage_events_are_treated_as_cumulative_not_additive``) — it has not
+    been confirmed against a captured real stream. If a future CLI emits per-event
+    deltas instead, that fixture is the contract to revisit before changing this.
+    """
+    result.raw_usage.update(dict(usage))
+    for attribute, value in (
+        ("input_tokens", usage.get("input_tokens")),
+        ("cached_input_tokens", usage.get("cached_input_tokens", usage.get("cache_read_input_tokens"))),
+        ("output_tokens", usage.get("output_tokens")),
+        ("reasoning_output_tokens", usage.get("reasoning_output_tokens")),
+    ):
+        count, malformed = _coerce_usage_int(value)
+        if malformed:
+            result.malformed_usage += 1
+        setattr(result, attribute, max(getattr(result, attribute), count))
 
 
 def _item_text(item: Mapping[str, Any]) -> str:
@@ -165,6 +223,29 @@ def _item_text(item: Mapping[str, Any]) -> str:
 def _command_text(item: Mapping[str, Any]) -> str:
     values = [item.get(key, "") for key in ("command", "cmd", "name", "arguments", "input")]
     return " ".join(value if isinstance(value, str) else json.dumps(value, sort_keys=True) for value in values)
+
+
+def _tool_use_command(block: Mapping[str, Any]) -> str:
+    """Return the shell command carried by one legacy assistant ``tool_use`` block.
+
+    The previous code passed ``name + " " + _command_text(block)`` to the Codemap
+    predicate, which could never match: the predicate requires ``$CODEMAP_BIN`` in
+    first position, and both the prepended tool name *and* ``_command_text``'s own
+    ``name`` field pushed it out of that slot, so the whole legacy attribution
+    branch was unreachable-false. Stripping only the prefix is not enough — the
+    command has to be read out of the block's ``input`` payload directly.
+    """
+    payload = block.get("input")
+    if isinstance(payload, Mapping):
+        for key in ("command", "cmd"):
+            value = payload.get(key)
+            if isinstance(value, str):
+                return value
+    for key in ("command", "cmd"):
+        value = block.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
 
 
 def _unwrap_native_command(command: str) -> str | None:
@@ -267,6 +348,47 @@ def _observes_compact_codemap_query(command: str) -> bool:
         re.search(r"(?:['\"]?\$CODEMAP_BIN['\"]?|\$\{CODEMAP_BIN\})\s+query\s+--compact(?:\s|$)", normalized)
         is not None
     )
+
+
+_FALLBACK_TOOLS = frozenset(
+    {
+        "ack",
+        "ag",
+        "awk",
+        "cat",
+        "fd",
+        "fgrep",
+        "find",
+        "egrep",
+        "grep",
+        "head",
+        "less",
+        "ls",
+        "more",
+        "nl",
+        "rg",
+        "sed",
+        "tail",
+        "tree",
+    }
+)
+
+
+def _is_search_or_read_fallback(command: str) -> bool:
+    """Return whether one native item is a search or read substituting for Codemap.
+
+    ``fallback_calls`` previously counted *every* command observed after the
+    first Codemap error, so an unrelated ``git status`` or ``pytest`` inflated a
+    metric whose name claims the agent fell back to manual searching. Only the
+    named search/read tools below are counted now, so the number means what it
+    says.
+
+    A compound or redirected item (``grep foo | head``) returns no dedicated
+    token list and is therefore excluded. That is a deliberate conservative
+    undercount: an over-broad count is what made the old metric unreadable.
+    """
+    tokens = _native_item_tokens(command)
+    return bool(tokens) and Path(tokens[0]).name in _FALLBACK_TOOLS
 
 
 def _is_codemap_command(command: str, *, launcher_path: Path | None = None) -> bool:
@@ -376,6 +498,13 @@ def parse_codex_jsonl(
     assistant blocks across CLI versions.  This parser accepts both shapes,
     deduplicates lifecycle events by item ID, and retains every valid parsed
     event in ``raw_events`` for audit/debugging.
+
+    Observed vs configured: the ``codemap_*`` call and error counters are read
+    from the stream, but the ``_skill_`` / ``_direct_`` split is *not*. It is
+    derived from whether the caller passed ``skill_path``, which the runner does
+    only for the C_skill_required home. Treat every skill-vs-direct number as a
+    restatement of the arm assignment, not as evidence of Skill mediation; the
+    only observational Skill signal is ``skill_delivery_observed``.
     """
     result = CodexParseResult()
     seen_items: set[str] = set()
@@ -402,17 +531,7 @@ def parse_codex_jsonl(
 
         usage = event.get("usage")
         if isinstance(usage, Mapping):
-            result.raw_usage.update(dict(usage))
-            result.input_tokens = max(result.input_tokens, _as_int(usage.get("input_tokens")))
-            result.cached_input_tokens = max(
-                result.cached_input_tokens,
-                _as_int(usage.get("cached_input_tokens", usage.get("cache_read_input_tokens"))),
-            )
-            result.output_tokens = max(result.output_tokens, _as_int(usage.get("output_tokens")))
-            result.reasoning_output_tokens = max(
-                result.reasoning_output_tokens,
-                _as_int(usage.get("reasoning_output_tokens")),
-            )
+            _ingest_usage(result, usage)
 
         item = event.get("item")
         if isinstance(item, Mapping):
@@ -442,9 +561,18 @@ def parse_codex_jsonl(
                     )
                     if _canonical_query_arguments(command) is not None:
                         result.codemap_calls += 1
+                        # CONFIGURED BY CONSTRUCTION, NOT OBSERVED. `skill_path` is
+                        # non-None only for the C_skill_required home, so this split
+                        # restates the caller's arm assignment; the stream carries no
+                        # evidence distinguishing a Skill-mediated query from a direct
+                        # one, because both end as the same `$CODEMAP_BIN` command.
                         # The immutable C home proves the installed-Skill treatment.
                         # A manual Skill-file read remains useful audit evidence, but
                         # requiring it would add ceremony unrelated to a query's use.
+                        # Consequence: `_arm_compliance` for C_skill_required (see
+                        # run-codex-structural.py) is a home-integrity claim plus an
+                        # observed successful query — not proof the Skill was read.
+                        # `skill_delivery_observed` is the separate observational signal.
                         delivery = "skill" if skill_path is not None else "direct"
                         if delivery == "direct":
                             result.codemap_direct_calls += 1
@@ -466,7 +594,7 @@ def parse_codex_jsonl(
                                 result.codemap_skill_compact_successful_calls += 1
                     if _observes_compact_codemap_query(command):
                         result.codemap_observed_calls += 1
-                    elif result.codemap_errors:
+                    elif result.codemap_errors and _is_search_or_read_fallback(command):
                         result.fallback_calls += 1
                     if skill_read_verified and not compact_query_attempt_seen:
                         result.skill_delivery_observed = True
@@ -485,10 +613,10 @@ def parse_codex_jsonl(
                 if block.get("type") == "tool_use":
                     result.last_tool_text_offset = len(result.output_text)
                     name = str(block.get("name", ""))
-                    command = _command_text(block)
+                    command = _tool_use_command(block)
                     if name.lower() in {"bash", "shell", "command_execution"}:
                         result.command_calls += 1
-                    if _is_codemap_command(name + " " + command, launcher_path=launcher_path):
+                    if _is_codemap_command(command, launcher_path=launcher_path):
                         result.codemap_calls += 1
                         if result.skill_delivery_observed:
                             result.codemap_skill_calls += 1

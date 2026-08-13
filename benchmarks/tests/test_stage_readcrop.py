@@ -7,6 +7,7 @@ import inspect
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any
 from types import SimpleNamespace
@@ -85,6 +86,69 @@ def test_readcrop_parser_preserves_answer_and_redacted_event_evidence() -> None:
     assert row["raw_events"]
     assert len(row["raw_events_sha256"]) == 64
     assert auto_row["compliance"] is True
+
+
+def test_unscoreable_answer_leaves_every_recall_field_none() -> None:
+    """B-M6: one failure cannot be averaged into two means and omitted from two."""
+    runner = _load()
+    task = {
+        "id": "RC-fixture",
+        "type": "read_crop",
+        "prompt": "Describe Example.method.",
+        "primary_module": "package.module",
+        "symbol": "Example.method",
+        "expected_keywords": ["value"],
+    }
+    contract = runner.build_readcrop_contract(task, source="def method(self, value: int) -> None:\n    pass\n")
+    stream = "\n".join(
+        (
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "no envelope here"}}),
+            json.dumps({"type": "turn.completed", "status": "completed"}),
+        )
+    )
+
+    row = runner.parse_readcrop_stream(stream, arm="A_plain", contract=contract, skill_path=None)
+
+    assert row["answer_error"] == "missing strict read-crop answer envelope"
+    assert row["parameter_recall"] is None
+    assert row["behavior_fact_recall"] is None
+    assert row["behavior_facts_correct"] is None
+    assert row["keyword_recall_diagnostic"] is None
+    assert row["quality_score"] is None
+    assert row["success"] is False
+    assert row["primary_correct"] is False
+
+
+def test_prompt_rejects_an_arm_that_has_no_availability_supplement(monkeypatch: pytest.MonkeyPatch) -> None:
+    """B-L4: the guard must survive `python -O`, which strips a bare assert."""
+    runner = _load()
+    monkeypatch.setattr(runner, "ARMS", (*runner.ARMS, "D_phantom"))
+
+    with pytest.raises(ValueError, match="no availability supplement"):
+        runner.readcrop_prompt("D_phantom", {"prompt": "Describe Example.method.", "symbol": "Example.method"})
+
+
+def test_importing_the_stage_does_not_execute_the_structural_runner() -> None:
+    """B-L5: importing a prompt helper must not run the 5000-line paid runner."""
+    probe = (
+        "import sys, json; sys.path.insert(0, '.');"
+        "from _bench_codex import stage_readcrop;"
+        "target = stage_readcrop.STRUCTURAL_PATH.resolve();"
+        "loaded = [m for m in tuple(sys.modules.values())"
+        " if getattr(m, '__file__', None) and __import__('pathlib').Path(m.__file__).resolve() == target];"
+        "print(json.dumps({'loaded': bool(loaded), 'lazy': stage_readcrop._STRUCTURAL_MODULE is None}))"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=BENCHMARKS,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
+    )
+
+    assert json.loads(completed.stdout.strip().splitlines()[-1]) == {"loaded": False, "lazy": True}
 
 
 def test_result_row_reports_progress_and_cell_state() -> None:
@@ -209,6 +273,7 @@ def test_strict_readcrop_requires_the_locked_symbol_query(monkeypatch: Any, tmp_
         codemap_skill_compact_successful_calls=1,
         successful_query_arguments=[["symbol", "Other.method"]],
         codemap_calls=1,
+        codemap_observed_calls=1,
         input_tokens=10,
         cached_input_tokens=0,
         output_tokens=1,
@@ -216,6 +281,7 @@ def test_strict_readcrop_requires_the_locked_symbol_query(monkeypatch: Any, tmp_
         tool_result_tokens=None,
         command_calls=1,
         tool_elapsed_s=0.1,
+        malformed_usage=0,
         raw_events=[],
     )
     monkeypatch.setattr(runner.runtime, "parse_codex_jsonl", lambda *_args, **_kwargs: parsed)
@@ -393,7 +459,7 @@ def test_preflight_probes_every_native_arm(monkeypatch: Any, tmp_path: Path) -> 
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(runner._structural, "CodexRunner", Adapter)
+    monkeypatch.setattr(runner._structural(), "CodexRunner", Adapter)
     runner.preflight_isolation(
         repo_path=tmp_path,
         index_path=tmp_path / "index.json",
@@ -424,7 +490,7 @@ def test_paid_snapshot_binds_the_structural_launcher_and_readcrop_stage(monkeypa
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(runner._structural, "CodexRunner", Adapter)
+    monkeypatch.setattr(runner._structural(), "CodexRunner", Adapter)
     task = {"task": {"id": "RC-01"}, "contract": type("Contract", (), {"task_id": "RC-01"})()}
     with pytest.raises(KeyboardInterrupt):
         runner.run_paid(

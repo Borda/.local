@@ -18,7 +18,10 @@ Covers public API surface:
 from __future__ import annotations
 
 import json
+import inspect
+import math
 import subprocess
+from types import SimpleNamespace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -2074,3 +2077,98 @@ class TestIndexScanVersion:
     def test_min_ver_constant_is_positive(self, script_run_cli: Any) -> None:
         """Scenario: the self-consistency minimum version is a positive gate value."""
         assert script_run_cli._SELF_CONSISTENCY_MIN_VER >= 1
+
+
+class TestTimingCensoring:
+    """B-H6: failed and timed-out runs must not enter the latency statistics."""
+
+    def test_failed_runs_are_discarded_and_counted(self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A command that fails instantly otherwise records an excellent latency."""
+        monkeypatch.setattr(
+            script_run_cli, "_run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="boom")
+        )
+
+        stats = script_run_cli.time_command(["false"], n=3)
+
+        assert stats.failed == 3
+        assert stats.measured == 0
+        assert math.isnan(stats.median_ms)
+
+    def test_timed_out_runs_are_reported_as_censored_not_observed(
+        self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The deadline is a lower bound on the true duration, not a measurement.
+
+        Appending 30_000 ms as if it were an observation dragged the median toward
+        the timeout value.
+        """
+
+        def timeout(*_args: Any, **_kwargs: Any) -> None:
+            raise subprocess.TimeoutExpired(["sleep"], 30)
+
+        monkeypatch.setattr(script_run_cli, "_run", timeout)
+
+        stats = script_run_cli.time_command(["sleep", "60"], n=3)
+
+        assert stats.timed_out == 3
+        assert stats.measured == 0
+        assert math.isnan(stats.median_ms)
+        assert stats.median_ms != 30_000.0
+
+    def test_successful_runs_still_produce_statistics(
+        self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The ordinary path is unchanged."""
+        monkeypatch.setattr(
+            script_run_cli, "_run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr="")
+        )
+
+        stats = script_run_cli.time_command(["true"], n=4)
+
+        assert stats.failed == 0
+        assert stats.timed_out == 0
+        assert stats.measured == 4
+        assert stats.median_ms >= 0
+
+    def test_a_mixed_run_keeps_only_the_successful_observations(
+        self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Partial failure must reduce the observation count, not the reported speed."""
+        codes = iter([0, 1, 0])
+
+        monkeypatch.setattr(
+            script_run_cli,
+            "_run",
+            lambda *_args, **_kwargs: SimpleNamespace(returncode=next(codes), stdout="", stderr=""),
+        )
+
+        stats = script_run_cli.time_command(["maybe"], n=3)
+
+        assert stats.failed == 1
+        assert stats.measured == 2
+
+    def test_command_sequence_discards_a_failed_sequence(
+        self, script_run_cli: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """B-H6: the same rule applies to the cold-grep sequence timer."""
+        monkeypatch.setattr(
+            script_run_cli, "_run", lambda *_args, **_kwargs: SimpleNamespace(returncode=2, stdout="", stderr="")
+        )
+
+        stats = script_run_cli.time_commands([["a"], ["b"]], n=2)
+
+        assert stats.failed == 2
+        assert stats.measured == 0
+
+
+def test_cold_call_counts_are_labelled_as_planned_invocations(script_run_cli: Any) -> None:
+    """B-H7: the cold baseline reports its plan size, not observed search work.
+
+    ``cold_greps`` returns ``len(cmds)`` by construction, so presenting it beside the
+    measured codemap counts without a label read as a comparable observation.
+    """
+    source = inspect.getsource(script_run_cli)
+
+    assert "total_cold_planned_calls" in source
+    assert "planned_invocations_not_observed_search_work" in source
+    assert "total_cold_calls" not in source
