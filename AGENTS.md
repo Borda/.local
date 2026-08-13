@@ -1,8 +1,16 @@
 # Repository Agent Instructions
 
-<!-- policy-sibling-sync: AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
+<!-- policy-sibling-sync: CLAUDE.md, AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
 
-Any policy change in one listed instruction file must trigger a relevance review of the other two before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
+Any policy change in one listed instruction file must trigger a relevance review of every other listed file before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
+
+## Edit Scope
+
+All edits stay inside this project directory. Never edit `$CODEX_HOME` or `~/.claude/` directly — both are install targets populated from this checkout, and a hand-edit there is overwritten on the next sync.
+
+- Permitted roots: `.codex/` (Codex config, skills, session policy), `.claude/settings.json` and `.claude/settings.local.json`, `plugins/*/{agents,skills,rules,hooks,bin}/`.
+- `sync.sh` installs from the pushed GitHub remote, not the local working tree: commit and push first, then `bash sync.sh [claude|codex]`. Running it against uncommitted work silently installs the previous state.
+- Never initiate propagation mid-task; it is a deliberate human-triggered step.
 
 ## Core Principles
 
@@ -31,6 +39,6 @@ Plugin-specific authoring, installability, cross-reference, versioning, and veri
 - Python minimum: 3.10. The repository root is an environment anchor, not an installable package.
 - Bootstrap test tooling with `uv sync --only-group test`; benchmark-only dependencies use `uv sync --only-group bench`.
 - Run focused tests with `.venv/bin/python -m pytest <paths>` and broaden to the affected suite before completion.
-- Run `.venv/bin/ruff check <changed-python-paths>` and `.venv/bin/ruff format --check <changed-python-paths>` for Python edits.
+- Lint/format Python edits via the pinned pre-commit hooks, never the bare tool: `pre-commit run ruff-check --files <changed-python-paths>` and `pre-commit run ruff-format --files <changed-python-paths>`; direct `ruff` invocation drifts from the version/config pinned in `.pre-commit-config.yaml`.
 - Use `pre-commit run --all-files` only when the task requires the repository-wide gate; preserve unrelated working-tree changes.
 - Release and build entry points are plugin-specific; follow `plugins/AGENTS.md` and the owning plugin's scripts and README. Remote publication remains human-owned.

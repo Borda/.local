@@ -1,8 +1,8 @@
 # Plugin Authoring Rules
 
-<!-- policy-sibling-sync: AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
+<!-- policy-sibling-sync: CLAUDE.md, AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
 
-Any policy change in one listed instruction file must trigger a relevance review of the other two before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
+Any policy change in one listed instruction file must trigger a relevance review of every other listed file before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
 
 Apply these rules to every file under `plugins/`; `plugins/CLAUDE.md` remains the full authoring reference, and this file is the Codex-facing distillation.
 
@@ -10,7 +10,7 @@ Apply these rules to every file under `plugins/`; `plugins/CLAUDE.md` remains th
 
 - Bootstrap test tooling from the repository root with `uv sync --only-group test` when the existing `.venv` is unavailable.
 - Run `.venv/bin/python -m pytest -q plugins/<name>` for the touched plugin; use focused test paths while iterating, then the full plugin suite before completion.
-- Run `.venv/bin/ruff check <changed-python-paths>` and `.venv/bin/ruff format --check <changed-python-paths>` for Python edits.
+- Lint/format Python edits via the pinned pre-commit hooks, never the bare tool: `pre-commit run ruff-check --files <changed-python-paths>` and `pre-commit run ruff-format --files <changed-python-paths>`; direct `ruff` invocation drifts from the version/config pinned in `.pre-commit-config.yaml`.
 - When `plugins/<name>/scripts/build_package.py` and `validate_package.py` exist, build into a temporary directory and validate the produced package before commit.
 - There is no shared automatic release command. Update the owning manifests and CHANGELOG, validate the package, and leave remote publication to the human workflow.
 - Completion requires relevant tests, lint/format where applicable, package validation where available, README synchronization, the SemVer gate, and `git diff --check`.

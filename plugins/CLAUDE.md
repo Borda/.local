@@ -2,9 +2,9 @@
 
 # Plugin Authoring Rules
 
-<!-- policy-sibling-sync: AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
+<!-- policy-sibling-sync: CLAUDE.md, AGENTS.md, plugins/AGENTS.md, plugins/CLAUDE.md -->
 
-Any policy change in one listed instruction file must trigger a relevance review of the other two before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
+Any policy change in one listed instruction file must trigger a relevance review of every other listed file before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
 
 Plugins under `plugins/`. See `README.md` for user-facing detail. Sections below with a "Full ... : `AUTHORING.md` §X" pointer have narrow-trigger detail (worked checklists, mechanism rationale, precedent, catalogues) in `plugins/AUTHORING.md`, same directory — load on demand, not needed for routine edits.
 
