@@ -1,15 +1,34 @@
 #!/usr/bin/env python
-"""check_cli_flag_drift.py — detect SKILL.md flags that drifted from a bin/ script's argparse.
+"""check_cli_flag_drift.py — detect documented flags that drifted from a bin/ script's argparse.
 
 For every ``bin/*.py`` script that defines an ``argparse`` parser, extract the exact
 set of option strings it registers (via static AST parsing — the target script is
-never imported or executed). Then scan every ``skills/*/SKILL.md`` for a literal
-``python .../bin/<script>.py`` invocation and collect the ``--long-flag`` tokens on
-that same shell command (following ``\\`` line-continuations, stopping at a
-pipe/``;``/``&&``/``$(`` boundary). A documented ``--long-flag`` that the script's
-argparse does NOT define is a finding: the doc drifted (flag renamed, removed, or
-typo'd). This is a flag-ACCURACY check, not an enumeration-completeness one — a real
-flag the docs never mention is fine.
+never imported or executed). Two documents are then checked against that set:
+
+1. **Skill docs** — scan every ``skills/*/SKILL.md`` for a literal
+   ``python .../bin/<script>.py`` invocation and collect the ``--long-flag`` tokens on
+   that same shell command (following ``\\`` line-continuations, stopping at a
+   pipe/``;``/``&&``/``$(`` boundary).
+2. **The script's own module docstring** — collect the flags on invocation lines inside
+   its ``Usage:`` block. A script documenting its own CLI is the doc a reader trusts
+   most, and it drifted unwatched: a phantom flag advertised there survived being
+   copied into four separate documents because nothing validated the source.
+
+A documented ``--long-flag`` that the script's argparse does NOT define is a finding:
+the doc drifted (flag renamed, removed, or typo'd). This is a flag-ACCURACY check, not
+an enumeration-completeness one — a real flag the docs never mention is fine.
+
+The docstring scan is deliberately confined to ``Usage:`` invocation lines anchored on
+the script's own basename, for the same reason the SKILL.md scan requires a literal
+invocation: a bin/ docstring's prose legitimately names flags that are not its own.
+Summary lines describe a wrapped tool's flags (``run pytest --tb=short``) or the flags a
+script parses back out of an argument string (``extract --root and --incremental from
+$ARGUMENTS``), and a ``Usage:`` line may pipe another command's flags into this one
+(``codemap-py query central --top 100000 | resolve_centrality.py --files a.py``).
+Measured over the live tree, scanning whole docstrings reports 25 such files and every
+one is a false positive; anchoring as described reports none. Since a false positive in
+an unowned plugin cannot be fixed from here, a policy that produced them would have to
+be suppressed rather than obeyed.
 
 Only ``--long-flag`` tokens are checked. Single-dash short options (``-f``, ``-z``)
 are ignored because they collide with bash test operators and other shell short flags
@@ -27,7 +46,8 @@ Usage:
     check_cli_flag_drift.py [--plugins-dir DIR]
 
 Output (stdout):
-    One finding line per drifted flag + hint line, or a single pass line.
+    One finding line per drifted flag + hint line, naming whether the flag was
+    documented by a SKILL.md or by the script's own docstring, or a single pass line.
 
 Exit codes:
     0 — every documented flag matches a real argparse flag
@@ -57,15 +77,23 @@ _FLAG_RE = re.compile(r"(?<![\w-])--[a-z][a-z0-9-]*\b")
 # (grep, printf, git) past one of these contributes its own flags, not the script's.
 _CMD_BOUNDARY_RE = re.compile(r"\||;|&&|\|\||\$\(|`|>&|2>")
 _DEFAULT_PLUGINS_DIR = "plugins"
+#: Opens a module docstring's invocation block. Everything until the block dedents is
+#: treated as the script's self-documented command line.
+_USAGE_HEADING_RE = re.compile(r"^\s*Usage:(?P<inline>.*)$")
+
+#: Documents that can advertise a flag, named in the finding so a reader knows where to look.
+ORIGIN_SKILL_MD = "SKILL.md"
+ORIGIN_DOCSTRING = "module docstring"
 
 
 @dataclass
 class DriftFinding:
-    """A SKILL.md flag near a script basename that the script's argparse does not define."""
+    """A documented flag, on an invocation of a script, that the script's argparse lacks."""
 
-    skill_md: str
+    document: str
     script: str
     flag: str
+    origin: str = ORIGIN_SKILL_MD
 
 
 def _accepts_passthrough(node: ast.Call) -> bool:
@@ -137,12 +165,45 @@ def extract_argparse_flags(source: str) -> set[str] | None:
     return flags if saw_add_argument else None
 
 
-def iter_argparse_scripts(plugins_dir: Path) -> dict[str, set[str]]:
-    """Map each argparse-based bin/ script basename to its registered flag set.
+def iter_argparse_script_sources(plugins_dir: Path) -> list[tuple[Path, str, set[str]]]:
+    """Return every argparse-based bin/ script with its source text and registered flags.
 
     Discovers ``plugins/*/bin/*.py`` scripts, skipping underscore-prefixed private
     modules. Each script is read and AST-parsed (never imported/executed). Scripts
-    that register no argparse arguments are omitted from the result.
+    that register no argparse arguments are omitted, as are unreadable and unparsable
+    ones. The source is returned alongside the flags so a caller needing the docstring
+    does not re-read the file.
+
+    Args:
+        plugins_dir: Root directory containing plugin subdirectories.
+
+    Returns:
+        List of ``(path, source, flags)`` in discovery order.
+
+    No doctest — filesystem-dependent; covered by pytest with tmp_path.
+    """
+    found: list[tuple[Path, str, set[str]]] = []
+    for plugin_dir in sorted(plugins_dir.iterdir()):
+        bin_dir = plugin_dir / "bin"
+        if not (plugin_dir.is_dir() and bin_dir.is_dir()):
+            continue
+        for script in sorted(bin_dir.iterdir()):
+            if script.suffix != ".py" or script.name.startswith("_") or not script.is_file():
+                continue
+            if script.stat().st_size > _MAX_FILE_SIZE:
+                continue
+            try:
+                source = script.read_text(encoding="utf-8", errors="replace")
+                flags = extract_argparse_flags(source)
+            except (OSError, SyntaxError):
+                continue
+            if flags is not None:
+                found.append((script, source, flags))
+    return found
+
+
+def iter_argparse_scripts(plugins_dir: Path) -> dict[str, set[str]]:
+    """Map each argparse-based bin/ script basename to its registered flag set.
 
     Args:
         plugins_dir: Root directory containing plugin subdirectories.
@@ -155,22 +216,115 @@ def iter_argparse_scripts(plugins_dir: Path) -> dict[str, set[str]]:
     No doctest — filesystem-dependent; covered by pytest with tmp_path.
     """
     scripts: dict[str, set[str]] = {}
-    for plugin_dir in sorted(plugins_dir.iterdir()):
-        bin_dir = plugin_dir / "bin"
-        if not (plugin_dir.is_dir() and bin_dir.is_dir()):
-            continue
-        for script in sorted(bin_dir.iterdir()):
-            if script.suffix != ".py" or script.name.startswith("_") or not script.is_file():
-                continue
-            if script.stat().st_size > _MAX_FILE_SIZE:
-                continue
-            try:
-                flags = extract_argparse_flags(script.read_text(encoding="utf-8", errors="replace"))
-            except (OSError, SyntaxError):
-                continue
-            if flags is not None:
-                scripts.setdefault(script.name, set()).update(flags)
+    for script, _source, flags in iter_argparse_script_sources(plugins_dir):
+        scripts.setdefault(script.name, set()).update(flags)
     return scripts
+
+
+def usage_block_lines(source: str) -> list[str]:
+    """Return the lines of a module docstring's ``Usage:`` block, or an empty list.
+
+    The block runs from the ``Usage:`` heading to the first non-indented line, which is
+    where the next docstring section begins. Text on the heading line itself is kept, so
+    a one-line ``Usage: script.py --flag`` is covered too.
+
+    Args:
+        source: Python source text of a bin/ script.
+
+    Returns:
+        The block's lines, heading text first; empty when there is no docstring or no
+        ``Usage:`` section.
+
+    Examples:
+        >>> src = "'''Summary.\\n\\nUsage:\\n    t.py --a\\n\\nNotes:\\n    --b\\n'''"
+        >>> usage_block_lines(src)
+        ['', '    t.py --a', '']
+        >>> usage_block_lines("x = 1")
+        []
+    """
+    try:
+        docstring = ast.get_docstring(ast.parse(source))
+    except SyntaxError:
+        return []
+    if not docstring:
+        return []
+    block: list[str] = []
+    inside = False
+    for line in docstring.splitlines():
+        heading = _USAGE_HEADING_RE.match(line)
+        if heading:
+            inside = True
+            block.append(heading.group("inline"))
+            continue
+        if not inside:
+            continue
+        # A line at column zero starts the next section; blank lines stay inside the block
+        # so a multi-paragraph usage example is not truncated at its first empty line.
+        if line.strip() and not line.startswith((" ", "\t")):
+            break
+        block.append(line)
+    return block
+
+
+def _basename_invocation_pattern(script: str) -> re.Pattern[str]:
+    """Return a regex matching this script's own basename used as a command.
+
+    Unlike :func:`_invocation_pattern` this does not require a ``bin/`` prefix, because a
+    script's own ``Usage:`` block usually invokes it by bare basename. A path prefix is
+    still matched, since ``/`` does not close the preceding word boundary.
+
+    Args:
+        script: Script basename with ``.py``.
+
+    Returns:
+        Compiled pattern matching at the end of the basename token.
+
+    Examples:
+        >>> p = _basename_invocation_pattern("foo.py")
+        >>> bool(p.search("    foo.py --x")), bool(p.search('python "$ROOT/bin/foo.py" --x'))
+        (True, True)
+        >>> bool(p.search("    barfoo.py --x"))
+        False
+    """
+    return re.compile(rf"(?<![\w.-]){re.escape(script)}(?![\w.-])")
+
+
+def find_docstring_drift(script: Path, source: str, flags: set[str]) -> list[DriftFinding]:
+    """Return every flag on this script's own ``Usage:`` invocations that its argparse lacks.
+
+    Only lines invoking the script by its own basename are read, and only from that token
+    to the next shell boundary — so a piped producer's flags and prose naming another
+    tool's flags are both excluded. See the module docstring for why that narrowing is
+    required rather than merely convenient.
+
+    Args:
+        script: Path of the bin/ script.
+        source: Its source text.
+        flags: The option strings its argparse registers.
+
+    Returns:
+        List of DriftFinding attributed to the script's own docstring.
+
+    No doctest — multi-arg orchestration; covered by pytest with tmp_path.
+    """
+    lines = usage_block_lines(source)
+    if not lines:
+        return []
+    pattern = _basename_invocation_pattern(script.name)
+    findings: list[DriftFinding] = []
+    seen: set[str] = set()
+    for idx, line in enumerate(lines):
+        match = pattern.search(line)
+        if not match:
+            continue
+        for flag in _FLAG_RE.findall(command_scope(lines, idx, match.end())):
+            if flag in flags or flag in seen:
+                continue
+            seen.add(flag)
+            findings.append(
+                DriftFinding(document=script.as_posix(), script=script.name, flag=flag, origin=ORIGIN_DOCSTRING)
+            )
+    return findings
 
 
 def _invocation_pattern(script: str) -> re.Pattern[str]:
@@ -237,7 +391,7 @@ def command_scope(lines: list[str], start_idx: int, match_end: int) -> str:
 
 
 def find_drift(plugins_dir: Path) -> list[DriftFinding]:
-    """Return every SKILL.md flag on a script invocation that its argparse lacks.
+    """Return every documented flag, in a SKILL.md or a script's own docstring, that drifted.
 
     Args:
         plugins_dir: Root directory containing plugin subdirectories.
@@ -247,6 +401,7 @@ def find_drift(plugins_dir: Path) -> list[DriftFinding]:
 
     No doctest — filesystem-dependent; covered by pytest with tmp_path.
     """
+    sources = iter_argparse_script_sources(plugins_dir)
     scripts = iter_argparse_scripts(plugins_dir)
     patterns = {name: _invocation_pattern(name) for name in scripts}
     findings: list[DriftFinding] = []
@@ -256,6 +411,11 @@ def find_drift(plugins_dir: Path) -> list[DriftFinding]:
         except OSError:
             continue
         findings.extend(_scan_skill_lines(lines, skill_md.as_posix(), scripts, patterns))
+    # A script's docstring is checked against that file's own argparse, not the basename-merged
+    # set: two plugins sharing a basename each document their own copy, so merging would let one
+    # copy's flag excuse a phantom in the other.
+    for script, source, flags in sources:
+        findings.extend(find_docstring_drift(script, source, flags))
     return findings
 
 
@@ -290,7 +450,7 @@ def _scan_skill_lines(
                 if flag in scripts[name] or (name, flag) in seen:
                     continue
                 seen.add((name, flag))
-                findings.append(DriftFinding(skill_md=skill_md, script=name, flag=flag))
+                findings.append(DriftFinding(document=skill_md, script=name, flag=flag))
     return findings
 
 
@@ -334,9 +494,9 @@ def main(argv: list[str] | None = None) -> int:
     if findings:
         for f in findings:
             print(
-                f"⚠ 42: {f.skill_md}"
-                f" — documents {f.flag} near {f.script}, which its argparse does not define"
-                f"\n  hint: fix the flag name in SKILL.md, or add {f.flag} to {f.script}'s parser"
+                f"⚠ 42: {f.document}"
+                f" — {f.origin} documents {f.flag} near {f.script}, which its argparse does not define"
+                f"\n  hint: fix the flag name in that {f.origin}, or add {f.flag} to {f.script}'s parser"
             )
         return 1
 

@@ -2049,7 +2049,7 @@ def _treatment_artifact_lock_mismatch_message(artifact_name: str) -> str:
         f"installed treatment artifact does not match lock: {artifact_name}. "
         "The local treatment bytes changed after `benchmarks/manifests/codex-integration.json` was generated; "
         "no paid model call was started. Refresh the lock with "
-        "`python3 benchmarks/build-codex-integration-manifest.py`, then resolve a new scope for the same study, "
+        "`uv run python benchmarks/build-codex-integration-manifest.py`, then resolve a new scope for the same study, "
         "repository, model, and task IDs. Do not reuse the previous --paid-approval value. "
         "If Codex Rig edits are still in progress, regenerate only after the intended local bytes are ready."
     )
@@ -2065,7 +2065,7 @@ def _treatment_artifact_version_mismatch_message(version_drift: Mapping[str, tup
         f"installed treatment version differs from the active manifest ({observed}). "
         "No paid model call was started. The local plugin changed after the treatment manifest was generated. "
         "When the intended local plugin bytes are ready, run "
-        "`python3 benchmarks/build-codex-integration-manifest.py`, then resolve a new scope for the same study, "
+        "`uv run python benchmarks/build-codex-integration-manifest.py`, then resolve a new scope for the same study, "
         "repository, model, and task IDs. Do not reuse the previous --paid-approval value."
     )
 

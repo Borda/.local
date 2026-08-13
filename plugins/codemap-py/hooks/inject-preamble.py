@@ -22,7 +22,11 @@ SESSION_TTL_MS = 30 * 60 * 1000
 #: Identity fields read out of the index header, compiled once at import. They used to be
 #: matched by a pattern built — and an ``import re`` executed — inside a nested closure,
 #: once per field, on every prompt.
-_HEADER_FIELD_RES = {name: re.compile(rf'"{name}"\s*:\s*"([^"]*)"') for name in ("git_sha", "scanned_at", "scan_root")}
+# The value alternation consumes `\"` as one unit so an embedded quote does not end the match
+# early; whatever it captures is still a JSON string body, so `_json_unescape` decodes it.
+_HEADER_FIELD_RES = {
+    name: re.compile(rf'"{name}"\s*:\s*"((?:[^"\\]|\\.)*)"') for name in ("git_sha", "scanned_at", "scan_root")
+}
 
 
 def now_ms() -> int:
@@ -106,7 +110,8 @@ def handle_missing_index(root: Path, project: str) -> None:
     print(
         f'[codemap] No structural index for "{project}" (.cache/codemap/{project}.json missing) - blast-radius / coupling queries unavailable.\n'
         "ACTION (ask once): call AskUserQuestion - ask the user whether to build the codemap index now.\n"
-        "  - yes -> run scan-index (${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/scan-index) in the FOREGROUND and WAIT until it finishes, then continue using scan-query.\n"
+        "  - yes -> run `codemap-py index` in the FOREGROUND and WAIT until it finishes, then continue using `codemap-py query`.\n"
+        "    (bare command resolves through the plugin's bin/ PATH entry; where it is unavailable, invoke ${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py as one standalone command.)\n"
         "  - no -> proceed without codemap; do not raise again this session."
     )
 
@@ -136,6 +141,26 @@ def regular_file_stat(path: Path) -> os.stat_result | None:
     return info if stat.S_ISREG(info.st_mode) else None
 
 
+def _json_unescape(raw: str) -> str:
+    r"""Decode the body of a JSON string literal captured by regex.
+
+    The prefix scan matches raw file text, so what a capture group holds is still *encoded*:
+    a Windows ``scan_root`` is stored as ``C:\\Users\\me`` and was handed to callers with the
+    backslashes doubled, which is not a path that exists. Decoding restores the written value
+    on every platform — POSIX roots simply contain nothing to unescape.
+
+    Args:
+        raw: Capture group contents, without the surrounding quotes.
+
+    Returns:
+        The decoded string, or ``raw`` unchanged when it is not a decodable literal.
+    """
+    try:
+        return json.loads(f'"{raw}"')
+    except ValueError:
+        return raw  # a truncated escape at the peek boundary is still better raw than dropped
+
+
 def header_fields(index_path: Path) -> dict[str, str]:
     """Return the index identity fields from a bounded prefix read.
 
@@ -159,7 +184,7 @@ def header_fields(index_path: Path) -> dict[str, str]:
     fields = {}
     for name, pattern in _HEADER_FIELD_RES.items():
         match = pattern.search(header)
-        fields[name] = match.group(1) if match else ""
+        fields[name] = _json_unescape(match.group(1)) if match else ""
     return fields
 
 
@@ -200,12 +225,15 @@ def acquire_refresh_lock(path: Path) -> int | None:
 
 def spawn_refresh(scan_bin: Path, scan_root: Path, cwd: Path) -> bool:
     """Spawn a detached incremental scan with platform-specific process isolation."""
-    # TODO(C-H3): this detached scan takes no rwgate write lease, so it can run concurrently
-    # with a skill-invoked scan of the same index (unbounded parallel AST walks,
-    # last-writer-wins). It cannot take one from here: `rwgate.write_index` scopes the lease
-    # to a callback in *this* process, and this hook must return immediately on the prompt
-    # path rather than block for the scan's 300s budget. The lease therefore belongs inside
-    # `bin/scan-index` (the child), which covers this call site transitively.
+    # The exclusive write lease is the child's, not this hook's: `bin/scan-index` is a thin
+    # launcher over `codemap_py.graph.main`, which wraps build and publish in
+    # `rwgate.write_index` — so this detached scan is gated even though nothing here leases.
+    # This process must not take one: `rwgate.write_index` scopes the lease to a callback in
+    # *this* process, and the prompt path has to return immediately rather than block for the
+    # scan's 300s budget. Spawning the launcher rather than the `codemap-py` dispatcher leaves
+    # no gap either — `codemap-py index` shells out to this same binary (see `codemap_py.cli`),
+    # so both routes reach the identical leased engine, and going direct skips one process
+    # layer on the latency-sensitive prompt path.
     scan_args = ["--incremental", "--root", str(scan_root), "--timeout", "300"]
     kwargs: dict[str, object] = {
         "cwd": cwd,

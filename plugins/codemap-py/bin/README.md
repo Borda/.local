@@ -2,12 +2,14 @@
 
 This directory ships the runtime surface a project author or a Claude/Codex skill actually invokes: the interpreter-resolving launchers, the index builder and query engine, a handful of maintenance and analysis helpers used by skills and debrief tooling, and a set of internal compatibility shims. Everything here is installed as-is into the package (see `../scripts/README.md` for how the package is built and validated) and is addressed either by bare name on `PATH`, or via `${CLAUDE_PLUGIN_ROOT}/bin/<script>` from inside a skill.
 
-**Language policy.** Python is the default for this directory, minimum version 3.10, per the plugin-wide `bin/` convention; the one exception is `setup_scan_env.sh`, which stays in bash for path/env-resolution glue ahead of a Python subprocess call. In practice `codemap_py_entry.py` (invoked by the `codemap-py` / `codemap-py.cmd` launchers) enforces a narrower runtime bound of its own — CPython 3.11 up to, but excluding, 3.15 — and resolves the interpreter to use before importing anything from the `codemap_py` package. All meaningful logic (scanning, querying, CLI dispatch) lives in the importable `src/codemap_py` package; the scripts under this directory are thin launchers, deterministic argument/path transforms, or session-scoped temp-file glue — no branching business logic lives here.
+**Language policy.** Every executable here is Python, minimum version 3.10, per the plugin-wide `bin/` convention. `setup_scan_env.sh` is the one remaining `.sh` file and is deprecated: it is a three-line shim that `exec`s `setup_scan_env.py`, kept only so pre-existing bash call sites keep working. New call sites invoke the `.py` directly — `.sh` does not execute on Windows, which is why the logic moved. In practice `codemap_py_entry.py` (invoked by the `codemap-py` / `codemap-py.cmd` launchers) enforces a narrower runtime bound of its own — CPython 3.11 up to, but excluding, 3.15 — and resolves the interpreter to use before importing anything from the `codemap_py` package. All meaningful logic (scanning, querying, CLI dispatch) lives in the importable `src/codemap_py` package; the scripts under this directory are thin launchers, deterministic argument/path transforms, or session-scoped temp-file glue — no branching business logic lives here.
+
+**Complexity gate.** The repository-root `pyproject.toml` enables `C901` plus `PLR0911`/`PLR0912`/`PLR0915` at the standard limits (cyclomatic complexity ≤12, branches ≤12, statements ≤50, return points ≤6) and scopes enforcement to this plugin with a negated per-file-ignore (`!plugins/codemap-py/**`). It is scoped to this plugin because the sibling plugins carry a much larger backlog; gating them is a separate decision. Twenty-one findings predate the gate — six `C901` (five in `src/codemap_py/scanner.py`, one in `src/codemap_py/graph.py`; worst is `_drop_top_level_rebindings` at complexity 30) and fifteen `PLR`, spread over six files — and are listed as `per-file-ignores` with their counts. That list is accepted debt, not a licence: its purpose is to stop new complexity entering the plugin, not to bless the scanner internals. Re-measure with `ruff check --select C901,PLR0911,PLR0912,PLR0915` after touching a listed file.
 
 ## Contents
 
 - [User-facing launchers](#user-facing-launchers) — `codemap-py`, `codemap-py.cmd`, `scan-index`, `scan-query`, `check-index-currency`
-- [Maintenance and analysis helpers](#maintenance-and-analysis-helpers) — `anonymize.py`, `check_index_smoke.py`, `scan-stats.py`, `smoke_test_index.py`, `resolve_proj_index.py`, `resolve_index_env.py`, `locate_scan_query.py`, `join_avoidance.py`, `gen_deprecation_wrapper.py`, `parse_scan_args.py`, `parse_deprecate_args.py`, `setup_scan_env.sh`
+- [Maintenance and analysis helpers](#maintenance-and-analysis-helpers) — `anonymize.py`, `check_index_smoke.py`, `scan-stats.py`, `smoke_test_index.py`, `resolve_proj_index.py`, `resolve_index_env.py`, `locate_scan_query.py`, `join_avoidance.py`, `gen_deprecation_wrapper.py`, `parse_scan_args.py`, `parse_deprecate_args.py`, `setup_scan_env.py`, `setup_scan_env.sh` (deprecated shim)
 - [Internal `sys.modules` shims](#internal-sysmodules-shims) — `_exclusions.py`, `_index_identity.py`, `_runtime_log.py`, `_rwgate.py`, `_schema.py`, `_telemetry.py`
 
 ## User-facing launchers
@@ -337,7 +339,7 @@ Exit `0` always on parsed input; `1` if `--nul-output`'s path validation fails (
 python bin/parse_scan_args.py "--root . --incremental" --print-root
 ```
 
-**When-to-use.** Internal helper for the `scan-codebase` skill (via `setup_scan_env.sh`) — not typically invoked directly by a user, though nothing prevents it.
+**When-to-use.** Internal helper for the `scan-codebase` skill (via `setup_scan_env.py`, which imports it rather than shelling out) — not typically invoked directly by a user, though nothing prevents it.
 
 ### `parse_deprecate_args.py`
 
@@ -362,9 +364,32 @@ DEPRECATE=$(cat "$FLAG_FILE" 2>/dev/null || echo "false")
 
 **When-to-use.** Internal helper for the `codemap:rename-refs` skill, which needs `DEPRECATE`/`DEPRECATE_DECORATOR` in-shell without an `eval "$(...)"`.
 
-### `setup_scan_env.sh`
+### `setup_scan_env.py`
 
 **Purpose.** Consolidates the per-invocation setup previously inlined in `scan-codebase/SKILL.md`: derives `PROJ_SLUG` (hostname short-name plus repo basename, sanitized to alphanumerics/dashes), validates that the `scan-index` binary exists at `$CLAUDE_PLUGIN_ROOT/bin/scan-index`, runs `parse_scan_args.py` against the raw `$ARGUMENTS` string, derives `PROJ_NAME` (basename of `--root` when given, else the git-root/cwd basename), drops a sentinel tmpfile when `--incremental` was requested but no prior index exists (so the skill can report the silent full-scan fallback), and writes both a sourceable `KEY=VAL` state file and the individual per-`PROJ_SLUG` tmpfiles consumed by later skill steps.
+
+**Usage.**
+
+```
+python setup_scan_env.py --arguments "$ARGUMENTS"
+```
+
+Both `--arguments <value>` and `--arguments=<value>` are accepted. Prints the state-file path on stdout — and nothing else, so the caller can capture it with `$(...)`; the full-scan-fallback notice goes to stderr. Exit `0` success, `1` `scan-index` binary missing, `2` `parse_scan_args.py` failed, `3` bad CLI arguments.
+
+**How-to.**
+
+```bash
+STATE_FILE=$(python bin/setup_scan_env.py --arguments "--root . --incremental")
+source "$STATE_FILE"
+```
+
+**When-to-use.** Called by the `scan-codebase` skill's first step to collapse several previously-inlined bash blocks into one call; it can be run standalone for debugging, but is not meant for routine interactive use.
+
+**Portability.** Stdlib-only and free of POSIX-only shell-outs — the host short-name comes from `socket.gethostname()` rather than `hostname -s`, temp files from `tempfile` rather than `mktemp`, the ownership check is guarded on `hasattr(os, "getuid")`, and `parse_scan_args.py` is imported rather than run through a `python3` subprocess. It therefore works on Windows, which the shell predecessor did not.
+
+### `setup_scan_env.sh`
+
+**Purpose.** Deprecated shim, removed no earlier than `1.0.0` — the same window the `scan-index`/`scan-query` aliases carry. `exec`s `setup_scan_env.py` with every argument forwarded, so pre-existing bash call sites keep working unmodified. Because `exec` replaces the shell rather than spawning a child, the Python process inherits this script's PID — which matters, since the handoff tmpfile names embed it — along with its exit code and both output streams. The shim is therefore invisible to callers, and an integration test pins that equivalence.
 
 **Usage.**
 
@@ -372,16 +397,7 @@ DEPRECATE=$(cat "$FLAG_FILE" 2>/dev/null || echo "false")
 setup_scan_env.sh --arguments "$ARGUMENTS"
 ```
 
-Prints the state-file path on stdout. Exit `0` success, `1` `scan-index` binary missing, `2` `parse_scan_args.py` failed, `3` bad CLI arguments.
-
-**How-to.**
-
-```bash
-STATE_FILE=$(bin/setup_scan_env.sh --arguments "--root . --incremental")
-source "$STATE_FILE"
-```
-
-**When-to-use.** Sourced by the `scan-codebase` skill's first step to collapse several previously-inlined bash blocks into one call; it is a plain shell script and can be run standalone for debugging, but is not meant for routine interactive use.
+**When-to-use.** Never, in new code — invoke `setup_scan_env.py` directly. This file exists only for backwards compatibility and does not run on Windows.
 
 ## Internal `sys.modules` shims
 

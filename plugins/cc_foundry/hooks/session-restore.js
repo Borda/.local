@@ -59,10 +59,14 @@ function splitFrontmatter(text) {
   return { head: text.slice(0, bodyStart + 1), body: text.slice(bodyStart + 1) };
 }
 
-/** Parse `key: value` lines out of a frontmatter block. Values keep their raw text. */
+/**
+ * Parse `key: value` lines out of a frontmatter block. Values keep their raw text.
+ * Splits on `\r?\n`: a doc written on Windows carries CRLF, and `.` in JS regex excludes `\r`,
+ * so a `\n`-only split left every value unmatched — no fields, every gate below failing silent.
+ */
 function parseFields(head) {
   const fields = {};
-  for (const line of head.split("\n")) {
+  for (const line of head.split(/\r?\n/)) {
     const m = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
     if (m) fields[m[1]] = m[2].trim();
   }
@@ -105,9 +109,13 @@ function buildOutput(slug, body, fields, docPath) {
   );
 }
 
-/** Rewrite the frontmatter's consumed flag in place. Best-effort — caller ignores failure. */
+/**
+ * Rewrite the frontmatter's consumed flag in place. Best-effort — caller ignores failure.
+ * The trailing `(\r?)` is captured and replayed so a CRLF doc keeps its line ending instead of
+ * gaining one lone LF line; the rewrite must round-trip the file byte for byte apart from the flag.
+ */
 function markConsumed(docPath, split) {
-  const rewritten = split.head.replace(/^consumed:\s*false\s*$/m, "consumed: true");
+  const rewritten = split.head.replace(/^(consumed:[ \t]*)false[ \t]*(\r?)$/m, "$1true$2");
   if (rewritten === split.head) return;
   fs.writeFileSync(docPath, rewritten + split.body, "utf8");
 }

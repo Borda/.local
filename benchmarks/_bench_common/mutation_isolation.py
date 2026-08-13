@@ -166,6 +166,68 @@ def _apply_fixture(worktree: Path, contract: EditTaskContract) -> None:
         fixture_path.unlink(missing_ok=True)
 
 
+# The launcher reports its own runtime rather than being parsed for one. A console-script
+# launcher is a text file with a Python shebang only on POSIX; the same entry point installs
+# as a binary trampoline on Windows, where reading a shebang out of it fails outright
+# (`UnicodeDecodeError` on the first line). Asking the admitted launcher to print what it
+# actually loaded is both platform-neutral and a stricter binding: it fingerprints the
+# interpreter that will run the Patch command, not the one a header claims.
+_RUNTIME_PROBE_CONFTEST = """
+import importlib.metadata as metadata
+import json, pathlib, pytest, sys
+
+entry_points = metadata.entry_points()
+entry_points = entry_points.select(group='pytest11') if hasattr(entry_points, 'select') else entry_points.get('pytest11', ())
+plugins = sorted((item.name, item.value, item.dist.name, item.dist.version) for item in entry_points)
+print({token!r} + json.dumps({{'python_executable': sys.executable, 'python_prefix': sys.prefix,
+    'python_version': sys.version.split()[0], 'pytest_module': str(pathlib.Path(pytest.__file__).resolve()),
+    'pytest_plugins': plugins, 'pytest_version': pytest.__version__}}, sort_keys=True))
+"""
+_RUNTIME_PROBE_TIMEOUT_S = 120.0
+
+
+def _probe_patch_test_runtime(pytest_executable: Path) -> dict[str, Any]:
+    """Return the runtime facts reported by one admitted pytest launcher.
+
+    The launcher runs against an empty throwaway root with its own empty config, so
+    neither this repository's addopts nor a collected test can influence the answer.
+    Collecting nothing is the expected outcome; only the tokenized line is read, because
+    a loaded plugin may write its own banner to the same stream.
+
+    Args:
+        pytest_executable: Absolute launcher selected at scope admission.
+
+    Returns:
+        The decoded identity mapping printed by the launcher's own interpreter.
+
+    Raises:
+        ValueError: If the launcher produced no tokenized identity line.
+    """
+    token = f"patch-runtime-identity-{os.urandom(8).hex()}:"
+    # An outer pytest run exports its own arguments; inheriting them would let the caller's
+    # invocation, not the launcher, decide whether the probe can complete.
+    environment = {name: value for name, value in os.environ.items() if name != "PYTEST_ADDOPTS"}
+    with tempfile.TemporaryDirectory(prefix="codemap-patch-runtime-") as probe_root:
+        root = Path(probe_root)
+        (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+        (root / "conftest.py").write_text(_RUNTIME_PROBE_CONFTEST.format(token=token), encoding="utf-8")
+        probe = subprocess.run(
+            [str(pytest_executable), "-c", str(root / "pytest.ini"), "--rootdir", str(root), "-s", "-q", str(root)],
+            cwd=probe_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            env=environment,
+            timeout=_RUNTIME_PROBE_TIMEOUT_S,
+        )
+    reported = [line for line in probe.stdout.splitlines() if line.startswith(token)]
+    if not reported:
+        detail = (probe.stderr or probe.stdout).strip()[:500]
+        raise ValueError(f"Patch task pytest interpreter probe failed (exit {probe.returncode}): {detail}")
+    return json.loads(reported[-1][len(token) :])
+
+
 def patch_test_runtime_identity() -> dict[str, str]:
     """Resolve and fingerprint the pytest launcher used by Patch test commands.
 
@@ -181,46 +243,11 @@ def patch_test_runtime_identity() -> dict[str, str]:
         pytest_executable = Path(pytest_command).absolute()
         if not pytest_executable.is_file():
             raise ValueError(f"Patch task pytest executable is unavailable: {pytest_executable}")
-        shebang = pytest_executable.read_bytes().splitlines()[0].decode("utf-8")
-        if not shebang.startswith("#!"):
-            raise ValueError("Patch task pytest executable has no Python shebang")
-        shebang_argv = shlex.split(shebang[2:])
-        if not shebang_argv:
-            raise ValueError("Patch task pytest executable has an empty shebang")
-        if Path(shebang_argv[0]).name == "env":
-            python_name = next((part for part in shebang_argv[1:] if not part.startswith("-")), None)
-            python_command = shutil.which(python_name) if python_name else None
-            if python_command is None:
-                raise ValueError("Patch task pytest shebang interpreter is unavailable")
-            python = Path(python_command).absolute()
-        else:
-            python = Path(shebang_argv[0]).absolute()
-        resolved_python = python.resolve(strict=True)
-        probe_code = "\n".join(
-            (
-                "import importlib.metadata as metadata",
-                "import json, pathlib, pytest, sys",
-                "entry_points = metadata.entry_points()",
-                "entry_points = entry_points.select(group='pytest11') if hasattr(entry_points, 'select') else entry_points.get('pytest11', ())",
-                "plugins = sorted((item.name, item.value, item.dist.name, item.dist.version) for item in entry_points)",
-                "print(json.dumps({'python_executable': sys.executable, 'python_prefix': sys.prefix, "
-                "'python_version': sys.version.split()[0], 'pytest_module': str(pathlib.Path(pytest.__file__).resolve()), "
-                "'pytest_plugins': plugins, 'pytest_version': pytest.__version__}, sort_keys=True))",
-            )
-        )
-        probe = subprocess.run(
-            [str(python), "-c", probe_code],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if probe.returncode != 0:
-            raise ValueError(f"Patch task pytest interpreter probe failed: {probe.stderr.strip()[:500]}")
-        identity = json.loads(probe.stdout)
+        identity = _probe_patch_test_runtime(pytest_executable)
+        resolved_python = Path(identity["python_executable"]).resolve(strict=True)
         pytest_origin = Path(identity["pytest_module"]).resolve(strict=True)
         pytest_plugins = json.dumps(identity["pytest_plugins"], separators=(",", ":"), sort_keys=True)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, IndexError) as exc:
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, KeyError, IndexError) as exc:
         raise ValueError("Patch task pytest runtime is unavailable") from exc
     if not pytest_origin.is_file():
         raise ValueError("Patch task pytest module is unavailable")

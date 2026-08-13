@@ -22,9 +22,6 @@ Never hard-wrap prose in any Markdown file — one physical line per prose parag
 
 **Code block comments**: procedural code (steps an agent/skill executes) — comments explain WHY only (non-obvious constraint, workaround, incident ref, safety rationale), never WHAT/HOW; remove self-documenting comments. Example/pattern code (illustrates a pattern, not executed directly) — comments may also document expected output, motivation, or when to apply. Self-documenting-comment examples: `AUTHORING.md` §Markdown No-Wrap.
 
-## Benchmark Isolation
-
-Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not shipped plugin content. Use neutral generic examples in Skills, templates, and user-facing docs; retain the generalized contract in production regressions without copying benchmark fixtures.
 
 ## GitHub Reference Scoping — `#N` and `@name`
 
@@ -91,7 +88,7 @@ Single-line sentinel read-back: `IFS= read -r VAR < "${TMPDIR:-/tmp}/<name>-${CS
 - Validate: after `claude plugin install`, all agents/skills/rules/hooks resolve without a local `plugins/` tree
 - **Bare `plugins/` path = only valid as final fallback** after cache-path resolution: `VAR="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)"; [ -z "$VAR" ] && VAR="plugins/<plugin>/skills/_shared"`. Never bare `plugins/` as primary path. Check C32.
 - **Background agents require health monitoring**: any skill spawning `Agent(..., run_in_background=true)` must implement CLAUDE.md §6 (sentinel + poll + cutoff) — reference `_FOUNDRY_SHARED/agent-spawn-protocol.md`, don't reproduce inline. Check C35.
-- **`bin/` executables are Python (`.py`), never shell (`.sh`)** — these plugins must run on Windows, where `.sh` does not execute. Call sites use `python "$PLUGIN_ROOT/bin/<name>.py"`, never `bash …/<name>.sh`. Python must itself stay portable: temp dir via `os.environ.get("TMPDIR") or tempfile.gettempdir()` (never hardcoded `/tmp` — absent on native Windows Python), session token via `os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"` (never `os.getppid()`), `pathlib` over string path concatenation. Three legacy `.sh` files remain tracked (`cc_research/bin/{git_slugs,resolve-quality-gates}.sh`, `codemap-py/bin/setup_scan_env.sh`) — **they are debt, not precedent**; never add to them or match them when authoring new scripts.
+- **`bin/` executables are Python (`.py`), never shell (`.sh`)** — these plugins must run on Windows, where `.sh` does not execute. Call sites use `python "$PLUGIN_ROOT/bin/<name>.py"`, never `bash …/<name>.sh`. Python must itself stay portable: temp dir via `os.environ.get("TMPDIR") or tempfile.gettempdir()` (never hardcoded `/tmp` — absent on native Windows Python), session token via `os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"` (never `os.getppid()`), `pathlib` over string path concatenation. Two legacy `.sh` files remain tracked (`cc_research/bin/{git_slugs,resolve-quality-gates}.sh`) — **they are debt, not precedent**; never add to them or match them when authoring new scripts. (`codemap-py/bin/setup_scan_env.sh` is no longer logic: it is a deprecated `exec` shim delegating to `setup_scan_env.py`, kept only for pre-existing call sites.)
 
 ## Worktree Base — verify before trusting agent output
 

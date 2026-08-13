@@ -5,8 +5,10 @@
 Callers may pre-set `TARGET_MODULE` (dotted) and `TARGET_FN` (bare function name) before reading this file — typically module/function the experiment or verification edits. Both empty → only global `central` baseline runs.
 
 ```bash
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)   # `basename ""` exits 0, so `||` never fired
+[ -n "$_ROOT" ] || _ROOT="$PWD"
+PROJ=$(basename "$_ROOT")   # raw basename — scanner writes it verbatim, never sanitized
+_IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"   # root-anchored: skill may run from a subdir
 if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     codemap-py index --incremental 2>/dev/null || true   # refresh SHA-changed files only; never full-build mid-task
     _CM_N=0 _CM_H=0

@@ -11,19 +11,19 @@ Read currency first: `IFS= read -r CODEMAP_CURRENCY < "${TMPDIR:-/tmp}/dev-codem
 Fires when `CODEMAP_ENABLED=false` and the consumer's skip flag is **not** set to off. Invoke `AskUserQuestion`:
 - Question: "No codemap index for this project — structural dependency context unavailable. How to proceed?"
 - (a) Continue without codemap — proceed with file-read context only
-- (b) Build index now — run `scan-index` in the foreground (wait until it finishes), then set `CODEMAP_ENABLED=true` and continue
+- (b) Build index now — run `codemap-py index` in the foreground (wait until it finishes), then set `CODEMAP_ENABLED=true` and continue
 - (c) Abort — stop; build index manually then re-invoke this skill
 
-On (b): run `scan-index` in the foreground (wait until it finishes); set `CODEMAP_ENABLED=true`; continue. (Never model-invoke the `codemap-py:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; the model builds via the `scan-index` binary, exactly as codemap-py's own `inject-preamble.py` hook does.)
+On (b): run `codemap-py index` in the foreground (wait until it finishes); set `CODEMAP_ENABLED=true`; continue. (Never model-invoke the `codemap-py:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; the model builds through the gated `codemap-py` dispatcher, never the `scan-index` alias — a compatibility shim removed no earlier than `1.0.0`.)
 On (c): stop.
 
 ## Gate B — stale index
 
 Fires when `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. Invoke `AskUserQuestion`:
 - Question: "Codemap index is stale — source files changed since last scan; context may miss recent changes. How to proceed?"
-- (a) Rebuild now — run `scan-index` in the foreground (wait until it finishes), then continue with fresh index (note: the ambient hook may have already started a background refresh; `scan-index` will be blocked by the scan lockfile until it completes — up to 10 min)
+- (a) Rebuild now — run `codemap-py index` in the foreground (wait until it finishes), then continue with fresh index (note: the ambient hook may already hold the index's exclusive writer lease with a background refresh; the rebuild waits out the gate timeout — 30 s default, `CODEMAP_GATE_TIMEOUT` overrides — then exits `index_busy`, so re-run once that refresh lands)
 - (b) Continue with stale data — proceed; results may miss recent changes
 - (c) Skip codemap — set `CODEMAP_ENABLED=false`; proceed without structural context
 
-On (a): run `scan-index` in the foreground (wait until it finishes); continue.
+On (a): run `codemap-py index` in the foreground (wait until it finishes); continue.
 On (c): set `CODEMAP_ENABLED=false`.

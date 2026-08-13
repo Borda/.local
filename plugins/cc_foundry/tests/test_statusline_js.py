@@ -2,7 +2,7 @@
 
 The hook is a status-line renderer: it consumes a JSON payload on stdin
 and writes a two-line ANSI string to stdout. State for the segments
-lives under ``/tmp/claude-state-<session_id>/`` and is written by
+lives under ``<hook temp base>/claude-state-<session_id>/`` and is written by
 ``task-log.js`` at runtime. These tests seed that state directly, then
 assert against ``statusline.js`` stdout.
 
@@ -18,13 +18,12 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import sys
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-
+from _hook_env import hook_tmp_base
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -39,10 +38,14 @@ def _strip_ansi(s: str) -> str:
 
 @pytest.fixture
 def sid(tmp_path: Path) -> Iterator[str]:
-    """Yield a unique session id; clean ``/tmp/claude-state-<id>`` on teardown."""
+    """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
+
+    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the
+    hook's ``getSentinelDir()`` writes on this platform.
+    """
     s = f"pytest-{tmp_path.name}"
     yield s
-    shutil.rmtree(f"/tmp/claude-state-{s}", ignore_errors=True)
+    shutil.rmtree(hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
 
 
 @pytest.fixture
@@ -83,7 +86,7 @@ def _write_agent(
     ``last_active`` is included only when provided so tests can exercise both the
     legacy (since-only) records and the refreshed (last_active-bearing) ones.
     """
-    d = Path("/tmp") / f"claude-state-{sid}" / "agents"
+    d = hook_tmp_base() / f"claude-state-{sid}" / "agents"
     d.mkdir(parents=True, exist_ok=True)
     record: dict = {"id": agent_id, "type": agent_type, "model": "opus", "color": None, "since": since}
     if last_active is not None:
@@ -93,7 +96,7 @@ def _write_agent(
 
 def _write_codex(sid: str, tool_use_id: str, *, since: str) -> None:
     """Write a codex/<id>.json file under the per-session state dir."""
-    d = Path("/tmp") / f"claude-state-{sid}" / "codex"
+    d = hook_tmp_base() / f"claude-state-{sid}" / "codex"
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{tool_use_id}.json").write_text(
         json.dumps({"id": tool_use_id, "since": since, "type": "rescue"}),
@@ -104,7 +107,6 @@ def _write_codex(sid: str, tool_use_id: str, *, since: str) -> None:
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestAgentDisplay:
     """statusline.js: 🤖 segment rendering across empty, active, and stale agents."""
 
@@ -217,7 +219,6 @@ class TestAgentDisplay:
         assert "🤖 none" in rendered
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestCodexDisplay:
     """statusline.js: codex:* agents shown in 🤖 segment via agents/ dir."""
 

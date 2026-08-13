@@ -588,7 +588,7 @@ Available on: `feature`, `fix`, `refactor` (all work stays in the worktree); and
 /develop:refactor src/loader.py "extract batching" --worktree --team
 ```
 
-- **Codemap alignment** — because the session CWD moves into the worktree, the codemap index resolves per-worktree (`<worktree>/.cache/codemap/…`). Each run owns its own ephemeral index, so any number of parallel `--worktree` runs never share or race one index; `.cache/` is gitignored so a worktree index never merges back. After you merge the branch, the main index is flagged stale on the next prompt and refreshes once.
+- **Codemap alignment** — the index path is anchored to the git top-level (`<root>/.cache/codemap/<project>.json`), not to the session CWD, and a linked worktree is its own top-level, so the index still resolves per-worktree (`<worktree>/.cache/codemap/…`) — and resolves identically from any subdirectory inside it. Each run owns its own ephemeral index, so any number of parallel `--worktree` runs never share or race one index; `.cache/` is gitignored so a worktree index never merges back. After you merge the branch, the main index is flagged stale on the next prompt and refreshes once.
 - **Composes with `--team`** — the orchestrator worktree is the integration point; `--team` teammates keep their own per-agent isolation and merge into the orchestrator's worktree branch.
 - Not offered on `debug` (diagnosis handoff), `plan`, or `review` (read-only).
 

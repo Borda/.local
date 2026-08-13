@@ -98,10 +98,19 @@ def _stub_scan_query_present(monkeypatch: pytest.MonkeyPatch, present: bool = Tr
     monkeypatch.setattr(cs.shutil, "which", lambda name: "/usr/bin/codemap-py" if present else None)
 
 
-def _stub_git(monkeypatch: pytest.MonkeyPatch, project_name: str, diff_files: list[str] | None = None) -> None:
+def _stub_git(monkeypatch: pytest.MonkeyPatch, diff_files: list[str] | None = None) -> None:
+    """Fake git whose repository top-level is the test's CWD.
+
+    The scanner writes the index under the repository root, so the previous stub — which
+    reported the root as ``/fake/<name>`` while the fixture created the index in the CWD —
+    encoded the CWD-vs-root split that E-H1 removed. With resolution now anchored on the
+    root, the stub must report the directory the index actually lives in.
+    """
+    top = str(Path.cwd())
+
     def fake_check_output(cmd: list[str], **_kw: Any) -> str:
         if cmd[:2] == ["git", "rev-parse"]:
-            return f"/fake/{project_name}\n"
+            return f"{top}\n"
         if cmd[:2] == ["git", "diff"]:
             return "\n".join(diff_files or []) + ("\n" if diff_files else "")
         raise AssertionError(f"Unexpected cmd: {cmd}")
@@ -137,8 +146,8 @@ def test_main_missing_scan_query_silent_exit_0(in_tmp_cwd: Path, monkeypatch: py
 
 def test_main_missing_index_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_scan_query_present(monkeypatch, present=True)
-    _stub_git(monkeypatch, project_name="myproj")
-    # No .cache/codemap/myproj.json created → exit 0.
+    _stub_git(monkeypatch)
+    # No .cache/codemap/<root>.json created → exit 0.
     rc = cs.main(["--source=diff"])
     assert rc == 0
 
@@ -157,7 +166,7 @@ def test_main_find_mode_invokes_scan_query_per_module_and_coupled(
     (target / "b.py").write_text("")
 
     _stub_scan_query_present(monkeypatch, present=True)
-    _stub_git(monkeypatch, project_name=project.name)
+    _stub_git(monkeypatch)
 
     calls: list[list[str]] = []
 
@@ -186,7 +195,7 @@ def test_main_find_missing_target_returns_1(
     (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     _stub_scan_query_present(monkeypatch, present=True)
-    _stub_git(monkeypatch, project_name=project.name)
+    _stub_git(monkeypatch)
 
     rc = cs.main(["--source=find"])
     assert rc == 1
@@ -199,7 +208,7 @@ def test_main_diff_mode_invokes_per_module(in_tmp_cwd: Path, monkeypatch: pytest
     (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     _stub_scan_query_present(monkeypatch, present=True)
-    _stub_git(monkeypatch, project_name=project.name, diff_files=["src/pkg/a.py", "src/pkg/b.py"])
+    _stub_git(monkeypatch, diff_files=["src/pkg/a.py", "src/pkg/b.py"])
 
     calls: list[list[str]] = []
     monkeypatch.setattr(cs.subprocess, "run", lambda cmd, **_kw: calls.append(cmd) or type("CP", (), {})())
@@ -219,7 +228,7 @@ def test_main_diff_flat_layout_fallback(in_tmp_cwd: Path, monkeypatch: pytest.Mo
 
     _stub_scan_query_present(monkeypatch, present=True)
     # Only __init__.py files → primary derivation drops them → flat-layout fallback kicks in.
-    _stub_git(monkeypatch, project_name=project.name, diff_files=["lib/__init__.py", "other/__init__.py"])
+    _stub_git(monkeypatch, diff_files=["lib/__init__.py", "other/__init__.py"])
 
     calls: list[list[str]] = []
     monkeypatch.setattr(cs.subprocess, "run", lambda cmd, **_kw: calls.append(cmd) or type("CP", (), {})())
@@ -236,7 +245,7 @@ def test_main_diff_empty_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.Mon
     (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     _stub_scan_query_present(monkeypatch, present=True)
-    _stub_git(monkeypatch, project_name=project.name, diff_files=[])
+    _stub_git(monkeypatch, diff_files=[])
 
     calls: list[list[str]] = []
     monkeypatch.setattr(cs.subprocess, "run", lambda cmd, **_kw: calls.append(cmd) or type("CP", (), {})())

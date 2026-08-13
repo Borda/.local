@@ -2,7 +2,7 @@
 
 The hook is invoked as a Node.js child process with a JSON payload on
 stdin and asserted against the per-session state directory written
-under ``/tmp/claude-state-<session_id>``. No JS is mocked — each test
+under ``<hook temp base>/claude-state-<session_id>``. No JS is mocked — each test
 spawns the real script via ``node`` and inspects filesystem effects.
 
 Three behavioural areas are covered:
@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from _hook_env import hook_tmp_base
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -42,10 +42,14 @@ import pytest
 
 @pytest.fixture
 def sid(tmp_path: Path) -> Iterator[str]:
-    """Yield a unique session id; clean ``/tmp/claude-state-<id>`` on teardown."""
+    """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
+
+    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the
+    hook's ``getSentinelDir()`` writes on this platform.
+    """
     s = f"pytest-{tmp_path.name}"
     yield s
-    shutil.rmtree(f"/tmp/claude-state-{s}", ignore_errors=True)
+    shutil.rmtree(hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
 
 
 @pytest.fixture
@@ -217,7 +221,6 @@ def _write_transcript(path: Path, file_paths: list[str]) -> None:
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestAgentLifecycle:
     """task-log.js: PreToolUse / PostToolUse / SubagentStart / SubagentStop for Agent()."""
 
@@ -417,7 +420,6 @@ class TestAgentLifecycle:
         assert not (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestCodexTracking:
     """task-log.js: Skill(codex:*) tracking under state/codex/."""
 
@@ -450,7 +452,6 @@ class TestCodexTracking:
         assert not (state_dir(sid) / "codex" / f"{tool_use_id}.json").exists()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestToolCounting:
     """task-log.js: per-tool counter under state/tools/."""
 
@@ -475,7 +476,6 @@ class TestToolCounting:
         assert data["count"] == 2
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestAgentLivenessRefresh:
     """task-log.js: touchAgentLastActive refreshes a worktree subagent's last_active on tool activity."""
 
@@ -522,12 +522,11 @@ class TestAgentLivenessRefresh:
         assert not (state_dir(sid) / "agents" / "a0gone999.json").exists()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestPreCompactContract:
     """task-log.js: PreCompact writes session-context.md and preserves the skill contract verbatim.
 
     PreCompact writes ``<cwd>/.claude/state/session-context.md`` (cwd = project root),
-    not the ``/tmp/claude-state-<sid>`` ephemeral dir — so these tests pass ``cwd`` and
+    not the ephemeral ``claude-state-<sid>`` dir — so these tests pass ``cwd`` and
     read the context file from that project-local state dir. The skill contract is
     staged by skills at ``<cwd>/.temp/state/skill-contract.md`` (relocated out of
     ``.claude/state/`` to dodge the sensitive-file gate), which is where the hook reads it.

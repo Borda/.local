@@ -16,7 +16,8 @@ Contract (plan §4.4 "Logging"):
   component;
 - the log root is ``<canonical-root>/.cache/codemap/logs`` regardless of CWD;
 - ``CODEMAP_LOG_DIR`` overrides the log root but the ``<runtime>/`` component is
-  still appended;
+  still appended; a *relative* override is anchored to the canonical root for the
+  same reason the default is;
 - log correlation uses the runtime's opaque session id when available, otherwise a
   process/invocation id;
 - logging failure never blocks index build, validation, reuse, or query.
@@ -36,6 +37,10 @@ RUNTIME_ALLOWLIST = ("claude", "codex", "direct")
 DEFAULT_RUNTIME = "direct"
 INVALID_RUNTIME = "invalid_runtime_identity"
 LOG_SUBDIR = Path(".cache", "codemap", "logs")
+#: The one environment variable every logging layer honours as a log-root override.
+#: Named here so ``telemetry`` and ``query`` read the same key through the same
+#: resolver instead of each repeating the literal beside its own default.
+LOG_DIR_ENV = "CODEMAP_LOG_DIR"
 
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
 _INVOCATION: tuple[int, str] | None = None
@@ -88,6 +93,51 @@ def invocation_id() -> str:
     return _INVOCATION[1]
 
 
+def log_root(*, root: Path | None = None, override: str | None = None) -> Path:
+    """Return the project-anchored log root shared by every codemap logging layer.
+
+    This is the single resolver behind the CLI (:mod:`codemap_py.telemetry`), the
+    query engine (:mod:`codemap_py.query`), and the runtime-scoped writer
+    (:func:`log_dir_for`). Each of them previously spelled its own
+    ``Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))``, and a bare
+    relative path resolves against the *process* CWD: a session started in a
+    subdirectory wrote its shards to ``<subdir>/.cache/codemap/logs`` while the
+    hooks (started at the repo root) wrote to ``<root>/.cache/codemap/logs``. The
+    layers still joined on one session key, but across two directories — so
+    ``debrief-coding`` read one half of a session and reported the other half as
+    absent. Anchoring to the canonical root is what keeps the three layers in one
+    directory no matter where the process was launched.
+
+    The anchor is the git top-level (via
+    :func:`codemap_py.index_paths.canonical_root`), the same convention
+    ``query.find_index`` uses for ``<git toplevel>/.cache/codemap/``, so the logs
+    sit beside the index they describe.
+
+    Args:
+        root: Canonical project root; resolved from the CWD when omitted.
+        override: Explicit log-root override; ``None`` reads :data:`LOG_DIR_ENV`.
+            An absolute override is honoured verbatim (it is already unambiguous);
+            a relative one is anchored to *root* for the same reason the default is.
+
+    Returns:
+        The absolute log-root directory (no ``<runtime>/`` component).
+
+    Examples:
+        >>> log_root(root=Path("/proj"), override="").as_posix()
+        '/proj/.cache/codemap/logs'
+        >>> log_root(root=Path("/proj"), override="/shared/logs").as_posix()
+        '/shared/logs'
+        >>> log_root(root=Path("/proj"), override="build/logs").as_posix()
+        '/proj/build/logs'
+    """
+    raw = override if override is not None else os.environ.get(LOG_DIR_ENV)
+    anchor = root if root is not None else canonical_root()
+    if not raw:
+        return anchor / LOG_SUBDIR
+    expanded = Path(raw).expanduser()
+    return expanded if expanded.is_absolute() else anchor / expanded
+
+
 def log_dir_for(runtime: object, *, root: Path | None = None, override: str | None = None) -> Path:
     """Return the ``<log-root>/<runtime>/`` directory for *runtime*.
 
@@ -108,9 +158,7 @@ def log_dir_for(runtime: object, *, root: Path | None = None, override: str | No
         '/shared/logs/codex'
     """
     resolved, _ = resolve_runtime(runtime)
-    override = override if override is not None else os.environ.get("CODEMAP_LOG_DIR")
-    base = Path(override).expanduser() if override else (root or canonical_root()) / LOG_SUBDIR
-    return base / resolved
+    return log_root(root=root, override=override) / resolved
 
 
 def log_path(

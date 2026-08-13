@@ -16,7 +16,7 @@ Flags:
     --force-off       CODEMAP_FORCE_OFF=true — always write false.
     --strict          CODEMAP_STRICT=true — exit 1 when codemap absent/index missing.
     --proj <name>     Project name override (default: basename of git toplevel).
-    --idx-dir <path>  Codemap index directory override (default: .cache/codemap).
+    --idx-dir <path>  Codemap index directory override (default: <git toplevel>/.cache/codemap).
 
 Temp files written:
     ${TMPDIR:-/tmp}/<prefix>-codemap-enabled-<CSID>   → "true" or "false"
@@ -40,10 +40,54 @@ import tempfile
 from pathlib import Path
 
 
-def _resolve_proj(proj_override: str | None) -> str:
-    """Return project slug from git toplevel or override."""
-    if proj_override:
-        return proj_override
+def _check_currency(index_path: Path) -> tuple[str, str]:
+    """Return ``(status, reason)`` for an existing index, failing open to ``current``.
+
+    ``check-index-currency`` is optional; when it is absent, times out, or emits
+    unparsable output the gate deliberately fails **open** — a staleness probe must
+    never block a skill that already has a usable index. The coercion is announced on
+    stderr rather than applied silently, so "current" that was assumed is
+    distinguishable from "current" that was measured.
+
+    Args:
+        index_path: Path to the codemap index JSON that was already found.
+
+    Returns:
+        ``(status, reason)`` — status is one of the probe's own values, or
+        ``"current"`` when the probe could not be consulted.
+    """
+    currency_bin = shutil.which("check-index-currency")
+    if not currency_bin:
+        return "current", ""
+    try:
+        result = subprocess.run(
+            [sys.executable, currency_bin, "--index-path", str(index_path)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        data = json.loads(result.stdout.strip())
+        return str(data.get("status", "current")), str(data.get("reason", ""))
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        print(
+            f"⚠ codemap-py: currency probe failed ({type(exc).__name__}) — assuming 'current'; "
+            "index staleness was NOT verified.",
+            file=sys.stderr,
+        )
+        return "current", ""
+
+
+def _project_root() -> Path:
+    """Return the project root the codemap index is filed under.
+
+    Mirrors the provider's own resolver (``codemap_py.index_paths.canonical_root``):
+    the git top-level when the process runs inside a repository, otherwise the CWD.
+    Anchoring here — rather than trusting the CWD — is what lets a skill invoked from
+    a repo subdirectory still find the index the scanner wrote at the repo root.
+
+    Returns:
+        Absolute project root path (git top-level, else the current directory).
+    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -51,14 +95,29 @@ def _resolve_proj(proj_override: str | None) -> str:
             text=True,
             timeout=5,
         )
-        if result.returncode == 0:
-            raw = Path(result.stdout.strip()).name
-            # Keep only alphanumeric, dot, dash, underscore — same as bash `tr -cd 'a-zA-Z0-9._-'`
-            safe = "".join(c for c in raw if c.isalnum() or c in "._-")
-            return safe or "default"
-    except Exception:
-        pass
-    return "default"
+    except (OSError, subprocess.SubprocessError):
+        return Path.cwd()
+    top = result.stdout.strip() if result.returncode == 0 else ""
+    return Path(top) if top else Path.cwd()
+
+
+def _resolve_proj(proj_override: str | None, root: Path) -> str:
+    """Return the project name the index file is named after.
+
+    The provider names the index after the **raw** basename of the project root
+    (``codemap_py.index_paths.resolve_index`` → ``base_root.name``) with no
+    sanitization. A consumer that strips characters would seek a filename the
+    scanner never wrote — a permanent false ``no_index`` for any repository whose
+    directory name contains a space, ``+``, or a non-ASCII character.
+
+    Args:
+        proj_override: Explicit ``--proj`` value; wins when non-empty.
+        root: Project root from :func:`_project_root`.
+
+    Returns:
+        Project name used as ``<name>.json`` under the index directory.
+    """
+    return proj_override or root.name
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,7 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     force_off = False
     strict = False
     proj_override: str | None = None
-    idx_dir = os.environ.get("CODEMAP_INDEX_DIR", ".cache/codemap")
+    # None = "not overridden" → derived from the project root below. An explicit
+    # --idx-dir wins over CODEMAP_INDEX_DIR, which wins over the default layout.
+    idx_dir: str | None = os.environ.get("CODEMAP_INDEX_DIR") or None
 
     i = 0
     while i < len(args):
@@ -122,10 +183,14 @@ def main(argv: list[str] | None = None) -> int:
         currency_file.write_text("off\n")
         return 0
 
-    proj = _resolve_proj(proj_override)
+    root = _project_root()
+    proj = _resolve_proj(proj_override, root)
     scan_query_available = shutil.which("codemap-py") is not None
-    index_path = Path(idx_dir) / f"{proj}.json"
-    index_found = index_path.exists()
+    index_dir = Path(idx_dir) if idx_dir else root / ".cache" / "codemap"
+    index_path = index_dir / f"{proj}.json"
+    # is_file, not exists: a *directory* named "<proj>.json" would otherwise pass the
+    # gate and every downstream query would then fail against an unreadable index.
+    index_found = index_path.is_file()
 
     if not scan_query_available or not index_found:
         if strict:
@@ -151,24 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         out_file.write_text("false\n")
         return 0
 
-    # Index found — check currency when check-index-currency is available
-    currency_bin = shutil.which("check-index-currency")
-    currency = "current"
-    currency_reason = ""
-    if currency_bin:
-        try:
-            result = subprocess.run(
-                [sys.executable, currency_bin, "--index-path", str(index_path)],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            data = json.loads(result.stdout.strip())
-            currency = data.get("status", "current")
-            currency_reason = data.get("reason", "")
-        except Exception:
-            currency = "current"  # parse/timeout error → assume current
-
+    currency, currency_reason = _check_currency(index_path)
     currency_file.write_text(f"{currency}\n")
 
     if currency == "stale":

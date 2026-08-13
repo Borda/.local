@@ -173,8 +173,13 @@ def _git_diff_files(timeout: int = 15) -> list[str]:
     return [line for line in out.splitlines() if line]
 
 
-def _git_project_name(timeout: int = 15) -> str:
-    """Return basename of git toplevel, falling back to current dir basename."""
+def _git_root(timeout: int = 15) -> Path:
+    """Return the git toplevel, falling back to the current directory.
+
+    Mirrors ``codemap_py.index_paths.canonical_root``: the index the scanner writes lives
+    under the repository root, so a consumer that anchored on the process CWD reported a
+    false ``no_index`` whenever a skill ran from a subdirectory.
+    """
     try:
         out = subprocess.check_output(  # noqa: S603 — fixed argv, no shell.
             ["git", "rev-parse", "--show-toplevel"],
@@ -183,10 +188,21 @@ def _git_project_name(timeout: int = 15) -> str:
             timeout=timeout,
         ).strip()
         if out:
-            return Path(out).name
+            return Path(out).resolve()
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         pass
-    return Path.cwd().name
+    return Path.cwd().resolve()
+
+
+def _index_path(root: Path) -> Path:
+    """Return the index file for *root*, honouring the flat ``CODEMAP_INDEX_DIR`` override.
+
+    The project name is the raw directory basename — the scanner writes it verbatim, so any
+    sanitization here would seek a filename that is never written.
+    """
+    override = os.environ.get("CODEMAP_INDEX_DIR")
+    index_dir = Path(override).expanduser().resolve() if override else root / ".cache" / "codemap"
+    return index_dir / f"{root.name}.json"
 
 
 _MAX_FIND_FILES = 2000
@@ -290,9 +306,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # Index file missing → silent exit 0.
-    project = _git_project_name(timeout=args.timeout)
-    _custom = os.environ.get("CODEMAP_INDEX_DIR")
-    index_path = (Path(_custom) if _custom else Path(".cache") / "codemap") / f"{project}.json"
+    index_path = _index_path(_git_root(timeout=args.timeout))
     if not index_path.is_file():
         return 0
 

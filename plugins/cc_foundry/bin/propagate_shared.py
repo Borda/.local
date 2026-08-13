@@ -12,8 +12,12 @@ canonical).
 This tool has a single source of truth — MANIFEST — mapping each canonical file
 to the copies that must equal it.
 
-- ``--check`` (default): report every copy that differs from its canonical;
-  exit 1 if any differ. Wire into pre-commit / CI.
+Check mode is the default and takes no flag — there is no ``--check`` option, and
+passing one exits 2 (``unrecognized arguments: --check``). ``--apply`` is the only
+mode flag.
+
+- no mode flag (default): report every copy that differs from its canonical;
+  exit 1 if any differ. This is the form pre-commit / CI run.
 - ``--apply``: overwrite each copy with its canonical.
 
 Only files that are MEANT to be byte-identical belong in MANIFEST. Files that
@@ -147,6 +151,27 @@ MANIFEST: list[dict[str, object]] = [
         ],
     },
     {
+        # file -> canonical-module resolver, fed by `codemap-py query central`. Foundry's six
+        # agent pre-flights need the same mapping oss:review already uses; re-implementing
+        # match_module() in foundry would be a second copy of the exact drift this MANIFEST
+        # exists to stop, and importing oss's copy is a forbidden cross-plugin runtime
+        # dependency. Byte-identical copy is the only remaining shape.
+        "canonical": "plugins/cc_oss/bin/resolve_centrality.py",
+        "copies": [
+            "plugins/cc_foundry/bin/resolve_centrality.py",
+        ],
+    },
+    {
+        # Consumer codemap gate resolver. Identical logic in both plugins; the only
+        # per-plugin difference (the currency-sentinel name) is injected by each
+        # plugin's own wrapper (dev_codemap_gate.py / codemap-flag.py) via
+        # --currency-prefix, never by editing this file.
+        "canonical": "plugins/cc_develop/bin/codemap_resolve.py",
+        "copies": [
+            "plugins/cc_research/bin/codemap_resolve.py",
+        ],
+    },
+    {
         # Each of these three plugins ships a rules/ directory that no installed
         # workflow used to deliver, so those rules were inert. Every plugin now
         # installs its own via /<plugin>:setup, and the delivery mechanism must be
@@ -231,7 +256,7 @@ def apply(root: Path, manifest: list[dict[str, object]]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Returns process exit code (0 clean, 1 drift in --check)."""
+    """CLI entry point. Returns process exit code (0 clean, 1 drift in check mode)."""
     parser = argparse.ArgumentParser(description="Sync byte-identical cross-plugin shared files")
     parser.add_argument("--apply", action="store_true", help="overwrite copies with canonical (default: check only)")
     parser.add_argument("--root", default=".", help="repository root (default: cwd)")

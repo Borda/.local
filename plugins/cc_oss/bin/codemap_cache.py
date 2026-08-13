@@ -13,9 +13,10 @@ Artifact shape (report §5.3) — one file per module at
 
     {
       "module": "pkg.mod",
-      "prefix": {                     # index-derived; content-hashed + git-sha stamped
+      "prefix": {                     # index-derived; content-hashed + index-stamped
         "git_sha": "<index git_sha>",
         "scanned_at": "<index ISO timestamp>",
+        "index_stamp": "<size>:<mtime_ns> of the index file",
         "content_hash": "<sha256 of answers>",
         "answers": {"rdeps": {...}, "fn-rdeps": {...}, ...}
       },
@@ -28,8 +29,18 @@ Artifact shape (report §5.3) — one file per module at
 
 Freshness rule: an artifact is reusable when its ``prefix.scanned_at`` is not
 older than the current index ``scanned_at`` (the index has not been rebuilt
-since the artifact was written) and its ``git_sha`` matches. A rebuilt index
-(newer ``scanned_at``) invalidates every artifact — the consumer must re-query.
+since the artifact was written), its ``git_sha`` matches, and its
+``index_stamp`` still equals the index file's ``<size>:<mtime_ns>``. A rebuilt
+index (newer ``scanned_at``) invalidates every artifact — the consumer must
+re-query.
+
+The ``index_stamp`` is what makes the rule fail **closed** without trusting the
+index's declared metadata: an index rewritten in place without advancing
+``scanned_at`` (an ``--incremental`` re-scan, a restored backup, a manual edit)
+is byte-different but metadata-identical, and the two declared fields alone
+would happily reuse answers taken from the previous contents. Stat data needs no
+knowledge of the index schema, so it also keeps working if the provider renames
+either field.
 
 Health metric: ``reuse_ratio`` = reused answers / total persisted answers,
 printed by the ``report`` command for telemetry.
@@ -58,9 +69,13 @@ import re
 import sys
 from pathlib import Path
 
-# codemap-py query batch emits one query per module in this order (mirrors
-# develop/bin/build_codemap_batch.py PER_MODULE_QUERIES). Keyed here by the
-# query name the consumer reads back so a reorder on either side is caught.
+# The per-module queries oss:review's pre-flight issues, and therefore the only
+# `cmd` values `_module_answers_from_batch` will group. Authority is oss's own
+# review block (skills/review/modes/codemap-context.md); tests assert the two
+# stay equal. cc_develop's build_codemap_batch.py keeps a deliberately shorter
+# list — this is NOT a mirror of it, and nothing here detects drift against it:
+# grouping keys on the emitted `cmd`, so a batch from any producer contributes
+# whichever of these queries it happens to carry.
 PER_MODULE_QUERIES: tuple[str, ...] = (
     "rdeps",
     "fn-rdeps",
@@ -118,17 +133,40 @@ def _content_hash(answers: dict[str, object]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _index_stamp(index_path: Path) -> tuple[str, str]:
-    """Read ``git_sha`` and ``scanned_at`` from a codemap index.
+def _file_stamp(index_path: Path) -> str:
+    """Return an opaque change stamp for the index **file**, using stat data only.
+
+    Deliberately schema-free: no key of the provider's index is read here, so this
+    signal survives any rename or restructuring on the provider side and still
+    changes whenever the file is rewritten.
 
     Args:
         index_path: Path to the codemap index JSON.
 
     Returns:
-        ``(git_sha, scanned_at)``; empty strings when the field is absent.
+        ``"<size>:<mtime_ns>"``.
+    """
+    stat = index_path.stat()
+    return f"{stat.st_size}:{stat.st_mtime_ns}"
+
+
+def _index_stamp(index_path: Path) -> tuple[str, str, str]:
+    """Read the freshness triple for a codemap index.
+
+    ``git_sha`` and ``scanned_at`` are the index's own declared metadata; the third
+    element is the schema-free file stamp from :func:`_file_stamp`. All three are
+    compared on read — see the module docstring for why the declared pair alone is
+    not sufficient.
+
+    Args:
+        index_path: Path to the codemap index JSON.
+
+    Returns:
+        ``(git_sha, scanned_at, index_stamp)``; the first two are empty strings
+        when the field is absent.
     """
     meta = json.loads(index_path.read_text(encoding="utf-8"))
-    return str(meta.get("git_sha", "")), str(meta.get("scanned_at", ""))
+    return str(meta.get("git_sha", "")), str(meta.get("scanned_at", "")), _file_stamp(index_path)
 
 
 def _result_module(result: dict) -> str:
@@ -191,7 +229,7 @@ def cmd_write(args: argparse.Namespace) -> int:
         Exit code (0 on success).
     """
     batch = json.loads(Path(args.batch).read_text(encoding="utf-8"))
-    git_sha, scanned_at = _index_stamp(Path(args.index))
+    git_sha, scanned_at, index_stamp = _index_stamp(Path(args.index))
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -208,6 +246,7 @@ def cmd_write(args: argparse.Namespace) -> int:
             "prefix": {
                 "git_sha": git_sha,
                 "scanned_at": scanned_at,
+                "index_stamp": index_stamp,
                 "content_hash": _content_hash(answers),
                 "answers": answers,
             },
@@ -220,13 +259,14 @@ def cmd_write(args: argparse.Namespace) -> int:
     return 0
 
 
-def _reuse_verdict(artifact: dict, git_sha: str, scanned_at: str) -> tuple[bool, str]:
+def _reuse_verdict(artifact: dict, git_sha: str, scanned_at: str, index_stamp: str) -> tuple[bool, str]:
     """Decide whether an artifact may be reused against the current index.
 
     Args:
         artifact: Decoded per-module artifact.
         git_sha: Current index ``git_sha``.
         scanned_at: Current index ``scanned_at`` (ISO timestamp).
+        index_stamp: Current index ``"<size>:<mtime_ns>"`` from :func:`_file_stamp`.
 
     Returns:
         ``(reuse, reason)`` — ``reuse`` False on any staleness signal.
@@ -240,6 +280,11 @@ def _reuse_verdict(artifact: dict, git_sha: str, scanned_at: str) -> tuple[bool,
     # current index scan → index was rebuilt since; answers may be stale.
     if art_scanned and scanned_at and art_scanned < scanned_at:
         return False, "index_rebuilt"
+    # Fail closed: an artifact written before this field existed has no stamp and
+    # is re-queried rather than trusted. Catches an in-place rewrite that left
+    # git_sha and scanned_at untouched — invisible to both checks above.
+    if str(prefix.get("index_stamp", "")) != index_stamp:
+        return False, "index_stamp_mismatch"
     if _content_hash(prefix.get("answers", {})) != prefix.get("content_hash", ""):
         return False, "content_hash_mismatch"
     return True, "fresh"
@@ -266,8 +311,7 @@ def cmd_read(args: argparse.Namespace) -> int:
         print(json.dumps({"reuse": False, "reason": "cold_miss", "answers": {}}))
         return 0
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
-    git_sha, scanned_at = _index_stamp(Path(args.index))
-    reuse, reason = _reuse_verdict(artifact, git_sha, scanned_at)
+    reuse, reason = _reuse_verdict(artifact, *_index_stamp(Path(args.index)))
     answers = artifact.get("prefix", {}).get("answers", {}) if reuse else {}
     print(json.dumps({"reuse": reuse, "reason": reason, "answers": answers}))
     return 0

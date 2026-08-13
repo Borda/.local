@@ -55,7 +55,7 @@ def codemap_bin_on_path(env: dict[str, str], plugin_root: Path) -> dict[str, str
 
     Examples:
         >>> import pathlib, tempfile
-        >>> root = pathlib.Path(tempfile.mkdtemp())
+        >>> root = pathlib.Path(tempfile.mkdtemp()).resolve()  # macOS TMPDIR is a symlink
         >>> (root / "bin").mkdir()
         >>> _ = (root / "bin" / "codemap-py").write_text("")
         >>> codemap_bin_on_path({"PATH": "/usr/bin"}, root)["PATH"].startswith(str(root / "bin"))

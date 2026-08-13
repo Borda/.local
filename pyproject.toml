@@ -54,6 +54,27 @@ extend-exclude = [
   "site/",                                 # MkDocs build output — generated, not source
 ]
 format = {}
+# Complexity gate — enforced for codemap-py only (the negated pattern below ignores the
+# rules everywhere else). The other plugins carry their own, much larger, backlog of
+# complexity findings; gating them is a separate decision.
+lint.extend-select = [ "C901", "PLR0911", "PLR0912", "PLR0915" ]
+# Accepted debt, frozen at today's offender set: the gate exists to stop NEW complexity
+# entering the plugin, not to force a refactor of the scanner and graph internals. Each
+# entry is a ceiling, never a licence — a function added to one of these files that
+# exceeds the limits still needs splitting, it just is not machine-enforced here.
+# Re-measure with `ruff check --select C901,PLR0911,PLR0912,PLR0915` after touching them.
+lint.per-file-ignores."!plugins/codemap-py/**" = [ "C901", "PLR0911", "PLR0912", "PLR0915" ]
+# 1 PLR0911 each
+lint.per-file-ignores."plugins/codemap-py/bin/resolve_index_env.py" = [ "PLR0911" ]
+lint.per-file-ignores."plugins/codemap-py/src/codemap_py/cli.py" = [ "PLR0911" ]
+# 1 C901 (_recompute_metrics, 22) + 3 PLR
+lint.per-file-ignores."plugins/codemap-py/src/codemap_py/graph.py" = [ "C901", "PLR0911", "PLR0912", "PLR0915" ]
+# 5 C901 (worst: _drop_top_level_rebindings, 30) + 8 PLR
+lint.per-file-ignores."plugins/codemap-py/src/codemap_py/scanner.py" = [ "C901", "PLR0911", "PLR0912", "PLR0915" ]
+lint.per-file-ignores."plugins/codemap-py/src/codemap_py/schema.py" = [ "PLR0911" ]
+lint.per-file-ignores."plugins/codemap-py/tests/data/parity_golden/_schema.py" = [ "PLR0911" ]
+lint.mccabe.max-complexity = 12
+lint.pylint = { max-returns = 6, max-branches = 12, max-statements = 50 }
 
 [tool.codespell]
 # ignore-words-list: real words codespell misflags — "derails" (not "details")
@@ -62,6 +83,9 @@ skip = "./site,./.git"  # MkDocs build output + git internals — generated, not
 
 [tool.pytest]
 ini_options.testpaths = [ "benchmarks", "plugins" ]
+# benchmarks/ has no __init__.py by design; this puts it on sys.path so suites import
+# `_bench_common.<mod>` directly, with no `benchmarks.`-prefixed namespace-package fallback.
+ini_options.pythonpath = [ "benchmarks" ]
 ini_options.norecursedirs = [
   "*.egg",
   ".*",

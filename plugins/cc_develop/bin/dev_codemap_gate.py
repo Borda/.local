@@ -37,6 +37,10 @@ from pathlib import Path
 
 _KNOWN_SKILLS = "debug|feature|fix|plan|refactor|review"
 
+# Currency sentinel basename read back by skills/_shared/codemap-gates.md. Owned here
+# because codemap_resolve.py is byte-identical across plugins and cannot name one.
+CURRENCY_PREFIX = "dev-codemap-currency"
+
 
 def _tmp_dir() -> Path:
     """Session temp dir; never a hardcoded /tmp, which is absent on native Windows Python."""
@@ -95,10 +99,14 @@ def _run_codemap_resolve(bin_dir: Path, raw: str) -> tuple[str, int]:
     """Run bin/codemap_resolve.py, returning its (stripped stdout, exit code).
 
     stderr is inherited, not captured — the shell original never redirected it.
+
+    ``--currency-prefix`` is supplied here because ``codemap_resolve.py`` is byte-identical
+    across consuming plugins (propagate_shared.py MANIFEST); develop's sentinel name is
+    develop's own concern and must never be hard-coded in that shared file.
     """
     try:
         proc = subprocess.run(
-            [sys.executable, str(bin_dir / "codemap_resolve.py"), raw],
+            [sys.executable, str(bin_dir / "codemap_resolve.py"), raw, "--currency-prefix", CURRENCY_PREFIX],
             stdout=subprocess.PIPE,
             text=True,
             check=False,

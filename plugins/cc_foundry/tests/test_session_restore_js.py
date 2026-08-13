@@ -52,8 +52,13 @@ def write_handover(
     created: str | None = None,
     filler: str = "",
     pointer: str | None = None,
+    newline: str = "\n",
 ) -> Path:
     """Create a handover doc plus its ``LATEST`` pointer under *project*.
+
+    Written as bytes with an explicit line ending rather than through text mode: text mode
+    silently emits CRLF on Windows, which made the platform — not the parameter — decide what
+    the hook was fed. ``newline="\\r\\n"`` now exercises the CRLF path on every OS.
 
     Args:
         project: Directory standing in for the hook payload's ``cwd``.
@@ -63,16 +68,17 @@ def write_handover(
         filler: Extra body text appended under ``## Decisions``, used to
             push the document past the size guard.
         pointer: Contents of ``LATEST``; defaults to *slug*.
+        newline: Line ending written into both the pointer and the document.
 
     Returns:
         Path of the handover document.
     """
     store_dir = project / ".claude" / "state" / "session"
     store_dir.mkdir(parents=True, exist_ok=True)
-    (store_dir / "LATEST").write_text(f"{slug if pointer is None else pointer}\n", encoding="utf8")
+    (store_dir / "LATEST").write_bytes(f"{slug if pointer is None else pointer}{newline}".encode())
     doc = store_dir / f"{slug}.md"
-    doc.write_text(
-        "\n".join(
+    doc.write_bytes(
+        newline.join(
             [
                 "---",
                 f"slug: {slug}",
@@ -98,8 +104,7 @@ def write_handover(
                 "run the pytest suite",
                 "",
             ]
-        ),
-        encoding="utf8",
+        ).encode()
     )
     return doc
 
@@ -274,6 +279,39 @@ def test_consumption_rewrites_only_the_flag(run_hook, tmp_path: Path) -> None:
     after = doc.read_text(encoding="utf8")
     assert after == before.replace("consumed: false", "consumed: true", 1)
     assert after.split("\n")[5] == "---"
+
+
+# ── CRLF documents ────────────────────────────────────────────────────────────
+#
+# A doc written on Windows carries CRLF. `.` in a JS regex excludes `\r` and `$` without the `m`
+# flag anchors at end-of-string, so a frontmatter parser splitting on `\n` alone matched no line
+# at all: every field came back undefined and each gate below it exited silent. These run on every
+# platform — the line ending is written explicitly, not inherited from the host.
+
+
+def test_crlf_doc_injects(run_hook, tmp_path: Path) -> None:
+    """Frontmatter gates must parse a CRLF document, not fall through to silence."""
+    write_handover(tmp_path, newline="\r\n")
+    result = run_hook(HOOK, payload(tmp_path))
+    assert "[session] restored from `plan-x`" in result.stdout
+    assert "branch main" in result.stdout
+
+
+def test_crlf_doc_gates_still_reject_consumed(run_hook, tmp_path: Path) -> None:
+    """CRLF parsing must read the real flag value, not merely find the key."""
+    write_handover(tmp_path, consumed="true", newline="\r\n")
+    result = run_hook(HOOK, payload(tmp_path))
+    assert result.stdout == ""
+
+
+def test_crlf_consumption_preserves_line_endings(run_hook, tmp_path: Path) -> None:
+    """The in-place rewrite round-trips byte for byte apart from the flag — no lone LF left behind."""
+    doc = write_handover(tmp_path, newline="\r\n")
+    before = doc.read_bytes()
+    run_hook(HOOK, payload(tmp_path))
+    after = doc.read_bytes()
+    assert after == before.replace(b"consumed: false", b"consumed: true", 1)
+    assert b"\n" not in after.replace(b"\r\n", b"")
 
 
 # ── Registration ──────────────────────────────────────────────────────────────

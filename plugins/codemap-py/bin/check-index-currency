@@ -6,6 +6,14 @@ Two-tier check (prefer false-stale over missed-stale):
   Tier 2 (no git / git_sha absent): compare stored file_shas vs current
       content using mtime pre-filter then git blob SHA-1 or MD5 verify.
 
+The index itself is read under a shared read lease
+(:func:`codemap_py.rwgate.read_lease`), never with a bare ``json.load``: the gate's
+contract is that "no launcher, adapter, or consumer is permitted a token-free
+filesystem read of the index", and this launcher is a consumer like any other. Only
+the index read is leased — the Tier 2 source-tree walk and hashing touch project
+files, not the index, and holding the lease across them would make every currency
+check block a concurrent writer for the length of a full tree walk.
+
 Usage:
     check-index-currency --index-path <path> [--root <path>] [--field <name>]
 
@@ -22,7 +30,7 @@ Output (stdout):
 Exit codes:
     0 — current
     1 — stale
-    2 — no_index (index file not found or unreadable)
+    2 — no_index (index file not found, unreadable, or its read gate unavailable)
     3 — argument error
 """
 
@@ -37,8 +45,30 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from codemap_py import rwgate  # noqa: E402  (needs the sys.path insert above)
+
 _GIT_TIMEOUT = 5
-MAX_INDEX_SIZE = 50_000_000  # 50 MB DoS guard
+# DoS guard, held at the query engine's own ceiling (``query._MAX_INDEX_SIZE_BYTES``).
+# It must never be TIGHTER than what the engine will serve: this probe refusing a file
+# the engine reads happily answers ``no_index`` — indistinguishable from "no index
+# exists" — so the staleness gate silently stops firing on exactly the large
+# repositories that need it most. Measured on this repository at 131 MB, well past the
+# former 50 MB cap. Raising the value in one place and not the other re-opens that;
+# ``TestIndexSizeCapAgreement`` fails if they drift apart.
+MAX_INDEX_SIZE = 512 * 1024 * 1024
+
+# Deliberately far below the gate's 30 s default and every consumer's own subprocess
+# budget (15 s in cc_oss/bin/detect_codemap.py, the tightest one measured). A live
+# writer holds its intent for the whole index build — minutes on a real tree — so a
+# longer wait never turns into a successful read; it only risks the consumer's
+# timeout firing first, and every consumer treats its own timeout as "assume
+# current", which is the missed-stale this checker exists to prevent. Failing fast to
+# "stale" under a live writer keeps the module's stated bias intact.
+_LEASE_TIMEOUT = 2.0
 
 SKIP_DIRS = frozenset(
     {
@@ -263,22 +293,72 @@ def _parse_scanned_at(value: object) -> float:
 
 
 def _read_index(index_path: Path) -> dict | None:
-    """Read and parse index JSON, enforcing size limit.
+    """Read and parse index JSON under a shared read lease, enforcing the size limit.
+
+    Uses the gate's :func:`codemap_py.rwgate.read_lease` primitive rather than its
+    ``read_index`` convenience wrapper, because this function keeps policy the wrapper
+    does not have: a 50 MB size guard, and "unparsable is not fatal, it is just
+    ``None``". Entering through ``read_index`` would parse the file a second time and
+    surface its ``IndexUnreadable`` instead of that policy.
+
+    The lease covers the parse only. An absent or oversized file is rejected before any
+    lease is taken, so a currency check against a project that has no index never
+    creates a coordination directory beside it.
 
     Args:
         index_path: Path to index file.
 
     Returns:
-        Parsed dict, or None on failure.
+        Parsed dict, or None when the file is absent, oversized, unreadable, or is
+        valid JSON that is not an object.
+
+    Raises:
+        rwgate.IndexBusy: a live writer still held the index at ``_LEASE_TIMEOUT``.
+        rwgate.CoordinationUnavailable: the ``.index-rw`` root beside the index could
+            not be created or locked, so no leased read is possible.
     """
     try:
         if index_path.stat().st_size > MAX_INDEX_SIZE:
             return None
-        with index_path.open(encoding="utf-8") as fh:
-            data = json.load(fh)
-        return data if isinstance(data, dict) else None
-    except Exception:
+    except OSError:
         return None
+    with rwgate.read_lease(index_path, timeout=_LEASE_TIMEOUT):
+        try:
+            with index_path.open(encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError, RecursionError):
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def _read_index_or_failure(index_path: Path) -> tuple[dict | None, tuple[dict, int] | None]:
+    """Load the index for a currency check, or produce the result that ends the check.
+
+    Exactly one element of the returned pair is ever non-``None``. Keeping the mapping
+    here rather than inline gives each gate failure the status it actually means: a
+    live writer holds its intent for the whole rebuild, so the index on disk is about
+    to be replaced and ``stale`` is the honest answer under this module's
+    prefer-false-stale bias; an unusable coordination root means the index cannot be
+    consulted at all, which is operationally the same as an unreadable one.
+
+    Args:
+        index_path: Path to the index JSON file.
+
+    Returns:
+        ``(index, None)`` once the index has parsed, else ``(None, result)`` where
+        *result* is the ``(result_dict, exit_code)`` pair the caller must return.
+    """
+    if not index_path.exists():
+        return None, _result("no_index", f"index not found: {index_path}")
+    try:
+        index = _read_index(index_path)
+    except rwgate.IndexBusy as exc:
+        return None, _result("stale", f"index busy under a live writer: {exc}")
+    except rwgate.CoordinationUnavailable as exc:
+        return None, _result("no_index", f"index read gate unavailable: {exc}")
+    if index is None:
+        return None, _result("no_index", f"index unreadable or oversized: {index_path}")
+    return index, None
 
 
 def _result(status: str, reason: str, changed_count: int = 0) -> tuple[dict, int]:
@@ -301,42 +381,124 @@ def _result(status: str, reason: str, changed_count: int = 0) -> tuple[dict, int
 # ---------------------------------------------------------------------------
 
 
-def check_currency(index_path: Path, root: Path) -> tuple[dict, int]:
-    """Check whether the codemap index is current with the source tree.
+def _git_blob_changed(relpath: str, stored_sha: str, git_blobs: dict[str, str] | None) -> bool:
+    """Report whether a stored git blob SHA disagrees with the working tree.
+
+    A file git no longer reports a blob for counts as changed, and so does every file
+    when ``git ls-files`` itself failed: an index whose SHAs cannot be corroborated is
+    not evidence of currency, and this module prefers a false stale over a missed one.
 
     Args:
-        index_path: Path to the index JSON file.
+        relpath: POSIX-relative path of the file being checked.
+        stored_sha: Blob SHA recorded in the index for *relpath*.
+        git_blobs: Current blob SHAs by relpath, or None when git was unavailable.
+
+    Returns:
+        True when the file must be treated as changed.
+    """
+    current_sha = git_blobs.get(relpath) if git_blobs is not None else None
+    return current_sha is None or current_sha != stored_sha
+
+
+def _hashed_file_changed(
+    relpath: str,
+    stored_sha: str,
+    current_py: dict[str, Path],
+    algo: str,
+    scanned_ts: float,
+) -> bool:
+    """Report whether a stored content hash disagrees with the file on disk.
+
+    Deletions are not reported here — the caller has already compared the two path
+    sets, so a path absent from *current_py* at this point cannot be a deletion and is
+    left alone. An unreadable file counts as changed; a file whose mtime predates the
+    scan is trusted without hashing.
+
+    Args:
+        relpath: POSIX-relative path of the file being checked.
+        stored_sha: Content hash recorded in the index for *relpath*.
+        current_py: Mapping of relpath to absolute Path for .py files found on disk.
+        algo: Hash algorithm detected from the stored digests ("md5" or "sha256").
+        scanned_ts: POSIX timestamp of the index scan, or 0.0 when unknown.
+
+    Returns:
+        True when the file must be treated as changed.
+    """
+    path = current_py.get(relpath)
+    if path is None:
+        return False
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return True
+    if scanned_ts and mtime <= scanned_ts:
+        return False  # mtime pre-filter: not modified since scan
+    try:
+        current_sha = _md5_file(path) if algo == "md5" else _sha256_file(path)
+    except OSError:
+        return True
+    return current_sha != stored_sha
+
+
+def _changed_paths(
+    stored_py: dict[str, str],
+    current_py: dict[str, Path],
+    algo: str,
+    git_blobs: dict[str, str] | None,
+    scanned_ts: float,
+) -> list[str]:
+    """Return the stored paths whose current content disagrees with the index.
+
+    Args:
+        stored_py: Mapping of relpath to stored hash, .py entries only.
+        current_py: Mapping of relpath to absolute Path for .py files found on disk.
+        algo: Hash algorithm detected from the stored digests.
+        git_blobs: Current git blob SHAs, or None when *algo* is not ``"git"``.
+        scanned_ts: POSIX timestamp of the index scan, or 0.0 when unknown.
+
+    Returns:
+        Changed relpaths, in the order they appear in *stored_py*.
+    """
+    if algo == "git":
+        return [rel for rel, sha in stored_py.items() if _git_blob_changed(rel, sha, git_blobs)]
+    return [rel for rel, sha in stored_py.items() if _hashed_file_changed(rel, sha, current_py, algo, scanned_ts)]
+
+
+def _tier1_result(root: Path, stored_git_sha: str, current_git_sha: str) -> tuple[dict, int]:
+    """Decide currency from git alone — fast, no file reads.
+
+    Args:
+        root: Project root directory.
+        stored_git_sha: HEAD SHA recorded in the index.
+        current_git_sha: HEAD SHA of the working tree.
+
+    Returns:
+        Tuple of (result_dict, exit_code).
+    """
+    if stored_git_sha != current_git_sha:
+        short_old = stored_git_sha[:8]
+        short_new = current_git_sha[:8]
+        return _result("stale", f"HEAD changed {short_old}→{short_new}")
+    dirty = _git_dirty_py_count(root)
+    if dirty:
+        return _result("stale", f"{dirty} uncommitted .py change(s)", dirty)
+    return _result("current", "HEAD matches, no dirty .py files")
+
+
+def _tier2_result(index: dict, root: Path) -> tuple[dict, int]:
+    """Decide currency by comparing stored file_shas against the source tree.
+
+    Used when git cannot answer: either the tree is not a repository or the index
+    predates the ``git_sha`` field. Path-set differences (new and deleted files) are
+    settled before any hashing, so an obviously stale index costs no file reads.
+
+    Args:
+        index: Parsed index mapping.
         root: Project root directory.
 
     Returns:
         Tuple of (result_dict, exit_code).
     """
-    if not index_path.exists():
-        return _result("no_index", f"index not found: {index_path}")
-
-    index = _read_index(index_path)
-    if index is None:
-        return _result("no_index", f"index unreadable or oversized: {index_path}")
-
-    stored_git_sha: str | None = index.get("git_sha")
-    current_git_sha = _git_head(root)
-
-    # ------------------------------------------------------------------
-    # Tier 1: git-based (fast — no file reads)
-    # ------------------------------------------------------------------
-    if current_git_sha is not None and stored_git_sha is not None:
-        if stored_git_sha != current_git_sha:
-            short_old = stored_git_sha[:8]
-            short_new = current_git_sha[:8]
-            return _result("stale", f"HEAD changed {short_old}→{short_new}")
-        dirty = _git_dirty_py_count(root)
-        if dirty:
-            return _result("stale", f"{dirty} uncommitted .py change(s)", dirty)
-        return _result("current", "HEAD matches, no dirty .py files")
-
-    # ------------------------------------------------------------------
-    # Tier 2: filesystem — compare file_shas with mtime pre-filter
-    # ------------------------------------------------------------------
     file_shas: dict[str, str] = index.get("file_shas", {})
     # Only .py entries; exclude synthetic (__coverage_mtime__ etc.)
     stored_py = {k: v for k, v in file_shas.items() if k.endswith(".py") and not k.startswith("__")}
@@ -363,36 +525,37 @@ def check_currency(index_path: Path, root: Path) -> tuple[dict, int]:
     algo = _detect_hash_algo(stored_py)
     git_blobs: dict[str, str] | None = _git_blob_shas(root) if algo == "git" else None
 
-    changed: list[str] = []
-    for relpath, stored_sha in stored_py.items():
-        if algo == "git":
-            current_sha = git_blobs.get(relpath) if git_blobs is not None else None
-            if current_sha is None:
-                changed.append(relpath)
-                continue
-        else:
-            path = current_py.get(relpath)
-            if path is None:
-                continue
-            try:
-                mtime = path.stat().st_mtime
-            except OSError:
-                changed.append(relpath)
-                continue
-            if scanned_ts and mtime <= scanned_ts:
-                continue  # mtime pre-filter: not modified since scan
-            try:
-                current_sha = _md5_file(path) if algo == "md5" else _sha256_file(path)
-            except OSError:
-                changed.append(relpath)
-                continue
-        if current_sha != stored_sha:
-            changed.append(relpath)
-
+    changed = _changed_paths(stored_py, current_py, algo, git_blobs, scanned_ts)
     if changed:
         return _result("stale", f"{len(changed)} .py file(s) changed", len(changed))
 
     return _result("current", "all source files match index")
+
+
+def check_currency(index_path: Path, root: Path) -> tuple[dict, int]:
+    """Check whether the codemap index is current with the source tree.
+
+    Tier 1 answers from git when both the index and the working tree carry a HEAD SHA;
+    otherwise Tier 2 falls back to comparing stored content hashes.
+
+    Args:
+        index_path: Path to the index JSON file.
+        root: Project root directory.
+
+    Returns:
+        Tuple of (result_dict, exit_code).
+    """
+    index, failure = _read_index_or_failure(index_path)
+    if failure is not None:
+        return failure
+
+    stored_git_sha: str | None = index.get("git_sha")
+    current_git_sha = _git_head(root)
+
+    if current_git_sha is not None and stored_git_sha is not None:
+        return _tier1_result(root, stored_git_sha, current_git_sha)
+
+    return _tier2_result(index, root)
 
 
 # ---------------------------------------------------------------------------

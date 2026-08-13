@@ -42,6 +42,19 @@ Hook ids (from `.pre-commit-config.yaml`): `ruff-check`, `ruff-format`, `eslint`
 - Bootstrap test tooling with `uv sync --only-group test`; benchmark-only dependencies use `uv sync --only-group bench`.
 - Run tests with `.venv/bin/python -m pytest <paths>` — **not** `uv run pytest` or a bare `pytest`; the project venv is the pinned environment. Start focused, broaden to the affected suite before completion.
 
+## Multi-OS Executables — POSIX Assumption = Defect
+
+Scripts, hooks, `bin/`, CI steps all run Linux + macOS + native Windows. Fix at source; skip never.
+
+- `pathlib`; `Path(p).is_absolute()` not `startswith("/")`; `PurePath(p).as_posix()` before hash/serialize/compare — separators change digests
+- POSIX-absolute literals unportable as fixtures: `/host/x` → `D:\host\x` on Windows
+- Byte-asserted or hashed writes: `newline="\n"` or bytes — text mode emits CRLF
+- Sanitized subprocess `env=` keeps `SystemRoot`, `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP` on win32 — else child Python aborts: `_Py_HashRandomization_Init: failed to get random numbers`; temp dir via `os.environ.get("TMPDIR") or tempfile.gettempdir()`, never `/tmp`
+- CI `run:` calling `.sh` needs explicit `shell: bash` — Windows pwsh dot-sources it, exits 0, runs nothing (false green)
+- Symlink/mode/uid = capabilities: degrade in production code first
+- Skip last resort: never blanket `skipif(sys.platform == "win32")` — probe capability, skip on `OSError`; document + re-audit each surviving skip
+- Green macOS ≠ Windows support: prove with `PureWindowsPath`/`ntpath`; monkeypatching `os.name` does not change `pathlib`
+
 ## Benchmark Isolation
 
 Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not production content. Never copy them into shipped plugins, skills, templates, or user-facing docs; use neutral generic examples and encode the generalized contract in a regression test instead.

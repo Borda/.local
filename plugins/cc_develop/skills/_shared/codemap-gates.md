@@ -14,6 +14,6 @@ Contract (`v2`) — follow both gates with develop's skip flag:
 - **Gate A — missing index**: fire when `CODEMAP_ENABLED=false` and `CODEMAP_RAW=auto`.
 - **Gate B — stale index**: fire when `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`.
 
-Each gate's `AskUserQuestion` prompt, options, and on-choice actions (build via the `codemap-py index` binary, continue, abort/skip) in contract — apply verbatim.
+Each gate's `AskUserQuestion` prompt, options, and on-choice actions (continue, abort/skip) in contract — apply as written, no consumer override: the contract's own build/rebuild action is the gated `codemap-py index` dispatcher.
 
 **Fallback when codemap-py plugin absent** (`$_CM_SHARED/codemap-gates.md` missing): skip both gates, proceed with `CODEMAP_ENABLED` as-is — no structural gating, file-read context only. Never break load.

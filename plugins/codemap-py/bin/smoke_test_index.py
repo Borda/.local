@@ -35,7 +35,9 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_MAX_AGE_HOURS = 24
-MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M9: DoS guard)
+# DoS guard (SEC-M9), held at the query engine's ceiling (``query._MAX_INDEX_SIZE_BYTES``):
+# a helper that refuses an index the engine serves reports a healthy project as broken.
+MAX_INDEX_SIZE = 512 * 1024 * 1024
 
 
 def _is_user_owned(path: Path) -> bool:

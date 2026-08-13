@@ -51,7 +51,7 @@ _PROJ="$(basename "$(pwd)")"
 
 ## §Codemap alignment — automatic, no coordination
 
-Index path is CWD-relative (`<root>/.cache/codemap/<project>.json`); under `CODEMAP_INDEX_DIR` keys on `<canonical-root-sha256>/…`. Either way worktree root differs → **each worktree owns its own index**. Parallel runs never share/race one index. `.cache/` gitignored → worktree index never merges back → main index untouched. After user merges branch, `inject-preamble.py` currency check flags main index stale next prompt → one standard refresh.
+Index path is anchored to the git toplevel (`<root>/.cache/codemap/<project>.json`, project = raw basename of that root), not to the CWD; under `CODEMAP_INDEX_DIR` it is flat (`<override>/<project>.json`). A linked worktree is its own git toplevel, so the root differs either way → **each worktree owns its own index**. Parallel runs never share/race one index. `.cache/` gitignored → worktree index never merges back → main index untouched. After user merges branch, `inject-preamble.py` currency check flags main index stale next prompt → one standard refresh.
 
 Do NOT point `CODEMAP_INDEX_DIR` at a shared path inside worktree mode — breaks isolation.
 

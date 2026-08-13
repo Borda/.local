@@ -89,8 +89,10 @@ AI/ML researcher bridging theory and practice. Reads papers critically, implemen
 Codemap pre-flight — run if `codemap-py query` available + index exists; skip Grep/Read enumeration for symbols codemap already covers (requires `codemap-py` plugin). Own copy — self-contained, no cross-plugin reference.
 
 ```bash
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)   # `basename ""` exits 0, so `||` never fired
+[ -n "$_ROOT" ] || _ROOT="$PWD"
+PROJ=$(basename "$_ROOT")   # raw basename — scanner writes it verbatim, never sanitized
+_IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"   # root-anchored: agent may run from a subdir
 if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     codemap-py query --timeout 5 central --top 5 2>/dev/null  # blast-radius baseline; always run
     if [ -n "$TARGET_MODULE" ]; then

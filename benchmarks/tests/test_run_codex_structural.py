@@ -318,8 +318,10 @@ def test_executable_workspace_permission_grants_only_the_disposable_worktree(
 
     text = config.read_text(encoding="utf-8")
     assert 'extends = ":read-only"' in text
-    assert f'"{workspace_path.resolve()}" = "write"' in text
-    assert f'"{source_path.resolve()}" = "deny"' in text
+    # Paths enter the TOML as basic strings, so the expectation is the escaped rendering
+    # rather than the raw path: a Windows separator is a TOML escape character.
+    assert f'{json.dumps(str(workspace_path.resolve()))} = "write"' in text
+    assert f'{json.dumps(str(source_path.resolve()))} = "deny"' in text
 
 
 def test_prepare_verified_home_passes_writable_workspace_to_permission_verifier(

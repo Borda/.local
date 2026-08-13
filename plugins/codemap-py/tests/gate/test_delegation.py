@@ -41,10 +41,15 @@ _SHIM_SOURCE = """\
 import os
 import subprocess
 import sys
+import time
 
 counter = os.environ.get("CODEMAP_TEST_SCAN_COUNTER")
 if counter:
-    with open(counter, "a", encoding="utf-8") as fh:
+    # One marker file per scan, never a shared append: this write happens before the engine
+    # takes its lease, so racing scans append concurrently, and the Windows CRT emulates
+    # O_APPEND by seeking to end first — both writers land on the same offset and one scan
+    # vanishes from the tally.
+    with open(f"{counter}.{os.getpid()}.{time.time_ns()}", "w", encoding="utf-8") as fh:
         fh.write("scan\\n")
 scan_index = os.environ["CODEMAP_TEST_SCAN_INDEX"]
 sys.exit(subprocess.run([sys.executable, scan_index, *sys.argv[1:]]).returncode)
@@ -86,10 +91,8 @@ def _git_init(root: Path) -> None:
 
 
 def _count(counter: Path) -> int:
-    try:
-        return len(counter.read_text(encoding="utf-8").split())
-    except OSError:
-        return 0
+    """Count recorded scans — one marker file per invocation, see ``_SHIM_SOURCE``."""
+    return len(list(counter.parent.glob(f"{counter.name}.*")))
 
 
 def _sha(path: Path) -> str:

@@ -68,11 +68,11 @@ Review runs per-changed-module pre-flight batch once (§Review-pipeline injectio
 
 ```json
 {"module": "pkg.mod",
- "prefix": {"git_sha": "<index git_sha>", "scanned_at": "<index ISO ts>", "content_hash": "<sha256>", "answers": {"rdeps": {...}, "fn-rdeps": {...}}},
+ "prefix": {"git_sha": "<index git_sha>", "scanned_at": "<index ISO ts>", "index_stamp": "<size>:<mtime_ns> of index file", "content_hash": "<sha256>", "answers": {"rdeps": {...}, "fn-rdeps": {...}}},
  "delta": {"touched_files": [], "exhausted_queries": [], "notes": []}}
 ```
 
-**Freshness rule**: reusable only when `prefix.git_sha` matches current index `git_sha` AND `prefix.scanned_at` not older than current index `scanned_at` (rebuilt index — newer `scanned_at` — invalidates every artifact; re-query). Health metric: `reuse_ratio` = reused answers / total persisted.
+**Freshness rule** (fail-closed, three conditions — all must hold): `prefix.git_sha` matches current index `git_sha`; `prefix.scanned_at` not older than current index `scanned_at` (rebuilt index — newer `scanned_at` — invalidates every artifact); `prefix.index_stamp` still equals the index file's `<size>:<mtime_ns>`. The stamp is what makes the rule fail closed without trusting index-declared metadata: an `--incremental` re-scan, a restored backup, or a manual edit can leave `git_sha`/`scanned_at` untouched and is invisible to the first two checks alone. An artifact written before the stamp field existed carries none and is re-queried rather than trusted. Verdict reasons from `codemap_cache.py read`: `fresh` · `git_sha_mismatch` · `index_rebuilt` · `index_stamp_mismatch` · `content_hash_mismatch`. Health metric: `reuse_ratio` = reused answers / total persisted.
 
 **Writer/reader contract** (oss plugin ships `bin/codemap_cache.py`; gate on `oss` availability — consumer without it simply re-queries):
 

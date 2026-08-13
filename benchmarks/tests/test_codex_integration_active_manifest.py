@@ -192,7 +192,7 @@ def test_generator_stale_error_names_exact_rebuild_command(tmp_path: Path) -> No
     try:
         generator["_write_or_check"](tmp_path / "stale.json", b"expected\n", True)
     except ValueError as exc:
-        assert str(exc).endswith("run: python3 benchmarks/build-codex-integration-manifest.py")
+        assert str(exc).endswith("run: uv run python benchmarks/build-codex-integration-manifest.py")
     else:
         raise AssertionError("stale integration output was accepted")
 

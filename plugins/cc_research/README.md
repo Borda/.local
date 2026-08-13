@@ -414,7 +414,7 @@ After implementing method from paper, verify implementation matches paper claims
 
 **Strict mode** (`--strict`): any HIGH severity mismatch in F or E → stops immediately with BREAKING notice. Use before expensive experiments.
 
-**Codemap** (`run`, `verify`): on by default when `codemap` plugin installed and project index exists — supplies blast-radius, importer, coverage context to ideation agent (`run`) and fidelity auditor (`verify`). Missing/stale index → prompt to build/rebuild (Gate A/B); `--no-codemap` skips silently, `--codemap` strict.
+**Codemap** (`run`, `verify`): on by default when `codemap-py` plugin installed and project index exists — supplies blast-radius, importer, coverage context to ideation agent (`run`) and fidelity auditor (`verify`). Missing/stale index → prompt to build/rebuild (Gate A/B); `--no-codemap` skips silently, `--codemap` strict.
 
 **Output**: full report → `.temp/output-verify-<branch>-<date>.md`.
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.5
+
+- Spawn every shared calibration helper through the running Python interpreter instead of executing the `.py` file directly, so the offline harness runs on Windows: `CreateProcess` cannot execute a script by shebang, and the write-result, find-review-report, and validate-artifacts selftests aborted the whole run with `OSError: [WinError 193]` before any result artifact was written.
+- Bind a fixture gate command that starts with a bare `python` or `python3` token to the interpreter already running the calibration, removing the dependency on a `python3` entry in the child process PATH.
+- Point the Windows spelling of the isolated harness home at the same temporary directory as `HOME`. `ntpath.expanduser` reads `USERPROFILE`, then `HOMEDRIVE` plus `HOMEPATH`, and never `HOME`, so `env -i` left `~` unresolvable and the code-review validator's `--help` exited non-zero on `Path.home()` alone; without the isolated spelling a helper expanding `~` would have reached the real user profile instead.
+- Resolve the code-review validator's Codex-home fallback only when `CODEX_HOME` is unset, matching the sync and role-manager helpers. The argparse default previously called `Path.home()` on every invocation, including those that supplied the variable.
+- Two Windows gaps stay open and are deliberately out of this change. The paid live A/B gate runner still splits a bare `python3` token and terminates through `os.killpg`, both POSIX-only; that path is blocked in CI and unreachable offline. The offline harness writes its command blockers as extensionless shell scripts, which `CreateProcess` skips, so on Windows the harness isolates by empty credentials rather than by blocked commands.
+- Record which index file answered each structural-context query, and report a disagreement between that path and the one the health probe resolved as evidence in the artifact rather than reconciling it. A run whose answers were complete and fresh keeps its `available` status; both paths are retained so the disagreement is diagnosable. A Codemap that reports no path yields `null` and no claim, so an older provider still works. Structural-context artifacts are now schema version 3.
+- Report an honest structural-context status when no `--target` is supplied: a standard category batch now omits its target-requiring queries instead of failing them, so a targetless `analysis` or `develop` probe can reach `available` rather than always reporting `degraded`. A category whose every query requires a target keeps its bounded error, and an explicit `--query-kind` fact route still degrades on a missing or malformed target.
+- Compose coexisting structural-context caveats into the single new status `stale+degraded` instead of letting a stale index mask a coverage gap; `stale` and `degraded` keep their existing meanings when only one condition holds, and per-query completeness flags are unchanged.
+- Record each skill's Codemap route selection in the contract so the default category batch reads as a deliberate per-workflow choice, and pin that record against the skills themselves with a drift test.
+
 ## 0.7.4
 
 - Accept canonical `Review Findings and Merge Blocks` sections by using regex control sequences as regex tokens instead of matching their backslash spellings literally.

@@ -19,11 +19,11 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from _hook_env import hook_tmp_base
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -31,10 +31,14 @@ import pytest
 
 @pytest.fixture
 def sid(tmp_path: Path) -> Iterator[str]:
-    """Yield a unique session id; clean ``/tmp/claude-state-<id>`` on teardown."""
+    """Yield a unique session id; clean its ``claude-state-<id>`` dir on teardown.
+
+    Base resolved via ``hook_tmp_base()`` so teardown targets the same directory the
+    hook's ``getSentinelDir()`` writes on this platform.
+    """
     s = f"pytest-{tmp_path.name}"
     yield s
-    shutil.rmtree(f"/tmp/claude-state-{s}", ignore_errors=True)
+    shutil.rmtree(hook_tmp_base() / f"claude-state-{s}", ignore_errors=True)
 
 
 @pytest.fixture
@@ -77,7 +81,6 @@ def _session_start(session_id: str) -> dict:
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 class TestAgentRouting:
     """agent-router.js: tier-1 passthrough vs tier-3 fallback to general-purpose."""
 

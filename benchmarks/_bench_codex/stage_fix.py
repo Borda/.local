@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePath
 import re
 import shlex
 import subprocess
@@ -746,6 +746,29 @@ def _suggested_run_dir(study: str) -> Path:
     return Path("benchmarks") / "results" / f"codex-{study}-{uuid4().hex[:12]}"
 
 
+def _repo_relative_argument(path: PurePath) -> str:
+    """Render one repo-relative path as the emitted paid command will be typed.
+
+    The printed command is a shell line whose repo-relative arguments are read by the
+    runner as forward-slash paths. A native rendering would embed the host separator and
+    hand a Windows operator a command the runner cannot resolve.
+
+    Args:
+        path: Repo-relative path to place in the emitted command.
+
+    Returns:
+        The path in POSIX form.
+
+    Examples:
+        >>> from pathlib import PurePosixPath, PureWindowsPath
+        >>> _repo_relative_argument(PureWindowsPath(r"benchmarks\\results\\codex-fix"))
+        'benchmarks/results/codex-fix'
+        >>> _repo_relative_argument(PurePosixPath("benchmarks/results/codex-fix"))
+        'benchmarks/results/codex-fix'
+    """
+    return PurePath(path).as_posix()
+
+
 def _print_paid_command(
     *,
     study: str,
@@ -773,7 +796,7 @@ def _print_paid_command(
     if explicit_selection:
         print(f"  --tasks {tasks} \\")
     print('  --auth-source "$HOME/.codex/auth.json" \\')
-    print(f"  --run-dir {run_dir} \\")
+    print(f"  --run-dir {_repo_relative_argument(run_dir)} \\")
     print(f"  --paid-approval {paid_approval_token(scope_sha256)}")
 
 

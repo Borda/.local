@@ -37,9 +37,9 @@ _ARGS_UNKNOWN=$(printf '%s\n' "$ARGUMENTS" | tr ' ' '\n' \
 _ARGS_UNKNOWN="${_ARGS_UNKNOWN% }"
 [ -z "$_ARGS_UNKNOWN" ] || { printf "! Unknown flag(s): %s\nSupported: --root <path>, --incremental\n" "$_ARGS_UNKNOWN" >&2; exit 1; }
 SETUP_STDERR="${TMPDIR:-/tmp}/codemap-setup-err-$$-${CSID}"
-SCAN_STATE_FILE=$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/setup_scan_env.sh" --arguments "$ARGUMENTS" 2>"$SETUP_STDERR")
+SCAN_STATE_FILE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/setup_scan_env.py" --arguments "$ARGUMENTS" 2>"$SETUP_STDERR")
 if [ $? -ne 0 ] || [ -z "$SCAN_STATE_FILE" ]; then
-  printf "! setup_scan_env.sh failed"; [ -s "$SETUP_STDERR" ] && printf ": %s" "$(cat "$SETUP_STDERR")"; printf "\n"; exit 1
+  printf "! setup_scan_env.py failed"; [ -s "$SETUP_STDERR" ] && printf ": %s" "$(cat "$SETUP_STDERR")"; printf "\n"; exit 1
 fi
 # project-scoped — bare CSID collides across concurrent repos in one session
 _CM_PROJ_SLUG=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
@@ -64,8 +64,10 @@ while IFS= read -r -d '' _arg; do
   SCAN_ARGS+=("$_arg")
 done < "$_ARGS_FILE"
 rm -f "$_ARGS_FILE"
-# gated dispatcher, not the ungated scan-index alias — the writer lease lives only in `codemap-py index`. SCAN_BIN stays as setup_scan_env.sh's existence preflight (the dispatcher needs the same binary present).
-"${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" index --timeout 360 "${SCAN_ARGS[@]}"
+# dispatcher, not the scan-index alias — alias leases in-engine too (graph.main wraps build+publish in rwgate.write_index), but it skips the dispatcher's interpreter probe (exit 127 on no eligible CPython) and is a deprecated shim, removed no earlier than 1.0.0. SCAN_BIN stays setup_scan_env.py's existence preflight (dispatcher needs the same binary present).
+# PATH-literal first token — expansion-bearing form matches no bare-name allow prefix; absolute launcher is the interactive fallback
+command -v codemap-py >/dev/null 2>&1 || { printf "! codemap-py not on PATH — run \"\${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py\" index as one standalone command instead\n" >&2; exit 1; }
+codemap-py index --timeout 360 "${SCAN_ARGS[@]}"
 # capture rc BEFORE branching — inside `if ! cmd; then`, $? is the negated compound's status (always 0), never the scanner's
 _SCAN_RC=$?
 if [ "$_SCAN_RC" -ne 0 ]; then

@@ -19,9 +19,17 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   offline-harness:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
     timeout-minutes: 10
     env:
       CODEX_HARNESS_RESULTS_DIR: ".github/codex-harness-results"

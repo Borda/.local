@@ -89,7 +89,10 @@ Spawn **foundry:linting-expert** agent if mypy or ruff issues need non-trivial f
 **Post-change blast radius** (if codemap installed — soft check):
 
 ```bash
-if command -v codemap-py >/dev/null 2>&1; then
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+PROJ=$(basename "$_ROOT")
+_IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
+if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     codemap-py query rdeps <module> 2>/dev/null | head -20
     echo "^ review rdeps — changes here may affect callers"
 fi

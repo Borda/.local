@@ -498,8 +498,9 @@ Make minimal change to fix root cause:
        # extract the fenced JSON block that follows the marker heading
        _TI_JSON=$(awk '/^## Test Impact \(codemap-py\)/{f=1} f&&/^```json/{g=1;next} f&&/^```/{g=0} g' "$DIAG_FILE")
        _HANDOFF_AT=$(grep -m1 'index_scanned_at:' "$DIAG_FILE" | sed 's/.*index_scanned_at:[[:space:]]*//')
-       PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || basename "$PWD")
-       _LIVE_AT=$(grep -o '"scanned_at"[[:space:]]*:[[:space:]]*"[^"]*"' "${CODEMAP_INDEX_DIR:-.cache/codemap}/${PROJ}.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+       _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+       PROJ=$(basename "$_ROOT")   # raw basename — scanner writes it verbatim, never sanitized
+       _LIVE_AT=$(grep -o '"scanned_at"[[:space:]]*:[[:space:]]*"[^"]*"' "${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}/${PROJ}.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
        case "$_TI_JSON" in *'"stale": true'*|*'"stale":true'*) _TI_STALE=1;; *) _TI_STALE=0;; esac
        if [ "$_TI_STALE" -eq 0 ] && [ -n "$_HANDOFF_AT" ] && [ "$_HANDOFF_AT" = "$_LIVE_AT" ]; then
            REUSED_PYTEST_CMD=$(printf '%s' "$_TI_JSON" | grep -o '"pytest_cmd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')

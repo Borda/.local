@@ -349,7 +349,7 @@ def test_methodology_builder_stale_error_names_exact_rebuild_command(tmp_path: P
     try:
         builder["_write_or_check"](tmp_path / "stale.json", b"expected\n", check=True)
     except ValueError as exc:
-        assert str(exc).endswith("run: python3 benchmarks/build-provider-parity-methodology-manifest.py")
+        assert str(exc).endswith("run: uv run python benchmarks/build-provider-parity-methodology-manifest.py")
     else:
         raise AssertionError("stale methodology output was accepted")
 

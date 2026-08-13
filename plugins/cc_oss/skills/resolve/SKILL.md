@@ -137,7 +137,7 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/n
 [ "$CODEMAP_FORCE_OFF" = "false" ] && cat "$_OSS_SHARED/codemap-gates.md"  # timeout: 5000
 ```
 
-**Codemap gates** — when `CODEMAP_FORCE_OFF=false`, run (from `codemap-gates.md`, loaded above): **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, after `codemap:scan-codebase` set `CODEMAP_ENABLED=true`. Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
+**Codemap gates** — when `CODEMAP_FORCE_OFF=false`, run (from `codemap-gates.md`, loaded above): **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, build with the gated `codemap-py index` binary in the foreground, then set `CODEMAP_ENABLED=true` — never model-invoke the `codemap-py:scan-codebase` skill, which is `disable-model-invocation: true` (user-slash-only). Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
@@ -571,19 +571,20 @@ fi
 <!-- branch: codex-cap — only when codex agent AND N>8 items; adds 1 call (max 5 if user proceeds; worst case = item-select + commit-mode + codex-cap + push-auth + post-pr) -->
 If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
 
-**Structural context (codemap-py — if `CODEMAP_ENABLED=true`)**: before reading action-item-dispatch.md, query blast radius of modules affected by selected items:
+**Codemap index identity (if `CODEMAP_ENABLED=true`)**: resolve the index path the next block reuses. No query runs here — per-item blast radius is action-item-dispatch.md's **Pre-loop blast-radius scan**, which resolves each item's canonical module first and passes it as `rdeps`' positional argument.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r CODEMAP_ENABLED < "${TMPDIR:-/tmp}/resolve-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_ENABLED="false"  # timeout: 3000
 if [ "$CODEMAP_ENABLED" = "true" ]; then
-    _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-    _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
-    codemap-py query rdeps --top 10 2>/dev/null || true  # timeout: 5000
+    # index dir anchors at git root, not cwd — subdir invocation otherwise misses an index that exists. _PROJ = raw basename; scanner writes it unsanitized, so `tr -cd` would seek a filename it never wrote.
+    _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+    _PROJ=$(basename "$_ROOT")
+    _IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
 fi
 ```
 
-If codemap-py output returned: prepend `## Structural Context (codemap-py)` block to each implementation agent prompt in action-item-dispatch.md — blast radius, top callers, coupling pairs.
+Blast radius, top callers and coupling pairs reach each implementation agent through action-item-dispatch.md's own `ITEM_CALLERS` context, not from this step.
 
 **Review pre-flight cache** — reuse the per-module codemap answers `/review` already computed, so the Step 8 blast-radius scan issues 0 duplicate pre-flight queries when a fresh review artifact exists (contract + artifact shape in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache; requires `develop`/`oss` codemap wiring). Locate the latest review run-dir and materialize the per-module cache once, before the per-item loop:
 
@@ -591,7 +592,7 @@ If codemap-py output returned: prepend `## Structural Context (codemap-py)` bloc
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 CODEMAP_CACHE_DIR=""
 if [ "$CODEMAP_ENABLED" = "true" ]; then
-    _IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/${_PROJ}.json"
+    _IDX_FILE="${_IDX}/${_PROJ}.json"  # both set above; git-root-anchored
     CODEMAP_CACHE_DIR=".temp/resolve/codemap-context"  # resolve-owned; stable across the run
     mkdir -p "$CODEMAP_CACHE_DIR"  # timeout: 3000
     # review's pre-flight blob: .temp/review/<ts>/codemap-context.md

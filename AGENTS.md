@@ -18,6 +18,19 @@ Simplicity and reliability come first. Understand the affected flow and root cau
 
 Verification is part of implementation. Work is not complete until relevant checks pass and failures, residual risks, and deliberately deferred scope are reported accurately.
 
+## Multi-OS Executables
+
+Scripts, hooks, `bin/` entry points, and CI steps all run on Linux, macOS, and native Windows. A POSIX-only assumption is a defect to fix at the source, never a reason to skip the platform.
+
+- `pathlib`; `Path(p).is_absolute()` not a leading-slash check; `PurePath(p).as_posix()` before hashing, serializing, or comparing a path — native separators change the digest.
+- POSIX-absolute literals are not portable fixtures: `/host/x` resolves to `D:\host\x` on Windows.
+- Byte-asserted or hashed writes use `newline="\n"` or bytes; text mode emits CRLF on Windows.
+- Sanitized subprocess `env=` keeps `SystemRoot`, `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP` on win32, else the child Python aborts before running; temp dirs via `os.environ.get("TMPDIR") or tempfile.gettempdir()`, never `/tmp`.
+- A workflow `run:` step invoking `.sh` needs explicit `shell: bash` — the Windows default shell dot-sources it and exits zero, a false green.
+- Symlinks, file modes, and uid checks are capabilities: degrade in production code first.
+- Skips are the last resort: never a blanket `skipif(sys.platform == "win32")`, always a capability probe skipping on `OSError`, with each surviving skip documented and re-audited.
+- Green macOS is absence of regression, not Windows support: prove Windows semantics with `PureWindowsPath` or `ntpath`, since monkeypatching `os.name` does not change `pathlib`.
+
 ## Benchmark Isolation
 
 Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not production content. Never copy them into shipped plugins, Skills, templates, or user-facing docs; use neutral generic examples and encode the generalized contract in a regression test instead.
@@ -39,6 +52,6 @@ Plugin-specific authoring, installability, cross-reference, versioning, and veri
 - Python minimum: 3.10. The repository root is an environment anchor, not an installable package.
 - Bootstrap test tooling with `uv sync --only-group test`; benchmark-only dependencies use `uv sync --only-group bench`.
 - Run focused tests with `.venv/bin/python -m pytest <paths>` and broaden to the affected suite before completion.
-- Lint/format Python edits via the pinned pre-commit hooks, never the bare tool: `pre-commit run ruff-check --files <changed-python-paths>` and `pre-commit run ruff-format --files <changed-python-paths>`; direct `ruff` invocation drifts from the version/config pinned in `.pre-commit-config.yaml`.
+- Lint/format edits via the pinned pre-commit hooks, never the bare tool: `pre-commit run ruff-check --files <changed-python-paths>`, `pre-commit run ruff-format --files <changed-python-paths>`, and `pre-commit run mdformat --files <changed-markdown-paths>`; direct `ruff` or `mdformat` invocation drifts from the version/config pinned in `.pre-commit-config.yaml`.
 - Use `pre-commit run --all-files` only when the task requires the repository-wide gate; preserve unrelated working-tree changes.
 - Release and build entry points are plugin-specific; follow `plugins/AGENTS.md` and the owning plugin's scripts and README. Remote publication remains human-owned.

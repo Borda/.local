@@ -6,28 +6,20 @@ Any policy change in one listed instruction file must trigger a relevance review
 
 Apply these rules to every file under `plugins/`; `plugins/CLAUDE.md` remains the full authoring reference, and this file is the Codex-facing distillation.
 
+Root `AGENTS.md` already applies here and is not restated: edit scope, core principles, multi-OS executables, benchmark isolation, focused delegation, Markdown no-wrap, and the test/lint workflow. This file adds only what is specific to authoring plugins.
+
 ## Plugin Workflow
 
-- Bootstrap test tooling from the repository root with `uv sync --only-group test` when the existing `.venv` is unavailable.
 - Run `.venv/bin/python -m pytest -q plugins/<name>` for the touched plugin; use focused test paths while iterating, then the full plugin suite before completion.
-- Lint/format Python edits via the pinned pre-commit hooks, never the bare tool: `pre-commit run ruff-check --files <changed-python-paths>` and `pre-commit run ruff-format --files <changed-python-paths>`; direct `ruff` invocation drifts from the version/config pinned in `.pre-commit-config.yaml`.
 - When `plugins/<name>/scripts/build_package.py` and `validate_package.py` exist, build into a temporary directory and validate the produced package before commit.
 - There is no shared automatic release command. Update the owning manifests and CHANGELOG, validate the package, and leave remote publication to the human workflow.
 - Completion requires relevant tests, lint/format where applicable, package validation where available, README synchronization, the SemVer gate, and `git diff --check`.
-
-## Markdown No-Wrap
-
-Never hard-wrap prose in any Markdown file. Keep each prose paragraph on one physical line; preserve intentional structural breaks in headings, lists, tables, blockquotes, links, HTML `<details>` blocks, and fenced code. Do not blindly unwrap or reflow a whole file; edit only the intended prose and retain its surrounding structure.
 
 ## Markdown Annotation Convention
 
 In plugin Markdown files, write prose annotations, notes, and load directives as `>` blockquotes. Use `#` for intentional Markdown headings and, inside fenced `bash` or `python` blocks, code comments; never use `#` as a fake prose comment or load directive because plain-text `#` changes heading hierarchy.
 
 Comments in procedural code explain only WHY: non-obvious constraints, workarounds, incidents, or safety rationale. Comments in example or pattern code may also explain expected output, motivation, or when to apply the pattern.
-
-## Benchmark Isolation
-
-Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not shipped plugin content. Use neutral generic examples in Skills, templates, and user-facing docs; retain the generalized contract in production regressions without copying benchmark fixtures.
 
 ## Installability
 

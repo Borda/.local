@@ -19,10 +19,8 @@ whole rendered response: a combined response whose unrelated sub-result carried
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
-import tempfile
 from pathlib import Path
 
 _QUERY = re.compile(r"\bscan-query\b|\$SQ\b")
@@ -33,50 +31,22 @@ _EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 #: invalidates anyway — dropping a still-valid sentinel costs one re-query, while keeping
 #: a stale one denies a grep the model actually needed.
 _SOURCE_SUFFIXES = (".py", ".pyi")
-#: Characters that must never reach a tmp filename (the session id is host-supplied).
-_UNSAFE_KEY = re.compile(r"[^A-Za-z0-9_-]")
+# Claude launches this hook as `python "<plugin-root>/hooks/record-exhausted.py"`, which
+# already puts hooks/ on sys.path — but the test suite loads it through
+# `importlib.util.spec_from_file_location`, which does not. Inserting explicitly makes
+# the shared-helper import resolve under every load mechanism.
+_HOOKS_DIR = Path(__file__).resolve().parent
+if str(_HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_DIR))
 
+import _hookutil  # noqa: E402  (needs the sys.path insert above)
 
-def tmp_dir() -> Path:
-    """Return the temp directory the hook sentinels live in.
-
-    ``TMPDIR`` is honoured explicitly rather than left to :func:`tempfile.gettempdir`
-    alone so the value matches ``codemap_py.telemetry``, which resolves it the same way.
-
-    Examples:
-        >>> tmp_dir().is_absolute()
-        True
-    """
-    return Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
-
-
-def session_key(session_id: object) -> str:
-    """Return the sanitized sentinel key for *session_id*, or a session-scoped fallback.
-
-    A missing ``session_id`` used to collapse to the literal ``"nosession"`` inside a
-    machine-global temp directory, so two concurrent projects shared — and could deny each
-    other's greps through — one sentinel. The fallback is therefore scoped by project *and*
-    by the Claude Code session token, which stays the terminal suffix.
-
-    Args:
-        session_id: The host-supplied session id (any type; ``None``/empty means absent).
-
-    Returns:
-        A filename-safe key, never empty.
-
-    Examples:
-        >>> session_key("abc-123")
-        'abc-123'
-        >>> session_key("../../etc/passwd")
-        '------etc-passwd'
-        >>> session_key(None) not in ("", "nosession")
-        True
-    """
-    key = _UNSAFE_KEY.sub("-", str(session_id or "").strip())
-    if key:
-        return key
-    csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
-    return f"{_UNSAFE_KEY.sub('-', Path.cwd().name)}-{_UNSAFE_KEY.sub('-', csid)}"
+# Re-exported, not re-implemented: this hook WRITES the sentinel that
+# ``guard-redundant-scan.py`` reads, so a divergence between their two copies of the key
+# would not raise — it would write one file and read another, and the deny would simply
+# never fire.
+tmp_dir = _hookutil.tmp_dir
+session_key = _hookutil.session_key
 
 
 def sentinel_path(session_id: object) -> Path:

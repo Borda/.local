@@ -39,22 +39,31 @@ python PLUGIN_ROOT/shared/codemap_adapter.py context --category <analysis|develo
   [--target <qname>] [--root <path>] --out <run-directory>/codemap-context.json
 ```
 
-`query-kind` defaults to `standard`, preserving the existing category batch for callers that do not opt into adaptive routing. `skip` records a truthful zero-query decision and does not resolve a launcher, run `doctor`, or start a Codemap subprocess. For a non-standard fact kind with a valid required target, the adapter runs the health probe and exactly one compact query; a missing or malformed required target records a bounded degraded outcome without starting that query. `standard` retains the category's established batch. The adapter persists `artifact_schema_version: 2` and the selected `query_kind` while keeping `protocol_version: codemap-py.integration.v1` unchanged.
+`query-kind` defaults to `standard`, preserving the existing category batch for callers that do not opt into adaptive routing. `skip` records a truthful zero-query decision and does not resolve a launcher, run `doctor`, or start a Codemap subprocess. For a non-standard fact kind with a valid required target, the adapter runs the health probe and exactly one compact query; a missing or malformed required target records a bounded degraded outcome without starting that query. `standard` retains the category's established batch. The adapter persists `artifact_schema_version: 3` and the selected `query_kind` while keeping `protocol_version: codemap-py.integration.v1` unchanged.
 
 A skipped artifact retains the same top-level contract and makes the decision auditable without fabricating provider evidence:
 
 ```json
 {
   "protocol_version": "codemap-py.integration.v1",
-  "artifact_schema_version": 2,
+  "artifact_schema_version": 3,
   "category": "develop",
   "query_kind": "skip",
   "target": "pkg.module::symbol",
   "status": "skipped",
   "probe": {"status": "skipped", "detail": "query kind skip: no Codemap subprocess requested", "launcher": null, "doctor": null},
-  "queries": []
+  "queries": [],
+  "index_path_divergence": []
 }
 ```
+
+## Index-path provenance
+
+Schema 3 adds two provenance fields. Each record in `queries[]` carries `index_path`: the index file the provider reported for that one query — the path it actually opened, or, on a not-indexed exit raised by a failed load, the path it addressed and could not open. A provider that reports no path yields `null`, which is the expected shape for a Codemap predating the field and for a not-indexed exit raised after the index loaded successfully. The adapter never substitutes the probe's path for a missing one.
+
+`index_path_divergence` lists every query whose reported path differs from `probe.doctor.index_path`, each record naming the subcommand and both paths. The two are worth comparing because they are produced by separate processes: `doctor` derives its path from Codemap's resolver, while a query reports the file it opened. A disagreement means the two processes resolved different indexes — a stale index-directory override, a different git root, or a self-heal that rewrote elsewhere — so the probe's path is not provenance for the answers actually returned.
+
+The divergence is recorded, never reconciled, and never folded into `status`. The adapter has no basis for electing one path as correct, and a status token would cost the reader the two paths that make the disagreement diagnosable; a run with divergent paths and complete, fresh answers therefore stays `available`. The paths are compared verbatim rather than normalized, since normalizing would absorb exactly the symlink and relative-root differences worth reporting. A path missing on either side produces no record — absence is not disagreement.
 
 ## Named status vocabulary
 
@@ -65,7 +74,10 @@ A skipped artifact retains the same top-level contract and makes the decision au
 | `stale` | index older than source for at least one query's target | note the caveat, still use the returned evidence, do not silently treat it as exhaustive |
 | `incompatible` | interpreter unsupported, `doctor` payload malformed, or every mapped query failed | fall back to bounded file inspection; record the incompatibility, never retry the adapter within the same run |
 | `degraded` | some evidence returned but `query_complete`/`not_covered`/`degraded` flags a gap | use the evidence, surface the gap as a caveat, never silently present it as exhaustive |
+| `stale+degraded` | the batch is stale **and** gap-flagged, whether both conditions come from one query or from different queries | surface both caveats: re-indexing alone does not make this evidence exhaustive |
 | `skipped` | adaptive routing deliberately selected zero Codemap queries | continue with bounded local inspection; retain the persisted route decision and do not claim structural evidence |
+
+`stale+degraded` is the vocabulary's only composed value, and no further composition is possible: `absent`, `incompatible`, and `skipped` are decided before any query runs, and `stale` is only ever read off a query that parsed successfully. It exists because ranking one condition above the other would drop the other's caveat — `stale` alone invites the false conclusion that re-indexing restores exhaustiveness, and `degraded` alone hides that the evidence describes an older tree. A consumer testing for a single condition splits the value on `+`; the per-query `stale`, `query_complete`, `not_covered`, and `degraded` fields remain in `queries[]` either way.
 
 Absence and incompatibility are non-fatal: the workflow proceeds with its normal bounded file
 inspection. A run must never claim structural evidence it did not actually receive.
@@ -81,7 +93,25 @@ inspection. A run must never claim structural evidence it did not actually recei
 
 Adaptive route kinds are a closed consumer vocabulary: `central` (`central`), `callers` (`fn-rdeps <module::symbol> --exclude-tests`), `blast` (`fn-blast <module::symbol>`), `dependencies` (`rdeps <module>`), `test-impact` (`test-impact <module-or-qname>`), and `coupling` (`coupled`). `standard` selects the category table above; `skip` selects no query. A workflow chooses `skip` for an exact localized edit with no unresolved structural fact, the matching single route for one unresolved fact, and `standard` for broad or unknown scope. An explicit user or tool request for structural evidence overrides `skip`. The decision is made once and the resulting artifact is consumed by all specialists without re-querying.
 
-`target` is a dotted module or `module::symbol` qname when the skill has resolved one at its decision point; `analysis`/`develop` queries marked `requires_target=True` in `codemap_adapter.CATEGORY_QUERIES` return early with a bounded error instead of guessing one. Route normalization uses the module portion for `dependencies`, the full qname for `callers` and `blast`, and either form for `test-impact`. A malformed or missing required target is recorded as degraded context rather than guessed or queried.
+## Route selection per skill
+
+Passing `--query-kind` is a per-workflow decision, not a migration every consumer owes. The default keeps the category batch, so a skill that does not select a route is fully specified rather than unfinished. This table is the record of each skill's choice; a skill that starts or stops selecting routes must move rows here in the same change.
+
+| Skill | Category | Route selection | Why |
+| --- | --- | --- | --- |
+| `develop` | `develop` | adaptive — passes `--query-kind` | resolves one module/symbol at its decision point, so a single fact usually settles the open structural question |
+| `investigate` | `develop` | adaptive — passes `--query-kind` | same decision point, reached only when `scope` names a Python module/symbol |
+| `optimize` | `develop` | adaptive — passes `--query-kind` | same decision point, reached only when `scope_files` resolves to a Python module/symbol |
+| `analyse` | `analysis` | standard batch — no `--query-kind` | its decision point is broad or unknown scope, which the routing rule above already assigns to `standard` |
+| `research` | `analysis` | standard batch — no `--query-kind` | same broad-scope decision point |
+| `code-review` | `review` | standard batch — no `--query-kind` | the category's only query is `diff-impact`, which has no equivalent in the closed fact-kind vocabulary; the sole alternative kind would be `skip` |
+| `code-remediate` | `review` | standard batch — no `--query-kind` | same single-query category |
+| `audit` | `audit` | standard batch — no `--query-kind` | the category's `undocumented --all` and `dead-modules` have no fact-kind equivalents |
+| `release` | `audit` | standard batch — no `--query-kind` | same category |
+
+The five not-applicable skills below select no category at all and are absent from this table by design.
+
+`target` is a dotted module or `module::symbol` qname when the skill has resolved one at its decision point; it is optional for every consuming skill. In a `standard` batch with no target, the queries marked `requires_target=True` in `codemap_adapter.CATEGORY_QUERIES` are dropped from the plan instead of being run and failed, so `analysis` runs `central` alone and `develop` runs `coupled` alone. The artifact then lists only the queries actually attempted and `available` keeps its documented "exhaustive for the queries run" meaning; `degraded` stays reserved for a real gap in provider evidence rather than for a question the caller never asked. A category whose every query requires a target keeps its bounded error, because reporting `available` off zero executed queries would claim evidence never received. An explicit fact route still records a bounded degraded outcome for a missing or malformed required target — there the target is the caller's own required input, not an optional refinement. Route normalization uses the module portion for `dependencies`, the full qname for `callers` and `blast`, and either form for `test-impact`. A malformed or missing required target is never guessed or queried.
 
 ## Not-applicable skills (recorded reason, no forced query)
 

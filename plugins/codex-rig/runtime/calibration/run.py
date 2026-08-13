@@ -228,6 +228,7 @@ class Paths:
     find_review_report: Path
     validate_artifacts: Path
     code_review_validate_artifacts: Path
+    code_review_review_routing: Path
     codex_harness: Path
     checks: Path
     leaks: Path
@@ -293,6 +294,7 @@ class Paths:
             find_review_report=shared_dir / "find-review-report.py",
             validate_artifacts=shared_dir / "validate-artifacts.py",
             code_review_validate_artifacts=skills_dir / "code-review" / "validate_artifacts.py",
+            code_review_review_routing=skills_dir / "code-review" / "review_routing.py",
             codex_harness=project_root / ".github" / "codex-harness.sh",
             checks=out_dir / "checks.txt",
             leaks=out_dir / "leaks.txt",
@@ -1080,6 +1082,18 @@ def cli_argv(path: Path, *arguments: str | Path) -> list[str | Path]:
     return [*prefix, *arguments]
 
 
+def gate_argv(command: str) -> list[str]:
+    """Split a fixture gate command, binding a bare interpreter token to the running Python.
+
+    Windows ships no ``python3`` on PATH and a POSIX ``python`` may resolve to Python 2, so the
+    interpreter already executing this calibration run is the only portable target.
+    """
+    argv = shlex.split(command)
+    if argv and argv[0] in {"python", "python3"}:
+        argv[0] = sys.executable
+    return argv
+
+
 def run_command(
     args: list[str | Path],
     cwd: Path | None = None,
@@ -1126,6 +1140,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         "run-gates": run.paths.run_gates,
         "escalation-ledger": run.paths.shared_dir / "escalation_ledger.py",
         "code-review-validate-artifacts": run.paths.code_review_validate_artifacts,
+        "code-review-review-routing": run.paths.code_review_review_routing,
         "select-git-remote": run.paths.select_git_remote,
         "validate-artifacts": run.paths.validate_artifacts,
         "write-result": run.paths.write_result_py,
@@ -1180,6 +1195,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
     check_python_syntax(run, run.paths.live_ab_runner, "run_live_ab.py")
     check_python_syntax(run, run.paths.live_contract, "live_contract.py")
     check_python_syntax(run, run.paths.code_review_validate_artifacts, "code-review/validate_artifacts.py")
+    check_python_syntax(run, run.paths.code_review_review_routing, "code-review/review_routing.py")
     for label, script in cli_paths.items():
         result = run_command(cli_argv(script, "--help"))
         if result.returncode != 0 or "usage" not in result.stdout.lower():
@@ -1569,7 +1585,7 @@ def selftest_live_ab_contract(run: CalibrationRun, selftest_dir: Path) -> None:
                         destination = fixture_dir / relative
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         destination.write_text(content, encoding="utf-8")
-                    gate = run_command(shlex.split(task["gate_command"]), cwd=fixture_dir)
+                    gate = run_command(gate_argv(task["gate_command"]), cwd=fixture_dir)
                     if gate.returncode == 0:
                         run.fail_and_leak("shared-script-selftests", f"selftest-vacuous:live-ab-fixture:{route_id}")
                 pair_id = f"{campaign_id}:{route_id}:{index}"
@@ -2042,7 +2058,7 @@ def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
 def run_write_result(run: CalibrationRun, out_path: Path, metadata: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     """Run the shared write-result helper with a valid selftest payload."""
     return run_command(
-        [
+        cli_argv(
             run.paths.write_result_py,
             "--out",
             out_path,
@@ -2068,7 +2084,7 @@ def run_write_result(run: CalibrationRun, out_path: Path, metadata: dict[str, An
             json.dumps(metadata, separators=(",", ":")),
             "--artifact-path",
             out_path,
-        ]
+        )
     )
 
 
@@ -2089,12 +2105,12 @@ def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None
             encoding="utf-8",
         )
     expected = newer / "result.json"
-    result = run_command([run.paths.find_review_report, "--target", "#123", "--reports-dir", fixture])
+    result = run_command(cli_argv(run.paths.find_review_report, "--target", "#123", "--reports-dir", fixture))
     if result.returncode != 0:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:find-review-report:match")
     elif result.stdout.strip() != str(expected):
         run.fail_and_leak("shared-script-selftests", f"selftest-mismatch:find-review-report:{result.stdout.strip()}")
-    missing = run_command([run.paths.find_review_report, "--target", "#999", "--reports-dir", fixture])
+    missing = run_command(cli_argv(run.paths.find_review_report, "--target", "#999", "--reports-dir", fixture))
     if missing.returncode == 0:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:find-review-report:missing-target")
 
@@ -2108,7 +2124,7 @@ def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None
             '{"number": 321, "url": "https://github.com/example/repo/pull/321"}\n',
             encoding="utf-8",
         )
-    compatibility = run_command([run.paths.find_review_report, "--target", "#321"], cwd=compatibility_root)
+    compatibility = run_command(cli_argv(run.paths.find_review_report, "--target", "#321"), cwd=compatibility_root)
     expected_legacy = legacy.relative_to(compatibility_root) / "result.json"
     if compatibility.returncode != 0 or compatibility.stdout.strip() != str(expected_legacy):
         run.fail_and_leak("shared-script-selftests", "selftest-failed:find-review-report:legacy-fallback")
@@ -2214,7 +2230,7 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
         run.fail_and_leak("shared-script-selftests", "selftest-failed:validate-artifacts-write-result")
         return
     validation = run_command(
-        [
+        cli_argv(
             run.paths.validate_artifacts,
             "--skill",
             "develop",
@@ -2222,13 +2238,13 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
             validate_dir,
             "--result",
             validate_dir / "result.json",
-        ]
+        )
     )
     if validation.returncode != 0:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:validate-artifacts")
 
     contradictory = run_command(
-        [
+        cli_argv(
             run.paths.write_result_py,
             "--out",
             validate_dir / "contradictory.json",
@@ -2254,7 +2270,7 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
             json.dumps(metadata, separators=(",", ":")),
             "--artifact-path",
             validate_dir / "contradictory.json",
-        ]
+        )
     )
     if contradictory.returncode == 0 or (validate_dir / "contradictory.json").exists():
         run.fail_and_leak("shared-script-selftests", "selftest-failed:write-result-accepted-contradiction")

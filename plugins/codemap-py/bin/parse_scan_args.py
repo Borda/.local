@@ -102,6 +102,37 @@ def parse_scan_args(arguments: str) -> list[str]:
     return tokens
 
 
+def format_scan_args(tokens: list[str]) -> str:
+    """Render parsed tokens as the shell-quoted single-line form printed on stdout.
+
+    ``--root`` and its value stay one space-separated pair so a caller can splice the
+    result straight into a command line; every other token is quoted on its own.
+
+    Args:
+        tokens: Token list as returned by :func:`parse_scan_args`.
+
+    Returns:
+        Space-joined shell-quoted string. Empty string when ``tokens`` is empty.
+
+    Examples:
+        >>> format_scan_args(["--root", "/abs/path"])
+        '--root /abs/path'
+        >>> format_scan_args(["--root", "/abs path", "--incremental"])
+        "--root '/abs path' --incremental"
+        >>> format_scan_args([])
+        ''
+    """
+    quoted_tokens: list[str] = []
+    it = iter(tokens)
+    for token in it:
+        if token == "--root":
+            root_val = next(it, "")
+            quoted_tokens.append(f"--root {shlex.quote(root_val)}")
+        else:
+            quoted_tokens.append(shlex.quote(token))
+    return " ".join(quoted_tokens)
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: read $ARGUMENTS, emit arg tokens, return 0.
 

@@ -1,4 +1,4 @@
-"""Tests for check_cli_flag_drift — SKILL.md flag vs argparse drift detector (Check 42)."""
+"""Tests for check_cli_flag_drift — documented flag vs argparse drift detector (Check 42)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,14 @@ from pathlib import Path
 import pytest
 
 from check_cli_flag_drift import (
+    ORIGIN_DOCSTRING,
     DriftFinding,
     command_scope,
     extract_argparse_flags,
     find_drift,
     iter_argparse_scripts,
     main,
+    usage_block_lines,
 )
 
 
@@ -172,6 +174,101 @@ class TestFindDrift:
         _make_script(tmp_path, "myplugin", "tool.py", _ARGPARSE_BODY)
         _make_skill(tmp_path, "myplugin", "sk", 'python "${ROOT}/bin/tool.py" --ghost\n')
         assert isinstance(find_drift(tmp_path)[0], DriftFinding)
+
+
+# ---------------------------------------------------------------------------
+# module-docstring Usage: block
+# ---------------------------------------------------------------------------
+
+
+def _docstring_script(usage: str, prose: str = "") -> str:
+    """Build a bin/ script whose docstring carries ``usage`` inside a Usage: block."""
+    return f'"""tool.py — a summary.\n\n{prose}Usage:\n{usage}\n"""\n{_ARGPARSE_BODY}'
+
+
+class TestUsageBlockLines:
+    def test_block_stops_at_next_section(self) -> None:
+        """The block ends where the next docstring section begins, not at the first blank line."""
+        source = _docstring_script("    tool.py --real\n\n    tool.py --recurse\n\nNotes:\n    --ghost")
+        assert [line.strip() for line in usage_block_lines(source)] == [
+            "",
+            "tool.py --real",
+            "",
+            "tool.py --recurse",
+            "",
+        ]
+
+    def test_no_usage_section_yields_no_lines(self) -> None:
+        """A docstring without a Usage: section contributes nothing to scan."""
+        assert usage_block_lines('"""tool.py — a summary, no usage."""\n') == []
+
+
+class TestDocstringDrift:
+    def test_phantom_flag_in_own_usage_block_is_a_finding(self, tmp_path: Path) -> None:
+        """A script advertising a flag its parser lacks is caught — the E-N9 regression.
+
+        This is the shape that escaped detection and was then copied into four documents:
+        the phantom was advertised by the script's own docstring, which nothing validated.
+        """
+        _make_script(tmp_path, "myplugin", "tool.py", _docstring_script("    tool.py --check"))
+
+        findings = find_drift(tmp_path)
+
+        assert [(f.flag, f.script, f.origin) for f in findings] == [("--check", "tool.py", ORIGIN_DOCSTRING)]
+        assert findings[0].document.endswith("myplugin/bin/tool.py")
+
+    def test_real_flag_in_own_usage_block_is_not_a_finding(self, tmp_path: Path) -> None:
+        """Discrimination: the same scan must accept a Usage block naming only real flags."""
+        _make_script(tmp_path, "myplugin", "tool.py", _docstring_script("    tool.py --real --recurse"))
+        assert find_drift(tmp_path) == []
+
+    def test_wrapped_tool_flag_in_summary_prose_is_not_a_finding(self, tmp_path: Path) -> None:
+        """Prose naming another tool's flag is not this script's CLI — the dominant false positive."""
+        source = _docstring_script(
+            "    tool.py --real",
+            prose="It runs ``pytest --tb=short`` and parses ``--root`` out of $ARGUMENTS.\n\n",
+        )
+        _make_script(tmp_path, "myplugin", "tool.py", source)
+        assert find_drift(tmp_path) == []
+
+    def test_piped_producer_flag_is_not_attributed_to_this_script(self, tmp_path: Path) -> None:
+        """A Usage line piping another command in owns its own flags up to the pipe."""
+        source = _docstring_script("    other-cli query --top 100 | tool.py --real")
+        _make_script(tmp_path, "myplugin", "tool.py", source)
+        assert find_drift(tmp_path) == []
+
+    def test_passthrough_script_docstring_never_drifts(self, tmp_path: Path) -> None:
+        """A REMAINDER passthrough accepts arbitrary flags, so its docstring cannot drift."""
+        body = "import argparse\np = argparse.ArgumentParser()\np.add_argument('x', nargs=argparse.REMAINDER)\n"
+        source = f'"""tool.py — a summary.\n\nUsage:\n    tool.py --anything\n"""\n{body}'
+        _make_script(tmp_path, "myplugin", "tool.py", source)
+        assert find_drift(tmp_path) == []
+
+    def test_same_basename_in_two_plugins_is_judged_per_copy(self, tmp_path: Path) -> None:
+        """One plugin's real flag must not excuse a phantom in another plugin's same-named copy."""
+        _make_script(tmp_path, "alpha", "tool.py", _docstring_script("    tool.py --real"))
+        beta_body = (
+            '"""tool.py — a summary.\n\nUsage:\n    tool.py --check\n"""\n'
+            "import argparse\np = argparse.ArgumentParser()\np.add_argument('--check')\n"
+        )
+        _make_script(tmp_path, "beta", "tool.py", beta_body)
+
+        # `--check` is real in beta and absent from alpha; neither copy documents the other's.
+        assert find_drift(tmp_path) == []
+
+    def test_cli_exits_1_and_names_the_docstring_origin(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The finding line must say the docstring documented it, so the reader opens the right file."""
+        monkeypatch.chdir(tmp_path)
+        _make_script(tmp_path, "myplugin", "tool.py", _docstring_script("    tool.py --check"))
+
+        rc = main(["--plugins-dir", str(tmp_path)])
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert ORIGIN_DOCSTRING in out
+        assert "--check" in out
 
 
 # ---------------------------------------------------------------------------

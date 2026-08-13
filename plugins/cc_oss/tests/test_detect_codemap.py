@@ -139,52 +139,171 @@ class TestMain:
         assert (out_dir / "myprefix-codemap-enabled-shared").exists()
 
 
-class TestResolveProj:
-    """_resolve_proj() helper — git-based slug derivation."""
+def _init_repo(path: Path) -> Path:
+    """Create a git repository at *path* and return the root git itself reports."""
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True, capture_output=True)
+    top = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return Path(top)
 
-    def test_git_success_returns_sanitized_basename(self) -> None:
-        """git rev-parse success → basename of toplevel, sanitized."""
+
+class TestProjectRoot:
+    """_project_root() — git-toplevel anchoring (E-H1)."""
+
+    def test_git_success_returns_toplevel(self) -> None:
+        """git rev-parse success → the reported toplevel path, not the CWD."""
         mock_result = mock.Mock(returncode=0, stdout="/home/user/my-project\n")
         with mock.patch("detect_codemap.subprocess.run", return_value=mock_result):
-            proj = detect_codemap._resolve_proj(None)
-        assert proj == "my-project"
+            assert detect_codemap._project_root() == Path("/home/user/my-project")
 
-    def test_git_nonzero_exit_returns_default(self) -> None:
-        """git rev-parse non-zero exit → 'default'."""
+    def test_git_nonzero_exit_falls_back_to_cwd(self) -> None:
+        """git rev-parse non-zero exit → CWD, matching the provider's own fallback."""
         mock_result = mock.Mock(returncode=128, stdout="")
         with mock.patch("detect_codemap.subprocess.run", return_value=mock_result):
-            proj = detect_codemap._resolve_proj(None)
-        assert proj == "default"
+            assert detect_codemap._project_root() == Path.cwd()
 
-    def test_git_timeout_returns_default(self) -> None:
-        """subprocess.run raising TimeoutExpired → 'default'."""
+    def test_git_timeout_falls_back_to_cwd(self) -> None:
+        """subprocess.run raising TimeoutExpired → CWD, never an exception."""
         with mock.patch(
             "detect_codemap.subprocess.run",
             side_effect=subprocess.TimeoutExpired("git", 5),
         ):
-            proj = detect_codemap._resolve_proj(None)
-        assert proj == "default"
+            assert detect_codemap._project_root() == Path.cwd()
 
-    def test_proj_override_returned_directly_without_git(self) -> None:
-        """proj_override bypasses git entirely and is returned as-is."""
-        with mock.patch("detect_codemap.subprocess.run") as mock_run:
-            proj = detect_codemap._resolve_proj("explicit-proj")
-        mock_run.assert_not_called()
-        assert proj == "explicit-proj"
+    def test_git_missing_binary_falls_back_to_cwd(self) -> None:
+        """git absent (OSError) → CWD, never an exception."""
+        with mock.patch("detect_codemap.subprocess.run", side_effect=OSError("no git")):
+            assert detect_codemap._project_root() == Path.cwd()
 
-    def test_special_chars_stripped_from_basename(self) -> None:
-        """Non-alphanumeric/dot/dash/underscore chars stripped from git basename."""
-        mock_result = mock.Mock(returncode=0, stdout="/tmp/my repo with spaces\n")
-        with mock.patch("detect_codemap.subprocess.run", return_value=mock_result):
-            proj = detect_codemap._resolve_proj(None)
-        assert proj == "myrepowithspaces"
 
-    def test_empty_basename_after_sanitize_returns_default(self) -> None:
-        """Basename all-special chars → empty after sanitize → 'default' fallback."""
-        mock_result = mock.Mock(returncode=0, stdout="/tmp/!!!\n")
-        with mock.patch("detect_codemap.subprocess.run", return_value=mock_result):
-            proj = detect_codemap._resolve_proj(None)
-        assert proj == "default"
+class TestResolveProj:
+    """_resolve_proj() — raw-basename naming, matching the provider (E-H3)."""
+
+    def test_basename_used_verbatim(self) -> None:
+        """Plain basename returned as-is."""
+        assert detect_codemap._resolve_proj(None, Path("/home/user/my-project")) == "my-project"
+
+    def test_proj_override_wins(self) -> None:
+        """--proj bypasses the root-derived name entirely."""
+        assert detect_codemap._resolve_proj("explicit-proj", Path("/home/user/other")) == "explicit-proj"
+
+    @pytest.mark.parametrize("name", ["my repo with spaces", "café", "a+b", "proj(1)"])
+    def test_special_chars_are_not_stripped(self, name: str) -> None:
+        """Space/'+'/non-ASCII survive: the scanner writes the RAW basename.
+
+        Regression for E-H3 — the old unicode-``isalnum`` filter turned ``a+b`` into
+        ``ab`` and ``my repo`` into ``myrepo``, so the consumer sought a filename the
+        scanner never wrote: a permanent, silent false ``no_index``.
+        """
+        assert detect_codemap._resolve_proj(None, Path("/tmp") / name) == name
+
+
+class TestIndexAnchoring:
+    """End-to-end index location — anchored at the git root, not the CWD."""
+
+    def test_subdir_invocation_finds_root_anchored_index(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Invoked from a repo subdirectory, the root's index still counts (E-H1).
+
+        The old default was the cwd-relative string ``.cache/codemap``, so running any
+        skill from ``<repo>/pkg/sub`` probed ``<repo>/pkg/sub/.cache/codemap`` and
+        reported ``no_index`` while the index sat at the repo root.
+        """
+        root = _init_repo(tmp_path / "my-repo")
+        index_dir = root / ".cache" / "codemap"
+        index_dir.mkdir(parents=True)
+        (index_dir / f"{root.name}.json").write_text("{}")
+        subdir = root / "pkg" / "sub"
+        subdir.mkdir(parents=True)
+
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.delenv("CODEMAP_INDEX_DIR", raising=False)
+        monkeypatch.chdir(subdir)
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
+            rc = detect_codemap.main(["--prefix", "test"])
+
+        assert rc == 0
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
+        assert not (subdir / ".cache").exists(), "must not have probed a cwd-relative index dir"
+
+    def test_non_ascii_repo_name_index_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A repo directory named ``café`` resolves to ``café.json`` (E-H3)."""
+        root = _init_repo(tmp_path / "café")
+        index_dir = root / ".cache" / "codemap"
+        index_dir.mkdir(parents=True)
+        (index_dir / f"{root.name}.json").write_text("{}")
+
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.delenv("CODEMAP_INDEX_DIR", raising=False)
+        monkeypatch.chdir(root)
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
+            rc = detect_codemap.main(["--prefix", "test"])
+
+        assert rc == 0
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "true\n"
+
+    def test_directory_named_like_index_does_not_pass_gate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A *directory* called ``<proj>.json`` is not an index (E-L3)."""
+        idx_dir = tmp_path / "idx"
+        (idx_dir / "proj.json").mkdir(parents=True)
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        with mock.patch("detect_codemap.shutil.which", return_value="/usr/bin/codemap-py"):
+            rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(idx_dir)])
+        assert rc == 0
+        assert (tmp_path / "test-codemap-enabled-shared").read_text() == "false\n"
+        assert (tmp_path / "test-codemap-currency-shared").read_text() == "no_index\n"
+
+
+class TestCurrency:
+    """Currency probe — fail-open, but never silently (E-L4)."""
+
+    def test_probe_failure_announces_the_coercion(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Unparsable probe output → 'current' written, coercion noted on stderr."""
+        idx_dir = tmp_path / "idx"
+        idx_dir.mkdir()
+        (idx_dir / "proj.json").write_text("{}")
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+        def _which(name: str) -> str | None:
+            return "/usr/bin/check-index-currency" if name == "check-index-currency" else "/usr/bin/codemap-py"
+
+        with (
+            mock.patch("detect_codemap.shutil.which", side_effect=_which),
+            mock.patch("detect_codemap.subprocess.run", return_value=mock.Mock(returncode=0, stdout="not json")),
+        ):
+            rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(idx_dir)])
+
+        assert rc == 0
+        assert (tmp_path / "test-codemap-currency-shared").read_text() == "current\n"
+        assert "staleness was NOT verified" in capsys.readouterr().err
+
+    def test_probe_absent_is_silent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """No check-index-currency on PATH → 'current', no warning (nothing failed)."""
+        idx_dir = tmp_path / "idx"
+        idx_dir.mkdir()
+        (idx_dir / "proj.json").write_text("{}")
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+        def _which(name: str) -> str | None:
+            return None if name == "check-index-currency" else "/usr/bin/codemap-py"
+
+        with mock.patch("detect_codemap.shutil.which", side_effect=_which):
+            rc = detect_codemap.main(["--prefix", "test", "--proj", "proj", "--idx-dir", str(idx_dir)])
+
+        assert rc == 0
+        assert (tmp_path / "test-codemap-currency-shared").read_text() == "current\n"
+        assert "staleness was NOT verified" not in capsys.readouterr().err
 
 
 def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:

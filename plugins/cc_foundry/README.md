@@ -203,6 +203,7 @@ Full-sweep quality audit of `.claude/` config + all `plugins/*/` agent and skill
 - Plugin integration correctness (codex plugin, foundry plugin)
 - File length, heading hierarchy, LLM context minimality
 - Config token overhead: total always-loaded config >100 KB, single rules file >10 KB (rules/ loads at session start; agents/skills lazy-loaded)
+- Codemap index guards: every file resolving a codemap index path must be MANIFEST-managed, declared in the guard registry with its shape, or call the provider CLI (which never spells the path); registry entries whose file no longer holds a guard fail too, so the inventory cannot rot
 
 Outputs structured report. With fix level: delegates fixes to sub-agents (never edits inline), re-audits modified files to confirm fixes held. Convergence loop up to 5 passes.
 
@@ -872,11 +873,12 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 | File                              | Script                       | Tests | Covered                                                                                                                                                                          |
 | --------------------------------- | ---------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `test_check_routing_links.py`     | `check_routing_links.py`     | 42    | Computed path resolution, orphan-risk detection (R2), bin-ref integrity (R3), security path guard                                                                                |
+| `test_check_codemap_guard.py`     | `check_codemap_guard.py`     | 42    | MANIFEST-managed vs registry-declared vs provider-CLI classification, registry rot detection, git-root anchoring and raw-project-name invariants                                 |
 | `test_symlink_with_guard.py`      | `symlink_with_guard.py`      | 35    | Create/update/remove symlinks, guard against stale links, unconditional purge of `~/.claude/skills/` links                                                                       |
 | `test_extract_code_blocks.py`     | `extract_code_blocks.py`     | 30    | Fence parsing, lang normalisation, heuristic code/prose classification, token filtering                                                                                          |
 | `test_check_bash_persistence.py`  | `check_bash_persistence.py`  | 28    | Cross-block variable reference detection, env-var filtering, multi-block files                                                                                                   |
 | `test_find_polluter.py`           | `find_polluter.py`           | 24    | Safe/unsafe node-id validation, isolation test runner, bisect loop                                                                                                               |
-| `test_check_cli_flag_drift.py`    | `check_cli_flag_drift.py`    | 24    | AST flag extraction, invocation-scoped matching, REMAINDER passthrough, no-exec guarantee                                                                                        |
+| `test_check_cli_flag_drift.py`    | `check_cli_flag_drift.py`    | 35    | AST flag extraction, invocation-scoped matching, docstring `Usage:`-block scan vs own argparse surface, REMAINDER passthrough, no-exec guarantee                                 |
 | `test_verify_perm.py`             | `verify_perm.py`             | 21    | Settings allow-entry detection, missing/malformed JSON, CLI exit codes                                                                                                           |
 | `test_check_orphaned_bin.py`      | `check_orphaned_bin.py`      | 21    | Orphaned bin/ script detection, consumer-reference parsing, multi-plugin scan                                                                                                    |
 | `test_cost_analyzer.py`           | `cost_analyzer.py`           | 21    | Message-id dedupe (3x-inflation guard), tier/cost pricing, main/sidechain bucketing, subagent-transcript merge, session discovery no-double-count, CLI session-id + window modes |

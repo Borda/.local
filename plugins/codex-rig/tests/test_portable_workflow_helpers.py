@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import pytest
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 COLLECT_DIFF = PLUGIN_ROOT / "shared" / "collect_diff.py"
 RUN_GATES = PLUGIN_ROOT / "shared" / "run_gates.py"
+REVIEW_VALIDATOR = PLUGIN_ROOT / "skills" / "code-review" / "validate_artifacts.py"
 GATE_IDS = ("lint", "format", "types", "tests", "review")
 
 
@@ -240,3 +242,31 @@ def test_run_gates_times_out_and_terminates_native_process(tmp_path: Path) -> No
 def test_portable_helpers_do_not_ship_shell_compatibility_wrappers(wrapper_name: str) -> None:
     """Keep the plugin helper surface Python-only across supported platforms."""
     assert not (PLUGIN_ROOT / "shared" / wrapper_name).exists()
+
+
+def test_offline_harness_isolates_the_windows_spelling_of_home() -> None:
+    """Keep the temporary harness home reachable through the variable Windows actually reads."""
+    harness = (PLUGIN_ROOT.parents[1] / ".github" / "codex-harness.sh").read_text(encoding="utf-8")
+
+    assert 'CHILD_ENV+=("USERPROFILE=$(to_child_path "$TMP_HOME")")' in harness
+
+
+def test_review_validator_help_survives_a_host_without_home_variables(tmp_path: Path) -> None:
+    """Reject a home lookup on the argparse default path, which Windows resolves from USERPROFILE."""
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in ("PATH", "SystemRoot", "SYSTEMROOT", "COMSPEC", "ComSpec", "PATHEXT", "TEMP", "TMP", "TMPDIR")
+    }
+    environment["CODEX_HOME"] = str(tmp_path / ".codex")
+
+    completed = subprocess.run(
+        [sys.executable, str(REVIEW_VALIDATOR), "--help"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "usage" in completed.stdout.lower()

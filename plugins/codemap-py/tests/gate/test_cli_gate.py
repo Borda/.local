@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -118,6 +119,84 @@ def test_override_lease_write_and_report_paths_are_one_path(tmp_path: Path, monk
 
     reported = Path(json.loads(_run_cli(["doctor", "--json"], cwd=project).stdout)["index_path"])
     assert reported == written[0]
+
+
+def test_override_query_leases_and_loads_the_path_doctor_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: a real query leases and loads exactly the file doctor names.
+
+    The sibling test above stops at the written and doctor-reported paths — it never
+    loads an index, so a reader resolving a different path would still pass it. That is
+    the half of the split this one closes: the query runs for real, and the gate's
+    coordination root is located afterwards (the writer's own is cleared first, so the
+    one found can only be this query's), making the leased path and the loaded path
+    observed rather than inferred.
+
+    Both halves of the original split fail loudly and separately here: a writer that
+    publishes elsewhere trips the ``is_file`` arrange check, a reader that leases
+    elsewhere trips the ``leased`` assertion with the path it actually used.
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "mod.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
+    override = tmp_path / "shared"
+    monkeypatch.setenv("CODEMAP_INDEX_DIR", str(override))
+    assert _run_cli(["index", "--root", str(project)]).returncode == 0
+    index_file = override.resolve() / "proj.json"
+    assert index_file.is_file(), "writer did not publish at the flat override path"
+    shutil.rmtree(index_file.parent / _index_identity.COORDINATION_DIRNAME, ignore_errors=True)
+
+    result = _run_cli(["query", "central", "--top", "3"], cwd=project)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["central"], "query returned no data — it did not load the published index"
+    leased = sorted(p.parent for p in tmp_path.rglob(_index_identity.COORDINATION_DIRNAME))
+    assert leased == [index_file.parent], f"query leased somewhere other than the published index: {leased}"
+    reported = Path(json.loads(_run_cli(["doctor", "--json"], cwd=project).stdout)["index_path"])
+    assert reported == index_file
+
+
+def test_query_reports_the_index_path_it_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A query's own output names the index file it read, under a flat override."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "mod.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
+    override = tmp_path / "shared"
+    monkeypatch.setenv("CODEMAP_INDEX_DIR", str(override))
+    assert _run_cli(["index", "--root", str(project)]).returncode == 0
+    index_file = override.resolve() / "proj.json"
+
+    result = _run_cli(["query", "central", "--top", "3"], cwd=project)
+
+    assert result.returncode == 0, result.stderr
+    assert Path(json.loads(result.stdout)["index"]["index_path"]) == index_file
+
+
+def test_reported_index_path_comes_from_the_load_not_the_resolver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The emitted path survives a resolver whose answer changed after the load.
+
+    This is the whole point of the field: a consumer comparing its own probe against a
+    path the provider recomputes on demand compares two runs of one function and learns
+    nothing. Re-pointing ``CODEMAP_INDEX_DIR`` between the load and the emit makes the
+    two answers differ, so an implementation that resolved at emit time fails here.
+    """
+    from codemap_py import query
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "mod.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
+    override = tmp_path / "shared"
+    monkeypatch.setenv("CODEMAP_INDEX_DIR", str(override))
+    assert _run_cli(["index", "--root", str(project)]).returncode == 0
+    index_file = override.resolve() / "proj.json"
+
+    index = query._load_index_leased(index_file)
+    monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path / "elsewhere"))
+
+    assert Path(query._cmd_coverage(index, command="central")["index_path"]) == index_file
 
 
 def _hold_writer_intent(index_path: str, ready: Path, hold: float) -> None:

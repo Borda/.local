@@ -84,11 +84,15 @@ class TestTasksFile:
         assert len(tasks) == 55
         assert script_gen_bench._expected_query_contract_errors(tasks) == []
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX scan-query launcher is not executable on native Windows")
     def test_expected_query_commands_are_supported_by_scan_query(self, script_gen_bench: Any) -> None:
-        """The benchmark's declared command allowlist stays within the live CLI surface."""
+        """The benchmark's declared command allowlist stays within the live CLI surface.
+
+        The launcher runs through ``sys.executable`` rather than by direct execution, which is
+        how the script itself and the sibling lanes start it — so this contract is checked on
+        Windows too, where an extension-less shebang script cannot be launched directly.
+        """
         launcher = script_gen_bench.git_toplevel() / "plugins" / "codemap-py" / "bin" / "scan-query"
-        result = subprocess.run([str(launcher), "--help"], capture_output=True, text=True, check=True)
+        result = subprocess.run([sys.executable, str(launcher), "--help"], capture_output=True, text=True, check=True)
         match = re.search(r"\{([^}]+)\}", result.stdout)
 
         assert match is not None
@@ -1542,7 +1546,9 @@ class TestTaskType:
         }
         original = json.dumps(payload, indent=2, sort_keys=True) + "\n"
         tasks_file = tmp_path / "tasks.json"
-        tasks_file.write_text(original)
+        # newline="\n": the fixture states the LF bytes the assertion compares against, instead of
+        # letting the host's text mode seed the file with a different line ending than it expects.
+        tasks_file.write_text(original, newline="\n")
         monkeypatch.setattr(script_gen_bench, "TASKS_FILE", tasks_file)
 
         fake_sq = tmp_path / "scan-query"
@@ -1578,6 +1584,9 @@ class TestTaskType:
 
         assert serialized_payloads
         assert tasks_file.read_bytes() == original.encode()
+        # The task file is a byte-compared artefact: the write-back must emit LF on every host,
+        # never the host line ending that text mode would substitute.
+        assert b"\r\n" not in tasks_file.read_bytes()
 
 
 class TestValidatorsDict:

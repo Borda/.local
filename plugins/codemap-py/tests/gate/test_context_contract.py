@@ -145,40 +145,50 @@ class TestContextContract:
         tmp_path: Path,
         query_kind: str,
         expected_queries: list[str],
+        posix_bash: str,
     ) -> None:
         """The executable guard must skip retrieval or issue only the mapped compact query."""
         contract = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
         batch = contract.split("## Batch pre-flight pattern", 1)[1].split("```bash", 1)[1].split("```", 1)[0]
-        bin_dir = tmp_path / "bin"
-        bin_dir.mkdir()
         trace = tmp_path / "queries.txt"
 
-        scripts = {
-            "git": '#!/bin/sh\nprintf "%s\\n" "$FAKE_REPO"\n',
-            "scan-index": "#!/bin/sh\nexit 0\n",
-            "scan-query": (
-                '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TRACE"\nprintf \'%s\\n\' \'{"query_complete":true}\'\n'
-            ),
-        }
-        for name, body in scripts.items():
-            path = bin_dir / name
-            path.write_text(body, encoding="utf-8")
-            path.chmod(0o755)
+        # Shell functions, not executables on PATH: whether an extensionless file carrying a
+        # shebang counts as executable is a property of the host — Git-for-Windows decides it
+        # from mount flags and content sniffing, and Python's chmod cannot set that bit at all.
+        # This test measures which queries the snippet issues, never how a host resolves a
+        # command, and `command -v` reports functions, so the snippet's own guard still runs.
+        stubs = "\n".join(
+            (
+                'git() { printf "%s\\n" "$FAKE_REPO"; }',
+                "scan-index() { return 0; }",
+                'scan-query() { printf "%s\\n" "$*" >> "$TRACE"; printf \'%s\\n\' \'{"query_complete":true}\'; }',
+                "",
+            )
+        )
 
         index_dir = tmp_path / ".cache" / "codemap"
         index_dir.mkdir(parents=True)
         (index_dir / f"{tmp_path.name}.json").write_text("{}\n", encoding="utf-8")
         env = os.environ | {
             "CODEMAP_QUERY_KIND": query_kind,
-            "FAKE_REPO": str(tmp_path),
-            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            # Values the *shell* reads, so both are spelled the way it reads them: `basename`
+            # does not split on a backslash, so a native `C:\...\repo` would leave the whole
+            # string as the project name and the index probe below would never match.
+            "FAKE_REPO": tmp_path.as_posix(),
             "TARGET_FN": "target",
             "TARGET_MODULE": "package.module",
             "TARGET_QUALIFIED": "package.module::target",
-            "TRACE": str(trace),
+            "TRACE": trace.as_posix(),
         }
 
-        subprocess.run(["bash", "-c", batch], cwd=tmp_path, env=env, check=True, capture_output=True, text=True)
+        subprocess.run(
+            [posix_bash, "-c", stubs + batch],
+            cwd=tmp_path,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
         queries = trace.read_text(encoding="utf-8").splitlines() if trace.exists() else []
         assert queries == expected_queries
@@ -211,7 +221,9 @@ class TestGatesContract:
             pytest.param("Rebuild now", id="b-rebuild"),
             pytest.param("Continue with stale data", id="b-stale"),
             pytest.param("Skip codemap", id="b-skip"),
-            pytest.param("run `scan-index` in the foreground", id="build-scan-index"),
+            # E-N7: was the bare `scan-index` alias, which every skill and consumer wrapper
+            # had already migrated off — the wrappers cancelled it with an explicit override.
+            pytest.param("run `codemap-py index` in the foreground", id="build-gated-launcher"),
         ],
     )
     def test_carries_gate_machinery(self, marker: str):

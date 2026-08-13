@@ -5,6 +5,12 @@ Auto-loads all ``bin/`` Python scripts as importable modules so tests can
 
 JS hook helpers ``run_hook`` and ``state_dir`` are exposed as pytest fixtures
 so test methods receive them as parameters — no explicit imports required.
+
+Non-fixture host-capability helpers (``hook_tmp_base``, ``bash_runs_posix_script``)
+live in ``_hook_env.py``, NOT here. Nothing may import this module by the bare name
+``conftest``: ``ini_options.testpaths`` spans ``benchmarks`` and ``plugins``, every
+tree has its own ``conftest.py``, and under ``--import-mode=importlib`` the bare name
+resolves to whichever one loaded first — ``benchmarks/conftest.py`` in a full run.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from pathlib import Path
 from typing import Callable
 
 import pytest
+
 
 _TESTS_DIR = Path(__file__).resolve().parent
 if str(_TESTS_DIR) not in sys.path:
@@ -71,7 +78,10 @@ def run_hook() -> Callable[..., subprocess.CompletedProcess]:
             ["node", str(_HOOKS_DIR / hook)],
             input=json.dumps(payload),
             capture_output=True,
-            text=True,
+            # Explicit UTF-8, never bare text=True: that decodes with the parent's locale codec,
+            # and cp1252 has no mapping for 0x8f — the VS-16 byte of the statusline's emoji
+            # markers. The pipe reader thread dies mid-decode and stdout silently becomes None.
+            encoding="utf-8",
             env=env,
             cwd=str(cwd) if cwd else None,
         )
@@ -81,9 +91,15 @@ def run_hook() -> Callable[..., subprocess.CompletedProcess]:
 
 @pytest.fixture
 def state_dir() -> Callable[[str], Path]:
-    """Return callable that maps a session id to its ``/tmp/claude-state-<sid>`` path."""
+    """Return callable that maps a session id to its ``claude-state-<sid>`` path.
+
+    Base comes from :func:`hook_tmp_base`, so the path tracks the hook's own
+    ``getSentinelDir()`` on every platform instead of assuming ``/tmp``.
+    """
+
+    from _hook_env import hook_tmp_base  # local: _TESTS_DIR is on sys.path only after this module loads
 
     def _state_dir(sid: str) -> Path:
-        return Path("/tmp") / f"claude-state-{sid}"
+        return hook_tmp_base() / f"claude-state-{sid}"
 
     return _state_dir

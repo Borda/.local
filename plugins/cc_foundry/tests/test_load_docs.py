@@ -55,10 +55,12 @@ def fake_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "plugin_install"
     modes = root / "skills" / "demo" / "modes"
     modes.mkdir(parents=True)
-    (modes / "one.md").write_text("mode body\n", encoding="utf-8")
+    # write_bytes, not write_text: text mode translates "\n" to CRLF on Windows, which would
+    # make the byte-exact assertions below test the fixture's newline handling, not the loader's.
+    (modes / "one.md").write_bytes(b"mode body\n")
     shared = root / "skills" / "_shared"
     shared.mkdir(parents=True)
-    (shared / "doc.md").write_text("shared body\n", encoding="utf-8")
+    (shared / "doc.md").write_bytes(b"shared body\n")
     (root / ".claude-plugin").mkdir()
     (root / ".claude-plugin" / "plugin.json").write_text('{"name": "foundry"}', encoding="utf-8")
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(root))
@@ -70,6 +72,15 @@ def test_load_mode_emits_file_verbatim(fake_plugin: Path, capsysbinary: pytest.C
     """Resolved file is written to stdout byte-for-byte, exit 0."""
     assert load_mode.main(["demo", "modes", "one.md"]) == 0
     assert capsysbinary.readouterr().out == b"mode body\n"
+
+
+def test_load_mode_passes_crlf_through_unchanged(fake_plugin: Path, capsysbinary: pytest.CaptureFixture[bytes]) -> None:
+    """A CRLF file emits CRLF — the loader is a byte pipe, never a newline translator."""
+    (fake_plugin / "skills" / "demo" / "modes" / "crlf.md").write_bytes(b"line one\r\nline two\r\n")
+
+    assert load_mode.main(["demo", "modes", "crlf.md"]) == 0
+
+    assert capsysbinary.readouterr().out == b"line one\r\nline two\r\n"
 
 
 def test_load_mode_missing_subdir_breaks(fake_plugin: Path, capsys: pytest.CaptureFixture[str]) -> None:

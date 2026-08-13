@@ -114,6 +114,27 @@ def test_check_cli_json_exits_zero(repo: Path, capsys: pytest.CaptureFixture[str
     assert payload["protocol"] == integration.PROTOCOL_VERSION
 
 
+def test_every_managed_file_target_exists_in_this_source_tree() -> None:
+    """Every ``CONSUMER_MANAGED_FILE`` target is a real file in this checkout (E-H4).
+
+    The map names the host file each consumer's managed block is inserted into. A target
+    that does not exist reads as a first-time insert against a path nothing ships, so the
+    defect stays invisible until an apply run creates a stray file — which is exactly how
+    ``foundry`` came to point at an absent ``skills/_shared/codemap-context.md``. Every
+    other test here builds a disposable fixture tree, so none of them can catch it: this
+    one deliberately asserts against the real source checkout.
+    """
+    repo_root = Path(__file__).resolve().parents[4]
+    if not (repo_root / integration.PROVIDER_DIR).is_dir():
+        pytest.skip("not running from a source checkout")
+    missing = [
+        f"{target.plugin_dir}/{integration.CONSUMER_MANAGED_FILE[target.consumer]}"
+        for target in integration.ALL_TARGETS
+        if not (repo_root / target.plugin_dir / integration.CONSUMER_MANAGED_FILE[target.consumer]).is_file()
+    ]
+    assert missing == [], f"CONSUMER_MANAGED_FILE targets absent from the source tree: {missing}"
+
+
 def test_check_reports_absent_consumer_as_named_state_not_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

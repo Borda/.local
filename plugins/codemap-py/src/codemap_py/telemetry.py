@@ -26,6 +26,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from codemap_py.runtime_log import log_root
+
 LOG_MAX_BYTES = 10 * 1024 * 1024
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
 _PLUGIN_VERSION: str | None = None
@@ -90,7 +92,10 @@ def log_cli(cmd: str, argv: list[str], result: object, t0: float, *, log_dir: Pa
     if os.environ.get("CODEMAP_LOGGING", "true").lower() == "false":
         return
     try:
-        log_dir = log_dir or Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))
+        # Resolved through runtime_log rather than a local relative default: the shard
+        # this appends to must land in the SAME directory the hook layers write to, and
+        # a CWD-relative default splits them the moment a session starts in a subdir.
+        log_dir = log_dir or log_root()
         sid = session_id()
         log_file = log_path_for(sid, log_dir)
         log_file.parent.mkdir(parents=True, exist_ok=True)

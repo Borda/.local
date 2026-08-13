@@ -295,23 +295,61 @@ def owns(dest: Path, target: str, plugin_root: Path, lineage: Path | None) -> bo
     return any(resolved.is_relative_to(base) for base in bases)
 
 
-def _readlink(path: Path) -> str | None:
-    """Raw link target of ``path``, or ``None`` when it is not a symlink.
+def strip_extended_prefix(target: str) -> str:
+    r"""Drop Windows' extended-length (``\\?\``) prefix from a raw link target.
+
+    ``os.readlink`` on Windows returns the reparse point's substitute name, which for an
+    absolute target is always spelled in the extended-length namespace: ``C:\p\rules`` comes
+    back as ``\\?\C:\p\rules``. That spelling denotes the same file but compares unequal to
+    every path this module derives from ``plugin_root``, so :func:`owns` rejected links this
+    plugin had just written — every rerun reported its own links as foreign conflicts,
+    refreshed nothing, and pruned nothing.
+
+    A POSIX target can never begin with this prefix, so the transform is inert off Windows
+    and needs no platform branch.
+
+    Args:
+        target: Raw ``readlink`` output.
+
+    Returns:
+        The same target spelled without the extended-length prefix.
+
+    Examples:
+        >>> strip_extended_prefix(r"\\?\C:\plugins\rules\gates.md")
+        'C:\\plugins\\rules\\gates.md'
+        >>> strip_extended_prefix(r"\\?\UNC\server\share\gates.md")
+        '\\\\server\\share\\gates.md'
+        >>> strip_extended_prefix("/h/.claude/rules/gates.md")
+        '/h/.claude/rules/gates.md'
+    """
+    if target.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + target[len("\\\\?\\UNC\\") :]
+    if target.startswith("\\\\?\\"):
+        return target[len("\\\\?\\") :]
+    return target
+
+
+def read_link_target(path: Path) -> str | None:
+    """Link target of ``path`` in its plain spelling, or ``None`` when it is not a symlink.
+
+    Every consumer — ownership proof, conflict descriptor, idempotence check — must see the
+    same spelling the rest of this module derives from ``plugin_root``, so the raw value is
+    normalised here rather than at each call site.
 
     Args:
         path: Filesystem path to inspect.
 
     Returns:
-        ``readlink`` output, or ``None``.
+        ``readlink`` output with any extended-length prefix removed, or ``None``.
 
     Examples:
-        >>> _readlink(Path("/nonexistent/path")) is None
+        >>> read_link_target(Path("/nonexistent/path")) is None
         True
     """
     if not path.is_symlink():
         return None
     try:
-        return os.readlink(path)
+        return strip_extended_prefix(os.readlink(path))
     except OSError:
         return None
 
@@ -366,7 +404,7 @@ def _install_one(
         dry_run: Report only; make no filesystem change.
         result: Accumulator mutated in place.
     """
-    target = _readlink(link.dest)
+    target = read_link_target(link.dest)
     exists = link.dest.is_symlink() or link.dest.exists()
     foreign = exists and not (target is not None and owns(link.dest, target, plugin_root, lineage))
 
@@ -417,7 +455,7 @@ def _prune_obsolete(
     for entry in sorted(rules_dest.iterdir()):
         if entry.name in keep or not entry.name.startswith(prefix) or entry.suffix != ".md":
             continue
-        target = _readlink(entry)
+        target = read_link_target(entry)
         if target is None or not owns(entry, target, plugin_root, lineage):
             continue
         if not dry_run:

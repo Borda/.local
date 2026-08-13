@@ -11,8 +11,10 @@
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 codemap_available=false
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+# index dir anchors at git root, not cwd — subdir invocation otherwise reports no_index while index exists. PROJ = raw basename; scanner writes it unsanitized (space/+/non-ASCII survive). `[ -n ]` test, not `||`: `basename ""` exits 0, so the old fallback was dead and a non-git project got PROJ="".
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+PROJ=$(basename "$_ROOT")
+_IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
 # $RUN_DIR made in Step2; stage to TMPDIR, copied later
 CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/oss-review-codemap-context-${CLEAN_ARGS}-${CSID}.md"
 # reload mode flags (scope-detection.md pattern) — gates test/docs sub-batteries behind consuming agent; missing sentinel → all flags false, run everything
@@ -20,7 +22,9 @@ CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/oss-review-codemap-context-${CLEAN_ARGS}-
 CICD_ONLY_MODE="${CICD_ONLY_MODE:-false}"; DOCS_ONLY_MODE="${DOCS_ONLY_MODE:-false}"; DOCS_CICD_MODE="${DOCS_CICD_MODE:-false}"
 if [ "$CODEMAP_ENABLED" = "true" ] && command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     codemap_available=true
-    CHANGED_MODS=$(echo "$CHANGED_FILES" | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')
+    # module names come from the index's own `name` field, never a sed transform: `pkg/__init__.py` is `pkg`, not `pkg.__init__`, and the old `grep -v '__init__$'` then dropped it entirely — an __init__-only PR got zero structural context. Files the index doesn't know resolve to nothing rather than a guessed name.
+    _CHANGED_PY=$(printf '%s\n' "$CHANGED_FILES" | grep '\.py$' | paste -sd, -)
+    CHANGED_MODS=$(codemap-py query --timeout 10 central --top 100000 2>/dev/null | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_centrality.py" --files "$_CHANGED_PY" --modules-only 2>/dev/null)
     {
         echo "## Structural Context (codemap-py)"
         echo

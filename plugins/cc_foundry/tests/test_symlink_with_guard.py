@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,82 @@ def _stale_root(plugin: Path, version: str = "0.39.0") -> Path:
 def _ln(target: str, link: Path) -> None:
     """Create a symlink with an arbitrary text target (no exists-check)."""
     link.symlink_to(target)
+
+
+def _bash_can_symlink() -> bool:
+    """Probe whether the ``bash`` on PATH can create a symlink Python recognises.
+
+    A capability probe rather than a platform test: on a Windows host ``bash``
+    may be the WSL launcher stub (prints a UTF-16 install notice, exits 1) or a
+    Git Bash whose ``ln -s`` copies instead of linking, but a Git Bash with
+    ``MSYS=winsymlinks:nativestrict`` and Developer Mode satisfies it and must
+    keep running the test.
+
+    Returns:
+        True when ``bash -c 'ln -s ...'`` produced a real symlink.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "probe_src"
+        src.write_text("probe\n", encoding="utf-8")
+        link = Path(tmp) / "probe_link"
+        try:
+            proc = subprocess.run(
+                ["bash", "-c", f'ln -s "{src}" "{link}"'],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return proc.returncode == 0 and link.is_symlink()
+
+
+_BASH_SYMLINKS = _bash_can_symlink()
+
+
+class TestExtendedPathPrefix:
+    """Windows hands back ``\\\\?\\``-prefixed link targets; every comparison must see them stripped."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            pytest.param(r"\\?\C:\Users\x\rules\a.md", r"C:\Users\x\rules\a.md", id="drive"),
+            pytest.param(r"\\?\UNC\server\share\a.md", r"\\server\share\a.md", id="unc"),
+            pytest.param("/home/x/rules/a.md", "/home/x/rules/a.md", id="posix-untouched"),
+            pytest.param(r"C:\Users\x\a.md", r"C:\Users\x\a.md", id="plain-windows-untouched"),
+        ],
+    )
+    def test_strip_extended_prefix(self, raw: str, expected: str) -> None:
+        """The prefix is removed for both drive and UNC forms; other spellings pass through."""
+        assert symlink_with_guard._strip_extended_prefix(raw) == expected
+
+    def test_readlink_strips_prefix_at_the_boundary(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``_readlink`` normalises, so no downstream consumer ever sees the prefixed spelling."""
+        link = tmp_path / "link.md"
+        _ln("target.md", link)
+        monkeypatch.setattr(symlink_with_guard.os, "readlink", lambda _p: r"\\?\C:\cache\foundry\rules\a.md")
+
+        assert symlink_with_guard._readlink(link) == r"C:\cache\foundry\rules\a.md"
+
+
+class TestMarkerSeparators:
+    """The marker is spelled with ``/``; a native Windows target spells the same path with ``\\``."""
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            pytest.param("/h/.claude/plugins/cache/borda-ai-rig/foundry/0.40.0/skills/curator", id="posix"),
+            pytest.param(r"C:\h\.claude\plugins\cache\borda-ai-rig\foundry\0.40.0\skills\curator", id="windows"),
+        ],
+    )
+    def test_marker_matches_either_separator(self, target: str) -> None:
+        """Both spellings are foundry-managed — the skills/agents purge must fire on each."""
+        assert symlink_with_guard._is_foundry_managed(target, _MARKER)
+
+    def test_foreign_windows_target_is_not_managed(self) -> None:
+        """Separator normalisation must not widen the match to unrelated paths."""
+        assert not symlink_with_guard._is_foundry_managed(r"C:\h\dotfiles\rules\a.md", _MARKER)
 
 
 class TestCleanup:
@@ -712,8 +789,17 @@ class TestSkillPhase4Block:
         """Drift guard: the shell loop's literal prefix equals ``_RULE_PREFIX``."""
         assert f'base="{symlink_with_guard._RULE_PREFIX}$(basename "$src")"' in _phase4_block()
 
+    @pytest.mark.skipif(
+        not _BASH_SYMLINKS,
+        reason="`bash` on PATH cannot create symlinks (WSL launcher stub, or Git Bash without winsymlinks)",
+    )
     def test_block_creates_namespaced_links(self, env: tuple[Path, Path], tmp_path: Path) -> None:
-        """Running the real block produces exactly the destinations ``_build_entries`` expects."""
+        """Running the real block produces exactly the destinations ``_build_entries`` expects.
+
+        Capability-gated, not platform-gated: the block is the skill's own ``ln -sf`` loop, so a
+        host whose ``bash`` cannot link has nothing to assert about. ``test_block_uses_the_module_rule_prefix``
+        keeps the prefix drift-guard running unconditionally on every platform.
+        """
         plugin, home = env
         run_env = {
             **os.environ,

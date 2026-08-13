@@ -225,7 +225,7 @@ from collections import defaultdict
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Optional, Sequence
 
 import fire
@@ -514,12 +514,70 @@ def _command_arguments(value: str) -> tuple[str, ...]:
     return tuple(token for token in shlex.split(value) if token != "--compact" and not re.match(r"(?:\d?>|>&)", token))
 
 
-def _absolute_codemap_launchers(command: str) -> set[Path]:
-    """Return absolute plugin launchers that are permitted outside one worktree."""
+def _absolute_codemap_launchers(command: str) -> set[PurePosixPath]:
+    """Return absolute plugin launchers that are permitted outside one worktree.
+
+    Args:
+        command: One recorded Bash command from the transcript.
+
+    Returns:
+        The launcher paths exactly as the agent named them, normalized only lexically.
+
+    Examples:
+        >>> sorted(str(path) for path in _absolute_codemap_launchers("/opt/cm/bin/codemap-py query symbol X"))
+        ['/opt/cm/bin/codemap-py']
+    """
     return {
-        Path(path).resolve()
+        PurePosixPath(path)
         for path in re.findall(r"(?<![A-Za-z0-9_.-])(/[^\s'\"`|;&()<>]*/bin/codemap-py)(?=\"?\s+query\b)", command)
     }
+
+
+def _workspace_containment_roots(workspace_root: Path) -> tuple[PurePosixPath, ...]:
+    """Return the POSIX forms a transcript path may use to name one checkout.
+
+    A transcript records the path the agent typed, so a checkout reachable through a
+    symlinked temp directory is named either way. Both forms are containment roots;
+    resolving the *observed* path against this host instead would be wrong everywhere and
+    catastrophic on Windows, where a leading-slash path acquires the current drive letter.
+
+    Args:
+        workspace_root: The disposable checkout handed to the agent.
+
+    Returns:
+        Deduplicated POSIX-form roots, longest-lived form first.
+
+    Examples:
+        >>> from pathlib import PurePosixPath, PureWindowsPath
+        >>> _workspace_containment_roots(PureWindowsPath(r"D:\\a\\repo"))
+        (PurePosixPath('D:/a/repo'),)
+    """
+    forms = [workspace_root]
+    resolve = getattr(workspace_root, "resolve", None)
+    if resolve is not None:
+        forms.append(resolve())
+    return tuple(dict.fromkeys(PurePosixPath(form.as_posix()) for form in forms))
+
+
+def _is_inside_workspace(observed: PurePosixPath, roots: Sequence[PurePosixPath]) -> bool:
+    """Return whether one observed path names something inside the disposable checkout.
+
+    Args:
+        observed: Absolute path exactly as the transcript recorded it.
+        roots: Containment roots from :func:`_workspace_containment_roots`.
+
+    Returns:
+        Whether the observed path is the checkout or lives beneath it.
+
+    Examples:
+        >>> from pathlib import PurePosixPath
+        >>> roots = (PurePosixPath("/opt/codemap-py"),)
+        >>> _is_inside_workspace(PurePosixPath("/opt/codemap-py/bin/x"), roots)
+        True
+        >>> _is_inside_workspace(PurePosixPath("/opt/codemap-py-evil/bin/x"), roots)
+        False
+    """
+    return any(observed == root or observed.is_relative_to(root) for root in roots)
 
 
 def _tool_input_strings(value: Any) -> Iterator[str]:
@@ -544,11 +602,15 @@ def _outside_workspace_path_evidence(
     Denied guesses remain diagnostic evidence without quarantining a clean cell.
     Only tool fields that execute a command or name a filesystem target count;
     written content is data rather than an access request.
+
+    Every path here is evidence about the agent's filesystem, recorded verbatim: it is
+    classified against the checkout lexically and never resolved against the host running
+    the scorer.
     """
     if workspace_root is None:
         return [], []
-    root = workspace_root.resolve()
-    benign_shell_endpoints = {Path("/dev/null"), Path("/dev/stdout"), Path("/dev/stderr")}
+    roots = _workspace_containment_roots(workspace_root)
+    benign_shell_endpoints = {PurePosixPath("/dev/null"), PurePosixPath("/dev/stdout"), PurePosixPath("/dev/stderr")}
     attempted: list[str] = []
     successful: list[str] = []
     attempted_seen: set[str] = set()
@@ -593,11 +655,11 @@ def _outside_workspace_path_evidence(
                             start <= path_match.start() and path_match.end() <= end for start, end in variable_launchers
                         ):
                             continue
-                        candidate = Path(raw_path).resolve()
+                        candidate = PurePosixPath(raw_path)
                         if (
                             candidate in benign_shell_endpoints
                             or candidate in allowed_launchers
-                            or candidate.is_relative_to(root)
+                            or _is_inside_workspace(candidate, roots)
                         ):
                             continue
                         normalized = str(candidate)

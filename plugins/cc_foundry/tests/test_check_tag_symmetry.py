@@ -325,15 +325,32 @@ class TestMainSubcheckSelection:
         assert rc == 2
         assert "bogus" in capsys.readouterr().err
 
-    def test_read_error_survives_subcheck_narrowing(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """An unreadable file is reported under any --check mode, never filtered away."""
+    def test_read_error_survives_subcheck_narrowing(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An unreadable file is reported under any --check mode, never filtered away.
+
+        The denial is injected rather than produced by ``chmod(0o000)``: Windows maps chmod
+        onto the read-only attribute only, so the file stayed readable and the assertion tested
+        the OS instead of the filter. The subject here is that a READ_ERROR finding survives
+        ``--check`` narrowing, which an injected OSError exercises identically on every platform.
+        """
         unreadable = tmp_path / "locked.md"
         unreadable.write_text("<role>\nok\n</role>\n", encoding="utf-8")
-        unreadable.chmod(0o000)
-        try:
-            rc = cts.main([str(unreadable), "--check", "empty-block"])
-            out = capsys.readouterr().out
-        finally:
-            unreadable.chmod(0o644)
+        real_read_text = Path.read_text
+
+        def _deny(self: Path, *args: object, **kwargs: object) -> str:
+            if self == unreadable:
+                raise PermissionError(13, "Permission denied")
+            return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "read_text", _deny)
+
+        rc = cts.main([str(unreadable), "--check", "empty-block"])
+
+        out = capsys.readouterr().out
         assert rc == 1
         assert "cannot read" in out

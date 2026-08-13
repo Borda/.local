@@ -1,4 +1,9 @@
-"""Tests for ``bin/setup_scan_env.sh`` — scan-codebase setup state file generation.
+"""Tests for ``bin/setup_scan_env.py`` — scan-codebase setup state file generation.
+
+Every behavioural test runs twice: once against the Python port invoked directly, and
+once through ``bin/setup_scan_env.sh``, the deprecated bash shim that ``exec``s it.
+Both entry points must therefore satisfy the same contract, which is what keeps
+pre-existing bash call sites working after the port.
 
 Covered scenarios:
 - Bad CLI args → exit 3, no state file.
@@ -8,11 +13,13 @@ Covered scenarios:
 - ``--root`` extraction overrides ``PROJ_NAME`` (basename of ``--root`` value, not repo).
 - ``--incremental`` sentinel created when no prior index exists for ``PROJ_NAME``.
 - ``--incremental`` sentinel absent when prior index exists.
+- Shim/port equivalence — identical invocation yields identical exit code and state.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -21,19 +28,40 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).parent.parent.parent / "bin" / "setup_scan_env.sh"
 PLUGIN_ROOT = Path(__file__).parent.parent.parent  # contains real bin/scan-index
-_EXIT_BAD_ARGS = 3  # setup_scan_env.sh's own argument-validation exit code
+SCRIPT = PLUGIN_ROOT / "bin" / "setup_scan_env.py"
+SHIM = PLUGIN_ROOT / "bin" / "setup_scan_env.sh"
+_EXIT_BAD_ARGS = 3  # setup_scan_env.py's own argument-validation exit code
+
+_PY_ARGV = [sys.executable, str(SCRIPT)]
+_SH_ARGV = ["bash", str(SHIM)]
 
 
-def sh(
+@pytest.fixture(
+    params=[
+        pytest.param(_PY_ARGV, id="py"),
+        pytest.param(_SH_ARGV, id="sh-shim"),
+    ]
+)
+def launcher(request: pytest.FixtureRequest) -> list[str]:
+    """Return the argv prefix for one of the two supported entry points.
+
+    Returns:
+        ``[python, setup_scan_env.py]`` or ``[bash, setup_scan_env.sh]``.
+    """
+    return request.param
+
+
+def run_setup(
+    launcher: list[str],
     *args: str,
     env: dict[str, str] | None = None,
     cwd: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``setup_scan_env.sh`` under bash with explicit env override.
+    """Run one setup entry point with an explicit env override.
 
     Args:
+        launcher: Argv prefix naming the entry point under test.
         *args: Positional arguments forwarded to the script.
         env: Environment overlay (``None`` ⇒ inherit only).
         cwd: Working directory for the invocation.
@@ -42,12 +70,12 @@ def sh(
         Captured ``CompletedProcess`` with text-mode stdout/stderr.
     """
     e = {**os.environ, **(env or {})}
-    # Force the script's CSID="${CSID:-shared}" fallback regardless of the host shell —
-    # a real Claude Code session (like the one running this suite) never sets CSID itself,
-    # only CLAUDE_CODE_SESSION_ID (which the script does not read directly).
+    # Force the script's CSID = os.environ.get("CSID") or "shared" fallback regardless of
+    # the host shell — a real Claude Code session (like the one running this suite) never
+    # sets CSID itself, only CLAUDE_CODE_SESSION_ID (which the script does not read).
     e.pop("CSID", None)
     return subprocess.run(
-        ["bash", str(SCRIPT), *args],
+        [*launcher, *args],
         capture_output=True,
         text=True,
         env=e,
@@ -59,8 +87,8 @@ def sh(
 def fake_repo(tmp_path: Path) -> Path:
     """Return a throwaway directory acting as a fake repo root.
 
-    setup_scan_env.sh uses ``git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD"``
-    so it falls back to $PWD when git is unavailable — no real git repo needed.
+    setup_scan_env.py falls back to the cwd when ``git rev-parse --show-toplevel``
+    fails, so no real git repo is needed.
 
     Returns:
         Directory path used as the working directory for script invocations.
@@ -88,9 +116,10 @@ def isolated_tmpdir(tmp_path: Path) -> Path:
 class TestArgumentValidation:
     """Bad CLI shapes must fail fast with exit 3 and never touch tmpfiles."""
 
-    def test_unknown_flag(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+    def test_unknown_flag(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
         """An unknown long flag exits 3 with a stderr message."""
-        r = sh(
+        r = run_setup(
+            launcher,
             "--bogus",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
             cwd=str(fake_repo),
@@ -98,15 +127,27 @@ class TestArgumentValidation:
         assert r.returncode == _EXIT_BAD_ARGS
         assert "unknown argument" in r.stderr
 
-    def test_arguments_without_value(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+    def test_arguments_without_value(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
         """``--arguments`` without a following token exits 3."""
-        r = sh(
+        r = run_setup(
+            launcher,
             "--arguments",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
             cwd=str(fake_repo),
         )
         assert r.returncode == _EXIT_BAD_ARGS
         assert "needs a value" in r.stderr
+
+    def test_arguments_equals_form(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """``--arguments=<value>`` is accepted alongside the space-separated form."""
+        r = run_setup(
+            launcher,
+            "--arguments=--incremental",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        assert _read_state(Path(r.stdout.strip()))["SCAN_ARGS_RAW"] == "--incremental"
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +158,14 @@ class TestArgumentValidation:
 class TestMissingScanIndex:
     """Bogus ``CLAUDE_PLUGIN_ROOT`` ⇒ scan-index validation fails (exit 1)."""
 
-    def test_bogus_plugin_root(self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path) -> None:
+    def test_bogus_plugin_root(
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path
+    ) -> None:
         """Pointing ``CLAUDE_PLUGIN_ROOT`` at an empty dir surfaces the missing-binary error."""
         empty = tmp_path / "no-plugin"
         empty.mkdir()
-        r = sh(
+        r = run_setup(
+            launcher,
             "--arguments",
             "",
             env={"CLAUDE_PLUGIN_ROOT": str(empty), "TMPDIR": str(isolated_tmpdir)},
@@ -146,7 +190,7 @@ def _read_state(state_file: Path) -> dict[str, str]:
     the file is sourceable.
 
     Args:
-        state_file: Path written by ``setup_scan_env.sh``.
+        state_file: Path written by ``setup_scan_env.py``.
 
     Returns:
         Mapping ``{PROJ_SLUG, SCAN_BIN, SCAN_ARGS_RAW, PROJ_NAME}``.
@@ -169,9 +213,10 @@ def _read_state(state_file: Path) -> dict[str, str]:
 class TestHappyPath:
     """Normal invocation produces a sourceable state file and per-slug tmpfiles."""
 
-    def _run_minimal(self, fake_repo: Path, isolated_tmpdir: Path) -> dict[str, str]:
+    def _run_minimal(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> dict[str, str]:
         """Run the minimal setup invocation and return the sourced state."""
-        r = sh(
+        r = run_setup(
+            launcher,
             "--arguments",
             "",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -182,25 +227,29 @@ class TestHappyPath:
         assert state_path.is_file(), f"state file not created at {state_path}"
         return _read_state(state_path)
 
-    def test_minimal_invocation_writes_sourceable_state(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+    def test_minimal_invocation_writes_sourceable_state(
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
+    ) -> None:
         """No flags writes a sourceable state file with project identity and scan command fields."""
-        state = self._run_minimal(fake_repo, isolated_tmpdir)
+        state = self._run_minimal(launcher, fake_repo, isolated_tmpdir)
         assert state["PROJ_NAME"] == fake_repo.name
-        # PROJ_SLUG ends in the sanitised repo basename — the script's `tr -cd '[:alnum:]-'`
-        # strips underscores and other punctuation, so compare on the sanitised form.
+        # PROJ_SLUG ends in the sanitised repo basename — the script strips underscores
+        # and other punctuation, so compare on the sanitised form.
         sanitised_repo = "".join(c for c in fake_repo.name if c.isalnum() or c == "-")
         assert state["PROJ_SLUG"].endswith(sanitised_repo)
         assert state["SCAN_BIN"].endswith("/bin/scan-index")
         assert state["SCAN_ARGS_RAW"] == ""
 
-    def test_minimal_invocation_writes_per_slug_tmpfiles(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+    def test_minimal_invocation_writes_per_slug_tmpfiles(
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
+    ) -> None:
         """Per-PROJ_SLUG tmpfiles exist with content matching the sourceable state.
 
         ``CSID`` env var is unset in the test invocation (only inherited by real
-        ``export CSID=...`` callers), so the script's ``CSID="${CSID:-shared}"``
-        fallback applies — every written filename carries a terminal ``-shared``.
+        ``export CSID=...`` callers), so the script's ``"shared"`` fallback applies —
+        every written filename carries a terminal ``-shared``.
         """
-        state = self._run_minimal(fake_repo, isolated_tmpdir)
+        state = self._run_minimal(launcher, fake_repo, isolated_tmpdir)
         slug = state["PROJ_SLUG"]
         assert (isolated_tmpdir / "codemap-proj-slug-shared").read_text() == slug
         assert (isolated_tmpdir / f"codemap-proj-name-{slug}-shared").read_text() == fake_repo.name
@@ -208,18 +257,21 @@ class TestHappyPath:
         assert (isolated_tmpdir / f"codemap-scan-args-{slug}-shared").read_text() == ""
 
     def test_minimal_invocation_does_not_create_incremental_sentinel(
-        self, fake_repo: Path, isolated_tmpdir: Path
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
     ) -> None:
         """No --incremental request leaves the fallback sentinel absent."""
-        state = self._run_minimal(fake_repo, isolated_tmpdir)
+        state = self._run_minimal(launcher, fake_repo, isolated_tmpdir)
         slug = state["PROJ_SLUG"]
         assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}-shared").exists()
 
-    def test_root_flag_overrides_proj_name(self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path) -> None:
+    def test_root_flag_overrides_proj_name(
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path
+    ) -> None:
         """``--root /some/other`` ⇒ PROJ_NAME = basename(other), not repo basename."""
         other = tmp_path / "alt-project"
         other.mkdir()
-        r = sh(
+        r = run_setup(
+            launcher,
             "--arguments",
             f"--root {other}",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -231,13 +283,14 @@ class TestHappyPath:
         assert state["SCAN_ARGS_RAW"] == f"--root {other}"
 
     def test_root_flag_with_spaces_overrides_proj_name(
-        self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path
     ) -> None:
         """A quoted ``--root`` path containing spaces still drives project identity."""
         other = tmp_path / "alt project with spaces"
         other.mkdir()
         raw_args = f"--root {shlex.quote(str(other))}"
-        r = sh(
+        r = run_setup(
+            launcher,
             "--arguments",
             raw_args,
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -248,6 +301,18 @@ class TestHappyPath:
         assert state["PROJ_NAME"] == other.name
         assert str(other) in state["SCAN_ARGS_RAW"]
 
+    def test_root_dot_keeps_repo_basename(self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """``--root .`` resolves like an absent --root — basename('.') would be empty."""
+        r = run_setup(
+            launcher,
+            "--arguments",
+            "--root .",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        assert _read_state(Path(r.stdout.strip()))["PROJ_NAME"] == fake_repo.name
+
 
 # ---------------------------------------------------------------------------
 # --incremental sentinel behaviour
@@ -257,9 +322,12 @@ class TestHappyPath:
 class TestIncrementalSentinel:
     """``--incremental`` flag interacts with the prior-index check."""
 
-    def test_sentinel_created_when_no_prior_index(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+    def test_sentinel_created_when_no_prior_index(
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
+    ) -> None:
         """``--incremental`` with no ``.cache/codemap/<proj>.json`` writes the sentinel."""
-        r = sh(
+        r = run_setup(
+            launcher,
             "--arguments",
             "--incremental",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -274,13 +342,16 @@ class TestIncrementalSentinel:
         sentinel = isolated_tmpdir / f"codemap-incremental-noop-{slug}-shared"
         assert sentinel.is_file(), "incremental-noop sentinel should have been created"
 
-    def test_sentinel_absent_when_prior_index_exists(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+    def test_sentinel_absent_when_prior_index_exists(
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
+    ) -> None:
         """``--incremental`` with an existing prior index ⇒ no sentinel, no stderr notice."""
         cache_dir = fake_repo / ".cache" / "codemap"
         cache_dir.mkdir(parents=True)
         (cache_dir / f"{fake_repo.name}.json").write_text("{}")
 
-        r = sh(
+        r = run_setup(
+            launcher,
             "--arguments",
             "--incremental",
             env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
@@ -293,13 +364,91 @@ class TestIncrementalSentinel:
         slug = state["PROJ_SLUG"]
         assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}-shared").exists()
 
+    def test_sentinel_absent_for_prefixed_lookalike_flag(
+        self, launcher: list[str], fake_repo: Path, isolated_tmpdir: Path
+    ) -> None:
+        """``--incremental-foo`` is not the ``--incremental`` token — no sentinel, no notice."""
+        r = run_setup(
+            launcher,
+            "--arguments",
+            "--incremental-foo",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        assert "No prior index" not in r.stderr
+
 
 # ---------------------------------------------------------------------------
-# Module-level skip — script depends on real `git` + `python` on PATH.
+# Shim delegation
+# ---------------------------------------------------------------------------
+
+
+def _tmpfile_shapes(tmpdir: Path) -> list[str]:
+    """List the tmpfile names in ``tmpdir`` with the per-run random parts masked out.
+
+    Two names are unequal across separate runs by design: half the handoff tmpfiles
+    embed ``os.getpid()`` so concurrent same-project scans cannot race, and the state
+    file carries an unguessable ``mkstemp`` suffix so it cannot be symlink-squatted.
+    Masking both leaves the set of names each entry point is expected to produce.
+
+    Args:
+        tmpdir: Directory the run used as ``TMPDIR``.
+
+    Returns:
+        Sorted names with the PID and the state-file suffix replaced by placeholders.
+    """
+    masked = (re.sub(r"-\d+-", "-<pid>-", p.name) for p in tmpdir.iterdir())
+    return sorted(re.sub(r"^codemap-scan-state-.*$", "codemap-scan-state-<rand>", name) for name in masked)
+
+
+class TestShimDelegation:
+    """``setup_scan_env.sh`` must be a transparent pass-through to the port."""
+
+    def test_shim_matches_port(self, fake_repo: Path, tmp_path: Path) -> None:
+        """Same invocation through both entry points yields the same exit code and state.
+
+        The state-file *path* differs by construction (``mkstemp`` picks a fresh
+        name each run), so equality is asserted on the sourced fields instead.
+        """
+        py_tmp, sh_tmp = tmp_path / "py-tmp", tmp_path / "sh-tmp"
+        py_tmp.mkdir()
+        sh_tmp.mkdir()
+        args = ("--arguments", "--root . --incremental")
+        plugin_env = {"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT)}
+
+        py = run_setup(_PY_ARGV, *args, env={**plugin_env, "TMPDIR": str(py_tmp)}, cwd=str(fake_repo))
+        sh = run_setup(_SH_ARGV, *args, env={**plugin_env, "TMPDIR": str(sh_tmp)}, cwd=str(fake_repo))
+
+        assert (py.returncode, sh.returncode) == (0, 0), f"py={py.stderr} sh={sh.stderr}"
+        assert py.stderr == sh.stderr
+        assert _read_state(Path(py.stdout.strip())) == _read_state(Path(sh.stdout.strip()))
+        assert _tmpfile_shapes(py_tmp) == _tmpfile_shapes(sh_tmp)
+
+    def test_shim_propagates_failure_exit_code(self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path) -> None:
+        """A non-zero exit from the port reaches the caller unchanged through the shim."""
+        empty = tmp_path / "no-plugin"
+        empty.mkdir()
+        r = run_setup(
+            _SH_ARGV,
+            "--arguments",
+            "",
+            env={"CLAUDE_PLUGIN_ROOT": str(empty), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 1
+        assert "scan-index binary not found" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# Module-level skip — the suite drives both entry points, and the bash shim plus
+# the `source`-based state reader need a POSIX shell. The .py itself is Windows-safe
+# by construction (no hostname/tr/mktemp/stat shell-outs), but proving that needs a
+# Windows runner this suite does not have.
 # ---------------------------------------------------------------------------
 
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32" or shutil.which("python3") is None,
-    reason="setup_scan_env.sh uses POSIX-only tools (hostname -s, tr) — not supported on Windows",
+    reason="the bash shim and the source-based state reader need a POSIX shell",
 )

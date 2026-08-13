@@ -2,6 +2,42 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.30.0
+
+Staleness reporting and telemetry anchoring: the currency probe joins the read gate, and every staleness question — and every log shard — is now resolved from the repository root rather than from the process working directory.
+
+- Anchor the telemetry log root at the project root through one resolver, `runtime_log.log_root()`, now used by the CLI layer, the query engine, and the runtime-scoped writer alike; `runtime_log.LOG_DIR_ENV` names the override key once instead of each layer repeating the literal. A session whose hooks fired at the repository root while a query ran from a subdirectory previously wrote the two halves of one session into `<root>/.cache/codemap/logs` and `<subdir>/.cache/codemap/logs`; neither half was an error, so the join simply returned nothing and `debrief-coding` reported the missing half as absent. The import-time `_LOG_DIR` constant in `query.py` is removed rather than repointed — a constant frozen at import could never see a `CODEMAP_LOG_DIR` exported afterwards.
+
+- Anchor a **relative** `CODEMAP_LOG_DIR` to the project root as well. An absolute override is unchanged and still honoured verbatim; a relative one used to resolve against whatever directory the process started in, which reintroduced the same split the default suffered from. Set an absolute path to keep the previous behaviour.
+
+- Report the index file a query actually loaded as `index.index_path`, captured at load time rather than recomputed from the resolver when the block is emitted. A consumer that compared its own probe path against a resolver-derived answer was comparing two runs of one function; this is the only value that can disagree with the resolver — a stale `CODEMAP_INDEX_DIR` in the querying process, a different git root, a self-heal that rewrote elsewhere — which is what makes it worth reporting. The field survives the coverage-block diet, since a consumer that only ever sees compacted blocks would otherwise never see it.
+
+- Raise the index-size ceiling in `bin/check-index-currency`, `bin/scan-stats.py` and `bin/smoke_test_index.py` from 50 MB to the query engine's own 512 MB. A helper ceiling below the engine's does not fail safe: `check-index-currency` answered `no_index` — the same answer a project with no index at all gives — for any index above 50 MB, so the staleness gate silently stopped firing on exactly the large repositories it exists for. Measured on a real index of 131 MB.
+
+- Ship `hooks/_hookutil.py`, holding the project anchor, the log-directory resolution, the project key and the session-key sanitizer the logging and sentinel hooks must agree on. All five hooks now import it instead of carrying their own copy: `project_name()` was duplicated three ways and `session_key()` twice, and a divergence between copies never raised — it wrote one file and read another, so the cross-layer join simply returned nothing. It is a deliberate copy of the rules in `runtime_log`, not an import: the hooks fire on every Grep/Read/Glob/Bash call and must stay free of package imports and subprocesses, so the two layers are held in agreement by test instead.
+
+- Read the index under a shared read lease in `check-index-currency` instead of a bare `json.load`, so the launcher obeys the same gate as every other consumer. A live writer holding the index now answers `stale` (the honest verdict while a rebuild is in flight) and an unusable coordination root answers `no_index`; the 2 s lease covers the index parse only, never the Tier 2 source-tree walk.
+
+- Anchor every staleness-related git subprocess at the git top-level rather than the process working directory. A query issued from a subdirectory previously compared subdirectory-relative paths against root-relative index entries, so it read every indexed file as deleted: the index reported permanently stale, self-healed on every call, and answered `query_complete: false` for the rest of the session. The same anchoring applies to the untracked-file scan and to the mtime check on indexed-but-untracked files, which silently found nothing from a subdirectory.
+
+- Watch the writer's own file set in the timestamp fallback used for a pre-`file_shas` index — `*.py`, `*.pyi`, `*.rst`, `docs/**/*.md`, spelled once and shared with the SHA path. The previous hand-written pathspec (`*.py` minus `docs/`, `*.md`, `*.rst`) covered none of a changed `.pyi`, `.rst`, doc file, or a `.py` under `docs/`, each of which left the check reporting a fresh index.
+
+- Report `stale_undetermined` when git fails inside a repository rather than presenting the resulting empty answer as proof of freshness. The coverage block gains the flag only in that case, `query_complete` returns false with a `stale_undetermined` reason, and stderr names the failure. Being outside a repository stays silent — staleness was never knowable there.
+
+- Query git once per invocation for tracked blob SHAs instead of twice; the self-heal decision and the coverage block now read one memoized, self-consistent answer.
+
+- Correct the README's `CODEMAP_INDEX_DIR` description, which still documented the root-keyed `<canonical-root-sha256>/<project>.json` layout that `0.29.4` retired in favour of the flat `<override>/<project>.json` convention.
+
+- Correct the README's managed-block claims: consumer plugins ship the host file the block lands in, not a pre-applied block, so `/codemap-py:integration check` reporting `missing` before the first `apply` is the expected state and not a packaging defect.
+
+- Port `bin/setup_scan_env.sh` to stdlib-only `bin/setup_scan_env.py`; the `.sh` remains as a deprecated `exec` shim (removal no earlier than `1.0.0`) so existing call sites keep working, and an integration test pins shim/port equivalence on every scenario. The port removes the `python3`-on-PATH dependency by loading `parse_scan_args` via `importlib`, and `format_scan_args()` is extracted so both consumers share one quoting rule.
+
+- Convert the claude-skills dispatcher invocations to bare PATH-literal `codemap-py` (the `0.29.1` pattern) in `scan-codebase`, `test-impact` and `rename-refs`, retiring the `CM=`/`"$CM"` re-resolution ritual; codex-skills keep explicit plugin-root paths deliberately, since the Codex runtime has no `bin/` `PATH` entry.
+
+- Correct four skill-prose sites that claimed the `scan-index`/`scan-query` aliases take no writer lease: every route leases inside the engine, so the prose now gives the real reasons to prefer the dispatcher — the interpreter probe (exit `127`) and the aliases' deprecated-shim status. The `inject-preamble` hook's stale comment claiming its detached scan was ungated is likewise corrected, and the hook's model-facing directive now names `codemap-py index`.
+
+- Gate new code on cyclomatic-complexity and size limits (C901, PLR0911/0912/0915), scoped to this plugin from the repository-root ruff config via a negated per-file-ignore, with the six current offenders enumerated per file as explicit accepted debt.
+
 ## 0.29.4
 
 Audit remediation across the index gate, the hook roster, and both skill rosters.

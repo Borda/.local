@@ -20,15 +20,69 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import ntpath
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from _bench_common.edit_patch_contracts import semantic_index_sha256
+
+
+def _root_boundary_separators(source_root: str) -> tuple[str, ...]:
+    r"""Return the separators that can delimit a path *beneath* ``source_root``.
+
+    The convention follows the recorded path data, not the running interpreter: an index
+    and its lock are portable JSON, so a scan taken on Windows carries a drive-rooted
+    (or backslash-bearing) root whose children may be spelled with either separator, and
+    both therefore delimit the tree. A POSIX root admits ``/`` only — a backslash is a
+    legal POSIX filename character, so accepting it would fold ``…/repo\sibling`` into
+    the locked tree. Anchoring on :data:`os.sep` instead made the relocation a silent
+    no-op whenever the payload's separator differed from the host's, which is what left
+    a Windows run hashing unrewritten checkout paths.
+
+    Args:
+        source_root: Scan root exactly as it is spelled in the index or lock.
+
+    Returns:
+        Separator strings that mark the start of a path below *source_root*.
+
+    Examples:
+        >>> _root_boundary_separators("/scan/repo")
+        ('/',)
+        >>> "\\" in _root_boundary_separators("C:\\scan\\repo")
+        True
+    """
+    if ntpath.splitdrive(source_root)[0] or "\\" in source_root:
+        return ("\\", "/")
+    return ("/",)
+
+
+def _is_absolute_path(value: str) -> bool:
+    r"""Return whether *value* is an absolute path under POSIX *or* Windows rules.
+
+    Lock documents travel between machines: a POSIX-rooted canonical checkout path must
+    still validate when the lock is read on Windows, where ``Path`` becomes
+    ``WindowsPath`` and rejects a driveless root; a recorded ``C:\repo`` must likewise
+    validate off Windows. ``os.path.isabs`` cannot serve as the check either —
+    ``ntpath.isabs("/x")`` changed answer in Python 3.13.
+
+    Args:
+        value: Path string exactly as recorded in the lock document.
+
+    Returns:
+        True when either path flavour considers *value* absolute.
+
+    Examples:
+        >>> _is_absolute_path("/scan/repo")
+        True
+        >>> _is_absolute_path("C:\\repo"), _is_absolute_path("repo/sub")
+        (True, False)
+    """
+    return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
 
 
 def _cli_error(message: str) -> None:
@@ -190,15 +244,19 @@ def _replace_root(value: Any, source_root: str, locked_root: str) -> Any:
     content field that merely mentions the checkout path (a docstring first line, a
     captured subprocess argument) was edited too — and those rewritten bytes are the
     ones hashed and installed, which makes the installed index disagree with the
-    source it was scanned from. Anchoring on the ``os.sep`` boundary additionally
+    source it was scanned from. Anchoring on a separator boundary additionally
     keeps a sibling directory whose name merely extends the root (``…/repo-other``
     beside ``…/repo``) out of the locked tree; a bare ``startswith`` would fold it in.
+    Which separators bound the tree is decided by the root's own spelling
+    (:func:`_root_boundary_separators`), never by the host, so the same payload
+    relocates identically on every OS.
     """
     if isinstance(value, str):
         if value == source_root:
             return locked_root
-        if value.startswith(source_root + os.sep):
-            return locked_root + value[len(source_root) :]
+        for separator in _root_boundary_separators(source_root):
+            if value.startswith(source_root + separator):
+                return locked_root + value[len(source_root) :]
         return value
     if isinstance(value, list):
         return [_replace_root(item, source_root, locked_root) for item in value]
@@ -213,7 +271,7 @@ def _patch_index_locks(path: Path) -> dict[str, dict[str, Any]]:
     if payload.get("schema_version") != "provider-parity-patch-index-locks-v1":
         raise ValueError("patch index locks use an unsupported schema")
     canonical_root = payload.get("canonical_scan_root")
-    if not isinstance(canonical_root, str) or not Path(canonical_root).is_absolute():
+    if not isinstance(canonical_root, str) or not _is_absolute_path(canonical_root):
         raise ValueError("patch index locks require an absolute canonical_scan_root")
     tasks = payload.get("tasks")
     if not isinstance(tasks, dict) or not tasks:
@@ -278,11 +336,16 @@ def _install_patch_task_index(  # noqa: PLR0913 — 7 immutable coordinates of o
 ) -> str:
     """Scan one prepared worktree, verify it against *lock*, install it, and return its SHA-256.
 
+    The scanner is launched through the running interpreter rather than executed directly:
+    ``scan-index`` is an extension-less Python script whose shebang only selects an
+    interpreter on POSIX, so a direct launch raises ``OSError`` on Windows. This matches
+    how the sibling lane runs the same binary (``benchmarks/run-codemap-cli.py``).
+
     Raises:
         ValueError: If the scanner fails or the graph drifts from the reviewed lock.
     """
     scan = subprocess.run(
-        [str(scan_index_bin), "--root", str(worktree)],
+        [sys.executable, str(scan_index_bin), "--root", str(worktree)],
         check=False,
         capture_output=True,
         text=True,

@@ -187,13 +187,18 @@ def _ingest_usage(result: CodexParseResult, usage: Mapping[str, Any]) -> None:
     """Fold one native usage event into the turn totals and count schema drift.
 
     ``max()`` rather than a running sum is deliberate: ``benchmarks/README.md``
-    records that native Codex input usage is *cumulative within a turn*, so each
-    usage event restates the turn total and summing would multiply the reported
-    cost. That semantic is an assumption about the provider, pinned here only by
-    a synthetic fixture in ``tests/test_codex_runtime.py``
-    (``test_usage_events_are_treated_as_cumulative_not_additive``) — it has not
-    been confirmed against a captured real stream. If a future CLI emits per-event
-    deltas instead, that fixture is the contract to revisit before changing this.
+    records that native Codex input usage is *cumulative within a turn* — its
+    literal claim is only that cached input is a subset of gross input; the
+    stronger reading that each usage event restates the turn total is this
+    module's interpretation, not the README's assertion. An audit of every
+    captured real stream (401 turns, 2026-08-13) found exactly one usage-bearing
+    event per turn, always terminal — so ``max()``, ``sum()`` and last-wins are
+    indistinguishable on real data and the cumulative property is unobservable
+    there, while the subset claim held on all 401 events. The semantic stays
+    pinned only by a synthetic fixture in ``tests/test_codex_runtime.py``
+    (``test_usage_events_are_treated_as_cumulative_not_additive``). If a future
+    CLI emits several usage events per turn, that fixture is the contract to
+    revisit before changing this.
     """
     result.raw_usage.update(dict(usage))
     for attribute, value in (

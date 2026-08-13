@@ -22,6 +22,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Currency sentinel basename read back by skills/_shared/codemap-gates.md. Owned here
+# because codemap_resolve.py is byte-identical across plugins and cannot name one.
+CURRENCY_PREFIX = "research-codemap-currency"
+
 
 def _resolve_mode(args: str) -> str:
     """Map raw skill arguments to auto | strict | off.
@@ -39,14 +43,25 @@ def _resolve_mode(args: str) -> str:
 
 
 def _run_resolver(raw: str, csid: str) -> tuple[str, bool]:
-    """Run bin/codemap_resolve.py for *raw*, returning (stripped stdout, succeeded)."""
+    """Run bin/codemap_resolve.py for *raw*, returning (stripped stdout, succeeded).
+
+    ``--currency-prefix`` is supplied here because ``codemap_resolve.py`` is byte-identical
+    across consuming plugins (propagate_shared.py MANIFEST); research's sentinel name is
+    research's own concern and must never be hard-coded in that shared file.
+    """
     resolver = Path(__file__).resolve().parent / "codemap_resolve.py"
     # Invoked through sys.executable, not the shebang: a bare `#!` is not honoured
     # on Windows (plugins/CLAUDE.md §Installability).
     command = [sys.executable, str(resolver)]
     env = dict(os.environ, CSID=csid)
     try:
-        proc = subprocess.run([*command, raw], stdout=subprocess.PIPE, text=True, env=env, check=False)
+        proc = subprocess.run(
+            [*command, raw, "--currency-prefix", CURRENCY_PREFIX],
+            stdout=subprocess.PIPE,
+            text=True,
+            env=env,
+            check=False,
+        )
     except OSError as exc:
         print(f"codemap-flag: cannot run codemap_resolve.py: {exc}", file=sys.stderr)
         return "", False

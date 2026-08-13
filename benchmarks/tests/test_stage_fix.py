@@ -7,7 +7,7 @@ import dataclasses
 import importlib.util
 import inspect
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import shlex
 import sys
 from types import SimpleNamespace
@@ -191,9 +191,11 @@ def test_patch_scope_and_snapshot_close_over_runtime_and_implementation(stage_fi
 
 def test_managed_input_recovery_preserves_the_invalid_target(stage_fix: Any) -> None:
     """Managed-target admission must recommend a recoverable reconstruction, never deletion."""
-    recovery = stage_fix._stage_input_recovery(Path("/private/tmp/codemap-provider-parity-pl-2.6.5"))
+    managed_repo = stage_fix._MANAGED_PARITY_REPO
 
-    assert "REPO_PATH=/private/tmp/codemap-provider-parity-pl-2.6.5" in recovery
+    recovery = stage_fix._stage_input_recovery(managed_repo)
+
+    assert f"REPO_PATH={shlex.quote(str(managed_repo))}" in recovery
     assert 'mv "$REPO_PATH" "$REPO_PATH.invalid-$(date -u +%Y%m%dT%H%M%SZ)"' in recovery
     assert "run-all.sh codex --struct --tasks=FN-02 --dry-run" in recovery
     assert "rm -rf" not in recovery
@@ -237,6 +239,23 @@ def test_dry_run_emits_exact_paid_command_after_preflight(
     assert "--tasks FS-01" in output
     assert "--study" not in output
     assert "--paid=True" not in output
+
+
+@pytest.mark.parametrize(
+    "run_dir",
+    [
+        pytest.param(PureWindowsPath(r"benchmarks\results\codex-fix-01"), id="windows_separator"),
+        pytest.param(PurePosixPath("benchmarks/results/codex-fix-01"), id="posix_separator"),
+    ],
+)
+def test_emitted_run_dir_argument_keeps_repository_separators(stage_fix: Any, run_dir: Any) -> None:
+    """The paid command is a shell line, so its repo-relative argument stays forward-slashed.
+
+    Regression: the suggested run directory was interpolated in native form, which handed
+    a Windows operator ``--run-dir benchmarks\\results\\...`` — a value the runner reads as
+    one opaque segment rather than a path under ``benchmarks/results``.
+    """
+    assert stage_fix._repo_relative_argument(run_dir) == "benchmarks/results/codex-fix-01"
 
 
 def test_full_study_dry_run_emits_paid_command_without_task_selector(

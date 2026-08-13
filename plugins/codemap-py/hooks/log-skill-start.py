@@ -12,6 +12,16 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Claude launches this hook as `python "<plugin-root>/hooks/log-skill-start.py"`, which
+# already puts hooks/ on sys.path — but the test suite loads it through
+# `importlib.util.spec_from_file_location`, which does not. Inserting explicitly makes
+# the shared-helper import resolve under every load mechanism.
+_HOOKS_DIR = Path(__file__).resolve().parent
+if str(_HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_DIR))
+
+import _hookutil  # noqa: E402  (needs the sys.path insert above)
+
 #: Same sanitizer as ``codemap_py.telemetry`` — the shard names must agree to join.
 _UNSAFE_KEY = re.compile(r"[^A-Za-z0-9_-]")
 
@@ -21,33 +31,10 @@ def iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def project_name(cwd: Path | None = None) -> str:
-    """Return the project key: the basename of the nearest enclosing git root.
-
-    Must agree with ``seed-session.py``, ``log-tool-use.py`` and ``codemap_py.telemetry``:
-    all four address one per-project session marker, and keying this hook on ``cwd.name``
-    made a session started in a subdirectory mint a *second*, unjoinable session id.
-
-    Args:
-        cwd: Directory to resolve from; defaults to the process working directory.
-
-    Returns:
-        The git-root basename, or the directory's own basename outside a repository.
-
-    Examples:
-        >>> import tempfile
-        >>> with tempfile.TemporaryDirectory() as d:
-        ...     nested = Path(d) / "myproj" / "src"
-        ...     nested.mkdir(parents=True)
-        ...     (Path(d) / "myproj" / ".git").mkdir()
-        ...     project_name(nested)
-        'myproj'
-    """
-    start = (cwd or Path.cwd()).resolve()
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate.name
-    return start.name
+# Re-exported from the shared helper: this hook, ``seed-session.py``, ``log-tool-use.py``
+# and ``codemap_py.telemetry`` all address ONE per-project marker, and a divergent copy
+# here minted a second, unjoinable session id rather than raising anything.
+project_name = _hookutil.project_name
 
 
 def resolve_session(session_file: Path) -> str:
@@ -81,9 +68,10 @@ def main() -> int:
         tmp_dir = Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
         session = resolve_session(tmp_dir / f"codemap-{project_name()}-session")
         safe_session = _UNSAFE_KEY.sub("-", session)
-        # CODEMAP_LOG_DIR is honoured here as it is by log-tool-use.py and the cli layer;
-        # a shard that ignored the override landed outside the directory debrief reads.
-        log_dir = Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))
+        # Resolved through the shared helper so this shard lands in the same directory
+        # log-tool-use.py and the cli layer write to — CODEMAP_LOG_DIR honoured, and the
+        # default anchored to the project root rather than to whatever CWD Claude had.
+        log_dir = _hookutil.log_dir()
         log_file = log_dir / (f"skills_{safe_session}.jsonl" if safe_session else "skills.jsonl")
         record = {
             "ts": iso_now(),

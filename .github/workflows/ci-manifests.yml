@@ -1,0 +1,58 @@
+name: CI manifests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "plugins/**"
+      - "benchmarks/**"
+      - "pyproject.toml"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  manifests:
+    name: manifest ${{ matrix.manifest }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        manifest: ["provider-parity-methodology", "codex-integration", "codex-agentic"]
+    timeout-minutes: 10
+    env:
+      UV_PYTHON: "3.12"
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      # The job-level UV_PYTHON is uv's own equivalent of --python, so no uv run below
+      # repeats the version; the action input installs that interpreter.
+      - name: 📦 Install uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.UV_PYTHON }}
+
+      # Manifests are gitignored generated artifacts, so a fresh checkout has none to
+      # compare against: build first, then --check that a rebuild is byte-identical.
+      # The builders form a chain — codex-agentic hashes codex-integration.json, and both
+      # Codex builders read provider-parity-methodology.json — so a job builds every
+      # manifest its own target depends on before verifying that target alone.
+      # Bytes are Python-version independent but embed an OS-resolved scan root, so the
+      # matrix covers operating systems, not interpreter versions.
+      - name: 🔨 Build provider-parity-methodology
+        run: uv run --only-group test python benchmarks/build-provider-parity-methodology-manifest.py
+
+      - name: 🔨 Build codex-integration
+        if: matrix.manifest != 'provider-parity-methodology'
+        run: uv run --only-group test python benchmarks/build-codex-integration-manifest.py
+
+      - name: 🔨 Build codex-agentic
+        if: matrix.manifest == 'codex-agentic'
+        run: uv run --only-group test python benchmarks/build-codex-agentic-manifest.py
+
+      - name: 🔒 Verify ${{ matrix.manifest }} rebuilds byte-identically
+        run: uv run --only-group test python "benchmarks/build-${{ matrix.manifest }}-manifest.py" --check

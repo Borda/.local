@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 
 import pytest
 
 SUITE_PATH = Path(__file__).resolve().parents[1] / "suites" / "tasks-fix-single.json"
-FROZEN_REPO = Path("/private/tmp/codemap-provider-parity-pl-2.6.5")
+# Same canonical resolution the Fix stage itself uses: the root temp directory (which is
+# `/private/tmp` once resolved on the canonical macOS host), overridable for a host whose
+# root temp directory differs. The oracles read real frozen sources, so every test that
+# needs them is guarded on the repository being materialized rather than assuming a path.
+FROZEN_REPO = Path(
+    os.environ.get("CODEMAP_PARITY_REPO") or f"{os.sep}tmp{os.sep}codemap-provider-parity-pl-2.6.5"
+).resolve()
+requires_frozen_repo = pytest.mark.skipif(not FROZEN_REPO.is_dir(), reason="frozen benchmark repository is unavailable")
 BENCHMARKS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARKS))
 
@@ -25,6 +33,7 @@ def _tasks() -> dict[str, dict[str, object]]:
     return {task["id"]: task for task in json.loads(SUITE_PATH.read_text(encoding="utf-8"))}
 
 
+@requires_frozen_repo
 @pytest.mark.parametrize("task_id", ("FS-01", "FS-02", "FS-03", "FS-04"))
 def test_oracle_rejects_the_frozen_unfixed_source(task_id: str) -> None:
     """Each selected task has a real failing baseline at the locked revision."""
@@ -33,6 +42,7 @@ def test_oracle_rejects_the_frozen_unfixed_source(task_id: str) -> None:
     assert run_fix_single_oracle(FROZEN_REPO, contract) is False
 
 
+@requires_frozen_repo
 def test_patience_oracle_accepts_a_behavioral_fix(tmp_path: Path) -> None:
     """A guard must reject zero while retaining a legal positive value."""
     task = _tasks()["FS-01"]
@@ -54,6 +64,7 @@ def test_patience_oracle_accepts_a_behavioral_fix(tmp_path: Path) -> None:
     assert run_fix_single_oracle(tmp_path, contract) is True
 
 
+@requires_frozen_repo
 @pytest.mark.parametrize(
     ("task_id", "old", "new"),
     (

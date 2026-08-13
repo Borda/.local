@@ -34,7 +34,7 @@ research not installed → sub `research:X` with `general-purpose`, prepend role
 Codemap and develop expose skills only — no agent-level fallback. When absent, skip ops requiring their skills and log:
 
 ```
-"codemap plugin not installed — skipping <codemap:skill>"
+"codemap plugin not installed — skipping <codemap-py:skill>"
 "develop plugin not installed — skipping <develop:skill>"
 ```
 

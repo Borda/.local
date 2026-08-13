@@ -10,11 +10,47 @@ on:
       - "pyproject.toml"
       - "sync.sh"
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
+  codex-rig:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+    timeout-minutes: 10
+    env:
+      UV_PYTHON: "3.12"
+      # Bytecode written beside a packaged file changes what the manifest checks hash over.
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      # The job-level UV_PYTHON is uv's own equivalent of --python, so no uv run below
+      # repeats the version; the action input installs that interpreter.
+      - name: 📦 Install uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.UV_PYTHON }}
+
+      - name: 🐧 Verify Codex Rig entrypoints
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          uv run --only-group test python plugins/codex-rig/scripts/build_package.py --check
+          uv run --only-group test python plugins/codex-rig/scripts/validate_package.py
+          uv run --only-group test python plugins/codex-rig/shared/collect_pr.py --help
+
+      # Native pwsh, not the Git Bash the job default supplies: it is the shell a Windows user
+      # actually invokes these entrypoints from, and the one that surfaced the path defects.
+      - name: 🪟 Verify native Codex Rig entrypoints
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          uv run --only-group test python plugins/codex-rig/scripts/build_package.py --check
+          uv run --only-group test python plugins/codex-rig/scripts/validate_package.py
+          uv run --only-group test python plugins/codex-rig/shared/collect_pr.py --help
+
   tests:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -22,39 +58,23 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-    timeout-minutes: 10
+    timeout-minutes: 25
 
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
-
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
 
       - name: 🟢 Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: 📦 Install uv
+      # The action's python-version input sets UV_PYTHON, uv's equivalent of --python,
+      # so the pytest run below does not repeat the matrix version.
+      - name: 📦 Install uv and Python
         uses: astral-sh/setup-uv@v5
-
-      - name: 🔒 Verify deterministic benchmark manifests
-        run: |
-          uv run --only-group test --python ${{ matrix.python-version }} python benchmarks/build-provider-parity-methodology-manifest.py --check
-          uv run --only-group test --python ${{ matrix.python-version }} python benchmarks/build-codex-integration-manifest.py --check
-          uv run --only-group test --python ${{ matrix.python-version }} python benchmarks/build-codex-agentic-manifest.py --check
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: 🧪 Run plugin tests (Python bin/ + JS hooks)
-        run: uv run --only-group test --python ${{ matrix.python-version }} pytest -W error::DeprecationWarning
-
-      - name: 🪟 Verify native Codex Rig entrypoints
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $env:PYTHONDONTWRITEBYTECODE = "1"
-          uv run --only-group test --python ${{ matrix.python-version }} python plugins/codex-rig/scripts/build_package.py --check
-          uv run --only-group test --python ${{ matrix.python-version }} python plugins/codex-rig/scripts/validate_package.py
-          uv run --only-group test --python ${{ matrix.python-version }} python plugins/codex-rig/shared/collect_pr.py --help
+        run: uv run --only-group test pytest -W error::DeprecationWarning --durations=100

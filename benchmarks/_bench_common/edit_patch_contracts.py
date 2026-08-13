@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 import re
 import subprocess
 import sys
@@ -24,6 +24,7 @@ from types import MappingProxyType, SimpleNamespace
 from typing import Any, Callable, Optional
 
 from .provider_parity_contracts import canonical_task_hash, prompt_hash
+from .subprocess_env import minimal_child_env
 
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}$")
@@ -546,7 +547,7 @@ def _fix_single_worker_verdict(oracle_id: str, source: str, filename: str, *, ti
                 text=True,
                 errors="replace",
                 cwd=sandbox,
-                env={"PATH": os.environ.get("PATH", "")},
+                env=minimal_child_env(),
                 timeout=timeout_s,
                 check=False,
             )
@@ -1200,14 +1201,96 @@ def stage_contract_sha256(contracts: Sequence[EditTaskContract]) -> str:
     )
 
 
-def semantic_index_sha256(payload: Mapping[str, Any], source_root: Path) -> str:
-    """Hash graph content after removing only runtime-root and scan-time metadata."""
-    runtime_root = str(source_root.resolve())
+def _is_absolute_anywhere(value: str) -> bool:
+    """Return whether a recorded path is absolute under POSIX or Windows rules.
+
+    A lock document is portable data: the host reading one does not get to decide whether
+    the path another host recorded was absolute. ``os.path.isabs`` cannot stand in here —
+    ``ntpath.isabs("/x")`` changed its answer in Python 3.13, so a host-flavoured check
+    would begin rejecting valid locks on an interpreter upgrade with no other signal.
+
+    Args:
+        value: Recorded path string from a lock document.
+
+    Returns:
+        Whether either path flavour considers the value absolute.
+
+    Examples:
+        >>> _is_absolute_anywhere("/canonical/checkout")
+        True
+        >>> _is_absolute_anywhere(r"C:\\canonical\\checkout")
+        True
+        >>> _is_absolute_anywhere("relative/checkout")
+        False
+    """
+    return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+
+
+def _rerooted_posix(value: str, runtime_root: str) -> str:
+    """Replace runtime-root prefixes and render each surviving tail separator-free.
+
+    Stripping the root is not enough to make a digest portable: the path that remains
+    still carries the recording host's separator, so the same graph hashes differently
+    on Windows than on POSIX and a lock recorded on either can never verify on the other.
+    Only a tail that followed a matched root is renormalized — a backslash elsewhere in a
+    payload is content, not a separator, and rewriting it would corrupt the digest.
+
+    Args:
+        value: One string leaf from an index payload.
+        runtime_root: Resolved scan root to strip, in the recording host's own form.
+
+    Returns:
+        The string with each root occurrence replaced and its tail in POSIX form.
+
+    Examples:
+        >>> _rerooted_posix("/repo/src/app.py", "/repo")
+        '<runtime-root>/src/app.py'
+        >>> _rerooted_posix(r"D:\\repo\\src\\app.py", r"D:\\repo")
+        '<runtime-root>/src/app.py'
+        >>> _rerooted_posix("unrelated content", "/repo")
+        'unrelated content'
+    """
+    if runtime_root not in value:
+        return value
+    head, *tails = value.split(runtime_root)
+    rendered = [head]
+    for tail in tails:
+        rendered.append("<runtime-root>")
+        if tail:
+            rendered.append(PureWindowsPath(tail).as_posix())
+    return "".join(rendered)
+
+
+def semantic_index_sha256(payload: Mapping[str, Any], source_root: PurePath) -> str:
+    """Hash graph content after removing only runtime-root and scan-time metadata.
+
+    The digest is graph identity, so it must not depend on which host recorded the scan:
+    the runtime root is stripped and every surviving path tail is rendered in POSIX form.
+    A pure path is accepted and taken as already resolved, which is how a scan recorded on
+    the other platform is re-hashed without a matching filesystem present.
+
+    Args:
+        payload: Parsed index document.
+        source_root: Scan root to strip, as a concrete or pure path.
+
+    Returns:
+        The hex digest of the root-stripped, separator-normalized payload.
+
+    Examples:
+        >>> from pathlib import PurePosixPath, PureWindowsPath
+        >>> posix = {"modules": [{"file": "/repo/src/app.py"}]}
+        >>> windows = {"modules": [{"file": r"D:\\repo\\src\\app.py"}]}
+        >>> digest = semantic_index_sha256(posix, PurePosixPath("/repo"))
+        >>> digest == semantic_index_sha256(windows, PureWindowsPath(r"D:\\repo"))
+        True
+    """
+    resolve = getattr(source_root, "resolve", None)
+    runtime_root = str(source_root if resolve is None else resolve())
 
     def replace_root(value: Any) -> Any:
         """Replace embedded runtime-root prefixes without changing structure."""
         if isinstance(value, str):
-            return value.replace(runtime_root, "<runtime-root>")
+            return _rerooted_posix(value, runtime_root)
         if isinstance(value, list):
             return [replace_root(item) for item in value]
         if isinstance(value, dict):
@@ -1249,7 +1332,7 @@ def validate_patch_index_bundle(
         raise ValueError("patch index locks use an unsupported schema")
     canonical_root = document.get("canonical_scan_root")
     locks = document.get("tasks")
-    if not isinstance(canonical_root, str) or not Path(canonical_root).is_absolute() or not isinstance(locks, dict):
+    if not isinstance(canonical_root, str) or not _is_absolute_anywhere(canonical_root) or not isinstance(locks, dict):
         raise ValueError("patch index locks require an absolute canonical root and tasks object")
     task_ids = [contract.task_id for contract in contracts]
     if not task_ids or len(task_ids) != len(set(task_ids)):

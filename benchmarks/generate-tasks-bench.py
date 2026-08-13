@@ -306,7 +306,10 @@ def run_scan_query(sq: Path, args: list[str], index_path: Path, repo_path: Path)
     Returns:
         Parsed dict from stdout, or None on error.
     """
-    cmd = ["python3", str(sq.resolve()), "--index", str(index_path.resolve())] + args
+    # The launcher is an extension-less Python script: its shebang only selects an
+    # interpreter on POSIX, and "python3" is not a reliable command name on Windows.
+    # Running it through the current interpreter matches benchmarks/run-codemap-cli.py.
+    cmd = [sys.executable, str(sq.resolve()), "--index", str(index_path.resolve())] + args
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(repo_path))
         if result.returncode != 0:
@@ -2568,7 +2571,7 @@ def main(
 
     # Load tasks first — repo header provides local_path for fallback discovery
     try:
-        with TASKS_FILE.open() as f:
+        with TASKS_FILE.open(encoding="utf-8") as f:
             _raw = json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
         print(f"ERROR: cannot read {TASKS_FILE}: {exc}")
@@ -2673,7 +2676,10 @@ def main(
             print("\nUpdate aborted: every task type must have a validator")
         # Only write the full file when no --task filter was given (`task` is the filter, str | None).
         elif task is None:
-            with TASKS_FILE.open("w") as f:
+            # newline="\n" pins LF bytes on every OS: the task file is a byte-compared,
+            # hash-stable benchmark artefact, and text mode would otherwise translate each
+            # "\n" to os.linesep and rewrite the whole file on a Windows run.
+            with TASKS_FILE.open("w", encoding="utf-8", newline="\n") as f:
                 if _tasks_wrapper is not None:
                     out = {**_tasks_wrapper, "tasks": updated_tasks}
                     json.dump(out, f, indent=2, sort_keys=True)

@@ -9,11 +9,11 @@ path substring match. The ownership cases below are the guard against that.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 import sync_rules
-from sync_rules import SourceError, cache_lineage, dest_name, main, owns, sync
+from sync_rules import SourceError, cache_lineage, dest_name, main, owns, read_link_target, sync
 
 MARKETPLACE = "borda-ai-rig"
 PLUGIN = "develop"
@@ -72,8 +72,8 @@ def test_sibling_plugins_do_not_collide(tmp_path: Path) -> None:
 
     assert _dest(home).is_symlink()
     assert _dest(home, plugin="oss").is_symlink()
-    assert Path(_dest(home).readlink()).parent.parent == develop
-    assert Path(_dest(home, plugin="oss").readlink()).parent.parent == oss
+    assert Path(read_link_target(_dest(home))).parent.parent == develop
+    assert Path(read_link_target(_dest(home, plugin="oss"))).parent.parent == oss
 
 
 def test_cache_lineage_only_for_installed_roots(tmp_path: Path) -> None:
@@ -144,7 +144,7 @@ def test_creates_link_when_absent(tmp_path: Path) -> None:
     result = sync(PLUGIN, root, home)
 
     assert result.linked == ["develop-quality-gates.md"]
-    assert _dest(home).readlink() == root / "rules" / "quality-gates.md"
+    assert Path(read_link_target(_dest(home))) == root / "rules" / "quality-gates.md"
 
 
 def test_creates_rules_dir_when_missing(tmp_path: Path) -> None:
@@ -165,7 +165,7 @@ def test_relative_plugin_root_still_links_absolutely(tmp_path: Path, monkeypatch
 
     sync(PLUGIN, Path(root.name), home)
 
-    assert _dest(home).readlink().is_absolute()
+    assert Path(read_link_target(_dest(home))).is_absolute()
     assert _dest(home).resolve().is_file()
 
 
@@ -189,7 +189,7 @@ def test_refreshes_same_lineage_stale_link(tmp_path: Path) -> None:
     result = sync(PLUGIN, new, home)
 
     assert result.linked == ["develop-quality-gates.md"]
-    assert _dest(home).readlink() == new / "rules" / "quality-gates.md"
+    assert Path(read_link_target(_dest(home))) == new / "rules" / "quality-gates.md"
 
 
 def test_refreshes_broken_owned_link(tmp_path: Path) -> None:
@@ -201,7 +201,7 @@ def test_refreshes_broken_owned_link(tmp_path: Path) -> None:
     result = sync(PLUGIN, root, home)
 
     assert result.linked == ["develop-quality-gates.md"]
-    assert _dest(home).readlink() == root / "rules" / "quality-gates.md"
+    assert Path(read_link_target(_dest(home))) == root / "rules" / "quality-gates.md"
 
 
 # --- conflicts ---------------------------------------------------------------
@@ -230,7 +230,7 @@ def test_foreign_link_is_preserved_as_conflict(tmp_path: Path) -> None:
     result = sync(PLUGIN, root, home)
 
     assert result.conflicts == [f"develop-quality-gates.md → {foreign}"]
-    assert _dest(home).readlink() == foreign
+    assert Path(read_link_target(_dest(home))) == foreign
     assert foreign.is_file()
 
 
@@ -242,7 +242,7 @@ def test_relative_foreign_target_is_preserved(tmp_path: Path) -> None:
     result = sync(PLUGIN, root, home)
 
     assert result.conflicts
-    assert _dest(home).readlink() == Path("../../dotfiles/quality-gates.md")
+    assert Path(read_link_target(_dest(home))) == Path("../../dotfiles/quality-gates.md")
 
 
 def test_relative_owned_target_is_recognised(tmp_path: Path) -> None:
@@ -267,7 +267,7 @@ def test_broken_foreign_link_is_preserved(tmp_path: Path) -> None:
     result = sync(PLUGIN, root, home)
 
     assert result.conflicts == [f"develop-quality-gates.md → {dangling}"]
-    assert _dest(home).readlink() == dangling
+    assert Path(read_link_target(_dest(home))) == dangling
 
 
 def test_approve_replaces_conflicts(tmp_path: Path) -> None:
@@ -278,7 +278,7 @@ def test_approve_replaces_conflicts(tmp_path: Path) -> None:
     result = sync(PLUGIN, root, home, approve=True)
 
     assert result.replaced == ["develop-quality-gates.md"]
-    assert _dest(home).readlink() == root / "rules" / "quality-gates.md"
+    assert Path(read_link_target(_dest(home))) == root / "rules" / "quality-gates.md"
 
 
 # --- obsolete pruning --------------------------------------------------------
@@ -426,7 +426,7 @@ def test_validation_failure_leaves_existing_links_untouched(tmp_path: Path) -> N
 
     with pytest.raises(SourceError):
         sync(PLUGIN, root, home)
-    assert _dest(home).readlink() == root / "rules" / "quality-gates.md"
+    assert Path(read_link_target(_dest(home))) == root / "rules" / "quality-gates.md"
 
 
 # --- containment -------------------------------------------------------------
@@ -445,6 +445,57 @@ def test_writes_nothing_outside_claude_rules(tmp_path: Path) -> None:
 
     assert before == after
     assert (codex / "config.toml").read_text(encoding="utf-8") == "keep\n"
+
+
+# --- Windows link-target spelling --------------------------------------------
+#
+# These run everywhere. ``os.readlink`` only produces the extended-length spelling on
+# Windows, and ``pathlib`` picks its flavour from the host, so the Windows semantics are
+# exercised through ``PureWindowsPath``/``ntpath`` directly rather than by pretending to
+# be win32 — monkeypatching ``sys.platform`` does not change how ``pathlib`` parses paths.
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param(r"\\?\C:\p\rules\quality-gates.md", r"C:\p\rules\quality-gates.md", id="drive"),
+        pytest.param(r"\\?\UNC\server\share\gates.md", r"\\server\share\gates.md", id="unc"),
+        pytest.param(r"C:\p\rules\quality-gates.md", r"C:\p\rules\quality-gates.md", id="already-plain"),
+        pytest.param("/h/.claude/rules/quality-gates.md", "/h/.claude/rules/quality-gates.md", id="posix-untouched"),
+        pytest.param("../../dotfiles/quality-gates.md", "../../dotfiles/quality-gates.md", id="relative-untouched"),
+    ],
+)
+def test_extended_length_prefix_is_stripped(raw: str, expected: str) -> None:
+    """Windows spells absolute link targets in the ``\\\\?\\`` namespace; POSIX targets never do."""
+    assert sync_rules.strip_extended_prefix(raw) == expected
+
+
+def test_extended_length_prefix_defeats_the_ownership_comparison() -> None:
+    """The prefix is why ownership failed: same file, unequal path — so stripping is the fix."""
+    root = PureWindowsPath(r"C:\h\.claude\plugins\cache\borda-ai-rig\develop\0.19.0")
+    raw = rf"\\?\{root}\rules\quality-gates.md"
+
+    assert not PureWindowsPath(raw).is_relative_to(root)
+    assert PureWindowsPath(sync_rules.strip_extended_prefix(raw)).is_relative_to(root)
+
+
+def test_stripping_does_not_adopt_a_foreign_windows_target() -> None:
+    """Normalising the spelling must not widen ownership — a dotfiles link stays foreign."""
+    root = PureWindowsPath(r"C:\h\.claude\plugins\cache\borda-ai-rig\develop\0.19.0")
+    foreign = sync_rules.strip_extended_prefix(r"\\?\C:\h\dotfiles\rules\quality-gates.md")
+
+    assert not PureWindowsPath(foreign).is_relative_to(root)
+
+
+def test_read_link_target_normalises_what_the_link_reports(tmp_path: Path) -> None:
+    """The public reader is what every consumer uses, so the whole module sees one spelling."""
+    source = tmp_path / "quality-gates.md"
+    source.write_text("# gates\n", encoding="utf-8")
+    link = tmp_path / "develop-quality-gates.md"
+    link.symlink_to(source)
+
+    assert read_link_target(link) == sync_rules.strip_extended_prefix(str(link.readlink()))
+    assert Path(read_link_target(link)) == source
 
 
 # --- CLI ---------------------------------------------------------------------

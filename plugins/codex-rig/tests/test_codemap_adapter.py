@@ -59,6 +59,32 @@ _DEGRADED_QUERY = {
     "index": {"query_complete": False, "not_covered": ["dynamic-dispatch"], "degraded": 0, "stale": False}
 }
 _STALE_QUERY = {"index": {"query_complete": True, "not_covered": [], "degraded": 0, "stale": True}}
+_STALE_DEGRADED_QUERY = {
+    "index": {"query_complete": False, "not_covered": ["dynamic-dispatch"], "degraded": 1, "stale": True}
+}
+# A provider new enough to report which index it opened, agreeing with what `doctor` resolved.
+_AGREEING_QUERY = {
+    "index": {
+        "query_complete": True,
+        "not_covered": [],
+        "degraded": 0,
+        "stale": False,
+        "index_path": _HEALTHY_DOCTOR["index_path"],
+    }
+}
+# The same healthy answer, but opened from a different index than `doctor` resolved: the two
+# processes disagree about which index is this project's. Fabricated here rather than staged as a
+# real double index, since the adapter's job is to report the disagreement, not to produce one.
+_DIVERGENT_INDEX_PATH = "/fake/other-root/.cache/codemap/proj.json"
+_DIVERGENT_QUERY = {
+    "index": {
+        "query_complete": True,
+        "not_covered": [],
+        "degraded": 0,
+        "stale": False,
+        "index_path": _DIVERGENT_INDEX_PATH,
+    }
+}
 
 
 def _fake_script(doctor_payload: dict, doctor_exit: int, query_payload: dict, query_exit: int) -> str:
@@ -451,6 +477,163 @@ def test_gather_context_stale_when_query_reports_stale(monkeypatch: pytest.Monke
     assert context.status == adapter.STATUS_STALE
 
 
+def test_gather_context_composes_stale_and_gap_reported_by_one_query(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keep both caveats when a single query is stale and non-exhaustive at once."""
+    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _STALE_DEGRADED_QUERY, 0))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("audit")
+
+    assert context.status == adapter.STATUS_STALE_DEGRADED
+    assert context.to_dict()["status"] == "stale+degraded"
+
+
+def test_gather_context_composes_stale_and_gap_split_across_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Compose caveats raised by different queries so neither batch member masks the other."""
+    adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
+    )
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        if argv[1] == "doctor":
+            return 0, _HEALTHY_DOCTOR, None
+        return (0, _STALE_QUERY, None) if argv[3] == "undocumented" else (0, _DEGRADED_QUERY, None)
+
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("audit")
+
+    assert context.status == adapter.STATUS_STALE_DEGRADED
+    assert [outcome.stale for outcome in context.queries] == [True, False]
+    assert [outcome.query_complete for outcome in context.queries] == [True, False]
+
+
+def test_query_records_the_index_path_the_provider_reported_for_itself(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Record each query's own index path so provenance names the file that answered."""
+    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _AGREEING_QUERY, 0))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    assert [outcome.index_path for outcome in context.queries] == [_HEALTHY_DOCTOR["index_path"]]
+    assert context.to_dict()["queries"][0]["index_path"] == _HEALTHY_DOCTOR["index_path"]
+    # Agreement is not a divergence: the evidence list stays empty and is still serialized.
+    assert context.index_path_divergence == ()
+    assert context.to_dict()["index_path_divergence"] == []
+
+
+def test_provider_without_index_path_records_none_and_claims_no_divergence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Tolerate a provider predating the field: absence stays absent, never back-filled."""
+    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    assert context.status == adapter.STATUS_AVAILABLE
+    assert [outcome.index_path for outcome in context.queries] == [None]
+    assert context.to_dict()["queries"][0]["index_path"] is None
+    # An unreported path must not be compared against the probe's — absence is not disagreement.
+    assert context.index_path_divergence == ()
+
+
+def test_divergent_index_path_is_recorded_as_evidence_without_changing_status(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Report a query that opened a different index than `doctor` resolved, and keep both paths.
+
+    The status must stay `available`: the answers themselves were complete and fresh. Folding the
+    disagreement into the status would assert which of the two processes was wrong, and would cost
+    the reader the two paths that make the disagreement diagnosable.
+    """
+    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _DIVERGENT_QUERY, 0))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    assert context.status == adapter.STATUS_AVAILABLE
+    assert [record.to_dict() for record in context.index_path_divergence] == [
+        {
+            "subcommand": "diff-impact",
+            "doctor_index_path": _HEALTHY_DOCTOR["index_path"],
+            "query_index_path": _DIVERGENT_INDEX_PATH,
+        }
+    ]
+    # Neither path is reconciled away: the query keeps its own, the probe keeps its own.
+    assert context.queries[0].index_path == _DIVERGENT_INDEX_PATH
+    assert context.probe.doctor.index_path == _HEALTHY_DOCTOR["index_path"]
+
+
+def test_not_indexed_exit_records_the_addressed_path_and_its_divergence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keep the path a failed load addressed: a wrong index dir is exactly what diverges.
+
+    A not-indexed exit raised by a failed load reports the path at the payload root rather
+    than under `index`. That path is the only provenance such a run has, and comparing it is
+    the case the field most needs to cover — the query never opened the index the probe found.
+    """
+    not_indexed = {"error": "index is not valid JSON", "path": _DIVERGENT_INDEX_PATH}
+    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, not_indexed, 3))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    outcome = context.queries[0]
+    assert (outcome.exit_code, outcome.error) == (3, "target not indexed")
+    assert outcome.index_path == _DIVERGENT_INDEX_PATH
+    assert [record.query_index_path for record in context.index_path_divergence] == [_DIVERGENT_INDEX_PATH]
+
+
+def test_not_indexed_exit_without_a_path_key_claims_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A not-indexed exit raised after a successful load carries no path, so none is invented."""
+    not_indexed = {"error": "module not indexed", "module": "pkg.missing", "suggestions": []}
+    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, not_indexed, 3))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    adapter = load_adapter()
+
+    context = adapter.gather_structural_context("review")
+
+    assert context.queries[0].index_path is None
+    assert context.index_path_divergence == ()
+
+
+def test_divergence_is_recorded_per_query_not_once_per_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Attribute divergence to the query that diverged, leaving an agreeing sibling unaccused."""
+    adapter = load_adapter()
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution("/explicit/codemap-py", adapter.STATUS_AVAILABLE, "test launcher"),
+    )
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        if argv[1] == "doctor":
+            return 0, _HEALTHY_DOCTOR, None
+        return (0, _AGREEING_QUERY, None) if argv[3] == "undocumented" else (0, _DIVERGENT_QUERY, None)
+
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("audit")
+
+    assert [record.subcommand for record in context.index_path_divergence] == ["dead-modules"]
+    assert context.status == adapter.STATUS_AVAILABLE
+
+
 def test_gather_context_rejects_unknown_category(tmp_path: Path) -> None:
     """Refuse an undefined category rather than silently mapping it to an empty query set."""
     adapter = load_adapter()
@@ -459,17 +642,64 @@ def test_gather_context_rejects_unknown_category(tmp_path: Path) -> None:
         adapter.gather_structural_context("not-a-real-category")
 
 
-def test_develop_query_without_target_records_bounded_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A target-requiring query with no target degrades that one query instead of guessing one."""
-    _write_fake_codemap_py(tmp_path, _fake_script(_HEALTHY_DOCTOR, 0, _CLEAN_QUERY, 0))
-    monkeypatch.setenv("PATH", str(tmp_path))
+@pytest.mark.parametrize(
+    ("category", "expected_subcommands"),
+    [
+        pytest.param("analysis", ["central"], id="analysis-drops-deps"),
+        pytest.param("develop", ["coupled"], id="develop-drops-rdeps-and-test-impact"),
+    ],
+)
+def test_standard_batch_without_target_runs_only_target_free_queries(
+    monkeypatch: pytest.MonkeyPatch, category: str, expected_subcommands: list[str]
+) -> None:
+    """A targetless standard batch omits target-requiring queries rather than reporting a false gap."""
     adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
+    )
 
-    context = adapter.gather_structural_context("develop", target=None)
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        commands.append(argv)
+        return (0, _HEALTHY_DOCTOR, None) if argv[1] == "doctor" else (0, _CLEAN_QUERY, None)
 
-    rdeps = next(outcome for outcome in context.queries if outcome.subcommand == "rdeps")
-    assert rdeps.error is not None
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context(category, target=None)
+
+    assert context.status == adapter.STATUS_AVAILABLE
+    assert [outcome.subcommand for outcome in context.queries] == expected_subcommands
+    assert commands == [[launcher, "doctor", "--json"], [launcher, "query", "--compact", *expected_subcommands]]
+
+
+def test_standard_batch_of_only_target_requiring_queries_keeps_its_bounded_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Never report `available` off zero executed queries when every mapped query needs a target."""
+    adapter = load_adapter()
+    launcher = "/explicit/codemap-py"
+    commands: list[list[str]] = []
+    monkeypatch.setitem(adapter.CATEGORY_QUERIES, "targeted-only", (adapter.QuerySpec("rdeps", requires_target=True),))
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_codemap_executable",
+        lambda: adapter.LauncherResolution(launcher, adapter.STATUS_AVAILABLE, "test launcher"),
+    )
+
+    def run_json(argv: list[str], timeout: float) -> tuple[int, dict | None, str | None]:
+        commands.append(argv)
+        return 0, _HEALTHY_DOCTOR, None
+
+    monkeypatch.setattr(adapter, "_run_json", run_json)
+
+    context = adapter.gather_structural_context("targeted-only", target=None)
+
     assert context.status == adapter.STATUS_DEGRADED
+    assert context.queries[0].error == "target required, none supplied"
+    assert commands == [[launcher, "doctor", "--json"]]
 
 
 def test_cli_context_persists_json_to_out_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -500,7 +730,7 @@ def test_cli_context_persists_json_to_out_path(monkeypatch: pytest.MonkeyPatch, 
     assert stdout_payload == file_payload
     assert stdout_payload["status"] == "available"
     assert stdout_payload["protocol_version"] == "codemap-py.integration.v1"
-    assert stdout_payload["artifact_schema_version"] == 2
+    assert stdout_payload["artifact_schema_version"] == 3
     assert stdout_payload["query_kind"] == "standard"
     expected_launcher = str(tmp_path / ("codemap-py.bat" if os.name == "nt" else "codemap-py"))
     assert os.path.normcase(stdout_payload["probe"]["launcher"]) == os.path.normcase(expected_launcher)

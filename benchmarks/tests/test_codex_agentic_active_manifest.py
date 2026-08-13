@@ -60,7 +60,7 @@ def test_builder_stale_error_names_exact_rebuild_command(tmp_path: Path) -> None
     """Internal check mode must identify the command that repairs generated drift."""
     builder = runpy.run_path(str(BUILDER))
 
-    with pytest.raises(ValueError, match=r"run: python3 benchmarks/build-codex-agentic-manifest\.py$"):
+    with pytest.raises(ValueError, match=r"run: uv run python benchmarks/build-codex-agentic-manifest\.py$"):
         builder["_write_or_check"](tmp_path / "stale.json", b"expected\n", check=True)
 
 

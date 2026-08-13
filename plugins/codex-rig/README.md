@@ -4,7 +4,7 @@ Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Bor
 
 The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.7.4`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.7.5`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 ## What Codex Rig adds
 
@@ -96,7 +96,7 @@ $codex-rig:investigate find the root cause of this Windows-only CI failure
 $codex-rig:develop implement the verified fix and run relevant gates
 $codex-rig:code-review review the current diff with no prior assumptions
 $codex-rig:code-remediate close the high-severity findings
-$codex-rig:release assess release readiness for 0.8.0
+$codex-rig:release assess release readiness for 0.7.5
 ```
 
 For PR work:
@@ -149,7 +149,7 @@ Every workflow defines an input contract, fail-fast rules, required gates, artif
 
 `develop`, `investigate`, and `optimize` select a route and probe the [codemap-py](https://github.com/Borda/AI-Rig/tree/main/plugins/codemap-py) plugin once at a bounded decision point via `shared/codemap_adapter.py`, then persist the result to the run artifact — specialists consume that artifact, never a fresh query. An exact localized edit with no unresolved structural fact uses `skip`; one unresolved fact uses the matching single route; broad or unknown scope uses the legacy `standard` batch; an explicit structural request overrides `skip`. The other workflows retain their existing category-specific standard behavior or recorded not-applicable status. The adapter reads only the public `codemap-py doctor --json`/`query` CLI surface, never codemap-py's cache internals, source paths, or a cross-plugin Python import.
 
-The adapter reports one named status: `available`, `absent`, `stale`, `incompatible`, `degraded`, or `skipped`. `skipped` means the workflow deliberately selected zero Codemap subprocesses; it is not structural evidence. Absence and incompatibility are non-fatal — the workflow falls back to its normal bounded file inspection. `manage`, `sync`, `agent-shims`, `calibrate`, and `kaggle` stay not-applicable with a recorded behavioral reason (no Python call-graph subject); see `shared/codemap-contract.md` for the full protocol, adaptive route vocabulary, category-to-query map, and not-applicable rationale. Repository sync installs Codemap alongside Codex Rig, but Codex Rig retains zero runtime dependency on it: packaging, skill discovery, and startup still work when Codemap is absent or incompatible.
+The adapter reports one named status: `available`, `absent`, `stale`, `incompatible`, `degraded`, `stale+degraded`, or `skipped`. `skipped` means the workflow deliberately selected zero Codemap subprocesses; it is not structural evidence. `stale+degraded` is the vocabulary's only composed value and means both caveats hold at once, so neither masks the other. A standard batch run without `--target` omits the queries that require one instead of failing them, so a targetless probe reports the honest status of the queries it actually ran. Each query also records the index file that answered it, and any disagreement with the path the health probe resolved is listed under `index_path_divergence` as evidence — both paths retained, never reconciled, and never folded into the status. Absence and incompatibility are non-fatal — the workflow falls back to its normal bounded file inspection. `manage`, `sync`, `agent-shims`, `calibrate`, and `kaggle` stay not-applicable with a recorded behavioral reason (no Python call-graph subject); see `shared/codemap-contract.md` for the full protocol, adaptive route vocabulary, category-to-query map, per-skill route selection, and not-applicable rationale. Repository sync installs Codemap alongside Codex Rig, but Codex Rig retains zero runtime dependency on it: packaging, skill discovery, and startup still work when Codemap is absent or incompatible.
 
 ## Specialist role cards
 
@@ -198,7 +198,7 @@ Use delegation only when two or more disjoint workstreams can proceed without du
 - Terra owns implementation, runtime behavior, tests, data/ML, performance, curation, challenge, and executable verification.
 - Sol is reserved for solution architecture and security.
 
-Select the smallest capable tier from current task evidence: escalate only for a mandatory boundary or observed lower-tier insufficiency, de-escalate only after an evidenced scope split leaves bounded support, and never change tiers on cost alone. The canonical policy is [`shared/specialist-orchestration.md`](shared/specialist-orchestration.md#delegation-lead-and-model-routing).
+Select the smallest capable tier from current task evidence: escalate only for a mandatory boundary or observed lower-tier insufficiency, de-escalate only after an evidenced scope split leaves bounded support, and never change tiers on cost alone. The canonical policy is [`shared/specialist-orchestration.md`](https://github.com/Borda/AI-Rig/blob/main/plugins/codex-rig/shared/specialist-orchestration.md#delegation-lead-and-model-routing).
 
 Two consecutive work cycles without material progress, or three evidence-backed attempts that leave the same closure condition unmet, trigger a persisted and validated `reasoning-progress.json` stall ledger and one advisory escalation: a supported higher reasoning effort first, then the next permitted tier. The advisor supplies a bounded recovery action and stop condition but makes no changes; its route is valid only when the observed sandbox is `read-only`. If no safe route exists or that one action still fails to close the condition, Codex Rig stops and asks the user with consolidated evidence, hypotheses, rejected alternatives, and a recommended next step. This guardrail is distinct from, and never resets, the repeated-obstacle policy.
 

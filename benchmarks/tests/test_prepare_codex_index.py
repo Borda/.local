@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import subprocess
 from types import ModuleType
 
@@ -26,7 +26,10 @@ def _load_script() -> ModuleType:
 
 def _fixture_files(tmp_path: Path, expected_sha256: str, *, scan_version: int = 12) -> tuple[Path, Path, Path, bytes]:
     """Create one environment-dependent scan and its locked manifest oracle."""
-    source_root = tmp_path / "fresh-target"
+    # Resolved once: prepare_index rewrites against source_root.resolve(), so an unresolved
+    # fixture root (a Windows 8.3 short name, a macOS /tmp symlink) would spell the payload
+    # prefix differently from the prefix under rewrite and defeat the relocation.
+    source_root = (tmp_path / "fresh-target").resolve()
     source_root.mkdir(exist_ok=True)
     index_path = tmp_path / "index.json"
     index_path.write_text(
@@ -88,18 +91,32 @@ def test_prepare_index_rewrites_only_environment_metadata_to_exact_locked_bytes(
     assert index_path.read_bytes() == locked_bytes
 
 
+def _rooted_payload(root: Path) -> dict[str, object]:
+    """Return one scan payload whose every embedded path is spelled natively under *root*.
+
+    Both roots' payloads are built from ``Path`` joins rather than by relocating one
+    payload's JSON text: ``json.dumps(...).replace(str(root), ...)`` cannot match a
+    Windows root, because the JSON text escapes each separator as ``\\\\``.
+    """
+    return {
+        "scan_version": 13,
+        "scanned_at": "different-runtime-times-are-not-graph-identity",
+        "project": "fixture",
+        "scan_root": str(root),
+        "modules": [{"file": str(root / "src" / "demo.py"), "imports": [str(root / "src" / "helper.py")]}],
+    }
+
+
 def test_semantic_index_identity_is_stable_across_runtime_roots(tmp_path: Path) -> None:
     """Equivalent scans keep one semantic identity without sharing a runtime path."""
     module = _load_script()
-    first_root = tmp_path / "first" / "target"
-    second_root = tmp_path / "second" / "target"
-    payload = {
-        "scan_version": 13,
-        "scanned_at": "different-runtime-times-are-not-graph-identity",
-        "scan_root": str(first_root),
-        "modules": [{"file": f"{first_root}/src/demo.py", "imports": [f"{first_root}/src/helper.py"]}],
-    }
-    second_payload = json.loads(json.dumps(payload).replace(str(first_root), str(second_root)))
+    # Resolved: semantic_index_sha256 strips str(source_root.resolve()), so an unresolved root
+    # (a Windows 8.3 short name, a macOS /tmp symlink) spells the payload prefix differently
+    # from the prefix being stripped and no root would be removed from either digest.
+    first_root = (tmp_path / "first" / "target").resolve()
+    second_root = (tmp_path / "second" / "target").resolve()
+    payload = _rooted_payload(first_root)
+    second_payload = _rooted_payload(second_root)
 
     assert module.semantic_index_sha256(payload, first_root) == module.semantic_index_sha256(
         second_payload, second_root
@@ -156,7 +173,9 @@ def _locked_semantic_sha256(module: ModuleType, source: Path) -> str:
             "scanned_at": "locked",
             "project": "provider-parity-PT-01",
             "scan_root": str(source.resolve()),
-            "modules": [{"file": f"{source.resolve()}/demo.py"}],
+            # Native join, not an f-string "/" literal: the installed index carries the
+            # separator the scanner emitted, so a POSIX-spelled oracle never matches on Windows.
+            "modules": [{"file": str(source.resolve() / "demo.py")}],
         },
         source,
     )
@@ -203,7 +222,7 @@ def test_patch_index_bundle_builds_each_exact_historical_graph_at_the_runtime_ro
     payload = json.loads(index_path.read_text(encoding="utf-8"))
     assert installed == {"PT-01": hashlib.sha256(index_path.read_bytes()).hexdigest()}
     assert payload["scan_root"] == str(source.resolve())
-    assert payload["modules"][0]["file"] == f"{source.resolve()}/demo.py"
+    assert payload["modules"][0]["file"] == str(source.resolve() / "demo.py")
     assert (
         subprocess.run(
             ["git", "-C", str(source), "status", "--porcelain", "--untracked-files=no"],
@@ -308,6 +327,82 @@ def test_replace_root_rewrites_path_prefixes_without_touching_content(tmp_path: 
     }
 
 
+def test_replace_root_relocates_a_windows_spelled_scan_under_either_separator() -> None:
+    """A Windows-rooted scan relocates on any host, whichever separator spells its children.
+
+    Windows accepts both separators, so a scan taken there may carry either below the same
+    root; both must therefore delimit the tree, while a sibling that merely extends the root
+    name and prose that only mentions the checkout stay verbatim. Inputs are built with
+    ``PureWindowsPath`` so the Windows contract is exercised on every platform.
+    """
+    module = _load_script()
+    root = str(PureWindowsPath("C:/scan/repo"))
+    locked = str(PureWindowsPath("D:/locked/root"))
+    payload = {
+        "scan_root": root,
+        "modules": [
+            {
+                "file": str(PureWindowsPath("C:/scan/repo/src/demo.py")),
+                "forward_slash_child": f"{root}/src/helper.py",
+                "neighbour": str(PureWindowsPath("C:/scan/repo-other/src/demo.py")),
+                "docstring_first_line": f"Reads defaults from {root}\\setup.cfg at import time.",
+            }
+        ],
+    }
+
+    rewritten = module._replace_root(payload, root, locked)
+
+    assert rewritten == {
+        "scan_root": locked,
+        "modules": [
+            {
+                "file": str(PureWindowsPath("D:/locked/root/src/demo.py")),
+                "forward_slash_child": f"{locked}/src/helper.py",
+                "neighbour": str(PureWindowsPath("C:/scan/repo-other/src/demo.py")),
+                "docstring_first_line": f"Reads defaults from {root}\\setup.cfg at import time.",
+            }
+        ],
+    }
+
+
+def test_replace_root_keeps_a_backslash_named_sibling_of_a_posix_root_verbatim() -> None:
+    """A backslash is a legal POSIX filename character, so it never delimits a POSIX scan tree."""
+    module = _load_script()
+
+    rewritten = module._replace_root({"file": "/scan/repo\\sibling/demo.py"}, "/scan/repo", "/locked/root")
+
+    assert rewritten == {"file": "/scan/repo\\sibling/demo.py"}
+
+
+@pytest.mark.parametrize(
+    ("canonical_root", "absolute"),
+    [
+        pytest.param("/checkouts/repo", True, id="posix-root"),
+        pytest.param(str(PureWindowsPath("C:/checkouts/repo")), True, id="windows-drive-root"),
+        pytest.param(str(PureWindowsPath("//server/share/repo")), True, id="windows-unc-root"),
+        pytest.param("checkouts/repo", False, id="relative-root"),
+    ],
+)
+def test_patch_index_locks_accept_a_canonical_root_recorded_on_either_platform(
+    tmp_path: Path, canonical_root: str, absolute: bool
+) -> None:
+    """A lock is portable data: its canonical root is judged by both path flavours, not the host.
+
+    A run reads a lock recorded on the other OS — a POSIX root on Windows, a drive or UNC root
+    off Windows — and single-flavour validation rejected the foreign spelling as relative.
+    """
+    module = _load_script()
+    locks = _write_patch_locks(
+        tmp_path / "locks.json", commit="a" * 40, canonical_root=canonical_root, semantic_sha256="c" * 64
+    )
+
+    if not absolute:
+        with pytest.raises(ValueError, match="absolute canonical_scan_root"):
+            module._patch_index_locks(locks)
+        return
+    assert module._patch_index_locks(locks)["PT-01"]["baseline_commit"] == "a" * 40
+
+
 def test_patch_index_bundle_fails_before_scanning_when_baseline_object_is_missing(tmp_path: Path) -> None:
     """A paid patch scope cannot begin when its exact source object is unavailable."""
     module = _load_script()
@@ -366,21 +461,17 @@ def test_patch_index_bundle_rejects_incomplete_lock_rows_before_scanning(tmp_pat
 def test_prepare_index_uses_semantic_lock_without_rewriting_runtime_root(tmp_path: Path) -> None:
     """A prospective lock accepts equivalent scans at distinct roots and keeps each queryable path."""
     module = _load_script()
-    first_root = tmp_path / "first" / "target"
-    second_root = tmp_path / "second" / "target"
+    # Resolved for the same reason as the identity test above: prepare_index hashes through
+    # semantic_index_sha256, which strips the resolved spelling of the runtime root.
+    first_root = (tmp_path / "first" / "target").resolve()
+    second_root = (tmp_path / "second" / "target").resolve()
     first_root.mkdir(parents=True)
     second_root.mkdir(parents=True)
     first_index = tmp_path / "first-index.json"
     second_index = tmp_path / "second-index.json"
-    payload = {
-        "scan_version": 13,
-        "scanned_at": "runtime-time",
-        "project": "fixture",
-        "scan_root": str(first_root),
-        "modules": [{"file": f"{first_root}/src/demo.py", "imports": [f"{first_root}/src/helper.py"]}],
-    }
+    payload = _rooted_payload(first_root)
     first_index.write_text(json.dumps(payload), encoding="utf-8")
-    second_payload = json.loads(json.dumps(payload).replace(str(first_root), str(second_root)))
+    second_payload = _rooted_payload(second_root)
     second_index.write_text(json.dumps(second_payload), encoding="utf-8")
     semantic_sha256 = module.semantic_index_sha256(payload, first_root)
     manifest = tmp_path / "manifest.json"

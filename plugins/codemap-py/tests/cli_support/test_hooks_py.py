@@ -295,6 +295,71 @@ class TestInjectPreambleCurrency:
         assert not marker.exists()
 
 
+# ── inject-preamble: bounded index-header read ────────────────────────────────────
+
+
+class TestInjectPreambleHeaderFields:
+    """``header_fields`` reads identity out of a bounded index prefix, never the whole file.
+
+    The bound is the point: this runs on every prompt, and real indexes reach hundreds of MB
+    (well past ``MAX_PARSE_BYTES``), so a whole-file ``json.loads`` here would either stall the
+    prompt path or report every large project as ``unknown`` currency and never refresh.
+    """
+
+    def test_returns_every_identity_field_from_a_normal_index(self, tmp_path: Path) -> None:
+        """A small index yields git_sha, scanned_at and scan_root exactly as written."""
+        idx_dir = tmp_path / ".cache" / "codemap"
+        idx_path = _write_index(idx_dir, "proj", git_sha="a" * 40)
+
+        fields = _INJECT_MODULE.header_fields(idx_path)
+
+        assert fields == {
+            "git_sha": "a" * 40,
+            "scanned_at": "2026-06-20T00:00:00Z",
+            "scan_root": str(idx_dir.parent),
+        }
+
+    def test_backslashes_in_a_value_come_back_unescaped(self, tmp_path: Path) -> None:
+        """A Windows ``scan_root`` is stored JSON-escaped; the reader owes the caller the real path."""
+        idx_dir = tmp_path / ".cache" / "codemap"
+        idx_dir.mkdir(parents=True)
+        idx_path = idx_dir / "proj.json"
+        scan_root = r"C:\Users\runneradmin\AppData\Local\Temp\proj"
+        idx_path.write_text(
+            json.dumps({"git_sha": "c" * 40, "scanned_at": "2026-06-20T00:00:00Z", "scan_root": scan_root}),
+            encoding="utf-8",
+        )
+
+        fields = _INJECT_MODULE.header_fields(idx_path)
+
+        assert fields["scan_root"] == scan_root
+        assert r"\\" not in fields["scan_root"]
+
+    def test_field_past_the_peek_window_reads_as_absent(self, tmp_path: Path) -> None:
+        """Only the first HEADER_PEEK_BYTES are consulted — a later field comes back empty."""
+        idx_dir = tmp_path / ".cache" / "codemap"
+        idx_dir.mkdir(parents=True)
+        idx_path = idx_dir / "proj.json"
+        padding = "x" * (_INJECT_MODULE.HEADER_PEEK_BYTES * 2)
+        idx_path.write_text(
+            json.dumps({"git_sha": "b" * 40, "scan_root": str(tmp_path), "pad": padding, "scanned_at": "2026-07-01"}),
+            encoding="utf-8",
+        )
+
+        fields = _INJECT_MODULE.header_fields(idx_path)
+
+        assert fields["git_sha"] == "b" * 40
+        assert fields["scanned_at"] == ""
+
+    def test_unreadable_index_maps_every_field_to_empty(self, tmp_path: Path) -> None:
+        """An index path that cannot be read degrades to empty values, never an exception."""
+        missing = tmp_path / "absent" / "proj.json"
+
+        fields = _INJECT_MODULE.header_fields(missing)
+
+        assert fields == {"git_sha": "", "scanned_at": "", "scan_root": ""}
+
+
 # ── inject-preamble: stale-index background refresh + lock lifecycle ──────────────
 
 
@@ -1077,7 +1142,11 @@ class TestSessionKeyAgreement:
         result = self._run(self._TOOL_HOOK, {"tool_name": "Grep", "tool_input": {"pattern": "x"}}, nested, tmpdir)
 
         assert result.returncode == 0, result.stderr
-        shard = nested / ".cache" / "codemap" / "logs" / "tools_sid-sub.jsonl"
+        # Shard is asserted at the REPOSITORY root, not at *nested*: the hook anchors its
+        # log dir to the project root, so a subdirectory invocation joins the same shard
+        # the cli layer writes. Asserting `nested/.cache/...` here pinned the split-log
+        # defect itself — two halves of one session in two directories, neither an error.
+        shard = repo / ".cache" / "codemap" / "logs" / "tools_sid-sub.jsonl"
         assert shard.exists(), "subdirectory tool record did not join the seeded session shard"
         assert json.loads(shard.read_text().strip())["session"] == "sid-sub"
 
@@ -1090,7 +1159,7 @@ class TestSessionKeyAgreement:
         result = self._run(_SKILL, payload, nested, tmpdir)
 
         assert result.returncode == 0, result.stderr
-        shard = nested / ".cache" / "codemap" / "logs" / "skills_sid-sub.jsonl"
+        shard = repo / ".cache" / "codemap" / "logs" / "skills_sid-sub.jsonl"
         assert shard.exists(), "subdirectory skill record did not join the seeded session shard"
         assert json.loads(shard.read_text().strip())["session"] == "sid-sub"
 

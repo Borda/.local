@@ -10,36 +10,21 @@ import tempfile
 from pathlib import Path
 
 
-def project_name(cwd: Path | None = None) -> str:
-    """Return the project key: the basename of the nearest enclosing git root.
+# Claude launches this hook as `python "<plugin-root>/hooks/seed-session.py"`, which
+# already puts hooks/ on sys.path — but the test suite loads it through
+# `importlib.util.spec_from_file_location`, which does not. Inserting explicitly makes
+# the shared-helper import resolve under every load mechanism.
+_HOOKS_DIR = Path(__file__).resolve().parent
+if str(_HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_DIR))
 
-    This hook writes the marker every other layer reads, so its keying is the one the
-    readers (``log-tool-use.py``, ``log-skill-start.py``, ``codemap_py.telemetry``) must
-    reproduce. The root is found by walking for ``.git`` rather than by shelling out to
-    ``git rev-parse``, which is both cheaper and identical in result — except that it
-    keeps working when git is absent from ``PATH``. ``.git`` is matched as a file too,
-    which is how linked worktrees mark their root.
+import _hookutil  # noqa: E402  (needs the sys.path insert above)
 
-    Args:
-        cwd: Directory to resolve from; defaults to the process working directory.
-
-    Returns:
-        The git-root basename, or the directory's own basename outside a repository.
-
-    Examples:
-        >>> import tempfile
-        >>> with tempfile.TemporaryDirectory() as d:
-        ...     nested = Path(d) / "myproj" / "src"
-        ...     nested.mkdir(parents=True)
-        ...     (Path(d) / "myproj" / ".git").mkdir()
-        ...     project_name(nested)
-        'myproj'
-    """
-    start = (cwd or Path.cwd()).resolve()
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate.name
-    return start.name
+# This hook WRITES the marker every other layer reads, so its keying is the contract.
+# Re-exported rather than re-implemented: three hooks each carried their own copy of
+# this walk, and a divergence between copies is not an error — it is two files written
+# under two keys that simply never join.
+project_name = _hookutil.project_name
 
 
 def main() -> int:

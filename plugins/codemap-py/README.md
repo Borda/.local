@@ -63,7 +63,7 @@ On pytorch-lightning (646 modules), plain-arm agents hit 300-second hard timeout
 
 ### With codemap-py
 
-Wiring into `/develop` and `/oss` ships pre-built — nothing to run first. Run `/develop:refactor auth.py` — before spawning any agent, skill silent runs:
+`/develop` and `/oss` ship the gate wiring their skills read, and `/codemap-py:integration apply` inserts the managed block on first install. Run `/develop:refactor auth.py` — before spawning any agent, skill silent runs:
 
 ```bash
 codemap-py query --compact central --top 5         # highest risk overall
@@ -195,7 +195,7 @@ Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0
 >
 > codemap-py injects rich dependency graph into every agent prompt. On weaker models or tasks with large blast-radius graphs, extra context can overwhelm model, cause fallback to grep-heavy loops — performing *worse* than plain arm. Benchmark labels this failure mode `degenerate_grep_loop`.
 >
-> Good integration needs three things: (1) **skill-first protocol** — agent calls `/codemap-py:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap-py queries per task; (3) **hard stop on `query_complete: true`** — when index says list complete for query direction, write answer immediate, no more tool calls. `query_complete` direction-scoped: `deps`/`symbols` query on healthy module can be complete while another file degraded, but `rdeps`/`central`/`path` require zero degraded files. Legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle. Skipping any — especially ignoring completeness flag — primary cause of regressions flipping codemap-py benefit into liability. Wiring itself ships pre-built in `/develop` and `/oss`; run `/codemap-py:integration check` to confirm it's present and current rather than hand-editing skill files.
+> Good integration needs three things: (1) **skill-first protocol** — agent calls `/codemap-py:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap-py queries per task; (3) **hard stop on `query_complete: true`** — when index says list complete for query direction, write answer immediate, no more tool calls. `query_complete` direction-scoped: `deps`/`symbols` query on healthy module can be complete while another file degraded, but `rdeps`/`central`/`path` require zero degraded files. Legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle. Skipping any — especially ignoring completeness flag — primary cause of regressions flipping codemap-py benefit into liability. `/develop` and `/oss` ship the host file the managed block lands in; `/codemap-py:integration apply` inserts the block itself, and `check` reports whether it is present and current — either way, never hand-edit skill files.
 
 ### Executable workflow evidence
 
@@ -205,7 +205,7 @@ The complete ReadCrop, localized-fix, and Patch suites are accepted as separate 
 
 This evidence supports adaptive routing, not universal token savings. An exact `symbol` lookup establishes a source location, not behavioral sufficiency: for callbacks/hooks, cancellation or exception paths, scheduling/cleanup, and state transfer, read the surrounding source and named test/oracle, then use `fn-rdeps` or `fn-deps` only when caller or callee responsibility remains unresolved. `fn-rdeps` reports incoming call edges for a qualified symbol but does not enumerate subclass overrides. For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` to find same-name implementation candidates, then inspect source to verify ancestry and package boundaries. Name matching is candidate discovery only, not proof of inheritance.
 
-Exact task definitions, artifact checksums, unfavorable cells, validity limits, and reproducible dry-run commands live in the [benchmark documentation](../../benchmarks/README.md#fix-task-benchmark-families-agentic-benchmark). Benchmark task IDs and fixture-specific examples intentionally stay out of the shipped Skill contract.
+Exact task definitions, artifact checksums, unfavorable cells, validity limits, and reproducible dry-run commands live in the [benchmark documentation](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#fix-task-benchmark-families-agentic-benchmark). Benchmark task IDs and fixture-specific examples intentionally stay out of the shipped Skill contract.
 
 ______________________________________________________________________
 
@@ -227,7 +227,7 @@ codemap-py not standalone tool — primary value = structural context fed into `
 
 <!-- result-sync: summary derived from ../../benchmarks/README.md#multi-model-results-real-codebase-benchmark; changes require bidirectional updates or an explicit divergence note. -->
 
-The table below summarizes the historical 28-task Haiku/Sonnet structural suite; it is not a current per-task guarantee. The current executable evidence above supersedes blanket routing claims: use Codemap when a structural fact remains unresolved, retain plain-tool parity for already-localized work, and expect task-level variance. Full provenance and limitations remain in the [benchmark report](../../benchmarks/README.md#multi-model-results-real-codebase-benchmark).
+The table below summarizes the historical 28-task Haiku/Sonnet structural suite; it is not a current per-task guarantee. The current executable evidence above supersedes blanket routing claims: use Codemap when a structural fact remains unresolved, retain plain-tool parity for already-localized work, and expect task-level variance. Full provenance and limitations remain in the [benchmark report](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md#multi-model-results-real-codebase-benchmark).
 
 | Skill task type             | Token savings (codemap-py vs plain) | Accuracy lift                                                                                    |
 | --------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -344,7 +344,7 @@ ______________________________________________________________________
 
 ## ⬆️ Upgrading from codemap
 
-`codemap-py` `0.28.3` is the direct successor to `codemap` `0.24.x` — same maintained product, new plugin identity. **Never run `codemap` and `codemap-py` in the same session** — close every old-plugin session before switching; the legacy plugin does not implement the new shared-index read/write gate and is rejected as a concurrent producer.
+`codemap-py` is the direct successor to `codemap` `0.24.x` — same maintained product, new plugin identity; the rename landed in `codemap-py` `0.25.0` and every release since continues that line, so no successor version is pinned here. **Never run `codemap` and `codemap-py` in the same session** — close every old-plugin session before switching; the legacy plugin does not implement the new shared-index read/write gate and is rejected as a concurrent producer.
 
 1. Note the installed `codemap` version and confirm the immutable rollback source — commit `08e06b7a` (legacy `codemap` `0.24.1`) — before touching anything.
 2. Update the plugin marketplace.
@@ -358,7 +358,7 @@ ______________________________________________________________________
 
 No migration step deletes user data automatically; the project cache and any prior index are only ever read and revalidated, never rewritten in place.
 
-**Managed-block wiring ships pre-applied.** Every consumer plugin carries its own `codemap-py:integration:begin v1 sha256=...` managed block as checked-in source, versioned in lockstep with its own release — there's no separate per-user re-injection step, and no injected-block staleness to fix by hand. Step 07's `/codemap-py:integration check` should report every installed consumer current right after the switch; if one instead reports outdated or missing, that's a packaging defect in that consumer's own release, not something to patch locally — report it (see [Contributing / feedback](#contributing--feedback)).
+**Managed-block wiring is applied per install, not shipped pre-applied.** Every consumer plugin ships the *host file* the block lands in — the path `CONSUMER_MANAGED_FILE` names for it — but no consumer ships a `codemap-py:integration:begin v1 sha256=...` block as checked-in source. `/codemap-py:integration apply` inserts it the first time and replaces it on later runs; `check` is what tells you which state you are in. So after the switch, Step 07's `check` reporting a consumer as missing is the expected first-time state, not a packaging defect; only a consumer whose *host file* is absent is a defect worth reporting (see [Contributing / feedback](#contributing--feedback)).
 
 ### Rolling back
 
@@ -403,7 +403,7 @@ Most central (by rdep_count):
 /codemap-py:integration check
 ```
 
-Wiring into `/develop` and `/oss` ships pre-built into those plugins' own release — there's nothing to inject yourself. `check` is a zero-write health audit; run it any time to confirm every installed consumer reports current.
+`/develop` and `/oss` ship the host file; `apply` injects the managed block into it. `check` is a zero-write health audit; run it any time to see which installed consumers are current, outdated, or not yet wired.
 
 Done. Run normal skills — codemap-py works silent in background:
 
@@ -427,9 +427,9 @@ ______________________________________________________________________
 
 Run `/codemap-py:scan-codebase` after clone or project setup. Index lands in `.cache/codemap/<project>.json`. Re-run only after major structural changes or when gate fires.
 
-### 2 — Wiring ships pre-built
+### 2 — Wiring is applied, never hand-edited
 
-`/develop` and `/oss` carry their own `codemap-py:integration:begin v1 sha256=...` managed block as checked-in source, shipped already wired as part of each plugin's own release — nothing to inject yourself. Run `/codemap-py:integration check` any time to confirm the wiring is present and current for the plugins you have installed; a shipped consumer reporting outdated or missing is a packaging defect to report, not something to self-fix.
+`/develop` and `/oss` ship the file the `codemap-py:integration:begin v1 sha256=...` managed block belongs in, not the block — `/codemap-py:integration apply` inserts it on first run and replaces it when this plugin's version moves. Run `check` any time to see the state for the plugins you have installed: `missing` before the first apply, `outdated` when this plugin has moved on, `current` after. Never hand-author the block — the engine refuses any whose body hash disagrees with its marker.
 
 ### 3 — Gates are the primary safety mechanism
 
@@ -561,7 +561,7 @@ On partial failure (`exit 1`), the journal reports the exact state (`planned →
 
 #### demo mode
 
-Runs `check` plus one representative `central --top 3` structural query, writing disposable evidence to `.reports/integrate/<ts>/demo.json` — a plumbing smoke test, not the plain-vs-codemap-py A/B benchmark (that lives separately, see [Real-world proof: daily-work benchmark](#real-world-proof-daily-work-benchmark) above).
+Runs `check` plus one representative `central --top 3` structural query, writing disposable evidence to `.reports/integrate/<ts>/demo.json` — a plumbing smoke test, not the plain-vs-codemap-py A/B benchmark (that lives separately, see [Executable workflow evidence](#executable-workflow-evidence) above).
 
 ```text
 /codemap-py:integration demo --runtime both
@@ -1021,7 +1021,7 @@ Index written to `.cache/codemap/<project>.json` at project root by default. Set
 export CODEMAP_INDEX_DIR="$HOME/.codemap-py-cache"
 ```
 
-With `CODEMAP_INDEX_DIR` set, the index lands at `$CODEMAP_INDEX_DIR/<canonical-root-sha256>/<project>.json`; this keeps equal-basename projects isolated while preserving a matching legacy flat file as read-only compatibility input. All skills and bin scripts respect the same override; runtime identity never changes its path.
+With `CODEMAP_INDEX_DIR` set, the index lands at the flat path `$CODEMAP_INDEX_DIR/<project>.json` — the root-keyed `<canonical-root-sha256>/` layout was retired in `0.29.4` so the leased, written, loaded, and `doctor`-reported paths are one path. Two projects with the same directory name therefore resolve to the same file under one shared override; give colliding projects separate override directories (the collision is reported as an `index_root_collision` diagnostic, never silently served). All skills and bin scripts respect the same override; the override directory is anchored on nothing but itself, while the default layout is anchored at the git top-level, so a skill invoked from a subdirectory resolves the same index as one invoked from the root.
 
 Set `SCAN_NO_AUTOBUILD=1` to disable implicit query-time writes: `/codemap-py:query-code` and `/codemap-py:test-impact` use an existing index exactly as-is (no refresh or self-heal) and fail with structured manual-build guidance when it is missing. Explicit `codemap-py index` remains available when the user deliberately requests a build. Useful in CI or benchmarks where build cost must stay out of the measured query path.
 

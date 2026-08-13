@@ -21,6 +21,8 @@ from typing import Any, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 BENCHMARKS = ROOT / "benchmarks"
+# Self-named so a rename cannot leave the stale-output hint pointing at a missing script.
+REBUILD_COMMAND = f"uv run python {Path(__file__).resolve().relative_to(ROOT).as_posix()}"
 OUTPUT_MANIFEST = BENCHMARKS / "manifests" / "provider-parity-methodology.json"
 POLICY_SEED = BENCHMARKS / "policy" / "provider-parity-methodology.json"
 POLICY_SEED_SHA256 = "1e5b1cad389513db9402ca2da39f58c1ff9b7cb36b0fdc4a23ce03886e12f1f1"
@@ -372,11 +374,9 @@ def _write_or_check(path: Path, expected: bytes, *, check: bool) -> None:
     """Write generated output or fail closed when its exact bytes are stale."""
     if check:
         if not path.is_file() or path.read_bytes() != expected:
-            raise ValueError(
-                f"generated methodology record is stale: {path}; "
-                "run: python3 benchmarks/build-provider-parity-methodology-manifest.py"
-            )
+            raise ValueError(f"generated methodology record is stale: {path}; run: {REBUILD_COMMAND}")
         return
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(expected)
 
 

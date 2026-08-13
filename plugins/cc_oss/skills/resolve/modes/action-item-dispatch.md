@@ -96,14 +96,22 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # pre-loop; BLAST_RADIUS_CONTEXT shared with impl agents
 BLAST_RADIUS_CONTEXT=""
 IFS= read -r CODEMAP_CACHE_DIR < "${TMPDIR:-/tmp}/resolve-codemap-cache-dir-${CSID}" 2>/dev/null || CODEMAP_CACHE_DIR=""  # timeout: 3000
-_IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-').json"
+# index dir anchors at git root, not cwd; raw basename, no `tr -cd` — the scanner writes the name unsanitized, so stripping would seek a file it never wrote
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+_IDX_FILE="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}/$(basename "$_ROOT").json"
 _CACHE_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/codemap_cache.py"
 if command -v codemap-py >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
     echo "→ Codemap pre-scan — caller context for selected action items:"
+    # file→module from the index's own `name` field (same source as §Structural prep, and as the cache keys). A sed transform names pkg/__init__.py `pkg.__init__` while codemap calls it `pkg` — every package-init item then missed its cache entry AND errored on the live query.
+    _MODMAP="${TMPDIR:-/tmp}/resolve-file-module-${CSID}.json"
+    _ALL_PY=$(jq -r '.file // empty' "$IMPL_DIR/action-items.jsonl" | grep '\.py$' | paste -sd, -)  # timeout: 5000
+    codemap-py query --timeout 15 central --top 100000 2>/dev/null \
+        | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/resolve_centrality.py" --files "$_ALL_PY" > "$_MODMAP" 2>/dev/null || : > "$_MODMAP"  # timeout: 20000
     for _id in $SELECTED_ITEMS; do
         _f=$(jq -r "select(.id == $_id) | .file // empty" "$IMPL_DIR/action-items.jsonl")  # timeout: 5000
         [[ "$_f" == *.py ]] || continue
-        _m=$(echo "$_f" | sed -E 's|^src/||; s|/|.|g; s|\.py$||')
+        _m=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['file_module'].get(sys.argv[2],''))" "$_MODMAP" "$_f" 2>/dev/null)  # timeout: 5000
+        [ -n "$_m" ] || continue  # not indexed — querying a guessed name is a guaranteed error
         _c=""
         # cache-first: reuse review's rdeps answer when fresh; only query on miss
         if [ -n "$CODEMAP_CACHE_DIR" ] && [ -f "$_CACHE_BIN" ] && [ -f "$_IDX_FILE" ]; then

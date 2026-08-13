@@ -9,10 +9,8 @@ the two files must derive the same path from the same event, which
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -21,8 +19,6 @@ from pathlib import Path
 #: "import" with a ``-r`` flag — ``python -c "import x" && rm -r tmp`` among them — and
 #: added no coverage, since an anchored form of it is a strict subset of the first.
 _IMPORT_GREP = re.compile(r"\b(?:grep|rg)\b.*\b(?:import|from)\b")
-#: Characters that must never reach a tmp filename (the session id is host-supplied).
-_UNSAFE_KEY = re.compile(r"[^A-Za-z0-9_-]")
 #: How long a recorded exhaustive caller set may still deny a grep. ``record-exhausted.py``
 #: drops the sentinel on every Claude source edit, so this only bounds mutation the hook
 #: never saw (a checkout, an external editor, a sibling agent). Matches the 30-minute
@@ -32,28 +28,20 @@ _UNSAFE_KEY = re.compile(r"[^A-Za-z0-9_-]")
 _SENTINEL_TTL_S = 30 * 60
 
 
-def tmp_dir() -> Path:
-    """Return the temp directory the hook sentinels live in."""
-    return Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
+# Claude launches this hook as `python "<plugin-root>/hooks/guard-redundant-scan.py"`,
+# which already puts hooks/ on sys.path — but the test suite loads it through
+# `importlib.util.spec_from_file_location`, which does not. Inserting explicitly makes
+# the shared-helper import resolve under every load mechanism.
+_HOOKS_DIR = Path(__file__).resolve().parent
+if str(_HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_DIR))
 
+import _hookutil  # noqa: E402  (needs the sys.path insert above)
 
-def session_key(session_id: object) -> str:
-    """Return the sanitized sentinel key for *session_id*, or a session-scoped fallback.
-
-    Mirrors ``record-exhausted.session_key``: a missing session id must not collapse to one
-    machine-global key, or two concurrent projects would deny each other's greps.
-
-    Examples:
-        >>> session_key("abc-123")
-        'abc-123'
-        >>> session_key(None) not in ("", "nosession")
-        True
-    """
-    key = _UNSAFE_KEY.sub("-", str(session_id or "").strip())
-    if key:
-        return key
-    csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
-    return f"{_UNSAFE_KEY.sub('-', Path.cwd().name)}-{_UNSAFE_KEY.sub('-', csid)}"
+# Re-exported from the shared helper so this reader and ``record-exhausted.py``, the
+# sentinel's writer, cannot derive different paths from the same event.
+tmp_dir = _hookutil.tmp_dir
+session_key = _hookutil.session_key
 
 
 def sentinel_path(session_id: object) -> Path:

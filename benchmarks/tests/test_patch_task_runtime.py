@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -141,16 +141,62 @@ def test_patch_agent_workspace_rejects_a_clean_source_head_switch(patch_repo: Pa
         workspace.workspace.cleanup()
 
 
+def _ambient_pytest_launcher() -> str:
+    """Return the pytest launcher the benchmark environment would admit."""
+    launcher = os.environ.get(mutation_isolation.PATCH_PYTEST_ENV) or shutil.which("pytest")
+    if launcher is None:
+        pytest.fail("the benchmark test environment must provide a pytest launcher on PATH")
+    return launcher
+
+
+def test_patch_test_runtime_binds_the_ambient_launcher_whatever_its_file_format() -> None:
+    """The admitted launcher reports its own runtime instead of being parsed for a shebang.
+
+    Regression: the identity was read out of the launcher's first line, which exists
+    only for a POSIX text console script. The same entry point installs as a binary
+    trampoline on Windows, where that read failed with ``UnicodeDecodeError`` and took
+    every Patch scope down with ``Patch task pytest runtime is unavailable``.
+    """
+    identity = mutation_isolation.patch_test_runtime_identity()
+
+    assert identity["pytest_executable"] == str(Path(_ambient_pytest_launcher()).absolute())
+    assert identity["invocation"] == "absolute pytest executable"
+    assert Path(identity["python_executable"]).is_file()
+    assert identity == mutation_isolation.patch_test_runtime_identity()
+
+
+def test_patch_test_runtime_accepts_a_launcher_without_a_python_shebang(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A launcher whose header is not a Python shebang still yields a bound runtime.
+
+    A POSIX shell wrapper stands in for the Windows binary trampoline: both are
+    launchers whose leading bytes name no Python interpreter. Skipped where a
+    ``/bin/sh`` wrapper cannot be executed at all — on Windows the ambient
+    ``pytest.exe`` already exercises this path natively.
+    """
+    shell = Path("/bin/sh")
+    launcher = tmp_path / "pytest-wrapper"
+    launcher.write_text(f'#!{shell}\nexec "{_ambient_pytest_launcher()}" "$@"\n', encoding="utf-8")
+    try:
+        launcher.chmod(0o755)
+        subprocess.run([str(launcher), "--version"], check=True, capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        pytest.skip(f"a POSIX shell launcher is not executable on this host: {exc}")
+    monkeypatch.setenv(mutation_isolation.PATCH_PYTEST_ENV, str(launcher))
+
+    identity = mutation_isolation.patch_test_runtime_identity()
+
+    assert identity["pytest_executable"] == str(launcher)
+    assert identity["pytest_module_sha256"] == mutation_isolation.patch_test_runtime_identity()["pytest_module_sha256"]
+
+
 def test_patch_test_command_prioritizes_worktree_without_hiding_environment_dependencies(
     patch_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Patch tests use the frozen source while retaining dependencies from the active benchmark environment."""
     captured: dict[str, object] = {}
-    pytest_launcher = patch_repo / "bin" / "pytest"
-    pytest_launcher.parent.mkdir()
-    pytest_launcher.write_text(f"#!{sys.executable}\n", encoding="utf-8")
-    pytest_launcher.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{pytest_launcher.parent}{os.pathsep}{os.environ['PATH']}")
+    pytest_launcher = Path(_ambient_pytest_launcher()).absolute()
     runtime = mutation_isolation.patch_test_runtime_identity()
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:

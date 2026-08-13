@@ -32,7 +32,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M10: DoS guard)
+# DoS guard (SEC-M10), held at the query engine's ceiling (``query._MAX_INDEX_SIZE_BYTES``):
+# a helper that refuses an index the engine serves reports a healthy project as broken.
+MAX_INDEX_SIZE = 512 * 1024 * 1024
 MAX_SCAN_ARGS = 4096  # chars — cap SCAN_ARGS before shlex.split to bound parsing cost (SEC-L8: DoS guard)
 
 

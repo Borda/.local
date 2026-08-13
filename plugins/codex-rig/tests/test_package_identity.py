@@ -8,6 +8,7 @@ import json
 import os
 import stat
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 
@@ -16,6 +17,26 @@ import pytest
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 IDENTITY_PATH = PLUGIN_ROOT / "scripts" / "_package_identity.py"
+
+
+def _symlinks_available() -> bool:
+    """True when this host can create a file symlink.
+
+    Windows can, given Developer Mode or an elevated session, and the hosted CI runner does —
+    so the question is a per-host capability, not a platform. Asking it by attempting the
+    operation keeps the answer honest on both sides instead of writing Windows off wholesale.
+    """
+    with tempfile.TemporaryDirectory() as scratch:
+        target = Path(scratch) / "target"
+        target.write_text("probe", encoding="utf-8")
+        try:
+            (Path(scratch) / "link").symlink_to(target)
+        except (OSError, NotImplementedError):
+            return False
+    return True
+
+
+SYMLINKS_AVAILABLE = _symlinks_available()
 
 
 def load_identity() -> ModuleType:
@@ -141,7 +162,7 @@ def test_verify_package_rejects_nonportable_record_paths(tmp_path: Path, unsafe_
         identity.verify_package(tmp_path)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink fixture")
+@pytest.mark.skipif(not SYMLINKS_AVAILABLE, reason="host cannot create symlinks")
 def test_verify_package_rejects_symlink_payload(tmp_path: Path) -> None:
     """Reject links before any verified payload bytes are consumed."""
     identity = load_identity()

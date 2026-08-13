@@ -202,8 +202,10 @@ Rank by impact (highest first). Separate statically-confirmed from profiling-req
 Codemap pre-flight for structural perf analysis — run alongside step 1a+1b (see workflow):
 
 ```bash
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+# index dir anchors at git root, not cwd — subdir invocation otherwise reports no_index while index exists. PROJ = raw basename; scanner writes it unsanitized (space/+/non-ASCII survive).
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+PROJ=$(basename "$_ROOT")
+_IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
 if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     codemap-py query central --top 5 2>/dev/null  # always run; highest fan-in = highest optimization ROI
     if [ -n "$TARGET_MODULE" ]; then
@@ -211,7 +213,9 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
         [ -n "$TARGET_FN" ] && codemap-py query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
-        for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
+        # module names from index `name` field, never sed: `pkg/__init__.py` is `pkg`, not `pkg.__init__`. Files index doesn't know resolve to nothing, not a guessed name.
+        _CHANGED_PY=$(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | paste -sd, -)
+        for _MOD in $(codemap-py query --timeout 10 central --top 100000 2>/dev/null | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_centrality.py" --files "$_CHANGED_PY" --modules-only 2>/dev/null | head -10); do
             codemap-py query subprocess-deps "$_MOD" 2>/dev/null
         done
     fi

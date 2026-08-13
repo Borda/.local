@@ -42,10 +42,9 @@ _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/nul
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 INDEX="${_IDX}/${_CM_PROJ}.json"
 
-# gated dispatcher, not the ungated scan-query/scan-index aliases — leases live only in `codemap-py query|index`
-CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
-[ -x "$CM" ] || { echo "codemap-py launcher not found at $CM — install codemap-py plugin first"; exit 1; }
-echo "$CM" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-cm-${CSID}"
+# dispatcher, not the scan-query/scan-index aliases — aliases lease in-engine too, but skip the dispatcher's interpreter probe (exit 127) and are deprecated shims, removed no earlier than 1.0.0
+# PATH-literal invocation everywhere below — expansion-bearing form matches no bare-name allow prefix; the plugin's absolute bin/codemap-py stays the interactive fallback
+command -v codemap-py >/dev/null 2>&1 || { echo "codemap-py not on PATH — install the codemap-py plugin, or invoke its bin/codemap-py launcher as one standalone command"; exit 1; }
 
 [ ! -f "$INDEX" ] && echo "No index found — will build via codemap-py index"
 ```
@@ -66,14 +65,15 @@ if [ "${SCAN_NO_AUTOBUILD:-0}" = "1" ]; then
     echo "[codemap] SCAN_NO_AUTOBUILD=1 — using existing index as-is (no refresh)"
 else
     _CM_BUILD_T0=$(date +%s)
-    # forward CODEMAP_INDEX_DIR; ensures the build writes to same path as INDEX
-    CODEMAP_INDEX_DIR="${_IDX}" "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" index --incremental \
+    # export, not an inline env prefix — a prefix puts an expansion ahead of the binary, so the command no longer matches a bare-name allow prefix
+    export CODEMAP_INDEX_DIR="${_IDX}"   # forward to the build; ensures it writes to same path as INDEX
+    codemap-py index --incremental \
         && echo "[codemap] index built in $(( $(date +%s) - _CM_BUILD_T0 ))s" \
         || printf "⚠ codemap-py index --incremental failed — index may be stale; continuing\n"
 fi
 ```
 
-After the scan-index build or incremental refresh, re-verify index still present:
+After the build or incremental refresh, re-verify index still present:
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
@@ -116,10 +116,9 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 IFS= read -r QNAME < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname-${CSID}" 2>/dev/null || QNAME=""
 IFS= read -r MOCKS_FLAG < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks-${CSID}" 2>/dev/null || MOCKS_FLAG=""
-IFS= read -r CM < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-cm-${CSID}" 2>/dev/null || CM=""
 _TI_ERR="${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-stderr-${CSID}"
 # capture stderr to a file, never 2>/dev/null — a swallowed diagnostic is what rendered a broken index as "no affected tests"
-RESULT=$("$CM" query test-impact "$QNAME" $MOCKS_FLAG 2>"$_TI_ERR")
+RESULT=$(codemap-py query test-impact "$QNAME" $MOCKS_FLAG 2>"$_TI_ERR")
 _TI_RC=$?
 if [ "$_TI_RC" -ne 0 ]; then
     printf "! test-impact query failed (exit %d) — this is NOT a 'no affected tests' result; do not report an empty test set\n" "$_TI_RC" >&2

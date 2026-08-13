@@ -453,6 +453,27 @@ def _restore_v13_not_covered(legacy: object, current: object) -> None:
             _restore_v13_not_covered(legacy_item, current_item)
 
 
+def _drop_loaded_index_path(node: object) -> object:
+    """Strip ``index.index_path`` from *node* in place and return it.
+
+    The current engine reports the index file it actually loaded; the frozen v11 oracle
+    predates the field, and the value is an absolute path under pytest's tmp dir, so it
+    could never be byte-equal to a golden anyway. Parity is asserted on everything else.
+    The field's own contract — that it comes from the load rather than from re-running
+    the resolver — is pinned in ``tests/gate/test_cli_gate.py``, not here.
+    """
+    if isinstance(node, dict):
+        block = node.get("index")
+        if isinstance(block, dict):
+            block.pop("index_path", None)
+        for value in node.values():
+            _drop_loaded_index_path(value)
+    elif isinstance(node, list):
+        for item in node:
+            _drop_loaded_index_path(item)
+    return node
+
+
 def _assert_golden_query_parity(
     old: subprocess.CompletedProcess[str], new: subprocess.CompletedProcess[str], case: list[str]
 ) -> None:
@@ -462,7 +483,7 @@ def _assert_golden_query_parity(
     command = case[0]
     if command in _V12_QUERY_ADDITIONS:
         legacy = json.loads(old.stdout)
-        current = json.loads(new.stdout)
+        current = _drop_loaded_index_path(json.loads(new.stdout))
         assert isinstance(legacy, dict)
         assert isinstance(current, dict)
         _restore_v13_not_covered(legacy, current)
@@ -472,13 +493,13 @@ def _assert_golden_query_parity(
         return
     if command not in _COUNT_SEMANTIC_KEYS:
         legacy = json.loads(old.stdout)
-        current = json.loads(new.stdout)
+        current = _drop_loaded_index_path(json.loads(new.stdout))
         _restore_v13_not_covered(legacy, current)
         assert current == legacy
         return
 
     legacy = json.loads(old.stdout)
-    current = json.loads(new.stdout)
+    current = _drop_loaded_index_path(json.loads(new.stdout))
     assert isinstance(legacy, dict)
     assert isinstance(current, dict)
     _restore_v13_not_covered(legacy, current)
@@ -523,7 +544,7 @@ class TestOldVsNewBinParity:
         new = _run_new_bin(["batch"], built_project, stdin=stdin)
         assert old.returncode == new.returncode
         legacy = json.loads(old.stdout)
-        current = json.loads(new.stdout)
+        current = _drop_loaded_index_path(json.loads(new.stdout))
         _restore_v13_not_covered(legacy, current)
         assert current == legacy
         assert old.stderr == new.stderr
@@ -678,7 +699,9 @@ class TestDiffImpactParity:
         old = _run_old(old_scan_query, ["diff-impact", "--base", "HEAD"], diff_impact_project)
         new = _run_new_bin(["diff-impact", "--base", "HEAD"], diff_impact_project)
         assert old.returncode == new.returncode == 0
-        assert old.stdout == new.stdout
+        # Compared as parsed JSON rather than as bytes, so the one deliberately additive
+        # field (the loaded index path, absent from the frozen oracle) can be dropped.
+        assert _drop_loaded_index_path(json.loads(new.stdout)) == json.loads(old.stdout)
         assert old.stderr == new.stderr
 
     def test_diff_impact_matches_module_dispatch(self, diff_impact_project: Path) -> None:

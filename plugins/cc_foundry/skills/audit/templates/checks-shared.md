@@ -158,6 +158,22 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/propagate_shared.py"  # ti
 
 > Root cause: `sync.sh` does not propagate cross-plugin shared files; a canonical edit was not mirrored into the consuming plugins. Also enforced pre-commit.
 
+## Check 14f — Unmanaged codemap index-guard copy
+
+Detects a hand-written codemap index path in a file that neither a `MANIFEST` entry nor the guard registry covers. The guard ("is codemap-py installed, and does an index exist for this project?") was hand-copied across four plugins with nothing linking the copies, so each drifted alone and one path fix cost ten edits. Two shapes are permitted: consume the provider CLI (`codemap-py query`, `codemap_resolve.py` — such a consumer never spells the path, so it never trips this check), or one canonical copy propagated byte-identical. Inline bash in agent/skill prose is a fragment `MANIFEST` cannot propagate, so those copies are named in the script's `REGISTRY` with a reason and held to two invariants: index dir anchored to a project-root variable (never CWD), project name the raw basename (never sanitized).
+
+```bash
+printf "=== Check 14f: Unmanaged codemap index-guard copy ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_codemap_guard.py"  # timeout: 10000
+```
+
+**Severity**: **high** — an unmanaged copy drifts silently; a subdir-anchored or sanitized-name copy reports `no_index` while an index exists, and the agent falls back to Grep with no error.
+- **Unregistered copy**: **Auto-fix: NO** — pick a shape first (provider CLI preferred), then add the `MANIFEST` or `REGISTRY` entry.
+- **Invariant violation**: **Auto-fix: NO** — restore root anchoring / raw basename at the offending line.
+- **Stale registry entry**: **Auto-fix: YES** — drop the entry; the file no longer holds a guard.
+
+> Root cause: no structural link between copies of a mechanism duplicated by policy. `--list` prints the full inventory with each copy's shape. Also enforced pre-commit.
+
 ## Check 15 — Hardcoded user paths
 
 Use Grep tool (pattern `/Users/|/home/`, glob `{agents/*.md,skills/*/SKILL.md}`, path `.claude/`, output mode `content`) to flag non-portable paths in agent and skill files. Run second Grep on `.claude/settings.json` with same pattern to catch absolute hook paths.

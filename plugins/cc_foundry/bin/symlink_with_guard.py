@@ -167,8 +167,47 @@ class _Entry:
     kind: str
 
 
+def _strip_extended_prefix(path_str: str) -> str:
+    """Drop a Windows extended-length (``\\\\?\\``) prefix from a path string.
+
+    Windows stores an absolute symlink target in the reparse point with this
+    prefix, so ``os.readlink`` hands it back verbatim. Every comparison in this
+    module — ``Path.is_relative_to`` against a plugin root, the ``marker``
+    substring test, the conflict descriptor printed for the user — treats the
+    prefixed form as a *different* path, which silently disables cleanup and
+    turns owned links into conflicts. Strip it once at the boundary instead.
+
+    The UNC variant maps back to its double-backslash form rather than losing
+    four characters, which would corrupt a network path into a relative one.
+    Non-Windows targets pass through untouched.
+
+    Args:
+        path_str: Raw path string, typically ``os.readlink`` output.
+
+    Returns:
+        The same path without the extended-length prefix.
+
+    Examples:
+        >>> _strip_extended_prefix("\\\\\\\\?\\\\C:\\\\Users\\\\x\\\\rules\\\\a.md")
+        'C:\\\\Users\\\\x\\\\rules\\\\a.md'
+        >>> _strip_extended_prefix("\\\\\\\\?\\\\UNC\\\\server\\\\share\\\\a.md")
+        '\\\\\\\\server\\\\share\\\\a.md'
+        >>> _strip_extended_prefix("/home/x/rules/a.md")
+        '/home/x/rules/a.md'
+    """
+    if path_str.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path_str[len("\\\\?\\UNC\\") :]
+    if path_str.startswith("\\\\?\\"):
+        return path_str[len("\\\\?\\") :]
+    return path_str
+
+
 def _readlink(path: Path) -> str | None:
     """Return ``readlink(path)`` as a string, or ``None`` if not a symlink.
+
+    The result is normalised through :func:`_strip_extended_prefix` so every
+    downstream consumer — ownership proof, current-root test, marker match,
+    conflict descriptor — sees one canonical spelling of the target.
 
     Args:
         path: Filesystem path to inspect.
@@ -183,7 +222,7 @@ def _readlink(path: Path) -> str | None:
     if not path.is_symlink():
         return None
     try:
-        return os.readlink(path)
+        return _strip_extended_prefix(os.readlink(path))
     except OSError:
         return None
 
@@ -191,20 +230,28 @@ def _readlink(path: Path) -> str | None:
 def _is_foundry_managed(target: str, marker: str) -> bool:
     """True when the readlink target contains the foundry marker substring.
 
+    The marker is written with forward slashes (``borda-ai-rig/foundry/``), so a
+    native Windows target spelled with backslashes never matched it and both
+    unconditional purge scopes silently did nothing. The separator-normalised
+    form is tested as well; the raw test is kept first so a POSIX path
+    containing a literal backslash cannot change meaning.
+
     Args:
         target: ``readlink`` output (link's stored target, not resolved).
         marker: Substring identifying foundry-owned paths.
 
     Returns:
-        True iff ``marker`` appears in ``target``.
+        True iff ``marker`` appears in ``target``, with either separator style.
 
     Examples:
         >>> _is_foundry_managed("/home/x/.claude/plugins/cache/borda-ai-rig/foundry/0.17.0/rules/x.md", "borda-ai-rig/foundry/")
         True
+        >>> _is_foundry_managed("C:\\\\Users\\\\x\\\\cache\\\\borda-ai-rig\\\\foundry\\\\0.40.0\\\\skills\\\\a", "borda-ai-rig/foundry/")
+        True
         >>> _is_foundry_managed("/home/x/local/file.md", "borda-ai-rig/foundry/")
         False
     """
-    return marker in target
+    return marker in target or marker in target.replace("\\", "/")
 
 
 def _is_current(target: str, plugin_root: Path) -> bool:
@@ -230,11 +277,8 @@ def _is_current(target: str, plugin_root: Path) -> bool:
     """
     try:
         raw = os.path.realpath(target) if not os.path.isabs(target) else target
-        # Windows extended-path prefix (\\?\) breaks Path.is_relative_to comparisons
-        if isinstance(raw, str) and raw.startswith("\\\\?\\"):
-            raw = raw[4:]
-        resolved = Path(raw)
-        return resolved.is_relative_to(plugin_root.resolve())
+        resolved = Path(_strip_extended_prefix(raw))
+        return resolved.is_relative_to(Path(_strip_extended_prefix(str(plugin_root.resolve()))))
     except (ValueError, OSError):
         return str(plugin_root) in target  # fallback if resolution fails
 
@@ -290,9 +334,33 @@ def _resolve_target(dest: Path, target: str) -> Path:
         >>> _resolve_target(Path("/h/.claude/rules/x.md"), "../../dotfiles/x.md").as_posix()
         '/h/dotfiles/x.md'
     """
+    target = _strip_extended_prefix(target)
     if os.path.isabs(target):
         return Path(os.path.normpath(target))
     return Path(os.path.normpath(str(dest.parent / target)))
+
+
+def _base_paths(root: Path) -> set[str]:
+    """Return the normalised and realpath spellings of ``root`` used as ownership bases.
+
+    ``realpath`` may hand back an extended-length spelling on Windows, which
+    would never prefix-match a stripped target; both spellings are normalised
+    the same way so the comparison is separator- and prefix-consistent.
+
+    Args:
+        root: Directory to expand into comparison bases.
+
+    Returns:
+        Set of path strings suitable for ``Path.is_relative_to``.
+
+    Examples:
+        >>> "/tmp" in _base_paths(Path("/tmp")) or "\\\\tmp" in _base_paths(Path("/tmp"))
+        True
+    """
+    return {
+        _strip_extended_prefix(os.path.normpath(str(root))),
+        _strip_extended_prefix(os.path.realpath(str(root))),
+    }
 
 
 def _owns(dest: Path, target: str, plugin_root: Path, lineage: Path | None) -> bool:
@@ -325,9 +393,9 @@ def _owns(dest: Path, target: str, plugin_root: Path, lineage: Path | None) -> b
         False
     """
     resolved = _resolve_target(dest, target)
-    bases = {os.path.normpath(str(plugin_root)), os.path.realpath(str(plugin_root))}
+    bases = _base_paths(plugin_root)
     if lineage is not None:
-        bases |= {os.path.normpath(str(lineage)), os.path.realpath(str(lineage))}
+        bases |= _base_paths(lineage)
     return any(resolved.is_relative_to(base) for base in bases)
 
 

@@ -11,6 +11,16 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Claude launches this hook as `python "<plugin-root>/hooks/log-tool-use.py"`, which
+# already puts hooks/ on sys.path — but the test suite loads it through
+# `importlib.util.spec_from_file_location`, which does not. Inserting explicitly makes
+# the shared-helper import resolve under every load mechanism.
+_HOOKS_DIR = Path(__file__).resolve().parent
+if str(_HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_DIR))
+
+import _hookutil  # noqa: E402  (needs the sys.path insert above)
+
 _LOG_MAX_BYTES = 10 * 1024 * 1024
 _BASH_SEARCH = re.compile(r"(^|[|;&(]\s*)(rg|grep|egrep|fgrep)\s")
 #: Bytes of the shard the repeated-read nudge inspects. It runs on every matched Read, so
@@ -36,40 +46,9 @@ def plugin_version() -> str:
         return "?"
 
 
-def project_name(cwd: Path | None = None) -> str:
-    """Return the project key: the basename of the nearest enclosing git root.
-
-    The session marker is written once per *project* by ``seed-session.py``, which keys it
-    on the git-root basename — as does ``codemap_py.telemetry``. Keying on ``cwd.name``
-    here instead meant that a Claude session started in a subdirectory looked for a marker
-    nobody had written, so every tool record landed in an unsuffixed shard and the join
-    against the cli/skill layers silently returned nothing.
-
-    The root is found by walking for ``.git`` rather than by running ``git rev-parse``:
-    this hook fires on every Grep/Read/Glob call, and a subprocess per call is exactly the
-    cost its contract forbids. ``.git`` is matched as a file too, which is how linked
-    worktrees mark their root.
-
-    Args:
-        cwd: Directory to resolve from; defaults to the process working directory.
-
-    Returns:
-        The git-root basename, or the directory's own basename outside a repository.
-
-    Examples:
-        >>> import tempfile
-        >>> with tempfile.TemporaryDirectory() as d:
-        ...     nested = Path(d) / "myproj" / "src" / "pkg"
-        ...     nested.mkdir(parents=True)
-        ...     (Path(d) / "myproj" / ".git").mkdir()
-        ...     project_name(nested)
-        'myproj'
-    """
-    start = (cwd or Path.cwd()).resolve()
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate.name
-    return start.name
+# Re-exported from the shared helper so this hook and ``seed-session.py`` — the marker's
+# reader and its writer — cannot key on different names.
+project_name = _hookutil.project_name
 
 
 def session_id() -> str:
@@ -168,7 +147,7 @@ def main() -> int:
             "session": session,
             "target": target_for(tool_name, tool_input),
         }
-        log_dir = Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))
+        log_dir = _hookutil.log_dir()
         log_file = log_dir / (f"tools_{safe_session}.jsonl" if safe_session else "tools.jsonl")
         log_dir.mkdir(parents=True, exist_ok=True)
         if log_file.exists() and log_file.stat().st_size > _LOG_MAX_BYTES:

@@ -17,6 +17,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 BENCHMARKS = ROOT / "benchmarks"
+# Self-named so a rename cannot leave the stale-output hint pointing at a missing script.
+REBUILD_COMMAND = f"uv run python {Path(__file__).resolve().relative_to(ROOT).as_posix()}"
 MANIFESTS = BENCHMARKS / "manifests"
 SOURCE_MANIFEST = MANIFESTS / "provider-parity-methodology.json"
 TASKS_PATH = BENCHMARKS / "suites" / "tasks-agentic.json"
@@ -337,9 +339,7 @@ def _write_or_check(path: Path, expected: bytes, *, check: bool) -> None:
     """Write one generated artifact or fail closed when it differs."""
     if check:
         if not path.is_file() or path.read_bytes() != expected:
-            raise ValueError(
-                f"generated manifest is stale: {path}; run: python3 benchmarks/build-codex-agentic-manifest.py"
-            )
+            raise ValueError(f"generated manifest is stale: {path}; run: {REBUILD_COMMAND}")
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(expected)

@@ -5,6 +5,9 @@ Strategy:
 - Mock ``_git_head`` and ``_git_dirty_py_count`` so no git binary required.
 - Use ``tmp_path`` for real filesystem fixtures (Tier 2 file-hash path).
 - CLI entry-point tested via ``main()`` directly, not subprocess.
+- Exercise the RW gate for real (a genuine writer lease held from a second thread),
+  not a stubbed one — the regression being pinned is a token-free index read, which
+  a mocked gate would not detect.
 """
 
 from __future__ import annotations
@@ -12,11 +15,14 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+import threading
+from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
+from codemap_py import rwgate
 
 # ---------------------------------------------------------------------------
 # Import hyphen-named bin script (no .py extension — must use SourceFileLoader)
@@ -387,6 +393,58 @@ class TestCheckCurrencyTier2:
         assert code == 1
 
 
+class TestCheckCurrencyTier2GitBlobs:
+    """Tier 2 content verification when the index stores 40-char git blob SHAs."""
+
+    BLOB_ONE = "1" * 40
+    BLOB_TWO = "2" * 40
+
+    @pytest.fixture(autouse=True)
+    def _no_git_head(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Force Tier 2 by making _git_head return None."""
+        monkeypatch.setattr(cic, "_git_head", lambda root: None)
+
+    @pytest.fixture()
+    def index_file(self, tmp_path: Path) -> Path:
+        """Write two .py files and an index recording their blob SHAs."""
+        (tmp_path / "one.py").write_text("x = 1")
+        (tmp_path / "two.py").write_text("y = 2")
+        p = tmp_path / "idx.json"
+        _write_index(p, _minimal_index(file_shas={"one.py": self.BLOB_ONE, "two.py": self.BLOB_TWO}))
+        return p
+
+    def test_current_when_blobs_match(self, index_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every stored blob SHA still reported by git → current."""
+        blobs = {"one.py": self.BLOB_ONE, "two.py": self.BLOB_TWO}
+        monkeypatch.setattr(cic, "_git_blob_shas", lambda root: blobs)
+        r, code = cic.check_currency(index_file, tmp_path)
+        assert (r["status"], code) == ("current", 0)
+
+    def test_stale_when_blob_differs(self, index_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """One rewritten blob SHA → stale, counting only that file."""
+        blobs = {"one.py": self.BLOB_ONE, "two.py": "3" * 40}
+        monkeypatch.setattr(cic, "_git_blob_shas", lambda root: blobs)
+        r, code = cic.check_currency(index_file, tmp_path)
+        assert (r["status"], code) == ("stale", 1)
+        assert r["changed_count"] == 1
+
+    def test_stale_when_blob_absent(self, index_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A file git reports no blob for counts as changed."""
+        monkeypatch.setattr(cic, "_git_blob_shas", lambda root: {"one.py": self.BLOB_ONE})
+        r, _ = cic.check_currency(index_file, tmp_path)
+        assert r["status"] == "stale"
+        assert r["changed_count"] == 1
+
+    def test_stale_when_git_listing_unavailable(
+        self, index_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``git ls-files`` failing marks every stored file changed rather than assuming current."""
+        monkeypatch.setattr(cic, "_git_blob_shas", lambda root: None)
+        r, _ = cic.check_currency(index_file, tmp_path)
+        assert r["status"] == "stale"
+        assert r["changed_count"] == 2
+
+
 # ---------------------------------------------------------------------------
 # CLI — main() and --field flag
 # ---------------------------------------------------------------------------
@@ -458,3 +516,111 @@ class TestCLI:
         out = capsys.readouterr().out.strip()
         data = json.loads(out)
         assert data["status"] == "current"
+
+
+# ---------------------------------------------------------------------------
+# Index reads enter the RW gate
+# ---------------------------------------------------------------------------
+
+_WRITER_HOLD_TIMEOUT = 5.0
+
+
+@pytest.fixture()
+def gate_events() -> Iterator[list[str]]:
+    """Collect ``rwgate`` lifecycle event names emitted during one test."""
+    events: list[str] = []
+    rwgate.set_instrument(lambda name, fields: events.append(name))
+    yield events
+    rwgate.set_instrument(None)
+
+
+@pytest.fixture()
+def live_writer() -> Iterator[Callable[[Path], None]]:
+    """Return a callable holding a real exclusive writer lease until the test ends.
+
+    The writer runs on a second thread and parks inside its exclusive phase, so the
+    index it guards is genuinely unavailable to a reader for the whole test — the
+    only condition under which a leased read and a token-free read give different
+    answers.
+    """
+    release = threading.Event()
+    started = threading.Event()
+    threads: list[threading.Thread] = []
+
+    def _build(target: Path) -> None:
+        started.set()
+        release.wait(_WRITER_HOLD_TIMEOUT)
+
+    def _hold(index_path: Path) -> None:
+        thread = threading.Thread(target=rwgate.write_index, args=(index_path, _build), daemon=True)
+        thread.start()
+        threads.append(thread)
+        assert started.wait(_WRITER_HOLD_TIMEOUT), "writer never reached its exclusive phase"
+
+    yield _hold
+    release.set()
+    for thread in threads:
+        thread.join(_WRITER_HOLD_TIMEOUT)
+
+
+class TestIndexReadIsLeased:
+    """The index is read under a shared reader lease, never token-free."""
+
+    def test_read_index_brackets_the_parse_with_a_reader_token(self, tmp_path: Path, gate_events: list[str]) -> None:
+        """``_read_index`` acquires and releases exactly one reader token per read."""
+        p = tmp_path / "idx.json"
+        _write_index(p, _minimal_index())
+        cic._read_index(p)
+        assert gate_events == ["reader_acquire", "reader_release"]
+
+    def test_coordination_root_materialised_beside_the_index(self, tmp_path: Path) -> None:
+        """Leasing creates the ``.index-rw`` coordination root next to the index."""
+        p = tmp_path / "idx.json"
+        _write_index(p, _minimal_index())
+        cic._read_index(p)
+        assert (tmp_path / ".index-rw" / "readers").is_dir()
+
+    def test_absent_index_leases_nothing(self, tmp_path: Path) -> None:
+        """A check against a project with no index never creates a coordination root."""
+        r, _ = cic.check_currency(tmp_path / "missing.json", tmp_path)
+        assert r["status"] == "no_index"
+        assert not (tmp_path / ".index-rw").exists()
+
+    def test_full_check_reads_the_index_through_the_gate(
+        self, tmp_path: Path, gate_events: list[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A whole ``check_currency`` pass takes one reader lease and reports current."""
+        p = tmp_path / "idx.json"
+        _write_index(p, _minimal_index(git_sha=SHA_A))
+        monkeypatch.setattr(cic, "_git_head", lambda root: SHA_A)
+        monkeypatch.setattr(cic, "_git_dirty_py_count", lambda root: 0)
+        r, code = cic.check_currency(p, tmp_path)
+        assert (r["status"], code) == ("current", 0)
+        assert gate_events == ["reader_acquire", "reader_release"]
+
+    def test_live_writer_reports_stale_instead_of_reading_untokened(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, live_writer: Callable[[Path], None]
+    ) -> None:
+        """A held writer lease yields stale; a token-free read would have said current."""
+        p = tmp_path / "idx.json"
+        _write_index(p, _minimal_index(git_sha=SHA_A))
+        monkeypatch.setattr(cic, "_LEASE_TIMEOUT", 0.2)
+        monkeypatch.setattr(cic, "_git_head", lambda root: SHA_A)
+        monkeypatch.setattr(cic, "_git_dirty_py_count", lambda root: 0)
+        live_writer(p)
+        r, code = cic.check_currency(p, tmp_path)
+        assert (r["status"], code) == ("stale", 1)
+        assert "busy" in r["reason"]
+
+    def test_unusable_coordination_root_reports_no_index(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An unwritable coordination root ends the check as no_index, not a bare read."""
+        p = tmp_path / "idx.json"
+        _write_index(p, _minimal_index(git_sha=SHA_A))
+
+        def _refuse(path: Path, *, timeout: float | None = None) -> None:
+            raise rwgate.CoordinationUnavailable(f"coordination root unwritable: {path}")
+
+        monkeypatch.setattr(rwgate, "read_lease", _refuse)
+        r, code = cic.check_currency(p, tmp_path)
+        assert (r["status"], code) == ("no_index", 2)
+        assert "gate unavailable" in r["reason"]

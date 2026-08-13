@@ -172,17 +172,30 @@ def test_payload_includes_expected_members(package: Path, present_rel: str) -> N
     assert (package / present_rel).is_file()
 
 
-def test_all_six_python_hooks_ship(package: Path) -> None:
-    """Exactly the six retained Python hook helpers ship and no JavaScript remains."""
-    helpers = sorted(p.name for p in (package / "hooks").glob("*.py"))
-    assert helpers == [
+#: Every Python file the shipped ``hooks/`` tree is expected to contain. Pinned as a
+#: named set compared by difference — NOT by an exact count — because the count form
+#: ("exactly six") failed the moment a shared helper module was factored out of the
+#: hooks, which is a change this test has no business blocking. Set difference keeps the
+#: real guarantees (nothing silently disappears, nothing unexpected sneaks in) while
+#: leaving the roster free to grow through a one-line edit here.
+_EXPECTED_HOOK_PY = frozenset(
+    {
+        "_hookutil.py",
         "guard-redundant-scan.py",
         "inject-preamble.py",
         "log-skill-start.py",
         "log-tool-use.py",
         "record-exhausted.py",
         "seed-session.py",
-    ]
+    }
+)
+
+
+def test_expected_python_hooks_ship(package: Path) -> None:
+    """The shipped ``hooks/`` tree holds exactly the expected Python roster, no JavaScript."""
+    shipped = {p.name for p in (package / "hooks").glob("*.py")}
+    assert sorted(_EXPECTED_HOOK_PY - shipped) == [], "expected hook helpers missing from the package"
+    assert sorted(shipped - _EXPECTED_HOOK_PY) == [], "unexpected hook helpers in the package"
     assert list((package / "hooks").glob("*.js")) == []
 
 

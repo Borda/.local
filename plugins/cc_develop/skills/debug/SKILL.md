@@ -518,8 +518,9 @@ Write `$DIAG_FILE` with this structure:
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 TI_FILE="${TMPDIR:-/tmp}/dev-debug-test-impact-${CSID}"
 if [ -s "$TI_FILE" ] && ! grep -q '"error"' "$TI_FILE"; then
-    PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || basename "$PWD")
-    _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}/${PROJ}.json"
+    _ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+    PROJ=$(basename "$_ROOT")   # raw basename — scanner writes it verbatim, never sanitized
+    _IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}/${PROJ}.json"   # root-anchored: skill may run from a subdir
     IDX_SCANNED_AT=$(grep -o '"scanned_at"[[:space:]]*:[[:space:]]*"[^"]*"' "$_IDX" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
     {
         echo ""

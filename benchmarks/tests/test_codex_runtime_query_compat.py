@@ -329,7 +329,7 @@ def test_treatment_artifact_lock_mismatch_explains_safe_refresh(script_run_codex
 
     assert "codex_rig_adapter" in message
     assert "no paid model call was started" in message
-    assert "python3 benchmarks/build-codex-integration-manifest.py" in message
+    assert "uv run python benchmarks/build-codex-integration-manifest.py" in message
     assert "Do not reuse the previous --paid-approval value" in message
 
 

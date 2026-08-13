@@ -1223,10 +1223,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path, help="Review output directory.")
     parser.add_argument("--result", required=True, type=Path, help="Candidate result.json path.")
+    # Resolve the fallback lazily: an argparse default is built even when CODEX_HOME is set, and
+    # Path.home() raises on any host that exposes no home variable the platform recognizes.
+    codex_home = os.environ.get("CODEX_HOME")
     parser.add_argument(
         "--codex-home",
         type=Path,
-        default=Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")),
+        default=Path(codex_home) if codex_home else Path.home() / ".codex",
         help="Codex home containing rollout session logs.",
     )
     parser.add_argument("--project-root", type=Path, default=Path.cwd(), help="Project root containing .codex agents.")

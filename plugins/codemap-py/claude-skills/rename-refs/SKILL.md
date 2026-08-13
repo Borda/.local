@@ -129,10 +129,7 @@ STALE=$(printf '%s' "$SMOKE_JSON" | python3 -c "import sys,json; print(json.load
 
 ## Step 2: Resolve targets
 
-Every structural query and every rebuild in this skill goes through the gated `codemap-py` dispatcher — never the `scan-query`/`scan-index` aliases. The aliases take no read/write lease, so an ungated rebuild can race a concurrent scan mid-rename, and they are compatibility shims removed no earlier than `1.0.0`. Re-resolve `$CM` at the top of every subsequent Bash block (shell vars don't persist across Bash() calls):
-```bash
-CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"  # timeout: 5000
-```
+Every structural query and every rebuild in this skill goes through the `codemap-py` dispatcher — never the `scan-query`/`scan-index` aliases. The aliases lease in-engine exactly as the dispatcher does (shared read lease in the query engine, exclusive writer lease in the scan engine), so neither route can race a concurrent scan mid-rename; prefer the dispatcher because it owns the interpreter probe the aliases skip (`127` when no eligible CPython resolves, including an invalid `CODEMAP_PYTHON`), and because the aliases are deprecated compatibility shims removed no earlier than `1.0.0`. Invoke it PATH-literally — `codemap-py query …` / `codemap-py index …` — in every block below: an expansion-bearing path form matches no bare-name allow prefix, so it draws a permission prompt on every call. The plugin's absolute `bin/codemap-py` launcher stays the interactive fallback when the bare command is unavailable.
 
 **Symbol subcommand**:
 
@@ -140,9 +137,8 @@ CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"  # timeout: 5000
 # timeout: 25000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
 IFS= read -r OLD_REF < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_REF-${CSID}" 2>/dev/null || OLD_REF=""
-FIND_SYMBOL_JSON=$("$CM" query --timeout 20 find-symbol "$OLD_REF" --limit 0)
+FIND_SYMBOL_JSON=$(codemap-py query --timeout 20 find-symbol "$OLD_REF" --limit 0)
 printf '%s\n' "$FIND_SYMBOL_JSON" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-find-symbol-json-${CSID}"
 ```
 
@@ -166,8 +162,7 @@ Full qname: `<module>::<qualified_name>` (e.g. `mypackage.auth::validate_token`)
 # timeout: 25000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
-IFS= read -r FIND_SYMBOL_JSON < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-find-symbol-json-${CSID}" 2>/dev/null || FIND_SYMBOL_JSON="{}"
+IFS= read -r FIND_SYMBOL_JSON <  "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-find-symbol-json-${CSID}" 2>/dev/null || FIND_SYMBOL_JSON="{}"
 SYM_MODULE=$(printf '%s' "$FIND_SYMBOL_JSON" | python3 -c "import sys,json; m=json.load(sys.stdin).get('matches') or [{}]; print(m[0].get('module',''))" 2>/dev/null || echo "")
 SYM_QNAME=$(printf '%s' "$FIND_SYMBOL_JSON" | python3 -c "import sys,json; m=json.load(sys.stdin).get('matches') or [{}]; print(m[0].get('qualified_name',''))" 2>/dev/null || echo "")
 printf '%s\n' "$SYM_MODULE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-sym-module-${CSID}"
@@ -175,7 +170,7 @@ printf '%s\n' "$SYM_QNAME"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-sym-qname-${C
 [ -n "$SYM_MODULE" ] && [ -n "$SYM_QNAME" ] || { printf "! could not extract module/qualified_name from find-symbol result\n" >&2; exit 1; }
 # wire OLD_MODULE_PATH here for 4c — OLD_REF can't carry module for symbol rename, don't re-derive
 printf '%s\n' "$SYM_MODULE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}"
-RDEPS_JSON=$("$CM" query --timeout 20 fn-rdeps "${SYM_MODULE}::${SYM_QNAME}")
+RDEPS_JSON=$(codemap-py query --timeout 20 fn-rdeps "${SYM_MODULE}::${SYM_QNAME}")
 RDEP_COUNT=$(printf '%s' "$RDEPS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('count',0))" 2>/dev/null || echo "0")
 # forward-first, fail-closed — query_complete wins even when false. jq `//` falls through on false too, so false query_complete got overridden by true legacy exhaustive, arming the destructive gate on an incomplete graph.
 EXHAUSTIVE=$(printf '%s' "$RDEPS_JSON" | python3 -c "import sys,json; i=json.load(sys.stdin).get('index',{}); v=i.get('query_complete', i.get('exhaustive', False)); print('true' if v is True else 'false')" 2>/dev/null || echo "false")
@@ -193,11 +188,10 @@ printf '%s\n' "$EXHAUSTIVE"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-EXHAU
 # timeout: 25000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
 IFS= read -r OLD_REF < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_REF-${CSID}" 2>/dev/null || OLD_REF=""
 OLD_MODULE_PATH="$OLD_REF"
 printf '%s\n' "$OLD_MODULE_PATH" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH-${CSID}"
-RDEPS_JSON=$("$CM" query --timeout 20 rdeps "$OLD_REF")
+RDEPS_JSON=$(codemap-py query --timeout 20 rdeps "$OLD_REF")
 RDEP_COUNT=$(printf '%s' "$RDEPS_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('imported_by') or []))" 2>/dev/null || echo "0")
 # same forward-first, fail-closed read as the symbol branch
 EXHAUSTIVE=$(printf '%s' "$RDEPS_JSON" | python3 -c "import sys,json; i=json.load(sys.stdin).get('index',{}); v=i.get('query_complete', i.get('exhaustive', False)); print('true' if v is True else 'false')" 2>/dev/null || echo "false")
@@ -369,12 +363,7 @@ grep -qxF "$TARGET_FILE" "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-processed-import-f
 Apply import-line edits only when `SKIP_IMPORT=false`.
 
 Per caller entry (`called_by[i].caller` already `module::function` — pass directly to `codemap-py query`):
-1. Re-resolve CM (shell var does not persist across Bash() calls):
-   ```bash
-   # timeout: 5000
-   CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
-   ```
-   Then `"$CM" query symbol "<caller_qname>"` — timeout: 10000 — result: `{symbols:[{path, start_line, end_line, qualified_name, ...}]}`
+1. Run `codemap-py query symbol "<caller_qname>"` — timeout: 10000 — result: `{symbols:[{path, start_line, end_line, qualified_name, ...}]}`
    - 0 matches → log `⚠ symbol not found for caller <caller_qname> — skipping caller` and continue
    - Filter `symbols[]` by `qualified_name` (exact match preferred; else first entry)
    - Use matched entry's `path`, `start_line`, `end_line` for step 2
@@ -607,16 +596,15 @@ Edit each `:mod:` reference to new module path. For basename-only matches, verif
 # timeout: 400000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
-# `codemap-py index` not scan-index alias — dispatcher takes exclusive writer lease; ungated rebuild races concurrent scan mid-rename. --incremental re-parses changed files only.
-"$CM" index --incremental --timeout 360
+# `codemap-py index` not scan-index alias — alias leases in-engine too, but skips the dispatcher's interpreter probe (exit 127) and is a deprecated shim. --incremental re-parses changed files only.
+codemap-py index --incremental --timeout 360
 _scan_rc=$?
 if [ "$_scan_rc" -ne 0 ]; then
     printf "! codemap-py index --incremental failed (exit %d) — verification may be incomplete; run /codemap-py:scan-codebase for full rebuild\n" "$_scan_rc"
     # don't skip — stale results are advisory only
 fi
 IFS= read -r OLD_REF < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_REF-${CSID}" 2>/dev/null || OLD_REF=""
-"$CM" query --timeout 20 find-symbol "$OLD_REF" --limit 0  # timeout: 25000
+codemap-py query --timeout 20 find-symbol "$OLD_REF" --limit 0  # timeout: 25000
 ```
 
 For `module`:
@@ -624,9 +612,8 @@ For `module`:
 # timeout: 25000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
 IFS= read -r OLD_REF < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_REF-${CSID}" 2>/dev/null || OLD_REF=""
-"$CM" query --timeout 20 rdeps "$OLD_REF"
+codemap-py query --timeout 20 rdeps "$OLD_REF"
 ```
 
 Expected: old name absent (or present only as deprecated alias for symbol with `--deprecate`).

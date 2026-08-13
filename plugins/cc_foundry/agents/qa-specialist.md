@@ -254,8 +254,10 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 Codemap pre-flight — run if `codemap-py query` available; skip manual Glob/Grep enumeration for any module codemap already covers. Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+# index dir anchors at git root, not cwd — subdir invocation otherwise reports no_index while index exists. PROJ = raw basename; scanner writes it unsanitized (space/+/non-ASCII survive).
+_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); [ -n "$_ROOT" ] || _ROOT="$PWD"
+PROJ=$(basename "$_ROOT")
+_IDX="${CODEMAP_INDEX_DIR:-$_ROOT/.cache/codemap}"
 if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     if [ -n "$TARGET_MODULE" ]; then
         codemap-py query uncovered --top 20 "$TARGET_MODULE" 2>/dev/null
@@ -264,7 +266,9 @@ if command -v codemap-py >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     else
         # review/worktree — replaces step 01 enumeration
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
-        for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
+        # module names from index `name` field, never sed: `pkg/__init__.py` is `pkg`, not `pkg.__init__`. Files index doesn't know resolve to nothing, not a guessed name.
+        _CHANGED_PY=$(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | paste -sd, -)
+        for _MOD in $(codemap-py query --timeout 10 central --top 100000 2>/dev/null | python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_centrality.py" --files "$_CHANGED_PY" --modules-only 2>/dev/null | head -10); do
             codemap-py query uncovered --top 20 "$_MOD" 2>/dev/null
             codemap-py query coverage-gap --threshold 0.8 "$_MOD" 2>/dev/null
         done
