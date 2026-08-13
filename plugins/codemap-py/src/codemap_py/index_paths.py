@@ -19,13 +19,19 @@ Resolution rules (plan §4.4 "Shared project index"):
 - the default index is ``<canonical-root>/.cache/codemap/<project>.json`` with a
   sibling ``.index-rw/`` coordination directory;
 - ``CODEMAP_INDEX_DIR`` is a product-wide base override (never a runtime override).
-  Its target is ``<override>/<root-key>/<project>.json`` where ``<root-key>`` is the
-  full lowercase SHA-256 of the normalized canonical-root identity, so equal-basename
-  projects get distinct reusable indexes;
-- a legacy flat override at ``<override>/<project>.json`` is a read-only compatibility
-  candidate only when its stored ``scan_root`` matches the canonical root; a mismatch
-  is ignored with an ``index_root_collision`` diagnostic and never blocks the
-  root-keyed target;
+  Its target is the flat ``<override>/<project>.json`` — the exact path the index
+  writer (:func:`codemap_py.graph.main`) has always published under that variable —
+  so the leased path, the written path, the loaded path, and the ``doctor``-reported
+  path are one path. A root-keyed ``<override>/<root-key>/<project>.json`` layout was
+  resolved here previously while every writer stayed flat; that split meant the gate
+  coordinated a file nobody ever read. The flat convention is authoritative;
+- ``root_key`` is still the stable, path-free identity of the canonical root (used for
+  reporting and correlation) — it is simply no longer a path component;
+- the flat convention accepts that two equal-basename projects sharing one override
+  directory land on the same ``<project>.json``. That collision is detected rather than
+  silently served: an occupant whose stored ``scan_root`` is a different project raises
+  an ``index_root_collision`` diagnostic. Give colliding projects separate override
+  directories;
 - ``split_index_roots`` is reported when two environments resolve different index paths.
 """
 
@@ -77,8 +83,6 @@ class IndexIdentity:
         index_path: Resolved ``<project>.json`` index path.
         coordination_dir: Sibling ``.index-rw/`` directory beside the index.
         override: ``True`` when ``CODEMAP_INDEX_DIR`` selected the base.
-        legacy_candidate: Read-only legacy flat index path when it matches this
-            root, else ``None``.
         diagnostics: Any diagnostics raised while resolving (e.g. collisions).
     """
 
@@ -89,7 +93,6 @@ class IndexIdentity:
     index_path: Path
     coordination_dir: Path
     override: bool
-    legacy_candidate: Path | None
     diagnostics: tuple[Diagnostic, ...]
 
 
@@ -197,26 +200,31 @@ def _read_scan_root(path: Path) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _legacy_candidate(path: Path, root: Path, diagnostics: list[Diagnostic]) -> Path | None:
-    """Return *path* when it is a valid read-only legacy candidate for *root*.
+def _diagnose_root_collision(path: Path, root: Path, diagnostics: list[Diagnostic]) -> None:
+    """Append an ``index_root_collision`` diagnostic when *path* holds another project's index.
 
-    A legacy flat override index is reusable only when its stored ``scan_root``
-    normalizes to the same identity as *root*; a mismatch appends an
-    ``index_root_collision`` diagnostic and is never returned.
+    Under a shared ``CODEMAP_INDEX_DIR`` the flat ``<override>/<project>.json``
+    convention means two equal-basename projects target one file. This is the only
+    tell: an existing occupant whose stored ``scan_root`` normalizes to a different
+    identity than *root* belongs to another project. The diagnostic reports it —
+    resolution never rewrites the path, so the caller decides (the CLI surfaces it;
+    the fix is a separate override directory per colliding project).
+
+    An occupant with no readable ``scan_root`` (an older index, a partial write) is
+    not evidence of a collision and is left alone.
     """
     if not path.is_file():
-        return None
+        return
     stored = _read_scan_root(path)
-    if stored is not None and normalize_identity(_real(Path(stored))) == normalize_identity(root):
-        return path
+    if stored is None or normalize_identity(_real(Path(stored))) == normalize_identity(root):
+        return
     diagnostics.append(
         Diagnostic(
             INDEX_ROOT_COLLISION,
-            "legacy flat index does not match the canonical root; ignoring it",
-            {"legacy_path": str(path), "stored_scan_root": stored, "canonical_root": str(root)},
+            "index at the resolved path was built for a different project root",
+            {"index_path": str(path), "stored_scan_root": stored, "canonical_root": str(root)},
         )
     )
-    return None
 
 
 def resolve_index(
@@ -250,16 +258,18 @@ def resolve_index(
     diagnostics: list[Diagnostic] = []
 
     if override_raw:
-        override_base = Path(str(override_raw)).expanduser().resolve()
-        index_dir = override_base / rk
-        legacy = _legacy_candidate(override_base / f"{project}.json", base_root, diagnostics)
+        index_dir = Path(str(override_raw)).expanduser().resolve()
         override = True
     else:
         index_dir = base_root / INDEX_SUBDIR
-        legacy = None
         override = False
 
     index_path = index_dir / f"{project}.json"
+    if override:
+        # Only a shared override directory can collect two projects' indexes under one
+        # basename; the default layout is already root-scoped, so it is not probed (this
+        # resolver runs on every CLI invocation — no stat/parse on the common path).
+        _diagnose_root_collision(index_path, base_root, diagnostics)
     return IndexIdentity(
         project=project,
         root=base_root,
@@ -268,7 +278,6 @@ def resolve_index(
         index_path=index_path,
         coordination_dir=index_dir / COORDINATION_DIRNAME,
         override=override,
-        legacy_candidate=legacy,
         diagnostics=tuple(diagnostics),
     )
 

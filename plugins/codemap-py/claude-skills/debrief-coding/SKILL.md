@@ -20,7 +20,7 @@ NOT for: validating codemap installation health/integration (use `/codemap-py:in
 
 - `--since <YYYY-MM-DD>` — filter to records on or after this date (default: all)
 - `--session <id>` — filter to a single session UUID
-- `--anonymize` — run `anonymize.py` on both log files before reading; replaces qualified names with stable pseudonyms; keeps salt in `.cache/codemap/logs/.salt` (never included in output)
+- `--anonymize` — run `anonymize.py` on every log shard of all three layers (CLI, skill, tool) before reading; replaces qualified names with stable pseudonyms; keeps salt in `.cache/codemap/logs/.salt` (never included in output)
 - `--output <path>` — write report to this path (default: `.reports/codemap/debrief-<YYYY-MM-DD>.md`)
 
 ## Step 0: Verify logs exist
@@ -37,7 +37,7 @@ Telemetry **sharded per session** (`_telemetry.py` + `log-skill-start.py` + `log
 
 If `--anonymize` flag given:
 
-**Guard**: anonymize every present shard — never assume legacy `cli.jsonl` / `skills.jsonl` exist (per-session sharding means they usually don't). Loop over `$CLI_LOGS` / `$SKILLS_LOGS` sets from Step 0; anonymized copies land in `.cache/codemap/export/` (anonymize.py refuses to write next to `.salt` — never target logs dir); don't mix anonymized and original data in Step 2.
+**Guard**: anonymize every present shard of all three layers — CLI, skill, and tool — never assume legacy `cli.jsonl` / `skills.jsonl` / `tools.jsonl` exist (per-session sharding means they usually don't). Anonymized copies land in `.cache/codemap/export/` (anonymize.py refuses to write next to `.salt` — never target logs dir); don't mix anonymized and original data in Step 2, and don't exempt a layer.
 
 ```bash
 for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
@@ -59,7 +59,9 @@ Resolve each shard set with the `Glob` tool, then Read every returned path — d
 
 - CLI shards: `Glob(".cache/codemap/logs/cli_*.jsonl")` + `Glob(".cache/codemap/logs/cli.jsonl")` (or `.cache/codemap/export/cli*-anon.jsonl` when anonymized)
 - Skill shards: `Glob(".cache/codemap/logs/skills_*.jsonl")` + `Glob(".cache/codemap/logs/skills.jsonl")` (or `.cache/codemap/export/skills*-anon.jsonl`)
-- Tool shards: `Glob(".cache/codemap/logs/tools_*.jsonl")` + `Glob(".cache/codemap/logs/tools.jsonl")` (tool-use logs are never anonymized — anonymize.py only processes CLI/skill layers)
+- Tool shards: `Glob(".cache/codemap/logs/tools_*.jsonl")` + `Glob(".cache/codemap/logs/tools.jsonl")` (or `.cache/codemap/export/tools*-anon.jsonl` when anonymized)
+
+All three layers are anonymized — `anonymize.py --input` is layer-agnostic and Step 1 already loops over the tool shards, so in anonymize mode the tool layer must be read from `.cache/codemap/export/` like the other two. Reading raw `tools_*.jsonl` there would put verbatim Grep/Glob patterns and Read file paths — the `target` field — into an export produced for sharing.
 
 Read **every** path each Glob call returns. Concatenate records before analysing; single-file read misses per-session shards, reports near-empty dataset.
 

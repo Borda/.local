@@ -21,7 +21,7 @@ Codex has no `bin/` PATH entry and no `$CLAUDE_PLUGIN_ROOT`-equivalent environme
 
 ### Step 1: Run the scanner
 
-Parse the invocation text for `--root <path>` and `--incremental`. Any other `--`-prefixed token is unsupported: report `Unknown flag(s): --<token>. Supported: --root, --incremental.` and stop — do not guess at intent.
+Parse the invocation text for `--root <path>` and `--incremental`. Any other `--`-prefixed token is rejected: report `! Unknown flag(s): <tokens>` followed by `Supported: --root <path>, --incremental`, then stop — do not guess at intent. Both rosters use the same `Unknown flag(s)` wording — never a second synonym.
 
 ```bash
 PLUGIN_ROOT/bin/codemap-py index [--root <path>] [--incremental]

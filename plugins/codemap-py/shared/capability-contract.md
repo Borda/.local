@@ -112,6 +112,11 @@ with a "requires vN+ index" message (upgrade path: re-run auto-build or `scan-co
   most common misuse and is called out explicitly to both rosters.
 - For requests for test modules that directly import a module, use `rdeps <module>` and filter/report test
   modules; reserve `test-impact <target>` for transitive affected-test selection.
+- Test-impact lives at two levels and both are supported — this is a routing split, not a dead zone. The
+  `test-impact <target>` subcommand of this skill answers a one-off structural question; the `test-impact`
+  *skill* runs the full workflow (index ensure, JSON parse, `pytest` command, `not_covered` caveat). A
+  roster's NOT-for line defers the workflow to that skill and never removes the subcommand from this
+  skill's own surface; both rosters must state that split rather than imply the subcommand is unavailable.
 - Symbol staleness: `stale: true` + empty source → fall back to a file read; `stale: false` + empty
   → source genuinely unavailable, re-scan required.
 - Result truncation at 20 items is a real cap, not an exhaustive list, unless `--limit 0` is passed.

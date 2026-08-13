@@ -91,6 +91,8 @@ from collections.abc import Callable, Sequence
 from enum import Enum
 from pathlib import Path
 
+from codemap_py import index_paths, rwgate
+
 # Transitional seam: exclusion rules live in codemap_py.scanner, but this
 # module still reaches them through the old bare-name ``_exclusions`` import
 # (bin/_exclusions.py, itself a shim onto codemap_py.scanner) via a
@@ -347,10 +349,23 @@ def _find_index_via_cwd_walk() -> Path | None:
 def find_index() -> Path:
     """Locate the codemap index using a multi-strategy search.
 
+    0. ``CODEMAP_INDEX_DIR`` override — the flat ``<override>/<project>.json`` path
+       from :func:`codemap_py.index_paths.resolve_index`, the one resolver the index
+       writer (:func:`codemap_py.graph.main`), the RW gate, and ``codemap-py doctor``
+       also use. Deriving it here independently is what let reader and writer
+       normalize the project root differently and disagree on the file name.
     1. Git root — checks .cache/codemap/ then .cache/scan/ (backward compat)
     2. Walk up from CWD — finds index in ZIP exports and non-git repos
     3. Fallback — CWD convention; produces a clear error if missing
+
+    The override path is returned unconditionally (even when the file does not exist
+    yet) so a missing index surfaces a clear error at the writer's path instead of
+    silently falling back to a stale index under a different convention.
     """
+    identity = index_paths.resolve_index()
+    if identity.override:
+        return identity.index_path
+
     git_root = _get_git_root_cached()
     if git_root:
         found = _find_index_via_git_root(git_root)
@@ -474,6 +489,65 @@ def load_index(path: Path) -> dict:
             _EXIT_NOT_INDEXED,
         )
     return index
+
+
+def _emit_gate_error(code: str, detail: str) -> None:
+    """Write one bounded structured RW-gate error to stderr and exit 1.
+
+    Deliberately stderr, and deliberately not :func:`_die_json` (which writes the
+    query-level error to stdout): a gate refusal is not a query result, and the
+    ``{"error", "detail"}`` shape on stderr is the contract callers already parse
+    for ``index_busy``.
+
+    Args:
+        code: stable machine-readable slug (e.g. ``index_busy``).
+        detail: human-readable one-line cause.
+    """
+    sys.stderr.write(json.dumps({"error": code, "detail": detail}) + "\n")
+    sys.exit(1)
+
+
+def _gate_timeout_kwargs() -> dict[str, float]:
+    """Optional bounded gate timeout from ``CODEMAP_GATE_TIMEOUT`` (seconds).
+
+    Absent or non-positive leaves the gate's own default bound; a positive value
+    lets callers (and tests) shorten the wait before ``index_busy``.
+    """
+    raw = os.environ.get("CODEMAP_GATE_TIMEOUT", "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return {}
+    return {"timeout": value} if value > 0 else {}
+
+
+def _load_index_leased(index_path: Path) -> dict:
+    """Load and self-check the index under a shared read lease (plan §4.4).
+
+    The lease is taken HERE, in the engine, rather than by whatever launched it, so
+    every route into a query holds one: ``codemap-py query``, ``bin/scan-query``, and
+    any in-process caller. It is also scoped to the load alone and released on
+    return — a query must never still hold a reader token when it spawns the
+    self-heal writer, which would deadlock the child against its own parent until
+    the child's deadline expired.
+
+    Args:
+        index_path: resolved path of the index to load.
+
+    Returns:
+        The parsed, structurally self-checked index dict.
+    """
+    try:
+        with rwgate.read_lease(index_path, **_gate_timeout_kwargs()):
+            return load_index(index_path)
+    except rwgate.IndexBusy:
+        _emit_gate_error("index_busy", "read lease timed out under a live writer")
+    except rwgate.IndexUnreadable as exc:
+        # Subclass of CoordinationUnavailable — must be caught ahead of it.
+        _emit_gate_error("index_unreadable", str(exc))
+    except rwgate.CoordinationUnavailable as exc:
+        _emit_gate_error("index_coordination_unavailable", str(exc))
+    raise AssertionError("unreachable: every gate failure above exits")  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
@@ -629,12 +703,16 @@ def maybe_self_heal(index: dict, index_path: Path, scan_root: Path | None) -> di
         )
         return index
 
+    # The caller's read lease is already released by the time we get here — the scan
+    # below is a writer that takes its own exclusive lease, and a reader token still
+    # held by this process would block it until its deadline expired, every time.
     if not _run_incremental_scan(_BIN / "scan-index", scan_root):
         return index
     try:
-        healed = load_index(index_path)
-    except SystemExit:
-        # load_index calls _exit_error on a corrupt reload; keep the stale index rather than aborting.
+        healed = _load_index_leased(index_path)
+    except (SystemExit, rwgate.IndexBusy, rwgate.CoordinationUnavailable):
+        # A corrupt or momentarily unavailable reload must not abort a query that
+        # already has a usable (if stale) answer in hand — heal is best-effort.
         return index
     _print(f"codemap: self-healed index ({len(changed)} file(s) re-scanned).", file=sys.stderr)
     return healed
@@ -4795,7 +4873,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         signal.alarm(args.timeout)
 
     index_path = _resolve_index_path(args)
-    index = load_index(index_path)
+    index = _load_index_leased(index_path)
     if not _autobuild_disabled() and not args.no_heal:
         # refresh a stale index inline (bounded) so the answer reflects the
         # current tree — e.g. an edge added by a just-committed change is visible.

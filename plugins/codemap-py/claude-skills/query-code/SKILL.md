@@ -16,6 +16,8 @@ Answer structural Python questions with the unified `codemap-py query` CLI.
 NOT for: rebuilding the index (use `/codemap-py:scan-codebase`), renaming symbols (use `/codemap-py:rename-refs`), or which tests cover or are affected by a change (use `/codemap-py:test-impact`).
 </objective>
 
+Test-impact split: a one-off structural fact ("which tests would this touch?") is the `test-impact <target>` subcommand in the table below; the full affected-test workflow (index ensure, JSON parse, `pytest` command, `not_covered` caveat) is `/codemap-py:test-impact`. The NOT-for line above defers the workflow, not the subcommand.
+
 Skip Codemap when an exact file and symbol are supplied for a localized edit and no caller, dependency, blast-radius, test-impact, import, or source-slice fact remains unresolved. A lifecycle boundary—callback/hook, cancellation/exception, scheduling/cleanup, or state transfer—means source scope remains unresolved: inspect source plus the named test/oracle, then query `fn-rdeps` for caller or `fn-deps` for callee responsibility. An explicit structural query or tool requirement overrides this skip; otherwise choose the smallest complete query.
 
 <workflow>
@@ -61,7 +63,7 @@ For method changes that may affect overrides, use `find-symbol '<ClassSuffix>\.<
 
 When a source request names imports, use `symbol <name> --with-imports`; `query_complete: true` confirms index coverage, not that optional fields were requested.
 
-Use `codemap-py query --help` only when needed.
+That table is a routing shortlist, not the parser's full surface — `codemap-py query --help` lists every supported subcommand. Read it rather than guessing a name when the need above is not covered.
 
 ## Index and completeness contract
 
@@ -83,6 +85,10 @@ Interpret `index`:
   by `degraded`, `not_covered`, `root_mismatch`, or `stale`.
 - `compact: true` changes coverage metadata only; findings and counts remain
   complete.
+
+Truncation is not incompleteness. Result truncation at 20 items is a real cap, not an exhaustive list, unless `--limit 0` is passed (`symbol` and `find-symbol` carry that default). `query_complete` scores graph coverage only — staleness, degraded files, untracked files, root mismatch, name collisions — and never reports the cap, so `query_complete: true` on a capped list is still 20-of-N and does not license "stop querying" for the missing items.
+
+Read `index.confidence` before treating a list as whole: `"exact"` = every match returned, `"partial"` = capped or stale. When capped, `index.truncated: true` and `index.total_available: <N>` name the real total — re-run with `--limit 0` (or a `--top`/`--limit` above `total_available`) before reporting the list as complete. That re-run is a correction, not a new question, and is covered by the three-call budget below.
 
 Maximum: three Codemap calls, including one correction to a started name or
 argument error. `fn-blast` takes one qualified name, never `--depth`;

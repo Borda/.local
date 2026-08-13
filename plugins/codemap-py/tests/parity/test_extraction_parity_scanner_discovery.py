@@ -459,5 +459,13 @@ def test_permission_error_exit_code_parity(tmp_path: Path, old_scan_index: Path)
     assert old_index is None and new_index is None
     assert old_result.returncode == new_result.returncode == 1
     assert old_result.stdout == new_result.stdout == ""
-    assert _normalize_pid_tmp(old_result.stderr) == _normalize_pid_tmp(new_result.stderr)
-    assert "[codemap] ERROR: [Errno 13] Permission denied:" in old_result.stderr
+    assert "[codemap] ERROR: [Errno 13] Permission denied:" in _normalize_pid_tmp(old_result.stderr)
+
+    # Deliberate, documented divergence from byte-identical stderr parity (C-H2).
+    # An unwritable index directory is now reported by the RW gate as a bounded
+    # structured error, which the capability contract's exit-1 row requires and the
+    # old raw OSError message did not satisfy. Exit code and stdout parity — the part
+    # any caller actually branches on — still hold above.
+    new_error = json.loads(new_result.stderr)
+    assert new_error["error"] == "index_coordination_unavailable"
+    assert "detail" in new_error

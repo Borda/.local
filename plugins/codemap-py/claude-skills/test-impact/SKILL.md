@@ -42,18 +42,19 @@ _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/nul
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 INDEX="${_IDX}/${_CM_PROJ}.json"
 
-SQ=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/locate_scan_query.py" 2>/dev/null)
-[ -z "$SQ" ] && { echo "scan-query not found — install codemap-py plugin first"; exit 1; }
-echo "$SQ" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq-${CSID}"
+# gated dispatcher, not the ungated scan-query/scan-index aliases — leases live only in `codemap-py query|index`
+CM="${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py"
+[ -x "$CM" ] || { echo "codemap-py launcher not found at $CM — install codemap-py plugin first"; exit 1; }
+echo "$CM" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-cm-${CSID}"
 
-[ ! -f "$INDEX" ] && echo "No index found — will build via the scan-index binary"
+[ ! -f "$INDEX" ] && echo "No index found — will build via codemap-py index"
 ```
 
 Auto-build opt-out via `SCAN_NO_AUTOBUILD=1` (index used exactly as-is — no refresh, no full build); build wall-time echoed when it runs, keeps build cost separable from query cost.
 
 If `$INDEX` not found:
 - `SCAN_NO_AUTOBUILD=1` set → print `! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: /codemap-py:scan-codebase` and exit 1.
-- otherwise → run `scan-index` in the foreground (wait until it finishes) then continue. (Not the `codemap-py:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; build via the `scan-index` binary.)
+- otherwise → run `codemap-py index` in the foreground (wait until it finishes) then continue. (Not the `codemap-py:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; build via the gated `codemap-py index` dispatcher.)
 
 If index already exists:
 
@@ -65,10 +66,10 @@ if [ "${SCAN_NO_AUTOBUILD:-0}" = "1" ]; then
     echo "[codemap] SCAN_NO_AUTOBUILD=1 — using existing index as-is (no refresh)"
 else
     _CM_BUILD_T0=$(date +%s)
-    # forward CODEMAP_INDEX_DIR; ensures scan-index writes to same path as INDEX
-    CODEMAP_INDEX_DIR="${_IDX}" "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/scan-index" --incremental \
+    # forward CODEMAP_INDEX_DIR; ensures the build writes to same path as INDEX
+    CODEMAP_INDEX_DIR="${_IDX}" "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" index --incremental \
         && echo "[codemap] index built in $(( $(date +%s) - _CM_BUILD_T0 ))s" \
-        || printf "⚠ scan-index --incremental failed — index may be stale; continuing\n"
+        || printf "⚠ codemap-py index --incremental failed — index may be stale; continuing\n"
 fi
 ```
 
@@ -115,16 +116,37 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 IFS= read -r QNAME < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname-${CSID}" 2>/dev/null || QNAME=""
 IFS= read -r MOCKS_FLAG < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks-${CSID}" 2>/dev/null || MOCKS_FLAG=""
-IFS= read -r SQ < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq-${CSID}" 2>/dev/null || SQ=""
-RESULT=$("$SQ" test-impact "$QNAME" $MOCKS_FLAG 2>/dev/null)
-NOT_COVERED=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('index',{}).get('not_covered',[])))" 2>/dev/null || echo "[]")
-HINT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('index',{}).get('hint',''))" 2>/dev/null || echo "")
-TOTAL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('test_files',[])))" 2>/dev/null || echo "0")
-PYTEST_CMD=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pytest_cmd',''))" 2>/dev/null || echo "")
-echo "$NOT_COVERED" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered-${CSID}"
-echo "$HINT"        > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint-${CSID}"
-echo "$TOTAL"       > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-total-${CSID}"
-echo "$PYTEST_CMD"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-pytest-cmd-${CSID}"
+IFS= read -r CM < "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-cm-${CSID}" 2>/dev/null || CM=""
+_TI_ERR="${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-stderr-${CSID}"
+# capture stderr to a file, never 2>/dev/null — a swallowed diagnostic is what rendered a broken index as "no affected tests"
+RESULT=$("$CM" query test-impact "$QNAME" $MOCKS_FLAG 2>"$_TI_ERR")
+_TI_RC=$?
+if [ "$_TI_RC" -ne 0 ]; then
+    printf "! test-impact query failed (exit %d) — this is NOT a 'no affected tests' result; do not report an empty test set\n" "$_TI_RC" >&2
+    [ -s "$_TI_ERR" ] && sed -n '1,5p' "$_TI_ERR" >&2
+    printf "Rebuild with /codemap-py:scan-codebase, then re-run.\n" >&2
+    exit 1
+fi
+# one parse, no per-field `|| echo` defaults — a default here forges total=0 out of an unparsable payload
+printf '%s' "$RESULT" | python3 -c "
+import json, sys
+base, suf = sys.argv[1], sys.argv[2]
+try:
+    payload = json.loads(sys.stdin.read())
+except ValueError:
+    sys.stderr.write('! test-impact returned non-JSON output — NOT an empty result; rebuild via /codemap-py:scan-codebase and re-run\n')
+    raise SystemExit(1)
+index = payload.get('index') or {}
+fields = {
+    'not-covered': json.dumps(index.get('not_covered') or []),
+    'hint': index.get('hint') or '',
+    'total': str(len(payload.get('test_files') or [])),
+    'pytest-cmd': payload.get('pytest_cmd') or '',
+}
+for name, value in fields.items():
+    with open(base + name + suf, 'w') as handle:
+        handle.write(value + '\n')
+" "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-" "-${CSID}" || exit 1
 ```
 
 Parse JSON output from `$RESULT`:
@@ -134,11 +156,13 @@ Parse JSON output from `$RESULT`:
 - `index.not_covered` — surface as caveat if non-empty
 - `index.hint` — include as suggestion
 
-**haiku JSON parse guard**: `scan-query` JSON output may be prefixed/suffixed with log/warning lines under haiku model. Always extract JSON via `python3 -c "import sys,json; ..."` piping stdin — never assume raw output valid JSON. Parsing fails (ValueError/JSONDecodeError) → print `! scan-query returned non-JSON output — try /codemap-py:scan-codebase to rebuild index` and exit 1.
+**Loud-failure contract**: query failure and empty result are different outcomes and must never collapse into one another. The block above enforces both halves in shell, not prose — a non-zero exit code stops the skill (exit 1) before any field is read, and an unparsable payload exits 1 from the parser. Neither path may be reported as "no affected tests". A false empty test set on a broken index is the worst output this skill can emit.
+
+**haiku JSON parse guard**: `codemap-py query` JSON output may be prefixed/suffixed with log/warning lines under the haiku model. Always extract JSON by piping stdin into `python3 -c "import json, sys; ..."` — never assume raw output is valid JSON, and never add a per-field `|| echo "0"` / `|| echo "[]"` fallback, which manufactures a benign-looking default out of a failed parse.
 
 ## Step 3 — Output
 
-**When `total == 0`**: report "No tests found via static analysis. Try full suite or check with `grep -rn <symbol_name> tests/`."
+**When `total == 0`**: this branch is reachable only after the Step 2 query exited `0` and its payload parsed — a genuine empty result. Report "No tests found via static analysis. Try full suite or check with `grep -rn <symbol_name> tests/`."
 
 **When `total > 0`**:
 
@@ -158,6 +182,15 @@ Parse JSON output from `$RESULT`:
 </if>
 ```
 
-Output routing: if `total >= 5` write to `.temp/output-test-impact-<branch>-<YYYY-MM-DD>.md`.
+Output routing: if `total >= 5`, derive a free (non-colliding) path first, then write the report to the printed path:
+
+```bash
+# timeout: 3000
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-'); BRANCH="${BRANCH:-main}"
+# never overwrite — a same-day re-run on another target would replace an unrelated report
+TI_OUT=".temp/output-test-impact-${BRANCH}-$(date +%Y-%m-%d).md"; _n=1
+while [ -e "$TI_OUT" ]; do _n=$((_n+1)); TI_OUT=".temp/output-test-impact-${BRANCH}-$(date +%Y-%m-%d)-${_n}.md"; done
+printf '%s\n' "$TI_OUT"
+```
 
 </workflow>

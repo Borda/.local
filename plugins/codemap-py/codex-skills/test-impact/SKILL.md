@@ -75,4 +75,4 @@ Parse JSON explicitly from the CLI's stdout — do not assume the first line of 
 </if>
 ```
 
-Output routing: if `total >= 5`, write the same content to `.reports/codex/codemap-py/test-impact-<YYYY-MM-DD>.md` and print the path.
+Output routing: if `total >= 5`, write the same content to `.reports/codex/codemap-py/test-impact-<branch>-<YYYY-MM-DD>.md` and print the path. Derive `<branch>` from `git branch --show-current | tr '/' '-'` (empty/detached → `main`), and never overwrite: if that path exists, append a counter (`…-2.md`, `…-3.md`) until the name is free — a same-day re-run on another target would otherwise replace an unrelated report.

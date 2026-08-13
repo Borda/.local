@@ -933,6 +933,29 @@ class TestFindIndex:
         result = _find_index()
         assert result == codemap_idx
 
+    def test_index_dir_override_wins_over_cache_dirs(self, tmp_path, monkeypatch) -> None:
+        """CODEMAP_INDEX_DIR resolves to the writer's flat <override>/<root_name>.json even when a .cache index exists."""
+        cache_idx = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
+        cache_idx.parent.mkdir(parents=True)
+        cache_idx.write_text("{}")
+        override = tmp_path / "custom-index-dir"
+        override.mkdir()
+        (override / f"{tmp_path.name}.json").write_text("{}")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(_scan_query_mod, "_get_git_root_cached", lambda: tmp_path)
+        monkeypatch.setenv("CODEMAP_INDEX_DIR", str(override))
+        result = _find_index()
+        assert result == override / f"{tmp_path.name}.json"
+
+    def test_index_dir_override_returned_when_missing(self, tmp_path, monkeypatch) -> None:
+        """Override path is returned even before the writer publishes, so the error surfaces at the writer's path."""
+        override = tmp_path / "custom-index-dir"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(_scan_query_mod, "_get_git_root_cached", lambda: tmp_path)
+        monkeypatch.setenv("CODEMAP_INDEX_DIR", str(override))
+        result = _find_index()
+        assert result == override / f"{tmp_path.name}.json"
+
 
 class TestImportClassification:
     """Import classification into stdlib / third_party / internal groups (v4.3)."""

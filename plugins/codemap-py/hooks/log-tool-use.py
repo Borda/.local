@@ -13,6 +13,13 @@ from pathlib import Path
 
 _LOG_MAX_BYTES = 10 * 1024 * 1024
 _BASH_SEARCH = re.compile(r"(^|[|;&(]\s*)(rg|grep|egrep|fgrep)\s")
+#: Bytes of the shard the repeated-read nudge inspects. It runs on every matched Read, so
+#: scanning the whole 10 MB budget to decide one advisory was the dominant cost of a hook
+#: whose entire contract is to stay cheap. ~1.7K records fit here, far more than the three
+#: the nudge counts; beyond that window the hint can fire one read late, never spuriously.
+_NUDGE_TAIL_BYTES = 256 * 1024
+#: Same sanitizer as ``codemap_py.telemetry`` — the shard names must agree to join.
+_UNSAFE_KEY = re.compile(r"[^A-Za-z0-9_-]")
 
 
 def iso_now() -> str:
@@ -29,9 +36,45 @@ def plugin_version() -> str:
         return "?"
 
 
+def project_name(cwd: Path | None = None) -> str:
+    """Return the project key: the basename of the nearest enclosing git root.
+
+    The session marker is written once per *project* by ``seed-session.py``, which keys it
+    on the git-root basename — as does ``codemap_py.telemetry``. Keying on ``cwd.name``
+    here instead meant that a Claude session started in a subdirectory looked for a marker
+    nobody had written, so every tool record landed in an unsuffixed shard and the join
+    against the cli/skill layers silently returned nothing.
+
+    The root is found by walking for ``.git`` rather than by running ``git rev-parse``:
+    this hook fires on every Grep/Read/Glob call, and a subprocess per call is exactly the
+    cost its contract forbids. ``.git`` is matched as a file too, which is how linked
+    worktrees mark their root.
+
+    Args:
+        cwd: Directory to resolve from; defaults to the process working directory.
+
+    Returns:
+        The git-root basename, or the directory's own basename outside a repository.
+
+    Examples:
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     nested = Path(d) / "myproj" / "src" / "pkg"
+        ...     nested.mkdir(parents=True)
+        ...     (Path(d) / "myproj" / ".git").mkdir()
+        ...     project_name(nested)
+        'myproj'
+    """
+    start = (cwd or Path.cwd()).resolve()
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate.name
+    return start.name
+
+
 def session_id() -> str:
     """Return the session marker seeded once per project, without running git."""
-    marker = Path(tempfile.gettempdir()) / f"codemap-{Path.cwd().name}-session"
+    marker = Path(os.environ.get("TMPDIR") or tempfile.gettempdir()) / f"codemap-{project_name()}-session"
     try:
         return marker.read_text(encoding="utf-8").strip()
     except OSError:
@@ -57,6 +100,29 @@ def target_for(tool_name: str, tool_input: dict) -> str:
     return str(tool_input.get("pattern") or tool_input.get("path") or "")
 
 
+def tail_lines(log_file: Path, limit: int) -> list[str]:
+    """Return the last *limit* bytes of *log_file* as whole lines.
+
+    A window that starts mid-record would otherwise hand the caller a truncated first line
+    that can still contain a searched-for substring, so it is dropped whenever the read did
+    not start at byte 0.
+
+    Args:
+        log_file: The telemetry shard to read.
+        limit: Maximum number of trailing bytes to inspect.
+
+    Returns:
+        Complete lines from the window, oldest first.
+    """
+    with log_file.open("rb") as stream:
+        size = stream.seek(0, os.SEEK_END)
+        start = max(0, size - limit)
+        stream.seek(start)
+        window = stream.read()
+    lines = window.decode("utf-8", errors="replace").splitlines()
+    return lines[1:] if start and lines else lines
+
+
 def maybe_nudge_repeated_read(record: dict, log_file: Path) -> None:
     """Print one hint when a non-test Python source file is read for the third time."""
     if record["tool"] != "Read" or not record["target"].endswith(".py"):
@@ -65,9 +131,7 @@ def maybe_nudge_repeated_read(record: dict, log_file: Path) -> None:
         return
     escaped_target = json.dumps(record["target"])
     try:
-        count = sum(
-            '"Read"' in line and escaped_target in line for line in log_file.read_text(encoding="utf-8").splitlines()
-        )
+        count = sum('"Read"' in line and escaped_target in line for line in tail_lines(log_file, _NUDGE_TAIL_BYTES))
     except OSError:
         return
     if count == 3:
@@ -95,7 +159,7 @@ def main() -> int:
             if not _BASH_SEARCH.search(command) or "scan-query" in command:
                 return 0
         session = session_id()
-        safe_session = "".join(char if char.isalnum() or char in "_-" else "-" for char in session)
+        safe_session = _UNSAFE_KEY.sub("-", session)
         record = {
             "ts": iso_now(),
             "layer": "tool",

@@ -25,17 +25,17 @@ NOT for: querying existing index (use `/codemap-py:query-code`); integration hea
 
 Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `--incremental` if provided. Construct args conditionally — never pass literal placeholder strings:
 
-**Unsupported flag check** — scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then exit 1 — do not invoke AskUserQuestion (disable-model-invocation:true makes AskUserQuestion structurally unreachable). Run this check BEFORE invoking `parse_scan_args.py`.
+**Unknown-flag check** — scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): <tokens>` followed by `Supported: --root <path>, --incremental`, then exit 1 — do not invoke AskUserQuestion (disable-model-invocation:true makes AskUserQuestion structurally unreachable). Run this check BEFORE invoking `parse_scan_args.py`. Both rosters and the shell below use the same `Unknown flag(s)` wording — never a second synonym. This pre-flight exits `1`, a skill-local shortcut recorded as accepted in `shared/capability-contract.md`; it does not redefine §7.5's `2` for the CLI's own syntax errors.
 
 ```bash
 # timeout: 10000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # tr|awk, not for-loop — zsh doesn't word-split unquoted vars, for-loop saw whole string as one token, "--root <path>" always false-flagged unsupported
 # awk skips token after --root same as old _SKIP_NEXT; parse_scan_args.py handles quoted paths
-_ARGS_UNSUPPORTED=$(printf '%s\n' "$ARGUMENTS" | tr ' ' '\n' \
+_ARGS_UNKNOWN=$(printf '%s\n' "$ARGUMENTS" | tr ' ' '\n' \
   | awk '/^--root$/{skip=1;next} skip{skip=0;next} /^--incremental$/{next} /^--/{print}' | tr '\n' ' ')
-_ARGS_UNSUPPORTED="${_ARGS_UNSUPPORTED% }"
-[ -z "$_ARGS_UNSUPPORTED" ] || { printf "! Unsupported flag(s): %s\nSupported: --root <path>, --incremental\n" "$_ARGS_UNSUPPORTED" >&2; exit 1; }
+_ARGS_UNKNOWN="${_ARGS_UNKNOWN% }"
+[ -z "$_ARGS_UNKNOWN" ] || { printf "! Unknown flag(s): %s\nSupported: --root <path>, --incremental\n" "$_ARGS_UNKNOWN" >&2; exit 1; }
 SETUP_STDERR="${TMPDIR:-/tmp}/codemap-setup-err-$$-${CSID}"
 SCAN_STATE_FILE=$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/setup_scan_env.sh" --arguments "$ARGUMENTS" 2>"$SETUP_STDERR")
 if [ $? -ne 0 ] || [ -z "$SCAN_STATE_FILE" ]; then
@@ -64,8 +64,12 @@ while IFS= read -r -d '' _arg; do
   SCAN_ARGS+=("$_arg")
 done < "$_ARGS_FILE"
 rm -f "$_ARGS_FILE"
-if ! "$SCAN_BIN" --timeout 360 "${SCAN_ARGS[@]}"; then
-    printf "! scan-index failed (exit %d) — index may be stale or incomplete\n" "$?"
+# gated dispatcher, not the ungated scan-index alias — the writer lease lives only in `codemap-py index`. SCAN_BIN stays as setup_scan_env.sh's existence preflight (the dispatcher needs the same binary present).
+"${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" index --timeout 360 "${SCAN_ARGS[@]}"
+# capture rc BEFORE branching — inside `if ! cmd; then`, $? is the negated compound's status (always 0), never the scanner's
+_SCAN_RC=$?
+if [ "$_SCAN_RC" -ne 0 ]; then
+    printf "! codemap-py index failed (exit %d) — index may be stale or incomplete\n" "$_SCAN_RC"
     # rm sentinel on failure — stale one misleads Step 2
     rm -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}-${CSID}"
     exit 1

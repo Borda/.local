@@ -2,22 +2,24 @@
 
 Each hook is exercised exactly the way Claude Code drives it: a single event JSON is
 piped to `python <hook>` on stdin, and the observable side effects (stdout shape, tmp
-files written, spawn markers, exit code) are asserted. No production code is touched —
-a suspected production bug is pinned with an ``xfail(strict=True)`` test plus a note in
-the return envelope, never a fix.
+files written, spawn markers, exit code) are asserted.
 
 Hooks under test:
 
 - ``inject-preamble.py``       — UserPromptSubmit: index-status preamble, stale-index
                                   background refresh with an atomic O_EXCL lock, and
                                   a once-per-session emit flag. Both the lock and the
-                                  session flag use ``readTimestamp`` which must map a
+                                  session flag use ``read_timestamp`` which must map a
                                   corrupted (non-numeric/empty) file to a *stale* age
                                   rather than a NaN that poisons every comparison.
 - ``guard-redundant-scan.py``  — PreToolUse(Bash): deny import-discovery greps for a
                                   module already marked exhaustive this session.
 - ``seed-session.py``          — SessionStart: seed the per-project session tmpfile.
 - ``log-skill-start.py``       — PreToolUse(Skill): log codemap:* skill invocations.
+
+One session key spans them all: ``seed-session`` writes ``codemap-<project>-session``
+into TMPDIR and every other layer reads it back, so ``TestSessionKeyAgreement`` pins that
+the writer and both readers derive the same ``<project>`` from the same directory.
 
 TEST SEAM (inject-preamble): the hook keys its lock/flag tmp files on the git-root
 basename, resolves the index dir from ``CODEMAP_INDEX_DIR``, and resolves the
@@ -636,7 +638,7 @@ class TestInjectPreambleStaleCollapse:
 # ── guard-redundant-scan ─────────────────────────────────────────────────────────
 
 
-def _run_guard(command: str, session: str, tmpdir: Path) -> subprocess.CompletedProcess:
+def _run_guard(command: str, session: str, tmpdir: Path, cwd: Path | None = None) -> subprocess.CompletedProcess:
     """Drive guard-redundant-scan.py with an isolated TMPDIR for the sentinel lookup."""
     env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir)}
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session}
@@ -645,13 +647,16 @@ def _run_guard(command: str, session: str, tmpdir: Path) -> subprocess.Completed
         input=json.dumps(payload),
         text=True,
         capture_output=True,
+        cwd=str(cwd) if cwd else None,
         env=env,
     )
 
 
-def _seed_sentinel(tmpdir: Path, session: str, modules: list[str]) -> None:
+def _seed_sentinel(tmpdir: Path, session: str, modules: list[str]) -> Path:
     """Write the exhausted-caller sentinel the guard reads (one module per line)."""
-    (tmpdir / f"codemap-exhausted-{session}").write_text("\n".join(modules) + "\n")
+    sentinel = tmpdir / f"codemap-exhausted-{session}"
+    sentinel.write_text("\n".join(modules) + "\n")
+    return sentinel
 
 
 class TestGuardRedundantScan:
@@ -730,6 +735,124 @@ class TestGuardRedundantScan:
         assert result.stdout == ""
 
 
+class TestGuardCommandAnchoring:
+    """Only a real search command may be denied.
+
+    The pattern this pins replaces an unanchored ``\\bimport\\b.*-r`` alternative that
+    named no search tool at all, so any command pairing the word "import" with a ``-r``
+    flag — a Python one-liner next to an ``rm -r``, most damagingly — was denied while
+    naming an exhausted module.
+    """
+
+    _SESSION = "sess-anchor"
+    _MODULES = ["mypackage.auth", "mypackage/auth"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param('python -c "import mypackage.auth" && rm -r tmp', id="python-inline-import-with-rm"),
+            pytest.param("python -m pip install -r requirements.txt  # import mypackage.auth", id="pip-install-r"),
+            pytest.param("mv mypackage/auth.py mypackage/auth_v2.py", id="plain-file-move"),
+        ],
+    )
+    def test_non_search_command_never_denied(self, command: str, tmp_path: Path) -> None:
+        """A command that runs no search tool is allowed even while the sentinel is armed."""
+        _seed_sentinel(tmp_path, self._SESSION, self._MODULES)
+
+        result = _run_guard(command, self._SESSION, tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "", f"non-search command must not be denied: {command}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param('grep -rn "import mypackage.auth" src/', id="grep-import"),
+            pytest.param('rg "from mypackage.auth" -n', id="rg-from"),
+        ],
+    )
+    def test_search_command_still_denied(self, command: str, tmp_path: Path) -> None:
+        """Narrowing the pattern must not stop the greps the guard exists to deny."""
+        _seed_sentinel(tmp_path, self._SESSION, self._MODULES)
+
+        result = _run_guard(command, self._SESSION, tmp_path)
+
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+class TestGuardSentinelExpiry:
+    """A recorded caller set stops denying once its authority can no longer be trusted.
+
+    ``record-exhausted.py`` drops the sentinel on every Claude source edit; the TTL here
+    bounds the mutation that hook never sees (a checkout, an external editor, a sibling
+    agent), which previously left a deny armed for the rest of the session.
+    """
+
+    _SESSION = "sess-ttl"
+    _COMMAND = 'grep -rn "import mypackage.auth" .'
+    _TTL_S = 30 * 60  # guard-redundant-scan.py _SENTINEL_TTL_S
+
+    def test_fresh_sentinel_denies(self, tmp_path: Path) -> None:
+        """A just-recorded caller set is inside the TTL and still denies."""
+        _seed_sentinel(tmp_path, self._SESSION, ["mypackage.auth"])
+
+        result = _run_guard(self._COMMAND, self._SESSION, tmp_path)
+
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    def test_expired_sentinel_allows(self, tmp_path: Path) -> None:
+        """Past the TTL the same sentinel no longer has the authority to deny."""
+        sentinel = _seed_sentinel(tmp_path, self._SESSION, ["mypackage.auth"])
+        expired = time.time() - self._TTL_S - 60
+        os.utime(sentinel, (expired, expired))
+
+        result = _run_guard(self._COMMAND, self._SESSION, tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "", "an expired exhaustive result must not keep denying greps"
+
+
+class TestGuardMissingSessionKey:
+    """Two projects without a session id must not deny through one shared sentinel."""
+
+    _COMMAND = 'grep -rn "import mypackage.auth" .'
+
+    @staticmethod
+    def _run(tmpdir: Path, project: Path) -> subprocess.CompletedProcess:
+        """Drive the guard with no session_id from inside *project*."""
+        env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir), "CSID": "session-one"}
+        return subprocess.run(
+            [sys.executable, str(_GUARD)],
+            input=json.dumps({"tool_name": "Bash", "tool_input": {"command": TestGuardMissingSessionKey._COMMAND}}),
+            text=True,
+            capture_output=True,
+            cwd=str(project),
+            env=env,
+        )
+
+    def test_other_projects_sentinel_does_not_deny(self, tmp_path: Path) -> None:
+        """A sentinel armed under another project's fallback key is invisible here."""
+        alpha, beta = tmp_path / "proj-alpha", tmp_path / "proj-beta"
+        alpha.mkdir()
+        beta.mkdir()
+        _seed_sentinel(tmp_path, "proj-alpha-session-one", ["mypackage.auth"])
+
+        result = self._run(tmp_path, beta)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "", "a sibling project's exhausted set must never deny here"
+
+    def test_own_fallback_sentinel_still_denies(self, tmp_path: Path) -> None:
+        """The fallback key is a working key, not a disabled one."""
+        alpha = tmp_path / "proj-alpha"
+        alpha.mkdir()
+        _seed_sentinel(tmp_path, "proj-alpha-session-one", ["mypackage.auth"])
+
+        result = self._run(tmp_path, alpha)
+
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 # ── seed-session ─────────────────────────────────────────────────────────────────
 
 
@@ -797,6 +920,9 @@ class TestSeedSession:
 def _run_skill(payload: dict, cwd: Path, tmpdir: Path) -> subprocess.CompletedProcess:
     """Drive log-skill-start.py with cwd + TMPDIR pinned."""
     env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir)}
+    # The hook honours CODEMAP_LOG_DIR; an inherited one would redirect the shard the
+    # assertions below look for, so the tests stay hermetic by dropping it.
+    env.pop("CODEMAP_LOG_DIR", None)
     return subprocess.run(
         [sys.executable, str(_SKILL)],
         input=json.dumps(payload),
@@ -865,7 +991,7 @@ class TestLogSkillStart:
         """A seeded session tmpfile routes the record to skills_<session>.jsonl."""
         tmpdir = tmp_path / "tmp"
         tmpdir.mkdir()
-        # project = cwd basename (log-skill-start uses cwd basename, not git root).
+        # Outside a repository the project key falls back to the cwd basename.
         (tmpdir / f"codemap-{tmp_path.name}-session").write_text("seeded-sid")
         payload = {"tool_name": "Skill", "tool_input": {"skill": "codemap-py:test-impact"}}
 
@@ -890,3 +1016,89 @@ class TestLogSkillStart:
         )
         assert result.returncode == 0, result.stderr
         assert _skill_records(tmp_path) == []
+
+
+# ── cross-hook session keying ────────────────────────────────────────────────────
+
+
+class TestSessionKeyAgreement:
+    """The marker's writer and its readers must agree on the project key from any cwd.
+
+    ``seed-session`` keys the marker on the git-root basename, as does the cli layer
+    (``codemap_py.telemetry.session_id``). The tool and skill hooks used to key it on
+    ``Path.cwd().name``, so a Claude session started in a subdirectory looked for a marker
+    nobody had written: every tool and skill record landed in an unsuffixed shard and the
+    join across layers returned nothing while every hook still reported success.
+    """
+
+    _TOOL_HOOK = _HOOKS / "log-tool-use.py"
+
+    @staticmethod
+    def _repo_with_subdir(tmp_path: Path) -> tuple[Path, Path, Path]:
+        """Return (tmpdir, repo root, nested working directory) for a throwaway repo."""
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        repo = tmp_path / "myproj"
+        _init_repo(repo)
+        nested = repo / "src" / "pkg"
+        nested.mkdir(parents=True)
+        return tmpdir, repo, nested
+
+    @staticmethod
+    def _run(hook: Path, payload: dict, cwd: Path, tmpdir: Path) -> subprocess.CompletedProcess:
+        """Drive *hook* from *cwd* with TMPDIR pinned and telemetry re-enabled."""
+        env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir)}
+        env.pop("CODEMAP_LOG_DIR", None)
+        env["CODEMAP_LOGGING"] = "true"  # conftest's autouse gate exports false suite-wide
+        return subprocess.run(
+            [sys.executable, str(hook)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            cwd=str(cwd),
+            env=env,
+        )
+
+    def test_seed_from_subdir_writes_the_git_root_key(self, tmp_path: Path) -> None:
+        """The marker is named for the repository, not for whichever directory ran the hook."""
+        tmpdir, repo, nested = self._repo_with_subdir(tmp_path)
+
+        result = self._run(_SEED, {"session_id": "sid-sub"}, nested, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        assert (tmpdir / f"codemap-{repo.name}-session").read_text() == "sid-sub"
+        assert not (tmpdir / f"codemap-{nested.name}-session").exists()
+
+    def test_tool_hook_from_subdir_joins_the_seeded_session(self, tmp_path: Path) -> None:
+        """A tool record written from a subdirectory carries the seeded session id."""
+        tmpdir, repo, nested = self._repo_with_subdir(tmp_path)
+        (tmpdir / f"codemap-{repo.name}-session").write_text("sid-sub")
+
+        result = self._run(self._TOOL_HOOK, {"tool_name": "Grep", "tool_input": {"pattern": "x"}}, nested, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        shard = nested / ".cache" / "codemap" / "logs" / "tools_sid-sub.jsonl"
+        assert shard.exists(), "subdirectory tool record did not join the seeded session shard"
+        assert json.loads(shard.read_text().strip())["session"] == "sid-sub"
+
+    def test_skill_hook_from_subdir_joins_the_seeded_session(self, tmp_path: Path) -> None:
+        """A skill record written from a subdirectory carries the same seeded session id."""
+        tmpdir, repo, nested = self._repo_with_subdir(tmp_path)
+        (tmpdir / f"codemap-{repo.name}-session").write_text("sid-sub")
+        payload = {"tool_name": "Skill", "tool_input": {"skill": "codemap-py:query-code"}}
+
+        result = self._run(_SKILL, payload, nested, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        shard = nested / ".cache" / "codemap" / "logs" / "skills_sid-sub.jsonl"
+        assert shard.exists(), "subdirectory skill record did not join the seeded session shard"
+        assert json.loads(shard.read_text().strip())["session"] == "sid-sub"
+
+    def test_skill_hook_does_not_mint_a_second_session(self, tmp_path: Path) -> None:
+        """Reading the marker from a subdirectory must not look absent and mint a rival id."""
+        tmpdir, repo, nested = self._repo_with_subdir(tmp_path)
+        (tmpdir / f"codemap-{repo.name}-session").write_text("sid-sub")
+
+        self._run(_SKILL, {"tool_name": "Skill", "tool_input": {"skill": "codemap-py:scan-codebase"}}, nested, tmpdir)
+
+        assert [p.name for p in tmpdir.glob("codemap-*-session")] == [f"codemap-{repo.name}-session"]

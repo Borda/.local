@@ -55,39 +55,22 @@ sys.exit(subprocess.run([sys.executable, scan_index, *sys.argv[1:]]).returncode)
 # let exactly one build; the waiter's build_fn recheck then reuses the published
 # index. Same-process threads cannot model this — writer intent is PID-owned.
 _WORKER_SOURCE = """\
-import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
-sys.path.insert(0, os.environ["CODEMAP_BIN"])
-import _rwgate
-
-target = sys.argv[1]
-
-
-def build_fn(t):
-    try:
-        existing = json.loads(Path(t).read_bytes())
-        if existing.get("scan_version") and existing.get("file_shas"):
-            sys.stdout.write("reused")
-            return "reused"
-    except (OSError, ValueError):
-        pass
-    subprocess.run(
-        [sys.executable, os.environ["CODEMAP_TEST_SHIM"], "--root", os.environ["CODEMAP_TEST_ROOT"]],
-        check=True,
-        capture_output=True,
-    )
-    sys.stdout.write("built")
-    return "built"
-
-
-try:
-    _rwgate.write_index(target, build_fn, timeout=30)
-except _rwgate.IndexBusy:
-    sys.stdout.write("busy")
+# No lease here, deliberately. The exclusive write lease is taken inside the engine
+# (codemap_py.graph.main), so every route in is gated by construction. A caller that
+# wrapped this spawn in its own rwgate.write_index would deadlock: the child cannot
+# acquire (the parent's token is foreign and live to it) and the parent cannot release
+# (it is blocked on the child), so the child burns its deadline and fails index_busy.
+result = subprocess.run(
+    [sys.executable, os.environ["CODEMAP_TEST_SHIM"], "--root", os.environ["CODEMAP_TEST_ROOT"]],
+    capture_output=True,
+    text=True,
+)
+sys.stdout.write("built" if result.returncode == 0 else "failed:" + result.stderr[-400:])
+sys.exit(result.returncode)
 """
 
 
@@ -149,33 +132,50 @@ def test_identity_same_path_from_repo_subdir(project: Path) -> None:
     assert not ident.override
 
 
-def test_override_root_keyed_layout(tmp_path: Path) -> None:
+def test_override_flat_layout(tmp_path: Path) -> None:
+    """Under an override the index is flat ``<override>/<project>.json`` (C-H1).
+
+    The resolver previously root-keyed this path while every writer stayed flat, so
+    the gate coordinated a file nobody read. root_key survives as a path-free identity
+    for reporting; it is no longer a directory component.
+    """
     root = tmp_path / "proj"
     root.mkdir()
     override = tmp_path / "shared"
     ident = ii.resolve_index(root=root, index_dir_override=str(override))
     assert ident.override
     assert ident.root_key == ii.root_key(ident.root)
-    assert ident.index_path == override.resolve() / ident.root_key / "proj.json"
-    assert ident.coordination_dir == override.resolve() / ident.root_key / ii.COORDINATION_DIRNAME
+    assert ident.index_path == override.resolve() / "proj.json"
+    assert ident.coordination_dir == override.resolve() / ii.COORDINATION_DIRNAME
 
 
-def test_equal_basename_distinct_root_keys_independent_reuse(tmp_path: Path) -> None:
+def test_equal_basename_under_one_override_collides_and_is_diagnosed(tmp_path: Path) -> None:
+    """Equal-basename projects sharing one override resolve to ONE file — detected, not silent.
+
+    Behaviour change from the root-keyed layout (C-H1): two ``proj`` directories under a
+    single ``CODEMAP_INDEX_DIR`` no longer get independent indexes. The flat convention is
+    what every writer already used, so the alternative was a resolver pointing somewhere
+    nothing was ever written. The collision is surfaced as ``index_root_collision`` instead
+    of silently serving another project's index; the fix is one override dir per project.
+    """
     a = tmp_path / "a" / "proj"
     b = tmp_path / "b" / "proj"
     a.mkdir(parents=True)
     b.mkdir(parents=True)
     override = tmp_path / "shared"
+    override.mkdir()
     ia = ii.resolve_index(root=a, index_dir_override=str(override))
     ib = ii.resolve_index(root=b, index_dir_override=str(override))
     assert ia.project == ib.project == "proj"
-    assert ia.root_key != ib.root_key
-    assert ia.index_path != ib.index_path
-    for ident, tok in ((ia, "A"), (ib, "B")):
-        ident.index_dir.mkdir(parents=True, exist_ok=True)
-        ident.index_path.write_text(json.dumps({"scan_root": str(ident.root), "tok": tok}), encoding="utf-8")
-    assert json.loads(ia.index_path.read_text())["tok"] == "A"
-    assert json.loads(ib.index_path.read_text())["tok"] == "B"
+    assert ia.root_key != ib.root_key  # identity still distinguishes them
+    assert ia.index_path == ib.index_path == override.resolve() / "proj.json"
+
+    # With A's index in place, resolving B reports the collision rather than serving it.
+    ia.index_path.write_text(json.dumps({"scan_root": str(ia.root), "tok": "A"}), encoding="utf-8")
+    assert ii.resolve_index(root=a, index_dir_override=str(override)).diagnostics == ()
+    collided = ii.resolve_index(root=b, index_dir_override=str(override))
+    assert ii.INDEX_ROOT_COLLISION in [d.code for d in collided.diagnostics]
+    assert json.loads(ia.index_path.read_text())["tok"] == "A"  # never overwritten by resolution
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink alias identity")
@@ -190,19 +190,22 @@ def test_symlink_alias_same_identity(tmp_path: Path) -> None:
     assert id_real.root_key == id_link.root_key
 
 
-def test_legacy_flat_matching_root_is_readonly_candidate(tmp_path: Path) -> None:
+def test_flat_index_matching_root_resolves_clean(tmp_path: Path) -> None:
+    """An existing flat index built for this same root is the target, with no diagnostic.
+
+    Formerly this file was a read-only "legacy candidate" beside a distinct root-keyed
+    target. Flat is now the only layout, so a matching occupant is simply the index.
+    """
     root = tmp_path / "proj"
     root.mkdir()
     override = tmp_path / "shared"
     override.mkdir()
-    legacy = override / "proj.json"
-    legacy.write_text(json.dumps({"scan_root": str(root.resolve())}), encoding="utf-8")
+    existing = override / "proj.json"
+    existing.write_text(json.dumps({"scan_root": str(root.resolve())}), encoding="utf-8")
     ident = ii.resolve_index(root=root, index_dir_override=str(override))
-    assert ident.legacy_candidate == legacy
+    assert ident.index_path == existing
     assert ident.diagnostics == ()
-    # root-keyed target is distinct; legacy is never moved/overwritten.
-    assert ident.index_path != legacy
-    assert json.loads(legacy.read_text())["scan_root"] == str(root.resolve())
+    assert json.loads(existing.read_text())["scan_root"] == str(root.resolve())
 
 
 def test_legacy_flat_mismatch_emits_collision_diagnostic(tmp_path: Path) -> None:
@@ -212,14 +215,13 @@ def test_legacy_flat_mismatch_emits_collision_diagnostic(tmp_path: Path) -> None
     other.mkdir()
     override = tmp_path / "shared"
     override.mkdir()
-    legacy = override / "proj.json"
-    legacy.write_text(json.dumps({"scan_root": str(other.resolve())}), encoding="utf-8")
+    occupant = override / "proj.json"
+    occupant.write_text(json.dumps({"scan_root": str(other.resolve())}), encoding="utf-8")
     ident = ii.resolve_index(root=root, index_dir_override=str(override))
-    assert ident.legacy_candidate is None
     assert ii.INDEX_ROOT_COLLISION in [d.code for d in ident.diagnostics]
-    # collision never blocks the usable root-keyed target, never touches the legacy file.
-    assert ident.index_path.parent == override.resolve() / ident.root_key
-    assert legacy.is_file()
+    # Resolution reports the collision; it never rewrites the path or touches the file.
+    assert ident.index_path == occupant
+    assert json.loads(occupant.read_text())["scan_root"] == str(other.resolve())
 
 
 def test_split_index_roots_diagnostic(tmp_path: Path) -> None:
@@ -272,8 +274,19 @@ def test_reuse_across_cwd_and_runtime_no_rebuild(
     assert (log_root / "codex" / "cli_deleg.jsonl").is_file()
 
 
-# ── stale index: single effective rebuild under the gate, waiter reuses ────────
-def test_stale_index_single_rebuild_waiter_reuses(project: Path, shim: Path, tmp_path: Path) -> None:
+# ── stale index: concurrent writers are serialized by the engine's own lease ──
+def test_concurrent_scans_are_serialized_and_publish_a_valid_index(project: Path, shim: Path, tmp_path: Path) -> None:
+    """Two processes racing a stale index both succeed and leave one valid index (C-H3).
+
+    This is the contention test the gate exists for. Before engine-level leasing, both
+    scanners walked the AST simultaneously and the loser's ``os.replace`` won by
+    accident (last-writer-wins). Now each ``scan-index`` takes the exclusive write lease
+    inside ``graph.main``, so the walks are serialized whatever route invoked them.
+
+    Serialized is not deduplicated: two explicit full-scan requests both run, and the
+    counter shows 2. Skipping the second scan is the job of ``--incremental``, whose
+    recheck runs inside the exclusive phase and degrades a waiter to a near-noop pass.
+    """
     pytest.importorskip("_rwgate")
     counter = tmp_path / "counter.txt"
     worker = tmp_path / "gate_worker.py"
@@ -303,7 +316,10 @@ def test_stale_index_single_rebuild_waiter_reuses(project: Path, shim: Path, tmp
 
     assert all(p.returncode == 0 for p in procs), outs
     labels = sorted(out.strip() for out, _err in outs)
-    assert _count(counter) == 1
-    assert labels == ["built", "reused"]
+    assert labels == ["built", "built"]
+    assert _count(counter) == 2  # both ran; the lease ordered them, it did not drop one
+    # The point of the lease: whichever finished last, the published file is complete.
     published = json.loads(ident.index_path.read_bytes())
     assert published.get("scan_version") and published.get("file_shas")
+    # No temp leaked — a crashed or superseded writer must not litter the index dir.
+    assert not list(ident.index_dir.glob(".*.tmp"))

@@ -23,6 +23,15 @@
           }
         ],
         "matcher": "Grep|Read|Glob"
+      },
+      {
+        "hooks": [
+          {
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/record-exhausted.py\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit"
       }
     ],
     "PreToolUse": [

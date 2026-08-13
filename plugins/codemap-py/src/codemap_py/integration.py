@@ -1290,9 +1290,12 @@ def _demo_query(identity: index_paths.IndexIdentity) -> dict:
         return {"ran": False, "reason": "no index built yet"}
     capture = StringIO()
     try:
-        with rwgate.read_index(identity.index_path):
-            with contextlib.redirect_stdout(capture):
-                query.main(["central", "--top", "3", "--root", str(identity.root)])
+        # No lease here: query.main takes its own read lease around the load
+        # (codemap_py.query._load_index_leased). Wrapping it in a second one would
+        # parse the whole index twice per demo and re-introduce the caller-side
+        # leasing the gate's module docstring forbids.
+        with contextlib.redirect_stdout(capture):
+            query.main(["central", "--top", "3", "--root", str(identity.root)])
         return {"ran": True, "output": capture.getvalue()[:2048]}
     except (rwgate.IndexBusy, rwgate.CoordinationUnavailable) as exc:
         return {"ran": False, "reason": str(exc)}

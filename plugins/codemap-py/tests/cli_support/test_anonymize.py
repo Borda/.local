@@ -4,6 +4,10 @@ Covers:
 
 - ``error`` / ``stderr`` free-text fields: qualified names embedded in prose are
   pseudonymized token-by-token while surrounding text survives.
+- ``intent`` / ``target`` command fields: every identifying token is pseudonymized —
+  including the dot-free ones a whole-value "is this qualified?" gate exported verbatim —
+  while flags, separators and file extensions survive so the shape stays readable.
+- ``session`` / ``hook_session`` and the exported filename: no raw session id leaves.
 - ``not_covered`` lists: each element scrubbed individually (qualified elements
   hashed, plain diagnostic labels untouched).
 - Export-dir separation: the default output target is the dedicated export dir,
@@ -144,6 +148,154 @@ def test_not_covered_non_string_elements_survive() -> None:
     assert nc[0] == 42
     assert nc[1] is None
     assert nc[2].startswith("sym_")
+
+
+# ---------------------------------------------------------------------------
+# Command fields: intent / target
+# ---------------------------------------------------------------------------
+
+
+class TestCommandFieldLeak:
+    """A ``target``/``intent`` value carries project data whether or not it has a dot.
+
+    The gate these tests replace pseudonymized the field only when the *whole* value
+    looked like a qualified name, so a dot-free search command was exported verbatim
+    while a path with any dot in it collapsed to one opaque token.
+    """
+
+    def test_dot_free_command_is_scrubbed(self) -> None:
+        """A search command with no qualified name in it must not survive verbatim."""
+        record = {"tool": "Bash", "target": "grep -rn internal_secret_name src/"}
+
+        out = anonymize.anonymize_record(record, _SALT)
+
+        assert "internal_secret_name" not in out["target"]
+        assert out["target"].startswith("grep -rn sym_")
+        assert out["target"].endswith(" src/")
+
+    def test_dot_free_grep_pattern_is_scrubbed(self) -> None:
+        """A bare Grep pattern is project data too, dots or not."""
+        out = anonymize.anonymize_record({"tool": "Grep", "target": "validate_token"}, _SALT)
+
+        assert out["target"] == anonymize._pseudo("validate_token", _SALT)
+
+    def test_intent_prose_is_scrubbed(self) -> None:
+        """Skill arguments are the user's own words — every identifying token is hashed."""
+        out = anonymize.anonymize_record({"layer": "skill", "intent": "who calls validate_token"}, _SALT)
+
+        assert "validate_token" not in out["intent"]
+        assert out["intent"].count("sym_") == 3  # who / calls / validate_token
+
+    def test_path_keeps_its_shape_and_extension(self) -> None:
+        """A Read path is scrubbed per segment, not collapsed to one token."""
+        out = anonymize.anonymize_record({"tool": "Read", "target": "/Users/someone/proj/src/auth.py"}, _SALT)
+
+        target = out["target"]
+        assert "someone" not in target and "auth" not in target
+        assert target.endswith(".py"), "the file type is diagnostic and must survive"
+        assert target.count("/") == 5, "the path shape must survive"
+        assert "/src/" in target, "a conventional directory name is not identifying"
+
+    def test_generic_tool_tokens_survive(self) -> None:
+        """The tools the telemetry exists to measure stay readable in the export."""
+        out = anonymize.anonymize_record({"tool": "Bash", "target": "rg -n 'import' tests/"}, _SALT)
+
+        assert out["target"] == "rg -n 'import' tests/"
+
+    def test_command_pseudonyms_are_stable(self) -> None:
+        """The same identifier maps to one pseudonym, so repeat-read counting survives."""
+        first = anonymize.anonymize_record({"target": "/proj/auth_service.py"}, _SALT)["target"]
+        second = anonymize.anonymize_record({"target": "/other/auth_service.py"}, _SALT)["target"]
+
+        assert first.rsplit("/", 1)[-1] == second.rsplit("/", 1)[-1]
+
+    def test_non_string_target_left_alone(self) -> None:
+        """A non-string ``target`` is not treated as a command."""
+        out = anonymize.anonymize_record({"target": None, "count": 2}, _SALT)
+
+        assert out["target"] is None
+        assert out["count"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Session identifiers: record fields and the exported filename
+# ---------------------------------------------------------------------------
+
+
+class TestSessionPseudonymization:
+    """The session id correlates an export back to the machine that produced it."""
+
+    def test_session_field_is_pseudonymized(self) -> None:
+        """The raw session id never survives in a record."""
+        out = anonymize.anonymize_record({"layer": "tool", "session": "8f14e45f-ea"}, _SALT)
+
+        assert out["session"] == anonymize._pseudo("8f14e45f-ea", _SALT)
+
+    def test_hook_session_field_is_pseudonymized(self) -> None:
+        """The skill layer's second session field is covered too."""
+        out = anonymize.anonymize_record({"layer": "skill", "hook_session": "hook-sid-9"}, _SALT)
+
+        assert out["hook_session"] == anonymize._pseudo("hook-sid-9", _SALT)
+
+    def test_session_pseudonym_joins_across_layers(self) -> None:
+        """One session id maps to one pseudonym, so cross-layer joins still work."""
+        cli = anonymize.anonymize_record({"layer": "cli", "session": "sid-7"}, _SALT)
+        tool = anonymize.anonymize_record({"layer": "tool", "session": "sid-7"}, _SALT)
+
+        assert cli["session"] == tool["session"]
+
+    def test_empty_session_stays_empty(self) -> None:
+        """An unseeded session stays an empty string rather than becoming a pseudonym."""
+        out = anonymize.anonymize_record({"layer": "skill", "hook_session": ""}, _SALT)
+
+        assert out["hook_session"] == ""
+
+    def test_shard_filename_drops_the_raw_session_id(self, tmp_path: Path) -> None:
+        """End-to-end: the exported filename carries a pseudonym, not the session id."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        src = log_dir / "tools_8f14e45f-ea.jsonl"
+        src.write_text('{"layer":"tool","session":"8f14e45f-ea","tool":"Read","target":"/p/auth.py"}\n')
+        export_dir = tmp_path / "export"
+
+        rc = anonymize.main(["--input", str(src), "--out-dir", str(export_dir), "--salt", str(log_dir / ".salt")])
+
+        assert rc == 0
+        written = [path.name for path in export_dir.iterdir()]
+        # Derive the expectation from the salt the run actually used. _load_salt mints a
+        # fresh random salt when the file is absent, so a fixed module-level salt names a
+        # pseudonym this run could never produce.
+        run_salt = anonymize._load_salt(log_dir / ".salt")
+        assert written == [f"tools_{anonymize._pseudo('8f14e45f-ea', run_salt)}-anon.jsonl"]
+        record = json.loads((export_dir / written[0]).read_text().strip())
+        assert "8f14e45f-ea" not in json.dumps(record)
+
+    def test_unsuffixed_shard_name_is_unchanged(self, tmp_path: Path) -> None:
+        """A shard with no session suffix keeps its plain ``<layer>-anon.jsonl`` name."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        src = log_dir / "cli.jsonl"
+        src.write_text('{"cmd":"rdeps","args":{"module":"pkg.auth"}}\n')
+        export_dir = tmp_path / "export"
+
+        rc = anonymize.main(["--input", str(src), "--out-dir", str(export_dir), "--salt", str(log_dir / ".salt")])
+
+        assert rc == 0
+        assert (export_dir / "cli-anon.jsonl").exists()
+
+    def test_refusal_path_creates_no_salt(self, tmp_path: Path) -> None:
+        """Resolving the output name must not create the salt before the refusal check."""
+        src = tmp_path / "tools_sid.jsonl"
+        src.write_text('{"layer":"tool"}\n')
+        unsafe_dir = tmp_path / "logs"
+        unsafe_dir.mkdir()
+        (unsafe_dir / ".salt").write_text("00" * 32)
+        salt_file = tmp_path / "keep" / ".salt"
+
+        rc = anonymize.main(["--input", str(src), "--out-dir", str(unsafe_dir), "--salt", str(salt_file)])
+
+        assert rc == anonymize._EXIT_UNSAFE_OUT_DIR
+        assert not salt_file.exists(), "a refused run must not leave a salt file behind"
 
 
 # ---------------------------------------------------------------------------

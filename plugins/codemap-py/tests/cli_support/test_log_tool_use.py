@@ -1,6 +1,6 @@
 """Contract test: log-tool-use.py appends one tools.jsonl record per Grep/Read/Glob call.
 
-The PostToolUse hook (`log-tool-use.js`) is the raw grep/read-volume signal codemap's
+The PostToolUse hook (`log-tool-use.py`) is the raw grep/read-volume signal codemap's
 index-hygiene fixes aim to reduce. It must:
 
 - write one JSON line to `tools_<session>.jsonl` for each Grep/Read/Glob call, carrying
@@ -10,11 +10,14 @@ index-hygiene fixes aim to reduce. It must:
 - never read `tool_response` — parsing search/read output is the exact cost the hook must
   not pay (accept criterion + <5ms budget), so a hostile non-JSON tool_response must not
   change behaviour;
-- honour `CODEMAP_LOGGING=false` (mirrors `_telemetry.py`'s env gate) and fail open.
+- honour `CODEMAP_LOGGING=false` (mirrors `_telemetry.py`'s env gate) and fail open;
+- keep the repeated-read nudge bounded: it runs on every matched Read, so it inspects a
+  fixed tail of the shard instead of the whole 10 MB rotation budget.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -24,6 +27,11 @@ from pathlib import Path
 import pytest
 
 _HOOK = Path(__file__).parent.parent.parent / "hooks" / "log-tool-use.py"
+
+_SPEC = importlib.util.spec_from_file_location("codemap_log_tool_use", _HOOK)
+assert _SPEC and _SPEC.loader
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
 
 
 def _run(payload: dict, cwd: Path, *, logging: str | None = None) -> subprocess.CompletedProcess:
@@ -183,3 +191,45 @@ class TestReadRedundancyNudge:
         payload = {"tool_name": "Read", "tool_input": {"file_path": "/proj/tests/test_core.py"}}
         outs = [_run(payload, tmp_path).stdout for _ in range(4)]
         assert all(o == "" for o in outs)
+
+    def test_hint_survives_a_large_preexisting_shard(self, tmp_path: Path) -> None:
+        """The nudge still fires on the 3rd read when a big shard already exists.
+
+        Counting used to mean decoding and splitting the whole shard — up to the 10 MB
+        rotation budget — on every matched Read, to decide one advisory.
+        """
+        log_dir = tmp_path / ".cache" / "codemap" / "logs"
+        log_dir.mkdir(parents=True)
+        filler = json.dumps({"ts": "2026-01-01T00:00:00Z", "tool": "Grep", "target": "x" * 200}) + "\n"
+        (log_dir / "tools.jsonl").write_text(filler * 5_000)
+
+        outs = [_run(self._PAYLOAD, tmp_path).stdout for _ in range(3)]
+
+        assert outs[0] == "" and outs[1] == ""
+        assert "[codemap] core.py read 3x" in outs[2]
+
+
+class TestTailLines:
+    """The bounded window the repeated-read nudge counts over."""
+
+    def test_short_file_is_returned_whole(self, tmp_path: Path) -> None:
+        """A file inside the window yields every line, so small shards count exactly."""
+        log_file = tmp_path / "tools.jsonl"
+        log_file.write_text("one\ntwo\nthree\n")
+
+        assert _MODULE.tail_lines(log_file, 1024) == ["one", "two", "three"]
+
+    def test_window_is_bounded_and_drops_the_partial_head(self, tmp_path: Path) -> None:
+        """Only the trailing window is read, and its truncated first line is discarded.
+
+        A half-line at the window's head can still contain the searched-for target and
+        would inflate the count, so it never reaches the caller.
+        """
+        log_file = tmp_path / "tools.jsonl"
+        log_file.write_text("".join(f"line-{index:04d}\n" for index in range(1000)))
+
+        lines = _MODULE.tail_lines(log_file, 100)
+
+        assert len(lines) < 20, "the whole file was read despite the window"
+        assert lines[-1] == "line-0999"
+        assert all(line.startswith("line-") and len(line) == 9 for line in lines)

@@ -2,12 +2,20 @@
 """codemap_py.cli — codemap-py CLI dispatcher (plan §7.2, §7.3, §7.5).
 
 Dispatches ``codemap-py {index,query,doctor}`` to the current ``bin/``
-executables using argument arrays with ``shell=False``. Every public
-read/update enters the §4.4 RW gate — ``query`` under a shared read lease,
-``index`` under an exclusive writer lease — and both resolve the index identity
-through the single §4.4 resolver (:func:`codemap_py.index_paths.resolve_index`).
-It also owns the interpreter probe (plan §7.3). No general shell-command mode
-exists.
+executables using argument arrays with ``shell=False``, resolving the index
+identity through the single §4.4 resolver
+(:func:`codemap_py.index_paths.resolve_index`). It also owns the interpreter
+probe (plan §7.3). No general shell-command mode exists.
+
+Every public read/update enters the §4.4 RW gate, but this dispatcher is not
+where that happens: the engines lease themselves —
+:func:`codemap_py.query.main` takes a shared read lease around each index load,
+:func:`codemap_py.graph.main` an exclusive writer lease around build and publish.
+Gating there rather than here covers every entry point (this dispatcher, the
+``bin/scan-query`` and ``bin/scan-index`` launchers, the query engine's self-heal
+spawn, a hook's background refresh) instead of only this one, and it avoids the
+parent/child lock-order inversion that a lease taken here would create around a
+child process that needs its own.
 
 ``scripts/codemap_py_cli.py`` is a compatibility shim that aliases this module
 in ``sys.modules``, replacing the transitional ``bin/`` path-insertion helper
@@ -33,7 +41,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from codemap_py import index_paths, integration, query, rwgate
+from codemap_py import index_paths, integration, query
 
 _MIN = (3, 11)
 _MAX_EXCLUSIVE = (3, 15)
@@ -167,15 +175,14 @@ def _emit_error(code: str, detail: str) -> int:
 def _child_argv(script: str, rest: Sequence[str], plugin_root: Path, root: Path) -> list[str]:
     """Build the child argv, pinning ``--root`` to the resolver's canonical root.
 
-    Pinning ``--root`` keeps legacy scan-index/scan-query resolution aligned with
-    the §4.4 resolver root, so both agree on the DEFAULT-layout index path; a
-    user-supplied ``--root`` is honoured untouched.
+    Pinning ``--root`` keeps scan-index/scan-query resolution aligned with the §4.4
+    resolver root, so both agree on the DEFAULT-layout index path; a user-supplied
+    ``--root`` is honoured untouched.
 
-    Known limitation: under ``CODEMAP_INDEX_DIR`` the resolver keys the index in a
-    ``<root-key>/`` subdirectory while the legacy child resolves the flat
-    ``<override>/<project>.json`` path, so in that override case the gate
-    coordinates a different file than the child touches. Remains until
-    scan-index/scan-query resolution is folded fully into the package.
+    Under ``CODEMAP_INDEX_DIR`` the child no longer derives its own path either: the
+    resolver's flat ``<override>/<project>.json`` is what it writes and reads. The
+    override case used to resolve here to a ``<root-key>/`` subdirectory the child
+    never touched, so the gate coordinated one file while the child wrote another.
     """
     pin = [] if "--root" in rest else ["--root", str(root)]
     return [sys.executable, str(plugin_root / "bin" / script), *pin, *rest]
@@ -200,20 +207,6 @@ def _doctor(rest: Sequence[str], plugin_root: Path) -> int:
     return 0
 
 
-def _gate_kwargs() -> dict[str, float]:
-    """Optional bounded gate timeout from ``CODEMAP_GATE_TIMEOUT`` (seconds).
-
-    Absent or non-positive leaves the gate's own default bound; a positive value
-    lets callers (and tests) shorten the wait before ``index_busy``.
-    """
-    raw = os.environ.get("CODEMAP_GATE_TIMEOUT", "").strip()
-    try:
-        value = float(raw)
-    except ValueError:
-        return {}
-    return {"timeout": value} if value > 0 else {}
-
-
 def _query_argv(rest: Sequence[str], root: Path) -> list[str]:
     """Build the in-process argv for :func:`codemap_py.query.main`, pinning ``--root``.
 
@@ -225,47 +218,48 @@ def _query_argv(rest: Sequence[str], root: Path) -> list[str]:
 
 
 def _run_query(rest: Sequence[str], plugin_root: Path) -> int:
-    """Run the query engine in-process under a shared read lease (plan §4.4).
+    """Run the query engine in-process; the engine owns its own read lease.
 
     Runs the query engine as a direct, in-process call to
     :func:`codemap_py.query.main` — same argv contract and exit-code shape a
     subprocess would give, minus the process-spawn cost per query. ``main``
     raises ``SystemExit`` on every error path (see ``codemap_py.query``'s
-    ``_die_json``/``_exit_error``); that is caught here and turned into a
-    plain return code so this function's contract matches ``_run_index``'s.
+    ``_die_json``/``_exit_error``/``_emit_gate_error``); that is caught here and
+    turned into a plain return code so this function's contract matches
+    ``_run_index``'s.
+
+    This function must NOT wrap the call in a read lease of its own. The engine
+    leases each index load itself and releases it before spawning its self-heal
+    writer; a lease held out here would still be held across that spawn, and the
+    child writer — which cannot distinguish its parent's reader token from any
+    other live reader — would wait out its full deadline and fail on every stale
+    query. Leasing in the engine also means the gate covers ``bin/scan-query``
+    and every other entry point, not just this dispatcher.
     """
     del plugin_root  # kept for call-site symmetry with _run_index; unused now query runs in-process
     resolved = index_paths.resolve_index()
     argv = _query_argv(rest, resolved.root)
     try:
-        with rwgate.read_index(resolved.index_path, **_gate_kwargs()):
-            try:
-                query.main(argv)
-            except SystemExit as exc:
-                return exc.code if isinstance(exc.code, int) else _RUNTIME_ERROR_EXIT
-            return 0
-    except rwgate.IndexBusy:
-        return _emit_error("index_busy", "read lease timed out under a live writer")
-    except rwgate.CoordinationUnavailable:
-        return _emit_error("index_coordination_unavailable", "coordination root is unwritable")
+        query.main(argv)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else _RUNTIME_ERROR_EXIT
+    return 0
 
 
 def _run_index(rest: Sequence[str], plugin_root: Path) -> int:
-    """Run scan-index under an exclusive writer lease (plan §4.4)."""
+    """Run scan-index as a subprocess; the engine owns its own writer lease.
+
+    As with :func:`_run_query`, no lease is taken here. ``scan-index`` runs
+    :func:`codemap_py.graph.main`, which builds and publishes under an exclusive
+    lease; wrapping the child in a second one from this parent process would make
+    the child block on its own parent's writer intent until its deadline expired,
+    turning every ``codemap-py index`` invocation into ``index_busy``.
+    """
     if not (plugin_root / "bin" / "scan-index").is_file():
         return _emit_error("missing_executable", "scan-index")
     resolved = index_paths.resolve_index()
     argv = _child_argv("scan-index", rest, plugin_root, resolved.root)
-
-    def build_fn(_index_path: Path) -> int:
-        return subprocess.run(argv, check=False).returncode
-
-    try:
-        return rwgate.write_index(resolved.index_path, build_fn, **_gate_kwargs())
-    except rwgate.IndexBusy:
-        return _emit_error("index_busy", "writer lease timed out")
-    except rwgate.CoordinationUnavailable:
-        return _emit_error("index_coordination_unavailable", "coordination root is unwritable")
+    return subprocess.run(argv, check=False).returncode
 
 
 def main(argv: Sequence[str] | None = None, plugin_root: Path | None = None) -> int:

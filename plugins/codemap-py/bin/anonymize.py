@@ -1,5 +1,10 @@
 #!/usr/bin/env python
-"""anonymize.py — replace qualified names in codemap JSONL logs with salted pseudonyms.
+"""anonymize.py — replace project-identifying names in codemap JSONL logs with salted pseudonyms.
+
+Scrubbed: qualified names in the ``args``/``argv`` payloads and in ``error``/``stderr``
+prose, every identifying token in the ``intent``/``target`` command fields, the
+``session``/``hook_session`` join keys, and the session id embedded in the output
+filename. Kept: timestamps, counts, flags, tool names, and the command shape itself.
 
 Pseudonyms are stable within a project (same salt + same name → same pseudonym)
 but opaque to anyone without the salt file. Never share the salt alongside the
@@ -62,6 +67,50 @@ _QUALIFIED_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::)[A-Za-z_][A
 #: inline (error messages, captured ``stderr``/tracebacks). Scrubbed per-token,
 #: preserving surrounding prose, rather than replaced wholesale.
 _FREE_TEXT_FIELDS = ("error", "stderr")
+
+#: Fields holding a command line, a file path, or the user's own words: ``target``
+#: (Read path / Grep pattern / search command) and ``intent`` (skill arguments). Every
+#: identifier in them is project data, not only the dotted ones — ``grep -rn
+#: internal_secret_name src/`` carries no dot at all — so they are scrubbed with
+#: :func:`_anonymize_command`, which pseudonymizes bare identifiers too.
+_COMMAND_FIELDS = ("intent", "target")
+
+#: Join keys that identify one local Claude Code session. Replaced by a stable
+#: pseudonym: cross-layer joins survive (same salt → same pseudonym) while the raw
+#: id, which correlates an export back to the machine that produced it, does not leave.
+_SESSION_FIELDS = ("session", "hook_session")
+
+#: Any identifier-shaped token, qualified or bare — the unit :func:`_anonymize_command`
+#: decides about. Punctuation, digits, flags and separators fall between matches and
+#: therefore survive, which is what keeps a scrubbed command still readable as a command.
+_FREE_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::)[A-Za-z_][A-Za-z0-9_]*)*")
+
+#: Tokens kept verbatim inside a command field: search tools the telemetry exists to
+#: measure, conventional directory names, and Python vocabulary that appears in grep
+#: patterns. Deliberately short — a token missing from this set is pseudonymized, so
+#: the failure mode is a less readable export, never a leak.
+_GENERIC_TOKENS = frozenset(
+    {
+        "ack", "ag", "awk", "cat", "egrep", "fgrep", "find", "git", "grep", "head",
+        "python", "python3", "rg", "sed", "sort", "tail", "uniq", "wc", "xargs",
+        "bin", "docs", "lib", "src", "test", "tests",
+        "class", "def", "from", "import",
+    }
+)  # fmt: skip
+
+#: File extensions kept verbatim while the stem they belong to is pseudonymized, so an
+#: export still shows *what kind* of file was touched without naming it.
+_KNOWN_SUFFIXES = frozenset(
+    {"c", "cfg", "cpp", "h", "ini", "js", "json", "jsonl", "md", "py", "pyi", "rst", "toml", "ts", "txt", "yaml", "yml"}
+)
+
+#: Shortest token that can identify anything. Below it a token is a flag cluster or an
+#: abbreviation (``-rn`` → ``rn``); keeping those is what preserves command shape.
+_MIN_IDENTIFYING_LEN = 3
+
+#: Telemetry shard stems, whose ``<layer>_<session-id>`` form would otherwise carry the
+#: raw session id into the anonymized filename.
+_SHARD_STEM_RE = re.compile(r"^(cli|tools|skills)_(.+)$")
 
 
 def _load_salt(salt_file: Path) -> bytes:
@@ -173,6 +222,93 @@ def _anonymize_text(text: str, salt: bytes) -> str:
     return _QUALIFIED_TOKEN_RE.sub(lambda m: _pseudo(m.group(0), salt), text)
 
 
+def _pseudo_token(token: str, salt: bytes) -> str:
+    """Return the pseudonym for one command token, or the token when it identifies nothing.
+
+    Three tokens survive verbatim: a known file extension (its stem is still hashed, so
+    ``auth.py`` becomes ``sym_….py`` — the file type is diagnostic, the name is not), a
+    generic tool/structure word, and anything shorter than
+    :data:`_MIN_IDENTIFYING_LEN`.
+
+    Args:
+        token: One identifier-shaped token from a command or path.
+        salt: Per-project salt bytes.
+
+    Returns:
+        The token, pseudonymized unless it is provably non-identifying.
+
+    Examples:
+        >>> s = b'x' * 32
+        >>> _pseudo_token("grep", s)
+        'grep'
+        >>> _pseudo_token("rn", s)
+        'rn'
+        >>> _pseudo_token("auth.py", s).startswith("sym_") and _pseudo_token("auth.py", s).endswith(".py")
+        True
+        >>> _pseudo_token("internal_secret_name", s).startswith("sym_")
+        True
+    """
+    stem, dot, suffix = token.rpartition(".")
+    if dot and stem and suffix.lower() in _KNOWN_SUFFIXES:
+        return f"{_pseudo_token(stem, salt)}.{suffix}"
+    if len(token) < _MIN_IDENTIFYING_LEN or token.lower() in _GENERIC_TOKENS:
+        return token
+    return _pseudo(token, salt)
+
+
+def _anonymize_command(text: str, salt: bytes) -> str:
+    """Pseudonymize every identifying token in a command line, path, or intent string.
+
+    Stricter than :func:`_anonymize_text`, which only rewrites *qualified* names: a
+    command field regularly carries project data with no dot in it at all, so a
+    whole-value "is this qualified?" gate exported it verbatim. Working token-by-token
+    keeps flags, separators and punctuation, so the scrubbed value still reads as the
+    command it was.
+
+    Args:
+        text: The raw command, path, or intent string.
+        salt: Per-project salt bytes.
+
+    Returns:
+        The string with every identifying token replaced by its ``sym_`` pseudonym.
+
+    Examples:
+        >>> s = b'x' * 32
+        >>> out = _anonymize_command("grep -rn internal_secret_name src/", s)
+        >>> "internal_secret_name" in out
+        False
+        >>> out.startswith("grep -rn sym_") and out.endswith(" src/")
+        True
+        >>> _anonymize_command("/repo/src/auth.py", s).endswith(".py")
+        True
+    """
+    return _FREE_TOKEN_RE.sub(lambda m: _pseudo_token(m.group(0), salt), text)
+
+
+def _anonymize_stem(stem: str, salt: bytes) -> str:
+    """Pseudonymize the session id embedded in a telemetry shard filename stem.
+
+    Args:
+        stem: Input filename stem (e.g. ``tools_abc-123`` or ``cli``).
+        salt: Per-project salt bytes.
+
+    Returns:
+        The stem with any ``<layer>_<session-id>`` suffix pseudonymized; other stems
+        are returned unchanged.
+
+    Examples:
+        >>> s = b'x' * 32
+        >>> _anonymize_stem("cli", s)
+        'cli'
+        >>> _anonymize_stem("tools_abc-123", s).startswith("tools_sym_")
+        True
+        >>> "abc-123" in _anonymize_stem("tools_abc-123", s)
+        False
+    """
+    match = _SHARD_STEM_RE.match(stem)
+    return f"{match.group(1)}_{_pseudo(match.group(2), salt)}" if match else stem
+
+
 def _anonymize_value(v: object, salt: bytes) -> object:
     """Recursively replace qualified names with pseudonyms.
 
@@ -192,15 +328,51 @@ def _anonymize_value(v: object, salt: bytes) -> object:
     return v
 
 
-def _scrub_special_fields(v: object, salt: bytes) -> object:
-    """Recursively scrub free-text (``error``/``stderr``) and ``not_covered`` fields.
+def _scrub_field(key: str, val: object, salt: bytes) -> object:
+    """Return *val* scrubbed by the rule its *key* selects, or ``None`` when no rule applies.
 
-    Walks any nested dict/list structure. For dict keys in :data:`_FREE_TEXT_FIELDS`
-    the string value is scrubbed token-by-token (see :func:`_anonymize_text`), so
-    qualified names embedded in error messages and captured stderr are pseudonymized
-    while their surrounding prose survives. For a ``not_covered`` key holding a list,
-    each element is scrubbed individually: qualified-name elements become pseudonyms,
-    plain diagnostic labels (e.g. ``lazy-loading``) pass through unchanged.
+    Splitting the per-key decision out of :func:`_scrub_special_fields` keeps that
+    function's recursion readable as one thing. ``None`` means "not a special field" —
+    special fields never legitimately hold ``None``, since every rule below demands a
+    ``str`` or ``list``.
+
+    Args:
+        key: The dict key being inspected.
+        val: Its value.
+        salt: Per-project salt bytes.
+
+    Returns:
+        The scrubbed value, or ``None`` to let the caller recurse instead.
+
+    Examples:
+        >>> s = b'x' * 32
+        >>> _scrub_field("error", "boom in pkg.auth", s).startswith("boom in sym_")
+        True
+        >>> _scrub_field("session", "abc-123", s).startswith("sym_")
+        True
+        >>> _scrub_field("timing_ms", 12, s) is None
+        True
+    """
+    if key in _FREE_TEXT_FIELDS and isinstance(val, str):
+        return _anonymize_text(val, salt)
+    if key in _COMMAND_FIELDS and isinstance(val, str):
+        return _anonymize_command(val, salt)
+    if key in _SESSION_FIELDS and isinstance(val, str) and val:
+        return _pseudo(val, salt)
+    if key == "not_covered" and isinstance(val, list):
+        return [_anonymize_text(e, salt) if isinstance(e, str) else e for e in val]
+    return None
+
+
+def _scrub_special_fields(v: object, salt: bytes) -> object:
+    """Recursively scrub the free-text, command, session, and ``not_covered`` fields.
+
+    Walks any nested dict/list structure and applies :func:`_scrub_field` to every key.
+    Qualified names embedded in ``error``/``stderr`` prose are pseudonymized while the
+    surrounding words survive; ``intent``/``target`` additionally lose their bare
+    identifiers; ``session``/``hook_session`` become stable pseudonyms; and each
+    ``not_covered`` element is scrubbed individually, so qualified-name elements become
+    pseudonyms while plain diagnostic labels (e.g. ``lazy-loading``) pass through.
 
     This complements — and is applied alongside — :func:`_anonymize_value`, which
     handles whole-value qualified names in the ``args`` payload.
@@ -224,12 +396,8 @@ def _scrub_special_fields(v: object, salt: bytes) -> object:
     if isinstance(v, dict):
         scrubbed: dict = {}
         for key, val in v.items():
-            if key in _FREE_TEXT_FIELDS and isinstance(val, str):
-                scrubbed[key] = _anonymize_text(val, salt)
-            elif key == "not_covered" and isinstance(val, list):
-                scrubbed[key] = [_anonymize_text(e, salt) if isinstance(e, str) else e for e in val]
-            else:
-                scrubbed[key] = _scrub_special_fields(val, salt)
+            replacement = _scrub_field(key, val, salt)
+            scrubbed[key] = _scrub_special_fields(val, salt) if replacement is None else replacement
         return scrubbed
     if isinstance(v, list):
         return [_scrub_special_fields(item, salt) for item in v]
@@ -239,11 +407,12 @@ def _scrub_special_fields(v: object, salt: bytes) -> object:
 def anonymize_record(record: dict, salt: bytes) -> dict:
     """Anonymize one JSONL log record in-place (returns new dict).
 
-    Replaces qualified names in ``args``, ``argv``, ``intent``, and ``target``
-    fields. In addition, scrubs qualified names embedded in the free-text
-    ``error`` / ``stderr`` fields and hashes each element of any ``not_covered``
-    list, wherever those fields appear (including nested inside ``result``).
-    Leaves all other fields (timestamps, counts, flags) unchanged.
+    Replaces qualified names in the ``args`` and ``argv`` payloads. In addition, and
+    wherever those fields appear (including nested inside ``result``), scrubs qualified
+    names out of the free-text ``error`` / ``stderr`` fields, every identifying token out
+    of the ``intent`` / ``target`` command fields, the ``session`` / ``hook_session`` join
+    keys, and each element of any ``not_covered`` list. Leaves all other fields
+    (timestamps, counts, flags) unchanged.
 
     Args:
         record: Parsed log record.
@@ -262,6 +431,9 @@ def anonymize_record(record: dict, salt: bytes) -> dict:
         >>> e = anonymize_record({"result": {"error": "module pkg.auth not indexed"}}, s)
         >>> "pkg.auth" in e["result"]["error"]
         False
+        >>> t = anonymize_record({"tool": "Bash", "target": "grep -rn secret_name src/"}, s)
+        >>> "secret_name" in t["target"], t["tool"]
+        (False, 'Bash')
     """
     out = _scrub_special_fields(record, salt)
     assert isinstance(out, dict)  # a dict in always yields a dict out
@@ -269,9 +441,6 @@ def anonymize_record(record: dict, salt: bytes) -> dict:
         out["args"] = _anonymize_value(out["args"], salt)
     if "argv" in out and isinstance(out["argv"], list):
         out["argv"] = [_pseudo(a, salt) if isinstance(a, str) and _is_qualified(a) else a for a in out["argv"]]
-    for field in ("intent", "target"):
-        if field in out and isinstance(out[field], str) and _is_qualified(out[field]):
-            out[field] = _pseudo(out[field], salt)
     return out
 
 
@@ -297,16 +466,22 @@ def _dir_has_salt(directory: Path) -> bool:
     return (directory / SALT_FILENAME).exists()
 
 
-def _resolve_output(input_path: Path, out_dir: str | None, explicit_output: str | None) -> Path:
+def _resolve_output(
+    input_path: Path, out_dir: str | None, explicit_output: str | None, salt: bytes | None = None
+) -> Path:
     """Resolve the anonymized output path from CLI flags.
 
     An explicit ``--output`` wins when given. Otherwise the file is named
     ``<input-stem>-anon.jsonl`` inside ``out_dir`` (default :data:`DEFAULT_OUT_DIR`).
+    With *salt*, a ``<layer>_<session-id>`` stem is pseudonymized first, so the raw
+    session id does not survive in the exported filename either. Without it the
+    directory is still resolved correctly, which is all the salt-safety check needs.
 
     Args:
         input_path: The source log file.
         out_dir: ``--out-dir`` value, or None to use the default export directory.
         explicit_output: ``--output`` value, or None to derive from ``out_dir``.
+        salt: Per-project salt bytes, or None to keep the input stem verbatim.
 
     Returns:
         The resolved destination path (not yet created).
@@ -319,11 +494,14 @@ def _resolve_output(input_path: Path, out_dir: str | None, explicit_output: str 
         'exp/cli-anon.jsonl'
         >>> _resolve_output(pathlib.Path("logs/cli.jsonl"), None, "out/x.jsonl").as_posix()
         'out/x.jsonl'
+        >>> _resolve_output(pathlib.Path("logs/tools_abc.jsonl"), "exp", None, b'x' * 32).name
+        'tools_sym_ae56085268ec-anon.jsonl'
     """
     if explicit_output is not None:
         return Path(explicit_output)
     base = out_dir if out_dir is not None else DEFAULT_OUT_DIR
-    return Path(base) / f"{input_path.stem}-anon.jsonl"
+    stem = _anonymize_stem(input_path.stem, salt) if salt is not None else input_path.stem
+    return Path(base) / f"{stem}-anon.jsonl"
 
 
 def process(input_path: Path, output_path: Path, salt: bytes) -> tuple[int, int]:
@@ -420,6 +598,10 @@ def main(argv: list[str] | None = None) -> int:
         return _EXIT_UNSAFE_OUT_DIR
 
     salt = _load_salt(Path(args.salt))
+    # Re-resolved with the salt so a `<layer>_<session-id>` stem is pseudonymized too.
+    # The first resolution had to run salt-free: loading the salt creates the salt file,
+    # which must not happen on the refusal path above.
+    output_path = _resolve_output(input_path, args.out_dir, args.output, salt)
     out_dir.mkdir(parents=True, exist_ok=True)
     processed, skipped = process(input_path, output_path, salt)
     print(f"anonymize: {processed} records → {output_path}" + (f" ({skipped} skipped)" if skipped else ""))

@@ -4,30 +4,42 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 
-def project_name(cwd: Path) -> str:
-    """Return the git-root basename for *cwd*, falling back to its basename."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=2,
-            check=True,
-        )
-        if root := result.stdout.strip():
-            return Path(root).name
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return cwd.name
+def project_name(cwd: Path | None = None) -> str:
+    """Return the project key: the basename of the nearest enclosing git root.
+
+    This hook writes the marker every other layer reads, so its keying is the one the
+    readers (``log-tool-use.py``, ``log-skill-start.py``, ``codemap_py.telemetry``) must
+    reproduce. The root is found by walking for ``.git`` rather than by shelling out to
+    ``git rev-parse``, which is both cheaper and identical in result — except that it
+    keeps working when git is absent from ``PATH``. ``.git`` is matched as a file too,
+    which is how linked worktrees mark their root.
+
+    Args:
+        cwd: Directory to resolve from; defaults to the process working directory.
+
+    Returns:
+        The git-root basename, or the directory's own basename outside a repository.
+
+    Examples:
+        >>> import tempfile
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     nested = Path(d) / "myproj" / "src"
+        ...     nested.mkdir(parents=True)
+        ...     (Path(d) / "myproj" / ".git").mkdir()
+        ...     project_name(nested)
+        'myproj'
+    """
+    start = (cwd or Path.cwd()).resolve()
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate.name
+    return start.name
 
 
 def main() -> int:
@@ -39,8 +51,8 @@ def main() -> int:
         session_id = str(payload.get("session_id", "")).strip()
         if not session_id:
             return 0
-        marker = Path(tempfile.gettempdir()) / f"codemap-{project_name(Path.cwd())}-session"
-        marker.write_text(session_id, encoding="utf-8")
+        tmp_dir = Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
+        (tmp_dir / f"codemap-{project_name()}-session").write_text(session_id, encoding="utf-8")
     except (OSError, ValueError, TypeError):
         pass
     return 0

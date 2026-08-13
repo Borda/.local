@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from codemap_py import index_paths, rwgate
 from codemap_py.schema import SCAN_VERSION
 from codemap_py.scanner import (
     _GLOB_META_RE,
@@ -1360,18 +1361,93 @@ def _build_index(args: argparse.Namespace, root: Path, out_path: Path) -> dict:
     return scan(root, coverage_path=coverage_path)
 
 
-def _replace_index(tmp_path: Path, out_path: Path) -> None:
-    """Atomically promote a complete temporary index, retrying transient NTFS sharing failures."""
-    for attempt in range(_WINDOWS_REPLACE_RETRIES):
-        try:
-            tmp_path.replace(out_path)
-            return
-        except PermissionError as exc:
-            transient = sys.platform == "win32" and getattr(exc, "winerror", None) in {5, 32}
-            if not transient or attempt == _WINDOWS_REPLACE_RETRIES - 1:
-                raise
-            # Keep both complete files intact while a concurrent reader releases the destination.
-            time.sleep(_WINDOWS_REPLACE_DELAY_SECONDS * 2**attempt)
+def _die_gate(code: str, detail: str) -> None:
+    """Write one bounded structured gate error to stderr and exit 1.
+
+    The capability contract's exit-1 row requires a bounded structured error and
+    forbids a traceback, so every way the RW gate can refuse a build funnels through
+    here into the same ``{"error", "detail"}`` shape the CLI dispatcher already emits.
+
+    Args:
+        code: stable machine-readable slug (e.g. ``index_busy``).
+        detail: human-readable one-line cause.
+    """
+    sys.stderr.write(json.dumps({"error": code, "detail": detail}) + "\n")
+    sys.exit(1)
+
+
+def _gate_timeout_kwargs() -> dict[str, float]:
+    """Optional bounded gate timeout from ``CODEMAP_GATE_TIMEOUT`` (seconds).
+
+    Absent or non-positive leaves the gate's own default bound; a positive value
+    lets callers (and tests) shorten the wait before ``index_busy``. Mirrors the
+    query engine's reader-side handling of the same variable, so one setting bounds
+    both halves of the gate.
+    """
+    raw = os.environ.get("CODEMAP_GATE_TIMEOUT", "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return {}
+    return {"timeout": value} if value > 0 else {}
+
+
+def _build_and_publish(args: argparse.Namespace, root: Path, out_path: Path) -> dict:
+    """Scan *root* and publish the index to *out_path*; the writer's exclusive phase.
+
+    Runs as ``build_fn`` inside :func:`codemap_py.rwgate.write_index`, so it is the
+    only writer touching *out_path* for its duration. Serialisation streams straight
+    into the gate's temp file rather than being materialised as one payload — a real
+    index reaches hundreds of megabytes, and buffering it whole would multiply peak
+    memory during the write for no benefit.
+
+    Args:
+        args: parsed scan-index arguments (``incremental``, ``with_coverage``).
+        root: project root to scan.
+        out_path: index path to publish.
+
+    Returns:
+        The freshly built index dict (the caller reports its module counts).
+    """
+    index = _build_index(args, root, out_path)
+    with rwgate.publish_stream(out_path) as fh:
+        json.dump(index, fh, separators=(",", ":"))
+    return index
+
+
+def _resolve_out_path(root: Path) -> Path:
+    """Return the index path to publish for *root*.
+
+    Under ``CODEMAP_INDEX_DIR`` the path comes from
+    :func:`codemap_py.index_paths.resolve_index`, the single resolver the reader,
+    the RW gate, and ``codemap-py doctor`` also use — so all four derive one
+    identical path from one function. Previously this function derived the
+    override path itself (``<override>/<root.name>.json``) while the resolver
+    root-keyed it, and reader and writer each normalized the root differently;
+    an alias of the same project could therefore resolve to two different
+    ``<root_name>.json`` files under one override directory.
+
+    The default (no-override) layout keeps its root-relative derivation
+    unchanged: it is already root-scoped, and the reader's git-root strategy
+    matches it verbatim.
+
+    Args:
+        root: the project root being scanned.
+
+    Returns:
+        Absolute path of the ``<project>.json`` index to publish.
+
+    Examples:
+        >>> import os, tempfile
+        >>> d = Path(tempfile.mkdtemp()) / "proj"
+        >>> d.mkdir()
+        >>> _resolve_out_path(d) == d / ".cache" / "codemap" / "proj.json"
+        True
+    """
+    identity = index_paths.resolve_index(root=root)
+    if identity.override:
+        return identity.index_path
+    return root / ".cache" / "codemap" / f"{root.name}.json"
 
 
 def main() -> None:
@@ -1414,30 +1490,24 @@ def main() -> None:
     t0 = time.time()
     try:
         root = args.root or find_root()
-        _custom = os.environ.get("CODEMAP_INDEX_DIR")
-        out_dir = Path(_custom) if _custom else root / ".cache" / "codemap"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{root.name}.json"
+        out_path = _resolve_out_path(root)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        index = _build_index(args, root, out_path)
+        # The exclusive writer lease is taken HERE, in the engine, not in whatever
+        # launched it — so every route in (the codemap-py dispatcher, bin/scan-index,
+        # the query engine's self-heal spawn, a hook's background refresh) is gated by
+        # construction. A caller must NOT wrap this in a second lease: the parent's
+        # intent is foreign and live to this process, so the child would wait out its
+        # whole deadline and fail index_busy on every run.
+        index = rwgate.write_index(
+            out_path,
+            lambda target: _build_and_publish(args, root, target),
+            writer_version=SCAN_VERSION,
+            **_gate_timeout_kwargs(),
+        )
 
         ok = sum(1 for m in index["modules"] if m.get("status") == "ok")
         degraded = sum(1 for m in index["modules"] if m.get("status") == "degraded")
-
-        # PID-qualify the temp name so concurrent writers (inject-preamble bg refresh,
-        # post-commit hook, scan-query self-heal) never share one ".json.tmp" and
-        # clobber each other's write phase — os.replace is atomic on rename but NOT on
-        # the write, so two writers on a shared temp name interleave into corrupt bytes.
-        # A live PID is unique among running processes, so each writer owns its own temp.
-        tmp_path = out_path.with_suffix(f".json.{os.getpid()}.tmp")
-        try:
-            with tmp_path.open("w") as f:
-                json.dump(index, f, separators=(",", ":"))
-            _replace_index(tmp_path, out_path)
-        except BaseException:
-            # Never leak a PID-suffixed temp if the write/replace fails or is interrupted.
-            tmp_path.unlink(missing_ok=True)
-            raise
 
         print(f"[codemap] \u2713 {out_path}", file=sys.stderr)
         print(f"[codemap]   {ok} modules indexed, {degraded} degraded", file=sys.stderr)
@@ -1451,6 +1521,15 @@ def main() -> None:
             {"modules_indexed": ok, "degraded": degraded, "incremental": bool(args.incremental)},
             t0,
         )
+    except rwgate.IndexBusy as exc:
+        _die_gate("index_busy", str(exc))
+    except rwgate.VersionSkewRefused as exc:
+        _die_gate("index_version_skew", str(exc))
+    except rwgate.IndexUnreadable as exc:
+        # Subclass of CoordinationUnavailable, so it must be caught ahead of it.
+        _die_gate("index_unreadable", str(exc))
+    except rwgate.CoordinationUnavailable as exc:
+        _die_gate("index_coordination_unavailable", str(exc))
     except PermissionError as exc:
         print(f"[codemap] ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

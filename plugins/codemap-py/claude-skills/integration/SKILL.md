@@ -76,7 +76,7 @@ NOT for: running a structural query (use `/codemap-py:query-code`); explicit sta
     from an approved plan.
   - `sync` — install/reinstall the approved plan's targets in local runtime(s) via native plugin-
     manager CLIs.
-  - `demo` — run `check` plus one representative structural-context query; disposable evidence only.
+  - `demo` — run `check` plus representative plain-vs-structural-context workflows; disposable evidence only.
 
 </inputs>
 
@@ -136,9 +136,10 @@ Codex-specific note: "Start a new Codex session before relying on the updated pl
 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" integrate demo [--runtime <r>]  # timeout: 20000
 ```
 
-**`demo`** — runs `check` plus one representative structural-context query and records the
-protocol/version/evidence used; disposable unless the user separately approves a mutation. Print the
-report path the CLI returns.
+**`demo`** — runs `check` plus representative plain-vs-structural-context workflows and records the
+protocol/version/evidence used; disposable unless the user separately approves a mutation. The
+contrast between the plain and structural runs is the evidence — a single structural query alone does
+not satisfy this mode. Print the report path the CLI returns.
 
 ## Step 3: Report
 

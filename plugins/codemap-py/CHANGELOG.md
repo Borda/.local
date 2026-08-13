@@ -2,6 +2,42 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.29.4
+
+Audit remediation across the index gate, the hook roster, and both skill rosters.
+
+Index and RW gate:
+
+- Retire the root-keyed `CODEMAP_INDEX_DIR` layout in favour of the flat `<override>/<project>.json` convention every writer already used, so the leased, written, loaded, and `doctor`-reported paths are one path.
+- Take the read and write leases inside the engines (`query.main`, `graph.main`) rather than in their launchers, so the `codemap-py` dispatcher, `scan-query`/`scan-index`, the self-heal spawn, and hook background refreshes are all gated by construction. Callers must not wrap an engine invocation in a second lease.
+- Report a corrupt index through the `codemap-py query` dispatcher as a bounded diagnosable error instead of a raw traceback, matching what standalone `scan-query` already did, and stop parsing the index twice per dispatched query.
+- Implement the previously advertised version-skew refusal: a writer refuses to overwrite an index written by a newer schema generation instead of silently downgrading it.
+- Align the writer's temp-file name with the orphan cleaner so a crashed writer's temp is reclaimed, and `fsync` the payload before the atomic rename.
+
+! BREAKING — Two projects with the same directory name sharing one `CODEMAP_INDEX_DIR` no longer receive independent indexes; they resolve to the same file. Fix: give colliding projects separate override directories. The collision is reported as an `index_root_collision` diagnostic rather than silently serving another project's index.
+
+! BREAKING — An unwritable index directory now fails with a structured `{"error": "index_coordination_unavailable"}` on stderr instead of the previous `[codemap] ERROR: …` text. Exit code and stdout are unchanged.
+
+Hooks and telemetry:
+
+- Invalidate the exhausted-query sentinel on `Edit`/`Write`/`MultiEdit`/`NotebookEdit` and expire it after 30 minutes, so a post-edit grep is no longer denied on stale authority.
+- Anchor the redundant-scan guard's pattern to `grep`/`rg` so unrelated commands containing `import` are not denied, and scope its fallback session key per project and session.
+- Route the `intent` and `target` fields through token-level scrubbing in `anonymize.py` — a dot-free command such as a plain `grep` was previously exported verbatim — and pseudonymize the session id in both the record and the exported filename.
+- Bound the repeated-read telemetry check to a trailing window instead of re-reading the whole shard on every matched tool call.
+- Scope recorded query completeness to the module actually queried rather than to any `query_complete` appearing anywhere in a combined tool response.
+- Agree on one session key across the hooks (filesystem git-root walk), fixing telemetry joins that silently read zero from a subdirectory.
+
+Skills and docs:
+
+- Move the Claude `scan-codebase`, `test-impact`, and `rename-refs` skills onto the gated `codemap-py index|query` dispatcher, so both rosters share one execution path and one concurrency contract.
+- Disclose the 20-item result cap, `--limit 0`, and the `confidence` field in both `query-code` rosters, which previously instructed agents to stop querying on a flag that reports graph coverage, not display truncation.
+- Stop the Claude `test-impact` skill from rendering a failed query as "no affected tests"; a query failure now exits non-zero instead of falling back to empty defaults.
+- Read anonymized copies in Claude `debrief-coding --anonymize` mode and delete the false claim that tool-use logs are never anonymized.
+- Replace the undefined `$CODEMAP_BIN` in the Codex `query-code` skill, correct its `module::symbol` qname claim to match the source, drop the Claude `rename-refs` hard dependency on `jq`, and make report output paths collision-safe in both rosters.
+- Extend the parity gate with execution-surface checks (CLI surface, exit codes, qname grammar, result caps, undefined launcher variables, output paths, error suppression) — it was previously blind to all of them.
+
+Also: reconcile the `.claude-plugin` and `.codex-plugin` manifests, which had drifted to `0.29.3` and `0.29.2`. No `0.29.3` entry was ever recorded; that bump shipped in the Claude manifest alone.
+
 ## 0.29.2
 
 - Clarify that complete structural lookup resolves only its graph fact: lifecycle-boundary edits must inspect source plus the named test/oracle and use one directional caller/callee query only when that responsibility remains unresolved.

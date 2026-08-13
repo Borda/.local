@@ -31,6 +31,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 import codemap_py.graph as _graph_mod  # noqa: E402  (needs the sys.path insert above)
+import codemap_py.rwgate as _rwgate_mod  # noqa: E402
 import codemap_py.scanner as _scanner_mod  # noqa: E402
 
 extract_dynamic_imports = _scanner_mod.extract_dynamic_imports
@@ -42,7 +43,7 @@ _iter_python_files = _scanner_mod._iter_python_files
 _parse_file = _scanner_mod._parse_file
 _dedup_modules = _graph_mod._dedup_modules
 _dedup_key = _graph_mod._dedup_key
-_replace_index = _graph_mod._replace_index
+_replace_with_windows_retry = _rwgate_mod._replace_with_windows_retry
 
 
 def test_scan_falls_back_to_serial_when_process_pool_is_forbidden(
@@ -497,23 +498,23 @@ class TestAtomicIndexWrite:
         temp = tmp_path / "index.tmp"
         target = tmp_path / "index.json"
         temp.write_text('{"complete": true}')
-        original_replace = Path.replace
+        original_replace = _rwgate_mod.os.replace
         attempts = 0
 
-        def fail_twice(path: Path, destination: Path) -> Path:
+        def fail_twice(path, destination):
             nonlocal attempts
-            if path == temp and attempts < 2:
+            if Path(path) == temp and attempts < 2:
                 attempts += 1
                 error = PermissionError("destination temporarily locked")
                 error.winerror = 5
                 raise error
             return original_replace(path, destination)
 
-        monkeypatch.setattr(_graph_mod.sys, "platform", "win32")
-        monkeypatch.setattr(_graph_mod.time, "sleep", lambda _delay: None)
-        monkeypatch.setattr(Path, "replace", fail_twice)
+        monkeypatch.setattr(_rwgate_mod.sys, "platform", "win32")
+        monkeypatch.setattr(_rwgate_mod.time, "sleep", lambda _delay: None)
+        monkeypatch.setattr(_rwgate_mod.os, "replace", fail_twice)
 
-        _replace_index(temp, target)
+        _replace_with_windows_retry(temp, target)
 
         assert attempts == 2
         assert json.loads(target.read_text()) == {"complete": True}

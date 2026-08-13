@@ -1,9 +1,28 @@
 """Writer-preferred, cross-process read/write gate for the codemap index.
 
 This module is the process-safe coordination core mandated by the dual-runtime
-plan (§4.4 "Process-safe read/write and version-skew contract"). Every index
-load and update funnels through :func:`read_index` / :func:`write_index`; no
-launcher, adapter, or consumer is permitted a token-free filesystem read.
+plan (§4.4 "Process-safe read/write and version-skew contract").
+
+What is actually guaranteed, and where:
+
+* The gate is entered by the **engines**, not by their launchers:
+  :func:`codemap_py.query.main` loads the index under :func:`read_lease`, and
+  :func:`codemap_py.graph.main` builds and publishes under :func:`write_index`.
+  Every route into an engine therefore leases — the ``codemap-py`` dispatcher,
+  the ``bin/scan-query`` / ``bin/scan-index`` launchers, the query engine's own
+  self-heal spawn, and any hook that spawns those binaries.
+* A caller must **not** wrap an engine invocation in a second lease. A parent
+  holding a lease while its child process waits for one is a lock-order
+  inversion: the child cannot acquire (the parent's token is foreign and live to
+  it) and the parent cannot release (it is blocked on the child), so the child
+  burns its deadline and fails ``index_busy`` every time. This is precisely why
+  leasing lives in the engines and the dispatcher no longer wraps them.
+* What the gate prevents is **concurrent full scans** and reads racing a
+  publish. It does not, and never did, prevent a torn read — ``os.replace``
+  already makes publication atomic.
+
+No launcher, adapter, or consumer is permitted a token-free filesystem read of
+the index.
 
 ``bin/_rwgate.py`` is a compatibility shim that aliases this module in
 ``sys.modules`` — tests that monkeypatch private internals
@@ -55,15 +74,19 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterator, Optional
+from typing import IO, Any, Callable, Iterator, Optional
 from uuid import uuid4
 
 __all__ = [
+    "read_lease",
     "read_index",
     "write_index",
     "atomic_publish",
+    "publish_stream",
     "IndexBusy",
     "CoordinationUnavailable",
+    "IndexUnreadable",
+    "VersionSkewRefused",
     "set_instrument",
 ]
 
@@ -94,6 +117,34 @@ class CoordinationUnavailable(RuntimeError):
     A read-only index/coordination root is refused here rather than silently
     read without a token (plan §4.4). A shared writable ``CODEMAP_INDEX_DIR``
     is the supported path for read-only source trees.
+    """
+
+
+class IndexUnreadable(CoordinationUnavailable):
+    """Raised when the index file exists but does not parse as JSON.
+
+    Deliberately a subclass of :class:`CoordinationUnavailable` rather than a
+    sibling of it. Consumers of this gate already catch
+    ``(IndexBusy, CoordinationUnavailable)`` as the complete set of ways a leased
+    read can fail and translate it into a bounded structured error; a brand-new
+    top-level exception type would have escaped every one of them as a raw
+    traceback on a corrupt index — the exact capability-contract violation this
+    class exists to close. Subclassing makes every existing consumer correct
+    without edits, and the distinct type still lets a caller that cares
+    (``codemap-py query``) report "corrupt, rebuild" instead of "coordination
+    unavailable".
+
+    The message always names the offending path and the rebuild command.
+    """
+
+
+class VersionSkewRefused(RuntimeError):
+    """Raised when a writer would overwrite an index written by a newer schema.
+
+    The on-disk index carries a ``scan_version`` greater than the writer's own, so
+    the writer is the older tool. Publishing would silently downgrade the shared
+    index and force the newer reader to rebuild — repeatedly, if both tools keep
+    running. The write is refused instead (plan §4.4 version-skew contract).
     """
 
 
@@ -521,13 +572,61 @@ def _acquire_reader_token(reg: _Registry, coord: Path, deadline: float) -> Path:
 
 
 @contextlib.contextmanager
+def read_lease(path: os.PathLike[str] | str, *, timeout: float = DEFAULT_TIMEOUT) -> Iterator[None]:
+    """Hold a shared-reader lease over *path* for the ``with`` block, parsing nothing.
+
+    This is the primitive :func:`read_index` is built from, and the form a caller
+    that does its own loading, validation, and schema self-check should use — the
+    query engine, for one. Leasing and parsing are separate concerns: a caller that
+    parses the index itself and also enters through :func:`read_index` decodes the
+    whole file twice per query and, worse, gets the gate's bare
+    :func:`json.loads` failure instead of its own diagnosable error path.
+
+    Keep the body minimal — a live writer's intent already blocks *new* readers, but
+    the writer still drains this lease before its exclusive phase. In particular do
+    not spawn a process that will itself want a lease from inside this block (see the
+    module docstring's lock-order-inversion note).
+
+    Args:
+        path: index file path; coordination is resolved beside it.
+        timeout: bounded wait before :class:`IndexBusy` (never a stale read).
+
+    Yields:
+        ``None`` — the lease is the value; the caller reads *path* itself.
+
+    Raises:
+        IndexBusy: the reader wait deadline expired under writer intent.
+        CoordinationUnavailable: the coordination root is unwritable.
+
+    Examples:
+        >>> import tempfile, os
+        >>> p = os.path.join(tempfile.mkdtemp(), "idx.json")
+        >>> with read_lease(p, timeout=5):
+        ...     os.path.exists(p)
+        False
+    """
+    index_path = Path(path)
+    coord = _ensure_coord(index_path)
+    reg = _registry_for(coord)
+    deadline = time.monotonic() + timeout
+    token = _acquire_reader_token(reg, coord, deadline)
+    try:
+        yield
+    finally:
+        # Emit before the drop: the token is a unique name (no recycle race), and
+        # emitting first makes the append log show reader_release strictly before
+        # any writer that drains this token can enter its exclusive phase.
+        _emit("reader_release")
+        _release_owned(reg, token)
+
+
+@contextlib.contextmanager
 def read_index(path: os.PathLike[str] | str, *, timeout: float = DEFAULT_TIMEOUT) -> Iterator[Optional[dict]]:
     """Acquire a shared-reader lease and yield the parsed index (or ``None``).
 
-    The reader token is held for the whole ``with`` block (the read lease):
-    opening, parsing, validating, and the caller's in-memory use. Keep the body
-    minimal — a live writer's intent already blocks *new* readers, but the
-    writer still drains this lease before its exclusive phase.
+    A convenience wrapper over :func:`read_lease` for callers with no loader of
+    their own; the token is held for the whole ``with`` block, covering the parse
+    and the caller's in-memory use.
 
     Args:
         path: index file path; coordination is resolved beside it.
@@ -539,6 +638,7 @@ def read_index(path: os.PathLike[str] | str, *, timeout: float = DEFAULT_TIMEOUT
     Raises:
         IndexBusy: the reader wait deadline expired under writer intent.
         CoordinationUnavailable: the coordination root is unwritable.
+        IndexUnreadable: the index file exists but is not valid JSON.
 
     Examples:
         >>> import tempfile, os, json
@@ -550,30 +650,31 @@ def read_index(path: os.PathLike[str] | str, *, timeout: float = DEFAULT_TIMEOUT
         1
     """
     index_path = Path(path)
-    coord = _ensure_coord(index_path)
-    reg = _registry_for(coord)
-    deadline = time.monotonic() + timeout
-    token = _acquire_reader_token(reg, coord, deadline)
-    try:
+    with read_lease(index_path, timeout=timeout):
         _emit("index_open")
         data = _load_index(index_path)
         _emit("index_close")
         yield data
-    finally:
-        # Emit before the drop: the token is a unique name (no recycle race), and
-        # emitting first makes the append log show reader_release strictly before
-        # any writer that drains this token can enter its exclusive phase.
-        _emit("reader_release")
-        _release_owned(reg, token)
 
 
 def _load_index(index_path: Path) -> Optional[dict]:
-    """Read and parse the index JSON, or ``None`` when the file is absent."""
+    """Read and parse the index JSON, or ``None`` when the file is absent.
+
+    Raises:
+        IndexUnreadable: the file exists but does not parse as JSON. Letting the
+            raw :class:`json.JSONDecodeError` escape instead produced a traceback
+            in every consumer that only guards the gate's own exception types,
+            which the capability contract forbids for a corrupt index.
+    """
     try:
         with open(index_path, "rb") as fh:
             return json.loads(fh.read().decode("utf-8"))
     except FileNotFoundError:
         return None
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise IndexUnreadable(
+            f"index is not valid JSON: {index_path} ({exc}); rebuild it with `codemap-py index`"
+        ) from exc
 
 
 # ── writer path ─────────────────────────────────────────────────────────────
@@ -582,6 +683,7 @@ def write_index(
     build_fn: Callable[[Path], Any],
     *,
     timeout: float = DEFAULT_TIMEOUT,
+    writer_version: Optional[int] = None,
 ) -> Any:
     """Run *build_fn* under an exclusive, writer-preferred lease.
 
@@ -595,6 +697,9 @@ def write_index(
         path: index file path; coordination is resolved beside it.
         build_fn: callable receiving the index path; owns publish and validation.
         timeout: bounded wait before :class:`IndexBusy`.
+        writer_version: this writer's schema generation. When given, an on-disk
+            index from a strictly newer generation is refused instead of being
+            downgraded; ``None`` skips the check.
 
     Returns:
         Whatever ``build_fn`` returns.
@@ -602,6 +707,7 @@ def write_index(
     Raises:
         IndexBusy: intent acquisition or reader drain exceeded the deadline.
         CoordinationUnavailable: the coordination root is unwritable.
+        VersionSkewRefused: the on-disk index is newer than *writer_version*.
 
     Examples:
         >>> import tempfile, os
@@ -622,7 +728,7 @@ def write_index(
     _acquire_writer_intent(reg, writer_path, deadline)
     try:
         _drain_readers(reg, readers_dir, deadline)
-        _refuse_incompatible_generation(index_path)
+        _refuse_incompatible_generation(index_path, writer_version)
         _emit("writer_exclusive_enter")
         try:
             _clean_orphan_temps(index_path)
@@ -718,25 +824,137 @@ def _clean_orphan_temps(index_path: Path) -> None:
             _safe_unlink(parent / name)
 
 
-def _refuse_incompatible_generation(index_path: Path) -> None:
-    """Refuse an incompatible schema/format-generation overwrite.
+def _refuse_incompatible_generation(index_path: Path, writer_version: Optional[int]) -> None:
+    """Refuse to overwrite an index whose schema generation is newer than the writer's.
 
-    TODO(phase3): single-generation prototype ships no format-generation field,
-    so there is nothing to compare yet. Phase 3 introduces the version-skew
-    contract (plan §4.4 lines 263-265): a writer revalidates the current index
-    immediately before replacement and refuses a downgrade or an older-format
-    overwrite. Placeholder test: ``test_version_skew_refusal_placeholder``.
+    Runs inside the exclusive phase, immediately before ``build_fn`` — the writer
+    revalidates the index it is about to replace rather than trusting a check made
+    before the drain (plan §4.4 version-skew contract).
+
+    The comparison is deliberately one-sided. Refuse only when the on-disk
+    ``scan_version`` is strictly greater than *writer_version*: that is the case
+    where an older tool would silently downgrade a shared index and make the newer
+    reader rebuild on its next query, forever. Equal or older on disk is the normal
+    refresh path. Absent, non-integer, unreadable, or corrupt on-disk data is not a
+    newer generation and must not block the writer — replacing a broken index is
+    exactly the repair a caller is asking for.
+
+    Args:
+        index_path: index about to be replaced.
+        writer_version: the calling writer's schema generation, or ``None`` to skip
+            the check (a caller that does not persist a versioned schema).
+
+    Raises:
+        VersionSkewRefused: on-disk generation is newer than the writer's.
     """
-    return None
+    if writer_version is None:
+        return
+    try:
+        data = _load_index(index_path)
+    except IndexUnreadable:
+        return
+    if not isinstance(data, dict):
+        return
+    on_disk = data.get("scan_version")
+    if not isinstance(on_disk, int) or on_disk <= writer_version:
+        return
+    _emit("writer_version_skew_refused", on_disk=on_disk, writer=writer_version)
+    raise VersionSkewRefused(
+        f"refusing to overwrite a newer index: {index_path} was written by schema "
+        f"generation {on_disk}, this writer is generation {writer_version}; "
+        "upgrade codemap-py or point CODEMAP_INDEX_DIR elsewhere"
+    )
 
 
 # ── atomic publish helper (for build_fn) ────────────────────────────────────
+_WINDOWS_REPLACE_RETRIES = 8
+_WINDOWS_REPLACE_DELAY_SECONDS = 0.025
+
+
+def _replace_with_windows_retry(tmp: Path, target: Path) -> None:
+    """``os.replace`` *tmp* over *target*, retrying transient NTFS sharing failures.
+
+    Windows fails the rename with access-denied / sharing-violation while another
+    process still holds a handle on the destination, where POSIX just succeeds.
+    Both files are complete at every moment of the backoff, so a reader racing the
+    retry sees the old index or the new one, never a partial one.
+    """
+    for attempt in range(_WINDOWS_REPLACE_RETRIES):
+        try:
+            os.replace(tmp, target)
+            return
+        except PermissionError as exc:
+            transient = sys.platform == "win32" and getattr(exc, "winerror", None) in {5, 32}
+            if not transient or attempt == _WINDOWS_REPLACE_RETRIES - 1:
+                raise
+            time.sleep(_WINDOWS_REPLACE_DELAY_SECONDS * 2**attempt)
+
+
+def _temp_beside(target: Path) -> Path:
+    """Return a unique temp path beside *target*, named so orphans are reclaimable.
+
+    Single source of the temp-name convention. :func:`_clean_orphan_temps` matches
+    exactly this shape (leading dot, ``.tmp`` suffix); a writer that invents its own
+    name instead is invisible to the cleaner and leaks one file per crash forever.
+    The ``uuid4`` component is what makes concurrent writers safe on the write phase
+    — ``os.replace`` is atomic for the rename, never for the bytes written before it,
+    so two writers sharing one temp name interleave into a corrupt file.
+    """
+    return target.parent / f".{target.name}.{uuid4().hex}.tmp"
+
+
+@contextlib.contextmanager
+def publish_stream(index_path: os.PathLike[str] | str) -> Iterator[IO[str]]:
+    """Yield a text handle to write the index into, then publish it atomically.
+
+    The streaming counterpart of :func:`atomic_publish`, for a caller that
+    serialises incrementally (``json.dump``) instead of holding a finished payload.
+    That distinction is not cosmetic at this size: a real index runs to hundreds of
+    megabytes, and materialising one as a ``str`` plus a ``bytes`` copy just to hand
+    it over would multiply peak memory for no gain.
+
+    On clean exit the handle is flushed, ``fsync``-ed, and renamed over
+    *index_path*; on any exception the temp is removed and the exception
+    propagates, leaving the previous index untouched.
+
+    Args:
+        index_path: destination index path.
+
+    Yields:
+        An open text handle for the caller to serialise into.
+
+    Examples:
+        >>> import json, tempfile, os
+        >>> p = os.path.join(tempfile.mkdtemp(), "idx.json")
+        >>> with publish_stream(p) as fh:
+        ...     json.dump({"schema": 3}, fh)
+        >>> json.load(open(p))["schema"]
+        3
+    """
+    target = Path(index_path)
+    tmp = _temp_beside(target)
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            yield fh
+            fh.flush()
+            os.fsync(fh.fileno())
+        _replace_with_windows_retry(tmp, target)
+    except BaseException:
+        _safe_unlink(tmp)
+        raise
+
+
 def atomic_publish(index_path: os.PathLike[str] | str, data: bytes) -> None:
     """Atomically publish *data* to *index_path* via a uniquely named temp.
 
     The temp stays beside the target for a same-filesystem ``os.replace`` and is
-    consumed by it, so no observer sees a partial index. Naming matches
-    :func:`_clean_orphan_temps` so a crash before ``replace`` is recoverable.
+    consumed by it, so no observer sees a partial index. Naming comes from
+    :func:`_temp_beside`, so a crash before ``replace`` is recoverable: the next
+    writer's exclusive phase reclaims the orphan.
+
+    The payload is ``fsync``-ed before the rename. Without that, a crash around the
+    rename can leave the file published under the real name with unflushed tail
+    bytes — a structurally invalid index, which is worse than no index at all.
 
     Args:
         index_path: destination index path.
@@ -750,9 +968,13 @@ def atomic_publish(index_path: os.PathLike[str] | str, data: bytes) -> None:
         b'{"schema": 1}'
     """
     target = Path(index_path)
-    tmp = target.parent / f".{target.name}.{uuid4().hex}.tmp"
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, target)
+    tmp = _temp_beside(target)
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        _replace_with_windows_retry(tmp, target)
+    except BaseException:
+        _safe_unlink(tmp)
+        raise

@@ -16,7 +16,7 @@ Renames a Python symbol or module atomically. Coverage:
 
 **Subcommands**:
 
-- `symbol <old_qname> <new_qname>` — function, class, or method. qname = bare (`MyClass`), qualified (`MyClass.method`), or full (`mypackage.auth::validate_token`)
+- `symbol <old_qname> <new_qname>` — function, class, or method. qname = bare (`MyClass`) or qualified (`MyClass.method`) — matched against `qualified_name`, which is symbol-local; the module-qualified form (`module::symbol`) is not accepted by `find-symbol` and returns zero matches. `<module>::<qualified_name>` is composed later, in Step 2, for the `fn-rdeps` call only.
 - `module <old_module_path> <new_module_path>` — dotted path (`mypackage.old_name`). Renames the file and every import line.
 
 **Flags**:
@@ -70,7 +70,7 @@ Full qname: `<module>::<qualified_name>`. Then:
 PLUGIN_ROOT/bin/codemap-py query fn-rdeps "<module>::<qualified_name>"
 ```
 
-Returns `{qname, called_by:[{caller, module, path}], count, index:{exhaustive,...}}`. `called_by` entries have no line numbers — resolve each caller's line range with `query symbol <caller>` in Step 4. `exhaustive: false` → note in the blast-radius report.
+Returns `{qname, called_by:[{caller, module, path}], count, index:{query_complete,...}}`. `called_by` entries have no line numbers — resolve each caller's line range with `query symbol <caller>` in Step 4. Read completeness forward-first: `index.query_complete`, falling back to the legacy `index.exhaustive` alias only when `query_complete` is absent — never the alias alone, which disappears after its deprecation cycle. Not complete → note it in the blast-radius report.
 
 **Module subcommand**:
 
@@ -78,22 +78,22 @@ Returns `{qname, called_by:[{caller, module, path}], count, index:{exhaustive,..
 PLUGIN_ROOT/bin/codemap-py query rdeps "<old_module_path>"
 ```
 
-Returns `{imported_by:[...], index:{exhaustive,...}}`. `--remove-if-no-callers` is honored only when explicitly passed and the caller graph is exhaustive.
+Returns `{imported_by:[...], index:{query_complete,...}}`. Same forward-first read as above (`query_complete`, legacy `exhaustive` only as fallback). `--remove-if-no-callers` is honored only when explicitly passed and the caller graph is complete.
 
 ### Step 3: Blast-radius report and confirmation gate
 
 Print old → new, type, definition location (for symbol), static caller count and files, a note that docstring refs are grepped in Step 4, and hard-limit caveats (`getattr` dynamic dispatch, cross-repo consumers). If not exhaustive, add: "index non-exhaustive — some callers may not appear above."
 
-**Caller count > 50**: write the full caller list to `.reports/codex/codemap-py/rename-refs-blast-<YYYY-MM-DD>.md`, print the path, apply edits for the first 50 only, and note the remainder require manual edit (listed in that file). Step 6's summary must call these out as "skipped callers", not missed dynamic references.
+**Caller count > 50**: write the full caller list to `.reports/codex/codemap-py/rename-refs-blast-<branch>-<YYYY-MM-DD>.md`, print the path, apply edits for the first 50 only, and note the remainder require manual edit (listed in that file). Derive `<branch>` from `git branch --show-current | tr '/' '-'` (empty/detached → `main`), and never overwrite: if that path exists, append a counter (`…-2.md`, `…-3.md`) until the name is free. This file is the only record of callers 51–N — a same-day re-run that overwrote it would destroy the manual-edit list. Step 6's summary must call these out as "skipped callers", not missed dynamic references.
 
 **`--remove-if-no-callers` guards** (evaluated before any rename edit):
 
 - callers found → report the count and stop the entire rename — remove all callers first or drop the flag.
-- caller graph not exhaustive → report that exhaustive coverage is required (`$codemap-py:scan-codebase` first) and stop the entire rename.
-- 0 callers and exhaustive → ask in chat: (a) delete the definition — no callers confirmed, or (b) abort. On delete: verify the line at `start_line` actually names the expected symbol before editing (mismatch → index may be stale, abort without deleting); then remove the definition block (including preceding `@decorator` lines) and skip Step 4, going straight to Step 6.
+- caller graph not complete (`index.query_complete` not `true`, legacy `index.exhaustive` only as fallback) → report that complete coverage is required (`$codemap-py:scan-codebase` first) and stop the entire rename. Absent completeness field on both names → treat as not complete and stop; never read a missing field as `true`.
+- 0 callers and complete → ask in chat: (a) delete the definition — no callers confirmed, or (b) abort. On delete: verify the line at `start_line` actually names the expected symbol before editing (mismatch → index may be stale, abort without deleting); then remove the definition block (including preceding `@decorator` lines) and skip Step 4, going straight to Step 6.
 - otherwise: proceed with the normal rename flow.
 
-**`--dry-run`**: write the would-change site list to `.reports/codex/codemap-py/rename-refs-dry-<YYYY-MM-DD>.md`, print the path, ask in chat whether to apply for real (re-invoke without `--dry-run`) or stop, and wait.
+**`--dry-run`**: write the would-change site list to `.reports/codex/codemap-py/rename-refs-dry-<branch>-<YYYY-MM-DD>.md` — same `<branch>` derivation and same never-overwrite counter rule as the blast report above — print the path, ask in chat whether to apply for real (re-invoke without `--dry-run`) or stop, and wait.
 
 Otherwise, ask in chat: (a) apply edits, or (b) abort. On abort, stop.
 

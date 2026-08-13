@@ -2,8 +2,12 @@
 
 Proves the shipped ``codemap-py index/query`` enters the RW gate (a live writer
 lease forces ``query`` to return a bounded ``index_busy``) and that ``doctor``
-reports the exact path from the single §4.4 resolver, including the
-``CODEMAP_INDEX_DIR`` root-key layout.
+reports the exact path from the single §4.4 resolver, including the flat
+``CODEMAP_INDEX_DIR`` layout.
+
+Also covers the exit-1 surfaces the capability contract requires to be bounded and
+structured rather than a traceback: a corrupt index reached through the dispatcher
+(C-H2) and a writer refusing to downgrade a newer-schema index (C-M3).
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ if str(_SCRIPTS) not in sys.path:
 
 import _index_identity  # noqa: E402  (needs the bin/ path insert above)
 import _rwgate  # noqa: E402  (needs the bin/ path insert above)
+import _schema  # noqa: E402  (needs the bin/ path insert above)
 import codemap_py_cli as _cli  # noqa: E402  (needs the scripts/ path insert above)
 
 # These tests exercise resolver equality and gate wiring THROUGH the launcher, so
@@ -42,17 +47,25 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_cli(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Invoke the launcher with pytest's supported interpreter and inherited test environment."""
     env = {**os.environ, "CODEMAP_PYTHON": sys.executable}
-    return subprocess.run([str(_LAUNCHER), *args], capture_output=True, text=True, timeout=30, check=False, env=env)
+    return subprocess.run(
+        [str(_LAUNCHER), *args],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env=env,
+        cwd=None if cwd is None else str(cwd),
+    )
 
 
 @pytest.mark.parametrize("with_override", [pytest.param(False, id="default"), pytest.param(True, id="override")])
 def test_doctor_index_path_matches_resolver(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_override: bool
 ) -> None:
-    """doctor's index_path equals _index_identity.resolve_index() (incl. root-key)."""
+    """doctor's index_path equals _index_identity.resolve_index(), override or not."""
     if with_override:
         monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
     else:
@@ -64,15 +77,47 @@ def test_doctor_index_path_matches_resolver(
     assert json.loads(result.stdout)["index_path"] == expected
 
 
-def test_doctor_override_uses_root_key_subdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Under CODEMAP_INDEX_DIR the resolved path is nested in the root-key dir (F2)."""
+def test_doctor_override_reports_the_flat_resolver_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Under CODEMAP_INDEX_DIR doctor reports the flat ``<override>/<project>.json`` (C-H1).
+
+    Formerly doctor printed a root-keyed ``<override>/<root-key>/<project>.json`` that no
+    writer ever produced, so the path it reported did not exist.
+    """
     monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
     identity = _index_identity.resolve_index()
 
     result = _run_cli(["doctor", "--json"])
     reported = Path(json.loads(result.stdout)["index_path"])
-    assert reported.parent.name == identity.root_key
-    assert reported.parent.parent == tmp_path.resolve()
+    assert reported == identity.index_path
+    assert reported.parent == tmp_path.resolve()
+
+
+def test_override_lease_write_and_report_paths_are_one_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """End-to-end C-H1: the leased, written, loaded, and doctor-reported paths agree.
+
+    The finding was a four-way split under ``CODEMAP_INDEX_DIR`` — the resolver root-keyed
+    the path, the writer wrote flat, doctor printed the root-keyed one, and the reader
+    loaded the flat one. Asserting them equal one at a time cannot catch that; only
+    building an index and comparing every reported path against the file that actually
+    appeared does.
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "mod.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
+    override = tmp_path / "shared"
+    monkeypatch.setenv("CODEMAP_INDEX_DIR", str(override))
+
+    build = _run_cli(["index", "--root", str(project)])
+    assert build.returncode == 0, build.stderr
+
+    written = sorted(override.rglob("*.json"))
+    assert written == [override.resolve() / "proj.json"], f"writer published elsewhere: {written}"
+
+    identity = _index_identity.resolve_index(root=project)
+    assert identity.index_path == written[0]
+
+    reported = Path(json.loads(_run_cli(["doctor", "--json"], cwd=project).stdout)["index_path"])
+    assert reported == written[0]
 
 
 def _hold_writer_intent(index_path: str, ready: Path, hold: float) -> None:
@@ -104,3 +149,68 @@ def test_query_under_live_writer_returns_index_busy(tmp_path: Path, monkeypatch:
 
     assert result.returncode == 1, f"expected index_busy exit 1, got {result.returncode}: {result.stderr}"
     assert json.loads(result.stderr.strip().splitlines()[-1])["error"] == "index_busy"
+
+
+def test_corrupt_index_via_dispatcher_is_a_structured_error_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A corrupt index through ``codemap-py query`` exits 1 with a structured error (C-H2).
+
+    The standalone ``scan-query`` path was already graceful; the dispatcher was not.
+    ``rwgate._load_index`` guarded only FileNotFoundError, so JSONDecodeError escaped
+    ahead of the query engine's own handling and reached the user as a raw traceback —
+    which capability-contract.md forbids for every exit-1 surface.
+    """
+    monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
+    index_path = _index_identity.resolve_index().index_path
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    corrupt = "{ this is not json"
+    index_path.write_text(corrupt, encoding="utf-8")
+
+    dispatched = _run_cli(["query", "central"])
+
+    assert "Traceback" not in dispatched.stderr
+    assert "is not valid JSON" in dispatched.stderr
+    assert str(index_path) in dispatched.stderr  # names the offending file
+
+    # The defect was dispatcher-only: standalone scan-query already degraded gracefully.
+    # Parity with it is the fix, so assert against it rather than a hard-coded code —
+    # the gate leases the read but leaves parsing to the query engine, which owns the
+    # diagnosable error path for a corrupt index.
+    index_path.write_text(corrupt, encoding="utf-8")
+    standalone = subprocess.run(
+        [sys.executable, str(_BIN / "scan-query"), "central"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env={**os.environ, "CODEMAP_INDEX_DIR": str(tmp_path)},
+    )
+    assert "Traceback" not in standalone.stderr
+    assert dispatched.returncode == standalone.returncode
+
+
+def test_writer_refuses_to_downgrade_a_newer_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An older writer refuses to overwrite a newer-schema index (C-M3).
+
+    The refusal was advertised in the gate's docstring but implemented as ``return None``,
+    so an older tool silently downgraded a shared index and forced the newer reader to
+    rebuild on every query.
+    """
+    monkeypatch.setenv("CODEMAP_INDEX_DIR", str(tmp_path))
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "mod.py").write_text("x = 1\n", encoding="utf-8")
+
+    index_path = _index_identity.resolve_index(root=project).index_path
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    newer = {"scan_version": _schema.SCAN_VERSION + 1, "modules": [], "sentinel": "keep-me"}
+    index_path.write_text(json.dumps(newer), encoding="utf-8")
+
+    result = _run_cli(["index", "--root", str(project)])
+
+    assert result.returncode == 1, result.stdout
+    assert "Traceback" not in result.stderr
+    assert json.loads(result.stderr.strip().splitlines()[-1])["error"] == "index_version_skew"
+    # The newer index must survive the refusal untouched.
+    assert json.loads(index_path.read_text())["sentinel"] == "keep-me"
