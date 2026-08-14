@@ -1,19 +1,29 @@
 # Borda's AI-Rig
 
-> Five Claude Code plugins plus Codex Rig for Python/ML OSS development:
-> specialist roles, calibrated workflows, validate-first discipline.
+> Independently installable Claude Code and Codex plugins for evidence-first Python, ML, and open-source maintenance. The suite exposes 39 Claude skills across five plugins, 20 Codex skills across two plugins, 16 Claude agents, and 15 Codex Rig role cards. Codemap-py's six skills are available in both host totals.
 
 ## Documentation
 
-- [Overview](https://borda.github.io/AI-Rig/): Plugin suite — install, quick-start, how plugins compose
-- [foundry](https://borda.github.io/AI-Rig/foundry/): Base infrastructure — 8 specialist agents, calibration, audit, self-improvement
-- [oss](https://borda.github.io/AI-Rig/oss/): OSS maintainer workflows — parallel PR review, resolve feedback, SemVer releases
-- [develop](https://borda.github.io/AI-Rig/develop/): Validate-first development — feature, fix, refactor, debug with mandatory test gates
-- [research](https://borda.github.io/AI-Rig/research/): Structured ML experiments — SOTA search, design review, automated improvement loop
-- [codemap-py](https://borda.github.io/AI-Rig/codemap-py/): Python structural indexer — import graph, blast-radius, function call graph
-- [Codex Rig](https://borda.github.io/AI-Rig/codex-rig/): Native Codex workflows — 15 role cards, portable parallel routing, quality gates, and calibration
+- [Overview](https://borda.github.io/AI-Rig/): Product selection, complete skill inventory, installation, first workflows, boundaries, update, and removal
+- [Foundry](https://borda.github.io/AI-Rig/cc_foundry/): 11 skills, 10 specialist agents, 13 rules, 15 hook modules, setup, audit, calibration, session state, and current limits
+- [OSS](https://borda.github.io/AI-Rig/cc_oss/): 5 maintainer skills, 4 agents, GitHub evidence collection, PR review, feedback resolution, release-readiness assessment, and human-owned public actions
+- [Develop](https://borda.github.io/AI-Rig/cc_develop/): 7 validate-first Python skills for planning, features, fixes, refactors, debugging, review, and setup
+- [Research](https://borda.github.io/AI-Rig/cc_research/): 10 ML research skills, 2 agents, literature grounding, experiment planning and review, bounded runs, verification, ablation, retrospectives, and Kaggle notebooks
+- [Codemap-py](https://borda.github.io/AI-Rig/codemap-py/): 6 dual-runtime skills for static Python indexing, queries, test impact, renames, integration, and telemetry debriefs
+- [Codex Rig](https://borda.github.io/AI-Rig/codex-rig/): 13 evidence-first workflows, 1 lifecycle manager, 15 role cards, shared gates, artifacts, confidence contracts, and runtime fallbacks
+
+## Runtime guides
+
+- [Claude Code guide](https://github.com/Borda/AI-Rig/blob/main/.claude/README.md): Complete Claude skill, agent, rule, and hook inventory with setup and cleanup behavior
+- [Codex guide](https://github.com/Borda/AI-Rig/blob/main/.codex/README.md): Codex product selection, installation, first workflows, artifacts, and runtime boundaries
+- [Codex Rig role cards](https://github.com/Borda/AI-Rig/blob/main/plugins/codex-rig/roles/README.md): Complete Codex specialist-role inventory, ownership boundaries, and packaged role-card contract
+
+## Source
+
+- [GitHub repository](https://github.com/Borda/AI-Rig): Plugin source, manifests, tests, and maintainer tooling
+- [Sitemap](https://borda.github.io/AI-Rig/sitemap.xml): All rendered pages
 
 ## Optional
 
-- [GitHub Repository](https://github.com/Borda/AI-Rig): Source code and plugin files
-- [Sitemap](https://borda.github.io/AI-Rig/sitemap.xml): All pages
+- [Benchmark record](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md): Methods, arm definitions, per-run results, unfavorable cells, and validity limits for the Codemap-py studies
+- [Codemap-py capability contract](https://github.com/Borda/AI-Rig/blob/main/plugins/codemap-py/shared/capability-contract.md): Shared Claude/Codex authority for exit codes, completeness metadata, and static-analysis caveats

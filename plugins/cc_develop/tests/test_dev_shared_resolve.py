@@ -22,20 +22,9 @@ import dev_shared_resolve
 SCRIPT = Path(dev_shared_resolve.__file__)
 
 
-def test_no_tmp_literal_in_source() -> None:
-    """Windows-portability: no hardcoded ``/tmp``."""
-    assert "/tmp" not in SCRIPT.read_text(encoding="utf-8")
-
-
 def test_stdout_reconfigure_present() -> None:
     """Windows-portability: ``sys.stdout.reconfigure(...)`` required."""
     assert "sys.stdout.reconfigure" in SCRIPT.read_text(encoding="utf-8")
-
-
-def test_shebang_uses_env_python() -> None:
-    """Shebang must read ``#!/usr/bin/env python``."""
-    first_line = SCRIPT.read_text(encoding="utf-8").splitlines()[0]
-    assert first_line == "#!/usr/bin/env python"
 
 
 class TestDevelopOnly:

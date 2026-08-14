@@ -6,7 +6,7 @@ Covers:
 * ``LAUNCH_AT`` value embedded in sentinel path
 * Missing skill-id → exit 1
 * Invalid skill-id (unsafe chars) → exit 2
-* Windows-portability invariants: ``sys.stdout.reconfigure`` present,
+* Windows-portability invariants: no CRLF in stdout (behavioural),
   ``_sentinel_dir()`` defined for platform-conditional sentinel path
 """
 
@@ -34,23 +34,29 @@ def _parse_kv(output: str) -> dict[str, str]:
     return pairs
 
 
+@pytest.fixture
+def sentinel_cleanup() -> list[str]:
+    """Collect skill-ids used by a test; remove their sentinel files on teardown.
+
+    ``health_monitor_start.py`` writes to the fixed platform temp dir (not
+    ``tmp_path`` — the script owns that path, not the test), so cleanup must
+    happen out-of-band. Tests append the skill-id(s) they used.
+    """
+    skill_ids: list[str] = []
+    yield skill_ids
+    sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
+    for skill_id in skill_ids:
+        for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
+            stale.unlink(missing_ok=True)
+
+
 class TestPortabilityInvariants:
     """Source-level Windows-portability checks."""
-
-    def test_stdout_reconfigure_present(self) -> None:
-        """``sys.stdout.reconfigure(...)`` must be called in ``main()``."""
-        src = SCRIPT.read_text(encoding="utf-8")
-        assert "sys.stdout.reconfigure" in src
 
     def test_sentinel_dir_function_defined(self) -> None:
         """``_sentinel_dir()`` helper must exist — proves platform-conditional logic."""
         src = SCRIPT.read_text(encoding="utf-8")
         assert "_sentinel_dir" in src
-
-    def test_shebang_env_python(self) -> None:
-        """Shebang must be ``#!/usr/bin/env python`` (not ``python3``)."""
-        first_line = SCRIPT.read_text(encoding="utf-8").splitlines()[0]
-        assert first_line == "#!/usr/bin/env python"
 
     def test_no_utcnow(self) -> None:
         """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
@@ -68,19 +74,15 @@ class TestArgparse:
         assert exc.value.code == 0
         assert "health_monitor_start.py" in capsys.readouterr().out
 
-    def test_golden_readme_invocation(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_golden_readme_invocation(self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]) -> None:
         """README shape ``health_monitor_start.py <skill-id>`` → exit 0 with sentinel keys."""
-        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         skill_id = "research-run"
-        try:
-            rc = health_monitor_start.main([skill_id])
-            assert rc == 0
-            kv = _parse_kv(capsys.readouterr().out)
-            assert kv["LAUNCH_AT"].isdigit()
-            assert Path(kv["SENTINEL"]).name.startswith(f"research-{skill_id}-check-")
-        finally:
-            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
-                stale.unlink(missing_ok=True)
+        sentinel_cleanup.append(skill_id)
+        rc = health_monitor_start.main([skill_id])
+        assert rc == 0
+        kv = _parse_kv(capsys.readouterr().out)
+        assert kv["LAUNCH_AT"].isdigit()
+        assert Path(kv["SENTINEL"]).name.startswith(f"research-{skill_id}-check-")
 
 
 class TestValidation:
@@ -106,79 +108,61 @@ class TestValidation:
 class TestHappyPath:
     """Integration tests for valid invocations."""
 
-    def test_exit_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_exit_zero(self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]) -> None:
         """Valid skill-id → exit 0."""
-        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         skill_id = "test-skill-exitcode"
-        try:
-            rc = health_monitor_start.main([skill_id])
-            assert rc == 0
-        finally:
-            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
-                stale.unlink(missing_ok=True)
+        sentinel_cleanup.append(skill_id)
+        rc = health_monitor_start.main([skill_id])
+        assert rc == 0
 
-    def test_emits_launch_at_and_sentinel(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_emits_launch_at_and_sentinel(
+        self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]
+    ) -> None:
         """Output contains both ``LAUNCH_AT`` and ``SENTINEL`` keys."""
-        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         skill_id = "test-skill-kv"
-        try:
-            health_monitor_start.main([skill_id])
-            kv = _parse_kv(capsys.readouterr().out)
-            assert "LAUNCH_AT" in kv
-            assert "SENTINEL" in kv
-            assert kv["LAUNCH_AT"].isdigit()
-        finally:
-            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
-                stale.unlink(missing_ok=True)
+        sentinel_cleanup.append(skill_id)
+        health_monitor_start.main([skill_id])
+        kv = _parse_kv(capsys.readouterr().out)
+        assert "LAUNCH_AT" in kv
+        assert "SENTINEL" in kv
+        assert kv["LAUNCH_AT"].isdigit()
 
-    def test_sentinel_file_created(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_sentinel_file_created(self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]) -> None:
         """Sentinel path printed in stdout exists on disk."""
-        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         skill_id = "test-skill-file"
-        try:
-            health_monitor_start.main([skill_id])
-            kv = _parse_kv(capsys.readouterr().out)
-            sentinel = Path(kv["SENTINEL"])
-            assert sentinel.exists()
-            assert sentinel.name.startswith(f"research-{skill_id}-check-")
-        finally:
-            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
-                stale.unlink(missing_ok=True)
+        sentinel_cleanup.append(skill_id)
+        health_monitor_start.main([skill_id])
+        kv = _parse_kv(capsys.readouterr().out)
+        sentinel = Path(kv["SENTINEL"])
+        assert sentinel.exists()
+        assert sentinel.name.startswith(f"research-{skill_id}-check-")
 
-    def test_launch_at_matches_sentinel_timestamp(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_launch_at_matches_sentinel_timestamp(
+        self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]
+    ) -> None:
         """``LAUNCH_AT`` value appears as trailing ``<ts>`` in sentinel path."""
-        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         skill_id = "test-skill-tsmatch"
-        try:
-            health_monitor_start.main([skill_id])
-            kv = _parse_kv(capsys.readouterr().out)
-            m = re.search(r"-check-(\d+)$", kv["SENTINEL"])
-            assert m is not None
-            assert m.group(1) == kv["LAUNCH_AT"]
-        finally:
-            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
-                stale.unlink(missing_ok=True)
+        sentinel_cleanup.append(skill_id)
+        health_monitor_start.main([skill_id])
+        kv = _parse_kv(capsys.readouterr().out)
+        m = re.search(r"-check-(\d+)$", kv["SENTINEL"])
+        assert m is not None
+        assert m.group(1) == kv["LAUNCH_AT"]
 
-    def test_output_has_no_crlf(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_output_has_no_crlf(self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]) -> None:
         """stdout must not contain CRLF (Windows text-mode regression guard)."""
-        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         skill_id = "test-skill-crlf"
-        try:
-            health_monitor_start.main([skill_id])
-            out = capsys.readouterr().out
-            assert "\r" not in out
-        finally:
-            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
-                stale.unlink(missing_ok=True)
+        sentinel_cleanup.append(skill_id)
+        health_monitor_start.main([skill_id])
+        out = capsys.readouterr().out
+        assert "\r" not in out
 
-    def test_sentinel_path_uses_forward_slashes(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_sentinel_path_uses_forward_slashes(
+        self, capsys: pytest.CaptureFixture[str], sentinel_cleanup: list[str]
+    ) -> None:
         """SENTINEL value uses forward slashes (bash-compatible even on Windows)."""
-        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         skill_id = "test-skill-posix"
-        try:
-            health_monitor_start.main([skill_id])
-            kv = _parse_kv(capsys.readouterr().out)
-            assert "\\" not in kv["SENTINEL"]
-        finally:
-            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
-                stale.unlink(missing_ok=True)
+        sentinel_cleanup.append(skill_id)
+        health_monitor_start.main([skill_id])
+        kv = _parse_kv(capsys.readouterr().out)
+        assert "\\" not in kv["SENTINEL"]

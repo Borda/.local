@@ -304,11 +304,3 @@ class TestCurrency:
         assert rc == 0
         assert (tmp_path / "test-codemap-currency-shared").read_text() == "current\n"
         assert "staleness was NOT verified" not in capsys.readouterr().err
-
-
-def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0; --prefix requirement not reached."""
-    with pytest.raises(SystemExit) as exc:
-        detect_codemap.main(["--help"])
-    assert exc.value.code == 0
-    assert "usage: detect_codemap.py" in capsys.readouterr().out

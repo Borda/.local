@@ -19,6 +19,7 @@ POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason=WINDOWS_POSIX_SK
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PLUGIN_ROOT.parents[1]
 CARD_SEPARATOR = b"--- codex-rig-role-card ---\n"
+MARKETPLACE_PATH = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
 
 
 def sha256(path: Path) -> str:
@@ -53,12 +54,10 @@ def test_scaffold_has_stable_role_card_release_identity() -> None:
     }
 
 
+@pytest.mark.skipif(not MARKETPLACE_PATH.exists(), reason="repository marketplace is outside installed plugin cache")
 def test_repository_marketplace_contract() -> None:
     """Validate repository catalog metadata only when its source root exists."""
-    marketplace_path = REPO_ROOT / ".agents" / "plugins" / "marketplace.json"
-    if not marketplace_path.exists():
-        pytest.skip("repository marketplace is intentionally outside installed plugin cache")
-    marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    marketplace = json.loads(MARKETPLACE_PATH.read_text(encoding="utf-8"))
 
     assert marketplace["name"] == "borda-ai-rig"
     codex_entry = next(p for p in marketplace["plugins"] if p["name"] == "codex-rig")

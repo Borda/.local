@@ -2,6 +2,11 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.30.1
+
+- Rewrite the public README around the problem solved, Claude Code and Codex installation, first query, adaptive query selection, prerequisites, runtime differences, and static-analysis limits; remove duplicated run-specific benchmark tables while retaining links to the canonical benchmark record.
+- Align `bin/README.md`, `scripts/README.md`, and the documentation-site wrapper with the current dispatcher, six-skill dual-runtime package, Python version gate, package validation, and install-probe contracts.
+
 ## 0.30.0
 
 Staleness reporting and telemetry anchoring: the currency probe joins the read gate, and every staleness question — and every log shard — is now resolved from the repository root rather than from the process working directory.

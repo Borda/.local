@@ -3,11 +3,11 @@
     "name": "Jirka",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "Codebase structural index - scan Python projects once, query the import graph for blast-radius and coupling before touching code \u2014 Python projects only",
+  "description": "Static Python structure for Codex: indexing, queries, test impact, reference renames, integration, and session telemetry debriefs",
   "homepage": "https://github.com/Borda/AI-Rig",
   "license": "Apache-2.0",
   "name": "codemap-py",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./codex-skills/",
-  "version": "0.30.0"
+  "version": "0.30.1"
 }

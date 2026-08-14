@@ -15,6 +15,7 @@ cache) with ``plugin_root`` inside the installed cache.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,8 @@ import pytest
 _PLUGIN_ROOT = Path(__file__).resolve().parents[2]
 _REPO_ROOT = _PLUGIN_ROOT.parents[1]
 _SCRIPTS = _PLUGIN_ROOT / "scripts"
+_CLAUDE_CLI_AVAILABLE = shutil.which("claude") is not None
+_CODEX_CLI_AVAILABLE = shutil.which("codex") is not None
 
 _EXPECTED_CLAUDE_SKILLS = {
     "scan-codebase",
@@ -56,11 +59,10 @@ def _assert_source_hidden(installed_path: str) -> None:
     assert installed != repo and repo not in installed.parents, f"installed under repo checkout: {installed}"
 
 
+@pytest.mark.skipif(not _CLAUDE_CLI_AVAILABLE, reason="claude CLI not present on this runner")
 def test_claude_probe_installs_and_verifies_exact_roster() -> None:
     """The Claude probe installs the built package and verifies the exact 6-skill roster."""
     result = _run_probe("probe_claude_install.py")
-    if result["status"] == "claude-cli-not-present":
-        pytest.skip("claude CLI not present on this runner")
     assert result["status"] == "ok", result
     assert result["_returncode"] == 0
     verification = result["verification"]
@@ -71,11 +73,10 @@ def test_claude_probe_installs_and_verifies_exact_roster() -> None:
     _assert_runtime_proof(result)
 
 
+@pytest.mark.skipif(not _CODEX_CLI_AVAILABLE, reason="codex CLI not present on this runner")
 def test_codex_probe_installs_and_verifies_exact_roster() -> None:
     """The Codex probe installs the built package and verifies the exact six-skill roster (Phase 4)."""
     result = _run_probe("probe_codex_install.py")
-    if result["status"] == "codex-cli-not-present":
-        pytest.skip("codex CLI not present on this runner")
     assert result["status"] == "ok", result
     assert result["_returncode"] == 0
     verification = result["verification"]

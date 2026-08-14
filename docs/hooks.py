@@ -45,48 +45,48 @@ _SCHEMA_JSON_LD = """\
           "url": "https://github.com/Borda"
         },
         "featureList": [
-          "8 specialist Claude Code agents with calibrated recall thresholds",
-          "Validate-first development workflows with mandatory test gates",
-          "Multi-agent parallel PR review (6 specialist lenses in parallel)",
-          "SemVer-enforced release management with changelog generation",
-          "Structured ML experiment pipeline with auto-rollback on regression",
-          "Python codebase structural indexer with blast-radius metrics"
+          "16 specialist Claude Code agents across independently installable plugins",
+          "Validate-first Python development with explicit reproduction and acceptance gates",
+          "Evidence-backed issue, pull request, feedback-resolution, and release-readiness workflows",
+          "Reviewable ML research planning, execution, verification, ablation, and retrospective workflows",
+          "Static Python indexing, structural queries, test-impact analysis, and reference renames",
+          "13 Codex workflows, one lifecycle manager, 15 role cards, and shared artifact gates"
         ],
         "hasPart": [
           {
             "@type": "SoftwareApplication",
             "name": "foundry",
-            "description": "Base infrastructure plugin: 8 specialist agents, calibration, audit, self-improvement loop.",
-            "url": "https://borda.github.io/AI-Rig/foundry/"
+            "description": "Claude configuration and workflow maintenance: 11 skills, 10 specialist agents, rules, hooks, audit, calibration, and reviewed instruction distillation.",
+            "url": "https://borda.github.io/AI-Rig/cc_foundry/"
           },
           {
             "@type": "SoftwareApplication",
             "name": "oss",
-            "description": "OSS maintainer workflows: parallel PR review, resolve feedback, SemVer releases.",
-            "url": "https://borda.github.io/AI-Rig/oss/"
+            "description": "Five OSS maintainer skills for analysis, PR review, feedback resolution, release-readiness assessment, and setup.",
+            "url": "https://borda.github.io/AI-Rig/cc_oss/"
           },
           {
             "@type": "SoftwareApplication",
             "name": "develop",
-            "description": "Validate-first development: feature, fix, refactor, debug with mandatory test gates.",
-            "url": "https://borda.github.io/AI-Rig/develop/"
+            "description": "Seven validate-first Python skills for planning, features, fixes, refactors, debugging, review, and setup.",
+            "url": "https://borda.github.io/AI-Rig/cc_develop/"
           },
           {
             "@type": "SoftwareApplication",
             "name": "research",
-            "description": "Structured ML experiments: SOTA search, design review, automated improvement loop.",
-            "url": "https://borda.github.io/AI-Rig/research/"
+            "description": "Ten reviewable ML research skills for literature, planning, methodology review, bounded execution, verification, ablation, retrospectives, Kaggle, and setup.",
+            "url": "https://borda.github.io/AI-Rig/cc_research/"
           },
           {
             "@type": "SoftwareApplication",
-            "name": "codemap",
-            "description": "Python structural indexer: import graph, blast-radius metrics, function call graph.",
-            "url": "https://borda.github.io/AI-Rig/codemap/"
+            "name": "codemap-py",
+            "description": "Six dual-runtime skills for static Python indexing, structural queries, test impact, reference renames, integration, and telemetry debriefs.",
+            "url": "https://borda.github.io/AI-Rig/codemap-py/"
           },
           {
             "@type": "SoftwareApplication",
             "name": "Codex Rig",
-            "description": "OpenAI Codex workflows, specialist role cards, portable routing, quality gates, and calibration.",
+            "description": "Thirteen evidence-first Codex workflows, one legacy-shim lifecycle manager, fifteen role cards, shared gates, and reviewable artifacts.",
             "url": "https://borda.github.io/AI-Rig/codex-rig/"
           }
         ]

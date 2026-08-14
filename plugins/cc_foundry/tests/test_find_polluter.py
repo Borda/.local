@@ -9,10 +9,8 @@ Covers:
   unsafe node IDs dropped with a warning (SEC-F-1 runtime path)
 * ``binary_search`` convergence, single-candidate shortcut, empty-list rejection
 * ``main()`` end-to-end: polluter found, no-args usage, isolation failure,
-  no candidates, pytest missing, unsafe failing-test-id rejected
-
-The companion ``test_find-polluter.py`` keeps CLI/security edge cases that are
-specific to pytest's hyphenated filename collection path.
+  no candidates, pytest missing, unsafe failing-test-id rejected, path-traversal
+  test-dir rejected, verify-command guidance in the happy-path report
 """
 
 from __future__ import annotations
@@ -245,6 +243,16 @@ class TestCollectCandidates:
         err = capsys.readouterr().err
         assert "unsafe" in err.lower()
 
+    def test_empty_collection_output_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """All-blank pytest --collect-only output returns empty candidate list."""
+
+        def fake_run(_argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            return _FakeResult(stdout="\n\n\n")
+
+        _patch_run(monkeypatch, fake_run)
+        result = find_polluter.collect_candidates("tests", "tests/x.py::y", ["pytest"])
+        assert result == []
+
 
 # ---------------------------------------------------------------------------
 # binary_search
@@ -340,6 +348,13 @@ class TestMain:
         err = capsys.readouterr().err
         assert "rejected" in err.lower() or "metacharacter" in err.lower()
 
+    def test_path_traversal_test_dir_rejected_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """test_dir escaping project root is rejected with security message and exit 1."""
+        rc = find_polluter.main(["tests/test_x.py::test_ok", "../../etc"])
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "SECURITY" in err or "project root" in err.lower()
+
     def test_pytest_missing_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
         """pytest not resolvable → exit 1 with 'pytest not found' message."""
         monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: None)
@@ -402,6 +417,29 @@ class TestMain:
         out = capsys.readouterr().out
         assert "Polluter found" in out
         assert polluter in out
+
+    def test_report_includes_verify_command(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Happy path stdout includes 'Verify with:' guidance block."""
+        failing = "tests/test_z.py::fail"
+        polluter = "tests/test_a.py::one"
+        monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
+
+        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            if "--tb=short" in argv:
+                return _FakeResult(stdout="1 passed in 0.01s\n")
+            if "--collect-only" in argv:
+                return _FakeResult(stdout=f"{polluter}\n{failing}\n")
+            if polluter in _batch_from_argsfile(argv):
+                return _FakeResult(stdout="FAILED\n", returncode=1)
+            return _FakeResult(stdout="ok\n")
+
+        _patch_run(monkeypatch, fake_run)
+        find_polluter.main([failing, "tests"])
+        out = capsys.readouterr().out
+        assert "Verify with:" in out
+        assert "Next steps:" in out
 
     def test_default_test_dir_is_tests(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

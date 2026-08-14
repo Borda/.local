@@ -140,8 +140,8 @@ def _json_output(result: subprocess.CompletedProcess[str], label: str) -> dict[s
     return payload
 
 
-def _marketplace_root(run: RunCommand) -> Path | None:
-    """Return the one configured marketplace root, if present."""
+def _marketplace_state(run: RunCommand) -> tuple[Path | None, str | None]:
+    """Return the configured marketplace root and source type, if present."""
     result = _run(run, ["codex", "plugin", "marketplace", "list", "--json"])
     payload = _json_output(result, "marketplace list")
     entries = payload.get("marketplaces")
@@ -151,7 +151,7 @@ def _marketplace_root(run: RunCommand) -> Path | None:
     if len(matches) > 1:
         raise SyncError(f"multiple configured marketplaces named {MARKETPLACE}")
     if not matches:
-        return None
+        return None, None
     raw_root = matches[0].get("root")
     if not isinstance(raw_root, str) or not raw_root or "\x00" in raw_root:
         raise SyncError("configured marketplace root is invalid")
@@ -161,7 +161,9 @@ def _marketplace_root(run: RunCommand) -> Path | None:
         raise SyncError(f"configured marketplace root is unavailable: {error}") from error
     if not root.is_dir():
         raise SyncError("configured marketplace root is not a directory")
-    return root
+    source = matches[0].get("marketplaceSource")
+    source_type = source.get("sourceType") if isinstance(source, Mapping) else None
+    return root, source_type if isinstance(source_type, str) else None
 
 
 def _configured_ref(root: Path) -> str | None:
@@ -241,7 +243,7 @@ def sync_codex(
         return _clear(run, environ, stdout)
 
     requested_ref = args.codex_ref or ""
-    root = _marketplace_root(run)
+    root, source_type = _marketplace_state(run)
     if root is not None:
         configured_ref = _configured_ref(root)
         if configured_ref is None and requested_ref:
@@ -250,8 +252,11 @@ def sync_codex(
             raise SyncError(
                 f"marketplace tracks {configured_ref or 'default branch'}, requested {requested_ref or 'default branch'}"
             )
-        _run(run, ["codex", "plugin", "marketplace", "upgrade", MARKETPLACE])
-        print("  [ok] marketplace refreshed", file=stdout)
+        if source_type == "git":
+            _run(run, ["codex", "plugin", "marketplace", "upgrade", MARKETPLACE])
+            print("  [ok] marketplace refreshed", file=stdout)
+        else:
+            print(f"  [skip] marketplace refresh: configured {source_type or 'non-Git'} source", file=stdout)
     else:
         command = ["codex", "plugin", "marketplace", "add", MARKETPLACE_SOURCE]
         if requested_ref:
@@ -259,7 +264,7 @@ def sync_codex(
         _run(run, command)
         print("  [ok] marketplace registered", file=stdout)
 
-    root = _marketplace_root(run)
+    root, _source_type = _marketplace_state(run)
     if root is None:
         raise SyncError("marketplace root is unavailable after refresh")
     revision = _run(run, ["git", "-C", str(root), "rev-parse", "HEAD"], required=False)

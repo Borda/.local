@@ -2,11 +2,30 @@
 
 Codex Rig is the OpenAI Codex product in [Borda's AI-Rig](https://github.com/Borda/AI-Rig). It packages 13 reusable workflow skills, one lifecycle-manager skill, 15 canonical specialist role cards, shared quality gates, calibration, and an optional health hook as one Apache-2.0-licensed plugin.
 
-The plugin is complete for the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
+Calibration measures instruction quality against synthetic cases. It is not evidence that any individual run is correct.
 
-> Current release: `0.7.5`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+The package covers the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected when that route is available; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-## What Codex Rig adds
+> Current release: `0.7.6`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+
+<details open>
+<summary><strong>Navigation</strong></summary>
+
+- [What Codex Rig adds](#-what-codex-rig-adds)
+- [Requirements and installation](#-requirements)
+- [Quick start](#-quick-start)
+- [Skills and specialist roles](#-skills)
+- [Quality, review, and calibration](#-quality-gates-and-artifacts)
+- [Update, uninstall, and safety limits](#-update-or-reinstall)
+- [Package layout and verification](#-package-layout)
+
+</details>
+
+> Value at a glance: install one independently verifiable plugin to get evidence-backed workflows, bounded specialist role cards, portable fallbacks, and auditable artifacts without pretending Codex has native persistent-agent selection.
+
+> Current limits at a glance: named-agent shim installation remains platform-blocked; networked workflows require runtime approval; Codex CLI, Python 3.10+, and optional `gh`/Kaggle authentication are needed for their respective paths; shim mutation is unsupported on Windows and network/distributed filesystems.
+
+## 🎯 What Codex Rig adds
 
 - **A complete development loop:** investigate, analyse, implement, review, remediate, optimize, release, and audit with measurable gates.
 - **Specialist depth without a permanent agent install:** exact packaged role cards can guide independent blank agents or inline passes.
@@ -19,13 +38,13 @@ The plugin is complete for the capabilities Codex can currently install and veri
 - **Safe legacy cleanup:** authenticated, exact-plan removal exists for thin shims created during pre-release development.
 - **Optional codemap-py structural context:** the `develop`, `investigate`, and `optimize` workflows select a task-neutral route and probe the public codemap-py CLI once per run for only the required structural fact, or record a zero-query decision for a localized edit; they persist one artifact and fall back to bounded file inspection when Codemap is absent.
 
-## Requirements
+## ✅ Requirements
 
 - Codex CLI with plugin support
 - Python 3.10+
 - GitHub CLI (`gh`) installed and authenticated for complete PR review, checkout, and private evidence; public metadata fallback remains limited
 - Kaggle CLI installed and authenticated for grounded Kaggle workflows; when it is missing, Codex Rig only explains the user-owned setup and never installs it
-- Public GitHub access for install or marketplace refresh
+- Public GitHub access for a Git marketplace install or refresh
 - Windows, macOS, or Linux for workflows, package verification, sync, and read-only diagnostics
 - A POSIX local filesystem only for authenticated legacy agent-shim cleanup
 
@@ -33,12 +52,12 @@ No official marketplace is assumed. Local, unpushed changes are not installable 
 
 Codex Rig never enables persistent workspace network access. In a network-sandboxed runtime, invoking a networked workflow authorizes the plugin to request a narrow runtime approval for the complete owning command; the user/runtime still grants or denies the prompt. Approving only `gh`, `kaggle`, or another nested executable is insufficient when a Python helper owns its subprocesses and HTTPS traffic.
 
-## Install from GitHub
+## 📦 Install from GitHub
 
 ```bash
 codex plugin marketplace add Borda/AI-Rig
 # Optional reproducible release pin:
-# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.3.0
+# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.4.0
 codex plugin add codex-rig@borda-ai-rig
 ```
 
@@ -55,7 +74,10 @@ $codex-rig:audit
 
 `doctor` verifies the active package, manifest, helpers, role cards, and legacy shim state without writing. The audit workflow checks the consuming repository and reports concrete gaps.
 
-## Managed global instructions
+## 🌍 Managed global instructions
+
+<details open>
+<summary><strong>Global-instruction behavior and sync commands</strong></summary>
 
 `assets/AGENTS.md` is a versioned template, not an automatically installed plugin capability. It requires the simplest solution for verified current behavior, prefers maintained standard-library/native/already-installed package functionality over duplicating custom code, rejects machinery justified only by hypothetical future states, risks, scale, reuse, or edge cases, and preserves trust-boundary, data-loss, security, accessibility, and explicit-contract safeguards. Abstractions must reduce reader-visible concepts, Python imports stay at module scope unless a verified boundary requires locality, and fixtures provide concrete state unless fixture-managed lifecycle requires a callable; use ordinary helpers for configurable construction instead of nested fixture factories or aliases that add no meaning. A deliberately bounded simplification records its present ceiling and observable revisit trigger without creating a separate debt system. Direct marketplace/plugin installation leaves `${CODEX_HOME:-$HOME/.codex}/AGENTS.md` unchanged and does not project repository `.codex/` settings. The direct `plugins/codex-rig/scripts/sync_codex.py` command installs or updates the managed Codex plugins and authenticated Codex Rig block only; it does not project repository model defaults or personal policy. Root `bash sync.sh` with Codex scope additionally projects the root `model` and `review_model` from `.codex/config.toml` and the authenticated personal-policy block from `.codex/global-session-policy.md`. The current repository policy keeps the parent session on Terra and permits Sol only for an explicitly requested advisory pass or explicitly selected Sol agent.
 
@@ -73,11 +95,11 @@ Native Codex-only restore and teardown need no Bash or `jq`:
 
 ```text
 python plugins/codex-rig/scripts/sync_codex.py
-python plugins/codex-rig/scripts/sync_codex.py --codex-ref codex-rig-v0.3.0
+python plugins/codex-rig/scripts/sync_codex.py --codex-ref codex-rig-v0.4.0
 python plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
-`bash sync.sh claude` changes only Claude scope. `--codex-ref REF` selects a Codex source revision; it does not change product scope.
+`bash sync.sh claude` changes only Claude scope. `--codex-ref REF` selects a Codex source revision; it does not change product scope. A configured local marketplace is retained and its snapshot is used directly; only configured Git marketplaces are refreshed.
 
 The direct `sync_codex.py clear` action removes the managed Codex plugins and strips only the authenticated Codex Rig block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`; it leaves repository-projected model defaults and personal policy untouched. Root `bash sync.sh clear` reverses the selected Claude/Codex installation: it also uninstalls this marketplace's Claude plugins when Claude scope is active, strips the Codex Rig block, and leaves repository model defaults and personal-policy state in place. Both commands keep a timestamped backup and preserve user-owned content byte-for-byte, honor `claude`/`codex` scoping where applicable, and leave marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
@@ -87,7 +109,9 @@ Marketplace/plugin refresh can finish before a later global-instruction merge fa
 
 Project `AGENTS.md` files remain project-owned and are never changed. Review merged instructions for semantic conflicts; byte preservation cannot resolve contradictory policies.
 
-## Quick start
+</details>
+
+## ⚡ Quick start
 
 Skills can be invoked explicitly with `$codex-rig:<skill>` or selected implicitly when the request matches their description.
 
@@ -96,7 +120,7 @@ $codex-rig:investigate find the root cause of this Windows-only CI failure
 $codex-rig:develop implement the verified fix and run relevant gates
 $codex-rig:code-review review the current diff with no prior assumptions
 $codex-rig:code-remediate close the high-severity findings
-$codex-rig:release assess release readiness for 0.7.5
+$codex-rig:release assess release readiness for the current package
 ```
 
 For PR work:
@@ -120,11 +144,11 @@ codex '$codex-rig:code-remediate #123 +review'
 codex '$codex-rig:code-remediate review'
 ```
 
-## Skills
+## 🔧 Skills
 
 > Skill frontmatter uses compact routing descriptions to conserve the Codex skills catalog; each `SKILL.md` body remains the complete workflow contract.
 
-Codex Rig installs 14 skills: 13 work workflows plus the legacy shim manager.
+Codex Rig installs 14 skills: 13 workflows plus the legacy shim manager.
 
 | Skill            | Purpose                                                                                                             |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -145,13 +169,18 @@ Codex Rig installs 14 skills: 13 work workflows plus the legacy shim manager.
 
 Every workflow defines an input contract, fail-fast rules, required gates, artifact shape, and confidence output. The workflow instructions live in `skills/<name>/SKILL.md`; shared executable contracts live in `shared/`.
 
-## Optional codemap-py structural context
+## 🔗 Optional codemap-py structural context
+
+<details>
+<summary><strong>Bounded Codemap integration and fallback vocabulary</strong></summary>
 
 `develop`, `investigate`, and `optimize` select a route and probe the [codemap-py](https://github.com/Borda/AI-Rig/tree/main/plugins/codemap-py) plugin once at a bounded decision point via `shared/codemap_adapter.py`, then persist the result to the run artifact — specialists consume that artifact, never a fresh query. An exact localized edit with no unresolved structural fact uses `skip`; one unresolved fact uses the matching single route; broad or unknown scope uses the legacy `standard` batch; an explicit structural request overrides `skip`. The other workflows retain their existing category-specific standard behavior or recorded not-applicable status. The adapter reads only the public `codemap-py doctor --json`/`query` CLI surface, never codemap-py's cache internals, source paths, or a cross-plugin Python import.
 
 The adapter reports one named status: `available`, `absent`, `stale`, `incompatible`, `degraded`, `stale+degraded`, or `skipped`. `skipped` means the workflow deliberately selected zero Codemap subprocesses; it is not structural evidence. `stale+degraded` is the vocabulary's only composed value and means both caveats hold at once, so neither masks the other. A standard batch run without `--target` omits the queries that require one instead of failing them, so a targetless probe reports the honest status of the queries it actually ran. Each query also records the index file that answered it, and any disagreement with the path the health probe resolved is listed under `index_path_divergence` as evidence — both paths retained, never reconciled, and never folded into the status. Absence and incompatibility are non-fatal — the workflow falls back to its normal bounded file inspection. `manage`, `sync`, `agent-shims`, `calibrate`, and `kaggle` stay not-applicable with a recorded behavioral reason (no Python call-graph subject); see `shared/codemap-contract.md` for the full protocol, adaptive route vocabulary, category-to-query map, per-skill route selection, and not-applicable rationale. Repository sync installs Codemap alongside Codex Rig, but Codex Rig retains zero runtime dependency on it: packaging, skill discovery, and startup still work when Codemap is absent or incompatible.
 
-## Specialist role cards
+</details>
+
+## 🤖 Specialist role cards
 
 Roles are canonical behavioral profiles, not claims that Codex selected a custom agent configuration. Each card includes trigger/skip boundaries, evidence ownership, execution constraints, handover fields, and confidence rules.
 
@@ -175,7 +204,10 @@ Roles are canonical behavioral profiles, not claims that Codex selected a custom
 
 The model names are requested role settings. Blank-agent injection does not prove the actual model, reasoning effort, sandbox, approval policy, or nesting profile. Workflows must record requested and observed controls and stop when an unproved setting is mandatory for safety.
 
-## How portable role routing works
+## 🔗 How portable role routing works
+
+<details>
+<summary><strong>Role-card injection, fallback, and provenance details</strong></summary>
 
 The canonical policy is `shared/specialist-orchestration.md`.
 
@@ -190,7 +222,12 @@ Passing only a role name or path is not role injection. A task name records prov
 
 For every routed pass, Codex Rig records the role ID, card hash, attempted and selected routes, fallback reason, observable model/effort, requested and observed controls, independence, nesting depth, and material fidelity limits.
 
-## Orchestration and cost control
+</details>
+
+## 💰 Orchestration and cost control
+
+<details>
+<summary><strong>Tier ownership and escalation guardrails</strong></summary>
 
 Use delegation only when two or more disjoint workstreams can proceed without duplicating the same context. Typical high-value splits are implementation versus tests, architecture versus migration docs, or CI diagnosis versus static analysis.
 
@@ -204,15 +241,22 @@ Two consecutive work cycles without material progress, or three evidence-backed 
 
 The delegation lead returns one handover. Executable acceptance, runtime/API changes, release-blocking decisions, and security/architecture conclusions remain parent- or appropriate Terra/Sol-owned. Narrow work stays in the parent when handoff cost would exceed its value.
 
-## Quality gates and artifacts
+</details>
 
-Workflow artifacts use this shape:
+## 📊 Quality gates and artifacts
+
+<details>
+<summary><strong>Artifact shape and confidence thresholds</strong></summary>
+
+Workflow artifacts commonly use this shape; exact files vary by workflow:
 
 ```text
 .reports/codex/<skill>/<timestamp>/
 ├── result.json
 ├── gates.json
-├── gates.log
+├── gates.txt
+├── failed.txt
+├── gates.checks.jsonl
 └── skill-specific evidence
 ```
 
@@ -225,7 +269,12 @@ Confidence is evidence-backed:
 - `0.85 <= confidence < 0.90`: cautious-low; objective recovery evidence and remaining limits must be explicit.
 - `>= 0.90`: fair, not automatic; material residual limits still belong in the result.
 
-## PR review-to-remediation
+</details>
+
+## 🗺️ PR review-to-remediation
+
+<details>
+<summary><strong>Evidence collection, review closure, and remediation boundaries</strong></summary>
 
 `$codex-rig:code-review #123` collects contributor intent from the PR title/body, comments/reviews, target-branch evidence, an exact local PR head, and a locally derived diff before producing a structured review artifact. After successful collection it may emit an evidence-backed terminal `close` decision before detailed review for one of `FALSE_GOAL`, `BREAKING_CONDUCT`, `WRONG_SCOPE`, `WRONG_PROVENANCE`, `DUPLICATE`, `UNADDRESSED_REVERT`, `SPAM`, or `ARCHITECTURE_VIOLATION`; ambiguous evidence always continues to detailed review, and the decision never closes, comments on, merges, or otherwise mutates GitHub. It performs mandatory QA/challenge passes for broad or high-risk diffs and conditionally triggers architecture, security, CI, docs, data, performance, research, or web evidence when detailed review proceeds. `shared/github_read.py` is the sole GitHub data transport: it prefers authenticated `gh` but never reads credentials; permits only audited built-in view groups (`gist`, `issue`, `pr`, `project`, `release`, `repo`, `ruleset`, `run`, `workflow`), REST GET, and GraphQL query operations; and retains no CLI failure output. In a network-sandboxed runtime, the complete collector command—not a standalone `gh` preflight—must receive external-network approval because its nested CLI, HTTPS fallback, checkout, and Git fetches inherit the collector's execution context; one approved retry is required before a sandbox-shaped `github-network` failure becomes terminal. `collect_pr.py` separates core source evidence from supplemental online evidence: PR identity/body, base-repository identity, target ancestry, exact PR-head checkout, and local diff are mandatory; GraphQL review-thread resolution status and derived statistics may degrade with explicit artifacts and confidence gaps. Open fork PRs use `gh pr checkout <number>` unless the current HEAD already exactly matches PR metadata, then `git diff <base>...<head>` supplies the authoritative patch. Target advancement is integration context, not a PR finding or merge blocker; genuine divergence remains a collection failure. Historical merged/closed PR evidence uses GitHub's pull ref, exact SHA verification, and detached local checkout, but merge decisions and code-remediate remain OPEN-only. Every assessed non-approval PR result includes the findings/action table only for actual findings or review gates. If core collection fails before source review, report `PR Review Availability: unavailable`, source findings `not assessed`, merge decision `not made`, and plain process diagnostic/recovery/evidence prose; never use a Markdown table, list the operational failure as a PR issue, or emit `needs-more-work`. Current-attempt evidence is retained for diagnosis but remains explicitly unassessed. Authentication recovery remains a user-owned, out-of-band `gh` operation. Public PR metadata fallback is limited to `github-network`, `github-auth`, `github-rate-limit`, or `command-timeout` failures and requires a canonical URL matching a configured GitHub remote, or a numeric target bound to one distinct configured GitHub repository identity. Ambiguous or unsafe targets, permission, not-found, and unclassified failures fail closed. GitHub GraphQL object-resolution failures remain not-found errors instead of activating the network fallback. The HTTPS client uses Python's default CA store and recovers an available system CA bundle only when that store is empty. The fallback normalizes limited metadata, verifies a `refs/pull/<number>/head` detached checkout, derives the local diff, and records unavailable evidence in `online-review-summary.json`; it cannot establish private PR evidence. Review and remediation list the sorted IDs `github_provided_file_list`, `mergeability`, `review_decision`, `reviews`, and `top_level_comments` in their online triage/action evidence, add the exact gap `Public HTTPS PR metadata fallback omitted evidence: <sorted IDs>.`, and cap final confidence at `0.89`. Raw CLI stderr is never persisted; terminal diagnostics may include a safe `failure_reason` enum.
 
@@ -235,7 +284,12 @@ Detailed review routing uses the shipped `skills/code-review/review_routing.py` 
 
 Historical `.reports/codex/review/` and `.reports/codex/resolve/` artifacts remain readable fallback inputs. `code-review` and `code-remediate` are the canonical names.
 
-## Calibration
+</details>
+
+## 🎚️ Calibration
+
+<details>
+<summary><strong>Offline and live calibration boundaries</strong></summary>
 
 The packaged runner supports the plugin layout directly:
 
@@ -247,17 +301,24 @@ It validates packaged skills, role cards, shared contracts, behavior fixtures, a
 
 Paid live A/B calibration is separate, explicit, and never implied by the offline result.
 
-## Commit handoffs
+</details>
+
+## 🧾 Commit handoffs
 
 Codex-created commit handoffs identify every commit by hash and title, summarize behavior and affected surfaces, list exact verification evidence, disclose residual limits, and explain boundaries between multiple commits. The Git message remains concise; the user-facing handoff carries the fuller impact and evidence record.
 
-## Optional SessionStart diagnostic
+## 🩺 Optional SessionStart diagnostic
+
+<details>
+<summary><strong>Read-only hook behavior</strong></summary>
 
 `hooks/hooks.json` defines a read-only diagnostic for `startup` and `resume`. Codex discovers this default plugin hook path after install. The hook runs the same shim doctor used by the manager; it does not install, update, or remove shims.
 
 Review the hook command before trusting it. Declining hook trust leaves the diagnostic inactive and does not disable skills.
 
-## Update or reinstall
+</details>
+
+## ⬆️ Update or reinstall
 
 Use the bundled `$codex-rig:sync` workflow for a dry-run state report and an approval-gated refresh, or run the supported CLI commands directly:
 
@@ -272,9 +333,17 @@ Repository sync never restores the legacy `.codex/` tree. When Codex scope is ac
 
 ### Legacy project-to-home copies
 
+<details>
+<summary><strong>Legacy copy cleanup warning</strong></summary>
+
 Older `sync.sh` versions copied AI-Rig files into `~/.codex/`. The copied files had no durable per-file ownership marker, so Codex Rig does not delete them automatically. Before manual cleanup, back up the home, distinguish AI-Rig copies from user-owned modifications, and remove only files whose ownership you can establish. An old home copy can otherwise expose duplicate unnamespaced skills or stale named-agent registrations beside the plugin.
 
-## Experimental agent shims
+</details>
+
+## 🧪 Experimental agent shims
+
+<details>
+<summary><strong>Shim diagnostics and authenticated cleanup</strong></summary>
 
 The manager diagnoses prior development installations and safely removes authenticated standalone TOML files. New installation is platform-blocked because current collaboration tooling does not expose a verifiable custom-agent selector. Do not infer selection from a matching task name, child path, or file name.
 
@@ -298,7 +367,12 @@ Prior lifecycle files use authenticated names such as `codex-rig-linting-expert.
 
 Interrupted recognized transactions use a separate recovery digest. Approved recovery rolls back partial mutation or finalizes durable committed state. Repeat the original action after recovery. Use `remove` to recover prior interrupted transactions; blocked `install` never enters recovery or mutation planning.
 
-## Uninstall
+</details>
+
+## ⬆️ Uninstall
+
+<details>
+<summary><strong>Plugin removal and recovery procedure</strong></summary>
 
 Remove authenticated legacy shims while the plugin manager still exists:
 
@@ -311,7 +385,12 @@ Removing plugin first deliberately leaves thin shim files behind. Those shims br
 
 Recovery: reinstall `codex-rig@borda-ai-rig`, start a fresh session, run `doctor`, then run approved `remove`. Compatible historical state can authenticate guarded cleanup. Verification failure remains blocked; no force cleanup is provided.
 
-## Lifecycle safety limits
+</details>
+
+## 🧭 Lifecycle safety limits
+
+<details open>
+<summary><strong>Fail-closed mutation limits</strong></summary>
 
 - Foreign or marker-only `codex-rig-*.toml` files are never adopted, overwritten, or removed.
 - Modified managed shims, concurrent drift, unsafe links/nodes, ambiguous package selection, or changed runtime binaries block mutation.
@@ -325,7 +404,12 @@ Recovery: reinstall `codex-rig@borda-ai-rig`, start a fresh session, run `doctor
 - A successful shim transaction proves file ownership and link integrity, not runtime profile selection.
 - Native Windows and network/distributed filesystems are unsupported for shim mutation. Windows workflows, package verification, sync, hooks, and read-only shim inventory remain supported.
 
-## What changed from the idealized design
+</details>
+
+## 🎯 What changed from the idealized design
+
+<details>
+<summary><strong>Architecture evidence and remaining platform dependency</strong></summary>
 
 The initial design assumed a plugin could bundle named agents with model, sandbox, approval, and nesting controls. Implementation evidence changed that architecture:
 
@@ -338,13 +422,18 @@ The initial design assumed a plugin could bundle named agents with model, sandbo
 
 This design delivers the maintainable part of the original goal today and records the remaining platform dependency honestly. If Codex later exposes custom-agent selection, named shims can be reconsidered behind fresh runtime probes without changing skill or role-card semantics.
 
-## Package layout
+</details>
+
+## 🏗️ Package layout
+
+<details open>
+<summary><strong>Installed package topology</strong></summary>
 
 ```text
 codex-rig/
 ├── .codex-plugin/plugin.json
 ├── assets/AGENTS.md        # inert global-instructions template
-├── skills/                 # 14 installable skills
+├── skills/                 # 13 workflows + agent-shims lifecycle manager
 ├── roles/                  # 15 canonical role cards
 ├── shared/                 # gates, helpers, orchestration, artifact contracts
 ├── runtime/calibration/    # fixed, behavioral, and live calibration assets
@@ -356,7 +445,12 @@ codex-rig/
 
 The installed cache is immutable input. Workflows never edit their own plugin root or manually patch Codex plugin configuration.
 
-## Development and verification
+</details>
+
+## 🧪 Development and verification
+
+<details open>
+<summary><strong>Maintainer verification commands and acceptance gate</strong></summary>
 
 From the repository root:
 
@@ -372,6 +466,8 @@ On Windows, use `python` in place of `python3`; `build_package.py --check`, pack
 
 The package is accepted only when the generated manifest is current, every recorded file hash matches, plugin-only copied-tree tests pass, lifecycle safety tests pass, Windows collection and path behavior pass, the offline calibration harness passes, and public documentation builds without warnings.
 
-## License
+</details>
+
+## 📄 License
 
 Codex Rig is licensed under Apache-2.0. See `LICENSE` and `NOTICE`.

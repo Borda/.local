@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 _CODEMAP_CLI = Path(__file__).resolve().parents[2] / "bin" / "codemap-py"
+_PYTHON_311 = shutil.which("python3.11")
 
 
 def _git(root: Path, *args: str) -> None:
@@ -40,10 +41,8 @@ def _scan(scan_index: Path, root: Path) -> Path:
 
 def _supported_codemap_env() -> dict[str, str]:
     """Return an environment that makes the public launcher use CPython 3.11."""
-    interpreter = shutil.which("python3.11")
-    if interpreter is None:
-        pytest.skip("codemap-py public-launcher test needs CPython 3.11 on PATH")
-    return {**os.environ, "CODEMAP_PYTHON": interpreter}
+    assert _PYTHON_311 is not None
+    return {**os.environ, "CODEMAP_PYTHON": _PYTHON_311}
 
 
 @pytest.fixture
@@ -204,6 +203,7 @@ def test_reverse_queries_return_all_names_without_a_limit(
     assert fn_payload["count"] == len(expected_callers)
 
 
+@pytest.mark.skipif(_PYTHON_311 is None, reason="codemap-py public-launcher test needs CPython 3.11 on PATH")
 def test_compact_reverse_queries_only_reduce_metadata_not_result_arrays(
     wide_reverse_graph: tuple[Path, Path, set[str], set[str]],
 ) -> None:
@@ -266,6 +266,7 @@ def test_compact_reverse_queries_only_reduce_metadata_not_result_arrays(
     assert set(default_rdeps_payload["imported_by"]) == expected_modules
 
 
+@pytest.mark.skipif(_PYTHON_311 is None, reason="codemap-py public-launcher test needs CPython 3.11 on PATH")
 def test_compact_stale_query_keeps_the_incompleteness_reason(stale_git_project: tuple[Path, Path]) -> None:
     """Compact metadata must retain the stale veto rather than imply a complete result.
 

@@ -8,35 +8,16 @@ import json
 import os
 import stat
 import sys
-import tempfile
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
+from _platform import SYMLINKS_AVAILABLE
+
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 IDENTITY_PATH = PLUGIN_ROOT / "scripts" / "_package_identity.py"
-
-
-def _symlinks_available() -> bool:
-    """True when this host can create a file symlink.
-
-    Windows can, given Developer Mode or an elevated session, and the hosted CI runner does —
-    so the question is a per-host capability, not a platform. Asking it by attempting the
-    operation keeps the answer honest on both sides instead of writing Windows off wholesale.
-    """
-    with tempfile.TemporaryDirectory() as scratch:
-        target = Path(scratch) / "target"
-        target.write_text("probe", encoding="utf-8")
-        try:
-            (Path(scratch) / "link").symlink_to(target)
-        except (OSError, NotImplementedError):
-            return False
-    return True
-
-
-SYMLINKS_AVAILABLE = _symlinks_available()
 
 
 def load_identity() -> ModuleType:

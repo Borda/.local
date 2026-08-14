@@ -31,6 +31,7 @@ import pytest
 from codemap_py import integration
 
 _PATH_CLASSES = {"normal": "repo", "spaces_nonascii": "a repo café"}
+_SOURCE_CHECKOUT = (Path(__file__).resolve().parents[4] / integration.PROVIDER_DIR).is_dir()
 
 
 # --------------------------------------------------------------------------------------
@@ -114,6 +115,7 @@ def test_check_cli_json_exits_zero(repo: Path, capsys: pytest.CaptureFixture[str
     assert payload["protocol"] == integration.PROTOCOL_VERSION
 
 
+@pytest.mark.skipif(not _SOURCE_CHECKOUT, reason="not running from a source checkout")
 def test_every_managed_file_target_exists_in_this_source_tree() -> None:
     """Every ``CONSUMER_MANAGED_FILE`` target is a real file in this checkout (E-H4).
 
@@ -125,8 +127,6 @@ def test_every_managed_file_target_exists_in_this_source_tree() -> None:
     one deliberately asserts against the real source checkout.
     """
     repo_root = Path(__file__).resolve().parents[4]
-    if not (repo_root / integration.PROVIDER_DIR).is_dir():
-        pytest.skip("not running from a source checkout")
     missing = [
         f"{target.plugin_dir}/{integration.CONSUMER_MANAGED_FILE[target.consumer]}"
         for target in integration.ALL_TARGETS

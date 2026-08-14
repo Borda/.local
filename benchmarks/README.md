@@ -858,7 +858,7 @@ Omitting `--tasks` runs all 73 locked tasks (219 A/B/C cells); use an explicit f
 
 Rows below use the canonical arm name with the retired one in parentheses: `C_strict` was called `C_required` when this run was frozen, and `benchmarks/results/code-2026-08-04.json` still records the old string — search that artifact for `C_required`, not `C_strict`. The [agentic measurement caveats](#agentic-measurement-caveats) apply to this table: the arms ran in fixed A→B→C order against a warm provider cache, and the `erec`/`rrec`/`aqs` columns carry the substring-credit and unweighted-mean inflation described there.
 
-<!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#claude-agentic-2026-08-04; update both files or record an explicit divergence note. -->
+<!-- result-sync: ../plugins/codemap-py/README.md#claude-agentic-2026-08-04 is an anchor stub only — the plugin README intentionally no longer duplicates run-specific tables (§Benchmark Isolation). This table is canonical; do not re-add values there. -->
 
 | Model  | Arm                       |   n |     in tok |  out tok |    cost $ | elapsed s |     erec |     rrec |      aqs |  correct |
 | ------ | ------------------------- | --: | ---------: | -------: | --------: | --------: | -------: | -------: | -------: | -------: |
@@ -1088,7 +1088,7 @@ Full summary + per-task reading: [`results/bench-summary-2026-07-29.md`](results
 
 **Two value axes — read separately, never blended.** (1) **Reliability/quality**: safety-grade + structural recall — codemap **13/13 safety-grade every tier** vs plain 8/13 → 12/13 → 13/13; the primary proposition, holds up-tier. (2) **Economy (cost/tokens/time)**: read at *matched caller fan-in* — the win grows with fan-in (cost 0.35× haiku / 0.54× opus on high-fan-in tasks); raw median token ratio is a *secondary, caveated* number that → 1 as models get terser. Accuracy Δ is a saturation-sensitive tie-breaker, not a headline.
 
-<!-- result-sync: this is the canonical July 29 table; ../plugins/codemap-py/README.md#three-model-comparison contains the distinct June 22 legacy run, so do not synchronize their values. -->
+<!-- result-sync: this is the canonical July 29 table. ../plugins/codemap-py/README.md#three-model-comparison is now an anchor stub only — the June 22 legacy run it used to hold was removed from the plugin README (§Benchmark Isolation). The June 22 table below remains the canonical copy; the two runs are still distinct and must not be blended. -->
 
 | Tier      | Plain accuracy    | Codemap accuracy  | Δ accuracy | Safety-grade plain | Safety-grade codemap | Token× med / mean | Cost× med / mean |
 | --------- | ----------------- | ----------------- | ---------- | ------------------ | -------------------- | ----------------- | ---------------- |
@@ -1113,7 +1113,7 @@ Per-workflow codemap accuracy: query (n=28) 92.0 / 95.8 / 84.0%; debug (n=6) 100
 
 Results — June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master. **Models** `claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-opus-4-6` · **codemap version not recorded in these result lines** (predates the v0.13.2 agentic run; ~mid-June 2026) · **codemap-favoring steering harness** (not comparable with the July run above — see comparability note).
 
-<!-- result-sync: duplicated/summarized in ../plugins/codemap-py/README.md#three-model-comparison; update both files or record an explicit divergence note. All result tables in this historical block are canonical sources for downstream summaries. -->
+<!-- result-sync: ../plugins/codemap-py/README.md#three-model-comparison is an anchor stub only — the plugin README no longer duplicates run-specific tables (§Benchmark Isolation). All result tables in this historical block are the canonical sources for downstream summaries; do not re-add values to the plugin README. -->
 
 | Model      | Plain accuracy    | Codemap accuracy  | Accuracy lift | Safety-grade plain | Safety-grade codemap | Token ratio (median) | Token ratio range |
 | ---------- | ----------------- | ----------------- | ------------- | ------------------ | -------------------- | -------------------- | ----------------- |

@@ -804,6 +804,12 @@ def _real_cli_ready(path_with_bin: str) -> bool:
     return completed.returncode == 0
 
 
+REAL_CLI_READY = _real_cli_ready(f"{_CODEMAP_BIN_DIR}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
+@pytest.mark.skipif(
+    not REAL_CLI_READY, reason="real codemap-py CLI unavailable (installed-plugin isolation or no eligible CPython)"
+)
 def test_root_scoped_query_runs_against_real_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Unmocked regression: a root-scoped query drives the ACTUAL codemap-py grammar (--root must precede the subcommand).
 
@@ -814,9 +820,6 @@ def test_root_scoped_query_runs_against_real_cli(monkeypatch: pytest.MonkeyPatch
     """
     path_with_bin = f"{_CODEMAP_BIN_DIR}{os.pathsep}{os.environ.get('PATH', '')}"
     monkeypatch.setenv("PATH", path_with_bin)
-    if not _real_cli_ready(path_with_bin):
-        pytest.skip("real codemap-py CLI unavailable (installed-plugin isolation or no eligible CPython)")
-
     fixture = tmp_path / "proj"
     fixture.mkdir()
     (fixture / "leaf.py").write_text("def leaf():\n    return 1\n", encoding="utf-8")

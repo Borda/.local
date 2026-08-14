@@ -8,6 +8,7 @@ import errno
 import os
 import stat
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 
@@ -16,6 +17,15 @@ import pytest
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = PLUGIN_ROOT / "scripts" / "_agent_shim_posix.py"
+
+
+def _mode_is_retainable(mode: int) -> bool:
+    """Return whether the host filesystem preserves one requested permission mode."""
+    with tempfile.TemporaryDirectory() as temporary:
+        path = Path(temporary) / "mode-probe"
+        path.mkdir(mode=0o700)
+        path.chmod(mode)
+        return stat.S_IMODE(path.stat().st_mode) == mode
 
 
 def load_module() -> ModuleType:
@@ -139,7 +149,15 @@ def test_protected_target_primitives_preserve_mode(roots: tuple[int, int, Path, 
 
 @pytest.mark.parametrize(
     "mode",
-    [0o775, 0o4700, 0o2700, 0o1700],
+    [
+        pytest.param(
+            mode,
+            marks=pytest.mark.skipif(
+                not _mode_is_retainable(mode), reason=f"filesystem does not retain mode {mode:04o}"
+            ),
+        )
+        for mode in (0o775, 0o4700, 0o2700, 0o1700)
+    ],
     ids=["group-writable", "setuid", "setgid", "sticky"],
 )
 def test_protected_directory_rejects_group_writable_or_special_modes(tmp_path: Path, mode: int) -> None:
@@ -149,8 +167,7 @@ def test_protected_directory_rejects_group_writable_or_special_modes(tmp_path: P
     child.mkdir(mode=0o700)
     child.chmod(mode)
     observed_mode = stat.S_IMODE(child.stat().st_mode)
-    if observed_mode != mode:
-        pytest.skip(f"filesystem did not retain requested mode {mode:04o}; observed {observed_mode:04o}")
+    assert observed_mode == mode
     root_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         with pytest.raises(

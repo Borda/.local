@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
 from codemap_py import integration
 
 _PLUGIN_ROOT = Path(__file__).parent.parent.parent
@@ -36,6 +39,35 @@ _DEVELOP_CONTEXT = _PLUGINS_DIR / "cc_develop" / "skills" / "_shared" / "codemap
 _DEVELOP_FIX = _PLUGINS_DIR / "cc_develop" / "skills" / "fix" / "SKILL.md"
 _DEVELOP_GATES = _PLUGINS_DIR / "cc_develop" / "skills" / "_shared" / "codemap-gates.md"
 _OSS_GATES = _PLUGINS_DIR / "cc_oss" / "skills" / "_shared" / "codemap-gates.md"
+
+
+def _find_working_posix_bash() -> str | None:
+    """Return a Bash executable that executes POSIX script syntax."""
+    if sys.platform != "win32":
+        candidates = ["bash"]
+    else:
+        roots = [os.environ.get("ProgramFiles"), os.environ.get("ProgramW6432"), os.environ.get("ProgramFiles(x86)")]
+        candidates = [
+            *([os.environ["GIT_BASH"]] if os.environ.get("GIT_BASH") else []),
+            *(str(Path(root) / "Git" / sub / "bash.exe") for root in roots if root for sub in ("bin", "usr/bin")),
+            *(
+                [str(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Git" / "bin" / "bash.exe")]
+                if os.environ.get("LOCALAPPDATA")
+                else []
+            ),
+            *([shutil.which("bash")] if shutil.which("bash") else []),
+        ]
+    for candidate in candidates:
+        try:
+            probe = subprocess.run([candidate, "-c", "printf ok"], capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if probe.returncode == 0 and probe.stdout.strip() == "ok":
+            return candidate
+    return None
+
+
+_POSIX_BASH = _find_working_posix_bash()
 
 
 class TestContextContract:
@@ -109,6 +141,7 @@ class TestContextContract:
         assert "source)" not in batch
         assert "symbol --with-imports" in standard
 
+    @pytest.mark.skipif(_POSIX_BASH is None, reason="no working POSIX bash on this host")
     @pytest.mark.parametrize(
         ("query_kind", "expected_queries"),
         (
@@ -145,7 +178,6 @@ class TestContextContract:
         tmp_path: Path,
         query_kind: str,
         expected_queries: list[str],
-        posix_bash: str,
     ) -> None:
         """The executable guard must skip retrieval or issue only the mapped compact query."""
         contract = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
@@ -182,7 +214,7 @@ class TestContextContract:
         }
 
         subprocess.run(
-            [posix_bash, "-c", stubs + batch],
+            [_POSIX_BASH, "-c", stubs + batch],
             cwd=tmp_path,
             env=env,
             check=True,

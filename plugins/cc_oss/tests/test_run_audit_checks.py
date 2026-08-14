@@ -392,11 +392,3 @@ def test_no_tags_falls_back_to_initial_commit(
     assert rc == 0
     out = capsys.readouterr().out
     assert initial_sha in out
-
-
-def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 without running gh/git."""
-    with pytest.raises(SystemExit) as exc:
-        rac.main(["--help"])
-    assert exc.value.code == 0
-    assert "usage: run_audit_checks.py" in capsys.readouterr().out

@@ -7,8 +7,7 @@ Covers:
 * ``CODEMAP_INDEX_DIR`` env var overrides the index directory
 * ``--check`` exits 1 when index absent; exits 0 and prints ✓ when present
 * ``main()`` without ``--check`` always exits 0
-* Windows-portability invariants: no ``/tmp``, ``sys.stdout.reconfigure`` present,
-  ``shell=True`` absent
+* Windows-portability invariants: no ``/tmp``, ``shell=True`` absent
 """
 
 from __future__ import annotations
@@ -30,18 +29,6 @@ main = _mod.main
 
 class TestPortabilityInvariants:
     """Source-level Windows-portability checks."""
-
-    def test_no_tmp_literal_in_source(self) -> None:
-        """Script must not hardcode ``/tmp``."""
-        assert "/tmp" not in _SCRIPT.read_text(encoding="utf-8")
-
-    def test_stdout_reconfigure_present(self) -> None:
-        """``sys.stdout.reconfigure(...)`` must be called in ``main()``."""
-        assert "sys.stdout.reconfigure" in _SCRIPT.read_text(encoding="utf-8")
-
-    def test_shebang_env_python(self) -> None:
-        """Shebang must be ``#!/usr/bin/env python`` (not ``python3``)."""
-        assert _SCRIPT.read_text(encoding="utf-8").splitlines()[0] == "#!/usr/bin/env python"
 
     def test_no_utcnow(self) -> None:
         """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""

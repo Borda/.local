@@ -277,11 +277,11 @@ def _validate_args(owner: str, repo: str, default_branch: str, data_file: str) -
         ``None`` when all args valid; a single-line error message otherwise.
 
     Examples:
-        >>> _validate_args("owner", "repo", "main", "/tmp/out.jsonl") is None
+        >>> _validate_args("owner", "repo", "main", "/opt/out.jsonl") is None
         True
-        >>> _validate_args("", "repo", "main", "/tmp/out.jsonl")
+        >>> _validate_args("", "repo", "main", "/opt/out.jsonl")
         '--owner required'
-        >>> _validate_args("owner", "repo", "..", "/tmp/out.jsonl")
+        >>> _validate_args("owner", "repo", "..", "/opt/out.jsonl")
         "--default-branch must match '[A-Za-z0-9._/-]+', got: '..'"
     """
     if not owner:

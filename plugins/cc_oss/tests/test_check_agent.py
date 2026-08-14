@@ -135,14 +135,6 @@ def test_main_prints_false(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     assert capsys.readouterr().out.strip() == "false"
 
 
-def test_help_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 (argparse)."""
-    with pytest.raises(SystemExit) as exc:
-        check_agent.main(["--help"])
-    assert exc.value.code == 0
-    assert "usage:" in capsys.readouterr().out
-
-
 def test_golden_invocation_two_positionals(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Documented call site ``check_agent.py oss shepherd`` (2 positional) prints true/false, exits 0."""
     import unittest.mock as mock

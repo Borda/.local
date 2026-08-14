@@ -304,7 +304,10 @@ repos:
         entry: '["''`]/tmp/'
         # Replaces tests/hooks/tmp-paths.test.js, which checked a hardcoded 6-file cc_foundry list
         # and missed the other 16 plugin hooks; this glob picks up new hooks automatically.
-        files: ^plugins/[^/]+/hooks/.*\.(js|py)$|^\.claude/hooks/.*\.(js|py)$|^\.codex/hooks/.*\.(js|py)$
+        # bin/ included for the same reason: the per-script test_no_tmp_literal_in_source copies
+        # covered 8 of 124 bin/ scripts. Doctests must avoid quoted /tmp/ too — a doctest's
+        # expected-output line is indistinguishable from a real path constant to a line matcher.
+        files: ^plugins/[^/]+/(hooks|bin)/.*\.(js|py)$|^\.claude/hooks/.*\.(js|py)$|^\.codex/hooks/.*\.(js|py)$
 
       - id: check-benchmark-portable-paths
         name: 🧳 No hardcoded machine paths in benchmark source

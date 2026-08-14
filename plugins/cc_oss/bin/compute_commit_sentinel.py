@@ -75,7 +75,7 @@ def get_sentinel_path() -> str:
         None
 
     Returns:
-        Absolute sentinel path string, e.g. ``/tmp/claude-commit-auth-myrepo-main``.
+        Absolute sentinel path string, e.g. ``<tmpdir>/claude-commit-auth-myrepo-main``.
 
     Raises:
         subprocess.CalledProcessError: if not inside a git repository.

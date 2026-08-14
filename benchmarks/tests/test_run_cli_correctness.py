@@ -18,6 +18,13 @@ from typing import Any
 
 import pytest
 
+from _launcher_capability import raw_codemap_launchers_are_runnable
+
+REPO_ROOT = Path(__file__).parent.parent.parent
+RAW_CODEMAP_LAUNCHERS = pytest.mark.skipif(
+    not raw_codemap_launchers_are_runnable(REPO_ROOT),
+    reason="raw scan-index/scan-query launchers cannot execute on this host",
+)
 
 # ===========================================================================
 # _Checklist accumulator
@@ -138,6 +145,7 @@ def _bins(script_run_cli: Any, scan_query_binary: Path, scan_index_binary: Path)
     return scan_query_binary, scan_index_binary
 
 
+@RAW_CODEMAP_LAUNCHERS
 class TestSuitesRunGreen:
     """Every fixture-based correctness suite passes end-to-end against the real binaries."""
 
@@ -200,6 +208,7 @@ class TestSuitesRunGreen:
         assert results == []
 
 
+@RAW_CODEMAP_LAUNCHERS
 class TestDiffImpactChecks:
     """The diff-impact suite asserts the specific known-ground-truth blast radius."""
 
@@ -214,6 +223,7 @@ class TestDiffImpactChecks:
         assert checks["unmapped_file_surfaced"] is True
 
 
+@RAW_CODEMAP_LAUNCHERS
 class TestUncoveredXrefsChecks:
     """The uncovered/xrefs suite asserts exact counts from the constructed fixture."""
 

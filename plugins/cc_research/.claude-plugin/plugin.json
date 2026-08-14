@@ -3,9 +3,9 @@
     "name": "Jirka",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "ML research skills: topic, plan, judge, run, sweep, verify, fortify, retro",
+  "description": "Reviewable ML research: literature, planning, methodology review, bounded runs, sweeps, verification, ablations, retrospectives, Kaggle, and setup",
   "license": "Apache-2.0",
   "name": "research",
   "repository": "https://github.com/Borda/AI-Rig",
-  "version": "0.15.2"
+  "version": "0.15.3"
 }

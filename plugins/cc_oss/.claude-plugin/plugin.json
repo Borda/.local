@@ -3,7 +3,7 @@
     "name": "Jirka",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "OSS maintenance plugin: agents (shepherd, cicd-steward, gh-scraper, repo-warden) and skills (analyse, resolve, review, release)",
+  "description": "Open-source maintenance: analyse, review, resolve, release-readiness, and setup skills with four specialist agents",
   "keywords": [
     "oss",
     "github",
@@ -15,5 +15,5 @@
   "license": "Apache-2.0",
   "name": "oss",
   "repository": "https://github.com/Borda/AI-Rig",
-  "version": "0.28.1"
+  "version": "0.28.2"
 }

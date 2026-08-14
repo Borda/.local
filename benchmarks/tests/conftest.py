@@ -17,6 +17,13 @@ import pytest
 
 BENCHMARKS_DIR = Path(__file__).parent.parent
 REPO_ROOT = BENCHMARKS_DIR.parent
+TESTS_DIR = Path(__file__).parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+PYTORCH_LIGHTNING_REPO = Path(os.environ.get("PL_REPO_PATH", str(REPO_ROOT / ".sandbox" / "pytorch-lightning")))
+PYTORCH_LIGHTNING_INDEXES = (
+    tuple(sorted(PYTORCH_LIGHTNING_REPO.rglob(".cache/codemap/*.json"))) if PYTORCH_LIGHTNING_REPO.exists() else ()
+)
 
 
 def _load_module(module_name: str, filename: str):
@@ -98,18 +105,13 @@ def script_gen_real_issues():
 def scan_query_binary() -> Path:
     """Path to scan-query binary; fails on POSIX when the tracked binary is absent.
 
-    Windows skips (the harness exercises the POSIX launcher only). On POSIX the
-    binary is a tracked file, so a missing path means a broken checkout, not an
-    unavailable dependency — fail loudly instead of yielding a false-green skip.
+    The enclosing tests use a collection-time launchability marker. Once selected,
+    a missing tracked binary means a broken checkout, so fail loudly rather than
+    yielding a false-green skip.
 
     Returns:
         Absolute path to the scan-query executable.
     """
-    if sys.platform == "win32":
-        pytest.skip(
-            "benchmark harness exercises the POSIX launcher only; "
-            "codemap-py Windows coverage lives in plugins/codemap-py tests"
-        )
     binary = REPO_ROOT / "plugins" / "codemap-py" / "bin" / "scan-query"
     if not binary.exists():
         pytest.fail(f"tracked scan-query binary missing at {binary} — broken checkout")
@@ -120,18 +122,13 @@ def scan_query_binary() -> Path:
 def scan_index_binary() -> Path:
     """Path to scan-index binary; fails on POSIX when the tracked binary is absent.
 
-    Windows skips (the harness exercises the POSIX launcher only). On POSIX the
-    binary is a tracked file, so a missing path means a broken checkout, not an
-    unavailable dependency — fail loudly instead of yielding a false-green skip.
+    The enclosing tests use a collection-time launchability marker. Once selected,
+    a missing tracked binary means a broken checkout, so fail loudly rather than
+    yielding a false-green skip.
 
     Returns:
         Absolute path to the scan-index executable.
     """
-    if sys.platform == "win32":
-        pytest.skip(
-            "benchmark harness exercises the POSIX launcher only; "
-            "codemap-py Windows coverage lives in plugins/codemap-py tests"
-        )
     binary = REPO_ROOT / "plugins" / "codemap-py" / "bin" / "scan-index"
     if not binary.exists():
         pytest.fail(f"tracked scan-index binary missing at {binary} — broken checkout")
@@ -142,7 +139,7 @@ def scan_index_binary() -> Path:
 def sample_repo(tmp_path_factory: pytest.TempPathFactory, scan_index_binary: Path) -> tuple[Path, Path]:
     """Clone psf/requests (shallow) and build a codemap index.
 
-    Skips if git clone fails (no network access).
+    Fails if clone or indexing fails after collection.
 
     Args:
         tmp_path_factory: pytest factory for session-scoped temp directories.
@@ -160,7 +157,7 @@ def sample_repo(tmp_path_factory: pytest.TempPathFactory, scan_index_binary: Pat
             timeout=120,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        pytest.skip(f"git clone failed (no network?): {exc}")
+        pytest.fail(f"git clone failed (no network?): {exc}")
 
     try:
         subprocess.run(
@@ -171,18 +168,18 @@ def sample_repo(tmp_path_factory: pytest.TempPathFactory, scan_index_binary: Pat
             cwd=str(clone_dir),
         )
     except subprocess.CalledProcessError as exc:
-        pytest.skip(f"scan-index failed: {exc.stderr.decode()}")
+        pytest.fail(f"scan-index failed: {exc.stderr.decode()}")
 
     index_candidates = sorted(clone_dir.rglob(".cache/codemap/*.json"))
     if not index_candidates:
-        pytest.skip("scan-index ran but produced no index file")
+        pytest.fail("scan-index ran but produced no index file")
 
     return clone_dir, index_candidates[0]
 
 
 @pytest.fixture(scope="session")
 def pytorch_lightning_repo() -> Path:
-    """Path to a pytorch-lightning checkout; skips if not found.
+    """Path to a decorator-validated pytorch-lightning checkout.
 
     Checks ``PL_REPO_PATH`` env var first, then the pinned in-project clone
     ``.sandbox/pytorch-lightning`` (created by ``run-all.sh``).
@@ -190,16 +187,13 @@ def pytorch_lightning_repo() -> Path:
     Returns:
         Absolute path to the pytorch-lightning repository root.
     """
-    default = Path(__file__).resolve().parents[2] / ".sandbox" / "pytorch-lightning"
-    repo = Path(os.environ.get("PL_REPO_PATH", str(default)))
-    if not repo.exists():
-        pytest.skip(f"pytorch-lightning repo not found at {repo}; set PL_REPO_PATH env var")
-    return repo
+    assert PYTORCH_LIGHTNING_REPO.is_dir(), "pytorch-lightning test lacks checkout marker"
+    return PYTORCH_LIGHTNING_REPO
 
 
 @pytest.fixture(scope="session")
 def pytorch_lightning_index(pytorch_lightning_repo: Path, scan_query_binary: Path) -> Path:
-    """Pre-built codemap index for pytorch-lightning; skips if not found.
+    """Decorator-validated pre-built Codemap index for pytorch-lightning.
 
     The index is expected at ``.cache/codemap/<repo-name>.json`` inside the
     repo.  Run ``scan-index --root <repo>`` once to create it.
@@ -212,9 +206,5 @@ def pytorch_lightning_index(pytorch_lightning_repo: Path, scan_query_binary: Pat
         Absolute path to the JSON index file.
     """
     _ = scan_query_binary  # ensure binary fixture resolved
-    candidates = sorted(pytorch_lightning_repo.rglob(".cache/codemap/*.json"))
-    if not candidates:
-        pytest.skip(
-            f"No codemap index found under {pytorch_lightning_repo}/.cache/codemap/; run: scan-index --root <repo>"
-        )
-    return candidates[0]
+    assert PYTORCH_LIGHTNING_INDEXES, "pytorch-lightning index test lacks index marker"
+    return PYTORCH_LIGHTNING_INDEXES[0]

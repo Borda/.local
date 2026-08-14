@@ -8,6 +8,7 @@ import json
 import os
 import stat
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 
@@ -47,6 +48,30 @@ def load_module(path: Path, name: str) -> ModuleType:
 def canonical(value: object) -> bytes:
     """Encode canonical lifecycle JSON."""
     return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _mode_is_retainable(mode: int) -> bool:
+    """Return whether the host filesystem preserves one requested permission mode."""
+    with tempfile.TemporaryDirectory() as temporary:
+        path = Path(temporary) / "mode-probe"
+        path.mkdir(mode=0o700)
+        path.chmod(mode)
+        return stat.S_IMODE(path.stat().st_mode) == mode
+
+
+def _fifo_is_creatable() -> bool:
+    """Return whether the host permits a FIFO in its temporary directory."""
+    if not hasattr(os, "mkfifo"):
+        return False
+    with tempfile.TemporaryDirectory() as temporary:
+        try:
+            os.mkfifo(Path(temporary) / "fifo")
+        except OSError:
+            return False
+    return True
+
+
+FIFO_UNAVAILABLE = not _fifo_is_creatable()
 
 
 def identity(path: Path) -> dict[str, object]:
@@ -325,7 +350,16 @@ def test_existing_empty_lock_and_partial_state_root_are_bound_read_only(tmp_path
     assert snapshot(tmp_path) == before
 
 
-@pytest.mark.parametrize("node", ["symlink", "directory", "fifo", "nonempty", "mode"])
+@pytest.mark.parametrize(
+    "node",
+    [
+        "symlink",
+        "directory",
+        pytest.param("fifo", marks=pytest.mark.skipif(FIFO_UNAVAILABLE, reason="FIFO creation is unavailable")),
+        "nonempty",
+        "mode",
+    ],
+)
 def test_unsafe_coordination_lock_blocks(node: str, tmp_path: Path) -> None:
     """Reject a lock that cannot be safely opened as the fixed owned file."""
     module = load_module(OBSERVER_PATH, f"codex_rig_observe_lock_{node}")
@@ -338,8 +372,6 @@ def test_unsafe_coordination_lock_blocks(node: str, tmp_path: Path) -> None:
     elif node == "directory":
         lock.mkdir(mode=0o700)
     elif node == "fifo":
-        if not hasattr(os, "mkfifo"):
-            pytest.skip("FIFO creation is unavailable")
         os.mkfifo(lock, mode=0o600)
     elif node == "nonempty":
         write_private(lock, b"unexpected")
@@ -478,7 +510,14 @@ def test_historical_roster_and_old_cache_identity_are_migration_evidence(tmp_pat
     assert dict(result.target_observations)["codex-rig-web-explorer.toml"].kind == "absent"
 
 
-@pytest.mark.parametrize("node", ["symlink", "directory", "fifo"])
+@pytest.mark.parametrize(
+    "node",
+    [
+        "symlink",
+        "directory",
+        pytest.param("fifo", marks=pytest.mark.skipif(FIFO_UNAVAILABLE, reason="FIFO creation is unavailable")),
+    ],
+)
 def test_hostile_target_nodes_fail_closed(tmp_path: Path, node: str) -> None:
     """Prevent no-follow target observation from accepting aliased or non-files."""
     module = load_module(OBSERVER_PATH, f"codex_rig_observe_target_{node}")
@@ -491,8 +530,6 @@ def test_hostile_target_nodes_fail_closed(tmp_path: Path, node: str) -> None:
     elif node == "directory":
         target.mkdir()
     else:
-        if not hasattr(os, "mkfifo"):
-            pytest.skip("FIFO creation is unavailable")
         os.mkfifo(target)
     before = snapshot(tmp_path)
 
@@ -552,7 +589,14 @@ def test_namespace_candidate_preserves_exact_current_role_observations(tmp_path:
     )
 
 
-@pytest.mark.parametrize("node", ["symlink", "directory", "fifo"])
+@pytest.mark.parametrize(
+    "node",
+    [
+        "symlink",
+        "directory",
+        pytest.param("fifo", marks=pytest.mark.skipif(FIFO_UNAVAILABLE, reason="FIFO creation is unavailable")),
+    ],
+)
 def test_unsafe_namespace_candidate_remains_visible(tmp_path: Path, node: str) -> None:
     """Inventory a nonregular namespace candidate without following or reading it."""
     module = load_module(OBSERVER_PATH, f"codex_rig_observe_retired_{node}")
@@ -565,8 +609,6 @@ def test_unsafe_namespace_candidate_remains_visible(tmp_path: Path, node: str) -
     elif node == "directory":
         candidate.mkdir()
     else:
-        if not hasattr(os, "mkfifo"):
-            pytest.skip("FIFO creation is unavailable")
         os.mkfifo(candidate)
     before = snapshot(tmp_path)
 
@@ -698,7 +740,15 @@ def test_owned_protected_target_root_mode_0755_is_accepted(tmp_path: Path) -> No
 
 @pytest.mark.parametrize(
     "mode",
-    [0o4700, 0o2700, 0o1700],
+    [
+        pytest.param(
+            mode,
+            marks=pytest.mark.skipif(
+                not _mode_is_retainable(mode), reason=f"filesystem does not retain mode {mode:04o}"
+            ),
+        )
+        for mode in (0o4700, 0o2700, 0o1700)
+    ],
     ids=["setuid", "setgid", "sticky"],
 )
 def test_protected_target_root_special_bits_block(tmp_path: Path, mode: int) -> None:
@@ -707,8 +757,7 @@ def test_protected_target_root_special_bits_block(tmp_path: Path, mode: int) -> 
     codex_home, plugin_root, target_root, _ = make_roots(tmp_path)
     target_root.chmod(mode)
     observed_mode = stat.S_IMODE(target_root.stat().st_mode)
-    if observed_mode != mode:
-        pytest.skip(f"filesystem did not retain requested mode {mode:04o}; observed {observed_mode:04o}")
+    assert observed_mode == mode
 
     result = observe(module, codex_home, plugin_root)
 

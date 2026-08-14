@@ -94,9 +94,9 @@ def _validate_plugin_root(plugin_root: str) -> str:
     Examples:
         >>> str(_validate_plugin_root(str(_own_plugin_root()))) == str(_own_plugin_root())
         True
-        >>> _validate_plugin_root("/tmp/evil")
+        >>> _validate_plugin_root("/opt/evil")
         Traceback (most recent call last):
-        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: '/tmp/evil'
+        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: '/opt/evil'
         >>> _validate_plugin_root("relative/path")
         Traceback (most recent call last):
         ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: 'relative/path'
@@ -261,11 +261,11 @@ def format_eval_line(proj: str, index: str) -> str:
         Single line of the form ``PROJ=<quoted> INDEX=<quoted>`` (no trailing newline).
 
     Examples:
-        >>> format_eval_line("myproj", "/tmp/index.json")
-        'PROJ=myproj INDEX=/tmp/index.json'
-        >>> format_eval_line("proj with space", "/tmp/index.json")
-        "PROJ='proj with space' INDEX=/tmp/index.json"
-        >>> "PROJ='proj'" in format_eval_line("proj'q", "/tmp/x.json")
+        >>> format_eval_line("myproj", "/opt/index.json")
+        'PROJ=myproj INDEX=/opt/index.json'
+        >>> format_eval_line("proj with space", "/opt/index.json")
+        "PROJ='proj with space' INDEX=/opt/index.json"
+        >>> "PROJ='proj'" in format_eval_line("proj'q", "/opt/x.json")
         True
     """
     return f"PROJ={shlex.quote(proj)} INDEX={shlex.quote(index)}"

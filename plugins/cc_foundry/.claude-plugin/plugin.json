@@ -3,7 +3,7 @@
     "name": "Jirka",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "OSS Claude Code config: agents, skills, and hooks for professional AI-assisted development workflows",
+  "description": "Claude Code configuration and workflow maintenance: 11 skills, 10 specialist agents, rules, hooks, audit, calibration, and session handover",
   "keywords": [
     "agents",
     "skills",
@@ -15,5 +15,5 @@
   "license": "Apache-2.0",
   "name": "foundry",
   "repository": "https://github.com/Borda/AI-Rig",
-  "version": "0.46.1"
+  "version": "0.46.2"
 }

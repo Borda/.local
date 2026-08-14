@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,6 +35,29 @@ _CONTEXT = _RESEARCH / "skills" / "_shared" / "codemap-context.md"
 _SCIENTIST = _RESEARCH / "agents" / "scientist.md"
 
 _BASH_BLOCK_FILES = [_CONTEXT, _SCIENTIST]
+
+
+def _find_posix_bash() -> str | None:
+    """Return a bash that runs POSIX script syntax, if the host provides one."""
+    if sys.platform != "win32":
+        candidates = ["bash"]
+    else:
+        roots = [os.environ.get("ProgramFiles"), os.environ.get("ProgramW6432"), os.environ.get("ProgramFiles(x86)")]
+        candidates = [
+            *(str(Path(root) / "Git" / sub / "bash.exe") for root in roots if root for sub in ("bin", "usr/bin")),
+            *([shutil.which("bash")] if shutil.which("bash") else []),
+        ]
+    for candidate in candidates:
+        try:
+            probe = subprocess.run([candidate, "-c", "printf ok"], capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if probe.returncode == 0 and probe.stdout.strip() == "ok":
+            return candidate
+    return None
+
+
+_POSIX_BASH = _find_posix_bash()
 
 
 def _bash_blocks(path: Path) -> list[str]:
@@ -109,7 +134,8 @@ def test_index_dir_is_root_anchored(path: Path):
 
 
 @pytest.mark.parametrize("path", _BASH_BLOCK_FILES, ids=lambda p: p.name)
-def test_project_name_fallback_fires_outside_a_git_repository(path: Path, tmp_path: Path, posix_bash: str):
+@pytest.mark.skipif(_POSIX_BASH is None, reason="requires a working POSIX bash")
+def test_project_name_fallback_fires_outside_a_git_repository(path: Path, tmp_path: Path):
     """E-M7: `basename ""` exits 0, so the old `||` fallback was unreachable and PROJ went empty."""
     block = next(b for b in _bash_blocks(path) if "_ROOT=" in b)
     snippet = "\n".join(
@@ -120,7 +146,7 @@ def test_project_name_fallback_fires_outside_a_git_repository(path: Path, tmp_pa
     workdir = tmp_path / "loose project"
     workdir.mkdir()
     result = subprocess.run(
-        [posix_bash, "-c", f'{snippet}\nprintf "%s" "$PROJ"'],
+        [_POSIX_BASH, "-c", f'{snippet}\nprintf "%s" "$PROJ"'],
         cwd=workdir,
         capture_output=True,
         text=True,

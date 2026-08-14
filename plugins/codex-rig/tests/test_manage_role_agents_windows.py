@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -80,7 +81,8 @@ def test_windows_mutation_remains_explicitly_blocked_without_writes(
 
     assert module.main([action]) == 5
 
-    output = capsys.readouterr().out
-    assert "blocked" in output
-    assert "writes" in output
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["action"] == action
+    assert payload["classification"] == "platform-blocked"
+    assert payload["writes"] == 0
     assert tuple(tmp_path.rglob("*")) == before

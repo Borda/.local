@@ -360,16 +360,12 @@ class TestIsMeaningfulIssue:
             # --- happy path: specific title + real body ---
             ("CombinedLoader hangs on StopIteration", "Detailed description here.", True),
             ("Timer callback resets on resume", "Steps to reproduce:\n1. ...", True),
-            # --- generic titles (case-insensitive) ---
-            ("bug", "Detailed description.", False),
+            # --- generic titles are case-folded before the GENERIC_TITLES membership check;
+            # the membership check itself over the full current set is proven exhaustively by
+            # test_is_meaningful_issue_generic_title_exhaustive below, so only case-folding is
+            # spot-checked here ---
             ("Bug", "Detailed description.", False),  # case folded
             ("BUG", "Detailed description.", False),
-            ("question", "Some body.", False),
-            ("help", "Some body.", False),
-            ("feature request", "Some body.", False),
-            ("feature", "Some body.", False),
-            ("issue", "Some body.", False),
-            ("error", "Some body.", False),
             # --- empty / blank title ---
             ("", "Body here.", False),
             ("   ", "Body here.", False),  # whitespace-only title

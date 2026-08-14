@@ -1,8 +1,8 @@
 # 🏭 foundry — Claude Code Plugin
 
-OSS Claude Code config: 10 specialist agents, 12 skills, event-driven hooks, self-improvement loop for professional AI-assisted development.
+OSS Claude Code configuration for Python/ML projects: 10 specialist agents, 11 skills, event-driven hooks, and repeatable audit and calibration workflows.
 
-> OSS workflows: also install `oss` plugin (`/oss:review`, `/oss:release`, ...). Development: install `develop` (`/develop:feature`, `/develop:fix`, ...). ML research: install `research` (`/research:run`, `/research:topic`, ...).
+> Optional integrations: `/oss:review` and `/oss:release` add release/review workflows (requires the `oss` plugin); `/develop:feature` and `/develop:fix` add implementation workflows (requires the `develop` plugin); `/research:run` and `/research:topic` add ML research workflows (requires the `research` plugin).
 
 ______________________________________________________________________
 
@@ -10,11 +10,12 @@ ______________________________________________________________________
 
 <summary><strong>📋 Contents</strong></summary>
 
-- [What is foundry?](#what-is-foundry)
-- [Why foundry?](#why-foundry)
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Skills reference](#skills-reference)
+- [What is foundry?](#-what-is-foundry)
+- [Why foundry?](#-why-foundry)
+- [Install](#-install)
+- [Quick start](#-quick-start)
+- [Current boundaries](#-current-boundaries)
+- [Skills reference](#-skills-reference)
   - [`/foundry:setup`](#foundrysetup)
   - [`/foundry:audit`](#foundryaudit)
   - [`/foundry:calibrate`](#foundrycalibrate)
@@ -26,7 +27,7 @@ ______________________________________________________________________
   - [`/foundry:session`](#foundrysession)
   - [`/foundry:create`](#foundrycreate)
   - [`/foundry:humanizer`](#foundryhumanizer)
-- [Agents reference](#agents-reference)
+- [Agents reference](#-agents-reference)
   - [foundry:sw-engineer](#foundrysw-engineer)
   - [foundry:solution-architect](#foundrysolution-architect)
   - [foundry:qa-specialist](#foundryqa-specialist)
@@ -37,15 +38,16 @@ ______________________________________________________________________
   - [foundry:curator](#foundrycurator)
   - [foundry:challenger](#foundrychallenger)
   - [foundry:creator](#foundrycreator)
-- [Agent relationships](#agent-relationships)
-- [Rules installed](#rules-installed)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [Plugin structure](#plugin-structure)
+- [Agent relationships](#-agent-relationships)
+- [Rules installed](#-rules-installed)
+- [Configuration](#-configuration)
+- [Troubleshooting](#-troubleshooting)
+- [Plugin structure](#-plugin-structure)
+- [Bin helper inventory](#bin-helper-inventory)
 - [Upgrade](#upgrade)
 - [Uninstall](#uninstall)
-- [Development / testing](#development--testing)
-- [Contributing / feedback](#contributing--feedback)
+- [Development / testing](#-development--testing)
+- [Contributing / feedback](#-contributing--feedback)
 
 </details>
 
@@ -53,9 +55,9 @@ ______________________________________________________________________
 
 ## 🤔 What is foundry?
 
-foundry = base infrastructure plugin for Claude Code on Python/ML OSS projects. Gives Claude Code team of ten non-overlapping specialist agents — deep, calibrated domain knowledge each — plus skills for lifecycle management, accuracy benchmarking, feeding corrections back into instructions.
+foundry is the configuration and workflow layer for Claude Code on Python/ML OSS projects. It gives Claude Code ten specialist agents, eleven namespaced skills, rules, and event-driven hooks for routing work, checking configuration, measuring instruction quality, and recording lessons for review.
 
-Without foundry: Claude Code = generalist. Helps with code but no release conventions, no routing enforcement to right specialist, no mechanism to measure or improve own accuracy over time. foundry packages all that infrastructure in one installable plugin.
+The problem it solves is workflow drift: a generalist session can mix architecture, implementation, tests, docs, and tooling without clear ownership, while corrections disappear between sessions. Foundry provides explicit role boundaries, repeatable audits and calibration runs, and project-local state for the parts it supports. It does not replace application-code, release, or ML-research plugins.
 
 ______________________________________________________________________
 
@@ -70,15 +72,15 @@ ______________________________________________________________________
 - `/foundry:manage` creates, renames, deletes agents with full cross-reference propagation, one command
 - `/foundry:brainstorm` turns vague idea into approved spec before any code written
 - `/foundry:distill` converts accumulated corrections into durable rules + agent instruction updates
-- Hooks keep lint, task tracking, teammate quality gates running on every file save
+- Hooks keep lint, task tracking, teammate quality gates, and report checks running around Claude tool events (including Write/Edit operations)
 
-Self-improvement loop — `/foundry:audit` catches structural drift; `/foundry:calibrate` catches behavioral drift; `/foundry:distill` surfaces patterns from corrections — closes feedback loop automatically.
+Use `/foundry:audit` for structural checks, `/foundry:calibrate` for measured routing and agent behavior, and `/foundry:distill` to turn recurring corrections into proposed instruction updates.
 
 ______________________________________________________________________
 
 ## 📦 Install
 
-**Prerequisites**: Claude Code with plugin support; `jq` on PATH; `node` on PATH (hooks need it).
+**Prerequisites**: Claude Code with plugin support; Python 3.10+ and `git` (setup runs from a project repository); `jq` on PATH for setup/audit JSON work; and Node.js on PATH for the plugin's hooks.
 
 ```bash
 claude plugin marketplace add Borda/AI-Rig
@@ -99,7 +101,7 @@ claude plugin install research@borda-ai-rig
 /foundry:setup
 ```
 
-Merges `statusLine`, `permissions.allow`, `enabledPlugins` into `~/.claude/settings.json`; symlinks all rule files into `~/.claude/rules/` as `foundry-<name>.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Idempotent — safe to re-run.
+Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, and (when pinned by the project) `advisorModel` into `~/.claude/settings.json`; symlinks all rule files into `~/.claude/rules/` as `foundry-<name>.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Run it from the project repository root. Idempotent — safe to re-run.
 
 **After any plugin upgrade**, re-run `/foundry:setup` — auto-replaces stale foundry symlinks, removes rules gone from new version. No prompt for old-version symlinks.
 
@@ -107,13 +109,19 @@ ______________________________________________________________________
 
 ## ⚡ Quick start
 
-One command confirms everything works:
+Run setup once, then check the installation from the project repository root:
+
+```text
+/foundry:setup
+```
+
+The first useful workflow is:
 
 ```text
 /foundry:audit setup
 ```
 
-Expected: structured report of system config checks (hooks, settings.json, plugin integration, symlinks). Zero critical findings = ready.
+It produces a structured report of system config checks (hooks, `settings.json`, plugin integration, and symlinks). Treat any critical findings as blockers and resolve the report's suggested next action.
 
 Follow with:
 
@@ -121,7 +129,19 @@ Follow with:
 /foundry:calibrate routing --fast
 ```
 
-Quick routing accuracy benchmark — measures whether Claude Code dispatches tasks to right agent. Expect routing accuracy ≥90%.
+Quick routing benchmark — measures whether Claude Code dispatches synthetic tasks to the right agent. The calibration threshold is 90%; use the measured result to identify routing gaps rather than treating it as a guarantee.
+
+______________________________________________________________________
+
+## 🧭 Current boundaries
+
+- Foundry manages Claude Code configuration and workflow guidance; it does not implement application code or provide release-management and ML-research workflows. For those workflows, install `develop` (requires the `develop` plugin), `oss` (requires the `oss` plugin), or `research` (requires the `research` plugin).
+- Calibration uses synthetic problems with quasi-ground-truth. It is an instruction-quality signal, not a production benchmark or guarantee of agent correctness.
+- Hooks are event-driven and depend on Claude Code loading the enabled plugin plus Node.js. Most report or nudge; selected guards intentionally gate unsafe pushes or incomplete follow-up prompts.
+- Setup intentionally leaves some state behind on uninstall: merged settings, `foundry-*.md` rule links, and `TEAM_PROTOCOL.md` need manual review or removal; see [Uninstall](#uninstall).
+- Profile cost output is best-effort and uses public list rates, not an account billing statement; when transcripts are unavailable, the clock report can still run without the cost section.
+
+These are current boundaries of the shipped plugin, not promises about future support.
 
 ______________________________________________________________________
 
@@ -142,7 +162,7 @@ What it does:
 - Backs up `~/.claude/settings.json` before touching
 - Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, `advisorModel` (copied from project `.claude/settings.json` when pinned)
 - Copies `permissions-guide.md` to `.claude/` (only if absent — preserves project-local edits)
-- Symlinks all `plugins/cc_foundry/rules/*.md` into `~/.claude/rules/` as `foundry-<name>.md`, plus `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks, removes rules gone from the current version, and migrates pre-namespace unprefixed links it provably owns\`
+- Symlinks all `plugins/cc_foundry/rules/*.md` into `~/.claude/rules/` as `foundry-<name>.md`, plus `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks, removes rules gone from the current version, and migrates pre-namespace unprefixed links it provably owns.
 - Removes stale `hooks` block from settings if present (hooks now register via plugin manifest)
 
 Hooks (`hooks.json`) register automatically when plugin enabled — `/foundry:setup` never touches them directly.
@@ -711,8 +731,6 @@ ______________________________________________________________________
 
 </summary>
 
-## 🔍 Troubleshooting
-
 **`/foundry:audit` reports broken symlinks (Check I3)**
 
 Symlinks in `~/.claude/rules/` point to previous plugin cache path after upgrade. Re-run `/foundry:setup` — Step 10 detects stale symlinks as conflicts, offers replacement.
@@ -757,8 +775,6 @@ ______________________________________________________________________
 
 </summary>
 
-## 🏗️ Plugin structure
-
 ```text
 plugins/cc_foundry/
 ├── .claude-plugin/
@@ -795,6 +811,67 @@ ______________________________________________________________________
 
 </details>
 
+<a id="bin-helper-inventory"></a>
+
+<details>
+
+<summary><strong>🧰 Bin helper inventory (36 shipped deterministic helpers)</strong></summary>
+
+These Python helpers are installed workflow support and maintainer surfaces, not additional slash-command skills. They resolve paths, validate plugin documents, prepare reports, or perform bounded deterministic transforms; invoke them through the owning skill or with the installed plugin root.
+
+#### Audit, consistency, and document checks
+
+| Helper                       | Purpose                                                            |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `audit_churn.py`             | Emit git-history recurrence signals for `/foundry:audit`.          |
+| `audit_static.py`            | Run and aggregate the deterministic Layer-1 audit checks.          |
+| `check_bash_persistence.py`  | Detect shell variables referenced across separate Bash tool calls. |
+| `check_cli_flag_drift.py`    | Detect drift between documented flags and `argparse` options.      |
+| `check_codemap_guard.py`     | Detect unmanaged codemap index-guard copies.                       |
+| `check_codex.py`             | Detect whether the Codex plugin is installed and enabled.          |
+| `check_fence_symmetry.py`    | Validate Markdown code-fence pairing and nesting.                  |
+| `check_mode_dispatch.py`     | Detect dangling mode-dispatch references in skill files.           |
+| `check_orphaned_bin.py`      | Find bin scripts not referenced by plugin Markdown.                |
+| `check_readme_drift.py`      | Detect README version and bin-reference drift from disk.           |
+| `check_routing_links.py`     | Validate computed paths in skills and agent files.                 |
+| `check_spawn_prompt_vars.py` | Detect unresolved variables in Markdown spawn prompts.             |
+| `check_tag_symmetry.py`      | Check XML-tag symmetry in agent and skill Markdown.                |
+| `classify_resolver_sites.py` | Classify resolver call sites as inline-required or cat-only.       |
+
+#### Session, install, and state helpers
+
+| Helper                         | Purpose                                                       |
+| ------------------------------ | ------------------------------------------------------------- |
+| `find-polluter.py`             | Binary-search a test suite for test-isolation contamination.  |
+| `get_plugin_install_path.py`   | Resolve the active plugin path from Claude's registry.        |
+| `health_sentinel.py`           | Create and inspect health-monitoring sentinels.               |
+| `jq_write.py`                  | Apply an atomic `jq` JSON edit through temp-file replacement. |
+| `load_mode.py`                 | Resolve a skill mode/template directory and emit one file.    |
+| `load_shared_doc.py`           | Resolve the plugin shared-doc directory and emit one file.    |
+| `make_run_dir.py`              | Create a UTC-timestamped run directory.                       |
+| `purge_plugin_cache.py`        | Remove orphaned versions from the plugin cache.               |
+| `remove_hook_from_registry.py` | Remove matching hook commands from a JSON registry.           |
+| `resolve_memory_dir.py`        | Resolve the project-scoped Claude memory directory.           |
+| `resolve_plugin_root.py`       | Resolve and validate the current installed plugin root.       |
+| `resolve_shared_path.py`       | Resolve the plugin's shared directory portably.               |
+| `resolve_skill_subdir.py`      | Resolve a skill `modes/` or `templates/` subdirectory.        |
+| `state.py`                     | Persist small shell values across Bash tool-call boundaries.  |
+| `symlink_with_guard.py`        | Scan and safely manage foundry-init symlink conflicts.        |
+
+#### Reporting, synchronization, and transforms
+
+| Helper                   | Purpose                                                               |
+| ------------------------ | --------------------------------------------------------------------- |
+| `cost_analyzer.py`       | Bucket Claude session token usage and estimated cost.                 |
+| `extract_code_blocks.py` | Extract and classify fenced Markdown code blocks.                     |
+| `propagate_shared.py`    | Keep byte-identical cross-plugin shared files synchronized.           |
+| `resolve_centrality.py`  | Convert codemap centrality output into a resolver map.                |
+| `timing_analyzer.py`     | Bucket Claude session clock time into a Markdown report.              |
+| `trim_plugin_tables.py`  | Normalize Markdown table padding outside code fences.                 |
+| `verify_perm.py`         | Verify permission presence across settings and the permissions guide. |
+
+</details>
+
 <a id="upgrade"></a>
 
 <details>
@@ -828,6 +905,8 @@ claude plugin uninstall foundry
 ```
 
 Claude Code runs no cleanup hook on uninstall, so nothing `/foundry:setup` created is removed by `claude plugin uninstall` or by `bash sync.sh clear`. Settings keys merged into `~/.claude/settings.json` (`statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, `advisorModel`) remain — remove manually if desired. The `~/.claude/rules/foundry-*.md` symlinks and `~/.claude/TEAM_PROTOCOL.md` also persist and dangle once the plugin cache version is gone; delete them by hand.
+
+</details>
 
 ______________________________________________________________________
 
@@ -877,17 +956,17 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 | `test_symlink_with_guard.py`      | `symlink_with_guard.py`      | 35    | Create/update/remove symlinks, guard against stale links, unconditional purge of `~/.claude/skills/` links                                                                       |
 | `test_extract_code_blocks.py`     | `extract_code_blocks.py`     | 30    | Fence parsing, lang normalisation, heuristic code/prose classification, token filtering                                                                                          |
 | `test_check_bash_persistence.py`  | `check_bash_persistence.py`  | 28    | Cross-block variable reference detection, env-var filtering, multi-block files                                                                                                   |
-| `test_find_polluter.py`           | `find_polluter.py`           | 24    | Safe/unsafe node-id validation, isolation test runner, bisect loop                                                                                                               |
+| `test_find_polluter.py`           | `find_polluter.py`           | 30    | Safe/unsafe node-id validation, isolation test runner, bisect loop, path-traversal + report guidance                                                                             |
 | `test_check_cli_flag_drift.py`    | `check_cli_flag_drift.py`    | 35    | AST flag extraction, invocation-scoped matching, docstring `Usage:`-block scan vs own argparse surface, REMAINDER passthrough, no-exec guarantee                                 |
 | `test_verify_perm.py`             | `verify_perm.py`             | 21    | Settings allow-entry detection, missing/malformed JSON, CLI exit codes                                                                                                           |
 | `test_check_orphaned_bin.py`      | `check_orphaned_bin.py`      | 21    | Orphaned bin/ script detection, consumer-reference parsing, multi-plugin scan                                                                                                    |
 | `test_cost_analyzer.py`           | `cost_analyzer.py`           | 21    | Message-id dedupe (3x-inflation guard), tier/cost pricing, main/sidechain bucketing, subagent-transcript merge, session discovery no-double-count, CLI session-id + window modes |
 | `test_jq_write.py`                | `jq_write.py`                | 18    | Arg parsing, JSON path writes, merge semantics                                                                                                                                   |
-| `test_resolve_shared_path.py`     | `resolve_shared_path.py`     | 18    | Plugin/subdir validation, path traversal rejection, tier-1/2/3 resolution cascade                                                                                                |
+| `test_resolve_shared_path.py`     | `resolve_shared_path.py`     | 21    | Plugin/subdir validation, path traversal rejection, tier-1/2/3 resolution cascade                                                                                                |
 | `test_health_sentinel.py`         | `health_sentinel.py`         | 18    | Sentinel creation, age computation, stale detection, new-file polling                                                                                                            |
 | `test_check_fence_symmetry.py`    | `check_fence_symmetry.py`    | 17    | Unclosed fences, nested/interleaved fences, multi-file scan                                                                                                                      |
 | `test_check_codex.py`             | `check_codex.py`             | 17    | `installed_plugins.json` manifest parsing, codex key presence, malformed JSON                                                                                                    |
-| `test_make_run_dir.py`            | `make_run_dir.py`            | 16    | Portability invariants (no `/tmp` literals, `stdout.reconfigure`, shebang), timestamp format                                                                                     |
+| `test_make_run_dir.py`            | `make_run_dir.py`            | 16    | Portability invariants (no `/tmp` literals, no `utcnow`), timestamp format                                                                                                       |
 | `test_check_spawn_prompt_vars.py` | `check_spawn_prompt_vars.py` | 16    | `$VAR` in markdown code blocks, caller-substituted-var whitelist, multi-file scan                                                                                                |
 | `test_trim_plugin_tables.py`      | `trim_plugin_tables.py`      | 15    | Cell padding normalization, separator-row alignment colons, fenced-code-block skip, multi-file CLI                                                                               |
 | `test_check_tag_symmetry.py`      | `check_tag_symmetry.py`      | 14    | Empty/whitespace XML blocks, unbalanced open/close tags, multi-file scan                                                                                                         |

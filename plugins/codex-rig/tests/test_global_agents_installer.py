@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from _platform import POSIX_BASH, SYMLINKS_AVAILABLE
+
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = PLUGIN_ROOT / "scripts" / "install_global_agents.py"
@@ -214,6 +216,7 @@ def test_global_agents_installer_refuses_untrusted_managed_state(tmp_path: Path,
     assert "refusing" in result.stderr.lower()
 
 
+@pytest.mark.skipif(not SYMLINKS_AVAILABLE, reason="host cannot create symlinks")
 def test_global_agents_installer_refuses_symlink_target(tmp_path: Path) -> None:
     """Prevent optional installation from following a target outside Codex home."""
     source = tmp_path / "template.md"
@@ -222,10 +225,7 @@ def test_global_agents_installer_refuses_symlink_target(tmp_path: Path) -> None:
     codex_home.mkdir()
     outside = tmp_path / "outside.md"
     outside.write_text("outside\n", encoding="utf-8")
-    try:
-        (codex_home / "AGENTS.md").symlink_to(outside)
-    except OSError:
-        pytest.skip("symlinks unavailable")
+    (codex_home / "AGENTS.md").symlink_to(outside)
 
     result = run_installer(source, codex_home)
 
@@ -372,6 +372,7 @@ def test_sync_runs_setup_from_each_managed_plugin_install() -> None:
     assert 'claude --print "/foundry:setup --approve"' not in script
 
 
+@pytest.mark.skipif(POSIX_BASH is None, reason="working POSIX Bash is unavailable")
 def test_sync_rejects_codex_ref_for_claude_only_scope(posix_bash: str) -> None:
     """Prevent a Codex-only selector from being silently ignored by Claude-only restore."""
     sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"

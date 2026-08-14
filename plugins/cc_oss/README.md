@@ -1,8 +1,10 @@
 # 🌱 oss — Claude Code Plugin
 
-OSS workflow plugin for Python/ML open-source projects. Four agents (two user-facing, two internal pipeline), four slash-command skills: issue analysis, parallel code review, PR resolution, SemVer-disciplined releases.
+OSS workflow plugin for Python/ML open-source projects. Four agents (two user-facing, two internal pipeline) and five slash-command skills: issue analysis, parallel code review, PR resolution, release artifacts/readiness, and post-install rule setup.
 
-> Works standalone — `foundry` not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:qa-specialist`, etc.) — strongly recommended for production.
+Public actions stay maintainer-owned: replies, merges, pushes, tags, and releases are drafted or prepared here, never posted or published automatically.
+
+> Works standalone — `foundry` not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions and less specialization. Installing `foundry` unlocks the specialized agent roster.
 
 ______________________________________________________________________
 
@@ -10,22 +12,23 @@ ______________________________________________________________________
 
 <summary><strong>📋 Contents</strong></summary>
 
-- [What is oss?](#what-is-oss)
-- [Why oss?](#why-oss)
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Skills reference](#skills-reference)
+- [What is oss?](#-what-is-oss)
+- [Why oss?](#-why-oss)
+- [Install](#-install)
+- [Quick start](#-quick-start)
+- [Skills reference](#-skills-reference)
   - [/oss:analyse](#ossanalyse)
   - [/oss:review](#ossreview)
   - [/oss:resolve](#ossresolve)
   - [/oss:release](#ossrelease)
   - [/oss:setup](#osssetup)
-- [Agents reference](#agents-reference)
+- [Agents reference](#-agents-reference)
   - [oss:gh-scraper](#gh-scraper)
   - [oss:repo-warden](#repo-warden)
   - [oss:shepherd](#ossshepherd)
   - [oss:cicd-steward](#osscicd-steward)
-- [Configuration](#configuration)
+- [Configuration](#-configuration)
+- [Bin helper inventory](#bin-helper-inventory)
 - [Troubleshooting](#troubleshooting)
 - [Contributing / feedback](#contributing--feedback)
 
@@ -35,7 +38,7 @@ ______________________________________________________________________
 
 ## 🤔 What is oss?
 
-`oss` = Claude Code plugin for Python/ML open-source maintainers. Four slash-command skills — analyse, review, resolve, release — plus two specialist agents owning contributor communication and CI health. Covers recurring expensive maintainer work: triaging GitHub threads, multi-perspective PR review, closing review feedback in one pass, cutting releases with correct SemVer and complete changelogs.
+`oss` = Claude Code plugin for Python/ML open-source maintainers. Five slash-command skills — analyse, review, resolve, release, and setup — plus four agents for contributor communication, CI health, and vitality data collection/scoring. It covers recurring maintainer work: triaging GitHub threads, multi-perspective PR review, organizing review feedback into fixes, and preparing release artifacts with readiness checks.
 
 ______________________________________________________________________
 
@@ -43,17 +46,17 @@ ______________________________________________________________________
 
 Maintaining OSS = three competing demands: review code carefully (catch regressions), respond to contributors fast (keep engaged), ship releases confidently (users upgrade). Each = context-switch tax.
 
-`oss` removes tax:
+`oss` targets that tax:
 
-**PR review in minutes, not hours.** `/oss:review` runs Codex pre-pass ~60 seconds. Trivial PRs close there. Substantive PRs → six specialist agents fan out parallel — architecture, tests, performance, docs, linting, security — return ranked consolidated report. Expert coverage without reading every line.
+**Reduce review context switching.** `/oss:review` classifies the PR, runs relevant review dimensions in parallel, and writes a ranked report. The default fan-out is capped at four scope-selected dimensions; `--full` runs every dimension selected by scope. An optional Codex integration can add a co-review, and missing optional agents fall back gracefully.
 
-**Contributors get real response, fast.** `--reply` flag drafts welcoming comment in project voice, citing your conventions. 30 seconds review vs 10 minutes writing. Contributors feel heard, stay engaged.
+**Contributors get a usable response draft.** The `--reply` flag drafts a welcoming comment in project voice, citing project conventions. The draft is written for maintainer review; the plugin does not post it automatically.
 
-**Review feedback applied completely.** `/oss:resolve` closes gap between "reviewer said X" and "X in code." Reads live PR comments, saved review report, or both. Deduplicates across sources, resolves conflicts semantically (not mechanical side-pick), implements in parallel per-specialist worktrees with `[resolve No.N]` tags for traceability.
+**Turn review feedback into traceable action items.** `/oss:resolve` closes the gap between "reviewer said X" and "X in code." It reads live PR comments, a saved review report, or both; deduplicates sources; resolves conflicts semantically; and implements selected items with `[resolve No.N]` attribution, using isolated worktrees for specialist batches.
 
-**Releases go out correct.** `oss:shepherd` enforces SemVer before any tag. Writes changelog with deprecation tracking, generates migration guides for breaking changes, runs readiness audit. No accidental major bumps. No forgotten changelog entries.
+**Release communication stays grounded in the diff.** `/oss:release` classifies changes, checks documentation/version consistency, writes release notes and optional changelog/summary/migration artifacts, and audits readiness. It does not edit package versions, create tags, or publish packages.
 
-**Triage fast, structured.** `/oss:analyse vitality` = repo vitality scorecard with duplicate issue clustering + stale PR detection every morning. Specific thread → structured summary, act immediately.
+**Triage with structure.** `/oss:analyse vitality` produces a repo vitality scorecard with duplicate issue clustering and stale-PR detection. A specific thread becomes a structured summary with next actions.
 
 ______________________________________________________________________
 
@@ -64,28 +67,43 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install oss@borda-ai-rig
 ```
 
-Then run `/oss:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade; `bash sync.sh claude` does it for you.
+After installation, run `/oss:setup` once to link this plugin's rules into `~/.claude/rules/`; use `/oss:setup --approve` for the non-interactive path. Re-run it after an upgrade. In this repository, `bash sync.sh claude` invokes that setup path for managed installs.
 
-Full suite for best results:
+Recommended setup:
 
 ```bash
-claude plugin install foundry@borda-ai-rig   # base agents — strongly recommended
-claude plugin install oss@borda-ai-rig
-claude plugin install develop@borda-ai-rig
-claude plugin install research@borda-ai-rig
+claude plugin install foundry@borda-ai-rig   # specialized agents; optional
 ```
+
+`oss` requires Claude Code, Python 3.10+, and an authenticated GitHub CLI (`gh auth login`) for GitHub-backed workflows. The plugin can run without `foundry`, but agent calls then use `general-purpose` fallbacks with lower specialization.
 
 **Optional integrations** (unlock extra capabilities inside `oss` skills):
 
-| Plugin       | What it unlocks                                                                                                                                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry`    | Specialized review agents (sw-engineer, qa-specialist, perf-optimizer, doc-scribe, solution-architect, linting-expert) instead of general-purpose fallbacks                                          |
-| `codex`      | Action item implementation in `/oss:resolve` Step 8; Tier 1 pre-pass in `/oss:review`                                                                                                                |
-| `codemap-py` | Reverse-dependency count (`rdep_count`) in `/oss:review` risk assessment; stale-symbol detection in `/oss:analyse` issue triage, Open-PR Overlap + Structural Constraints in `/oss:analyse vitality` |
+| Plugin               | What it unlocks                                                                                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry`            | Specialized review and implementation agents instead of `general-purpose` fallbacks                                                                                                                  |
+| `codex@openai-codex` | Optional Codex co-review in `/oss:review` and Codex action-item dispatch in `/oss:resolve`                                                                                                           |
+| `codemap-py`         | Reverse-dependency count (`rdep_count`) in `/oss:review` risk assessment; stale-symbol detection in `/oss:analyse` issue triage, Open-PR Overlap + Structural Constraints in `/oss:analyse vitality` |
 
 All `oss` skills degrade gracefully when optional plugins absent — reduced capability, not broken commands.
 
-> **Note:** Skills always invoked with `oss:` prefix: `/oss:analyse`, `/oss:review`, `/oss:resolve`, `/oss:release`.
+Install the optional Codex integration only if you need those paths:
+
+```text
+/plugin marketplace add openai/codex-plugin-cc
+/plugin install codex@openai-codex
+/reload-plugins
+```
+
+For codemap-backed structural signals, install `codemap-py` from the same marketplace:
+
+```bash
+claude plugin install codemap-py@borda-ai-rig
+```
+
+For local-file review, install `develop` and use `/develop:review` (requires `develop` plugin); `/oss:review` is for GitHub pull requests.
+
+> **Note:** Skills always use the `oss:` prefix: `/oss:analyse`, `/oss:review`, `/oss:resolve`, `/oss:release`, and `/oss:setup`.
 
 <details>
 
@@ -118,10 +136,10 @@ ______________________________________________________________________
 # Review top PR and draft a contributor-facing response
 /oss:review 55 --reply
 
-# Apply all review feedback in one pass
+# Apply selected review feedback
 /oss:resolve 55 report
 
-# Cut a release
+# Prepare release artifacts
 /oss:release prepare v2.1.0
 ```
 
@@ -129,7 +147,7 @@ ______________________________________________________________________
 
 ## 🔧 Skills reference
 
-### /analyse
+### /oss:analyse
 
 Analyse GitHub threads + repo vitality. Accepts issue/PR number, keyword `vitality`, keyword `ecosystem`, or path to saved report file.
 
@@ -203,16 +221,16 @@ GitHub API responses cached in `.cache/gh/` by number and date (30-day TTL) — 
 
 ______________________________________________________________________
 
-### /review
+### /oss:review
 
-Tiered parallel review of GitHub PR. Input always PR number.
+Scope-aware parallel review of a GitHub PR. Input is a PR number or a saved review report for reply drafting.
 
-**Purpose:** Expert-level review coverage — architecture, tests, performance, docs, linting, security — without reading every line. Produces ranked findings report. Optionally drafts welcoming contributor comment.
+**Purpose:** Review architecture, tests, performance, docs, linting, and security in parallel. Produce a ranked findings report and, optionally, a welcoming contributor comment.
 
 **Invocation:**
 
 ```text
-/oss:review 55                # full tiered review — saves findings report
+/oss:review 55                # scope-aware review — saves findings report
 /oss:review 55 --reply        # review + draft contributor-facing comment
 ```
 
@@ -228,30 +246,24 @@ Tier 0  git diff --stat
         non-terminal); reads PR description + known CI status before any
         agent spawns. Full criteria: "Review stages" below.
 
-Tier 1  Codex pre-pass (~60 seconds)
-        Independent diff review; surfaces obvious issues first
-        If blocking issue found → report immediately, skip Tier 2
+Optional Codex co-review
+        Runs when `codex@openai-codex` is installed; otherwise skipped
 
-Tier 2  Parallel specialist agents (requires foundry plugin)
-        foundry:sw-engineer        — correctness, design, API contracts
-        foundry:qa-specialist      — test coverage, edge cases, regression risk
-        foundry:perf-optimizer     — hot paths, memory, algorithmic complexity
-        foundry:doc-scribe         — docstrings, README accuracy, examples  [always]
-        foundry:solution-architect — architecture fit, dependency impact
-        foundry:linting-expert     — style, type annotations, ruff/mypy
+Tier 2  Parallel review dimensions
+        Scope selects relevant dimensions; default runs at most four
+        `--full` runs every dimension selected by scope
+        Without foundry, requested agents use general-purpose fallbacks
 
-        Agent skip rules (sw-engineer, challenger, Codex always run):
-          CI/CD-only PR → oss:cicd-steward + sw-engineer + challenger + Codex
-          docs-only PR  → doc-scribe + sw-engineer + challenger + Codex
-          FIX           → skips perf-optimizer, solution-architect
-          REFACTOR      → all agents (perf-optimizer verifies new structure isn't slower)
-          FEATURE/MIXED → all agents
-          CHORE         → sw-engineer + doc-scribe + linting-expert + challenger + Codex
+        Scope examples:
+          docs-only PR → foundry:doc-scribe (+ challenge/Codex when enabled/available)
+          docs + CI PR → oss:cicd-steward + foundry:doc-scribe (+ challenge/Codex)
+          tests + CI   → foundry:qa-specialist + foundry:linting-expert
+          code PR      → dimensions selected from architecture, tests, performance, docs, lint, and security
 
         CI status: failing CI noted in report header — review always proceeds
         codemap integration: rdep_count > 20 flags as high-risk change
 
-        Consolidation: foundry:sw-engineer merges all agent findings into ranked report
+        Consolidation: the selected consolidator merges findings into a ranked report
 
         --reply: oss:shepherd drafts contributor-facing comment from consolidated report (written to .temp/; user posts)
 ```
@@ -297,17 +309,15 @@ Default `[blocking]` tag per finding category — judgment still required, not a
 
 **Typical scenarios:**
 
-| PR type                                               | Agents that run                                                                                        | Skipped                                                                       |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| CI/CD only (.github/workflows, azure-pipelines, etc.) | oss:cicd-steward, sw-engineer, challenger, Codex                                                       | qa-specialist, perf-optimizer, doc-scribe, linting-expert, solution-architect |
-| Docs/README only (.md, .rst)                          | doc-scribe, sw-engineer, challenger, Codex                                                             | qa-specialist, perf-optimizer, linting-expert, solution-architect             |
-| Bug fix (\<3 files, \<50 lines)                       | sw-engineer, qa-specialist, doc-scribe, linting-expert, challenger                                     | perf-optimizer, solution-architect                                            |
-| Refactor (restructure, no new API)                    | sw-engineer, qa-specialist, perf-optimizer, doc-scribe, linting-expert, solution-architect, challenger | —                                                                             |
-| Feature (new public API/module)                       | all agents                                                                                             | —                                                                             |
-| Chore (deps, config, tooling)                         | sw-engineer, doc-scribe, linting-expert, challenger, Codex                                             | qa-specialist, perf-optimizer, solution-architect                             |
-| Any PR with failing CI                                | same as above by type                                                                                  | — (CI noted in report header)                                                 |
+| PR type                | Agents that run                                                           | Skipped                                          |
+| ---------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
+| Docs-only (.md, .rst)  | doc-scribe, plus challenge/Codex when enabled/available                   | Code, test, performance, architecture dimensions |
+| Docs + CI/CD           | oss:cicd-steward, doc-scribe, plus challenge/Codex when enabled/available | Code, test, performance, architecture dimensions |
+| Tests + CI             | qa-specialist, linting-expert                                             | Other dimensions                                 |
+| Annotation-only Python | linting-expert                                                            | Other dimensions                                 |
+| Code PR                | Scope-selected dimensions (default top four; `--full` removes the cap)    | Dimensions ruled out by scope or the default cap |
 
-Without `foundry`, Tier 2 falls back to general-purpose agents with role descriptions — functional, lower quality.
+Without `foundry`, selected dimensions fall back to `general-purpose` agents with role descriptions — functional, but less specialized.
 
 **Output locations:**
 
@@ -317,15 +327,19 @@ Without `foundry`, Tier 2 falls back to general-purpose agents with role descrip
 
 **Flags:**
 
-| Flag               | Effect                                                                                                                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--reply`          | After consolidation, `oss:shepherd` drafts welcoming two-part PR comment (positive framing first, then specific actionable asks)                                                                                              |
-| `--worktree`       | Opt-in. Run the review in an isolated git worktree (base: HEAD) so no dimension agent can mutate main sources. Report is written to the **main tree**; you review + merge. PR-review mode only (not `--reply`/direct-report). |
-| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions)                                                                                     |
+| Flag                         | Effect                                                                                                                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reply`                    | After consolidation, `oss:shepherd` drafts a welcoming two-part PR comment (positive framing first, then specific actionable asks)                                                                                            |
+| `--no-challenge`             | Skip the adversarial challenge pass                                                                                                                                                                                           |
+| `--codemap` / `--no-codemap` | Require or disable codemap structural context; default is automatic when available                                                                                                                                            |
+| `--semble`                   | Enable the optional semble semantic-search companion                                                                                                                                                                          |
+| `--full`                     | Run every dimension selected by scope instead of the default top-four cap                                                                                                                                                     |
+| `--worktree`                 | Opt-in. Run the review in an isolated git worktree (base: HEAD) so no dimension agent can mutate main sources. Report is written to the **main tree**; you review + merge. PR-review mode only (not `--reply`/direct-report). |
+| `--keep "<items>"`           | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions)                                                                                     |
 
 ______________________________________________________________________
 
-### /resolve
+### /oss:resolve
 
 Apply review findings to codebase. Reads live PR comments, saved review report, or both — deduplicates, resolves conflicts, implements fixes.
 
@@ -377,7 +391,7 @@ Resolve after `/review` on same PR: blast-radius check reuses per-module codemap
 
 **Guard rails:**
 
-- More than 15 required items → pauses, asks confirm before continuing
+- More than 10 selected items → asks to batch or proceed with the slower larger dispatch; a single dispatch never exceeds 20 items
 - More than 20 conflicted files → aborts, reports; you review manually
 - Git push requires explicit confirmation before executing
 - Core invariant: uses `git merge`, never `git rebase` — preserves history
@@ -386,20 +400,23 @@ Every resolve cycle closes with parallel `foundry:linting-expert` + `foundry:qa-
 
 **Flags:**
 
-| Flag               | Effect                                                                                                                                                                                                                                                                                                                                    |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--worktree`       | Opt-in. Wrap the whole run in an isolated git worktree (base: HEAD) entered before `gh pr checkout`, so the checkout, per-specialist worktrees, and cherry-picks never touch your main tree/branch. Commits still push to the fork as usual; the local worktree is disposable. Composes with resolve's existing per-specialist isolation. |
-| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions)                                                                                                                                                                                                 |
+| Flag                         | Effect                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--worktree`                 | Opt-in. Wrap the whole run in an isolated git worktree (base: HEAD) entered before `gh pr checkout`, so the checkout, per-specialist worktrees, and cherry-picks never touch your main tree/branch. Commits can push to the fork only after explicit confirmation; the local worktree is disposable. Composes with resolve's existing per-specialist isolation. |
+| `--no-challenge`             | Skip per-item challenge validation                                                                                                                                                                                                                                                                                                                              |
+| `--agent <name>`             | Select the implementation/intelligence agent instead of the default Codex path                                                                                                                                                                                                                                                                                  |
+| `--codemap` / `--no-codemap` | Require or disable codemap structural context; default is automatic when available                                                                                                                                                                                                                                                                              |
+| `--keep "<items>"`           | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions)                                                                                                                                                                                                                       |
 
 **Output location:** `.reports/resolve/<timestamp>/`
 
 ______________________________________________________________________
 
-### /release
+### /oss:release
 
-SemVer-disciplined release pipeline. Six modes: from generating notes to auditing readiness.
+Release communication and readiness pipeline with four modes: notes, prepare, audit, and demo.
 
-**Purpose:** Cut release correctly — right version bump, complete changelog, migration guides where needed, readiness verified before tag goes out.
+**Purpose:** Prepare release artifacts from a verified change range and audit readiness before a human tags or publishes the release.
 
 **Invocation:**
 
@@ -411,7 +428,7 @@ SemVer-disciplined release pipeline. Six modes: from generating notes to auditin
 /oss:release notes --changelog --summary --migration  # all four outputs
 /oss:release notes --append                         # integrate newly-landed commits into existing artifacts
 /oss:release prepare v2.1.0                         # full pipeline: audit → all artifacts
-/oss:release audit                                  # readiness check before tagging
+/oss:release audit                                  # readiness check; does not tag or publish
 /oss:release demo                                   # story-telling notebook for the release
 /oss:release demo v1.2->v2.0                        # demo scoped to explicit range
 ```
@@ -427,7 +444,7 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 | `--summary`   | Internal summary saved to `.temp/`                                                                                                                                                                                                                                          |
 | `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                                                                                                                                                                                                    |
 | `--append`    | Rerun the full pipeline scoped to newly-landed commits; integrate results into existing artifacts instead of a full regenerate (see below)                                                                                                                                  |
-| `prepare`     | Full pipeline: audit → all four artifacts + `demo.py` in `releases/<version>/`                                                                                                                                                                                              |
+| `prepare`     | Full pipeline: audit → project `CHANGELOG.md` entry plus `HIGHLIGHTS.md`, `MIGRATION.md`, `SUMMARY.md`, `DRAFT.md`, and `demo.py` under `releases/<version>/`                                                                                                               |
 | `audit`       | Readiness checklist: tests green, changelog present, version bumped, no uncommitted changes, doc proportionality for newly added features, no blocking upstream `/oss:review` verdict on file, changelog scope check , Codex adversarial pass (if `codex` plugin installed) |
 | `demo`        | Story-telling jupytext notebook (`demo.py`) highlighting most significant contributions                                                                                                                                                                                     |
 
@@ -443,7 +460,8 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 | CHANGELOG.md                                 | `--changelog` | write     | -       | -      |
 | SUMMARY.md                                   | `--summary`   | write     | -       | -      |
 | MIGRATION.md                                 | `--migration` | write¹    | -       | -      |
-| demo.py                                      | -             | -         | -       | write² |
+| HIGHLIGHTS.md                                | -             | write     | -       | -      |
+| demo.py                                      | -             | write²    | -       | write² |
 | Release mode (informational, never blocking) | -             | ✓         | ✓       | -      |
 | Working tree                                 | -             | ✓         | ✓       | -      |
 | CI status                                    | -             | ✓         | ✓       | -      |
@@ -456,13 +474,9 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 
 Flag mark = output produced only when flag passed. ¹ Full guide when breaking changes detected; single-line stub otherwise. ² Jupytext percent-format Python script with `# %%` code cells and `# %% [markdown]` narrative cells; self-contained with references to additional resources.
 
-**SemVer enforcement:**
+**Version and breaking-change checks:**
 
-`oss:shepherd` validates proposed version bump against actual diff before anything written. Refuses to proceed if:
-
-- `patch` bump proposed but diff contains breaking changes → should be `major`
-- `minor` bump proposed but no new public API added → should be `patch`
-- Version string not `MAJOR.MINOR.PATCH` format
+The pipeline checks version consistency and classifies public breaking changes when codemap evidence is available. It does not choose or write a package version, create a git tag, or upload to PyPI/another registry; perform those project-specific release steps separately after reviewing the generated artifacts.
 
 **Breaking-change classification** (codemap-gated): after truth check, each diff-derived public symbol run through `fn-rdeps --exclude-tests`. Symbol with caller outside own top-level package → labelled **Breaking**, moved to ⚠ Breaking Changes with external call sites cited; symbol whose callers all inside own package stays under human label. Affected call-site list drafted into migration guide — downstream consumers see exactly what to change. Requires codemap v3 index — no index → phase skipped, human classification stands. Partial coverage (`query_complete:false`) surfaces evidence as possibly-incomplete, never drops it.
 
@@ -478,7 +492,7 @@ Added → Breaking Changes → Changed → Deprecated → Removed → Fixed → 
 
 **`--append`:** assumes an earlier `notes` run already produced `DRAFT.md` (and, when their flags were used, `CHANGELOG.md`/`SUMMARY.md`/`MIGRATION.md`) and reruns the full pipeline — unchanged, Gather changes through Draft executive summary — scoped to only the commits landed since then, tracked via a per-branch marker at `.temp/release-last-processed-<branch>`. Results integrate into every existing artifact in place via Read + Edit tool (no parsing script): DRAFT.md's Summary/Spotlights/Migration-guide/Notable-changes/Contributors sections all merge (not overwrite); root-level `SUMMARY.md`/`MIGRATION.md` merge the same way when their flags are set, guarded by a mechanical byte-count collapse guard against an accidental whole-file wipe. Purely additive — *except* when this cycle detects a commit reverting or materially changing something a prior cycle already wrote (cross-cycle revert/pivot detection): that stale entry is struck or superseded, never left stale beside a contradicting new one. A genuine `git revert` is resolved deterministically against a per-branch patch-id-keyed provenance store (`.temp/release-provenance-<branch>.json`, recording which commit's diff-content wrote which exact bullet — keyed on `git patch-id --stable` rather than raw commit sha, so a reword, rebase, or cherry-pick of the original commit since it was recorded doesn't defeat the lookup); a pivot (no literal revert commit) still relies on grep-narrowed semantic judgment. **After merge**, a post-merge re-validation pass re-runs Truth check, Identify highlights re-ranking, Validate migration docs, and Validate docs against the final merged content (not just this cycle's incremental diff) — catches prior-cycle content gone stale from this cycle's changes without a clean detected revert/pivot (e.g. a spotlight built on a commit a later cycle reverts gets replaced, not left beside the new set). No marker found (first use, or history rewritten by rebase/force-push) → falls back to the default `$LAST_TAG..HEAD` range and a full overwrite — identical to plain `notes` — establishing the baseline for the next `--append` run. Every successful `notes`-mode write refreshes the marker to current `HEAD`.
 
-**Output location:** `releases/<version>/` for `prepare` mode (including `demo.py` when version tag stable); `.temp/` for individual modes and demo on non-release branches.
+**Output location:** `releases/<version>/` for `prepare` artifacts (the project `CHANGELOG.md` is updated at its discovered path and linked from the release directory); `.temp/` for individual modes and demo on non-release branches.
 
 ______________________________________________________________________
 
@@ -545,7 +559,7 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-### shepherd
+### oss:shepherd
 
 **Role:** Public voice of project. Owns all external-facing communication — PR replies, issue responses, release notes, changelog entries, migration guides. Never writes implementation code.
 
@@ -583,7 +597,7 @@ use shepherd to write a migration guide for the v3.0 breaking changes
 
 ______________________________________________________________________
 
-### cicd-steward
+### oss:cicd-steward
 
 **Role:** GitHub Actions health specialist. Owns CI configuration quality: workflow topology, runner strategy, caching, branch protections, flaky test detection.
 
@@ -640,7 +654,7 @@ ______________________________________________________________________
 
 **GitHub authentication:** Skills use `gh` CLI. Run `gh auth login` once if not already.
 
-**Optional plugin integrations** detected automatically at runtime. Install any optional plugin from [Install](#install) — skills use them next invocation, no config changes.
+**Optional plugin integrations** detected automatically at runtime. Install any optional plugin from [Install](#-install) — skills use them next invocation, no config changes.
 
 **Hooks** register automatically from `hooks/hooks.json` when the plugin is enabled — no `settings.json` edits needed:
 
@@ -665,9 +679,67 @@ ______________________________________________________________________
 | `.cache/gh/`          | `/oss:analyse`, `/oss:review` | GitHub API response cache                        |
 | `releases/<version>/` | `/oss:release prepare`        | Release artefacts                                |
 
-All artifact directories gitignored (ephemeral, TTL-managed).
+Artifact directories are gitignored; GitHub API cache entries use the 30-day TTL described above.
 
 ______________________________________________________________________
+
+<a id="bin-helper-inventory"></a>
+
+<details>
+
+<summary><strong>🧰 Bin helper inventory (33 shipped deterministic helpers)</strong></summary>
+
+These helpers are installed workflow support and maintainer surfaces, not additional slash-command skills. The skills own the orchestration; the helpers handle bounded parsing, evidence collection, path resolution, scoring, and artifact preparation.
+
+#### Analysis, signals, and structural context
+
+| Helper                           | Purpose                                                               |
+| -------------------------------- | --------------------------------------------------------------------- |
+| `assemble_vitality_scores.py`    | Merge three vitality-axis partials into one health score.             |
+| `build_triage_batch.py`          | Build a codemap query batch from triaged identifiers.                 |
+| `check_agent.py`                 | Probe whether a plugin agent is installed.                            |
+| `check_oss_pr_signals.py`        | Collect read-only OSS signals from a pull-request diff.               |
+| `classify_breaking.py`           | Label changed public symbols as Breaking or internal.                 |
+| `classify_pr_scope.py`           | Classify a pull request as CHORE, FIX, REFACTOR, FEATURE, or MIXED.   |
+| `codemap_cache.py`               | Materialize review-to-resolve codemap pre-flight cache artifacts.     |
+| `detect_codemap.py`              | Detect codemap availability, index presence, and currency.            |
+| `detect_thread_type.py`          | Detect GitHub thread type and report drift.                           |
+| `extract_changed_symbols.py`     | Extract changed public Python symbols from a diff.                    |
+| `extract_diff_impact_qnames.py`  | Extract qualified names from codemap diff-impact JSON.                |
+| `extract_vitality_vars.py`       | Emit shell assignments from vitality-score JSON.                      |
+| `fetch_gh_data_group1.py`        | Fetch independent GitHub datasets for vitality scoring.               |
+| `fetch_gh_data_group2.py`        | Fetch dependent repository and workflow content for vitality scoring. |
+| `resolve_centrality.py`          | Convert codemap centrality output into a worktree resolver map.       |
+| `search_downstream_consumers.py` | Find GitHub repositories importing changed symbols.                   |
+
+#### Review, resolve, and argument helpers
+
+| Helper                       | Purpose                                                            |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `commit_action_item.py`      | Manage the commit sentinel around one resolve action-item commit.  |
+| `commit_all_items.py`        | Create a bulk commit summarizing resolved review items.            |
+| `commit_lint_fixes.py`       | Stage tracked lint changes and create the lint-fix commit.         |
+| `compute_commit_sentinel.py` | Print the current repository and branch commit-sentinel path.      |
+| `merge_specialist_batch.py`  | Cherry-pick specialist worktree commits in priority order.         |
+| `parse-resolve-args.py`      | Parse `/oss:resolve` arguments into shell assignments.             |
+| `parse-skill-flags.py`       | Parse shared skill flags into shell assignments.                   |
+| `parse_audit_json.py`        | Summarize `pip-audit` JSON as dependency and vulnerability counts. |
+| `resolve_preflight.py`       | Verify tools, authentication, and remote state before resolve.     |
+| `resolve_shared_path.py`     | Resolve the plugin's shared directory portably.                    |
+
+#### Release, installation, and path helpers
+
+| Helper                       | Purpose                                                    |
+| ---------------------------- | ---------------------------------------------------------- |
+| `extract_contributors.py`    | List unique non-bot contributors in a Git range.           |
+| `get_plugin_install_path.py` | Resolve the active plugin path from Claude's registry.     |
+| `release_append_marker.py`   | Persist and resolve the release `--append` baseline.       |
+| `release_setup.py`           | Resolve shared setup values for release modes.             |
+| `run_audit_checks.py`        | Gather raw readiness evidence for release audit.           |
+| `setup_release_dir.py`       | Create a release directory and protect existing artifacts. |
+| `sync_rules.py`              | Install namespaced rule symlinks into `~/.claude/rules/`.  |
+
+</details>
 
 <a id="troubleshooting"></a>
 
@@ -679,11 +751,9 @@ ______________________________________________________________________
 
 </summary>
 
-## 🔍 Troubleshooting
-
 **`/oss:review` skips Tier 2 agents**
 
-Tier 2 runs only when Tier 1 (Codex pre-pass) finds no blocking issue alone. Tier 1 flags blocking → shows in report. Install `codex` plugin to enable pre-pass; without it, `/oss:review` goes directly to Tier 2.
+Review dimensions are scope-selected and the default fan-out is capped at four. Install `foundry` for specialized agents; otherwise the selected work uses `general-purpose` fallbacks. Install `codex@openai-codex` only if you want the optional Codex co-review.
 
 **A question is blocked with "oss:review report gate"**
 
@@ -699,15 +769,15 @@ Tier 2 runs only when Tier 1 (Codex pre-pass) finds no blocking issue alone. Tie
 
 **`/oss:resolve` pauses mid-run asking for confirmation**
 
-More than 15 required items found across sources. Intentional — resolve asks before applying large batch. Confirm to continue, or review item list, tell resolve which to skip.
+More than 10 selected items found across sources. Intentional — resolve asks whether to batch or continue with the slower larger dispatch; a single dispatch never exceeds 20 items.
 
 **`/oss:resolve` aborts with "too many conflicted files"**
 
 More than 20 files have semantic conflicts. Resolve aborts rather than guessing intent at scale. Review conflict list in output, resolve most complex manually, re-run resolve on remainder.
 
-**`/oss:release` refuses to proceed with a proposed version bump**
+**`/oss:release` reports a version or release-state problem**
 
-`oss:shepherd` validated diff, found bump type incorrect. Output tells what bump type justified by actual changes. Adjust version argument, re-run.
+The readiness audit found a version-consistency or release-state gap. Review the audit table, update the project manifest/changelog as appropriate, and re-run `/oss:release audit [version]`; this skill does not edit package versions for you.
 
 **`/oss:analyse` returns stale data**
 

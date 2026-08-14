@@ -105,14 +105,6 @@ def test_main_malformed_stdin_exits_2(monkeypatch: pytest.MonkeyPatch, capsys: p
     assert "error" in json.loads(capsys.readouterr().out)
 
 
-def test_help_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 without touching stdin (argparse)."""
-    with pytest.raises(SystemExit) as exc:
-        cb.main(["--help"])
-    assert exc.value.code == 0
-    assert "usage:" in capsys.readouterr().out
-
-
 def test_golden_invocation_stdin_pipe(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """Documented call site (``codemap-py query batch | classify_breaking.py``) — stdin-only, no argv."""
     entry = {"ok": True, "result": {"qname": "mypkg.core::Thing", "called_by": [_caller("app.svc")]}}

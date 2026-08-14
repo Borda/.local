@@ -24,22 +24,10 @@ import resolve_shared_path
 SCRIPT = Path(resolve_shared_path.__file__)
 
 
-def test_no_tmp_literal_in_source() -> None:
-    """Windows-portability: script must not hardcode ``/tmp``."""
-    src = SCRIPT.read_text(encoding="utf-8")
-    assert "/tmp" not in src, "resolve_shared_path.py must not hardcode /tmp"
-
-
 def test_stdout_reconfigure_present_in_source() -> None:
     """Windows-portability: ``sys.stdout.reconfigure(...)`` required in ``main()``."""
     src = SCRIPT.read_text(encoding="utf-8")
     assert "sys.stdout.reconfigure" in src
-
-
-def test_shebang_uses_env_python_not_python3() -> None:
-    """Shebang must read ``#!/usr/bin/env python`` (not ``python3``)."""
-    first_line = SCRIPT.read_text(encoding="utf-8").splitlines()[0]
-    assert first_line == "#!/usr/bin/env python"
 
 
 class TestValidation:

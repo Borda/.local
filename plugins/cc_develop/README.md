@@ -1,8 +1,10 @@
 # 🛠️ develop — Claude Code Plugin
 
-Six slash-command skills — `plan`, `feature`, `fix`, `refactor`, `debug`, `review` — one principle: prove problem exist before writing solution. Every code-changing skill force you prove understanding before touching production code.
+Six development workflows — `plan`, `feature`, `fix`, `refactor`, `debug`, and `review` — help Claude Code understand a Python change before it edits production code. `/develop:setup` is the separate post-install command that delivers this plugin's rule symlinks.
 
-> Works standalone — `foundry` not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:qa-specialist`, etc.) — strongly recommended.
+The gates narrow the failure surface — they do not replace developer judgment on whether a generated change is correct or production-safe.
+
+> Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions; with it, the same workflows can route to named specialists such as `foundry:sw-engineer` and `foundry:qa-specialist`.
 
 ______________________________________________________________________
 
@@ -10,11 +12,11 @@ ______________________________________________________________________
 
 <summary><strong>📋 Contents</strong></summary>
 
-- [What is develop?](#what-is-develop)
-- [Why develop?](#why-develop)
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Skills reference](#skills-reference)
+- [What is develop?](#-what-is-develop)
+- [Why develop?](#-why-develop)
+- [Install](#-install)
+- [Quick start](#-quick-start)
+- [Skills reference](#-skills-reference)
   - [`/develop:plan`](#developplan)
   - [`/develop:feature`](#developfeature)
   - [`/develop:fix`](#developfix)
@@ -22,10 +24,11 @@ ______________________________________________________________________
   - [`/develop:debug`](#developdebug)
   - [`/develop:review`](#developreview)
   - [`/develop:setup`](#developsetup)
-- [Workflow overview](#workflow-overview)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [Contributing / feedback](#contributing--feedback)
+- [Workflow overview](#-workflow-overview)
+- [Configuration](#-configuration)
+- [Bin helper inventory](#bin-helper-inventory)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing / feedback](#-contributing--feedback)
 
 </details>
 
@@ -33,11 +36,11 @@ ______________________________________________________________________
 
 ## 🤔 What is develop?
 
-`develop` = development workflow plugin for Claude Code. Enforces validate-first discipline across full implementation lifecycle: scoping, features, bug fixes, refactoring, debugging, local code review — structured reproducible workflows, not freeform requests.
+`develop` is a Claude Code plugin for validate-first Python development: scope work, pin a feature contract, reproduce a bug, preserve behavior during refactoring, investigate failures, and review local Python changes with explicit evidence and handoff artifacts.
 
-For developers who want AI that follows engineering discipline, not one that guesses and charges ahead. Every skill has explicit gates blocking forward motion on shaky ground.
+Each workflow has gates that pause when the contract, reproduction, evidence, or safety net is missing.
 
-**Not for**: dependency upgrades (pydantic v1→v2, numpy 1→2), codebase onboarding/exploration, data migration scripts, CI-only failures without local repro (use `--ci-run` in debug), cross-cutting refactors >15 files (split into phases).
+> Current boundaries: code-changing and review workflows target Python projects with pytest-style tooling; `/develop:plan` can analyze a broader task, but downstream implementation still assumes pytest. Dependency migrations, data migrations, codebase onboarding, and Python-free changes remain outside this plugin's current scope; use the project's native workflow or another tool. Broader language support could be added later, but is not promised here.
 
 ______________________________________________________________________
 
@@ -50,14 +53,14 @@ Without it, AI-assisted development tends to:
 - Refactor without safety net — break behavior silently
 - Apply multi-file changes blind to affected downstream callers
 
-With `develop`, each workflow enforces discipline rigorous engineer applies manually:
+These workflows address common maintenance failures with concrete gates:
 
 - **feature**: failing demo test first — cannot write test = feature underspecified
 - **fix**: reproduce bug with failing regression test first — cannot reproduce = cannot verify fix
 - **refactor**: audit test coverage, lock characterization tests before moving one line
 - **debug**: gather all evidence, state one confirmed hypothesis before any fix
 - **plan**: scope complexity, identify blast radius, agent feasibility review before committing
-- **review**: six specialist agents — architecture, tests, performance, docs, lint, API design — against local diff. No GitHub PR needed
+- **review**: local Python review across architecture, tests, performance, docs, lint, security, and API design. It ranks the relevant dimensions and runs up to four by default, or all selected dimensions with `--full`; no GitHub PR is required.
 
 When Codemap is enabled, `fix` selects a route before retrieval: a fully localized file-and-symbol edit can use the explicit zero-query path, while unresolved callers, dependencies, blast radius, imports, or source scope receive only the matching compact query.
 
@@ -65,7 +68,7 @@ ______________________________________________________________________
 
 ## 📦 Install
 
-**Prerequisites**: Claude Code installed. Verify: `claude --version`
+**Prerequisites**: Claude Code installed (`claude --version`) and Python 3.10+ with a project test runner for code-changing/review workflows. The plugin itself is installed from the `borda-ai-rig` marketplace; project dependencies remain your responsibility.
 
 **Install develop**
 
@@ -74,22 +77,21 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install develop@borda-ai-rig
 ```
 
-Then run `/develop:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade; `bash sync.sh claude` does it for you.
+Then run `/develop:setup` once to link this plugin's rules into `~/.claude/rules/`. Re-run it after every upgrade. A repository checkout may also run `bash sync.sh claude`, but that is not required for a marketplace install.
 
 <details>
 
-<summary><strong>Install the full suite (recommended)</strong></summary>
+<summary><strong>Optional integrations</strong></summary>
 
 ```bash
-claude plugin install foundry@borda-ai-rig   # specialized agents — strongly recommended
-claude plugin install oss@borda-ai-rig        # progressive review loop integration
-claude plugin install develop@borda-ai-rig
+claude plugin install foundry@borda-ai-rig   # named specialist agents
+claude plugin install oss@borda-ai-rig        # optional PR review and severity checklist integration
 claude plugin install research@borda-ai-rig
 ```
 
 </details>
 
-`foundry` gives `develop` access to `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, others. Without it, all dispatches fall back to `general-purpose` with role-description prompts — functional, lower quality.
+`foundry` gives `develop` access to named specialist agents such as `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, and `foundry:doc-scribe`. Without it, dispatches fall back to `general-purpose` with role descriptions. The `develop` plugin ships its own quality-stack and shared workflow files; `foundry` is not required for those files to load.
 
 <details>
 
@@ -149,12 +151,13 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag               | Description                                          |
-| ------------------ | ---------------------------------------------------- |
-| `--no-challenge`   | Skip challenger adversarial gate                     |
-| `--codemap`        | Strict codemap — fail if index missing               |
-| `--no-codemap`     | Disable codemap even if available                    |
-| `--accept-no-plan` | Skip inline plan generation (for nested invocations) |
+| Flag              | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `--no-challenge`  | Skip challenger adversarial gate                     |
+| `--codemap`       | Require Codemap and an index; stop when unavailable  |
+| `--no-codemap`    | Disable Codemap even if available                    |
+| `--semble`        | Enable the optional Semble semantic-search preflight |
+| `--max-depth <N>` | Limit plan → debug → plan cycles (default: `3`)      |
 
 **What happens**:
 
@@ -210,12 +213,13 @@ ______________________________________________________________________
 
 | Flag                  | Description                                                                                                                                                                                                                    |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--issue <N>`         | Fetch issue `<N>` as the feature request; numeric positional arguments are also recognized as issue references                                                                                                                 |
 | `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                                                      |
 | `--plan <path>`       | Read classification, scope, approach from existing plan file                                                                                                                                                                   |
 | `--team`              | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope                                     |
 | `--worktree`          | Run the whole skill in an isolated git worktree (`.claude/worktrees/`) on a new branch — you review + merge (never auto-merged). Codemap index is per-worktree, so parallel runs never race one index. Composes with `--team`. |
 | `--no-codemap`        | Disable codemap even if available                                                                                                                                                                                              |
-| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                                                         |
+| `--codemap`           | Require Codemap and an index; stop when unavailable                                                                                                                                                                            |
 | `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust own scoping)                                                                                                                                                         |
 | `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                                               |
 | `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                                                      |
@@ -228,8 +232,8 @@ ______________________________________________________________________
 3. **Demo use-case**: crystallises API contract as inline doctest (simple functions) or example script (complex features with setup). Demo must fail against current code before proceeding. Gate enforced via exit code — not output text.
 4. **TDD implementation loop** (`foundry:sw-engineer`): tests pass one at a time, full suite after each change to catch regressions.
 5. **Review and close gaps**: 5-axis quality scan (correctness, readability, architecture, security, performance) → fix loop, max 3 cycles.
-6. **Documentation** (`foundry:doc-scribe`): Google-style docstrings, CHANGELOG entry, README updates if public API changed.
-7. **Quality stack**: lint/format (ruff) → type check (mypy) → full test suite → blast-radius check (codemap-py) → Codex pre-pass → progressive review loop.
+6. **Documentation** (`foundry:doc-scribe`): updates docstrings and README content when the implementation changes a public API; a separate changelog step is used only when the project has a changelog convention.
+7. **Quality stack**: available ruff/mypy checks → full test suite → optional Codemap blast-radius check → optional Codex pre-pass → progressive review loop.
 
 **Realistic example**:
 
@@ -248,7 +252,7 @@ ______________________________________________________________________
 
 **When to use**: fixing known bug with traceback, failing test, or GitHub issue.
 
-**Not for**: CI-only failures — use `/develop:debug --ci-run <run-id>` first; production incidents without CI run or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`.
+**Not for**: CI-only failures — use `/develop:debug --ci-run <run-id>` first; production incidents without CI run or traceback — use `/foundry:investigate` (requires `foundry` plugin); `.claude/` config issues — use `/foundry:audit` (requires `foundry` plugin).
 
 **Invocation**:
 
@@ -280,7 +284,7 @@ ______________________________________________________________________
 2. **Reproduce the bug** (`foundry:qa-specialist`): writes regression test failing on unfixed code. Gate: test must exit non-zero before proceeding.
 3. **Apply the fix** (`foundry:sw-engineer`): minimal change — only what makes regression test pass.
 4. **Review and close gaps**: 5-axis quality scan → fix loop, max 3 cycles. Adjacent bugs documented as observations, handled in separate session — never fixed same pass.
-5. **Quality stack**: ruff → mypy → full test suite → blast-radius check → Codex pre-pass → progressive review loop.
+5. **Quality stack**: available ruff/mypy checks → full test suite → optional Codemap blast-radius check → optional Codex pre-pass → progressive review loop.
 
 **Realistic example**:
 
@@ -327,7 +331,7 @@ ______________________________________________________________________
 | `--team`              | Spawn `foundry:sw-engineer` (refactoring) + `foundry:qa-specialist` (characterization tests) parallel. Use when target is directory or spans multiple modules                                                                  |
 | `--worktree`          | Run the whole skill in an isolated git worktree (`.claude/worktrees/`) on a new branch — you review + merge (never auto-merged). Codemap index is per-worktree, so parallel runs never race one index. Composes with `--team`. |
 | `--no-codemap`        | Disable codemap even if available                                                                                                                                                                                              |
-| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                                                         |
+| `--codemap`           | Require Codemap and an index; stop when unavailable                                                                                                                                                                            |
 | `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                                                                             |
 | `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                                               |
 | `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                                                      |
@@ -340,7 +344,7 @@ ______________________________________________________________________
 3. **Add characterization tests** (`foundry:qa-specialist`): every uncovered/partial public API gets tests asserting *current* behavior (not desired). Gate: all characterization tests must pass on unmodified code before proceeding.
 4. **Refactor with safety net**: one focused change per cycle, tests after each. Safety break: max 5 change-test cycles per inner session; max 10 total across all outer review cycles.
 5. **Review and close gaps**: behavior preservation, goal achievement, no new smells, no unintended API surface changes. Max 3 outer review cycles.
-6. **Quality stack**: ruff → mypy → full test suite → blast-radius check → Codex pre-pass → progressive review loop.
+6. **Quality stack**: available ruff/mypy checks → full test suite → optional Codemap blast-radius check → optional Codex pre-pass → progressive review loop.
 
 **Refactoring categories skill handles**:
 
@@ -367,7 +371,7 @@ ______________________________________________________________________
 
 **When to use**: symptom without confirmed root cause; bug mysterious enough to warrant structured investigation before fixing.
 
-**Not for**: production incidents without CI run ID or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`. CI-only failures ARE supported — pass `--ci-run <run-id or URL>`.
+**Not for**: production incidents without CI run ID or traceback — use `/foundry:investigate` (requires `foundry` plugin); `.claude/` config issues — use `/foundry:audit` (requires `foundry` plugin). CI-only failures ARE supported — pass `--ci-run <run-id or URL>`.
 
 **Invocation**:
 
@@ -387,7 +391,7 @@ ______________________________________________________________________
 | `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating distinct root-cause hypothesis independently. Use when root cause unclear after initial analysis, or failure spans 3+ modules                                                     |
 | `--worktree`           | Run the investigation in an isolated git worktree (base: HEAD) so reproduction attempts never touch main sources. Diagnosis file is written to the **main tree** so `/develop:fix` can read it.                                                 |
 | `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures, no local repro. |
-| `--codemap`            | Strict codemap — fail if index missing (auto-enabled when installed)                                                                                                                                                                            |
+| `--codemap`            | Require Codemap and an index; stop when unavailable                                                                                                                                                                                             |
 | `--no-codemap`         | Disable codemap even if available                                                                                                                                                                                                               |
 | `--no-challenge`       | Skip challenger adversarial gate entirely                                                                                                                                                                                                       |
 | `--challenge`          | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                                                                       |
@@ -415,11 +419,11 @@ ______________________________________________________________________
 
 ### `/develop:review`
 
-**Purpose**: Comprehensive local code review via six specialist agents parallel — architecture, tests, performance, docs, static analysis, API design. Works against local files or current git diff. No GitHub PR required.
+**Purpose**: Review local Python files or the current git diff across architecture, tests, performance, docs, static analysis, security, and API design. The classifier selects relevant dimensions; the default fan-out is capped at four, and `--full` runs every selected dimension. No GitHub PR is required.
 
 **When to use**: reviewing own changes before committing; structured feedback on local files; closing quality gaps before PR.
 
-**Not for**: GitHub PR review — use `/oss:review <PR#>`; implementation work — use `/develop:feature` or `/develop:fix`.
+**Not for**: GitHub PR review — use `/oss:review <PR#>` (requires `oss` plugin); implementation work — use `/develop:feature` or `/develop:fix`.
 
 **Scope**: Python source only. Non-Python files (YAML, Dockerfile, JSON, shell scripts) flagged in report header as "not reviewed" but presence noted — dependency/config changes can silently break reviewed Python code.
 
@@ -437,17 +441,18 @@ ______________________________________________________________________
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-challenge`   | Skip challenger adversarial gate                                                                                                                                                               |
 | `--challenge`      | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                      |
-| `--codemap`        | Strict codemap — fail if index missing                                                                                                                                                         |
+| `--codemap`        | Require Codemap and an index; stop when unavailable                                                                                                                                            |
 | `--no-codemap`     | Disable codemap even if available                                                                                                                                                              |
 | `--semble`         | Enable semble semantic search context                                                                                                                                                          |
 | `--worktree`       | Run the review in an isolated git worktree (base: HEAD) so no agent can mutate main sources. Report is written to the **main tree**; reviews committed HEAD (uncommitted changes not visible). |
+| `--full`           | Run every dimension selected by classification instead of the default top-four cap                                                                                                             |
 | `--keep "<items>"` | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                      |
 
 **Workflow**:
 
 1. **Identify scope**: collects Python files from path or `git diff HEAD`. Classifies diff FIX / REFACTOR / FEATURE / CHORE / MIXED — skips optional agents for smaller diffs (FIX skips `foundry:perf-optimizer` + `foundry:solution-architect`; CHORE skips `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:solution-architect`). Small diff (single file, \<50 lines, no new public API) also auto-skips `foundry:challenger` gate unless `--challenge` passed.
 2. **Codex co-review** (if `codex` plugin installed): adversarial diff review seeds pre-flagged issues list for specialist agents.
-3. **Six parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`):
+3. **Selected parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`; the default cap is four, `--full` removes that cap):
    - `foundry:sw-engineer`: architecture, SOLID, type safety, error handling, Python anti-patterns, security for touched auth/input/data paths
    - `foundry:qa-specialist`: test coverage gaps, missing edge cases, ML non-determinism, seed pinning, boundary conditions
    - `foundry:perf-optimizer`: algorithmic complexity, loops that should be NumPy/torch ops, unnecessary I/O, ML DataLoader config (skipped for FIX diffs)
@@ -485,8 +490,8 @@ git add src/mypackage/trainer.py tests/test_trainer.py
 - Blocking bugs or regressions → `/develop:fix`
 - Structural or quality issues → `/develop:refactor`
 - Security findings → `/develop:fix`; run `pip-audit` if dependency files changed
-- Mechanical issues (docstrings, missing tests) → `/codex:codex-rescue <task>` if Codex available
-- GitHub PR review for contributor → `/oss:review <PR#>` instead
+- Mechanical issues (docstrings, missing tests) → `/codex:codex-rescue <task>` (requires `codex` plugin) if available
+- GitHub PR review for contributor → `/oss:review <PR#>` (requires `oss` plugin) instead
 
 ______________________________________________________________________
 
@@ -590,7 +595,7 @@ Available on: `feature`, `fix`, `refactor` (all work stays in the worktree); and
 
 - **Codemap alignment** — the index path is anchored to the git top-level (`<root>/.cache/codemap/<project>.json`), not to the session CWD, and a linked worktree is its own top-level, so the index still resolves per-worktree (`<worktree>/.cache/codemap/…`) — and resolves identically from any subdirectory inside it. Each run owns its own ephemeral index, so any number of parallel `--worktree` runs never share or race one index; `.cache/` is gitignored so a worktree index never merges back. After you merge the branch, the main index is flagged stale on the next prompt and refreshes once.
 - **Composes with `--team`** — the orchestrator worktree is the integration point; `--team` teammates keep their own per-agent isolation and merge into the orchestrator's worktree branch.
-- Not offered on `debug` (diagnosis handoff), `plan`, or `review` (read-only).
+- Not offered on `plan` because planning is analysis-only; `debug` and `review` also support `--worktree`, with their report/diagnosis deliverables written to the main tree as documented above.
 
 ______________________________________________________________________
 
@@ -598,33 +603,33 @@ ______________________________________________________________________
 
 ### Dependencies by capability
 
-| Dependency       | Required    | Unlocks                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry` plugin | recommended | `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, others; quality stack shared file. Without foundry, all agents fall back to `general-purpose` with role-description prompts.                                                                                                                                                                            |
-| `oss` plugin     | optional    | `oss:review` checklist used by `develop:review` Agent 1. `oss:*` skills never auto-invoked from develop flows — progressive review loop escalates to `/develop:review` on concern signal only; run `/oss:review` explicitly once PR exists.                                                                                                                                                             |
-| `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                                                                                                                                                                                        |
-| `codemap-py`     | optional    | `codemap-py query` for blast-radius, import graph, call-graph context. **Auto-enabled** in all skills when installed and index found; existing index incremental-refreshed (SHA-diff) automatically before use; silently skipped if absent (no full build mid-task — run `/codemap-py:scan-codebase` once). Install: `claude plugin install codemap-py@borda-ai-rig`, then `/codemap-py:scan-codebase`. |
-| `gh` CLI         | optional    | Used in `fix`, `debug`, `feature` when argument is GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to upstream repo (fork workflow).                                                                                                                                                                                                                             |
+| Dependency       | Required    | Unlocks                                                                                                                                                                                      |
+| ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry` plugin | recommended | Named specialist agents. Without it, agent-router falls back to `general-purpose` with role-description prompts; develop's own quality-stack files still load.                               |
+| `oss` plugin     | optional    | Severity checklist for local review when available; use `/oss:review <PR#>` for contributor-facing GitHub PR review (requires `oss`).                                                        |
+| `codex` plugin   | optional    | Read-only adversarial pre-pass and bounded mechanical follow-up when available; skipped gracefully when absent.                                                                              |
+| `codemap-py`     | optional    | Structural context such as callers, imports, test impact, and blast radius. Auto mode uses an available index; absent/stale indexes follow the Codemap gate, and `--no-codemap` disables it. |
+| `semble` MCP     | optional    | Semantic-search companion enabled explicitly with `--semble`; preflight stops if the MCP server is not configured.                                                                           |
+| `gh` CLI         | optional    | Fetches issue bodies for numeric issue arguments and GitHub Actions logs for `/develop:debug --ci-run`; required only for those paths.                                                       |
 
 ### Codemap-py behavior
 
-Codemap-py auto-enabled in all skills when plugin installed and index exists. No flag needed for default experience.
+In auto mode, Codemap-py is used when the plugin and a project index are available; no flag is needed for that default experience.
 
-| State                              | Behavior                                   |
-| ---------------------------------- | ------------------------------------------ |
-| Installed + index found + no flag  | Auto-enabled                               |
-| Installed + no index + no flag     | AskUser: build index now? (Gate A)         |
-| Installed + stale index + no flag  | AskUser: rebuild now? (Gate B)             |
-| Not installed + no flag            | Silent skip                                |
-| Not installed + `--codemap`        | AskUser: install codemap-py? (strict mode) |
-| Installed + no index + `--codemap` | Fail with: build index first               |
-| Any state + `--no-codemap`         | Always disabled                            |
+| State                                 | Behavior                                   |
+| ------------------------------------- | ------------------------------------------ |
+| Installed + current index + auto mode | Use Codemap context                        |
+| Installed + no index + auto mode      | Gate A asks whether to build or continue   |
+| Installed + stale index + auto mode   | Gate B asks whether to refresh or continue |
+| Not installed + auto mode             | Continue without Codemap                   |
+| Any unavailable state + `--codemap`   | Stop and report strict-mode failure        |
+| Any state + `--no-codemap`            | Always disabled                            |
 
 `--codemap` = **strict assertion** — useful in CI or to guarantee structural context always applied. `--no-codemap` skips codemap for specific run (e.g. non-Python submodule).
 
 ### Python tooling
 
-Quality stack auto-detects project tooling at skill start via shared runner-detection file. No configuration needed — finds `uv`, `ruff`, `mypy`, `pytest` if on path. Tool absent → stack step skipped with note in final report.
+The quality stack is shipped by `develop` and auto-detects the project's runner (`uv`, Poetry, tox, Make, or `python -m pytest`). Missing optional tools such as ruff or mypy are reported and skipped; the test runner remains the decisive verification step.
 
 ### Hooks
 
@@ -660,15 +665,9 @@ ______________________________________________________________________
 
 </summary>
 
-## 🔍 Troubleshooting
+### "foundry plugin not installed — named-agent fallback"
 
-### "foundry plugin not installed — quality stack skipped"
-
-Quality stack reads shared file from `foundry` plugin. Not installed → lint/type/test/blast-radius steps skipped entirely, final report notes it.
-
-```bash
-claude plugin install foundry@borda-ai-rig
-```
+Not installed → named-agent dispatch falls back to `general-purpose`; the develop-owned quality stack still runs. Install `foundry` when you want its specialist agents.
 
 ### A question is blocked with "develop:review report gate"
 
@@ -692,7 +691,7 @@ Same pattern in `/develop:fix` Step 2. Regression test passes on unfixed code �
 
 ### codemap-py query warnings appearing in output
 
-`codemap-py` optional. `codemap-py` not on PATH → all codemap-py steps silently skipped. Plugin installed but index missing/stale → default (auto) mode prompts build/rebuild (Gate A/B); `--no-codemap` skips silently. Skill works fully without it. To enable codemap-py context, install the `codemap-py` plugin, run `/codemap-py:scan-codebase`.
+`codemap-py` optional. `codemap-py` not on PATH → all codemap-py steps silently skipped. Plugin installed but index missing/stale → default (auto) mode prompts build/rebuild (Gate A/B); `--no-codemap` skips silently. Skill works fully without it. To enable codemap-py context, install the `codemap-py` plugin, then run `/codemap-py:scan-codebase` (requires `codemap-py` plugin).
 
 ______________________________________________________________________
 
@@ -742,6 +741,36 @@ plugins/cc_develop/
     └── setup/
         └── SKILL.md
 ```
+
+<a id="bin-helper-inventory"></a>
+
+<details>
+
+<summary><strong>🧰 Bin helper inventory (17 shipped deterministic helpers)</strong></summary>
+
+These helpers are installed workflow support and maintainer surfaces, not additional slash-command skills. The skills own the development workflow; the helpers handle bounded flag parsing, Codemap context, test execution, worktree setup, path resolution, and state extraction.
+
+| Helper                       | Purpose                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| `build_codemap_batch.py`     | Build one Codemap pre-flight batch for changed modules.                    |
+| `codemap_resolve.py`         | Resolve Codemap auto, strict, or disabled mode.                            |
+| `codemap_scan.py`            | Derive affected modules and emit structural Codemap queries.               |
+| `dev_codemap_gate.py`        | Normalize and persist Codemap mode for all six workflows.                  |
+| `dev_issue_fetch_wrap.py`    | Fetch and persist upstream issue context for development skills.           |
+| `dev_parse_args.py`          | Parse development-skill arguments into shell-safe assignments.             |
+| `dev_run_dir.py`             | Create a timestamped `.developments/` run directory and optional sentinel. |
+| `dev_setup_worktree_wrap.py` | Set up team-mode worktree run directories and state.                       |
+| `dev_shared_resolve.py`      | Resolve develop's own shared directory portably.                           |
+| `diagnosis_parse.py`         | Parse and validate a `--diagnosis` path from arguments.                    |
+| `extract_json_field.py`      | Recover a JSON object from text and print a selected field.                |
+| `find-polluter.py`           | Binary-search test isolation contamination.                                |
+| `issue_fetch.py`             | Validate an issue argument and fetch it through `gh`.                      |
+| `pytest_gate.py`             | Run an allow-listed pytest command with full output.                       |
+| `run_pytest_short.py`        | Run an allow-listed pytest command and show its final output lines.        |
+| `setup_worktree.py`          | Create a team-mode `.temp/develop/` run directory and optional sentinel.   |
+| `sync_rules.py`              | Install namespaced rule symlinks into `~/.claude/rules/`.                  |
+
+</details>
 
 **Uninstall leaves rule links behind**: Claude Code runs no cleanup hook on uninstall, so `~/.claude/rules/develop-*.md` survives both `claude plugin uninstall` and `bash sync.sh clear`. Delete those symlinks by hand — once the plugin cache version is gone they dangle.
 

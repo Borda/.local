@@ -56,9 +56,9 @@ def _is_within(target: Path, root: Path) -> bool:
         ``True`` when ``target`` is identical to or nested under ``root``.
 
     Examples:
-        >>> _is_within(Path("/tmp/x/y"), Path("/tmp"))
+        >>> _is_within(Path("/opt/x/y"), Path("/opt"))
         True
-        >>> _is_within(Path("/etc/passwd"), Path("/tmp"))
+        >>> _is_within(Path("/etc/passwd"), Path("/opt"))
         False
     """
     try:

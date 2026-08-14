@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import inspect
 import math
+import os
 import subprocess
 from types import SimpleNamespace
 from datetime import date
@@ -29,7 +30,29 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from _launcher_capability import raw_codemap_launchers_are_runnable
+
 REPO_ROOT = Path(__file__).parent.parent.parent
+PYTORCH_LIGHTNING_REPO = Path(os.environ.get("PL_REPO_PATH", str(REPO_ROOT / ".sandbox" / "pytorch-lightning")))
+PYTORCH_LIGHTNING_INDEXES = (
+    tuple(sorted(PYTORCH_LIGHTNING_REPO.rglob(".cache/codemap/*.json"))) if PYTORCH_LIGHTNING_REPO.exists() else ()
+)
+RAW_CODEMAP_LAUNCHERS = pytest.mark.skipif(
+    not raw_codemap_launchers_are_runnable(REPO_ROOT),
+    reason="raw scan-index/scan-query launchers cannot execute on this host",
+)
+NETWORK_INTEGRATION = pytest.mark.skipif(
+    os.environ.get("CODEMAP_NETWORK_TESTS") != "1",
+    reason="set CODEMAP_NETWORK_TESTS=1 to run network integration tests",
+)
+PYTORCH_LIGHTNING_CHECKOUT = pytest.mark.skipif(
+    not PYTORCH_LIGHTNING_REPO.is_dir(),
+    reason=f"pytorch-lightning repo not found at {PYTORCH_LIGHTNING_REPO}",
+)
+PYTORCH_LIGHTNING_INDEX = pytest.mark.skipif(
+    not PYTORCH_LIGHTNING_INDEXES,
+    reason=f"No codemap index found under {PYTORCH_LIGHTNING_REPO}/.cache/codemap/",
+)
 
 
 # ===========================================================================
@@ -1108,10 +1131,12 @@ class TestThresholdsConfig:
 
 
 @pytest.mark.integration
+@NETWORK_INTEGRATION
+@RAW_CODEMAP_LAUNCHERS
 class TestIntegrationScanQuery:
     """Run the scan-query binary against a cloned psf/requests repo.
 
-    Skipped when the binary is absent or git clone fails (no network).
+    Requires runnable raw launchers and opt-in network access to clone the fixture repository.
     """
 
     def test_central_returns_valid_structure(
@@ -1166,11 +1191,14 @@ class TestIntegrationScanQuery:
 
 # ===========================================================================
 # Integration — full suites against pytorch-lightning repo
-# Skipped when PL_REPO_PATH not set and ~/Workspace/pytorch-lightning-master absent.
+# Requires a checked-out, indexed pytorch-lightning repository.
 # ===========================================================================
 
 
 @pytest.mark.integration
+@RAW_CODEMAP_LAUNCHERS
+@PYTORCH_LIGHTNING_CHECKOUT
+@PYTORCH_LIGHTNING_INDEX
 class TestIntegrationSuiteC:
     """Suite C: call-savings measurement against pytorch-lightning."""
 
@@ -1198,6 +1226,9 @@ class TestIntegrationSuiteC:
 
 
 @pytest.mark.integration
+@RAW_CODEMAP_LAUNCHERS
+@PYTORCH_LIGHTNING_CHECKOUT
+@PYTORCH_LIGHTNING_INDEX
 class TestIntegrationSuiteA:
     """Suite A: accuracy measurement against pytorch-lightning."""
 
@@ -1221,6 +1252,9 @@ class TestIntegrationSuiteA:
 
 
 @pytest.mark.integration
+@RAW_CODEMAP_LAUNCHERS
+@PYTORCH_LIGHTNING_CHECKOUT
+@PYTORCH_LIGHTNING_INDEX
 class TestIntegrationSuiteL:
     """Suite L: latency measurement against pytorch-lightning."""
 
@@ -1296,6 +1330,9 @@ def test_latency_index_build_restores_prebuilt_index_bytes(
 
 
 @pytest.mark.integration
+@RAW_CODEMAP_LAUNCHERS
+@PYTORCH_LIGHTNING_CHECKOUT
+@PYTORCH_LIGHTNING_INDEX
 class TestIntegrationSuiteQ:
     """Suite Q: query-shape validation against pytorch-lightning."""
 

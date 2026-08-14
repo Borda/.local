@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.6
+
+- Skip Git-only `codex plugin marketplace upgrade` for an existing local marketplace, then reconcile the managed plugin set from that configured local snapshot. Git marketplace refresh behavior is unchanged.
+
 ## 0.7.5
 
 - Spawn every shared calibration helper through the running Python interpreter instead of executing the `.py` file directly, so the offline harness runs on Windows: `CreateProcess` cannot execute a script by shebang, and the write-result, find-review-report, and validate-artifacts selftests aborted the whole run with `OSError: [WinError 193]` before any result artifact was written.

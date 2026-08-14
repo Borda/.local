@@ -78,8 +78,8 @@ def _marker_path(branch: str, marker_dir: str | None) -> Path:
             to ``.temp`` under the current working directory.
 
     Examples:
-        >>> _marker_path("main", "/tmp/x").as_posix()
-        '/tmp/x/release-last-processed-main'
+        >>> _marker_path("main", "/opt/x").as_posix()
+        '/opt/x/release-last-processed-main'
     """
     base = Path(marker_dir) if marker_dir else Path(".temp")
     return base / f"release-last-processed-{branch}"

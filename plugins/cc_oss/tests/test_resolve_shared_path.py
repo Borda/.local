@@ -2,8 +2,8 @@
 
 The oss copy is a verbatim duplicate of foundry's canonical module
 (cross-plugin imports are forbidden — oss must work standalone). These
-tests confirm the contract surface: stdout-reconfigure call, no ``/tmp``
-literal, env-tier-0 happy path, source-tree fallback, and argument
+tests confirm the contract surface: no ``/tmp`` literal, no CRLF in
+output, env-tier-0 happy path, source-tree fallback, and argument
 validation.
 """
 
@@ -16,23 +16,6 @@ import pytest
 import resolve_shared_path
 
 SCRIPT = Path(resolve_shared_path.__file__)
-
-
-def test_no_tmp_literal_in_source() -> None:
-    """Windows-portability: script must not hardcode ``/tmp``."""
-    src = SCRIPT.read_text(encoding="utf-8")
-    assert "/tmp" not in src
-
-
-def test_stdout_reconfigure_present() -> None:
-    """Windows-portability: ``sys.stdout.reconfigure(...)`` required."""
-    assert "sys.stdout.reconfigure" in SCRIPT.read_text(encoding="utf-8")
-
-
-def test_shebang_uses_env_python() -> None:
-    """Shebang must read ``#!/usr/bin/env python``."""
-    first_line = SCRIPT.read_text(encoding="utf-8").splitlines()[0]
-    assert first_line == "#!/usr/bin/env python"
 
 
 def test_lives_under_oss_bin() -> None:
@@ -74,3 +57,4 @@ def test_source_tree_fallback(
     assert rc == 0
     assert captured.out.strip() == "plugins/cc_oss/skills/_shared"
     assert "source-tree fallback" in captured.err
+    assert "\r" not in captured.out  # sys.stdout.reconfigure(newline="\n") — Windows portability

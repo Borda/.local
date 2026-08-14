@@ -1,464 +1,167 @@
-# bin/ — codemap-py runtime executables
+# 🧰 `bin/` — codemap-py runtime executables
 
-This directory ships the runtime surface a project author or a Claude/Codex skill actually invokes: the interpreter-resolving launchers, the index builder and query engine, a handful of maintenance and analysis helpers used by skills and debrief tooling, and a set of internal compatibility shims. Everything here is installed as-is into the package (see `../scripts/README.md` for how the package is built and validated) and is addressed either by bare name on `PATH`, or via `${CLAUDE_PLUGIN_ROOT}/bin/<script>` from inside a skill.
+This directory contains the installed runtime surface for codemap-py. The canonical user entry point is `codemap-py`; the `scan-index` and `scan-query` files remain compatibility launchers. The importable implementation lives under `src/codemap_py`.
 
-**Language policy.** Every executable here is Python, minimum version 3.10, per the plugin-wide `bin/` convention. `setup_scan_env.sh` is the one remaining `.sh` file and is deprecated: it is a three-line shim that `exec`s `setup_scan_env.py`, kept only so pre-existing bash call sites keep working. New call sites invoke the `.py` directly — `.sh` does not execute on Windows, which is why the logic moved. In practice `codemap_py_entry.py` (invoked by the `codemap-py` / `codemap-py.cmd` launchers) enforces a narrower runtime bound of its own — CPython 3.11 up to, but excluding, 3.15 — and resolves the interpreter to use before importing anything from the `codemap_py` package. All meaningful logic (scanning, querying, CLI dispatch) lives in the importable `src/codemap_py` package; the scripts under this directory are thin launchers, deterministic argument/path transforms, or session-scoped temp-file glue — no branching business logic lives here.
+All Python executables require Python 3.10 syntax at the source level, while the public `codemap-py` dispatcher and its POSIX/Windows launchers require CPython `>=3.11,<3.15`. The dispatcher probes an eligible interpreter before importing the package. Set `CODEMAP_PYTHON` to an eligible executable when PATH discovery is insufficient; an invalid override is authoritative and does not fall through to another interpreter.
 
-**Complexity gate.** The repository-root `pyproject.toml` enables `C901` plus `PLR0911`/`PLR0912`/`PLR0915` at the standard limits (cyclomatic complexity ≤12, branches ≤12, statements ≤50, return points ≤6) and scopes enforcement to this plugin with a negated per-file-ignore (`!plugins/codemap-py/**`). It is scoped to this plugin because the sibling plugins carry a much larger backlog; gating them is a separate decision. Twenty-one findings predate the gate — six `C901` (five in `src/codemap_py/scanner.py`, one in `src/codemap_py/graph.py`; worst is `_drop_top_level_rebindings` at complexity 30) and fifteen `PLR`, spread over six files — and are listed as `per-file-ignores` with their counts. That list is accepted debt, not a licence: its purpose is to stop new complexity entering the plugin, not to bless the scanner internals. Re-measure with `ruff check --select C901,PLR0911,PLR0912,PLR0915` after touching a listed file.
+The importable implementation lives under `src/codemap_py`; these files are thin launchers, deterministic path/argument transforms, or session-scoped helpers. `setup_scan_env.sh` is the only remaining shell file and is a deprecated `exec` shim for `setup_scan_env.py`, removed no earlier than `1.0.0` — the same window the `scan-index`/`scan-query` aliases carry. New callers use the Python entrypoint so the same behavior works on Windows.
 
-## Contents
-
-- [User-facing launchers](#user-facing-launchers) — `codemap-py`, `codemap-py.cmd`, `scan-index`, `scan-query`, `check-index-currency`
-- [Maintenance and analysis helpers](#maintenance-and-analysis-helpers) — `anonymize.py`, `check_index_smoke.py`, `scan-stats.py`, `smoke_test_index.py`, `resolve_proj_index.py`, `resolve_index_env.py`, `locate_scan_query.py`, `join_avoidance.py`, `gen_deprecation_wrapper.py`, `parse_scan_args.py`, `parse_deprecate_args.py`, `setup_scan_env.py`, `setup_scan_env.sh` (deprecated shim)
-- [Internal `sys.modules` shims](#internal-sysmodules-shims) — `_exclusions.py`, `_index_identity.py`, `_runtime_log.py`, `_rwgate.py`, `_schema.py`, `_telemetry.py`
-
-## User-facing launchers
-
-### `codemap-py`
-
-**Purpose.** The POSIX shell launcher and primary CLI entry point on macOS and Linux. Probes for an eligible CPython (an explicit `$CODEMAP_PYTHON`, and if it fails its own version probe the launcher fails hard rather than falling through; otherwise `python3` then `python` on `PATH`), then `exec`s `../scripts/codemap_py_entry.py` with every argument forwarded unchanged. No Bash dependency, no install step, no shell-command mode — it is a `#!/bin/sh` script.
-
-**Usage.**
-
-```
-codemap-py <subcommand> [args...]
-```
-
-Exits `127` with a diagnostic on stderr when no eligible interpreter is found.
-
-**How-to.**
+**Complexity gate.** The repository-root `pyproject.toml` enables `C901` plus `PLR0911`/`PLR0912`/`PLR0915` at the standard limits (cyclomatic complexity ≤12, branches ≤12, statements ≤50, return points ≤6) and scopes enforcement to this plugin with a negated per-file-ignore (`!plugins/codemap-py/**`). Findings that predate the gate are listed as `per-file-ignores` with their counts — accepted debt, not a licence to add more. Re-measure after touching any listed file:
 
 ```bash
-./bin/codemap-py doctor --json
+ruff check --select C901,PLR0911,PLR0912,PLR0915
 ```
 
-**When-to-use.** This is the command a project author or a skill runs after install — `doctor`, `index`, `query`, and every other `codemap_py.cli` subcommand go through here on POSIX systems.
+<details>
+<summary><strong>Contents</strong></summary>
 
-### `codemap-py.cmd`
+- [User-facing launchers](#-user-facing-launchers)
+- [Maintenance and analysis helpers](#-maintenance-and-analysis-helpers)
+- [Internal compatibility shims](#-internal-compatibility-shims)
+- [Portability and safety](#-portability-and-safety)
 
-**Purpose.** The Windows batch-file mirror of `codemap-py`: probes `CODEMAP_PYTHON`, then falls back through `py -3`, `python.exe`, and `python3.exe`, running `..\scripts\codemap_py_entry.py` with all arguments forwarded. Windows never depends on Bash, so this is a self-contained `@echo off` script rather than a port of the POSIX shell logic.
+</details>
 
-**Usage.**
+## 🧰 User-facing launchers
 
+### `codemap-py` and `codemap-py.cmd`
+
+`codemap-py` is the POSIX launcher; `codemap-py.cmd` is its Windows batch equivalent. Both forward arguments to `scripts/codemap_py_entry.py`, which dispatches `index`, `query`, `doctor`, and `integrate` without shell-command mode or dependency installation.
+
+```text
+codemap-py index [--root PATH] [--incremental] [--with-coverage PATH] [--timeout N]
+codemap-py query [global flags] <subcommand> ...
+codemap-py doctor [--json]
+codemap-py integrate {check,plan,apply,sync,demo} ...
 ```
-codemap-py.cmd <subcommand> [args...]
-```
 
-Exits `127` with a diagnostic on stderr when no eligible interpreter is found.
-
-**How-to.**
-
-```bat
-codemap-py.cmd doctor --json
-```
-
-**When-to-use.** The Windows equivalent of `codemap-py` — invoked from `cmd.exe` or PowerShell wherever the POSIX launcher would be used on macOS/Linux.
+The dispatcher returns `127` when no eligible CPython is found, `2` for invalid top-level syntax, and the underlying command's documented result for valid `index`, `query`, or `integrate` requests. `doctor --json` reports the selected interpreter, plugin root, support status, and resolved index path.
 
 ### `scan-index`
 
-**Purpose.** Thin launcher over `codemap_py.graph.main`. Builds the codemap structural index for a project: scans every Python file (import graph, per-symbol call graph, docstrings, mock patches, dynamic/subprocess imports, Sphinx/MkDocs cross-references, pytest fixture graph, optional coverage annotation) and writes `.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json` when that variable is set). File discovery and single-file AST parsing live in `codemap_py.scanner`; cross-module graph construction, coverage, and the `scan()` / `incremental_scan()` orchestration live in `codemap_py.graph` — this script only wires `src/` onto `sys.path` and delegates.
+Thin compatibility launcher over `codemap_py.graph.main`. It discovers `.py` and `.pyi` files, parses them with `ast.parse`, builds import/call/test/mock/fixture/subprocess and documentation-reference metadata, and writes `.cache/codemap/<project>.json` or the flat `$CODEMAP_INDEX_DIR/<project>.json` override.
 
-**Usage.**
-
-```
+```bash
 scan-index [--root PATH] [--incremental] [--with-coverage PATH] [--timeout N]
 ```
 
-- `--root PATH` — project root (default: git root or cwd).
-- `--incremental` — re-parse only files changed since the last scan (requires an existing v3+ index).
-- `--with-coverage PATH` — path to a `.coverage` SQLite file (v5.4+); attaches per-symbol `coverage_pct` / `covered_by` fields (requires `coverage>=7.4`).
-- `--timeout N` — hard timeout in seconds; `0` (default) means no limit. Uses `SIGALRM`, so Unix only.
-
-**How-to.**
-
-```bash
-bin/scan-index --root . --incremental
-```
-
-**When-to-use.** Run once per project to build the initial index, and again (with `--incremental` once one exists) whenever the index needs a refresh — typically driven by the `scan-codebase` skill rather than invoked bare, but safe to run directly.
+Use `codemap-py index` in new scripts. `--incremental` requires an existing v3-or-newer index; `--timeout` uses `SIGALRM` where the host provides it.
 
 ### `scan-query`
 
-**Purpose.** Thin launcher for the codemap query engine, wrapping `codemap_py.query.main`. Provides the full read-side command surface against an existing index: `deps`/`rdeps`/`central`/`coupled`/`path` for module-level import relationships, `symbol`/`symbols`/`find-symbol` for source lookup, `fn-deps`/`fn-rdeps`/`fn-central`/`fn-blast` for the function-level call graph, `test-impact` and the fixture/mock/subprocess queries for test-graph analysis, `coverage`/`coverage-gap`/`undocumented`/ `uncovered` for quality signals, `dead-symbols`/`dead-modules`/`xrefs` for dead-code and doc cross-reference checks, `diff-impact` for git-change blast radius, and `batch` for running many queries in one process against a single shared coverage block. `codemap_py.cli` (the `codemap-py query` dispatcher) does not shell out to this file — it calls `codemap_py.query.main` in-process under its own read lease; this launcher exists for direct invocation and for tests that exercise the standalone script.
-
-**Usage.**
-
-```
-scan-query [--index PATH] [--root PATH] [--timeout N] [--no-heal] [--verbose-coverage] <subcommand> ...
-```
-
-Run `scan-query --help` or `scan-query <subcommand> --help` for the full, current flag and subcommand reference — the subcommand roster above is summarized from that output and from `codemap_py.query`'s own module docstring, not reproduced flag-by-flag here.
-
-**How-to.**
+Thin compatibility launcher over `codemap_py.query.main`. It reads an existing index and emits JSON for module, symbol, call-graph, test-impact, fixture/mock/subprocess, documentation, coverage, dead-code, diff-impact, and batch queries. Run `scan-query --help` for the authoritative roster and flags.
 
 ```bash
-bin/scan-query rdeps pkg.auth
-bin/scan-query fn-blast pkg.auth::login
+scan-query rdeps mypackage.auth
+scan-query fn-rdeps 'mypackage.auth::check' --exclude-tests
 ```
 
-**When-to-use.** Any ad-hoc structural question against an already-built index — "what imports this module," "what calls this function," "which tests cover this," "what's the blast radius of this diff" — whether asked interactively or from a skill/agent that has already confirmed the index is current.
+The canonical dispatcher calls the query engine in-process; this file remains for direct invocation and compatibility. Both paths use the shared read/write gate in the engine.
 
 ### `check-index-currency`
 
-**Purpose.** Verifies that an on-disk codemap index still matches the current source tree, using a two-tier check that prefers reporting a false "stale" over missing a real one. Tier 1 (git repo present): compares the index's stored `git_sha` against `HEAD` and flags any dirty tracked `.py` files. Tier 2 (no git, or no stored `git_sha`): compares stored per-file hashes against current file content, using an mtime pre-filter before falling back to a git blob SHA-1 or MD5 recompute.
+Checks whether an index still matches the source tree. Git repositories use the stored Git identity plus dirty-file checks where possible; non-Git or older indexes fall back to stored file hashes. It reads the index under the shared read lease and prefers a false `stale` result to silently trusting uncertain state.
 
-**Usage.**
-
-```
-check-index-currency --index-path <path> [--root <path>] [--field <name>]
+```text
+check-index-currency --index-path PATH [--root PATH] [--field NAME]
 ```
 
-- `--index-path <path>` (required) — path to the codemap index JSON file.
-- `--root <path>` — project root (default: git toplevel or cwd).
-- `--field <name>` — print only the named field from the result JSON (e.g. `--field status`), useful for `STATUS=$(check-index-currency ... --field status)` in a bash block.
+It emits `{"status":"current"|"stale"|"no_index", ...}`. Exit `0` means current, `1` stale, `2` missing/unreadable or unavailable index, and `3` argument error.
 
-Output is a single JSON object: `{"status": "current"|"stale"|"no_index", "reason": "<text>", "changed_count": N}`. Exit `0` current, `1` stale, `2` no_index, `3` argument error.
+<details>
+<summary><strong>Launcher contracts and compatibility details</strong></summary>
 
-**How-to.**
+`codemap-py` is the canonical dispatcher on POSIX and Windows. The POSIX launcher probes an explicit `CODEMAP_PYTHON` first and then eligible PATH interpreters; `codemap-py.cmd` performs the equivalent Windows probe through `py -3`, `python.exe`, and `python3.exe`. Both forward arguments unchanged to `scripts/codemap_py_entry.py`, which checks the supported CPython range before importing the package.
 
-```bash
-bin/check-index-currency --index-path .cache/codemap/myproj.json --field status
-```
+`scan-index` and `scan-query` are compatibility launchers for direct callers and older skill paths. New scripts should use `codemap-py index` and `codemap-py query`; the aliases still share the package's read/write gate and return the same structured exit-code contract. `scan-index --incremental` requires an existing v3-or-newer index, and its `--timeout` option is Unix-specific because it uses `SIGALRM`.
 
-**When-to-use.** As a preflight before trusting any `scan-query` answer, or before a skill decides whether to re-run `scan-index` — the two-tier design means it stays cheap (git-SHA compare) in the common case and only falls back to per-file hashing when there is no git history to compare against.
+`check-index-currency` is a cheap preflight: in a Git repository it compares the stored Git identity and dirty tracked Python files, while non-Git or older indexes fall back to content hashes. It prefers a false stale answer to silently trusting uncertain state. Use it before treating a query list as complete, not as a replacement for the query's own coverage block.
 
-## Maintenance and analysis helpers
+</details>
 
-### `anonymize.py`
+## 🧰 Maintenance and analysis helpers
 
-**Purpose.** Replaces qualified names (anything containing `.` or `::`) in codemap JSONL telemetry logs with stable, salted pseudonyms, so a log can be shared without exposing real module/symbol names. Pseudonyms are stable within a project (same salt + same name → same pseudonym) but opaque without the salt file, which is created `0o600` and must never be shipped alongside the anonymized output. Writing into a directory that itself holds the salt file (`.salt`) is refused outright, since a recipient of both could reverse every pseudonym.
+<details>
+<summary><strong>Helper inventory</strong></summary>
 
-**Usage.**
+These helpers are called by skills or maintainer workflows rather than ordinary project queries. They are listed here so installed-path debugging has one reference:
 
-```
-python anonymize.py --input <log.jsonl> [--output PATH] [--out-dir DIR] [--salt PATH]
-```
+| File                         | Contract                                                                                                              | Exit codes                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `anonymize.py`               | Copy qualified names in JSONL telemetry to stable salted pseudonyms; keeps the salt separate from export output.      | `0` ok · `1` input unreadable · `2` output dir holds `.salt`                                           |
+| `check_index_smoke.py`       | Project `smoke_test_index.py` to compact `{ok, stale, age_hours}` JSON for shell callers.                             | `0` ok+fresh · `1` stale or failed · `2` bad args                                                      |
+| `smoke_test_index.py`        | Validate an index file and report age-based freshness.                                                                | `0` ok and not stale · `1` invalid or stale                                                            |
+| `scan-stats.py`              | Print module, degraded-module, symbol, call-edge, and centrality counts for the root in `SCAN_ARGS`.                  | `0` printed · `1` index missing/oversized · `2` root or cache escape                                   |
+| `resolve_proj_index.py`      | Resolve the project key and default index path; `--check` also reports existence.                                     | `0` ok · `1` `--check` and index missing · `2` bad args                                                |
+| `resolve_index_env.py`       | Safely write resolved project/index values to session-scoped temporary files without `eval`.                          | `0` ok · `1` no resolver output or index missing · `2` unknown flag · `3` unsafe plugin root or prefix |
+| `locate_scan_query.py`       | Resolve `scan-query` through PATH, the active plugin root, and the installed cache fallback.                          | `0` found · `1` not found · `2` bad args                                                               |
+| `join_avoidance.py`          | Join CLI and tool telemetry to identify searches repeated after a complete query.                                     | `0` ok, including zero events · `2` no `--logs` and no `--cli`/`--tools` pair                          |
+| `gen_deprecation_wrapper.py` | Generate the `pyDeprecate` wrapper used by `rename-refs --deprecate`.                                                 | `0` printed · `1` malformed decorator or type                                                          |
+| `parse_scan_args.py`         | Parse scan skill arguments into the scan state consumed by setup helpers.                                             | `0` parsed · `1` `--nul-output` path outside `TMPDIR`                                                  |
+| `parse_deprecate_args.py`    | Parse rename deprecation flags into temporary state files.                                                            | `0` always; failures surface as unwritten temp files                                                   |
+| `setup_scan_env.py`          | Prepare portable scan state, paths, sentinels, and parsed arguments for `scan-codebase`.                              | `0` ok · `1` `scan-index` missing · `2` arg parse failed · `3` bad args                                |
+| `setup_scan_env.sh`          | Deprecated POSIX `exec` shim to `setup_scan_env.py`; retain only for old call sites. It is not a Windows entry point. | inherits the Python script's code                                                                      |
 
-- `--input` (required) — source JSONL log file.
-- `--output` — explicit destination path, overriding `--out-dir`; still refused if its directory holds a salt file.
-- `--out-dir` — directory for `<input-stem>-anon.jsonl` (default `.cache/codemap/export`), deliberately distinct from the salt directory.
-- `--salt` — salt file path (default `.cache/codemap/logs/.salt`), created with a fresh random value if absent.
+Exit codes are what a `SKILL.md` bash block branches on, so they are part of the contract, not an implementation detail. Use the installed plugin root supplied by the host when invoking helpers from a skill. Do not assume the source checkout, a sibling plugin, or a fixed home/temp directory exists.
 
-Exit `0` success, `1` input not found, `2` refused (output directory contains a salt file).
-
-**How-to.**
-
-```bash
-python bin/anonymize.py --input .cache/codemap/logs/cli_abc123.jsonl
-```
-
-**When-to-use.** Before attaching or sharing codemap telemetry logs outside the local machine — debrief reports, bug reports, or any external hand-off — so qualified symbol/module names are pseudonymized first.
-
-### `check_index_smoke.py`
-
-**Purpose.** Wraps `smoke_test_index.py`: invokes it with `--index-path` / `--max-age-hours`, projects the result down to `{"ok": bool, "stale": bool, "age_hours": N}` (preserving an `error` field when present, sanitized to 256 ASCII characters), and derives the exit code from those projected fields rather than trusting the child process's own return code. Exists so a `SKILL.md` bash block can read `ok`/`stale` from compact JSON without needing `jq`.
-
-**Usage.**
-
-```
-python check_index_smoke.py --index-path <path> [--max-age-hours <N>]
-```
-
-`--max-age-hours` defaults to `24`. Output is a single JSON line, e.g. `{"ok":true,"stale":false,"age_hours":2.31}`, or with an `error` field on failure. Exit `0` ok and fresh, `1` failed or stale or no output, `2` invalid arguments.
-
-**How-to.**
-
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/bin/check_index_smoke.py" --index-path .cache/codemap/myproj.json
-```
-
-**When-to-use.** From within a skill's bash block, whenever a compact, jq-free ok/stale/age check on the index is needed before proceeding.
-
-### `scan-stats.py`
-
-**Purpose.** Prints a human-readable codemap index summary: module and degraded-module counts, total symbol count, total resolved call-edge count (v3+ index only), and the five most central modules by reverse-dependency count. Unusually, its project root is read from the `SCAN_ARGS` environment variable rather than argv — `argparse` here only handles `-h`/`--help` — so callers pass `--root` through `SCAN_ARGS`, matching the calling convention used by the `scan-codebase` skill.
-
-**Usage.**
-
-```
-SCAN_ARGS="--root <dir>" scan-stats.py
-```
-
-Exit `0` summary printed (or "No modules indexed."), `1` index file missing or oversized, `2` `--root` escapes the project root or `CODEMAP_INDEX_DIR` resolves outside allowed cache roots.
-
-**How-to.**
-
-```bash
-SCAN_ARGS="--root ." python bin/scan-stats.py
-```
-
-**When-to-use.** A quick human-readable health check right after a scan — module/symbol counts and the most central modules — without writing a query by hand.
-
-### `smoke_test_index.py`
-
-**Purpose.** The lower-level validator behind `check_index_smoke.py`: opens the index path and `json.load`s it, rejecting a missing, unreadable, non-object, or empty index, then compares filesystem mtime against wall clock and flags staleness above `--max-age-hours` (default 24). Emits the raw, unprojected result.
-
-**Usage.**
-
-```
-python smoke_test_index.py --index-path <path> [--max-age-hours N]
-```
-
-Output: `{"ok": true, "stale": false, "age_hours": 2.31, "path": "<path>"}`, or with an `error` field, e.g. `{"ok": false, "stale": false, "age_hours": null, "path": "<path>", "error": "index file not found"}`. Exit `0` ok and not stale, `1` invalid or stale.
-
-**How-to.**
-
-```bash
-python bin/smoke_test_index.py --index-path .cache/codemap/myproj.json
-```
-
-**When-to-use.** Call directly when the raw `{ok, stale, age_hours, path[, error]}` object is wanted without `check_index_smoke.py`'s exit-code projection and sanitization layer — otherwise prefer `check_index_smoke.py` from a skill.
-
-### `resolve_proj_index.py`
-
-**Purpose.** Computes the canonical `(PROJ, INDEX)` pair: `PROJ` is the git root's basename (or the cwd's basename outside a repo), and `INDEX` is `<git-root-or-cwd>/.cache/codemap/<proj>.json` by default, or `$CODEMAP_INDEX_DIR/<proj>.json` when that variable is set.
-
-**Usage.**
-
-```
-python resolve_proj_index.py [--check]
-```
-
-Without `--check`: two lines on stdout, `PROJ` then `INDEX` path. With `--check`: the same two lines plus a third status line, `✓ index: exists` or `✗ index: not found`. Exit `0` success, `1` `--check` given and index missing, `2` bad/missing argument.
-
-**How-to.**
-
-```bash
-python bin/resolve_proj_index.py --check
-```
-
-**When-to-use.** Whenever a script or skill needs the project name and index path without re-implementing the git-root-or-cwd plus `CODEMAP_INDEX_DIR` resolution logic itself — it is the canonical resolver that `resolve_index_env.py` shells out to.
-
-### `resolve_index_env.py`
-
-**Purpose.** Calls `resolve_proj_index.py`, reads `PROJ` (line 1) and `INDEX` (line 2) from its stdout, and writes each to `<tmpdir>/${prefix}-resolve-{proj,index}-<CSID>` for the caller to read back with `IFS= read -r`, rather than the `eval "$(...)"` anti-pattern. `CLAUDE_PLUGIN_ROOT` is validated before use (must be absolute and either inside the plugin cache subtree or ending in `plugins/codemap`) to prevent arbitrary subprocess execution; `TMPDIR` is honored only when absolute and owned by the current user.
-
-**Usage.**
-
-```
-python resolve_index_env.py [--check-exists] [--output-prefix STR]
-```
-
-- `--check-exists` — verify the `INDEX` file exists; exit `1` with a stderr message if missing (temp files are still written for diagnostics).
-- `--output-prefix STR` — prefix for the temp file names (default `codemap`); must match `[a-zA-Z0-9_-]+`. Use `codemap-<proj>` to scope per-project and avoid concurrent collisions.
-
-Exit `0` success, `1` resolver produced no output or (with `--check-exists`) the index is missing, `2` unknown flag, `3` unsafe `CLAUDE_PLUGIN_ROOT` or `--output-prefix`.
-
-**How-to.**
+`resolve_index_env.py` exists so a skill can read `PROJ`/`INDEX` without `eval "$(...)"`. Its handoff files are session-scoped, so the caller derives `CSID` once and reads them with `read`, never command substitution:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --output-prefix "codemap-myproj"
+python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_index_env.py" --output-prefix "codemap-myproj"
 IFS= read -r PROJ < "${TMPDIR:-/tmp}/codemap-myproj-resolve-proj-${CSID}" 2>/dev/null || PROJ=""
 IFS= read -r INDEX < "${TMPDIR:-/tmp}/codemap-myproj-resolve-index-${CSID}" 2>/dev/null || INDEX=""
 ```
 
-**When-to-use.** From a `SKILL.md` bash block that needs `PROJ`/`INDEX` in shell variables without resorting to `eval "$(...)"`.
+The helpers with security-sensitive boundaries are intentionally narrow: `anonymize.py` keeps its random salt separate from exported JSONL and refuses an output directory containing that salt; `resolve_index_env.py` writes resolved values to session-scoped temporary files without `eval` and validates plugin-root and output-prefix inputs; `locate_scan_query.py` rejects a launcher symlink that escapes the installed plugin root; and `join_avoidance.py` reports repeated manual searches only when a preceding complete query answered the same module.
 
-### `locate_scan_query.py`
+</details>
 
-**Purpose.** Resolves the `scan-query` executable via a three-tier fallback cascade: (1) `scan-query` on `PATH`; (2) `${CLAUDE_PLUGIN_ROOT}/bin/scan-query`, with a containment check rejecting a symlink that escapes the plugin root; (3) a glob over `~/.claude/plugins/cache/*/codemap/*/bin/scan-query`, picking the newest semver directory. Prints the resolved absolute path and nothing else.
+<details>
+<summary><strong>Detailed helper API contracts</strong></summary>
 
-**Usage.**
+The helpers below are stable skill-facing seams, not a second public CLI. Their arguments and output files are listed because installed-path debugging often happens outside the source checkout.
 
-```
-locate_scan_query.py
-```
+| Helper                       | Invocation and output contract                                                                                                                                                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anonymize.py`               | `anonymize.py --input PATH [--output PATH] [--out-dir DIR] [--salt PATH]`; reads JSONL, writes a separate pseudonymized export, and refuses an output directory containing `.salt`.                                                      |
+| `check_index_smoke.py`       | `check_index_smoke.py --index-path PATH [--max-age-hours N]`; projects the child validator to one JSON line with `ok`, `stale`, `age_hours`, and a bounded error. Exit 0 is fresh/valid, 1 is stale/failure, and 2 is invalid arguments. |
+| `smoke_test_index.py`        | `smoke_test_index.py --index-path PATH [--max-age-hours N]`; emits the raw `ok/stale/age_hours/path` object after checking readable non-empty JSON and age.                                                                              |
+| `scan-stats.py`              | `SCAN_ARGS='--root PATH' scan-stats.py`; prints module, degraded-module, symbol, resolved-call, and top reverse-dependency counts. The root is intentionally passed through `SCAN_ARGS`, not a second parser.                            |
+| `resolve_proj_index.py`      | `resolve_proj_index.py [--check]`; prints the project key and canonical index path, using Git root or current-directory fallback and `CODEMAP_INDEX_DIR`. `--check` also reports existence.                                              |
+| `resolve_index_env.py`       | `resolve_index_env.py [--check-exists] [--output-prefix NAME]`; resolves project/index values into exclusively-created session files without `eval`, validating the prefix and plugin-root boundary.                                     |
+| `locate_scan_query.py`       | `locate_scan_query.py`; prints one absolute launcher path from PATH, the active plugin root, or the installed-cache fallback. It rejects an escaping symlink and prints no diagnostic chatter on success.                                |
+| `join_avoidance.py`          | `join_avoidance.py --logs DIR [--window-min N] [--json]`; joins CLI and tool JSONL layers and reports searches after a complete query. It is offline telemetry analysis, not a runtime guard.                                            |
+| `gen_deprecation_wrapper.py` | `gen_deprecation_wrapper.py --old-name NAME [--type {function,method,class} --new-name NAME --since V or --decorator LINE] [--removed-in V]`; prints deprecation-wrapper source.                                                         |
+| `parse_scan_args.py`         | `parse_scan_args.py RAW_ARGUMENTS [--nul-output PATH] [--print-root]`; extracts only `--root` and `--incremental` from the raw skill argument blob, using NUL-safe output when requested.                                                |
+| `parse_deprecate_args.py`    | `parse_deprecate_args.py --arguments RAW_ARGUMENTS`; parses `--deprecate`/decorator values and writes exclusive temporary files containing `DEPRECATE` and `DEPRECATE_DECORATOR`, printing their paths.                                  |
+| `setup_scan_env.py`          | `setup_scan_env.py [--arguments RAW]`; derives a sanitized project slug, validates the installed scanner, parses scan flags, records the incremental-without-index fallback, and writes portable per-invocation state.                   |
+| `setup_scan_env.sh`          | `setup_scan_env.sh [args...]`; deprecated POSIX `exec` shim forwarding unchanged arguments to `setup_scan_env.py`. It is not a Windows entrypoint and should not receive new callers.                                                    |
 
-No positional arguments besides `-h`/`--help`. Exit `0` found and executable, `1` not found, `2` bad argument.
+The helpers are stdlib-only and use host temporary-directory facilities. Callers should pass explicit scratch paths and treat non-zero exits as structured failure; no helper installs dependencies or mutates a remote service. Security-sensitive helpers reject unsafe roots, symlinks, pre-planted temp files, and salt/output co-location rather than attempting recovery.
 
-**How-to.**
+</details>
 
-```bash
-SQ=$(python bin/locate_scan_query.py)
-```
+## 🧰 Internal compatibility shims
 
-**When-to-use.** Whenever a script or a cross-plugin consumer needs to invoke `scan-query` but cannot assume it is on `PATH` — e.g. a skill in a different plugin that shells out to the installed codemap-py cache.
+The `_exclusions.py`, `_index_identity.py`, `_runtime_log.py`, `_rwgate.py`, `_schema.py`, and `_telemetry.py` files alias package implementations for legacy bare-module imports used by launchers and tests. They are not standalone commands and should not be imported by new application code; use `codemap_py` modules instead.
 
-### `join_avoidance.py`
+<details>
+<summary><strong>Shim map</strong></summary>
 
-**Purpose.** Joins `tools_*.jsonl` (Grep/Read/Glob tool calls, from `log-tool-use.py`) against `cli_*.jsonl` (codemap CLI answers) to count *avoidance events* — a tool call that re-derived by hand what codemap had already answered completely (`query_complete: true`) within a preceding time window. A high avoidance rate is a dead-chain signal: either the redundant-scan guard is not firing, the injected context is not being read, or the model is ignoring both. The module-match rule is ported from `guard-redundant-scan.py` so this offline join counts exactly the greps the online guard was meant to deny.
+| Shim                 | Authoritative implementation | Boundary                                            |
+| -------------------- | ---------------------------- | --------------------------------------------------- |
+| `_exclusions.py`     | `codemap_py.scanner`         | Shared scanner exclusions and source-root handling. |
+| `_index_identity.py` | `codemap_py.index_paths`     | Project and index identity resolution.              |
+| `_runtime_log.py`    | `codemap_py.runtime_log`     | Project-anchored telemetry log paths.               |
+| `_rwgate.py`         | `codemap_py.rwgate`          | Cross-process index read/write coordination.        |
+| `_schema.py`         | `codemap_py.schema`          | Index schema compatibility.                         |
+| `_telemetry.py`      | `codemap_py.telemetry`       | Runtime/version telemetry compatibility.            |
 
-**Usage.**
+Each shim prepends the installed `src/` directory and replaces its own `sys.modules` entry with the real implementation, so tests and legacy bare imports cannot create a divergent shadow copy. Import the package modules directly in new code.
 
-```
-python join_avoidance.py --logs <dir> | (--cli FILE [--tools FILE]) [--window-min N] [--json]
-```
+</details>
 
-- `--logs <dir>` — log directory holding `cli_*`/`tools_*`/`skills_*` shards (default resolution mode).
-- `--cli FILE` / `--tools FILE` — explicit JSONL files, overriding `--logs` per layer.
-- `--window-min N` — minutes an answer may precede a re-deriving tool call and still count as leaked (default 10).
-- `--json` — emit a single-line JSON object instead of the text report.
+## 🧭 Portability and safety
 
-Exit `0` success (including "no avoidance events" or "no logs found"), `2` neither `--logs` nor a `--cli`/`--tools` pair given.
-
-**How-to.**
-
-```bash
-python bin/join_avoidance.py --logs .cache/codemap/logs --json
-```
-
-**When-to-use.** When debriefing codemap adoption or effectiveness — is the redundant-scan guard actually preventing the greps it exists to prevent, and if not, which sessions or skills are leaking.
-
-### `gen_deprecation_wrapper.py`
-
-**Purpose.** Generates the Python source for a `pyDeprecate` deprecation wrapper — the correct `from deprecate import ...` line, the decorator, and a stub `def`/`class` — for the `codemap:rename-refs --deprecate` code path. Two modes: **auto**, where the script builds the decorator line from `--type`/`--old-name`/`--new-name`/`--since`/`--removed-in`; and **explicit**, where the caller supplies a complete `--decorator` line and the script only infers the import and builds the stub.
-
-**Usage.**
-
-```
-python gen_deprecation_wrapper.py --type {function,method,class} --old-name X --new-name Y [--since V] [--removed-in V]
-python gen_deprecation_wrapper.py --decorator "@deprecated(...)" --old-name X [--removed-in V]
-```
-
-Prints the generated Python source to stdout. Exits `1` with a stderr message on a malformed decorator (e.g. containing newlines/control characters) or an unrecognized `--type`.
-
-**How-to.**
-
-```bash
-python bin/gen_deprecation_wrapper.py --type function --old-name foo --new-name bar --since 1.2.0 --removed-in 2.0.0
-```
-
-**When-to-use.** Internal helper for the `codemap:rename-refs` skill's `--deprecate` path; also usable standalone when hand-crafting a deprecation stub for a rename that wasn't done through the skill.
-
-### `parse_scan_args.py`
-
-**Purpose.** Extracts `--root` and `--incremental` from a single raw `$ARGUMENTS` string (as passed by a Claude skill), without handing a blob that may itself start with `--` to `argparse`'s own flag matcher. Supports three output modes: default (shell-quoted tokens for `eval`), `--nul-output` (NUL-delimited tokens written to a TMPDIR-contained file, for safe `while IFS= read -r -d ''` consumption), and `--print-root` (just the resolved `--root` value, or `.`).
-
-**Usage.**
-
-```
-parse_scan_args.py "$ARGUMENTS" [--nul-output <file>] [--print-root]
-```
-
-Exit `0` always on parsed input; `1` if `--nul-output`'s path validation fails (must resolve inside `TMPDIR`).
-
-**How-to.**
-
-```bash
-python bin/parse_scan_args.py "--root . --incremental" --print-root
-```
-
-**When-to-use.** Internal helper for the `scan-codebase` skill (via `setup_scan_env.py`, which imports it rather than shelling out) — not typically invoked directly by a user, though nothing prevents it.
-
-### `parse_deprecate_args.py`
-
-**Purpose.** Extracts `--deprecate` / `--no-deprecate` and an optional decorator value from a raw `$ARGUMENTS` string, then writes `DEPRECATE` (`"true"`/`"false"`) and `DEPRECATE_DECORATOR` to two exclusively-created (`O_CREAT|O_EXCL`, via `tempfile.mkstemp`) temp files rather than printing shell assignments for `eval`. A pre-planted file or symlink at a guessed name causes the write to fail rather than being followed; since the random suffix is not knowable to the calling shell in advance, the script prints the two resolved paths so the caller can `cat` exactly those files.
-
-**Usage.**
-
-```
-python parse_deprecate_args.py --arguments="$ARGUMENTS"
-```
-
-The `--arguments=` form (equals sign, no space) is required so a value beginning with `--` (the literal payload `--deprecate`) survives argparse's flag detection. Prints two lines: the flag-file path, then the decorator-file path. Exit `0` always.
-
-**How-to.**
-
-```bash
-OUT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/parse_deprecate_args.py" --arguments="--deprecate=@deprecated")
-FLAG_FILE=$(printf '%s\n' "$OUT" | sed -n 1p)
-DEC_FILE=$(printf '%s\n' "$OUT" | sed -n 2p)
-DEPRECATE=$(cat "$FLAG_FILE" 2>/dev/null || echo "false")
-```
-
-**When-to-use.** Internal helper for the `codemap:rename-refs` skill, which needs `DEPRECATE`/`DEPRECATE_DECORATOR` in-shell without an `eval "$(...)"`.
-
-### `setup_scan_env.py`
-
-**Purpose.** Consolidates the per-invocation setup previously inlined in `scan-codebase/SKILL.md`: derives `PROJ_SLUG` (hostname short-name plus repo basename, sanitized to alphanumerics/dashes), validates that the `scan-index` binary exists at `$CLAUDE_PLUGIN_ROOT/bin/scan-index`, runs `parse_scan_args.py` against the raw `$ARGUMENTS` string, derives `PROJ_NAME` (basename of `--root` when given, else the git-root/cwd basename), drops a sentinel tmpfile when `--incremental` was requested but no prior index exists (so the skill can report the silent full-scan fallback), and writes both a sourceable `KEY=VAL` state file and the individual per-`PROJ_SLUG` tmpfiles consumed by later skill steps.
-
-**Usage.**
-
-```
-python setup_scan_env.py --arguments "$ARGUMENTS"
-```
-
-Both `--arguments <value>` and `--arguments=<value>` are accepted. Prints the state-file path on stdout — and nothing else, so the caller can capture it with `$(...)`; the full-scan-fallback notice goes to stderr. Exit `0` success, `1` `scan-index` binary missing, `2` `parse_scan_args.py` failed, `3` bad CLI arguments.
-
-**How-to.**
-
-```bash
-STATE_FILE=$(python bin/setup_scan_env.py --arguments "--root . --incremental")
-source "$STATE_FILE"
-```
-
-**When-to-use.** Called by the `scan-codebase` skill's first step to collapse several previously-inlined bash blocks into one call; it can be run standalone for debugging, but is not meant for routine interactive use.
-
-**Portability.** Stdlib-only and free of POSIX-only shell-outs — the host short-name comes from `socket.gethostname()` rather than `hostname -s`, temp files from `tempfile` rather than `mktemp`, the ownership check is guarded on `hasattr(os, "getuid")`, and `parse_scan_args.py` is imported rather than run through a `python3` subprocess. It therefore works on Windows, which the shell predecessor did not.
-
-### `setup_scan_env.sh`
-
-**Purpose.** Deprecated shim, removed no earlier than `1.0.0` — the same window the `scan-index`/`scan-query` aliases carry. `exec`s `setup_scan_env.py` with every argument forwarded, so pre-existing bash call sites keep working unmodified. Because `exec` replaces the shell rather than spawning a child, the Python process inherits this script's PID — which matters, since the handoff tmpfile names embed it — along with its exit code and both output streams. The shim is therefore invisible to callers, and an integration test pins that equivalence.
-
-**Usage.**
-
-```
-setup_scan_env.sh --arguments "$ARGUMENTS"
-```
-
-**When-to-use.** Never, in new code — invoke `setup_scan_env.py` directly. This file exists only for backwards compatibility and does not run on Windows.
-
-## Internal `sys.modules` shims
-
-Six single-purpose files — `_exclusions.py`, `_index_identity.py`, `_runtime_log.py`, `_rwgate.py`, `_schema.py`, `_telemetry.py` — exist purely as import compatibility shims for code that historically imported them as bare module names (e.g. `import _schema`) after inserting `bin/` onto its own `sys.path`. Each shim follows the same pattern: prepend `<plugin-root>/src` to `sys.path`, import the real implementation module from `codemap_py`, then replace its own entry in `sys.modules` with that real module — so every attribute access, including private internals a test monkeypatches, reaches the one authoritative implementation rather than a divergent shadow copy. None of them is a standalone executable; none has meaningful logic of its own to invoke.
-
-### `_exclusions.py`
-
-**Purpose.** Shim for `codemap_py.scanner`, specifically its exclusion rules (`SKIP_DIRS`, `Exclusions`, `_load_exclusions`, `_match_exclusion`, `is_excluded`, `load_src_roots`) that `scan-query` must apply identically to how `scan-index`'s writer side applies them.
-
-**Usage.** Imported as a bare module name: `import _exclusions`, after the importer has put `bin/` on `sys.path`.
-
-**How-to.** Not run directly; consumed internally by `bin/scan-query`.
-
-**When-to-use.** Internal shim — not invoked directly.
-
-### `_index_identity.py`
-
-**Purpose.** Shim for `codemap_py.index_paths`.
-
-**Usage.** Imported as a bare module name: `import _index_identity`.
-
-**How-to.** Not run directly; consumed indirectly through the `codemap_py` package (including by `_runtime_log.py`) and by tests.
-
-**When-to-use.** Internal shim — not invoked directly.
-
-### `_runtime_log.py`
-
-**Purpose.** Shim for `codemap_py.runtime_log`.
-
-**Usage.** Imported as a bare module name: `import _runtime_log`.
-
-**How-to.** Not run directly; consumed by tests exercising the bare-name import path.
-
-**When-to-use.** Internal shim — not invoked directly.
-
-### `_rwgate.py`
-
-**Purpose.** Shim for `codemap_py.rwgate`, the cross-process read/write gate. Consumers include cross-process worker scripts that insert this directory onto `sys.path` and `import _rwgate` fresh in a new process, so private internals (`_RELEASE_TIMEOUT`, `_registry_for`, ...) that a test monkeypatches must mutate the one real gate state rather than a divergent copy.
-
-**Usage.** Imported as a bare module name: `import _rwgate`.
-
-**How-to.** Not run directly; consumed by tests and cross-process worker scripts.
-
-**When-to-use.** Internal shim — not invoked directly.
-
-### `_schema.py`
-
-**Purpose.** Shim for `codemap_py.schema`.
-
-**Usage.** Imported as a bare module name: `import _schema`.
-
-**How-to.** Not run directly; consumed internally by `bin/scan-index` and `bin/scan-query`.
-
-**When-to-use.** Internal shim — not invoked directly.
-
-### `_telemetry.py`
-
-**Purpose.** Shim for `codemap_py.telemetry`, including its module-global `_PLUGIN_VERSION` cache that a test monkeypatches.
-
-**Usage.** Imported as a bare module name: `import _telemetry`.
-
-**How-to.** Not run directly; consumed internally by `bin/scan-index` and `bin/scan-query`.
-
-**When-to-use.** Internal shim — not invoked directly.
+The core uses standard-library Python and `pathlib`-based paths. Launchers preserve arguments, avoid shell evaluation, and keep the interpreter probe before package import. The index writer and reader lease the shared index, write atomically, and report bounded structured failures. The `scan-index` timeout flag is Unix-specific because it relies on `SIGALRM`; normal indexing and querying remain available on Windows through `codemap-py.cmd`.

@@ -42,6 +42,7 @@ def fake_runner(
     calls: list[tuple[str, ...]],
     *,
     configured_ref: str = "",
+    source_type: str = "git",
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
     """Return deterministic Codex/Git command results for one restore."""
     metadata = marketplace_root / ".codex-marketplace-install.json"
@@ -51,7 +52,15 @@ def fake_runner(
         rendered = tuple(str(item) for item in command)
         calls.append(rendered)
         if rendered[1:5] == ("plugin", "marketplace", "list", "--json"):
-            payload = {"marketplaces": [{"name": "borda-ai-rig", "root": str(marketplace_root)}]}
+            payload = {
+                "marketplaces": [
+                    {
+                        "name": "borda-ai-rig",
+                        "root": str(marketplace_root),
+                        "marketplaceSource": {"sourceType": source_type},
+                    }
+                ]
+            }
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
         if rendered[1:5] == ("plugin", "list", "--marketplace", "borda-ai-rig"):
             payload = {
@@ -102,6 +111,27 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
     )
     assert "Codex Rig 0.3.0 installed" in output.getvalue()
     assert "Codemap 0.28.8 installed" in output.getvalue()
+
+
+def test_native_sync_preserves_local_marketplace_without_upgrade(tmp_path: Path) -> None:
+    """Install managed plugins from a configured local marketplace snapshot."""
+    module = load_sync()
+    root = marketplace_fixture(tmp_path)
+    calls: list[tuple[str, ...]] = []
+    output = io.StringIO()
+
+    result = module.sync_codex(
+        module.parse_args(["--no-codex-global-agents"]),
+        run=fake_runner(root, calls, source_type="local"),
+        environ={},
+        stdout=output,
+    )
+
+    assert result == 0
+    assert ("codex", "plugin", "marketplace", "upgrade", "borda-ai-rig") not in calls
+    assert ("codex", "plugin", "add", "codex-rig@borda-ai-rig") in calls
+    assert ("codex", "plugin", "add", "codemap-py@borda-ai-rig") in calls
+    assert "marketplace refresh: configured local source" in output.getvalue()
 
 
 def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None:

@@ -87,8 +87,8 @@ def parse_scan_args(arguments: str) -> list[str]:
         ['--incremental']
         >>> parse_scan_args("")
         []
-        >>> parse_scan_args("--incremental --root /tmp/x")
-        ['--root', '/tmp/x', '--incremental']
+        >>> parse_scan_args("--incremental --root /opt/x")
+        ['--root', '/opt/x', '--incremental']
     """
     tokens: list[str] = []
 
@@ -150,13 +150,13 @@ def main(argv: list[str] | None = None) -> int:
         >>> import os, tempfile
         >>> with tempfile.NamedTemporaryFile(delete=False) as f:
         ...     path = f.name
-        >>> main(["--root /tmp/x --incremental", "--nul-output", path])
+        >>> main(["--root /opt/x --incremental", "--nul-output", path])
         0
-        >>> open(path, "rb").read() == b"--root\\x00/tmp/x\\x00--incremental\\x00"
+        >>> open(path, "rb").read() == b"--root\\x00/opt/x\\x00--incremental\\x00"
         True
         >>> os.unlink(path)
-        >>> main(["--root /tmp/x", "--print-root"])
-        /tmp/x
+        >>> main(["--root /opt/x", "--print-root"])
+        /opt/x
         0
     """
     args = sys.argv[1:] if argv is None else argv

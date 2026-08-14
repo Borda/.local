@@ -3,11 +3,11 @@
     "name": "Jiri Borovec",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "Thirteen portable Codex workflows, fifteen specialist role cards, and an experimental shim manager.",
+  "description": "Thirteen evidence-first Codex workflows, one legacy-shim lifecycle manager, fifteen specialist role cards, shared gates, and reviewable artifacts.",
   "homepage": "https://github.com/Borda/AI-Rig",
   "interface": {
     "capabilities": [
-      "13 workflow skills and 1 experimental agent-shim manager",
+      "13 workflow skills and 1 legacy-shim lifecycle manager",
       "15 specialist role cards",
       "Parallel blank-agent role injection",
       "Authenticated cleanup for prior agent shims",
@@ -24,12 +24,12 @@
     ],
     "developerName": "Borda",
     "displayName": "Codex Rig",
-    "longDescription": "Run thirteen reusable Codex workflows with canonical role cards, parallel blank-agent injection, inline fallback, and authenticated cleanup for prior thin shims.",
-    "shortDescription": "Portable Codex workflows and role cards"
+    "longDescription": "Run thirteen evidence-first Codex workflows with shared gates, reviewable artifacts, canonical role cards, runtime blank-agent injection where available, disclosed inline fallback, and authenticated cleanup for prior thin shims.",
+    "shortDescription": "Evidence-first Codex workflows and role cards"
   },
   "license": "Apache-2.0",
   "name": "codex-rig",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./skills/",
-  "version": "0.7.5"
+  "version": "0.7.6"
 }

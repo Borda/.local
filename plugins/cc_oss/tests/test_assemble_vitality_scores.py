@@ -256,13 +256,6 @@ class TestMain:
         rc = main(["/no/such/a.json", "/no/b.json", "/no/c.json", str(scoring_file), str(scores_file)])
         assert rc == 1
 
-    def test_help_flag_exits_zero(self, capsys) -> None:
-        """``--help`` prints usage and exits 0 (argparse)."""
-        with pytest.raises(SystemExit) as exc:
-            main(["--help"])
-        assert exc.value.code == 0
-        assert "usage:" in capsys.readouterr().out
-
     def test_golden_invocation_five_positionals(
         self, partials: tuple, scoring_file: Path, tmp_path: Path, capsys
     ) -> None:

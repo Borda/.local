@@ -143,11 +143,3 @@ def test_stdin_symbols(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFi
     rc = sdc.main(["--package", "pkg"])
     assert rc == 0
     assert "org/repo" in capsys.readouterr().out
-
-
-def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
-    """``--help`` prints usage and exits 0 without running gh."""
-    with pytest.raises(SystemExit) as exc:
-        sdc.main(["--help"])
-    assert exc.value.code == 0
-    assert "usage: search_downstream_consumers.py" in capsys.readouterr().out

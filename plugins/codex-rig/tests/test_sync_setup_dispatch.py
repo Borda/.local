@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from _platform import POSIX_BASH
+
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 SYNC_SCRIPT = PLUGIN_ROOT.parents[1] / "sync.sh"
@@ -36,6 +38,10 @@ END_SENTINEL = "SETUP-DISPATCH-COMPLETE"
 MARKETPLACE = "fake-marketplace"
 # Non-empty so the fake CLI's glob cannot degenerate into a match-everything pattern, and absent from any invocation.
 NEVER_MATCHED = "::no-failure-requested::"
+pytestmark = [
+    pytest.mark.skipif(shutil.which("jq") is None, reason="jq is unavailable"),
+    pytest.mark.skipif(POSIX_BASH is None, reason="working POSIX Bash is unavailable"),
+]
 
 # The fake CLI records argv tab-separated so argument boundaries survive the log, and fails only on an explicit marker.
 FAKE_CLAUDE_SOURCE = """#!/usr/bin/env bash
@@ -167,9 +173,6 @@ def run_setup_dispatch(
     Returns:
         The completed process together with the recorded invocations and the isolated paths involved.
     """
-    if shutil.which("jq") is None:
-        pytest.skip("jq is unavailable")
-
     lines = read_sync_lines()
     fake_bin = root / "bin"
     fake_bin.mkdir()

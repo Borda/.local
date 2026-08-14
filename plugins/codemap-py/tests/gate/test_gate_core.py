@@ -534,15 +534,3 @@ def test_build_failure_with_contended_release_propagates_and_recovers(index: Pat
     assert not writer_path.exists(), "writer intent leaked after recovery"
     with _rwgate.read_index(index, timeout=5.0) as data:
         assert data["v"] == 7
-
-
-# ── version-skew refusal (Phase 3 — named placeholder) ───────────────────────
-@pytest.mark.skip(
-    reason="version-skew refusal is stubbed in the P1 single-generation prototype (plan §4.4 lines 263-265)"
-)
-def test_version_skew_refusal_placeholder() -> None:  # pragma: no cover
-    """Phase 3: an older format generation must not overwrite a newer index.
-
-    Placeholder for _refuse_incompatible_generation once the index carries a
-    format-generation field. Final acceptance exercises newer/older orderings.
-    """

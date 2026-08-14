@@ -27,6 +27,8 @@ from check_routing_links import (
     run_orphan_risk_detection,
 )
 
+_HAS_PROJECT_PLUGIN_TREE = (Path(__file__).resolve().parent.parent.parent / "cc_foundry").is_dir()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -658,11 +660,10 @@ class TestMain:
         captured = capsys.readouterr()
         assert "✓" in captured.out
 
+    @pytest.mark.skipif(not _HAS_PROJECT_PLUGIN_TREE, reason="requires project-root plugins/ tree")
     def test_real_plugins_dir_no_crash(self) -> None:
         """Smoke test against the actual plugins/ directory. Should not crash."""
         real_plugins = Path(__file__).resolve().parent.parent.parent  # plugins/
-        if not (real_plugins / "cc_foundry").is_dir():
-            pytest.skip("Not run from project root with plugins/ tree")
         # Use a nonexistent cache dir so no installed-state comparisons are made
         cache_dir = Path("/tmp/nonexistent_cache_dir_for_test")
         exit_code = main(

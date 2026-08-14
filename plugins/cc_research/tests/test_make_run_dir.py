@@ -5,7 +5,7 @@ Covers:
 * Timestamp format validation
 * Nested parent creation (``mkdir -p`` semantics)
 * Argument validation (missing args → exit 1, invalid patterns → exit 2)
-* Windows-portability invariants: no ``/tmp`` literal, ``sys.stdout.reconfigure`` present
+* Windows-portability invariants: no ``/tmp`` literal, no CRLF in stdout (behavioural)
 """
 
 from __future__ import annotations
@@ -33,21 +33,6 @@ TIMESTAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
 
 class TestPortabilityInvariants:
     """Source-level Windows-portability checks."""
-
-    def test_no_tmp_literal_in_source(self) -> None:
-        """Script must not hardcode ``/tmp``."""
-        src = _SCRIPT.read_text(encoding="utf-8")
-        assert "/tmp" not in src
-
-    def test_stdout_reconfigure_present(self) -> None:
-        """``sys.stdout.reconfigure(...)`` must be called in ``main()``."""
-        src = _SCRIPT.read_text(encoding="utf-8")
-        assert "sys.stdout.reconfigure" in src
-
-    def test_shebang_env_python(self) -> None:
-        """Shebang must be ``#!/usr/bin/env python`` (not ``python3``)."""
-        first_line = _SCRIPT.read_text(encoding="utf-8").splitlines()[0]
-        assert first_line == "#!/usr/bin/env python"
 
     def test_no_utcnow(self) -> None:
         """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""

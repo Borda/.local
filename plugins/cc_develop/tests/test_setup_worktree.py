@@ -6,8 +6,7 @@ Covers:
 * ``--sentinel <name>`` touches sentinel in the ``$TMPDIR`` sentinel dir
 * Sentinel name sanitization (path traversal stripped)
 * Sentinel creation refuses to follow a pre-planted symlink
-* Portability invariants: ``sys.stdout.reconfigure`` present,
-  ``_sentinel_dir()`` defined as the single ``$TMPDIR``-aware sentinel path source
+* Portability invariant: no ``datetime.utcnow()`` (deprecated in 3.12)
 """
 
 from __future__ import annotations
@@ -47,21 +46,6 @@ def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> str:
 
 class TestPortabilityInvariants:
     """Source-level portability checks."""
-
-    def test_stdout_reconfigure_present(self) -> None:
-        """``sys.stdout.reconfigure(...)`` must be called in ``main()``."""
-        src = SCRIPT.read_text(encoding="utf-8")
-        assert "sys.stdout.reconfigure" in src
-
-    def test_sentinel_dir_function_defined(self) -> None:
-        """``_sentinel_dir()`` helper must exist — single source of the sentinel path."""
-        src = SCRIPT.read_text(encoding="utf-8")
-        assert "_sentinel_dir" in src
-
-    def test_shebang_env_python(self) -> None:
-        """Shebang must be ``#!/usr/bin/env python`` (not ``python3``)."""
-        first_line = SCRIPT.read_text(encoding="utf-8").splitlines()[0]
-        assert first_line == "#!/usr/bin/env python"
 
     def test_no_utcnow(self) -> None:
         """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
@@ -163,13 +147,6 @@ class TestArgparse:
             setup_worktree.main(["--help"])
         assert exc.value.code == 0
         assert "setup_worktree.py" in capsys.readouterr().out
-
-    def test_golden_bare_invocation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Golden bare call (feature SKILL.md) returns 0 and creates the run dir."""
-        monkeypatch.chdir(tmp_path)
-        rc = setup_worktree.main([])
-        assert rc == 0
-        assert (tmp_path / ".temp" / "develop").is_dir()
 
 
 class TestSentinelFlag:

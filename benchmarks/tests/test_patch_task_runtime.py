@@ -20,6 +20,9 @@ except ModuleNotFoundError:
     from benchmarks._bench_common.mutation_isolation import create_patch_task_agent_workspace, execute_patch_task_answer
 
 
+POSIX_SHELL_LAUNCHER_AVAILABLE = os.name != "nt" and Path("/bin/sh").is_file()
+
+
 def _git(repo: Path, *args: str) -> str:
     """Run one local Git command for a disposable test repository."""
     return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
@@ -165,6 +168,7 @@ def test_patch_test_runtime_binds_the_ambient_launcher_whatever_its_file_format(
     assert identity == mutation_isolation.patch_test_runtime_identity()
 
 
+@pytest.mark.skipif(not POSIX_SHELL_LAUNCHER_AVAILABLE, reason="a POSIX shell launcher is not executable on this host")
 def test_patch_test_runtime_accepts_a_launcher_without_a_python_shebang(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -178,11 +182,8 @@ def test_patch_test_runtime_accepts_a_launcher_without_a_python_shebang(
     shell = Path("/bin/sh")
     launcher = tmp_path / "pytest-wrapper"
     launcher.write_text(f'#!{shell}\nexec "{_ambient_pytest_launcher()}" "$@"\n', encoding="utf-8")
-    try:
-        launcher.chmod(0o755)
-        subprocess.run([str(launcher), "--version"], check=True, capture_output=True, timeout=120)
-    except (OSError, subprocess.SubprocessError) as exc:
-        pytest.skip(f"a POSIX shell launcher is not executable on this host: {exc}")
+    launcher.chmod(0o755)
+    subprocess.run([str(launcher), "--version"], check=True, capture_output=True, timeout=120)
     monkeypatch.setenv(mutation_isolation.PATCH_PYTEST_ENV, str(launcher))
 
     identity = mutation_isolation.patch_test_runtime_identity()

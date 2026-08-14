@@ -1,4 +1,4 @@
-# plugins/ — Plugin Authoring & Behavior Reference
+# 🧩 plugins/ — Plugin Authoring & Behavior Reference
 
 This document covers the five Claude Code plugins and their permission model. Codex Rig is a separate peer product with Codex-native packaging, lifecycle, and trust rules; see [`codex-rig/README.md`](codex-rig/README.md).
 
@@ -6,9 +6,21 @@ Authoritative reference: critical behaviors, permission model, known limitations
 
 > Plugin inventory, install instructions, versioning policy, cross-plugin dependency rules: see root `README.md` + `plugins/CLAUDE.md`. This file covers trust model, bin/ execution, operational guarantees only.
 
+<details>
+<summary><strong>Contents</strong></summary>
+
+- [Permission Model](#-permission-model)
+- [bin/ Script Architecture](#-bin-script-architecture)
+- [bin/ Script Principles](#-bin-script-principles)
+- [Test Coverage & CI](#-test-coverage--ci)
+- [Known Limitations](#-known-limitations)
+- [Settings Sync](#-settings-sync)
+
+</details>
+
 ______________________________________________________________________
 
-## Permission Model
+## 🔐 Permission Model
 
 ### Trust boundary is at install time, not invocation time
 
@@ -28,16 +40,24 @@ More trust boundaries to know:
 
 All entries merged from `plugins/cc_foundry/.claude-plugin/permissions-allow.json` by `/foundry:setup`. Key entries for plugin execution:
 
+<details>
+<summary><strong>Show pre-approved entries</strong></summary>
+
 | Entry                     | What it covers                                                   | Why                                                                                     |
 | ------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `Bash(python:*)`          | Plugin bin/ Python scripts (`bin/*.py`) + `python -m *` tools    | Install = consent; per-invocation prompts are security theater for trusted plugin infra |
 | `Bash(eval:*)`            | `eval "$(python ...)"` patterns (arg parsing, health monitoring) | Required for shell variable injection from bin/ Python scripts                          |
 | `Bash(find:*)`            | Path resolution, run-dir discovery                               | Core skill infrastructure                                                               |
-| `Bash(node:*)`            | Hook files (`hooks/*.js`)                                        | All hooks Node.js                                                                       |
+| `Bash(node:*)`            | Node hook files shipped by Foundry, OSS, Develop, and Research   | Codemap-py's six Claude hooks are Python and use the Python execution boundary instead  |
 | `Bash(git *:*)` (various) | Read-only git operations                                         | Standard dev workflow                                                                   |
 | `Bash(gh *:*)` (various)  | GitHub CLI read operations                                       | OSS plugin workflows                                                                    |
 
+</details>
+
 ### What deliberately prompts
+
+<details>
+<summary><strong>Show prompt-triggering entries</strong></summary>
 
 | Entry                                       | Reason                                                                                                                                                                                                                                                                        |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,13 +66,15 @@ All entries merged from `plugins/cc_foundry/.claude-plugin/permissions-allow.jso
 | `git push`                                  | Push requires explicit user confirmation per session — intentional friction                                                                                                                                                                                                   |
 | Any `python*` wildcard beyond bare `python` | Only bare `python:*` added; `python3.11`, `python3.x` etc. still prompt                                                                                                                                                                                                       |
 
+</details>
+
 ### Check 23a — inline Python detector
 
 `/audit` Check 23a scans all SKILL.md files for `python -c` and `python <<` patterns, flags HIGH. `Bash(python:*)` allow entry does **not** exempt inline code — matcher requires `Bash(python -c:*)` for that. Check 23a finding → fix by extracting logic to `bin/*.py` script.
 
 ______________________________________________________________________
 
-## bin/ Script Architecture
+## 🧰 bin/ Script Architecture
 
 ### `${CLAUDE_PLUGIN_ROOT}` and the fallback pattern
 
@@ -111,7 +133,7 @@ python "${CLAUDE_PLUGIN_ROOT}/bin/script.py" args                               
 
 ______________________________________________________________________
 
-## bin/ Script Principles
+## 🧰 bin/ Script Principles
 
 - **Token optimisation** — bin/ scripts and prose rules both reduce tokens in SKILL.md; prefer prose when precision-equivalent and shorter; prefer bin/ when logic too complex for prose.
 - **Reduce complexity** — keep skill files simple; complex logic belongs in tested executables, not inline.
@@ -125,28 +147,33 @@ See [bin/ Authoring Guide](cc_foundry/skills/_shared/bin-authoring-guide.md) for
 
 ______________________________________________________________________
 
-## Test Coverage & CI
+## 🧪 Test Coverage & CI
 
-Every `bin/` Python script ships with `pytest` suite in plugin's `tests/` directory. Tests run every PR + push to `main` via GitHub Actions (`ci-tests.yml`), 6 matrix combos (Ubuntu, macOS, Windows × Python 3.10, 3.12).
+Each plugin ships pytest coverage for its deterministic helpers and workflow contracts. Tests run on pull requests and pushes to `main` through `ci-tests.yml`, whose executable matrix currently covers 12 combinations: Ubuntu, macOS, and Windows across Python 3.10, 3.11, 3.12, and 3.13.
 
-| Plugin        | Test files | Tests     | Coverage |
-| ------------- | ---------- | --------- | -------- |
-| foundry       | 25+        | 594+      | 90%      |
-| codemap       | 14+        | 284+      | 86%      |
-| oss           | 18+        | 256+      | 91%      |
-| develop       | 10+        | 160+      | 91%      |
-| research      | 11+        | 150+      | 90%      |
-| **Total/Avg** | **78+**    | **1444+** | **90%**  |
+<details>
+<summary><strong>Show coverage table</strong></summary>
 
-`+` = at minimum; run `grep -r "^def test_" plugins/*/tests/ | wc -l` for current count. Coverage = avg line coverage across `bin/` modules (as of 2026-06-10).
+| Plugin     | Test modules with test functions | Literal test functions |
+| ---------- | -------------------------------: | ---------------------: |
+| Foundry    |                               46 |                    814 |
+| OSS        |                               34 |                    476 |
+| Develop    |                               16 |                    275 |
+| Research   |                               14 |                    179 |
+| Codemap-py |                               52 |                   1076 |
+| Codex Rig  |                               38 |                    410 |
+
+</details>
+
+Snapshot measured from the checked-in tree on 2026-08-14 with `rg '^[[:space:]]*def test_'`; parametrization can produce more executed cases than literal functions. These counts are maintenance evidence, not a claim that every path or runtime environment is covered.
 
 `/audit` Check 23a and Check C32 continuously verify SKILL.md files don't introduce inline Python or bare `plugins/` path references — structural violations caught before reaching users.
 
-CI matrix ensures bin/ scripts run correctly on platforms users install plugins on. Green CI badge = all executables behave identically on Linux, macOS, Windows with both Python 3.10 and 3.12.
+The matrix exercises the supported operating-system and Python combinations. A green run proves the configured checks passed for that revision; it does not prove identical behavior outside those checks or in every host/plugin version.
 
 ______________________________________________________________________
 
-## Known Limitations
+## 🧭 Known Limitations
 
 ### Pattern A passthrough is observed behavior, not a contract
 
@@ -154,7 +181,7 @@ Shell script calls inside `VAR=$(script.sh ...)` work without explicit allow ent
 
 ______________________________________________________________________
 
-## Settings Sync
+## 🔄 Settings Sync
 
 `plugins/cc_foundry/.claude-plugin/permissions-allow.json` = canonical allow list for all entries foundry needs. `/foundry:setup` merges into `~/.claude/settings.json` on install. Merge **additive** — entries never removed automatically. Remove entry from `permissions-allow.json` → manually remove from `~/.claude/settings.json` too.
 

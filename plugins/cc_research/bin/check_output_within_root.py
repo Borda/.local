@@ -38,7 +38,7 @@ def is_within_root(candidate: str, root: str) -> bool:
         True
         >>> is_within_root(td, td)
         True
-        >>> is_within_root('/tmp/evil', td)
+        >>> is_within_root('/opt/evil', td)
         False
     """
     p = os.path.realpath(candidate)

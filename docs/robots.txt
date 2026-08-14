@@ -1,6 +1,18 @@
+# Borda's AI-Rig documentation — https://borda.github.io/AI-Rig/
+# Everything here is public Apache-2.0 documentation. Full crawl and AI
+# indexing are intentionally allowed.
+#
+# The wildcard block below already permits every crawler. The named blocks
+# are redundant on purpose: several AI crawlers honor only their own
+# user-agent group and ignore "*", so an explicit Allow removes ambiguity.
+# An unrecognized name in this list costs nothing — it falls back to "*".
+#
+# Structured summary for LLM consumers: https://borda.github.io/AI-Rig/llms.txt
+
 User-agent: *
 Allow: /
 
+# --- OpenAI ---
 User-agent: GPTBot
 Allow: /
 
@@ -10,19 +22,76 @@ Allow: /
 User-agent: ChatGPT-User
 Allow: /
 
+# --- Anthropic ---
 User-agent: ClaudeBot
 Allow: /
 
-User-agent: PerplexityBot
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+# --- Google ---
+User-agent: Googlebot
 Allow: /
 
 User-agent: Google-Extended
 Allow: /
 
+# --- Microsoft / Bing ---
+User-agent: Bingbot
+Allow: /
+
+# --- Perplexity ---
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+# --- Apple ---
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# --- Meta ---
+User-agent: meta-externalagent
+Allow: /
+
+# --- Amazon ---
 User-agent: Amazonbot
 Allow: /
 
-User-agent: Bingbot
+# --- Common Crawl (feeds many downstream training and RAG corpora) ---
+User-agent: CCBot
+Allow: /
+
+# --- Other AI search and assistant agents ---
+User-agent: MistralAI-User
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: DuckAssistBot
+Allow: /
+
+User-agent: YouBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Diffbot
+Allow: /
+
+User-agent: Timpibot
 Allow: /
 
 Sitemap: https://borda.github.io/AI-Rig/sitemap.xml

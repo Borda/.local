@@ -21,6 +21,7 @@ import pytest
 _DEVELOP = Path(__file__).resolve().parent.parent
 _DOC = _DEVELOP / "skills" / "_shared" / "codemap-context.md"
 _IMPL = _DEVELOP.parent / "cc_oss" / "bin" / "codemap_cache.py"
+_HAS_OSS_IMPLEMENTATION = _IMPL.is_file()
 
 
 @pytest.fixture(scope="module")
@@ -31,9 +32,7 @@ def doc_text() -> str:
 
 @pytest.fixture(scope="module")
 def impl_text() -> str:
-    """Return the oss-side cache implementation, skipping when not installed."""
-    if not _IMPL.is_file():
-        pytest.skip("cc_oss not present — cross-plugin parity check not applicable")
+    """Return the installed oss-side cache implementation."""
     return _IMPL.read_text(encoding="utf-8")
 
 
@@ -51,6 +50,7 @@ def test_freshness_rule_is_fail_closed(doc_text: str) -> None:
     assert "fail" in rule.lower()
 
 
+@pytest.mark.skipif(not _HAS_OSS_IMPLEMENTATION, reason="requires cc_oss cache implementation for parity check")
 def test_documented_verdict_reasons_all_exist(doc_text: str, impl_text: str) -> None:
     """Every reason string the doc advertises must be one the implementation can return."""
     rule = doc_text.split("**Freshness rule**", 1)[1].split("\n\n", 1)[0]
@@ -60,6 +60,7 @@ def test_documented_verdict_reasons_all_exist(doc_text: str, impl_text: str) -> 
     assert documented <= implemented, f"documented but unreachable: {sorted(documented - implemented)}"
 
 
+@pytest.mark.skipif(not _HAS_OSS_IMPLEMENTATION, reason="requires cc_oss cache implementation for parity check")
 def test_no_reason_left_undocumented(doc_text: str, impl_text: str) -> None:
     """A consumer branching on verdicts needs the full set, not a subset."""
     rule = doc_text.split("**Freshness rule**", 1)[1].split("\n\n", 1)[0]

@@ -3,9 +3,9 @@
     "name": "Jirka",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "Implementation workflow skills: feature, fix, refactor, plan, debug, review",
+  "description": "Validate-first Python development: plan, feature, fix, refactor, debug, review, and setup workflows",
   "license": "Apache-2.0",
   "name": "develop",
   "repository": "https://github.com/Borda/AI-Rig",
-  "version": "0.22.1"
+  "version": "0.22.2"
 }

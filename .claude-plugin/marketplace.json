@@ -1,31 +1,32 @@
 {
+  "description": "Independently installable Claude Code plugins for configuration, Python development, open-source maintenance, ML research, and static Python structure.",
   "name": "borda-ai-rig",
   "owner": {
     "name": "Borda"
   },
   "plugins": [
     {
-      "description": "Production-grade Claude Code config: specialist agents, slash-command skills, and event-driven hooks for Python/ML OSS development",
+      "description": "Claude Code configuration and workflow maintenance: 11 skills, 10 specialist agents, rules, hooks, audit, calibration, and session handover",
       "name": "foundry",
       "source": "./plugins/cc_foundry"
     },
     {
-      "description": "OSS maintenance skills: analyse, resolve, review, release",
+      "description": "Open-source maintenance: issue and repository analysis, PR review, feedback resolution, release-readiness assessment, setup, and 4 specialist agents",
       "name": "oss",
       "source": "./plugins/cc_oss"
     },
     {
-      "description": "Implementation workflow skills: feature, fix, refactor, plan, debug",
+      "description": "Validate-first Python development: plan, feature, fix, refactor, debug, review, and setup workflows",
       "name": "develop",
       "source": "./plugins/cc_develop"
     },
     {
-      "description": "ML/perf investigation skills: topic, plan, judge, run, sweep",
+      "description": "Reviewable ML research: literature, planning, methodology review, bounded runs, sweeps, implementation verification, ablations, retrospectives, Kaggle, and setup",
       "name": "research",
       "source": "./plugins/cc_research"
     },
     {
-      "description": "Codebase structural index \u2014 scan Python projects, query the import graph for blast-radius and coupling",
+      "description": "Static Python structure for Claude Code: indexing, queries, test impact, reference renames, integration, and session telemetry debriefs",
       "name": "codemap-py",
       "source": "./plugins/codemap-py"
     }

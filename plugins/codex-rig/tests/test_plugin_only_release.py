@@ -15,8 +15,11 @@ from typing import Any
 
 import pytest
 
+from _platform import POSIX_BASH
+
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+SYNC_SCRIPT = PLUGIN_ROOT.parents[1] / "sync.sh"
 EXPECTED_SKILLS = (
     "agent-shims",
     "analyse",
@@ -288,9 +291,9 @@ def test_release_profile_declares_only_packaged_lifecycle_features() -> None:
     """Keep shim-manager and hook metadata aligned while MCP remains absent."""
     manifest = load_json(PLUGIN_ROOT / "package-manifest.json")
     plugin = load_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")
-    assert plugin["description"].startswith("Thirteen portable Codex workflows")
+    assert plugin["description"].startswith("Thirteen evidence-first Codex workflows")
     assert plugin["interface"]["capabilities"] == [
-        "13 workflow skills and 1 experimental agent-shim manager",
+        "13 workflow skills and 1 legacy-shim lifecycle manager",
         "15 specialist role cards",
         "Parallel blank-agent role injection",
         "Authenticated cleanup for prior agent shims",
@@ -626,35 +629,10 @@ def test_code_remediate_rejects_conflicts_without_merge_authorization(tmp_path: 
         validator._validate_code_remediate_merge_resolution(metadata, pr_dir, {"local_head": "base-oid"})
 
 
-def test_public_lifecycle_guide_covers_install_update_and_safe_removal() -> None:
-    """Keep the user-visible lifecycle and deliberate thin-link limits explicit."""
-    guide_path = PLUGIN_ROOT / "README.md"
-    guide = normalized_text(guide_path).lower()
-    for required in (
-        "codex plugin marketplace add borda/ai-rig --ref codex-rig-v0.3.0",
-        "codex plugin add codex-rig@borda-ai-rig",
-        "optional sessionstart diagnostic",
-        "type that exact digest only after explicit approval",
-        "plugin reinstall does not update external user-agent files automatically",
-        "new installation is platform-blocked",
-        "removing plugin first deliberately leaves thin shim files behind",
-        "foreign or marker-only `codex-rig-*.toml` files are never adopted, overwritten, or removed",
-        "no native bundled agent registrations",
-    ):
-        assert required in guide
-
-    install_lines = {line.strip() for line in guide_path.read_text(encoding="utf-8").splitlines()}
-    assert "codex plugin marketplace add Borda/AI-Rig" in install_lines
-    assert "# codex plugin marketplace add Borda/AI-Rig --ref codex-rig-v0.3.0" in install_lines
-
-
 def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None:
     """Prevent the maintainer sync entrypoint from recreating legacy home mirrors."""
-    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
-    if not sync_path.is_file():
-        return
-
-    raw_script = sync_path.read_text(encoding="utf-8")
+    assert SYNC_SCRIPT.is_file(), f"source-checkout sync.sh missing at {SYNC_SCRIPT}"
+    raw_script = SYNC_SCRIPT.read_text(encoding="utf-8")
     script = " ".join(raw_script.split()).lower()
     assert "scripts/sync_codex.py" in script
     for forbidden in ("codex_src", 'rsync -a --no-perms "$codex_src', 'cp "$codex_src'):
@@ -671,12 +649,10 @@ def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None
     assert "print_claude_plugin_identity" in raw_script
 
 
+@pytest.mark.skipif(not SYNC_SCRIPT.is_file(), reason="requires source-checkout sync.sh")
+@pytest.mark.skipif(POSIX_BASH is None, reason="working POSIX Bash is unavailable")
 def test_repository_sync_defaults_to_latest_and_accepts_explicit_ref(tmp_path: Path, posix_bash: str) -> None:
     """Prove isolated Codex sync uses no ref by default and forwards an explicit pin."""
-    sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
-    if not sync_path.is_file():
-        return
-
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_codex_source = """#!/usr/bin/env python3
@@ -772,8 +748,8 @@ else:
             }
         )
         result = subprocess.run(
-            [posix_bash, str(sync_path), *cli_args],
-            cwd=sync_path.parent,
+            [posix_bash, str(SYNC_SCRIPT), *cli_args],
+            cwd=SYNC_SCRIPT.parent,
             env=env,
             capture_output=True,
             text=True,

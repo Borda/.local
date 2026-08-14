@@ -1,157 +1,125 @@
-# scripts/ — build, validation, and install-probe tooling
+# 🏗️ `scripts/` — package and install verification tooling
 
-This directory holds the maintainer-facing tooling that turns the tracked `codemap-py` plugin source tree into a shippable package, checks that package for closure and portability, and proves the package actually installs into a real Claude Code or Codex CLI. None of these scripts are part of the runtime CLI surface a project author interacts with day to day (that lives in `bin/`, documented separately) — everything here runs at release-engineering time, or from a test suite that exercises the release pipeline.
+These scripts are maintainer-facing. They build a deterministic codemap-py package, validate its payload, and optionally exercise the real Claude Code and Codex plugin-install paths. They are not the day-to-day query CLI; see [`../bin/README.md`](../bin/README.md) for that surface.
 
-## Contents
+The builder is derived from the tracked plugin payload rather than the whole checkout: source caches, tests, untracked files under included directories, and host-specific timestamps do not silently enter a package. The probes build from a disposable source copy, preserve the tracked executable-mode map, and delete that source before runtime proof so a passing install cannot accidentally import from the checkout.
 
-- [Package build and validation](#package-build-and-validation) — `build_package.py`, `validate_package.py`
-- [Install probes](#install-probes) — `probe_claude_install.py`, `probe_codex_install.py`, `_probe_runtime.py`
-- [CLI entrypoint and compatibility shim](#cli-entrypoint-and-compatibility-shim) — `codemap_py_entry.py`, `codemap_py_cli.py`
+<details>
+<summary><strong>Contents</strong></summary>
 
-## Package build and validation
+- [Package build and validation](#-package-build-and-validation)
+- [Install probes](#-install-probes)
+- [CLI entrypoint and compatibility shim](#-cli-entrypoint-and-compatibility-shim)
+- [Maintainer boundaries](#-maintainer-boundaries)
 
-`build_package.py` and `validate_package.py` are a matched pair: the first assembles a package, the second checks it. Every release (and every install probe, which builds a disposable candidate first) runs `build_package.py` and should follow it with `validate_package.py` before trusting the result.
+</details>
+
+## 🧪 Package build and validation
+
+Run the builder, then validate the resulting directory before treating it as a release candidate:
+
+```bash
+python plugins/codemap-py/scripts/build_package.py --out <package-dir>
+python plugins/codemap-py/scripts/validate_package.py --package <package-dir>
+```
+
+The scripts accept Python 3.10+ source syntax. The packaged runtime itself still requires CPython `>=3.11,<3.15`.
 
 ### `build_package.py`
 
-**Purpose.** Assembles the deterministic `codemap-py` distribution package from the REAL tracked plugin tree — both runtime manifest directories, every `bin/` executable and support module, the `scripts/` entrypoints, the Claude and Codex skill rosters, hook wiring, and the top-level product documents (`README.md`, `LICENSE`, `NOTICE`, `CHANGELOG.md`). Name and version are read from `.claude-plugin/plugin.json` at build time, never hardcoded. The package is git-tracked-set derived: `_INCLUDE_DIRS` membership is drawn from the same `{relative_posix_path: is_executable}` map used for the executable-bit metadata (by default `git ls-files --stage` on `source_root`), so an untracked file under an include directory is simply invisible to the payload rather than a build error. Determinism guarantees: stable file order, LF-terminated manifest, fixed on-disk modes, no timestamps, and an exec flag taken from git's tracked mode rather than the build host's `st_mode` — a Windows and a POSIX build of the same commit therefore produce a byte-identical `package-manifest.json`.
+Builds a package from the tracked plugin payload. It reads name and version from `.claude-plugin/plugin.json`, includes both runtime manifests, both six-skill rosters, hooks, `bin/`, `scripts/`, and required product documents, and writes a `package-manifest.json` with stable ordering, SHA-256 bytes, and executable-mode metadata. Tests and caches are excluded. Untracked files under included directories are not silently added to the payload.
 
-**Usage.**
-
-```
-python plugins/codemap-py/scripts/build_package.py --out <dir> [--check] [--mode-map <path>]
+```text
+python build_package.py --out DIR [--check] [--mode-map PATH]
 ```
 
-- `--out <dir>` (required) — package output directory; cleared and recreated on each build.
-- `--check` — rebuild to a temporary directory and byte-compare against `--out` (or against a fresh second build when `--out` is empty), also verifying on-disk executable modes agree with the manifest.
-- `--mode-map <path>` — JSON `{relative_posix_path: bool}` file overriding `source_root`'s own git-derived exec modes; used by the install probes, which build from a disposable copy whose own synthesized git index is not authoritative.
+`--check` rebuilds and compares package bytes and executable modes. `--mode-map` supplies the authoritative `{relative_posix_path: bool}` executable map when building from a disposable source copy. Exit `0` means success, `1` a determinism or mode mismatch, and `2` usage or payload-closure failure.
 
-Exit `0` on success, `1` on a `--check` mismatch, `2` on a usage or payload-closure error (missing required document, symlink, case collision, missing mode-map entry).
-
-**How-to.**
-
-```bash
-python plugins/codemap-py/scripts/build_package.py --out /tmp/codemap-py-pkg
-python plugins/codemap-py/scripts/build_package.py --out /tmp/codemap-py-pkg --check
-```
-
-**When-to-use.** At release build time, to produce the artifact that gets distributed through a marketplace, and in CI with `--check` to catch a non-deterministic build (e.g. a file whose executable bit disagrees between hosts) before it ships.
+The deterministic manifest records stable relative POSIX paths, SHA-256 content hashes, and executable-mode metadata. A clean `--check` therefore proves byte and mode reproducibility for the selected source tree; it does not prove that a native marketplace CLI is available or that a model can use the installed skills correctly.
 
 ### `validate_package.py`
 
-**Purpose.** Validates a directory produced by `build_package.py` against its own `package-manifest.json` and a set of closure rules, asserting that the package is a closed, self-contained, portable artifact. It checks: inventory identity (every manifest entry exists on disk with a matching SHA-256, no un-manifested extra file); portability (no symlinks, no case-folding collisions, no absolute or parent-escaping manifest paths); hygiene (no source-checkout or personal-home path bytes, no obvious secret material such as private-key headers or provider token prefixes, in the payload); closure (both runtime manifests and all required product documents present, no default `skills/` directory or `hooks/hooks.json` leaking in); declared-component closure (the Claude skill roster matches the on-disk `SKILL.md` directories exactly, every referenced hook helper exists and is inventoried, and the Codex manifest declares the same six-skill roster as Claude); and executable modes (on POSIX, each file's on-disk executable bit matches its manifest `exec` flag — informational only on Windows).
+Checks a builder output against its manifest. Validation covers inventory hashes and extra files, relative portable paths, symlinks and case collisions, source/home/secret-byte leaks, required documents and manifests, exact Claude/Codex six-skill roster closure, hook references, and executable modes where the host exposes them.
 
-**Usage.**
-
-```
-python plugins/codemap-py/scripts/validate_package.py --package <dir>
+```text
+python validate_package.py --package DIR
 ```
 
-- `--package <dir>` (required) — a directory previously produced by `build_package.py`.
+Exit `0` is clean, `1` reports named findings, and `2` is a usage error.
 
-Exit `0` when clean, `1` with named findings on stderr, `2` on a usage error (missing manifest or directory).
+Validation is fail-closed for extra files, missing manifest entries, symlinks, case-folding collisions, absolute or parent-escaping paths, source/home/secret-byte leaks, missing product documents, Claude/Codex roster drift, hook references, and executable-mode mismatches where the host exposes file modes.
 
-**How-to.**
+<details>
+<summary><strong>Install probes</strong></summary>
 
-```bash
-python plugins/codemap-py/scripts/validate_package.py --package /tmp/codemap-py-pkg
-```
+## 🧪 Install probes
 
-**When-to-use.** Immediately after `build_package.py`, before tagging or shipping a release — build then validate is the standard two-step release gate. Also useful any time a package directory's integrity is in question (e.g. after a manual edit) since it re-derives every closure guarantee from first principles rather than trusting the manifest blindly.
-
-## Install probes
-
-`probe_claude_install.py` and `probe_codex_install.py` are feasibility probes, not CI unit tests: each drives the real `claude` or `codex` CLI against a throwaway config directory to prove a freshly built candidate package actually installs and exposes the roster it declares. Neither ever touches the user's real `~/.claude` or `~/.codex` — every mutation is scoped to a fresh temporary directory removed on exit. Both share their staging and runtime-proof logic through `_probe_runtime.py`.
+The probes are optional release-acceptance checks. They require the corresponding native CLI and use disposable configuration and source locations; they do not modify a user's normal plugin home. A missing native CLI is reported as a prerequisite limitation, not as evidence that the package is broken.
 
 ### `probe_claude_install.py`
 
-**Purpose.** Copies the plugin working tree into a disposable checkout, builds a candidate package from that copy (using a mode map captured from the REAL repository's git index beforehand, since the copy's own synthesized index is never authoritative), registers a local Claude marketplace pointing at the candidate, and runs `claude plugin marketplace add` + `claude plugin install codemap-py@<mkt> --scope user` against a scratch `CLAUDE_CONFIG_DIR`. It then statically verifies the installed bytes (Claude skill roster matches `package-manifest.json`, no `codex-skills/` registered as a Claude skills source), deletes the entire disposable source tree, and finally proves source-independent runtime execution — `doctor`/`index`/`query` run from the installed cache bytes through the shipped launcher under a scrubbed environment, asserting no forbidden path leaks via env, argv, or installed bytes.
+Builds from a disposable source copy, registers a local Claude marketplace, runs the native marketplace/install commands, verifies the installed Claude manifest and six-skill roster, removes the source copy, and runs `doctor`, `index`, and `query` through the shipped launcher under a scrubbed environment.
 
-**Usage.**
-
-```
-python plugins/codemap-py/scripts/probe_claude_install.py [--report <path>]
+```text
+python probe_claude_install.py [--report PATH]
 ```
 
-- `--report <path>` — also write the JSON result to this path (always printed to stdout).
-
-Exit `0` = installed and verified; `2` = a named prerequisite is absent (`build_package.py` not yet present, or the `claude` CLI is not installed) — a recorded limitation, not a failure; `1` = the probe ran but installation or verification failed.
-
-**How-to.**
-
-```bash
-python plugins/codemap-py/scripts/probe_claude_install.py --report /tmp/claude-probe.json
-```
-
-**When-to-use.** As a release-acceptance check that the package actually installs cleanly through Claude Code's real plugin-install path — run it whenever the package layout, manifest fields, or skill roster change, and as part of the pre-release checklist.
+Exit `0` means the probe and source-independent runtime proof passed; `1` means the probe ran and found a failure; `2` means a named prerequisite such as the builder or `claude` CLI is unavailable.
 
 ### `probe_codex_install.py`
 
-**Purpose.** The Codex-side mirror of `probe_claude_install.py`: stages a disposable copy, builds a candidate, writes a local Codex marketplace manifest (`.agents/plugins/marketplace.json`, using Codex's object-form `source` discriminator), and runs `codex plugin marketplace add` + `codex plugin add codemap-py@<mkt> --json` against a scratch `CODEX_HOME`. It verifies a Codex skill source referencing `codex-skills/`, a non-empty installed Codex roster, and that `claude-skills/` is not registered as the Codex source. Package validation separately requires the shipped `./codex-skills/` source and the six-skill Claude/Codex parity. The probe then deletes the disposable source and proves `doctor`/`index`/`query` run only from installed cache bytes under a scrubbed environment.
+The Codex counterpart stages a disposable package, creates a local Codex marketplace manifest, runs native Codex marketplace/add operations, verifies the `./codex-skills/` source and six-skill roster, removes the source copy, and runs the same launcher-based runtime proof.
 
-**Usage.**
-
-```
-python plugins/codemap-py/scripts/probe_codex_install.py [--report <path>]
+```text
+python probe_codex_install.py [--report PATH]
 ```
 
-- `--report <path>` — also write the JSON result to this path (always printed to stdout).
-
-Exit `0` = installed and verified; `2` = a named prerequisite is absent (builder not present, or the `codex` CLI is not installed); `1` = the probe ran but installation or verification failed.
-
-**How-to.**
-
-```bash
-python plugins/codemap-py/scripts/probe_codex_install.py --report /tmp/codex-probe.json
-```
-
-**When-to-use.** Same release-acceptance role as `probe_claude_install.py`, for the Codex Rig install path. Run both probes together before a release — they exercise different marketplace manifest shapes and different roster contracts.
+Exit meanings match the Claude probe. The Codex manifest intentionally declares no hooks; the probe checks that the Claude roster is not used as the Codex source.
 
 ### `_probe_runtime.py`
 
-**Purpose.** Shared helper module backing both install probes — not a standalone CLI. Implements the disposable-source-copy runtime proof: capture the authoritative exec-mode map from the real repository's git index, `shutil.copytree` the plugin working tree into a temp checkout outside the repo (minus caches/tests/junk), build the candidate from that copy via `build_package.py --mode-map`, delete the entire temp source tree, then execute `doctor`/`index`/`query` from the installed cache bytes strictly through the shipped launcher (`bin/codemap-py`; there is deliberately no Python-entry fallback — a non-executable launcher is a probe failure, not a silent reroute) under an environment scrubbed of `PYTHONPATH`, `CLAUDE_PLUGIN_*`, and `CODEMAP_*` variables (except a controlled `CODEMAP_PYTHON`), scanning env, argv, and installed bytes for any reference to a forbidden root.
+Shared implementation for the two probes. It stages source, captures executable modes from the real tracked tree, builds the candidate, deletes the source copy, scrubs `PYTHONPATH`, plugin-root variables, and `CODEMAP_*` variables except a controlled interpreter override, and verifies `doctor`, `index`, and `query` through the installed launcher. Import it from a probe; it has no standalone CLI.
 
-**Usage.** Imported only — `from _probe_runtime import build_from_checkout, runtime_proof, stage_disposable_source, write_real_mode_map`. It has no `__main__` block and is never invoked from the command line.
+</details>
 
-**How-to.** Not directly runnable; to exercise its logic, run `probe_claude_install.py` or `probe_codex_install.py`, both of which call into it.
+<details>
+<summary><strong>Builder and validator closure details</strong></summary>
 
-**When-to-use.** Internal shim — not invoked directly. Anyone changing its staging, mode-map, or scrubbed-env logic should re-run both install probes afterward, since they are its only callers and the sole way to observe a regression here.
+`build_package.py` derives its payload from the Git-tracked plugin set. The include roots are the two runtime manifests, `bin/`, `scripts/`, both six-skill rosters, hooks, and the required product documents. It reads name/version from `.claude-plugin/plugin.json`; it does not infer identity from a directory name or include tests, caches, source-checkout metadata, or untracked files. The optional `--mode-map PATH` is the authoritative `{relative_posix_path: executable}` map when a disposable source copy has no trustworthy Git index.
 
-## CLI entrypoint and compatibility shim
+The manifest is deterministic: paths are relative POSIX paths, entries are stable-sorted, file bytes are LF-stable where generated, hashes are SHA-256, executable mode is explicit, and timestamps are absent. `--check` compares both bytes and executable flags against a fresh rebuild. A clean check proves reproducible packaging for the selected source tree; it does not prove marketplace installation or runtime/model behavior.
+
+`validate_package.py` is fail-closed. It checks manifest inventory and hashes, extra files, absolute/parent-escaping paths, symlinks, case-fold collisions, source/home/secret-byte leaks, required manifests and documents, Claude/Codex roster parity and closure, hook references, and executable modes where the host exposes them. It reports named findings rather than repairing a package. Run it after every build and before a release candidate is handed to a native install probe.
+
+The pair intentionally keeps release decisions outside these scripts: neither builds a remote marketplace, publishes an artifact, pushes Git, approves an integration plan, nor deletes a user installation. The release workflow owns those actions.
+
+</details>
+
+<details>
+<summary><strong>Install-probe source independence and reports</strong></summary>
+
+Each install probe builds from a disposable source copy and preserves the real tracked executable-mode map. It registers a local marketplace using the native runtime CLI, verifies the installed manifest and runtime-specific six-skill source, deletes the disposable source, scrubs `PYTHONPATH`, plugin-root variables, and `CODEMAP_*` variables except a controlled interpreter override, then runs `doctor`, `index`, and `query` through the installed launcher bytes. This proves the candidate does not accidentally import from the checkout; it does not prove an external marketplace or model session.
+
+`probe_claude_install.py [--report PATH]` uses a disposable `CLAUDE_CONFIG_DIR`, checks the Claude manifest and `claude-skills/` roster, and reports missing native `claude` CLI as a prerequisite limitation. `probe_codex_install.py [--report PATH]` uses a disposable `CODEX_HOME`, checks the Codex object-form marketplace manifest and `codex-skills/` roster, and reports missing native `codex` CLI similarly. Both return 0 for source-independent runtime proof, 1 for a probe-detected failure, and 2 for a named prerequisite or usage failure.
+
+`_probe_runtime.py` is import-only. Its supported helpers are `stage_disposable_source`, `write_real_mode_map`, `build_from_checkout`, and `runtime_proof`; changing staging, mode-map, scrubbed environment, or launcher selection requires running both probes. A non-executable launcher is a probe failure, not a reason to fall back to the Python entrypoint.
+
+</details>
+
+## 🧰 CLI entrypoint and compatibility shim
 
 ### `codemap_py_entry.py`
 
-**Purpose.** The single Python entrypoint shared by the POSIX launcher (`bin/codemap-py`), the Windows launcher (`bin/codemap-py.cmd`), an editable developer install, and runtime skills. It validates the running interpreter against the supported bound (CPython 3.11 up to, but excluding, 3.15) BEFORE importing anything from `codemap_py`, then prepends `<plugin-root>/src` to its own process import path and hands control to `codemap_py.cli.main` without remapping arguments. It performs no install, download, cache mutation, or dependency setup — it is a pure dispatcher.
+The Python entrypoint used by both platform launchers. It validates CPython `>=3.11,<3.15` before importing `codemap_py`, adds the installed `src/` directory to `sys.path`, and delegates to the CLI dispatcher. It performs no installation, download, or cache setup.
 
-**Usage.**
-
+```text
+python codemap_py_entry.py doctor --json
 ```
-python3 scripts/codemap_py_entry.py <codemap-py-subcommand> [args...]
-```
-
-On interpreter rejection, stdout stays empty and a single diagnostic is written to stderr; exit code `127`. Otherwise the exit code is whatever `codemap_py.cli.main` returns for the given subcommand.
-
-**How-to.**
-
-```bash
-python3 plugins/codemap-py/scripts/codemap_py_entry.py doctor --json
-```
-
-**When-to-use.** This is what `bin/codemap-py` and `bin/codemap-py.cmd` `exec` into after they have located an eligible interpreter — it is rarely invoked by name directly, but doing so is useful when debugging interpreter resolution or when working from a source checkout without an installed launcher.
 
 ### `codemap_py_cli.py`
 
-**Purpose.** A compatibility shim for `codemap_py.cli`. `codemap_py_entry.py` already imports `codemap_py.cli` directly; this shim exists only so consumers that import the bare `codemap_py_cli` name after inserting `scripts/` onto their own `sys.path` (tests, an editable checkout) keep working. It prepends `<plugin-root>/src` to `sys.path`, then replaces its own entry in `sys.modules` with the real package module so every attribute access — including `is_supported`, `candidate_interpreters`, and `resolve_interpreter`, which tests exercise directly — reaches the one authoritative implementation.
+Compatibility shim for code that historically imported the bare `codemap_py_cli` module after adding `scripts/` to `sys.path`. New code should import `codemap_py.cli` directly. The shim has no separate command surface.
 
-**Usage.** Imported only, as a bare module name after a `sys.path.insert` of `scripts/`: `import codemap_py_cli`. It has no CLI surface of its own.
+## 🧭 Maintainer boundaries
 
-**How-to.** Not run directly; a test file that needs it does:
-
-```python
-import sys
-
-sys.path.insert(0, "plugins/codemap-py/scripts")
-import codemap_py_cli
-```
-
-**When-to-use.** Internal shim — not invoked directly. It is a transitional compatibility layer kept for test and editable-checkout imports; new code should import `codemap_py.cli` directly instead.
+These scripts do not publish releases, push Git, mutate a remote marketplace, or approve integration plans. They build and inspect local artifacts; release policy and remote publication remain in the human release workflow. Keep examples pointed at explicit scratch directories and use the host's temporary-directory facilities rather than hard-coded platform paths.
