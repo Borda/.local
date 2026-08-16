@@ -31,6 +31,7 @@ Scripts, hooks, `bin/` entry points, and CI steps all run on Linux, macOS, and n
 - Skips are the last resort: never a blanket `skipif(sys.platform == "win32")`, always a capability probe skipping on `OSError`, with each surviving skip documented and re-audited.
 - Test skips must be collection-time decorators (`pytest.mark.skipif`, `pytest.mark.skip`, or parametrized marks); never call `pytest.skip()` from a test or fixture body.
 - Green macOS is absence of regression, not Windows support: prove Windows semantics with `PureWindowsPath` or `ntpath`, since monkeypatching `os.name` does not change `pathlib`.
+- Recurrent defect guard: a test simulating another OS must explicitly supply every host-only API and constant it exercises instead of assuming the runner exports them. For absent surfaces such as `os.killpg` or `signal.SIGKILL`, install test doubles with `monkeypatch.setattr(..., raising=False)` and use `monkeypatch.delattr(..., raising=False)` in the regression to prove the missing-attribute case; keep the simulated branch running on every host rather than adding an OS skip.
 
 ## Benchmark Isolation
 

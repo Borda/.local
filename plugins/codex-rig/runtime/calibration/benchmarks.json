@@ -224,17 +224,6 @@
     ]
   },
   "skills": {
-    "analyse": [
-      "## Input Schema",
-      "evidence.md",
-      "github_read.py",
-      "public HTTPS fallback",
-      "Self-Critical Gate",
-      "result-template.json",
-      "## Quality Gates",
-      "## Calibration Hooks",
-      "helper-cli-contract.md"
-    ],
     "audit": [
       "## Input Schema",
       "Runtime Leaks",
@@ -260,6 +249,17 @@
       "behavioral-version-policy",
       "commit-relative version",
       "git show HEAD",
+      "result-template.json",
+      "## Quality Gates",
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
+    ],
+    "change-analysis": [
+      "## Input Schema",
+      "evidence.md",
+      "github_read.py",
+      "public HTTPS fallback",
+      "Self-Critical Gate",
       "result-template.json",
       "## Quality Gates",
       "## Calibration Hooks",
@@ -479,7 +479,7 @@
       "## Calibration Hooks",
       "helper-cli-contract.md"
     ],
-    "develop": [
+    "implement": [
       "## Input Schema",
       "anti-rationalization gate",
       "feature demo contract",

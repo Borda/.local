@@ -12,12 +12,23 @@ GLOBAL_INSTRUCTIONS = PLUGIN_ROOT / "assets" / "AGENTS.md"
 BEHAVIORAL_CASES = PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json"
 README = PLUGIN_ROOT / "README.md"
 CHANGELOG = PLUGIN_ROOT / "CHANGELOG.md"
+CODE_REVIEW_SKILL = PLUGIN_ROOT / "skills" / "code-review" / "SKILL.md"
+CODE_REMEDIATE_SKILL = PLUGIN_ROOT / "skills" / "code-remediate" / "SKILL.md"
+
+
+APPROVAL_BRIEF_FIELDS = (
+    "Action and purpose",
+    "External capability",
+    "Credential behavior",
+    "Filesystem and worktree effects",
+    "Retry policy and safe denial outcome",
+)
 
 
 @pytest.mark.parametrize(
     ("skill_name", "network_marker"),
     [
-        ("analyse", "github_read.py"),
+        ("change-analysis", "github_read.py"),
         ("calibrate", "run_live_ab.py"),
         ("code-remediate", "collect_pr.py"),
         ("code-review", "collect_pr.py"),
@@ -35,8 +46,19 @@ def test_networked_cli_skills_require_complete_owning_command_approval(
 
     assert network_marker in skill
     assert "complete owning command" in skill or "complete collector command" in skill
-    assert '`sandbox_permissions="require_escalated"`' in skill
-    assert "never enable persistent workspace network access" in skill
+    approval_paragraphs = [
+        paragraph for paragraph in skill.split("\n\n") if '`sandbox_permissions="require_escalated"`' in paragraph
+    ]
+
+    assert len(approval_paragraphs) == 1
+    approval_paragraph = approval_paragraphs[0]
+    assert "never enable persistent workspace network access" in approval_paragraph
+    for field in APPROVAL_BRIEF_FIELDS:
+        assert field in approval_paragraph
+    assert "Denial aborts the active tool call and may end the assistant turn" in approval_paragraph
+    assert "Do not issue an equivalent approval request in the current turn" in approval_paragraph
+    assert "Do not switch to a broader command" in approval_paragraph
+    assert "Ask the user to send a new message to resume" in approval_paragraph
 
 
 def test_shared_contract_covers_known_networked_cli_families() -> None:
@@ -51,6 +73,50 @@ def test_shared_contract_covers_known_networked_cli_families() -> None:
         assert marker in contract
     assert "marketplace add/upgrade" in contract
     assert "`codex plugin add` from a configured marketplace snapshot" in contract
+
+
+def test_shared_contract_defines_approval_brief_and_denial_turn_recovery() -> None:
+    """Require a complete, plugin-owned brief before intentional approval requests."""
+    contract = SHARED_CONTRACT.read_text(encoding="utf-8")
+
+    assert "## Approval Brief" in contract
+    for field in APPROVAL_BRIEF_FIELDS:
+        assert field in contract
+    assert "Denial aborts the active tool call and may end the assistant turn" in contract
+    assert "Do not issue an equivalent approval request in the current turn" in contract
+    assert "Do not switch to a broader command" in contract
+    assert "Ask the user to send a new message to resume" in contract
+
+
+@pytest.mark.parametrize(
+    ("skill_path", "start_marker", "end_marker"),
+    [
+        (CODE_REVIEW_SKILL, "In runtimes with network sandboxing", "\n\nPR evidence has two tiers."),
+        (CODE_REMEDIATE_SKILL, "In runtimes with network sandboxing", "\n\n`github_read.py`"),
+    ],
+    ids=("code-review", "code-remediate"),
+)
+def test_pr_collector_owning_boundary_explains_approval_brief_and_denial_recovery(
+    skill_path: Path,
+    start_marker: str,
+    end_marker: str,
+) -> None:
+    """Keep PR collector approval guidance usable at the request boundary."""
+    skill = skill_path.read_text(encoding="utf-8")
+    start = skill.index(start_marker)
+    end = skill.index(end_marker, start)
+    approval_boundary = skill[start:end]
+
+    assert "outer collector command" in approval_boundary
+    for field in APPROVAL_BRIEF_FIELDS:
+        assert field in approval_boundary
+    assert "Denial aborts the active tool call and may end the assistant turn" in approval_boundary
+    assert "Do not issue an equivalent approval request in the current turn" in approval_boundary
+    assert "Do not switch to a broader command" in approval_boundary
+    assert "Ask the user to send a new message to resume" in approval_boundary
+    assert "before any user approval request or denial" in approval_boundary
+    assert "after the user denies approval" in approval_boundary
+    assert "retry is forbidden" in approval_boundary
 
 
 def test_missing_kaggle_cli_remains_user_owned_setup() -> None:
@@ -84,11 +150,28 @@ def test_calibration_rejects_persistent_or_nested_only_network_approval() -> Non
     payload = json.loads(BEHAVIORAL_CASES.read_text(encoding="utf-8"))
     cases = {case["id"]: case for case in payload["cases"]}
 
-    case = cases["develop-networked-cli-owning-command-approval"]
-    assert case["target"] == "develop"
+    case = cases["implement-networked-cli-owning-command-approval"]
+    assert case["target"] == "implement"
     assert case["expected_findings"] == [
         "complete-owning-command-network-approval-missing",
         "missing-kaggle-cli-setup-not-user-owned",
         "persistent-workspace-network-enabled",
         "nested-network-cli-approval-scope-invalid",
+    ]
+
+
+def test_calibration_covers_approval_brief_and_denial_turn_recovery() -> None:
+    """Keep calibration aligned with the reproduced host-denial clarity gap."""
+    payload = json.loads(BEHAVIORAL_CASES.read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in payload["cases"]}
+
+    case = cases["code-review-approval-denial-turn-recovery"]
+    assert case["target"] == "code-review"
+    assert case["expected_findings"] == [
+        "approval-brief-missing",
+        "denial-turn-abort-guidance-missing",
+        "safe-new-message-resume-missing",
+        "equivalent-approval-reprompt",
+        "broader-command-after-denial",
+        "denial-outcome-misreported",
     ]

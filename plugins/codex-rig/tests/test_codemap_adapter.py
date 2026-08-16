@@ -296,7 +296,7 @@ def test_gather_context_absent_never_runs_queries(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PATH", str(tmp_path))
     adapter = load_adapter()
 
-    context = adapter.gather_structural_context("develop", target="pkg.mod")
+    context = adapter.gather_structural_context("implementation", target="pkg.mod")
 
     assert context.status == adapter.STATUS_ABSENT
     assert context.queries == ()
@@ -308,7 +308,7 @@ def test_gather_context_available_when_all_queries_clean(monkeypatch: pytest.Mon
     monkeypatch.setenv("PATH", str(tmp_path))
     adapter = load_adapter()
 
-    context = adapter.gather_structural_context("develop", target="pkg.mod")
+    context = adapter.gather_structural_context("implementation", target="pkg.mod")
 
     assert context.status == adapter.STATUS_AVAILABLE
     assert len(context.queries) == 3  # rdeps, coupled, test-impact
@@ -323,7 +323,7 @@ def test_skip_route_persists_auditable_context_without_resolving_codemap(monkeyp
 
     monkeypatch.setattr(adapter, "_resolve_codemap_executable", unexpected_resolution)
 
-    context = adapter.gather_structural_context("develop", target="pkg.mod::edit", query_kind="skip")
+    context = adapter.gather_structural_context("implementation", target="pkg.mod::edit", query_kind="skip")
 
     assert context.query_kind == "skip"
     assert context.status == adapter.STATUS_SKIPPED
@@ -365,7 +365,7 @@ def test_fact_routes_run_doctor_and_exactly_one_compact_query(
 
     monkeypatch.setattr(adapter, "_run_json", run_json)
 
-    context = adapter.gather_structural_context("develop", target=target, query_kind=query_kind)
+    context = adapter.gather_structural_context("implementation", target=target, query_kind=query_kind)
 
     assert context.status == adapter.STATUS_AVAILABLE
     assert context.query_kind == query_kind
@@ -391,7 +391,7 @@ def test_fact_route_without_target_records_bounded_error_after_doctor(monkeypatc
 
     monkeypatch.setattr(adapter, "_run_json", run_json)
 
-    context = adapter.gather_structural_context("develop", query_kind="callers")
+    context = adapter.gather_structural_context("implementation", query_kind="callers")
 
     assert context.status == adapter.STATUS_DEGRADED
     assert commands == [[launcher, "doctor", "--json"]]
@@ -434,7 +434,7 @@ def test_fact_routes_degrade_without_query_for_missing_or_malformed_target(
 
     monkeypatch.setattr(adapter, "_run_json", run_json)
 
-    context = adapter.gather_structural_context("develop", target=target, query_kind=query_kind)
+    context = adapter.gather_structural_context("implementation", target=target, query_kind=query_kind)
 
     assert context.status == adapter.STATUS_DEGRADED
     assert context.target == target
@@ -452,7 +452,7 @@ def test_invalid_query_kind_fails_before_launcher_resolution(monkeypatch: pytest
     monkeypatch.setattr(adapter, "_resolve_codemap_executable", unexpected_resolution)
 
     with pytest.raises(ValueError, match="unknown query kind"):
-        adapter.gather_structural_context("develop", query_kind="not-a-route")
+        adapter.gather_structural_context("implementation", query_kind="not-a-route")
 
 
 def test_gather_context_degraded_when_not_covered_present(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -646,7 +646,7 @@ def test_gather_context_rejects_unknown_category(tmp_path: Path) -> None:
     ("category", "expected_subcommands"),
     [
         pytest.param("analysis", ["central"], id="analysis-drops-deps"),
-        pytest.param("develop", ["coupled"], id="develop-drops-rdeps-and-test-impact"),
+        pytest.param("implementation", ["coupled"], id="implementation-drops-rdeps-and-test-impact"),
     ],
 )
 def test_standard_batch_without_target_runs_only_target_free_queries(
@@ -745,7 +745,7 @@ def test_cli_skip_route_persists_without_codemap_on_path(tmp_path: Path) -> None
             str(ADAPTER_PATH),
             "context",
             "--category",
-            "develop",
+            "implementation",
             "--query-kind",
             "skip",
             "--out",

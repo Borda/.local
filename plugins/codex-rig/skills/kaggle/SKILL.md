@@ -5,7 +5,7 @@ description: "Build/extend grounded Kaggle Jupytext notebooks for training, EDA,
 
 # Kaggle
 
-Build a public-readable Kaggle notebook with an evidence-backed problem profile, visual EDA, stage-level sanity checks, reproducible training, inference, and submission validation. Write notebook scripts only; use `develop` for packages or production modules and `research` for literature surveys.
+Build a public-readable Kaggle notebook with an evidence-backed problem profile, visual EDA, stage-level sanity checks, reproducible training, inference, and submission validation. Write notebook scripts only; use `implement` for packages or production modules and `research` for literature surveys.
 
 ## Input Schema
 
@@ -40,7 +40,7 @@ Create `.reports/codex/kaggle/<timestamp>/` and keep the active plan current. Re
 
 Prefer the authenticated `kaggle` CLI over the competition page for anything the CLI can read. Competition pages are login-walled and often return partial content; the CLI reads real file names, sizes, and the actual sample submission.
 
-Apply the networked CLI approval contract in `../../shared/native-skill-contract.md` to every `kaggle` invocation, including probes, help, listings, and downloads: execute the complete owning command with external network approval from its first attempt. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow Kaggle-read/download justification; never enable persistent workspace network access or approve only a nested executable. The user's Kaggle task authorizes requesting the runtime permission, not bypassing its prompt. Kaggle CLI installation and authentication are user-owned prerequisites; never run an installer or authentication setup from this workflow.
+Apply the networked CLI approval contract in `../../shared/native-skill-contract.md` to every `kaggle` invocation, including probes, help, listings, and downloads: execute the complete owning command with external network approval from its first attempt. Before requesting it, state: `Action and purpose`: read competition metadata or download the selected Kaggle data; `External capability`: Kaggle network read or download; `Credential behavior`: use configured Kaggle CLI credentials without reading, creating, or authenticating them; `Filesystem and worktree effects`: write the evidence profile and, after validation, selected data under `.experiments/kaggle/`; `Retry policy and safe denial outcome`: do not repeat an equivalent request in this turn, and use page or user-supplied evidence only when the requested mode permits degraded grounding. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow Kaggle-read/download justification; never enable persistent workspace network access or approve only a nested executable. The user's Kaggle task authorizes requesting the runtime permission, not bypassing its prompt. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. Kaggle CLI installation and authentication are user-owned prerequisites; never run an installer or authentication setup from this workflow.
 
 **CLI probe.** `command -v kaggle`, then `kaggle competitions list -p 1` — succeeds only with valid credentials, and needs no rules acceptance, so it separates an auth failure from a rules failure. Record the resulting state in `profile.md` as `ready`, `unauthorized`, or `absent`. Absence is never fatal: fall back to the page and user-supplied facts, and record the degraded grounding as a residual limit.
 
@@ -111,7 +111,7 @@ Write the notebook directly; do not delegate generation to an external runner or
 - Preserve all requested `keep` content and unrelated resume-file content.
 - Use `# %%` and `# %% [markdown]` cell boundaries.
 
-Do not distill helpers into a package during the notebook run. Offer package extraction only as a separate `develop` task after the baseline notebook passes.
+Do not distill helpers into a package during the notebook run. Offer package extraction only as a separate `implement` task after the baseline notebook passes.
 
 ### 06: Verify the generated artifact
 

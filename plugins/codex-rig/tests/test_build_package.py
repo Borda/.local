@@ -181,7 +181,7 @@ def test_update_is_idempotent_after_normalizing_stale_manifest(tmp_path: Path) -
     ("mutator", "expected"),
     [
         (lambda root: (root / "roles" / "challenger" / "ROLE.md").unlink(), "missing canonical role card"),
-        (lambda root: (root / "skills" / "analyse" / "SKILL.md").unlink(), "missing workflow skill"),
+        (lambda root: (root / "skills" / "change-analysis" / "SKILL.md").unlink(), "missing workflow skill"),
     ],
     ids=["missing-role", "missing-skill"],
 )

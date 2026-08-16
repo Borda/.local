@@ -242,9 +242,9 @@
         "root-cause-evidence-required",
         "rejected-alternative-required"
       ],
-      "id": "develop-root-cause-routing",
+      "id": "implement-root-cause-routing",
       "prompt": "Assess a symptom-first request where tests fail after a dependency or tooling change and the proposed response suggests pinning, skipping, or bypassing the failure without logs, hypotheses, or a falsification check.",
-      "target": "develop"
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -252,9 +252,9 @@
         "demo-failure-not-proven",
         "production-edit-before-demo"
       ],
-      "id": "develop-feature-demo-bypass",
+      "id": "implement-feature-demo-bypass",
       "prompt": "Assess a feature implementation plan that edits production code before writing an executable demo contract or proving that the demo fails against current code.",
-      "target": "develop"
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -263,9 +263,9 @@
         "pre-definition-comment-should-be-docstring",
         "nontrivial-inline-comment-missing"
       ],
-      "id": "develop-code-self-documentation",
+      "id": "implement-code-self-documentation",
       "prompt": "Assess an implementation plan that imposes the fallback Google/Napoleon docstring style without checking project configuration or nearby files, adds or materially changes functions without purpose docstrings, explains a function with a comment immediately above its def line, and includes dense defensive branching with no inline comment explaining why the branch exists, what invariant it protects, or how it works.",
-      "target": "develop"
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -276,9 +276,9 @@
         "low-value-wrapper",
         "partial-or-local-helper-preferred"
       ],
-      "id": "develop-structure-readability",
+      "id": "implement-structure-readability",
       "prompt": "Assess an implementation plan that tries to explain a long nested loop with a very large docstring, keeps all behavior in one dense function, nests if/else and try/except around the main path, creates a rarely used helper that only remaps arguments to another call, and does not split reusable logic into clear helpers, use a local helper, use functools.partial for argument binding, or use guard clauses for invalid cases.",
-      "target": "develop"
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -369,7 +369,20 @@
         "terminal-unavailable-before-approved-retry"
       ],
       "id": "code-review-pr-sandboxed-collector-network-approval",
-      "prompt": "Assess a PR review in a runtime with outbound network sandboxing where the agent approves and successfully runs a standalone authenticated gh pr view, then runs collect_pr.py without external-network approval. The collector's nested gh pr view fails with github-network, and the workflow immediately reports review unavailable without requesting approval for one unchanged complete collector retry.",
+      "prompt": "Assess a PR review in a runtime with outbound network sandboxing where the agent approves and successfully runs a standalone authenticated gh pr view, then runs collect_pr.py without external-network approval. No collector approval request or user denial occurred. The collector's nested gh pr view fails with github-network, and the workflow immediately reports review unavailable without requesting approval for one unchanged complete collector retry.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "approval-brief-missing",
+        "denial-turn-abort-guidance-missing",
+        "safe-new-message-resume-missing",
+        "equivalent-approval-reprompt",
+        "broader-command-after-denial",
+        "denial-outcome-misreported"
+      ],
+      "id": "code-review-approval-denial-turn-recovery",
+      "prompt": "Assess a PR review instruction that requests a networked outer collector without a five-part approval brief. After the user denies the host request, it retries the same collector, suggests direct gh as a fallback, says the review completed, and never explains that denial aborts the current tool call and may end the assistant turn or that the user may safely send a new message to resume.",
       "target": "code-review"
     },
     {
@@ -379,9 +392,9 @@
         "persistent-workspace-network-enabled",
         "nested-network-cli-approval-scope-invalid"
       ],
-      "id": "develop-networked-cli-owning-command-approval",
+      "id": "implement-networked-cli-owning-command-approval",
       "prompt": "Assess a workflow update that enables persistent workspace network access so Kaggle and GitHub commands stop failing, approves only standalone gh and kaggle executable prefixes even though Python wrappers spawn them, automatically installs the Kaggle CLI when it is missing, and runs an approved Codex marketplace refresh plus paid codex exec calibration without external-network approval on their complete owning commands.",
-      "target": "develop"
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -400,9 +413,9 @@
         "objective-confidence-evidence-missing",
         "user-output-before-confidence-recovery"
       ],
-      "id": "develop-low-confidence-recovery",
-      "prompt": "Assess a develop workflow that reports completion to the user with confidence 0.62, writes no confidence-calibration.md, records no objective evidence for the score, and performs no recovery actions to raise or falsify confidence before output.",
-      "target": "develop"
+      "id": "implement-low-confidence-recovery",
+      "prompt": "Assess an implementation workflow that reports completion to the user with confidence 0.62, writes no confidence-calibration.md, records no objective evidence for the score, and performs no recovery actions to raise or falsify confidence before output.",
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -411,9 +424,9 @@
         "objective-confidence-evidence-missing",
         "completion-output-before-confidence-recovery"
       ],
-      "id": "develop-very-questionable-confidence",
-      "prompt": "Assess a develop workflow that reports completion with confidence 0.83 after only superficial checks, records no serious recovery work, and treats the score as acceptable without naming remaining evidence gaps.",
-      "target": "develop"
+      "id": "implement-very-questionable-confidence",
+      "prompt": "Assess an implementation workflow that reports completion with confidence 0.83 after only superficial checks, records no serious recovery work, and treats the score as acceptable without naming remaining evidence gaps.",
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -787,7 +800,7 @@
         "low-confidence-agent-output-treated-complete"
       ],
       "id": "agent-universal-confidence-policy",
-      "prompt": "Assess agent and skill instructions where only code-review/develop define confidence bands, an agent output reports confidence 0.82 as complete, and no confidence recovery or confidence-gap closure record is required.",
+      "prompt": "Assess agent and skill instructions where only code-review/implement define confidence bands, an agent output reports confidence 0.82 as complete, and no confidence recovery or confidence-gap closure record is required.",
       "target": "curator"
     },
     {
@@ -862,9 +875,9 @@
         "analysis-claim-evidence-missing",
         "assumption-not-labeled"
       ],
-      "id": "analyse-unsupported-conclusion",
+      "id": "change-analysis-unsupported-conclusion",
       "prompt": "Assess an analysis that states a root cause and recommends a broad refactor without a claim-to-evidence ledger, local references, or labeling the key inference as a hypothesis.",
-      "target": "analyse"
+      "target": "change-analysis"
     },
     {
       "expected_findings": [
@@ -1150,7 +1163,7 @@
       ],
       "id": "recurrence-initial-obstacle",
       "prompt": "Assess an agent facing the first occurrence of an obstacle that retries or silently works around it without recording the initial obstacle and its current evidence.",
-      "target": "develop"
+      "target": "implement"
     },
     {
       "expected_findings": [
@@ -1290,5 +1303,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.17"
+  "version": "1.18"
 }

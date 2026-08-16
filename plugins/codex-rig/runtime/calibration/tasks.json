@@ -8,14 +8,14 @@
     },
     {
       "goal": "Implement minimal change and verify checks",
-      "id": "develop-001",
-      "skill": "develop",
+      "id": "implement-001",
+      "skill": "implement",
       "success": "checks and gate status are present"
     },
     {
       "goal": "Reject workaround-only fixes for symptom-first failures",
-      "id": "develop-002",
-      "skill": "develop",
+      "id": "implement-002",
+      "skill": "implement",
       "success": "investigate handoff or root-cause evidence is required before editing"
     },
     {
@@ -62,8 +62,8 @@
     },
     {
       "goal": "Produce scoped analysis with confidence",
-      "id": "analyse-001",
-      "skill": "analyse",
+      "id": "change-analysis-001",
+      "skill": "change-analysis",
       "success": "findings and confidence are present"
     },
     {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- Rename the `develop` workflow to `implement` and `analyse` to `change-analysis` across skill identities, invocation names, artifact namespaces, routing, calibration, package metadata, and documentation. This release intentionally provides no aliases or compatibility paths for the former names.
+- Apply one canonical five-field approval brief to every shipped networked shell-CLI boundary; denial stops the current tool call without running the external command, equivalent reprompt, or broader fallback, requires a new user message to continue, and keeps separate capabilities as separate approvals.
+- Add a fail-closed, standard-library-only App Server denial transcript validator and focused protocol tests covering callback correlation, exact request/lifecycle command identity, declined primary terminal states, no output or fallback execution, fresh-turn recovery, and atomic success or bounded sanitized failure evidence only after the process cleanup attempt, without contacting a host or network service. A separately authorized live matrix runs text-only and installed-skill-input controls before denial, requires isolated non-overlapping roots plus one independently recorded full-package manifest digest across every row, verifies every declared payload before launch, stops on the first failure, and retains only sorted allowlisted error categories, the first specific category, whether any retry occurred, and the final retry state. Prior Codex-home use remains an explicit operator precondition because the probe cannot infer it safely from contents.
+- Add an installed-package-safe acceptance gate that copies only manifest-declared payload into a disposable cache and runs explicit package-safe tests without source-checkout context; the complete suite exercises these gates across Linux, macOS, and Windows with Python 3.10–3.13, while live App Server candidate binding remains a separately authorized manual probe and does not claim desktop-UI equivalence.
+
 ## 0.7.6
 
 - Skip Git-only `codex plugin marketplace upgrade` for an existing local marketplace, then reconcile the managed plugin set from that configured local snapshot. Git marketplace refresh behavior is unchanged.
@@ -23,7 +30,7 @@
 - Keep shell network access blocked by default while requiring scoped external-network approval for the complete command owning every intentional `gh` or `kaggle` call, GitHub collector fetch/HTTPS path, Codex Git marketplace add/upgrade, and paid live `codex exec` calibration.
 - Keep missing Kaggle CLI installation and authentication user-owned: Codex Rig reports the prerequisite and never runs or authorizes an installer.
 - Require the complete PR collector command to own approval for its nested GitHub CLI, HTTPS fallback, checkout, and Git fetch traffic instead of approving a standalone `gh` command.
-- Retry one unapproved sandbox-shaped `github-network` collection failure through the runtime approval mechanism before reporting review or remediation evidence unavailable.
+- Retry one agent-caused, pre-approval sandbox-shaped `github-network` collection failure through the runtime approval mechanism before reporting review or remediation evidence unavailable; a user denial always stops the turn and forbids that retry.
 
 ## 0.7.3
 

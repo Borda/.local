@@ -23,7 +23,7 @@ Validation rejects two consecutive cycles without material progress or three evi
 
 ## Used by
 
-The `develop`, `investigate`, and `code-remediate` lifecycle owners, plus `delegation-lead`, use this contract through the canonical reasoning-progress policy. Regression tests and calibration fixtures exercise the same rules so shipped advice-routing instructions and executable validation cannot drift apart.
+The `implement`, `investigate`, and `code-remediate` lifecycle owners, plus `delegation-lead`, use this contract through the canonical reasoning-progress policy. Regression tests and calibration fixtures exercise the same rules so shipped advice-routing instructions and executable validation cannot drift apart.
 """
 
 from __future__ import annotations

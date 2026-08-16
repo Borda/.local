@@ -7,7 +7,7 @@ description: "Investigate code debugging and root-cause narrowing; use measurabl
 
 See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) and [reasoning-progress escalation policy](../../shared/native-skill-contract.md#reasoning-progress-escalation) for repeated-obstacle handling; record and validate `reasoning-progress.json` before another cycle after an escalation trigger.
 
-Diagnosis-first loop for unclear failures: failing tests, tracebacks, regressions, surprising runtime behavior. Produce root-cause claim with evidence, falsification, rejected alternatives before any fix. Use `investigate` until root cause established; then hand off to `develop` or `code-remediate`.
+Diagnosis-first loop for unclear failures: failing tests, tracebacks, regressions, surprising runtime behavior. Produce root-cause claim with evidence, falsification, rejected alternatives before any fix. Use `investigate` until root cause established; then hand off to `implement` or `code-remediate`.
 
 ## Input Schema
 
@@ -48,7 +48,7 @@ Inspect `python PLUGIN_ROOT/shared/collect_diff.py --help`, collect `working-tre
 
 Add needed tool logs, CI excerpts, tracebacks, config, changed source. Absence of evidence ≠ evidence of absence.
 
-**Structural context (optional)**: when `scope` names a Python module/symbol, select one task-neutral route and probe codemap-py once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category develop --query-kind <kind> [--target <qname>] --out <run-directory>/codemap-context.json`. Use `skip` when the failure is localized and no structural fact is unresolved, the matching single route (`central`, `callers`, `blast`, `dependencies`, `test-impact`, or `coupling`) for one unresolved fact, and `standard` for broad or unknown scope. Map direct, all, or production caller questions to `callers`; use `blast` only for explicitly transitive caller questions. An explicit user or tool request for structural evidence overrides `skip`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the signals above. Persist the result once here, before hypothesis ranking; step 05 specialist probes consume `<run-directory>/codemap-context.json`, never a fresh query.
+**Structural context (optional)**: when `scope` names a Python module/symbol, select one task-neutral route and probe codemap-py once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category implementation --query-kind <kind> [--target <qname>] --out <run-directory>/codemap-context.json`. Use `skip` when the failure is localized and no structural fact is unresolved, the matching single route (`central`, `callers`, `blast`, `dependencies`, `test-impact`, or `coupling`) for one unresolved fact, and `standard` for broad or unknown scope. Map direct, all, or production caller questions to `callers`; use `blast` only for explicitly transitive caller questions. An explicit user or tool request for structural evidence overrides `skip`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the signals above. Persist the result once here, before hypothesis ranking; step 05 specialist probes consume `<run-directory>/codemap-context.json`, never a fresh query.
 
 ### 04: Rank hypotheses in `<run-directory>/hypotheses.md`
 

@@ -56,7 +56,7 @@ Try the investigation-to-review loop:
 
 ```text
 $codex-rig:investigate find the root cause of the failing test
-$codex-rig:develop implement the verified fix and run the relevant gates
+$codex-rig:implement apply the verified fix and run the relevant gates
 $codex-rig:code-review review the current diff with no prior assumptions
 $codex-rig:code-remediate close the selected findings
 ```
@@ -81,7 +81,7 @@ codex '$codemap-py:query-code rdeps mypackage.auth'
 <details>
 <summary><strong>Show package identity, architecture, and health behavior</strong></summary>
 
-Codex Rig is the independently packaged `codex-rig` product. The current manifest identifies version `0.7.6`, fourteen capabilities (thirteen workflow skills plus `agent-shims`), fifteen role cards, parallel blank-agent injection, inline fallback, quality gates, optional Codemap-py context, authenticated cleanup for prior shims, and an optional SessionStart diagnostic. The manifest does not register native persistent agents or an MCP server.
+Codex Rig is the independently packaged `codex-rig` product. The current manifest identifies version `0.8.0`, fourteen capabilities (thirteen workflow skills plus `agent-shims`), fifteen role cards, parallel blank-agent injection, inline fallback, quality gates, optional Codemap-py context, authenticated cleanup for prior shims, and an optional SessionStart diagnostic. The manifest does not register native persistent agents or an MCP server.
 
 Its shipped tree is organized as `.codex-plugin/plugin.json`, `skills/`, `roles/`, `shared/`, `runtime/calibration/`, `hooks/`, `scripts/`, `tests/`, and `package-manifest.json`. The installed cache is immutable input: workflows resolve their own installed root and do not patch the cache or copy repository source into it.
 
@@ -98,22 +98,22 @@ Codemap-py is a separate `codemap-py` package. Its current Codex manifest identi
 
 The rows below summarize the public `skills/*/SKILL.md` schemas. The installed skill body is authoritative for exact flags, fail-fast checks, command order, and result validation; every workflow creates a run directory and emits a validated result with confidence and unresolved limits unless its contract says the action is read-only.
 
-| Skill            | Input contract                                                                                                              | Core gate and outcome                                                                                                                                                  |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `analyse`        | Question, scope, `local`, `github`, `report`, or `ecosystem` mode, and `done_when`.                                         | Build an evidence ledger, rank findings and risks, and leave measurable next gates before implementation.                                                              |
-| `audit`          | `config`, `skills`, `roles`, or `all` scope; optional target; `upgrade` or `adversarial` mode; and optional gate skip.      | Inventory configuration and references, run shared gates, rank drift, and choose a repair level.                                                                       |
-| `calibrate`      | `skills`, `agents`, `routing`, or `all` scope; `fast` or `full` pace; `ab-test` or `apply` mode; optional live routes.      | Run fixed and behavioral checks, score recall, precision, and confidence accuracy, and write proposals only in apply mode.                                             |
-| `code-remediate` | Findings source or review shorthand, report/PR mode, target scope, optional severity or finding selection, and `done_when`. | Refresh required PR evidence when in PR mode, ask for selection before editing, apply selected fixes, rerun gates, and defer unselected critical/high work explicitly. |
-| `code-review`    | Optional working-tree/path/commit/PR scope and target.                                                                      | Resolve scope and risk mechanically, collect source evidence, run required specialist review, and emit a proposal/close decision without remote mutation.              |
-| `develop`        | Goal; `feature`, `fix`, `refactor`, `config`, or `spike` mode; constraints; and an acceptance statement.                    | Record baseline, investigate or demonstrate before editing as required, make the smallest change, run quality gates, and report residual risk.                         |
-| `investigate`    | Symptom, optional scope, `fast` or `full` pace, and a root-cause completion condition.                                      | Reproduce or characterize the failure, rank hypotheses, falsify alternatives, and stop at a confirmed cause or explicit uncertainty.                                   |
-| `kaggle`         | Competition slug, context, optional problem type/mode, offline/resume/keep controls, and completion condition.              | Ground schema and submission format through authenticated Kaggle CLI, write a Jupytext notebook, structurally verify it, and record the artifact.                      |
-| `manage`         | Create/update/delete/rename/permission intent, target, change/spec, and completion condition.                               | Resolve ownership and references, run safety gates, apply the smallest reversible edit, and verify all affected references.                                            |
-| `optimize`       | Goal, mode, metric command/direction, guard command, iteration limit, minimum delta, scope files, and completion condition. | Validate metric/guard, record baseline and hypothesis, change one bounded variable at a time, reject regressions, and stop at the iteration bound.                     |
-| `release`        | `notes`, `prepare`, `audit`, or `demo` mode; optional range/target version; and a release completion condition.             | Collect SemVer, changelog, migration, and package evidence, run readiness gates, and never tag, publish, upload, or force-push.                                        |
-| `research`       | Research question; `docs`, `sota`, `paper`, `methodology`, or `code-fidelity` mode; constraints; completion condition.      | Gather current primary sources, map claims to code context when relevant, and produce source-backed recommendations with confidence.                                   |
-| `sync`           | Fixed marketplace/plugin identity, `check` or `refresh` mode, optional Git ref, and completion condition.                   | Inspect active selection and cache drift read-only; refresh only after explicit approval, then recheck package identity.                                               |
-| `agent-shims`    | Exactly one action: `doctor`, `status`, `install`, or `remove`.                                                             | Diagnose read-only, report the platform block for install, or perform guarded exact-digest removal; never mutate on ambiguous or untrusted state.                      |
+| Skill             | Input contract                                                                                                              | Core gate and outcome                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `change-analysis` | Question, scope, `local`, `github`, `report`, or `ecosystem` mode, and `done_when`.                                         | Build an evidence ledger, rank findings and risks, and leave measurable next gates before implementation.                                                              |
+| `audit`           | `config`, `skills`, `roles`, or `all` scope; optional target; `upgrade` or `adversarial` mode; and optional gate skip.      | Inventory configuration and references, run shared gates, rank drift, and choose a repair level.                                                                       |
+| `calibrate`       | `skills`, `agents`, `routing`, or `all` scope; `fast` or `full` pace; `ab-test` or `apply` mode; optional live routes.      | Run fixed and behavioral checks, score recall, precision, and confidence accuracy, and write proposals only in apply mode.                                             |
+| `code-remediate`  | Findings source or review shorthand, report/PR mode, target scope, optional severity or finding selection, and `done_when`. | Refresh required PR evidence when in PR mode, ask for selection before editing, apply selected fixes, rerun gates, and defer unselected critical/high work explicitly. |
+| `code-review`     | Optional working-tree/path/commit/PR scope and target.                                                                      | Resolve scope and risk mechanically, collect source evidence, run required specialist review, and emit a proposal/close decision without remote mutation.              |
+| `implement`       | Goal; `feature`, `fix`, `refactor`, `config`, or `spike` mode; constraints; and an acceptance statement.                    | Record baseline, investigate or demonstrate before editing as required, make the smallest change, run quality gates, and report residual risk.                         |
+| `investigate`     | Symptom, optional scope, `fast` or `full` pace, and a root-cause completion condition.                                      | Reproduce or characterize the failure, rank hypotheses, falsify alternatives, and stop at a confirmed cause or explicit uncertainty.                                   |
+| `kaggle`          | Competition slug, context, optional problem type/mode, offline/resume/keep controls, and completion condition.              | Ground schema and submission format through authenticated Kaggle CLI, write a Jupytext notebook, structurally verify it, and record the artifact.                      |
+| `manage`          | Create/update/delete/rename/permission intent, target, change/spec, and completion condition.                               | Resolve ownership and references, run safety gates, apply the smallest reversible edit, and verify all affected references.                                            |
+| `optimize`        | Goal, mode, metric command/direction, guard command, iteration limit, minimum delta, scope files, and completion condition. | Validate metric/guard, record baseline and hypothesis, change one bounded variable at a time, reject regressions, and stop at the iteration bound.                     |
+| `release`         | `notes`, `prepare`, `audit`, or `demo` mode; optional range/target version; and a release completion condition.             | Collect SemVer, changelog, migration, and package evidence, run readiness gates, and never tag, publish, upload, or force-push.                                        |
+| `research`        | Research question; `docs`, `sota`, `paper`, `methodology`, or `code-fidelity` mode; constraints; completion condition.      | Gather current primary sources, map claims to code context when relevant, and produce source-backed recommendations with confidence.                                   |
+| `sync`            | Fixed marketplace/plugin identity, `check` or `refresh` mode, optional Git ref, and completion condition.                   | Inspect active selection and cache drift read-only; refresh only after explicit approval, then recheck package identity.                                               |
+| `agent-shims`     | Exactly one action: `doctor`, `status`, `install`, or `remove`.                                                             | Diagnose read-only, report the platform block for install, or perform guarded exact-digest removal; never mutate on ambiguous or untrusted state.                      |
 
 Common completion fields are the requested output, gate results or explicit not-applicable reasons, evidence paths, confidence, and unresolved gaps. The parent retains final acceptance for runtime/API changes, executable verification, security, architecture, and release-blocking decisions.
 
@@ -128,22 +128,22 @@ Codex Rig installs 13 workflows and one lifecycle manager:
 <details>
 <summary><strong>Show the 14-skill contract map</strong></summary>
 
-| Skill                       | Capability                                                                                           |
-| --------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `$codex-rig:analyse`        | Analyze an issue, PR, module, or problem before implementation and record ranked findings.           |
-| `$codex-rig:audit`          | Detect configuration, workflow, routing, documentation, and gate drift.                              |
-| `$codex-rig:calibrate`      | Run fixed and behavioral checks; score recall, precision, and confidence accuracy.                   |
-| `$codex-rig:code-remediate` | Triage review findings, select valid work, apply fixes, and prove closure.                           |
-| `$codex-rig:code-review`    | Review a local diff or current PR evidence across mandatory and risk-triggered axes.                 |
-| `$codex-rig:develop`        | Run a linear plan-build-verify implementation loop with measurable acceptance gates.                 |
-| `$codex-rig:investigate`    | Narrow an unknown failure to an evidence-backed root cause before implementation.                    |
-| `$codex-rig:kaggle`         | Create or extend grounded Jupytext Kaggle notebooks using the authenticated Kaggle CLI.              |
-| `$codex-rig:manage`         | Create, update, or remove Codex skills, agent configuration, and related references with guardrails. |
-| `$codex-rig:optimize`       | Measure, change one bounded variable, remeasure, and reject regressions.                             |
-| `$codex-rig:release`        | Assess SemVer, changelog, migration, packaging, and release readiness without publishing.            |
-| `$codex-rig:research`       | Collect current primary evidence and map it to implementation choices.                               |
-| `$codex-rig:sync`           | Report plugin-cache drift and request approval before a marketplace refresh.                         |
-| `$codex-rig:agent-shims`    | Diagnose or remove authenticated pre-release shims; new shim installation remains blocked.           |
+| Skill                        | Capability                                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `$codex-rig:change-analysis` | Analyze an issue, PR, module, or problem before implementation and record ranked findings.           |
+| `$codex-rig:audit`           | Detect configuration, workflow, routing, documentation, and gate drift.                              |
+| `$codex-rig:calibrate`       | Run fixed and behavioral checks; score recall, precision, and confidence accuracy.                   |
+| `$codex-rig:code-remediate`  | Triage review findings, select valid work, apply fixes, and prove closure.                           |
+| `$codex-rig:code-review`     | Review a local diff or current PR evidence across mandatory and risk-triggered axes.                 |
+| `$codex-rig:implement`       | Run a linear plan-build-verify implementation loop with measurable acceptance gates.                 |
+| `$codex-rig:investigate`     | Narrow an unknown failure to an evidence-backed root cause before implementation.                    |
+| `$codex-rig:kaggle`          | Create or extend grounded Jupytext Kaggle notebooks using the authenticated Kaggle CLI.              |
+| `$codex-rig:manage`          | Create, update, or remove Codex skills, agent configuration, and related references with guardrails. |
+| `$codex-rig:optimize`        | Measure, change one bounded variable, remeasure, and reject regressions.                             |
+| `$codex-rig:release`         | Assess SemVer, changelog, migration, packaging, and release readiness without publishing.            |
+| `$codex-rig:research`        | Collect current primary evidence and map it to implementation choices.                               |
+| `$codex-rig:sync`            | Report plugin-cache drift and request approval before a marketplace refresh.                         |
+| `$codex-rig:agent-shims`     | Diagnose or remove authenticated pre-release shims; new shim installation remains blocked.           |
 
 </details>
 
@@ -200,19 +200,19 @@ Codex does not add the plugin's `bin/` directory to PATH and does not receive th
 
 ## 🗺️ Choosing the right workflow
 
-| Situation                                                      | Route                                                          |
-| -------------------------------------------------------------- | -------------------------------------------------------------- |
-| Symptom or failing CI with unknown cause                       | `investigate`, then `develop` after root-cause evidence exists |
-| Requirements or change scope need analysis, not implementation | `analyse`                                                      |
-| Implement a bounded verified change                            | `develop`                                                      |
-| Review a local diff                                            | `code-review`                                                  |
-| Review a GitHub PR                                             | `code-review #123`                                             |
-| Apply selected findings from the latest matching PR review     | `code-remediate #123 +review`                                  |
-| Improve a measurable performance or quality metric             | `optimize`                                                     |
-| Check release readiness                                        | `release`                                                      |
-| Research current external behavior or migration guidance       | `research`                                                     |
-| Unresolved importers, callers, coupling, or test impact        | the smallest matching Codemap query                            |
-| Exact file and symbol known; no structural uncertainty remains | skip Codemap and inspect/edit directly                         |
+| Situation                                                      | Route                                                            |
+| -------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Symptom or failing CI with unknown cause                       | `investigate`, then `implement` after root-cause evidence exists |
+| Requirements or change scope need analysis, not implementation | `change-analysis`                                                |
+| Implement a bounded verified change                            | `implement`                                                      |
+| Review a local diff                                            | `code-review`                                                    |
+| Review a GitHub PR                                             | `code-review #123`                                               |
+| Apply selected findings from the latest matching PR review     | `code-remediate #123 +review`                                    |
+| Improve a measurable performance or quality metric             | `optimize`                                                       |
+| Check release readiness                                        | `release`                                                        |
+| Research current external behavior or migration guidance       | `research`                                                       |
+| Unresolved importers, callers, coupling, or test impact        | the smallest matching Codemap query                              |
+| Exact file and symbol known; no structural uncertainty remains | skip Codemap and inspect/edit directly                           |
 
 ## 📊 Artifacts and gates
 
@@ -284,7 +284,7 @@ Use `scan-codebase` to build or refresh, `query-code` for imports/symbols/call g
 
 Read each result's `index` block. `stale`, `degraded`, `query_complete`, `confidence`, `truncated`, `total_available`, and `not_covered` describe different limits. Query-time incremental self-heal can write unless `SCAN_NO_AUTOBUILD=1`; an explicit scan is predictable after a clone, branch switch, or large change. Static AST evidence does not prove dynamic dispatch, callbacks, string imports, inheritance, external consumers, runtime behavior, or test success.
 
-Codex Rig's `develop`, `investigate`, and `optimize` routes may probe the public Codemap CLI once and persist one status/artifact for specialists. `available`, `absent`, `stale`, `incompatible`, `degraded`, `stale+degraded`, and `skipped` are explicit statuses; absence/incompatibility fall back to bounded source inspection. The adapter never reads Codemap cache internals or imports Codemap Python code.
+Codex Rig's `implement`, `investigate`, and `optimize` routes may probe the public Codemap CLI once and persist one status/artifact for specialists. `available`, `absent`, `stale`, `incompatible`, `degraded`, `stale+degraded`, and `skipped` are explicit statuses; absence/incompatibility fall back to bounded source inspection. The adapter never reads Codemap cache internals or imports Codemap Python code.
 
 </details>
 

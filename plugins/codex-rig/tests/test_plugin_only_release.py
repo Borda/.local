@@ -19,15 +19,16 @@ from _platform import POSIX_BASH
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = PLUGIN_ROOT.parents[1]
 SYNC_SCRIPT = PLUGIN_ROOT.parents[1] / "sync.sh"
 EXPECTED_SKILLS = (
     "agent-shims",
-    "analyse",
+    "change-analysis",
     "audit",
     "calibrate",
     "code-remediate",
     "code-review",
-    "develop",
+    "implement",
     "investigate",
     "kaggle",
     "manage",
@@ -210,6 +211,45 @@ def test_skill_roster_names_and_manifest_records_are_exact() -> None:
     assert manifest["skills"] == [
         {"id": skill_id, "path": f"skills/{skill_id}/SKILL.md"} for skill_id in EXPECTED_SKILLS
     ]
+
+
+@pytest.mark.skipif(not (REPOSITORY_ROOT / "docs" / "index.md").is_file(), reason="requires source-checkout docs")
+def test_active_codex_rig_docs_use_only_current_skill_names() -> None:
+    """Prevent a breaking skill rename from leaving published invocations stale."""
+    docs = (
+        REPOSITORY_ROOT / "README.md",
+        REPOSITORY_ROOT / "docs" / "index.md",
+        REPOSITORY_ROOT / ".codex" / "README.md",
+        PLUGIN_ROOT / "README.md",
+        PLUGIN_ROOT / "roles" / "README.md",
+        PLUGIN_ROOT / "scripts" / "README.md",
+    )
+    for path in docs:
+        text = path.read_text(encoding="utf-8")
+        assert "$codex-rig:analyse" not in text, path
+        assert "$codex-rig:develop" not in text, path
+
+    codex_rig_row = next(
+        line
+        for line in (REPOSITORY_ROOT / "docs" / "index.md").read_text(encoding="utf-8").splitlines()
+        if line.startswith("| Codex Rig")
+    )
+    assert "`change-analysis`" in codex_rig_row
+    assert "`implement`" in codex_rig_row
+    assert "`analyse`" not in codex_rig_row
+    assert "`develop`" not in codex_rig_row
+
+
+def test_installed_markdown_has_no_source_checkout_only_paths() -> None:
+    """Keep shipped skill and shared documentation usable from an installed cache."""
+    markdown_files = [
+        *sorted((PLUGIN_ROOT / "skills").rglob("*.md")),
+        *sorted((PLUGIN_ROOT / "shared").rglob("*.md")),
+    ]
+    for path in markdown_files:
+        text = path.read_text(encoding="utf-8")
+        assert "plugins/codex-rig/" not in text, path
+        assert ".developments/" not in text, path
 
 
 def test_skill_dependencies_are_cache_local_and_manifested() -> None:
@@ -406,7 +446,7 @@ def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
     }
 
     assert case_contract == {
-        "recurrence-initial-obstacle": ("develop", ["initial-obstacle-not-recorded"]),
+        "recurrence-initial-obstacle": ("implement", ["initial-obstacle-not-recorded"]),
         "recurrence-second-occurrence-investigate": (
             "investigate",
             [
@@ -511,6 +551,43 @@ def test_calibration_model_stall_fixture_observations_are_scored(monkeypatch: py
     assert result["missing_case_ids"] == []
 
 
+def test_archived_route_evidence_is_not_promoted_after_skill_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Preserve historical paid evidence while exposing its current roster mismatch."""
+    calibration_dir = PLUGIN_ROOT / "runtime" / "calibration"
+    monkeypatch.syspath_prepend(str(calibration_dir))
+    spec = importlib.util.spec_from_file_location("codex_rig_calibration_route_archive", calibration_dir / "run.py")
+    assert spec is not None and spec.loader is not None
+    runner = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, runner)
+    spec.loader.exec_module(runner)
+
+    run = runner.CalibrationRun(paths=runner.Paths.create("plugin", tmp_path))
+    runner.check_accepted_route_evidence(run)
+
+    checks = run.paths.checks.read_text(encoding="utf-8")
+    assert "accepted-route-evidence=archived-stale:skill-roster-mismatch" in checks
+    assert run.accepted_route_evidence_current is False
+    assert run.checks_failed == []
+    recommendations, follow_up = runner.build_recommendations(
+        {
+            "thresholds": {},
+            "gate_metrics_raw": {"observations": 1, "recall": 1.0, "precision": 1.0},
+            "observation_freshness": {"live_observations": 0},
+            "live_route_acceptance": {"status": "insufficient-evidence"},
+            "case_results": [],
+        },
+        [],
+        0,
+        run.accepted_route_evidence_current,
+    )
+    assert recommendations == [
+        "No blocking calibration fixes found; maintain the current gates and collect live observations next."
+    ]
+    assert len(follow_up) == 2
+
+
 def test_calibration_recurrence_policy_link_is_limited_to_retry_owners(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -533,12 +610,12 @@ def test_calibration_recurrence_policy_link_is_limited_to_retry_owners(
     linked_roles = {
         path.parent.name for path in packaged_roles if runner.RECURRENCE_POLICY_LINK in path.read_text(encoding="utf-8")
     }
-    assert linked_skills == {"code-remediate", "develop", "investigate"}
+    assert linked_skills == {"code-remediate", "implement", "investigate"}
     assert linked_roles == {"delegation-lead"}
     assert runner.find_misplaced_packaged_recurrence_policy_links(packaged_skills, packaged_roles) == []
 
     for source, relative, is_role, remove_link in (
-        (PLUGIN_ROOT / "skills" / "develop" / "SKILL.md", Path("skills/develop/SKILL.md"), False, True),
+        (PLUGIN_ROOT / "skills" / "implement" / "SKILL.md", Path("skills/implement/SKILL.md"), False, True),
         (PLUGIN_ROOT / "skills" / "manage" / "SKILL.md", Path("skills/manage/SKILL.md"), False, False),
         (
             PLUGIN_ROOT / "roles" / "delegation-lead" / "ROLE.md",

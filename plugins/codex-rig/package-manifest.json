@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "bdce807613fbfadc0f3a8d2afcecda2510e1deb737195ddfb454617ad85d5e7f"
+      "sha256": "e844451702b799faceeb7f87a33969226162b339f40f1a0561f444e7f315ea1c"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "49d6553a047a623790c77165bde5e410daab2301f3f2f758f6b0c846009b9b7e"
+      "sha256": "e197d88385b22bb909c38c23e8123b68abccff1cda6fb0758725de5d87140c2d"
     },
     {
       "mode": "0644",
@@ -42,12 +42,12 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "1feb3d818e946d025e811bfc0a1d631fafbdc39ea411ca19cde39d8cfb7f090f"
+      "sha256": "d22519ff9fa778bbe4bf7a9a1e7b7a75a033958ff2313f21d68290445a420cea"
     },
     {
       "mode": "0644",
       "path": "assets/AGENTS.md",
-      "sha256": "dc0f9b4d37212bff9b2dab50a09b511af3651500d55546da67307042b132fda0"
+      "sha256": "f19b3f6542aacb0c24ea5c32331da25834552024b390ccc459789e48a21cf3c2"
     },
     {
       "mode": "0644",
@@ -152,22 +152,22 @@
     {
       "mode": "0644",
       "path": "runtime/calibration/accepted-route-evidence.json",
-      "sha256": "a1880f1441ee010fccd443c3b31988869b56f71f6e5ecd03c7e8bbc3d20d7a22"
+      "sha256": "c177533f784276219ff48983d1ebe1e39cc15bb025323606a4d3ffb606427ce7"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/behavioral-cases.json",
-      "sha256": "f6990662596453bdee9bfc0ea27dda8a3f49bebc58483c956c4d9004525cfc66"
+      "sha256": "d80d296ba211e6621d41c4cd5a623a72c1abc819a941e1c309421468202d971c"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/behavioral-observations.jsonl",
-      "sha256": "95d65962c8ce89dd3ee0955a5ff559818deaeac03d64dc95961169d9e08a25d3"
+      "sha256": "d6682aa1649984b2545d8b3ebd6729b9026a83afb639b6868bb1bfe79f630165"
     },
     {
       "mode": "0644",
       "path": "runtime/calibration/benchmarks.json",
-      "sha256": "1cf53d06c060c4fa41855c25429e91019f6b91caa9b847e662043d6a93ea30e7"
+      "sha256": "cdd4308d25af00b1606323ac61de484ddf5362115e1758bc5f9abeeef6745959"
     },
     {
       "mode": "0644",
@@ -217,7 +217,7 @@
     {
       "mode": "0755",
       "path": "runtime/calibration/run.py",
-      "sha256": "96e0e52ddb695a16399cb0eeed34436d1be984a8f8414f1bd87b305c77c246a2"
+      "sha256": "b3e9f17203a5b15ac29efe57cc51f35896b8a1b158bc1c0542106c4687eda48d"
     },
     {
       "mode": "0755",
@@ -232,7 +232,7 @@
     {
       "mode": "0644",
       "path": "runtime/calibration/tasks.json",
-      "sha256": "4046cc41b6594aea6034397810f9d31374877b0035e77b43ed3d46a8413dfd82"
+      "sha256": "d1248cfe6b33f58e9920275302bbcd1fa8bd4881519261c710ff2c05b4bdeb1a"
     },
     {
       "mode": "0644",
@@ -277,7 +277,7 @@
     {
       "mode": "0644",
       "path": "scripts/_package_identity.py",
-      "sha256": "c4954e839fe38907a35605dd1e662dbef97b4aca0613c438bad815b5c7a8a68d"
+      "sha256": "24f8a276041cd716234756fa06fc38a8d43cddf2cf2a870755f06b32a19b243f"
     },
     {
       "mode": "0644",
@@ -287,7 +287,7 @@
     {
       "mode": "0755",
       "path": "scripts/build_package.py",
-      "sha256": "0bef9577a0b35208bea0faeb50e979e9ffc3d45b6f2c54de2a1691520b5bf322"
+      "sha256": "d9bfc3f8c2e290630e4711cb93ea82a42d482ecac6f039ad339e2a15ea650b57"
     },
     {
       "mode": "0644",
@@ -312,7 +312,7 @@
     {
       "mode": "0755",
       "path": "scripts/validate_package.py",
-      "sha256": "9234ab704da0682f467753f078899db247c94289d864b08e1befcd6f40e5147e"
+      "sha256": "35e1b884c371034eee83259701903557cca451e15b4e02fa7213ee33a07194a3"
     },
     {
       "mode": "0644",
@@ -322,7 +322,7 @@
     {
       "mode": "0644",
       "path": "shared/codemap-contract.md",
-      "sha256": "ee21e2755b8b8c667479d7f62d6740492ea59a7cbe65ea4151a35d6644f00494"
+      "sha256": "46d5dd826c40f2035bcfab4d340abebe54b052311affac223f0f41a63b0f7600"
     },
     {
       "mode": "0644",
@@ -332,12 +332,12 @@
     {
       "mode": "0755",
       "path": "shared/codemap_adapter.py",
-      "sha256": "2653020678581468981604a9875499b8375c860d04a8c13c9ad5416dabc3dc4f"
+      "sha256": "30dadb1d2bcfb828c7a352cbd4f1cfb8bcf36f745db51e5c25d19d3d2b5a9625"
     },
     {
       "mode": "0755",
       "path": "shared/collect_diff.py",
-      "sha256": "d1067437ddc9f6bce98f3b8213cbb3d2ce137992dd5d84552636323ba16910d0"
+      "sha256": "cc86e84faf645b14a49320693c9d939b65215a7aa6083d689b3a3ea6db399682"
     },
     {
       "mode": "0755",
@@ -357,7 +357,7 @@
     {
       "mode": "0755",
       "path": "shared/escalation_ledger.py",
-      "sha256": "5518eb8f40680b7472384c34045aaf89e3e9872206c0e2509dbef6525bc36ebc"
+      "sha256": "af7046ef795588aa513b3cacf7d474369bc98f3f07fe8a993ad26b139638eb82"
     },
     {
       "mode": "0755",
@@ -377,7 +377,7 @@
     {
       "mode": "0644",
       "path": "shared/native-skill-contract.md",
-      "sha256": "e4f56b43bb4e4b1667b8c6b1d2e0e6aa59c2962139551ede51aa2df34159bb68"
+      "sha256": "ef968c5a5e2662fc63ebd06bbfba794473b3a0c51a3e74bdb0cc8acd1704809b"
     },
     {
       "mode": "0644",
@@ -387,7 +387,7 @@
     {
       "mode": "0755",
       "path": "shared/run_gates.py",
-      "sha256": "fb613ffb3c6252e03dc8db4090174d23349987714b642b2bec6223fe39e47014"
+      "sha256": "baa6afee8b607ea9d25f9c0d486be4e3fc453215cb167ac385206ce27701f957"
     },
     {
       "mode": "0755",
@@ -407,7 +407,7 @@
     {
       "mode": "0755",
       "path": "shared/validate-artifacts.py",
-      "sha256": "2b8db7254efe92ce63724bdf16581e0e64a6c5be90c4621229bbc862f248e655"
+      "sha256": "00108ff73bbba166ebcb5f6e0908b599d33d12b70b4149bd8fa93b0932ca67b9"
     },
     {
       "mode": "0755",
@@ -426,16 +426,6 @@
     },
     {
       "mode": "0644",
-      "path": "skills/analyse/SKILL.md",
-      "sha256": "a7605bfd7dff1cf5256cd5c2d69781ef295c212d0c09c09a7011abc48fb431b0"
-    },
-    {
-      "mode": "0644",
-      "path": "skills/analyse/result-template.json",
-      "sha256": "c50e29b97531a237ee77b067aa01351419aee6a272feea3e2335e300bf790b4a"
-    },
-    {
-      "mode": "0644",
       "path": "skills/audit/SKILL.md",
       "sha256": "0f7d7732000531ae9324fc1d659e77abb2089287b36e5ce8137d3fb22baad9c5"
     },
@@ -447,7 +437,7 @@
     {
       "mode": "0644",
       "path": "skills/calibrate/SKILL.md",
-      "sha256": "272f2b5b57c900259748f3756ac9906cf5bd64fd843a922a4530dd2a7616f685"
+      "sha256": "1273ad367495ca9365c4f41de05cd7bb98591ce2855f0218b909644735894941"
     },
     {
       "mode": "0644",
@@ -456,8 +446,18 @@
     },
     {
       "mode": "0644",
+      "path": "skills/change-analysis/SKILL.md",
+      "sha256": "e480162bf9b12d752006d8f112de17219247b63d97d5d2af9aa16428274b4851"
+    },
+    {
+      "mode": "0644",
+      "path": "skills/change-analysis/result-template.json",
+      "sha256": "14a3d6e64d039523458a5909b210bddde24f833b25ead2d815d7bd3e9c468940"
+    },
+    {
+      "mode": "0644",
       "path": "skills/code-remediate/SKILL.md",
-      "sha256": "ca8057735858994bd4ac307d40161b515dc85bc138fda1202e1921439bb37d25"
+      "sha256": "15db00b2337f4dc1c7c453a7c9f72f4912cc6dbcf0fe0e47b3c15324644fd3e7"
     },
     {
       "mode": "0644",
@@ -467,7 +467,7 @@
     {
       "mode": "0644",
       "path": "skills/code-review/SKILL.md",
-      "sha256": "c93f1be162138666983786ccfc930a64fb2bcfcef23f2c8225e44e3f857f9132"
+      "sha256": "da3bf5c14de6ca08298aa0b60b8b41c8994ab44d087306fb777cc71f5ff7ce90"
     },
     {
       "mode": "0644",
@@ -486,18 +486,18 @@
     },
     {
       "mode": "0644",
-      "path": "skills/develop/SKILL.md",
-      "sha256": "ca4e1d702a103c28fe87c055794a3e5d421f1522447cfd0ad484ffaed6750271"
+      "path": "skills/implement/SKILL.md",
+      "sha256": "c24823d261ca16241e293d4f8afd9c4b82a5b09c76845882266e11391889ec21"
     },
     {
       "mode": "0644",
-      "path": "skills/develop/result-template.json",
-      "sha256": "9e75c04f12d0a3b1f7e784cf2d00a71a0826df375350a38a0db3167722d40b70"
+      "path": "skills/implement/result-template.json",
+      "sha256": "659b407d57097b2f94565ec55883fd852e4b03ee04e0ddc74f9e1a20df7bc25b"
     },
     {
       "mode": "0644",
       "path": "skills/investigate/SKILL.md",
-      "sha256": "89afe85f5753d390cff132fcfb1c5570185a88203edbb952db655e18ab1826bc"
+      "sha256": "2008d9c8a42e170495d91dce989cab3f822b322098e32916827051bf76294e80"
     },
     {
       "mode": "0644",
@@ -507,7 +507,7 @@
     {
       "mode": "0644",
       "path": "skills/kaggle/SKILL.md",
-      "sha256": "2cca03cdb4327371b23d7d644eddbedd51f9089bfa70fd44519da4a643206c10"
+      "sha256": "3a01a71c65341d0d391f226443d3978b8435f7e8bef46c26ad5c822f35b50a7d"
     },
     {
       "mode": "0644",
@@ -557,7 +557,7 @@
     {
       "mode": "0644",
       "path": "skills/manage/SKILL.md",
-      "sha256": "031ded56d159a26fad7bc159d91ad7ef5ddb0d83638e31f87cd411f43f121f4f"
+      "sha256": "42504777bf31dee6cd2b9c6631aaff6eec2a92e3c6ca37b85526a0dbdda21eef"
     },
     {
       "mode": "0644",
@@ -567,7 +567,7 @@
     {
       "mode": "0644",
       "path": "skills/optimize/SKILL.md",
-      "sha256": "647f759e19dc7b8a5e66e3c564e029a40f25848a107c130ea205d6e388aebca5"
+      "sha256": "132c438e9bd8125385e12c86944cefe220000f5e839a712ba5bf1c81fd6e8b34"
     },
     {
       "mode": "0644",
@@ -577,7 +577,7 @@
     {
       "mode": "0644",
       "path": "skills/release/SKILL.md",
-      "sha256": "f10f3f905f4d797269de68962073b2761c78cf8b6aa6f7d93de56d3aa1dd49d6"
+      "sha256": "7ac71f6fcf41790312d89dc718f732065d338d77d908cdf963134c0edc768590"
     },
     {
       "mode": "0644",
@@ -597,7 +597,7 @@
     {
       "mode": "0644",
       "path": "skills/sync/SKILL.md",
-      "sha256": "e5cbbbd22869ee686340859e1c5411bbc6a7d86bf09e6d6ff71d72042f38200f"
+      "sha256": "807498453fdd53eddbd523b5a59efde2547f4357fa364941ea3788424d312ab1"
     },
     {
       "mode": "0644",
@@ -608,6 +608,11 @@
       "mode": "0644",
       "path": "tests/_platform.py",
       "sha256": "e2fe222769a153a3b327991abfb487134c8dc5829093c3e300d29ff3919b80f4"
+    },
+    {
+      "mode": "0644",
+      "path": "tests/app_server_denial_probe.py",
+      "sha256": "2cf8309d1659a069716aea6e869d93562035f01d1b580c9abfef84bd948946fa"
     },
     {
       "mode": "0644",
@@ -661,8 +666,13 @@
     },
     {
       "mode": "0644",
+      "path": "tests/test_app_server_denial_protocol.py",
+      "sha256": "47b8f121602f32246f2fb9c8c7dae47eeafc7b3debdac84eab520b7148a4ccea"
+    },
+    {
+      "mode": "0644",
       "path": "tests/test_build_package.py",
-      "sha256": "691029a6c570cec2d1251d148d4258284e51c8d228d021cfc137ff074d36c912"
+      "sha256": "1f8aab8a08d3fe7f8ec30b06db18d1ab40d14a9a98b1148a69122eae72d2968a"
     },
     {
       "mode": "0644",
@@ -702,12 +712,12 @@
     {
       "mode": "0644",
       "path": "tests/test_codemap_adapter.py",
-      "sha256": "573926545cb2654b1321ad6af6bfe374aea43fcfd801602832658a915745dd10"
+      "sha256": "334de8f97ae517fc8529ecf18b9f65b1b310de52254105bbe76f6d473f688fe5"
     },
     {
       "mode": "0644",
       "path": "tests/test_codemap_routing_contract.py",
-      "sha256": "fbf2c1c54b8bf65e00b9381582887104c70332cea2ed815ce0711ed0835cd6d5"
+      "sha256": "97ff2daa215ed6d788a25c07ee9df94ab14b69e668c82fea40d176d77b84e63b"
     },
     {
       "mode": "0644",
@@ -752,7 +762,12 @@
     {
       "mode": "0644",
       "path": "tests/test_installed_cache_scaffold.py",
-      "sha256": "3a33dac9d08dc843a0c764bba827d8bc5563a3565284ead6e8d44e697c84ca83"
+      "sha256": "ed52f50a582decdf0187aa4408e3fed863064d1152398fdf1a0d7c708d36fb52"
+    },
+    {
+      "mode": "0644",
+      "path": "tests/test_installed_package_gate.py",
+      "sha256": "78063b5e8eba809385413f8d9ca7f7e029dd8dad35536ec3bfc0905d40596014"
     },
     {
       "mode": "0644",
@@ -772,7 +787,7 @@
     {
       "mode": "0644",
       "path": "tests/test_networked_cli_approval_contract.py",
-      "sha256": "c03cbd6062ae521f4b8eb47f8a72b66d7643e8aba3e4d1a9a14074b5c5819c1e"
+      "sha256": "719314f488921518b71cb8b4dfde67fbf70248afdaeda61418387e73b1934615"
     },
     {
       "mode": "0644",
@@ -782,7 +797,7 @@
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "84aaa52cbf414c18350d1705104bbda5d9e21b2c7f7d20f786a89d736ad086ac"
+      "sha256": "b2cc69711c42daed94fae6769fb05d4d955cbdadb6a5eeee6a8403c81398dff2"
     },
     {
       "mode": "0644",
@@ -807,7 +822,7 @@
     {
       "mode": "0644",
       "path": "tests/test_windows_skip_budget.py",
-      "sha256": "2a80d5e3c6efe7df7c3cd25e212de052a40a848226f7200726efe3d42430ace2"
+      "sha256": "fcf77a47b7d34fa6cebf5eb48b1f90cb04619b92cafb8f8fe51ae1edd64d60a9"
     }
   ],
   "generator": {
@@ -991,8 +1006,8 @@
       "path": "skills/agent-shims/SKILL.md"
     },
     {
-      "id": "analyse",
-      "path": "skills/analyse/SKILL.md"
+      "id": "change-analysis",
+      "path": "skills/change-analysis/SKILL.md"
     },
     {
       "id": "audit",
@@ -1011,8 +1026,8 @@
       "path": "skills/code-review/SKILL.md"
     },
     {
-      "id": "develop",
-      "path": "skills/develop/SKILL.md"
+      "id": "implement",
+      "path": "skills/implement/SKILL.md"
     },
     {
       "id": "investigate",
@@ -1043,5 +1058,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.7.6"
+  "version": "0.8.0"
 }

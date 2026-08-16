@@ -42,6 +42,18 @@ Keep shell network access blocked by default. When a workflow intentionally exec
 
 This contract covers every `gh` and `kaggle` invocation; collector-owned `git fetch` and public HTTPS fallback; Codex Git marketplace add/upgrade and any complete sync wrapper that owns them; and paid live calibration through `codex exec`. Local-only marketplace/plugin listing, `codex plugin add` from a configured marketplace snapshot, plugin removal, offline calibration, ordinary local `git`, and runtime web/browser/MCP/connector tools do not receive shell escalation. Missing external CLIs remain user-owned prerequisites: tell the user what must be installed and authenticated, but never install or authorize an installer from the workflow. Unknown project commands are not pre-authorized: if a selected gate or dependency command attempts network access, request approval for that exact owning command when observed.
 
+## Approval Brief
+
+Before every intentional approval request, give one short plugin-owned brief with these exact labels:
+
+1. `Action and purpose`: the complete owning command and why it is needed.
+2. `External capability`: the network, download, paid run, lifecycle, or local-checkout effect.
+3. `Credential behavior`: whether an existing CLI acts only as an opaque credential broker.
+4. `Filesystem and worktree effects`: expected local artifacts, checkout, or cache changes.
+5. `Retry policy and safe denial outcome`: the bounded retry rule and what safely stops or degrades.
+
+Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command, enable persistent network access, or report completion. Ask the user to send a new message to resume; that new request starts a fresh decision under the documented command boundary.
+
 ## Recurrence And Root-Cause Policy
 
 Apply this fixed policy to every same or plausibly shared obstacle, including one that appears under different symptoms:
@@ -51,7 +63,7 @@ Apply this fixed policy to every same or plausibly shared obstacle, including on
 - Occurrence 3 stops all attempts. Ask the human for next steps and include attempted actions, current hypotheses/evidence, and the shared obstacle across differing symptoms.
 - Reset the count only when evidence falsifies the shared cause or a material external-state change occurs. Record the reset and its evidence.
 
-Only recurrence-lifecycle owners link this policy directly: the `develop`, `code-remediate`, and `investigate`
+Only recurrence-lifecycle owners link this policy directly: the `implement`, `code-remediate`, and `investigate`
 skills plus the `delegation-lead` role. Other skills use their own linear or bounded iteration contracts, and leaf
 specialists leave recurrence counting to their caller. They must not duplicate this link.
 

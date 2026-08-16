@@ -1,5 +1,5 @@
 {
-  "artifact_path": ".reports/codex/analyse/<timestamp>/result.json",
+  "artifact_path": ".reports/codex/change-analysis/<timestamp>/result.json",
   "checks_failed": [],
   "checks_run": [
     "review"

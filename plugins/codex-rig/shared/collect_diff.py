@@ -15,7 +15,7 @@ Run ``python collect_diff.py --scope <working-tree|path|commit> --out <directory
 
 ## Used by
 
-Codex Rig workflow skills, develop/review artifact setup, and portable-helper acceptance tests use this collector. Callers treat its files as local evidence and must not infer that an empty patch means the repository was clean unless ``status.txt`` agrees.
+Codex Rig workflow skills, implement/review artifact setup, and portable-helper acceptance tests use this collector. Callers treat its files as local evidence and must not infer that an empty patch means the repository was clean unless ``status.txt`` agrees.
 
 ## Outputs
 

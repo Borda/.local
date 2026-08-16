@@ -15,7 +15,7 @@ Run ``python validate-artifacts.py --skill <id> --out <directory> --result <cand
 
 ## Used by
 
-Develop, remediate, and review artifact workflows plus artifact-contract acceptance tests use this validator. The validator is the final local contract check before a workflow reports completion, not a substitute for running the checks whose records it validates.
+Implement, remediate, and review artifact workflows plus artifact-contract acceptance tests use this validator. The validator is the final local contract check before a workflow reports completion, not a substitute for running the checks whose records it validates.
 
 ## Outputs
 
@@ -103,13 +103,13 @@ PR_THREAD_CONFIDENCE_GAP = "PR review-thread resolution status was unavailable; 
 PR_PUBLIC_FALLBACK_MAX_CONFIDENCE = 0.89
 
 SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
-    "analyse": {"files": {}},
+    "change-analysis": {"files": {}},
     "audit": {"files": {}},
     "calibrate": {"files": {}},
     "research": {"files": {}},
     "code-review": {"files": {}},
     "sync": {"files": {}},
-    "develop": {
+    "implement": {
         "files": {
             "development-notes.md": ["Scope", "Acceptance Criteria", "Evidence", "Specialist Policy", "Gates"],
             "confidence-calibration.md": [

@@ -42,11 +42,12 @@ APPROVED_WINDOWS_SKIPS = {
 APPROVED_CAPABILITY_SKIPS = {
     "test_agent_shim_observe.py": 4,
     "test_agent_shim_posix.py": 1,
+    "test_app_server_denial_protocol.py": 1,
     "test_codemap_adapter.py": 1,
     "test_global_agents_installer.py": 2,
     "test_installed_cache_scaffold.py": 1,
     "test_package_identity.py": 1,
-    "test_plugin_only_release.py": 2,
+    "test_plugin_only_release.py": 3,
     "test_sync_setup_dispatch.py": 2,
 }
 

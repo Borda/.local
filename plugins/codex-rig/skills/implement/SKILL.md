@@ -1,9 +1,9 @@
 ---
-name: develop
+name: implement
 description: "Implement changes with a linear plan-build-verify workflow and measurable quality gates."
 ---
 
-# Develop
+# Implement
 
 See the [fixed recurrence and root-cause policy](../../shared/native-skill-contract.md#recurrence-and-root-cause-policy) and [reasoning-progress escalation policy](../../shared/native-skill-contract.md#reasoning-progress-escalation) for repeated-obstacle handling; record and validate `reasoning-progress.json` before another cycle after an escalation trigger.
 
@@ -26,7 +26,7 @@ Run linear implementation with strict gates.
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill develop` once. Retain its single printed path as
+Run `python PLUGIN_ROOT/shared/create_run.py --skill implement` once. Retain its single printed path as
 `<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
 reuse the path through a shell variable; shell variables do not persist across tool calls.
 
@@ -48,7 +48,7 @@ Modes:
 
 Define narrowest reversible change, owners, acceptance. For 3+ steps/design tradeoffs, update plan before edit.
 
-**Structural context (optional)**: select one task-neutral route at the decision point, then invoke the adapter once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category develop --query-kind <kind> [--target <qname>] --out <run-directory>/codemap-context.json`. Use `skip` for an exact localized edit with no unresolved structural fact, the matching single route (`central`, `callers`, `blast`, `dependencies`, `test-impact`, or `coupling`) for one unresolved fact, and `standard` for broad or unknown scope. Map direct, all, or production caller questions to `callers`; use `blast` only for explicitly transitive caller questions. An explicit user or tool request for structural evidence overrides `skip`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the routing above. Persist the result once here, before step 05 implementation; step 06 specialist fan-out consumes `<run-directory>/codemap-context.json`, never a fresh query.
+**Structural context (optional)**: select one task-neutral route at the decision point, then invoke the adapter once: `python PLUGIN_ROOT/shared/codemap_adapter.py context --category implementation --query-kind <kind> [--target <qname>] --out <run-directory>/codemap-context.json`. Use `skip` for an exact localized edit with no unresolved structural fact, the matching single route (`central`, `callers`, `blast`, `dependencies`, `test-impact`, or `coupling`) for one unresolved fact, and `standard` for broad or unknown scope. Map direct, all, or production caller questions to `callers`; use `blast` only for explicitly transitive caller questions. An explicit user or tool request for structural evidence overrides `skip`. Per `../../shared/codemap-contract.md`, absence/incompatibility is non-fatal — continue with the routing above. Persist the result once here, before step 05 implementation; step 06 specialist fan-out consumes `<run-directory>/codemap-context.json`, never a fresh query.
 
 ### 04: Run the anti-rationalization gate before editing
 
@@ -128,15 +128,15 @@ Write `<run-directory>/confidence-calibration.md` with these sections:
 
 Shared confidence policy:
 
-Apply the shared confidence band policy from `../../shared/quality-gates.md`. This skill records the required evidence in `confidence-calibration.md` and mirrors it in `DEVELOP_METADATA.confidence_recovery` before output.
+Apply the shared confidence band policy from `../../shared/quality-gates.md`. This skill records the required evidence in `confidence-calibration.md` and mirrors it in `IMPLEMENT_METADATA.confidence_recovery` before output.
 
 Confidence must be honest and objectively verifiable. Do not inflate it to pass a gate; if the evidence is missing, keep the lower score and fail or time out with the missing evidence named.
 
 ### 12: Write and validate the mandatory result artifact
 
-Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with `DEVELOP_METADATA`, validate as skill `develop`, and promote only the validated candidate.
+Follow `../../shared/helper-cli-contract.md` and authoritative help. Write with `IMPLEMENT_METADATA`, validate as skill `implement`, and promote only the validated candidate.
 
-`DEVELOP_METADATA.confidence_recovery` must mirror `confidence-calibration.md` and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `DEVELOP_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
+`IMPLEMENT_METADATA.confidence_recovery` must mirror `confidence-calibration.md` and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `IMPLEMENT_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
 
 ## Fail-fast Rules
 
@@ -169,7 +169,7 @@ Required checks:
 - `review`: `git diff --check`, changed-file inspection, acceptance criteria trace, simplicity/readability/reproducibility inspection, project docstring-style detection, and docstring/comment policy inspection for changed code.
 - `tests`: failing-then-passing check or explicit acceptance probe for changed behavior; `feature` mode must include the demo failure before edits and demo pass after implementation.
 - `artifact`: shared validator confirms `development-notes.md`, gate logs, and result JSON shape.
-- `confidence`: `confidence-calibration.md` and `DEVELOP_METADATA.confidence_recovery` satisfy the shared confidence band policy from `../../shared/quality-gates.md`.
+- `confidence`: `confidence-calibration.md` and `IMPLEMENT_METADATA.confidence_recovery` satisfy the shared confidence band policy from `../../shared/quality-gates.md`.
 
 Conditional checks:
 
@@ -180,7 +180,7 @@ Conditional checks:
 
 Update calibration when implementation routing or output expectations change:
 
-- benchmark patterns: `develop`
+- benchmark patterns: `implement`
 - behavioral cases: symptom-first routing, specialist substitution, config behavior changes, missing acceptance probe, feature demo gate bypass, missing project docstring-style detection, missing function docstrings, overlong docstrings masking complex code, long code blocks not factored, deep branching without guard clauses, low-value argument-remapping wrappers, pre-definition comments that should be docstrings, missing explanatory inline comments, low-confidence recovery loop, objective confidence evidence, artifact validator bypass
 
 ## Output Contract

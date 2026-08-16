@@ -15,7 +15,7 @@ Run ``python scripts/validate_package.py`` after ``build_package.py --check`` an
 
 ## Used by
 
-Release/develop gates and package validation acceptance tests invoke this validator. These callers rely on its non-zero exit status to block a package whose generated or shipped contents do not match the public contract.
+Release/implement gates and package validation acceptance tests invoke this validator. These callers rely on its non-zero exit status to block a package whose generated or shipped contents do not match the public contract.
 
 ## Outputs
 
@@ -43,12 +43,12 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = PACKAGE_ROOT / "scripts" / "build_package.py"
 EXPECTED_SKILLS = {
     "agent-shims",
-    "analyse",
+    "change-analysis",
     "audit",
     "calibrate",
     "code-remediate",
     "code-review",
-    "develop",
+    "implement",
     "investigate",
     "kaggle",
     "manage",

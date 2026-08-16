@@ -10,11 +10,11 @@ Reads local package data through safe I/O and performs no installation, refresh,
 
 ## Usage
 
-Import ``verify_package`` from package build/validation and installed helper startup paths. Call it against the package root that will actually supply assets, then retain the returned identity facts while consuming those assets.
+Import ``verify_package`` from package build/validation and installed helper startup paths. Call it against the package root that will actually supply assets, then retain the returned identity facts while consuming those assets. The live denial harness may instead invoke this file with ``--root`` and ``--expected-package-hash`` to compare the fully verified candidate with an independently recorded manifest digest.
 
 ## Used by
 
-``build_package.py``, installed role-link verification, and package identity tests call this verifier. These callers use the same contract both before shipping a package and before trusting one selected by local Codex discovery.
+``build_package.py``, installed role-link verification, the live App Server denial harness, and package identity tests call this verifier. These callers use the same contract both before shipping a package and before trusting one selected by local Codex discovery.
 
 ## Outputs
 
@@ -27,6 +27,7 @@ Malformed manifests, unexpected files, links, hashes, modes, or references raise
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -260,3 +261,22 @@ def verify_package(root: Path | str, *, enforce_modes: bool | None = None) -> Pa
         raise
     except OSError as error:
         raise PackageIdentityError(str(error)) from error
+
+
+def main() -> int:
+    """Verify one package against an independently supplied manifest digest."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", required=True, type=Path)
+    parser.add_argument("--expected-package-hash", required=True)
+    arguments = parser.parse_args()
+    if SHA256_PATTERN.fullmatch(arguments.expected_package_hash) is None:
+        return 2
+    try:
+        identity = verify_package(arguments.root)
+    except (OSError, UnicodeError, PackageIdentityError):
+        return 2
+    return 0 if identity.package_hash == arguments.expected_package_hash else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -15,7 +15,7 @@ Run ``python run_gates.py --out <directory>`` with explicit commands or document
 
 ## Used by
 
-Develop and related artifact workflows, result validation, and portable-gate acceptance tests use this runner. The five canonical IDs are fixed as ``lint``, ``format``, ``types``, ``tests``, and ``review``, so consumers can compare records without interpreting arbitrary gate names.
+Implement and related artifact workflows, result validation, and portable-gate acceptance tests use this runner. The five canonical IDs are fixed as ``lint``, ``format``, ``types``, ``tests``, and ``review``, so consumers can compare records without interpreting arbitrary gate names.
 
 ## Outputs
 

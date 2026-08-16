@@ -1,5 +1,5 @@
 {
-  "artifact_path": ".reports/codex/develop/<timestamp>/result.json",
+  "artifact_path": ".reports/codex/implement/<timestamp>/result.json",
   "checks_failed": [],
   "checks_run": [
     "lint",

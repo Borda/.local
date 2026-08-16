@@ -11,11 +11,11 @@ It calls only ``codemap-py doctor --json`` and public query commands; absence or
 
 ## Usage
 
-Run ``python codemap_adapter.py probe`` or ``python codemap_adapter.py context --category {analysis,develop,review,audit}`` and persist the result once per workflow. The context form accepts an optional dotted target, ``--query-kind`` (skip, one compact fact, or standard), repository root, timeout, and ``--out`` path; it always prints the same JSON payload that it writes.
+Run ``python codemap_adapter.py probe`` or ``python codemap_adapter.py context --category {analysis,implementation,review,audit}`` and persist the result once per workflow. The context form accepts an optional dotted target, ``--query-kind`` (skip, one compact fact, or standard), repository root, timeout, and ``--out`` path; it always prints the same JSON payload that it writes.
 
 ## Used by
 
-The ``analyse``, ``develop``, ``audit``, and ``code-review`` skills consume these observations; see the adjacent ``codemap-contract.md`` for the category/query mapping. The module is also exercised by portable helper tests that verify status reduction and the public CLI contract.
+The ``change-analysis``, ``implement``, ``audit``, and ``code-review`` skills consume these observations; see the adjacent ``codemap-contract.md`` for the category/query mapping. The module is also exercised by portable helper tests that verify status reduction and the public CLI contract.
 
 ## Outputs
 
@@ -76,8 +76,8 @@ CATEGORY_QUERIES: dict[str, tuple[QuerySpec, ...]] = {
         QuerySpec("central", requires_target=False),
         QuerySpec("deps", requires_target=True),
     ),
-    # develop/investigate/optimize: callers, coupling, test impact before implementation.
-    "develop": (
+    # implement/investigate/optimize: callers, coupling, test impact before implementation.
+    "implementation": (
         QuerySpec("rdeps", requires_target=True),
         QuerySpec("coupled", requires_target=False),
         QuerySpec("test-impact", requires_target=True),
@@ -523,7 +523,7 @@ def gather_structural_context(
     """Record a skip, one fact query, or a category's legacy standard query batch.
 
     Examples:
-        >>> ctx = gather_structural_context("develop", target="pkg.mod")
+        >>> ctx = gather_structural_context("implementation", target="pkg.mod")
         >>> ctx.protocol_version
         'codemap-py.integration.v1'
     """

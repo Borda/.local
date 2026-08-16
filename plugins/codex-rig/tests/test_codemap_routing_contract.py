@@ -64,4 +64,4 @@ def test_standard_batch_skills_are_the_documented_majority_choice() -> None:
 
     adaptive = sorted(skill for skill, selection in documented.items() if selection.startswith("adaptive"))
 
-    assert adaptive == ["develop", "investigate", "optimize"]
+    assert adaptive == ["implement", "investigate", "optimize"]

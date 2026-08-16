@@ -1,4 +1,4 @@
-<!-- file: codemap-contract.md — consumers: skills/{analyse,audit,code-review,code-remediate,develop,investigate,optimize,release,research}/SKILL.md, shared/codemap_adapter.py -->
+<!-- file: codemap-contract.md — consumers: skills/{change-analysis,audit,code-review,code-remediate,implement,investigate,optimize,release,research}/SKILL.md, shared/codemap_adapter.py -->
 
 # Codemap-py structural-context contract — codex-rig
 
@@ -34,7 +34,7 @@ the compact CLI JSON, never from index/cache files or raw runtime logs.
 Invocation:
 
 ```
-python PLUGIN_ROOT/shared/codemap_adapter.py context --category <analysis|develop|review|audit> \
+python PLUGIN_ROOT/shared/codemap_adapter.py context --category <analysis|implementation|review|audit> \
   [--query-kind <skip|central|callers|blast|dependencies|test-impact|coupling|standard>] \
   [--target <qname>] [--root <path>] --out <run-directory>/codemap-context.json
 ```
@@ -47,7 +47,7 @@ A skipped artifact retains the same top-level contract and makes the decision au
 {
   "protocol_version": "codemap-py.integration.v1",
   "artifact_schema_version": 3,
-  "category": "develop",
+  "category": "implementation",
   "query_kind": "skip",
   "target": "pkg.module::symbol",
   "status": "skipped",
@@ -86,8 +86,8 @@ inspection. A run must never claim structural evidence it did not actually recei
 
 | Category | Consuming skills | Queries (`codemap-py query <subcommand>`) |
 | --- | --- | --- |
-| `analysis` | analyse, research | `central` (no target) + `deps <target>` |
-| `develop` | develop, investigate, optimize | `rdeps <target>` + `coupled` (no target) + `test-impact <target>` |
+| `analysis` | change-analysis, research | `central` (no target) + `deps <target>` |
+| `implementation` | implement, investigate, optimize | `rdeps <target>` + `coupled` (no target) + `test-impact <target>` |
 | `review` | code-review, code-remediate | `diff-impact` (no target — reads the working-tree/PR diff once) |
 | `audit` | audit, release | `undocumented --all` + `dead-modules` (no target) |
 
@@ -99,10 +99,10 @@ Passing `--query-kind` is a per-workflow decision, not a migration every consume
 
 | Skill | Category | Route selection | Why |
 | --- | --- | --- | --- |
-| `develop` | `develop` | adaptive — passes `--query-kind` | resolves one module/symbol at its decision point, so a single fact usually settles the open structural question |
-| `investigate` | `develop` | adaptive — passes `--query-kind` | same decision point, reached only when `scope` names a Python module/symbol |
-| `optimize` | `develop` | adaptive — passes `--query-kind` | same decision point, reached only when `scope_files` resolves to a Python module/symbol |
-| `analyse` | `analysis` | standard batch — no `--query-kind` | its decision point is broad or unknown scope, which the routing rule above already assigns to `standard` |
+| `implement` | `implementation` | adaptive — passes `--query-kind` | resolves one module/symbol at its decision point, so a single fact usually settles the open structural question |
+| `investigate` | `implementation` | adaptive — passes `--query-kind` | same decision point, reached only when `scope` names a Python module/symbol |
+| `optimize` | `implementation` | adaptive — passes `--query-kind` | same decision point, reached only when `scope_files` resolves to a Python module/symbol |
+| `change-analysis` | `analysis` | standard batch — no `--query-kind` | its decision point is broad or unknown scope, which the routing rule above already assigns to `standard` |
 | `research` | `analysis` | standard batch — no `--query-kind` | same broad-scope decision point |
 | `code-review` | `review` | standard batch — no `--query-kind` | the category's only query is `diff-impact`, which has no equivalent in the closed fact-kind vocabulary; the sole alternative kind would be `skip` |
 | `code-remediate` | `review` | standard batch — no `--query-kind` | same single-query category |
@@ -111,13 +111,11 @@ Passing `--query-kind` is a per-workflow decision, not a migration every consume
 
 The five not-applicable skills below select no category at all and are absent from this table by design.
 
-`target` is a dotted module or `module::symbol` qname when the skill has resolved one at its decision point; it is optional for every consuming skill. In a `standard` batch with no target, the queries marked `requires_target=True` in `codemap_adapter.CATEGORY_QUERIES` are dropped from the plan instead of being run and failed, so `analysis` runs `central` alone and `develop` runs `coupled` alone. The artifact then lists only the queries actually attempted and `available` keeps its documented "exhaustive for the queries run" meaning; `degraded` stays reserved for a real gap in provider evidence rather than for a question the caller never asked. A category whose every query requires a target keeps its bounded error, because reporting `available` off zero executed queries would claim evidence never received. An explicit fact route still records a bounded degraded outcome for a missing or malformed required target — there the target is the caller's own required input, not an optional refinement. Route normalization uses the module portion for `dependencies`, the full qname for `callers` and `blast`, and either form for `test-impact`. A malformed or missing required target is never guessed or queried.
+`target` is a dotted module or `module::symbol` qname when the skill has resolved one at its decision point; it is optional for every consuming skill. In a `standard` batch with no target, the queries marked `requires_target=True` in `codemap_adapter.CATEGORY_QUERIES` are dropped from the plan instead of being run and failed, so `analysis` runs `central` alone and `implementation` runs `coupled` alone. The artifact then lists only the queries actually attempted and `available` keeps its documented "exhaustive for the queries run" meaning; `degraded` stays reserved for a real gap in provider evidence rather than for a question the caller never asked. A category whose every query requires a target keeps its bounded error, because reporting `available` off zero executed queries would claim evidence never received. An explicit fact route still records a bounded degraded outcome for a missing or malformed required target — there the target is the caller's own required input, not an optional refinement. Route normalization uses the module portion for `dependencies`, the full qname for `callers` and `blast`, and either form for `test-impact`. A malformed or missing required target is never guessed or queried.
 
 ## Not-applicable skills (recorded reason, no forced query)
 
-Per `.developments/codemap-py/2026-07-23T18-30-49Z/phase0/codex-rig-classification.md`, five
-skills have no Python structural-query subject and stay not-applicable rather than being forced to
-integrate:
+Five skills have no Python structural-query subject and stay not-applicable rather than being forced to integrate:
 
 | Skill | Reason |
 | --- | --- |

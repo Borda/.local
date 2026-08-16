@@ -116,9 +116,7 @@ Conditional:
 
 ## Calibration Hooks
 
-Behavior-changing management edits update or explicitly review the owning project's configuration, tests,
-documentation, routing, and calibration fixtures. Codex Rig source changes use `plugins/codex-rig/runtime/calibration/`
-and `plugins/codex-rig/shared/native-skill-contract.md`; an installed plugin cache remains immutable.
+Behavior-changing management edits update or explicitly review the owning project's configuration, tests, documentation, routing, and calibration fixtures. Codex Rig maintainers use `PLUGIN_ROOT/runtime/calibration/` and `PLUGIN_ROOT/shared/native-skill-contract.md`; an installed plugin cache remains immutable.
 
 For versioned calibration artifact changes, calculate version from last commit, not dirty worktree. If `HEAD` has `1.3`, all next-commit uncommitted edits stay `1.3` or `1.4`: one version step only; do not bump to `1.5`, `1.6`, etc. before a commit.
 

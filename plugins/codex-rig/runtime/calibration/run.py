@@ -18,7 +18,7 @@ Use the source layout when checking a repository checkout and the plugin layout 
 
 ## Used by
 
-release/develop verification workflows, package maintainers, and calibration acceptance tests.
+Release and implementation verification workflows, package maintainers, and calibration acceptance tests.
 Its result is also consumed by release-readiness decisions that require named checks, artifact paths, and explicit confidence gaps.
 
 ## Outputs
@@ -54,7 +54,7 @@ from live_contract import Layout, build_prompt, candidate_findings, prompt_sha25
 
 SKILLS = (
     "code-review",
-    "develop",
+    "implement",
     "code-remediate",
     "audit",
     "calibrate",
@@ -62,7 +62,7 @@ SKILLS = (
     "investigate",
     "sync",
     "manage",
-    "analyse",
+    "change-analysis",
     "optimize",
     "research",
 )
@@ -103,10 +103,10 @@ LUNA_MODEL_AGENTS = {
 TERRA_MODEL_AGENTS = set(AGENTS) - SOL_MODEL_AGENTS - LUNA_MODEL_AGENTS
 HIGH_EFFORT_AGENTS = set(AGENTS)
 RECURRENCE_POLICY_LINK = "../../shared/native-skill-contract.md#recurrence-and-root-cause-policy"
-RECURRENCE_POLICY_SKILLS = frozenset({"code-remediate", "develop", "investigate"})
+RECURRENCE_POLICY_SKILLS = frozenset({"code-remediate", "implement", "investigate"})
 RECURRENCE_POLICY_ROLES = frozenset({"delegation-lead"})
 RECURRENCE_CASE_CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
-    "recurrence-initial-obstacle": ("develop", ("initial-obstacle-not-recorded",)),
+    "recurrence-initial-obstacle": ("implement", ("initial-obstacle-not-recorded",)),
     "recurrence-second-occurrence-investigate": (
         "investigate",
         (
@@ -311,6 +311,7 @@ class CalibrationRun:
     fails: int = 0
     leaks: int = 0
     checks_failed: list[str] = field(default_factory=list)
+    accepted_route_evidence_current: bool = False
 
     def mark_check_failed(self, check_id: str) -> None:
         """Record a failed check once."""
@@ -491,11 +492,16 @@ def _derive_role_assignments(
 
 
 def check_accepted_route_evidence(run: CalibrationRun) -> None:
-    """Bind active model pins to hashed paid route evidence and adjudication."""
+    """Bind active model pins to hashed paid evidence and classify its roster freshness."""
     try:
         payload = json.loads(run.paths.accepted_route_evidence.read_text(encoding="utf-8"))
-        if payload.get("schema_version") != 1 or payload.get("reasoning_effort") != "high":
+        if payload.get("schema_version") != 2 or payload.get("reasoning_effort") != "high":
             raise ValueError("unsupported accepted-route evidence schema or effort")
+        evidence_skill_roster = payload.get("skill_roster")
+        if not isinstance(evidence_skill_roster, list) or not all(
+            isinstance(skill, str) for skill in evidence_skill_roster
+        ):
+            raise ValueError("accepted route evidence skill roster is malformed")
         sol_selection = payload.get("sol_role_selection")
         if sol_selection != {
             "mode": "bounded-read-only-advisory",
@@ -539,6 +545,11 @@ def check_accepted_route_evidence(run: CalibrationRun) -> None:
         run.fail_and_leak("accepted-route-evidence", f"accepted-route-evidence-invalid:{exc}")
         return
 
+    if tuple(evidence_skill_roster) != SKILLS:
+        run.append_check(f"accepted-route-evidence=archived-stale:skill-roster-mismatch:live-calls={observed_rows}")
+        return
+
+    run.accepted_route_evidence_current = True
     run.append_check(
         "accepted-route-evidence=ok:"
         f"live-calls={observed_rows}:luna-agents={len(LUNA_MODEL_AGENTS)}:sol-agents={len(SOL_MODEL_AGENTS)}"
@@ -2131,7 +2142,7 @@ def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None
 
 
 def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None:
-    """Create and validate a minimal develop artifact fixture."""
+    """Create and validate a minimal implementation artifact fixture."""
     validate_dir = selftest_dir / "validate"
     validate_dir.mkdir(parents=True, exist_ok=True)
     (validate_dir / "development-notes.md").write_text(
@@ -2233,7 +2244,7 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
         cli_argv(
             run.paths.validate_artifacts,
             "--skill",
-            "develop",
+            "implement",
             "--out",
             validate_dir,
             "--result",
@@ -2548,12 +2559,31 @@ def write_result(run: CalibrationRun) -> None:
         if run.paths.behavioral_result.exists()
         else None
     )
-    accepted_route_evidence = (
-        run.paths.accepted_route_evidence.exists() and "accepted-route-evidence" not in run.checks_failed
-    )
+    accepted_route_evidence = run.accepted_route_evidence_current
     recommendations, follow_up = build_recommendations(
         behavioral, run.checks_failed, run.leaks, accepted_route_evidence
     )
+    confidence_gaps = ["fixture-heavy calibration does not fully prove live model behavior"]
+    confidence_gap_closures = [
+        {
+            "gap": "fixture-heavy calibration does not fully prove live model behavior",
+            "status": "unresolved",
+            "rationale": "behavioral metrics include fixture observations; live observations are reported separately",
+        }
+    ]
+    remaining_limits = ["live model quality still depends on live calibration observations"]
+    if run.paths.accepted_route_evidence.exists() and not accepted_route_evidence:
+        stale_gap = "accepted live-route evidence predates the current skill identity"
+        confidence_gaps.append(stale_gap)
+        confidence_gap_closures.append(
+            {
+                "gap": stale_gap,
+                "status": "unresolved",
+                "rationale": "the archived evidence roster includes retired skill names and is preserved only as history",
+            }
+        )
+        remaining_limits.append("current implement and change-analysis routes lack fresh paid live evidence")
+    confidence = 0.95 if accepted_route_evidence else 0.9
     payload = {
         "status": status,
         "timestamp": run.paths.timestamp,
@@ -2580,25 +2610,19 @@ def write_result(run: CalibrationRun) -> None:
         ],
         "checks_failed": run.checks_failed,
         "findings": {"critical": 0, "high": run.leaks, "medium": 0, "low": 0},
-        "confidence": 0.95,
+        "confidence": confidence,
         "artifact_path": f".reports/codex/calibration/{run.paths.timestamp}/result.json",
         "metadata": {
             "layout": run.paths.layout,
-            "confidence_gaps": ["fixture-heavy calibration does not fully prove live model behavior"],
-            "confidence_gap_closures": [
-                {
-                    "gap": "fixture-heavy calibration does not fully prove live model behavior",
-                    "status": "unresolved",
-                    "rationale": "behavioral metrics include fixture observations; live observations are reported separately",
-                }
-            ],
+            "confidence_gaps": confidence_gaps,
+            "confidence_gap_closures": confidence_gap_closures,
             "confidence_recovery": {
                 "initial_confidence": 0.9,
-                "final_confidence": 0.95,
+                "final_confidence": confidence,
                 "status": "fair",
                 "evidence": ["calibration checks completed and behavioral metrics were computed"],
                 "recovery_actions": ["recorded fixture-vs-live observation counts and confidence calibration metrics"],
-                "remaining_limits": ["live model quality still depends on live calibration observations"],
+                "remaining_limits": remaining_limits,
             },
         },
         "leaks_found": run.leaks,

@@ -1,9 +1,9 @@
 ---
-name: analyse
+name: change-analysis
 description: "Analyze issue/PR/problem before implementation; produce source-backed findings and measurable gates."
 ---
 
-# Analyse
+# Change Analysis
 
 Run evidence-first analysis: truth, risk, next action before implementation, review, release, sync.
 
@@ -26,7 +26,7 @@ guess a cache version or fall back to a source checkout.
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill analyse` once. Retain its single printed path as
+Run `python PLUGIN_ROOT/shared/create_run.py --skill change-analysis` once. Retain its single printed path as
 `<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
 reuse the path through a shell variable; shell variables do not persist across tool calls.
 
@@ -37,7 +37,7 @@ reuse the path through a shell variable; shell variables do not persist across t
 - `report`: `.reports/**` or `.reports/codex/**` artifact.
 - `ecosystem`: downstream/API/dependency impact; current external claims need live web evidence. Do not invoke `gh` outside `github_read.py`.
 
-For every `github_read.py` or `collect_pr.py` execution, apply the networked CLI approval contract in `../../shared/native-skill-contract.md`: run the complete owning command with external network approval from its first attempt. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow read-only GitHub justification; never enable persistent workspace network access or approve only the nested `gh` executable. Runtime web tools used for ecosystem evidence keep their own permission path and do not receive shell escalation.
+For every `github_read.py` or `collect_pr.py` execution, apply the networked CLI approval contract in `../../shared/native-skill-contract.md`: run the complete owning command with external network approval from its first attempt. Before requesting it, state: `Action and purpose`: collect current GitHub analysis evidence; `External capability`: read-only GitHub network access; `Credential behavior`: `gh`, when used, is an opaque local credential broker; `Filesystem and worktree effects`: write evidence only to the analysis run directory, except a selected PR collector may create its documented local checkout; `Retry policy and safe denial outcome`: do not repeat an equivalent request in this turn, and use only already-available local or pasted evidence when the selected mode permits it. In a Codex exec call, set `sandbox_permissions="require_escalated"` with a narrow read-only GitHub justification; never enable persistent workspace network access or approve only the nested `gh` executable. Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command. Ask the user to send a new message to resume. Runtime web tools used for ecosystem evidence keep their own permission path and do not receive shell escalation.
 
 Unsupported/ambiguous mode => fail with usage note, unless pasted evidence supports `local`.
 
@@ -103,7 +103,7 @@ exit status as review evidence; do not erase a nonzero result.
 
 ### 09: Run shared gates and write the validated result artifact
 
-Follow `../../shared/helper-cli-contract.md` and helper `--help`. Analysis-only: mark lint/format/types/tests not applicable with reasons; review needs non-empty `analysis.md`, `self-review.md`, clean diff. Write `ANALYSE_METADATA`, validate `analyse`, promote only validated candidate.
+Follow `../../shared/helper-cli-contract.md` and helper `--help`. Analysis-only: mark lint/format/types/tests not applicable with reasons; review needs non-empty `analysis.md`, `self-review.md`, clean diff. Write `CHANGE_ANALYSIS_METADATA`, validate `change-analysis`, promote only validated candidate.
 
 Replace skip with command when analysis includes code changes/executable probes.
 
@@ -143,7 +143,7 @@ Optional checks:
 
 Update calibration when routing or evidence expectations change:
 
-- benchmark patterns: `analyse`
+- benchmark patterns: `change-analysis`
 - behavioral cases: unsupported claims, stale-source caveats, duplicate/related-item handling, networked CLI owning-command approval
 
 ## Output Contract

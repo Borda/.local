@@ -23,14 +23,14 @@ Six independently installable packages serve two runtimes: five marketplace plug
 
 ## Complete skill inventory
 
-| Package    | Shipped skills                                                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Foundry    | `setup`, `audit`, `calibrate`, `manage`, `brainstorm`, `investigate`, `profile`, `distill`, `session`, `create`, `humanizer`                                             |
-| OSS        | `analyse`, `review`, `resolve`, `release`, `setup`                                                                                                                       |
-| Develop    | `plan`, `feature`, `fix`, `refactor`, `debug`, `review`, `setup`                                                                                                         |
-| Research   | `topic`, `plan`, `judge`, `run`, `sweep`, `verify`, `fortify`, `retro`, `kaggle`, `setup`                                                                                |
-| Codemap-py | `scan-codebase`, `query-code`, `test-impact`, `rename-refs`, `integration`, `debrief-coding`                                                                             |
-| Codex Rig  | `analyse`, `audit`, `calibrate`, `code-remediate`, `code-review`, `develop`, `investigate`, `kaggle`, `manage`, `optimize`, `release`, `research`, `sync`, `agent-shims` |
+| Package    | Shipped skills                                                                                                                                                                     |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundry    | `setup`, `audit`, `calibrate`, `manage`, `brainstorm`, `investigate`, `profile`, `distill`, `session`, `create`, `humanizer`                                                       |
+| OSS        | `analyse`, `review`, `resolve`, `release`, `setup`                                                                                                                                 |
+| Develop    | `plan`, `feature`, `fix`, `refactor`, `debug`, `review`, `setup`                                                                                                                   |
+| Research   | `topic`, `plan`, `judge`, `run`, `sweep`, `verify`, `fortify`, `retro`, `kaggle`, `setup`                                                                                          |
+| Codemap-py | `scan-codebase`, `query-code`, `test-impact`, `rename-refs`, `integration`, `debrief-coding`                                                                                       |
+| Codex Rig  | `change-analysis`, `audit`, `calibrate`, `code-remediate`, `code-review`, `implement`, `investigate`, `kaggle`, `manage`, `optimize`, `release`, `research`, `sync`, `agent-shims` |
 
 The package pages document every skill's arguments, prerequisites, outputs, stopping conditions, fallbacks, and known boundaries. The repository's [Claude guide](https://github.com/Borda/AI-Rig/blob/main/.claude/README.md) also inventories all Claude agents, rules, and hooks; the [Codex Rig role-card reference](https://github.com/Borda/AI-Rig/blob/main/plugins/codex-rig/roles/README.md) inventories all Codex specialist roles.
 
@@ -86,7 +86,7 @@ Try the investigation-to-review loop:
 ```text
 $codex-rig:agent-shims doctor
 $codex-rig:investigate find the root cause of the failing test
-$codex-rig:develop implement the verified fix
+$codex-rig:implement apply the verified fix
 $codex-rig:code-review review the current diff
 ```
 
@@ -144,7 +144,7 @@ Native Codex investigation and remediation:
 
 ```text
 $codex-rig:investigate diagnose the failure
-$codex-rig:develop implement the verified fix
+$codex-rig:implement apply the verified fix
 $codex-rig:code-review review the resulting diff
 $codex-rig:code-remediate close selected findings
 ```

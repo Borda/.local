@@ -18,7 +18,7 @@
     ],
     "category": "Productivity",
     "defaultPrompt": [
-      "Use the codex-rig:develop skill to implement and verify the requested change.",
+      "Use the codex-rig:implement skill to implement and verify the requested change.",
       "Use the codex-rig:code-review skill to review the current diff.",
       "Use the codex-rig:research skill to collect primary evidence and recommendations."
     ],
@@ -31,5 +31,5 @@
   "name": "codex-rig",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./skills/",
-  "version": "0.7.6"
+  "version": "0.8.0"
 }

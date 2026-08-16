@@ -91,7 +91,21 @@
   "observed_live_calls": 57,
   "pricing_basis": "normalized-token-v1:uncached+0.1*cached+4*output",
   "reasoning_effort": "high",
-  "schema_version": 1,
+  "schema_version": 2,
+  "skill_roster": [
+    "code-review",
+    "develop",
+    "code-remediate",
+    "audit",
+    "calibrate",
+    "release",
+    "investigate",
+    "sync",
+    "manage",
+    "analyse",
+    "optimize",
+    "research"
+  ],
   "sol_role_selection": {
     "mode": "bounded-read-only-advisory",
     "parent_model": "gpt-5.6-terra",
