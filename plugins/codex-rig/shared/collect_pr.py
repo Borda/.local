@@ -89,7 +89,7 @@ COLLECTOR_EVIDENCE_ARTIFACTS = (
 PR_FIELDS = (
     "number,title,body,url,author,baseRefName,baseRefOid,headRefName,headRefOid,"
     "headRepository,headRepositoryOwner,isCrossRepository,state,isDraft,"
-    "reviewDecision,mergeable,comments,reviews,files"
+    "reviewDecision,mergeable,comments,reviews,files,statusCheckRollup"
 )
 GRAPHQL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
@@ -401,6 +401,7 @@ def _normalized_public_pr(payload: dict[str, Any], target: PRTarget) -> dict[str
         "comments": [],
         "reviews": [],
         "files": [],
+        "statusCheckRollup": None,
     }
 
 

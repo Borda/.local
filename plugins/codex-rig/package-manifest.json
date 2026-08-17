@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "09534ef345325d644b0c6292ed78c283e01be5c3a2ddd538910e7e1142a3c81c"
+      "sha256": "4f98243c7274d2842dbd90070345600f40ff0fa09869a4fcab514eb5e19cc8cc"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "1ba0ee7c5e720cb5165e040a5fdeaed9f27ec3b69b064ea9c5560ee191fdfa87"
+      "sha256": "8203d4db6b7f97fceff8a4654136f5435dd7a78ff19b900b6bf55c753a05979e"
     },
     {
       "mode": "0644",
@@ -42,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "4ac50ae5706c779dd1101b9bcec0478a32d5752ef2aa48986787f828339bd953"
+      "sha256": "f459f6d6cf3aef855cb41b871b9579ec08a8e2bc2c4df0fef136f7d0be8a1a5d"
     },
     {
       "mode": "0644",
@@ -342,7 +342,7 @@
     {
       "mode": "0755",
       "path": "shared/collect_pr.py",
-      "sha256": "f8885cf3b077512e41bbe237968ec0a455c413e5d914003fe9f714cb089e2b8e"
+      "sha256": "f85104b4606dae6ba8e114f31ae9e39245c9540804dc00aa2c559bae60b4ad9b"
     },
     {
       "mode": "0644",
@@ -467,7 +467,7 @@
     {
       "mode": "0644",
       "path": "skills/code-review/SKILL.md",
-      "sha256": "da3bf5c14de6ca08298aa0b60b8b41c8994ab44d087306fb777cc71f5ff7ce90"
+      "sha256": "2683ef159a34cac43a2e614c7622cfcecfc6902d4872b716d6cfe53131fefcea"
     },
     {
       "mode": "0644",
@@ -697,7 +697,7 @@
     {
       "mode": "0644",
       "path": "tests/test_code_review_routing_contract.py",
-      "sha256": "5bbd39c17fd2bf08cfd38bfda6488fa95074ab095960480c383106da24dbb49b"
+      "sha256": "702bebcffe707eb6bf2559daa07bc0b15834b72a9617dedfa8a777e933427417"
     },
     {
       "mode": "0644",
@@ -722,7 +722,7 @@
     {
       "mode": "0644",
       "path": "tests/test_collect_pr.py",
-      "sha256": "56d14c354acb5dcda9fd158c9cf51390890491de133a5dd6c8aeff086cd417e3"
+      "sha256": "e830f6e6894ae8a0395bc1597ba9c30789f3c206b2ff636ef4a24af5e8a5aab3"
     },
     {
       "mode": "0644",
@@ -1058,5 +1058,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.8.1"
+  "version": "0.8.2"
 }

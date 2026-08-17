@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.2
+
+- Add a compact, artifact-refreshed PR snapshot to every assessed `code-review` PR report and chat handoff: number/link, author, GitHub check state, verified-intent type, and mapped merge suggestion. The collector now retains `statusCheckRollup`; unavailable check evidence remains explicit rather than being presented as passing.
+- Specify that `code-review` routing evidence and triggered-role reasons must be non-empty JSON string arrays, preventing valid-looking string values from failing artifact validation and stranding a review as `result.candidate.json`.
+
 ## 0.8.1
 
 - kaggle skill: add a mechanical scan step for bare `#`/`##`/... heading-spacer lines inside `# %% [markdown]` cells (style-rules.md rule 08) — prose compliance alone proved insufficient in practice.

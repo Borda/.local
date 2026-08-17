@@ -55,6 +55,9 @@ def pr_payload(*, state: str = "OPEN", cross_repository: bool = False) -> dict[s
         "comments": [{"id": "comment-1"}],
         "reviews": [{"id": "review-1"}],
         "files": [{"path": "b.py"}, {"path": "a.py"}],
+        "statusCheckRollup": [
+            {"__typename": "CheckRun", "name": "tests", "status": "COMPLETED", "conclusion": "SUCCESS"}
+        ],
     }
 
 
@@ -269,7 +272,12 @@ def test_collect_pr_writes_complete_noncheckout_artifact_schema(
     assert routing["base_repo"] == "Borda/AI-Rig"
     assert routing["same_repo"] is True
     assert routing["local_checkout_command"] == "gh pr checkout 17"
-    assert json.loads((output / "pr.json").read_text())["body"].startswith("Fix checkpoint")
+    collected_pr = json.loads((output / "pr.json").read_text())
+    assert collected_pr["body"].startswith("Fix checkpoint")
+    assert collected_pr["statusCheckRollup"] == [
+        {"__typename": "CheckRun", "name": "tests", "status": "COMPLETED", "conclusion": "SUCCESS"}
+    ]
+    assert "statusCheckRollup" in module.PR_FIELDS
     assert all(call[1]["timeout"] == 5 for call in runner.calls)
 
 

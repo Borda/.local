@@ -122,7 +122,7 @@ Blocking defaults guide merge judgment; they are not automatic labels:
 
 ### 04: T2 risk-routed specialist fan-out. Route independent review from explicit behavior signals, not the file-count tier alone
 
-Always write `<run-directory>/review-routing.json`: `schema_version=1`; declared risk tier; every exact boolean signal below; non-empty `signal_evidence` for each true/false decision; sorted `triggered_roles`; non-empty `trigger_reasons` only for triggered roles. Then run `python PLUGIN_ROOT/skills/code-review/review_routing.py --out <run-directory>` so the shipped deterministic producer replaces `mechanical_risk_tier` and `mechanical_risk_evidence` from `files.txt`, `untracked.txt`, and `numstat.txt`; never calculate or copy those fields manually. Declared tier cannot be below mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence. Mechanically detected test, docs, data/tensor, CI, and security paths force matching signals true. Always write `<run-directory>/specialist-manifest.json`, with empty `passes` when no role triggers. Never add untriggered manifest roles.
+Always write `<run-directory>/review-routing.json`: `schema_version=1`; declared risk tier; every exact boolean signal below; `signal_evidence` as an object containing every signal with a non-empty JSON `list[str]` value for each true/false decision; sorted `triggered_roles`; `trigger_reasons` as an object containing only triggered roles with a non-empty JSON `list[str]` value. For example, write `"signal_evidence": {"bug_fix": ["PR body and changed test identify the corrected behavior."]}` and `"trigger_reasons": {"qa-specialist": ["Bug-fix and test-path evidence require QA."]}`. Bare strings are invalid. Then run `python PLUGIN_ROOT/skills/code-review/review_routing.py --out <run-directory>` so the shipped deterministic producer replaces `mechanical_risk_tier` and `mechanical_risk_evidence` from `files.txt`, `untracked.txt`, and `numstat.txt`; never calculate or copy those fields manually. Declared tier cannot be below mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence. Mechanically detected test, docs, data/tensor, CI, and security paths force matching signals true. Always write `<run-directory>/specialist-manifest.json`, with empty `passes` when no role triggers. Never add untriggered manifest roles.
 
 Required routing signals:
 
@@ -178,6 +178,7 @@ At most two attempts/role. Retry only `timeout`, `transport_error`, or `rate_lim
 Required sections:
 
 - `Decision Summary`
+- `PR Snapshot` for every assessed `scope=pr` review
 - `Scope`
 - `Risk Tier`
 - `Files Inspected`
@@ -219,6 +220,20 @@ Use exactly one recommendation:
 - `Minor changes`: medium/low items or `none`
 - `Required next work`: pre-merge work or `none`
 - `Confidence`: score plus key gaps
+
+For an assessed `scope=pr` review, immediately before user-facing output, rebuild `PR Snapshot` from the current run's `pr.json`, `pr-routing.json`, and `gates.json`; never reuse a PR number, author, CI state, or recommendation from the invocation or earlier chat. This is a refreshed presentation of the exact evidence reviewed, not a new network fetch after review.
+
+`PR Snapshot` must use this compact Markdown table in `review-notes.md` and reproduce it before findings in the final chat:
+
+| Field | Value |
+| --- | --- |
+| PR | `[#<number> — <title>](<url>)` |
+| Author | `@<pr.json author.login>` |
+| CI | `passing`, `failing — <check names>`, `pending — <check names>`, or `unavailable` |
+| Type | `fix`, `feat`, `refactor`, `perf`, `docs`, `ci`, `chore`, `test`, or `mixed` |
+| Suggestion | `approve`, `minor changes`, `needs work`, `reject`, or `not aligned` |
+
+Read PR CI from `pr.json.statusCheckRollup`: a failing completed check makes CI `failing`; otherwise an incomplete check makes it `pending`; otherwise completed successful/neutral/skipped checks make it `passing`. An absent or empty rollup is `unavailable`, never `passing`; name the known non-passing checks. Classify `Type` from verified change intent and diff, not title or file count. Map `Suggestion` directly from `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, and `not-aligned`, respectively. The snapshot applies only after successful source assessment: terminal unavailable and close outputs retain their existing no-table contracts.
 
 For every assessed non-`accept-as-is` PR decision and any `needs-more-work` decision in another scope, add a `## Review Findings and Merge Blocks` section immediately after `Decision Summary`. It is the canonical pre-merge handoff and must use this exact Markdown header and column order:
 
@@ -306,6 +321,6 @@ Update calibration when review routing, severity discipline, decision vocabulary
 
 Use shared gate schema from `../../shared/quality-gates.md`.
 
-Final chat starts compact `Review Decision Summary` for assessed reviews: recommendation, blockers, required next work, confidence/material limits, artifact path. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table in the chat output; it is the decision handoff, not optional detail. A terminal core T0 PR collection failure instead starts `PR Review Availability: unavailable` and uses plain prose for classified process diagnostic, recovery, source findings `not assessed`, merge decision `not made`, confidence/material limits, evidence, and artifact path. A terminal close starts `Review Decision: close`, names the code, says source findings were not assessed and detailed review was skipped, lists decisive evidence and counterevidence checked, states `GitHub mutation: not performed`, and provides confidence/material limits plus the artifact path. Neither terminal result uses a table or normal recommendation. Keep full routing, recovery, closure evidence in artifact, not chat. Assessed recommendations remain `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
+Final chat starts compact `Review Decision Summary` for assessed reviews: recommendation, blockers, required next work, confidence/material limits, artifact path. For every assessed PR review, reproduce its freshly rebuilt `PR Snapshot` table immediately after that summary and before any findings. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table in the chat output; it is the decision handoff, not optional detail. A terminal core T0 PR collection failure instead starts `PR Review Availability: unavailable` and uses plain prose for classified process diagnostic, recovery, source findings `not assessed`, merge decision `not made`, confidence/material limits, evidence, and artifact path. A terminal close starts `Review Decision: close`, names the code, says source findings were not assessed and detailed review was skipped, lists decisive evidence and counterevidence checked, states `GitHub mutation: not performed`, and provides confidence/material limits plus the artifact path. Neither terminal result uses a table or normal recommendation. Keep full routing, recovery, closure evidence in artifact, not chat. Assessed recommendations remain `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
 Minimum artifact payload template: `result-template.json`.

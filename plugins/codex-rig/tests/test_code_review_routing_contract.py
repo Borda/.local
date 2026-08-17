@@ -111,3 +111,25 @@ def test_skill_requires_deterministic_routing_synchronization_before_specialists
 
     assert invocation in skill
     assert skill.index(invocation) < skill.index("Always write `<run-directory>/specialist-manifest.json`")
+
+
+def test_skill_requires_list_valued_routing_evidence_and_reasons() -> None:
+    """Prevent a valid-looking string value from stranding a review as an unpromoted candidate."""
+    skill = CODE_REVIEW_SKILL.read_text(encoding="utf-8")
+
+    assert "non-empty JSON `list[str]` value for each true/false decision" in skill
+    assert "non-empty JSON `list[str]` value" in skill
+    assert "Bare strings are invalid." in skill
+
+
+def test_skill_rebuilds_a_compact_pr_snapshot_before_reporting_findings() -> None:
+    """Keep assessed PR handoffs grounded in current review artifacts, not stale chat context."""
+    skill = CODE_REVIEW_SKILL.read_text(encoding="utf-8")
+
+    assert "`PR Snapshot` for every assessed `scope=pr` review" in skill
+    assert "`pr.json`, `pr-routing.json`, and `gates.json`" in skill
+    assert "`pr.json.statusCheckRollup`" in skill
+    assert "An absent or empty rollup is `unavailable`, never `passing`" in skill
+    assert "`fix`, `feat`, `refactor`, `perf`, `docs`, `ci`, `chore`, `test`, or `mixed`" in skill
+    assert "`approve`, `minor changes`, `needs work`, `reject`, or `not aligned`" in skill
+    assert "before any findings" in skill
