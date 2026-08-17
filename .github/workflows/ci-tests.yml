@@ -76,5 +76,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # Pre-commit regenerates these manifests; CI catches a contributor who bypassed it.
+      # Every OS leg matters: the manifest must hash byte-identically on Windows too.
+      - name: 🧾 Verify blueprint manifest freshness
+        run: uv run --only-group test python plugins/cc_foundry/bin/build_blueprint_manifest.py --scan-dir plugins --check
+
       - name: 🧪 Run plugin tests (Python bin/ + JS hooks)
         run: uv run --only-group test pytest -W error::DeprecationWarning --durations=100

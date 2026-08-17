@@ -469,7 +469,7 @@ For each resolved handle, find a LinkedIn link via this ordered chain — stop a
 
 5. No step produced a link → omit LinkedIn, same as today's no-match behavior.
 
-Format unchanged: `- **Name** (@github_handle, [LinkedIn](https://linkedin.com/in/handle)) — <brief what they did>`. Omit `@handle` when unresolvable.
+Format unchanged: `- **Name** (@github_handle, [LinkedIn](https://linkedin.com/in/handle)) — <brief what they did>`. Omit `@handle` when unresolvable. `<brief what they did>` picks up to 3 most significant contributions per line 440's ranking and describes the contribution itself (feature/fix/area) — never a PR number, issue link, or `(#N)` reference.
 
 ## Identify highlights
 

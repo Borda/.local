@@ -22,7 +22,6 @@ Never hard-wrap prose in any Markdown file — one physical line per prose parag
 
 **Code block comments**: procedural code (steps an agent/skill executes) — comments explain WHY only (non-obvious constraint, workaround, incident ref, safety rationale), never WHAT/HOW; remove self-documenting comments. Example/pattern code (illustrates a pattern, not executed directly) — comments may also document expected output, motivation, or when to apply. Self-documenting-comment examples: `AUTHORING.md` §Markdown No-Wrap.
 
-
 ## GitHub Reference Scoping — `#N` and `@name`
 
 <!-- policy-sibling: plugins/cc_foundry/rules/git-commit.md, plugins/cc_foundry/rules/_full/git-commit.md, plugins/cc_oss/skills/_shared/shepherd-voice.md — same GH #/@ scoping policy restated for each consumer's own context. Editing this section → grep repo for `policy-sibling` to find every copy, update in lockstep (rationale + precedent: §Policy Duplication Marker below). -->
@@ -79,7 +78,7 @@ Load `_shared/*.md` (+ `modes/`, `templates/`) via `cat "$VAR/foo.md"` in bash �
 
 ## Sentinel Reads — `read`, not `$(cat ...)`
 
-Single-line sentinel read-back: `IFS= read -r VAR < "${TMPDIR:-/tmp}/<name>-${CSID}" 2>/dev/null || VAR=<default>` — never `VAR=$(cat ...)`. Command substitution `$(...)` triggers "Contains expansion" permission prompt in subagents regardless of allow list. Bare `cat "$VAR/foo.md"` (section above) unaffected — no substitution. Full rule + newline caveat: `cc_foundry/rules/claude-config.md` §TMPDIR Sentinel Scoping. Every plugin ships `hooks/sentinel-read-allow.js` (canonical: cc_foundry; propagated via `propagate_shared.py`) auto-allowing the legacy idiom, `$(date -u +FMT)` stamps, and the read-form itself (its first token `IFS=` matches no prefix allow-rule) in read-only compounds.
+Single-line sentinel read-back: `IFS= read -r VAR < "${TMPDIR:-/tmp}/<name>-${CSID}" 2>/dev/null || VAR=<default>` — never `VAR=$(cat ...)`. Command substitution `$(...)` triggers "Contains expansion" permission prompt in subagents regardless of allow list. Bare `cat "$VAR/foo.md"` (section above) unaffected — no substitution. Full rule + newline caveat: `cc_foundry/rules/claude-config.md` §TMPDIR Sentinel Scoping. Every plugin ships `hooks/sentinel-read-allow.js` (canonical: cc_foundry; propagated via `propagate_shared.py`) auto-allowing the legacy idiom, `$(date -u +FMT)` stamps, and the read-form itself (its first token `IFS=` matches no prefix allow-rule) in read-only compounds. For capture-substitutions that hook cannot shape-match (`$(python …)`, `$(git rev-parse …)`, `$(jq …)`), `hooks/blueprint-allow.js` is the general-purpose complement: it exact-matches the normalized command against the plugin's committed `blueprint-manifest.json` — full detail in `cc_foundry/permissions-guide.md` §"Contains expansion" gate.
 
 ## Installability
 

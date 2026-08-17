@@ -209,6 +209,14 @@ repos:
         files: ^plugins/codex-rig/
         pass_filenames: false
 
+      - id: blueprint-manifest-update
+        name: 🧾 blueprint manifest regeneration
+        language: system
+        entry: python3 plugins/cc_foundry/bin/build_blueprint_manifest.py --scan-dir plugins --update
+        # Coverage: every Markdown file a plugin ships can carry a bash blueprint.
+        files: ^plugins/.*\.md$
+        pass_filenames: false
+
       - id: check-fence-symmetry
         name: 🚧 code fence symmetry
         language: system

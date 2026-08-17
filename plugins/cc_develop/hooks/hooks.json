@@ -29,6 +29,15 @@
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/blueprint-allow.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
       }
     ]
   }

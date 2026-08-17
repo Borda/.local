@@ -1,0 +1,400 @@
+{
+  "_comment": "Cross-language contract vectors. Consumed by test_build_blueprint_manifest.py (Python: build_blueprint_manifest) and test_blueprint_allow_js.py (JS: hooks/blueprint-allow.js). Both suites must run every array; a vector added here must pass in both languages or the manifest hash space has diverged.",
+  "is_dangerous": [
+    {
+      "expected": false,
+      "id": "safe-echo",
+      "input": "echo hi"
+    },
+    {
+      "expected": false,
+      "id": "git-read-only",
+      "input": "git status --short"
+    },
+    {
+      "expected": false,
+      "id": "quoted-mention-is-safe",
+      "input": "echo 'rm -rf x'"
+    },
+    {
+      "expected": true,
+      "id": "rm",
+      "input": "rm -rf build"
+    },
+    {
+      "expected": true,
+      "id": "absolute-path-rm",
+      "input": "/bin/rm x"
+    },
+    {
+      "expected": true,
+      "id": "leading-assignment-then-rm",
+      "input": "FOO=1 rm x"
+    },
+    {
+      "expected": true,
+      "id": "chmod",
+      "input": "chmod +x script.py"
+    },
+    {
+      "expected": true,
+      "id": "second-segment",
+      "input": "echo a && dd if=/dev/zero of=x"
+    },
+    {
+      "expected": true,
+      "id": "substitution-body",
+      "input": "VAR=$(rm -rf x)"
+    },
+    {
+      "expected": true,
+      "id": "backtick-body",
+      "input": "echo `pkill node`"
+    },
+    {
+      "expected": true,
+      "id": "quoted-path-substitution-body",
+      "input": "BUILD=$(rm -rf \"$HOME/build\")"
+    },
+    {
+      "expected": true,
+      "id": "double-quoted-substitution-body",
+      "input": "echo \"$(rm -rf /)\""
+    },
+    {
+      "expected": true,
+      "id": "double-quoted-backtick-body",
+      "input": "echo \"`rm -rf /`\""
+    },
+    {
+      "expected": false,
+      "id": "single-quoted-substitution-is-literal",
+      "input": "echo '$(rm -rf /)'"
+    },
+    {
+      "expected": false,
+      "id": "single-quoted-backtick-is-literal",
+      "input": "echo '`rm -rf /`'"
+    },
+    {
+      "expected": true,
+      "id": "process-substitution-body",
+      "input": "cat <(rm -rf /)"
+    },
+    {
+      "expected": true,
+      "id": "output-process-substitution-body",
+      "input": "tee >(rm -rf /)"
+    },
+    {
+      "expected": false,
+      "id": "safe-process-substitution",
+      "input": "cat <(git status)"
+    },
+    {
+      "expected": false,
+      "id": "bare-redirection-is-not-substitution",
+      "input": "cat < notes.txt"
+    },
+    {
+      "expected": true,
+      "id": "git-push",
+      "input": "git push origin main"
+    },
+    {
+      "expected": true,
+      "id": "git-push-with-c-flag",
+      "input": "git -C repo push"
+    },
+    {
+      "expected": true,
+      "id": "git-force-flag",
+      "input": "git checkout --force main"
+    },
+    {
+      "expected": true,
+      "id": "git-short-force-flag",
+      "input": "git clean -f"
+    },
+    {
+      "expected": true,
+      "id": "git-worktree-remove",
+      "input": "git worktree remove wt"
+    },
+    {
+      "expected": true,
+      "id": "eval-defers-to-rm",
+      "input": "eval rm -rf /"
+    },
+    {
+      "expected": false,
+      "id": "eval-safe-argument",
+      "input": "eval echo hi"
+    },
+    {
+      "expected": true,
+      "id": "xargs-rm",
+      "input": "find . -name '*.tmp' | xargs rm -f"
+    },
+    {
+      "expected": true,
+      "id": "chained-xargs-rm",
+      "input": "xargs dirname | xargs rm -rf"
+    },
+    {
+      "expected": true,
+      "id": "xargs-null-separated-rm",
+      "input": "find .temp -mtime +30 -print0 | xargs -0 rm -rf"
+    },
+    {
+      "expected": true,
+      "id": "trap-deferred-rm",
+      "input": "trap 'rm -f \"$tmpenv\"' EXIT INT TERM"
+    },
+    {
+      "expected": true,
+      "id": "sudo-rm",
+      "input": "sudo rm -rf /var/cache"
+    },
+    {
+      "expected": true,
+      "id": "bash-c-rm",
+      "input": "bash -c 'rm -rf build'"
+    },
+    {
+      "expected": true,
+      "id": "find-delete",
+      "input": "find .cache -type f -mtime +30 -delete"
+    },
+    {
+      "expected": true,
+      "id": "wrapper-then-git-push",
+      "input": "timeout 5 git push origin main"
+    },
+    {
+      "expected": false,
+      "id": "plain-find",
+      "input": "find .reports -type d -mtime +30"
+    },
+    {
+      "expected": false,
+      "id": "plain-timeout",
+      "input": "timeout 5 curl -sS https://example.com"
+    },
+    {
+      "expected": false,
+      "id": "plain-xargs",
+      "input": "xargs grep -l pattern"
+    }
+  ],
+  "needs_bailout": [
+    {
+      "expected": false,
+      "id": "plain-block",
+      "input": "echo a\necho b"
+    },
+    {
+      "expected": false,
+      "id": "closed-quote",
+      "input": "echo 'one line'"
+    },
+    {
+      "expected": true,
+      "id": "quote-open-at-any-line-end-bails",
+      "input": "echo \"line one\n# still inside\nline three\""
+    },
+    {
+      "expected": true,
+      "id": "heredoc",
+      "input": "cat <<EOF\nbody\nEOF"
+    },
+    {
+      "expected": true,
+      "id": "dashed-quoted-heredoc",
+      "input": "cat <<-'EOF'\nbody\nEOF"
+    },
+    {
+      "expected": true,
+      "id": "herestring-over-bails",
+      "input": "grep <<< \"word\""
+    },
+    {
+      "expected": true,
+      "id": "unterminated-quote",
+      "input": "echo 'one\ntwo'"
+    }
+  ],
+  "normalize": [
+    {
+      "expected": "echo a\necho b",
+      "id": "crlf-to-lf",
+      "input": "echo a\r\necho b\r\n"
+    },
+    {
+      "expected": "echo a\necho b",
+      "id": "lone-cr-to-lf",
+      "input": "echo a\recho b"
+    },
+    {
+      "expected": "echo a\necho b",
+      "id": "trailing-whitespace-stripped",
+      "input": "echo a   \t\necho b  "
+    },
+    {
+      "expected": "echo   a    b",
+      "id": "no-intra-line-collapse",
+      "input": "echo   a    b"
+    },
+    {
+      "expected": "echo \"a  b\"",
+      "id": "no-quote-rewriting",
+      "input": "echo \"a  b\""
+    },
+    {
+      "expected": "curl http://x#y",
+      "id": "url-fragment-survives",
+      "input": "curl http://x#y"
+    },
+    {
+      "expected": "curl http://x#y",
+      "id": "url-fragment-plus-comment",
+      "input": "curl http://x#y  # fetch"
+    },
+    {
+      "expected": "echo \"${V:-#x}\"",
+      "id": "param-default-hash-survives",
+      "input": "echo \"${V:-#x}\""
+    },
+    {
+      "expected": "echo ${V:-#x}",
+      "id": "unquoted-param-default-survives",
+      "input": "echo ${V:-#x}"
+    },
+    {
+      "expected": "echo '# literal'",
+      "id": "single-quoted-hash-survives",
+      "input": "echo '# literal'"
+    },
+    {
+      "expected": "echo \"# literal\"",
+      "id": "double-quoted-hash-survives",
+      "input": "echo \"# literal\""
+    },
+    {
+      "expected": "echo \\# literal",
+      "id": "escaped-hash-survives",
+      "input": "echo \\# literal"
+    },
+    {
+      "expected": "echo a#b",
+      "id": "mid-word-hash-survives",
+      "input": "echo a#b"
+    },
+    {
+      "expected": "echo a",
+      "id": "tab-before-hash-is-comment",
+      "input": "echo a\t# tabbed"
+    },
+    {
+      "expected": "echo a",
+      "id": "hash-at-line-start-is-comment",
+      "input": "#!/usr/bin/env bash\necho a"
+    },
+    {
+      "expected": "",
+      "id": "comment-only-block-is-empty",
+      "input": "# only a comment"
+    },
+    {
+      "expected": "echo a",
+      "id": "leading-comment-line-leaves-nothing",
+      "input": "# note\necho a"
+    },
+    {
+      "expected": "echo a",
+      "id": "trailing-comment-line-leaves-nothing",
+      "input": "echo a\n# note"
+    },
+    {
+      "expected": "echo a\n\necho b",
+      "id": "inner-comment-line-leaves-one-blank",
+      "input": "echo a\n# note\necho b"
+    },
+    {
+      "expected": "echo a",
+      "id": "leading-trailing-blanks-dropped",
+      "input": "\n\n\necho a\n\n\n"
+    },
+    {
+      "expected": "echo a\n\necho b",
+      "id": "internal-blank-run-collapses-to-one",
+      "input": "echo a\n\n\n\n\necho b"
+    },
+    {
+      "expected": "echo \"line one\n# still inside\nline three\"",
+      "id": "quote-state-spans-lines",
+      "input": "echo \"line one\n# still inside\nline three\""
+    },
+    {
+      "expected": "cmd \\\n  --flag",
+      "id": "continuation-kept-verbatim",
+      "input": "cmd \\\n  --flag"
+    },
+    {
+      "expected": "echo a\\\\\necho b",
+      "id": "even-backslashes-kept-verbatim",
+      "input": "echo a\\\\\necho b"
+    },
+    {
+      "expected": "",
+      "id": "empty-input",
+      "input": ""
+    }
+  ],
+  "split_logical_commands": [
+    {
+      "expected": [
+        "echo a",
+        "echo b"
+      ],
+      "id": "newline-split",
+      "input": "echo a\necho b"
+    },
+    {
+      "expected": [
+        "a; b && c | d"
+      ],
+      "id": "never-splits-on-operators",
+      "input": "a; b && c | d"
+    },
+    {
+      "expected": [
+        "cmd \\\n  --flag",
+        "next"
+      ],
+      "id": "odd-backslash-continues",
+      "input": "cmd \\\n  --flag\nnext"
+    },
+    {
+      "expected": [
+        "echo a\\\\",
+        "echo b"
+      ],
+      "id": "even-backslash-does-not-continue",
+      "input": "echo a\\\\\necho b"
+    },
+    {
+      "expected": [
+        "echo a",
+        "echo b"
+      ],
+      "id": "blank-separator-dropped",
+      "input": "echo a\n\necho b"
+    },
+    {
+      "expected": [],
+      "id": "empty-input",
+      "input": ""
+    }
+  ]
+}
