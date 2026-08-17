@@ -159,8 +159,13 @@ def _pid_alive_posix(pid: int) -> bool:
         ``True`` when the process exists.
 
     Examples:
-        >>> _pid_alive_posix(os.getpid())
-        True
+        No doctest — an executable example would have to call this function, and
+        doctests are not platform-gated. On Windows ``os.kill(pid, 0)`` is not a
+        probe at all: signal 0 is ``CTRL_C_EVENT``, so CPython routes it to
+        ``GenerateConsoleCtrlEvent`` and delivers Ctrl+C to the whole console
+        process group — under pytest that surfaces as a ``KeyboardInterrupt``
+        that aborts the run with no failing test to point at. Covered by pytest
+        instead, which can skip by platform.
     """
     try:
         os.kill(pid, 0)

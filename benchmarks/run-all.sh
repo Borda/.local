@@ -179,15 +179,28 @@ refresh_generated_manifests() {
 
 refresh_generated_manifests
 
-sha256_file() {
+# Resolved once per run rather than per file: build_source_checksum_manifest hashes
+# every file of the paid source snapshot (~420), and probing for the hasher on each
+# one made the probe itself a measurable share of the run.
+SHA256_CMD=()
+
+resolve_sha256_cmd() {
+  if [ "${#SHA256_CMD[@]}" -gt 0 ]; then
+    return 0
+  fi
   if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{print $1}'
+    SHA256_CMD=(shasum -a 256)
   elif command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
+    SHA256_CMD=(sha256sum)
   else
     echo "ERROR: shasum or sha256sum is required to validate frozen evidence." >&2
     return 1
   fi
+}
+
+sha256_file() {
+  resolve_sha256_cmd || return 1
+  "${SHA256_CMD[@]}" "$1" | awk '{print $1}'
 }
 
 archive_paid_source() {
@@ -235,17 +248,26 @@ capture_codemap_mode_map() {
 build_source_checksum_manifest() {
   local source_root="$1"
   local output_path="$2"
-  local source_file relative_path source_symlink
+  local source_symlink listing
   source_symlink="$(find "$source_root" -type l -print -quit)"
   if [ -n "$source_symlink" ]; then
     echo "ERROR: paid Codex source snapshot contains a symlink: $source_symlink" >&2
     return 2
   fi
+  resolve_sha256_cmd || return 1
+  # One hasher invocation per xargs batch instead of three processes per file. The
+  # snapshot holds ~420 files, and the per-file form spent ~9 s of a 16 s run purely
+  # on fork/exec. `shasum -a 256` and `sha256sum` both emit "<sha>  <path>", which is
+  # the exact line this used to printf, so the manifest stays byte-identical.
+  listing="$(mktemp)"
+  ( cd "$source_root" && find . -type f -print | LC_ALL=C sort | sed 's|^\./||' ) > "$listing"
   : > "$output_path"
-  while IFS= read -r source_file; do
-    relative_path="${source_file#"$source_root"/}"
-    printf '%s  %s\n' "$(sha256_file "$source_file")" "$relative_path" >> "$output_path"
-  done < <(find "$source_root" -type f -print | LC_ALL=C sort)
+  # An empty listing must not reach xargs: with no operands the hasher reads stdin
+  # and the run hangs instead of writing an empty manifest.
+  if [ -s "$listing" ]; then
+    ( cd "$source_root" && tr '\n' '\0' < "$listing" | xargs -0 "${SHA256_CMD[@]}" ) > "$output_path"
+  fi
+  rm -f "$listing"
 }
 
 validate_paid_source_snapshot() {
@@ -343,9 +365,12 @@ resolve_agentic_scope() {
     echo "$scope_json" >&2
     return 2
   fi
-  AGENTIC_SCOPE_SHA="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["scope_sha256"])' <<<"$scope_json")"
-  AGENTIC_TOTAL_CELLS="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["total_cells"])' <<<"$scope_json")"
-  AGENTIC_COORDINATE_TIMEOUT="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["coordinate_timeout_seconds"])' <<<"$scope_json")"
+  # Three fields out of one blob in one interpreter start, not three.
+  {
+    IFS= read -r AGENTIC_SCOPE_SHA
+    IFS= read -r AGENTIC_TOTAL_CELLS
+    IFS= read -r AGENTIC_COORDINATE_TIMEOUT
+  } < <(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["scope_sha256"]); print(d["total_cells"]); print(d["coordinate_timeout_seconds"])' <<<"$scope_json")
   while IFS= read -r task_id; do
     [ -n "$task_id" ] && AGENTIC_TASK_IDS+=("$task_id")
   done < <(python3 -c 'import json,sys; print(*json.loads(sys.stdin.read())["task_ids"], sep="\n")' <<<"$scope_json")
@@ -1003,9 +1028,12 @@ ensure_codex_scope_resolved() {
 
 configure_codex_plan() {
   active_manifest_sha="$(sha256_file "$MANIFEST_PATH")"
-  coordinate_timeout="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["execution_controls"]["parity_timeout_seconds"])' "$MANIFEST_PATH")"
-  codex_model="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["name"])' "$MANIFEST_PATH")"
-  codex_reasoning_effort="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]["reasoning_effort"])' "$MANIFEST_PATH")"
+  # One interpreter start for the whole manifest read, not one per field.
+  {
+    IFS= read -r coordinate_timeout
+    IFS= read -r codex_model
+    IFS= read -r codex_reasoning_effort
+  } < <(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["execution_controls"]["parity_timeout_seconds"]); print(d["model"]["name"]); print(d["model"]["reasoning_effort"])' "$MANIFEST_PATH")
   task_count="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["task_selection"]["allowed_task_ids"]))' "$MANIFEST_PATH")"
   planned_cells="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["task_selection"]["default_total_cells"])' "$MANIFEST_PATH")"
   echo "== CODEX UNIFIED TASK STUDY =="

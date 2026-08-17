@@ -130,6 +130,33 @@
       {
         "hooks": [
           {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/write-guard.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/write-guard.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Write"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/write-guard.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "NotebookEdit"
+      },
+      {
+        "hooks": [
+          {
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/enforce-audit-header.js\"",
             "type": "command"
           }

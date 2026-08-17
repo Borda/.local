@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import ctypes
+import doctest
 import importlib.util
 import os
 import sys
@@ -59,8 +60,20 @@ class _FakeWindll:
 
 
 class TestPidLivenessPosix:
-    def test_own_pid_is_alive(self):
-        assert _mod._pid_alive_posix(os.getpid()) is True
+    def test_probes_with_signal_zero(self, monkeypatch):
+        """A live process answers True, and the probe is signal 0 — never a real signal.
+
+        ``os.kill`` is patched rather than invoked for real because signal 0 is not
+        inert everywhere: on Windows it is ``CTRL_C_EVENT``, so a genuine call would
+        deliver Ctrl+C to the console process group and abort the whole pytest run.
+        Patching keeps this assertion running on every host instead of skipping it
+        on the one platform where the mistake actually bites.
+        """
+        calls = []
+
+        monkeypatch.setattr(_mod.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+        assert _mod._pid_alive_posix(4242) is True
+        assert calls == [(4242, 0)]
 
     def test_permission_error_counts_as_alive(self, monkeypatch):
         """Another user's process exists — EPERM answers the question yes."""
@@ -403,3 +416,17 @@ class TestPortability:
         """A single os.kill implementation would be silently wrong on Windows."""
         assert "_pid_alive_windows" in self.SOURCE
         assert "OpenProcess" in self.SOURCE
+
+    def test_no_doctest_invokes_the_posix_probe(self):
+        """No doctest may call the POSIX probe — doctests cannot be platform-gated.
+
+        This is the regression: an ``Examples:`` block calling ``_pid_alive_posix``
+        reaches ``os.kill(pid, 0)`` on Windows, where signal 0 is ``CTRL_C_EVENT``
+        and CPython routes it to ``GenerateConsoleCtrlEvent``. Every Windows CI leg
+        then died with a ``KeyboardInterrupt`` and zero failing tests — a signal, so
+        nothing pointed at the cause. A pytest test can skip or patch by platform;
+        a doctest runs verbatim on all of them.
+        """
+        examples = [example.source for test in doctest.DocTestFinder().find(_mod) for example in test.examples]
+        offenders = [source for source in examples if "_pid_alive_posix(" in source]
+        assert offenders == [], f"doctest would signal the console group on Windows: {offenders}"

@@ -85,6 +85,21 @@ MANIFEST: list[dict[str, object]] = [
         ],
     },
     {
+        # Guard-only counterpart to the two allow hooks above: it never grants,
+        # it only forces a confirmation on writes to files that are named the
+        # same in nearly every repository and costly to change unreviewed (CI
+        # definitions, agent instructions, lockfiles, release metadata). Every
+        # plugin ships it so a standalone install still carries the policy.
+        "canonical": "plugins/cc_foundry/hooks/write-guard.js",
+        "copies": [
+            "plugins/cc_oss/hooks/write-guard.js",
+            "plugins/cc_develop/hooks/write-guard.js",
+            "plugins/cc_research/hooks/write-guard.js",
+            # codemap-py intentionally ships no copy, mirroring the entries
+            # above: its hook helpers are Python-only by contract.
+        ],
+    },
+    {
         # Stale-artifact healer. Every plugin whose skills create advisory
         # locks or git worktrees ships its own copy, because a skill may never
         # reach into a sibling plugin's bin/ (§Self-Contained _shared) and a
