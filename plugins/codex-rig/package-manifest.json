@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "e844451702b799faceeb7f87a33969226162b339f40f1a0561f444e7f315ea1c"
+      "sha256": "09534ef345325d644b0c6292ed78c283e01be5c3a2ddd538910e7e1142a3c81c"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "e197d88385b22bb909c38c23e8123b68abccff1cda6fb0758725de5d87140c2d"
+      "sha256": "1ba0ee7c5e720cb5165e040a5fdeaed9f27ec3b69b064ea9c5560ee191fdfa87"
     },
     {
       "mode": "0644",
@@ -42,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "d22519ff9fa778bbe4bf7a9a1e7b7a75a033958ff2313f21d68290445a420cea"
+      "sha256": "4ac50ae5706c779dd1101b9bcec0478a32d5752ef2aa48986787f828339bd953"
     },
     {
       "mode": "0644",
@@ -507,7 +507,7 @@
     {
       "mode": "0644",
       "path": "skills/kaggle/SKILL.md",
-      "sha256": "3a01a71c65341d0d391f226443d3978b8435f7e8bef46c26ad5c822f35b50a7d"
+      "sha256": "6576816f48498f288eb2ffbc2e436f49cbc2e13c6d09b7b8978f40a52cec0a89"
     },
     {
       "mode": "0644",
@@ -1058,5 +1058,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.8.0"
+  "version": "0.8.1"
 }

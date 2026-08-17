@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- kaggle skill: add a mechanical scan step for bare `#`/`##`/... heading-spacer lines inside `# %% [markdown]` cells (style-rules.md rule 08) — prose compliance alone proved insufficient in practice.
+
 ## 0.8.0
 
 - Rename the `develop` workflow to `implement` and `analyse` to `change-analysis` across skill identities, invocation names, artifact namespaces, routing, calibration, package metadata, and documentation. This release intentionally provides no aliases or compatibility paths for the former names.

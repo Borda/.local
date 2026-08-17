@@ -374,21 +374,7 @@ echo "=== Sections ===";   grep "^# %% \[markdown\]" "$OUTFILE"  # timeout: 5000
 echo "=== File size ===";  wc -l "$OUTFILE"  # timeout: 5000
 
 echo "=== Bare '#' heading-spacer check (rule 13) ==="
-BARE_HASH_COUNT=$(grep -cE '^#+[[:space:]]*$' "$OUTFILE" 2>/dev/null) || BARE_HASH_COUNT=0  # `|| echo 0` appends a second 0: grep -c prints 0 *and* exits 1 on zero matches
-echo "Found: $BARE_HASH_COUNT"
-if [ "$BARE_HASH_COUNT" -gt 0 ]; then
-    grep -nE '^#+[[:space:]]*$' "$OUTFILE"  # timeout: 5000
-    python3 -c "
-import re
-path = '$OUTFILE'
-with open(path) as f:
-    text = f.read()
-fixed = re.sub(r'(?m)^#+[ \t]*$', '', text)
-with open(path, 'w') as f:
-    f.write(fixed)
-"  # timeout: 5000
-    echo "Auto-fixed: $BARE_HASH_COUNT bare '#' spacer line(s) converted to true blank lines"
-fi
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/fix_jupytext_blank_md.py" "$OUTFILE"  # timeout: 5000
 ```
 
 Print to terminal:

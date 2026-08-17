@@ -124,6 +124,7 @@ Record verification in `profile.md` and gate logs.
 5. If `jupytext` is installed, convert to a temporary notebook and fail on conversion errors. Otherwise record the missing optional conversion check as a residual limit.
 6. Run executable smoke checks that do not require unavailable Kaggle data. Never claim model training, inference, or submission execution unless it actually ran.
 7. Review the focused diff and run `git diff --check` without modifying unrelated changes.
+8. Mechanically scan every `# %% [markdown]` cell for a bare `#`/`##`/... heading-spacer line (style-rules.md rule 08) — prose compliance alone proved insufficient in practice (see `research:kaggle`'s equivalent gate); clear each hit to a true blank line before recording the verification.
 
 ### 07: Run gates and publish the result artifact
 
