@@ -24,6 +24,24 @@ IFS= read -r WT_ENABLED < "${TMPDIR:-/tmp}/oss-<skill>-worktree-${CSID}" 2>/dev/
 3. Create off HEAD + persist main-tree root (for §Deliverable / restore), then enter:
 
 ```bash
+# timeout: 30000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/heal_git_artifacts.py" worktrees
+```
+
+> Heal before creating, not after — the run that leaks a worktree is by definition the one that never reaches its own cleanup. This call is **report-only**; it deletes nothing.
+>
+> Exit 0 (nothing reclaimable) → say nothing, continue. Exit 1 → print the tool's list verbatim, then `AskUserQuestion`: (a) **Skip** — leave them, continue the run · (b) **Remove them** — run the block below in this turn, then continue · (c) **Abort**. Removing a worktree deletes a directory tree, so it never happens without this answer — never run the `--apply` form unprompted.
+
+```bash
+# timeout: 30000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/heal_git_artifacts.py" worktrees --apply
+```
+
+> Candidates are only clean, registered-or-orphaned, ≥14-day-old `agent-*`/`oss-*` trees. Uncommitted work is reported and kept at any age; `dev-*` and hand-made names are never candidates. Never abort the review because healing was skipped.
+>
+> Scope note: this whole file is gated on `--worktree`, so worktree healing runs only on isolated runs. Lock healing (`oss:resolve` Step 8) is unconditional.
+
+```bash
 # timeout: 15000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 git rev-parse --show-toplevel > "${TMPDIR:-/tmp}/oss-<skill>-orig-root-${CSID}"

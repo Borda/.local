@@ -548,6 +548,16 @@ rm -f "${TMPDIR:-/tmp}/fortify-variant-idx-${CSID}" "${TMPDIR:-/tmp}/fortify-pat
 git worktree prune  # timeout: 15000
 ```
 
+`prune` only drops registrations whose directory is already gone. The inverse — directory present, never removed because the accumulator entry was never written (interrupt between `worktree add` and the append) — is invisible to it and to `git worktree list`. Sweep the variant root for those:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r _FDIR < "${TMPDIR:-/tmp}/fortify-dir-${CSID}" 2>/dev/null || _FDIR=""
+[ -n "$_FDIR" ] && python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/heal_git_artifacts.py" worktrees --root "$_FDIR/worktrees" --managed-prefix '*' --min-age-days 1 --apply  # timeout: 30000
+```
+
+> `--managed-prefix '*'` is safe **only** because `--root` is fortify's own variant directory — every child there is fortify's. Never widen it to a shared root. Variants holding uncommitted work are reported, not deleted. `--apply` is unattended here for parity with the `git worktree remove --force` above (same trees, same run) — but print the output verbatim whenever it removed anything, so the sweep is never silent.
+
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # boundary 2: F4 all variants complete (compaction-contract.md §Lifecycle)

@@ -586,6 +586,8 @@ Add `--team` to any code-changing skill. Spawns parallel specialist agents explo
 
 Add `--worktree` to run the **entire** skill inside a fresh git worktree under `.claude/worktrees/` on a new branch **based off your current `HEAD`** (via `git worktree add HEAD` + the harness `EnterWorktree`/`ExitWorktree` tools — not `origin/<default>`). The main working tree is never touched; on completion the skill leaves the worktree + branch on disk and reports the path/branch — **you** review and merge (never auto-merged). Uncommitted working-tree changes do not transfer into a worktree — commit or stash first if the run must see them.
 
+On entry a `--worktree` run also **reports** any leaked worktrees it could reclaim — clean, ≥14-day-old `agent-*`/`oss-*` trees, including directories git no longer has registered (`git worktree prune` cannot see those; it removes the inverse case). Nothing is deleted without an explicit answer to the prompt that follows. Trees holding uncommitted work are listed and kept at any age, and your own `dev-*` trees are never candidates.
+
 Available on: `feature`, `fix`, `refactor` (all work stays in the worktree); and opt-in on the read-only `debug` + `review` (isolation guards sources, but the diagnosis/report deliverable is written to the **main tree** so downstream skills + your review can reach it). Not on `plan` (analysis-only, never edits).
 
 ```text
@@ -764,6 +766,7 @@ These helpers are installed workflow support and maintainer surfaces, not additi
 | `diagnosis_parse.py`         | Parse and validate a `--diagnosis` path from arguments.                    |
 | `extract_json_field.py`      | Recover a JSON object from text and print a selected field.                |
 | `find-polluter.py`           | Binary-search test isolation contamination.                                |
+| `heal_git_artifacts.py`      | Reclaim stale skill locks and orphaned git worktrees.                      |
 | `issue_fetch.py`             | Validate an issue argument and fetch it through `gh`.                      |
 | `pytest_gate.py`             | Run an allow-listed pytest command with full output.                       |
 | `run_pytest_short.py`        | Run an allow-listed pytest command and show its final output lines.        |

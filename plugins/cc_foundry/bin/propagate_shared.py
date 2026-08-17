@@ -84,6 +84,20 @@ MANIFEST: list[dict[str, object]] = [
             # entry above: its hook helpers are Python-only by contract.
         ],
     },
+    {
+        # Stale-artifact healer. Every plugin whose skills create advisory
+        # locks or git worktrees ships its own copy, because a skill may never
+        # reach into a sibling plugin's bin/ (§Self-Contained _shared) and a
+        # standalone install must still be able to recover from its own leaks.
+        # codemap-py intentionally ships no copy: its hooks already implement a
+        # tested TTL lock takeover of their own (LOCK_TTL_MS).
+        "canonical": "plugins/cc_foundry/bin/heal_git_artifacts.py",
+        "copies": [
+            "plugins/cc_oss/bin/heal_git_artifacts.py",
+            "plugins/cc_develop/bin/heal_git_artifacts.py",
+            "plugins/cc_research/bin/heal_git_artifacts.py",
+        ],
+    },
     # --- Self-contained _shared (plugins/CLAUDE.md §Self-Contained _shared) ---
     # These six docs were previously READ OUT OF FOUNDRY'S TREE by sibling plugins
     # (via `resolve_shared_path.py foundry`, `dev_shared_resolve.py --foundry`, or

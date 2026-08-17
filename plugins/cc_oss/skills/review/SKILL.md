@@ -31,7 +31,9 @@ NOT for local file review or current git diff — use `/develop:review` (require
 
 <constants>
 
-FANOUT_MAX=4            # default: top-N most relevant of the scope-preselected dimensions
+FANOUT_MAX=3            # default: top-N most relevant of the scope-preselected dimensions
+                        # 3 not 4 — codex:codex-rescue spawns outside this cap, so 3 keeps the
+                        # observed agent count at 4, not 5
                         # --full runs ALL scope-preselected dimensions instead — no numeric cap
 AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
@@ -112,7 +114,7 @@ Parse `$ARGUMENTS` flags first (via `bin/parse-skill-flags.py`, C5) — this set
 | `--codemap` | `CODEMAP_STRICT` | `true` | `false` |
 | `--semble` | `SEMBLE_ENABLED` | `true` | `false` |
 | `--worktree` | `WT_ENABLED` | `true` | `false` |
-| `--full` | `FANOUT_CAP` | `0` — no cap, all preselected | `4` (`FANOUT_MAX`) |
+| `--full` | `FANOUT_CAP` | `0` — no cap, all preselected | `3` (`FANOUT_MAX`) |
 | `--keep "<items>"` | `KEEP_ITEMS` | value string | `""` |
 
 `CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed (including `--keep "<items>"` and its quoted value), leading whitespace stripped, leading `#` stripped.
@@ -122,7 +124,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 # parses --reply/--no-challenge/--semble/--worktree/--keep; codemap flags detected-only, re-derived independently below
 # shared flag/--keep parser (C5; also resolve/analyse SKILL.md)
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/parse-skill-flags.py" --flags reply,no-challenge,no-codemap,codemap,semble,worktree,full "$ARGUMENTS")"  # timeout: 5000
-FANOUT_CAP=4; [ "$FLAG_FULL" = "true" ] && FANOUT_CAP=0  # 0 = no cap: all scope-preselected dimensions
+FANOUT_CAP=3; [ "$FLAG_FULL" = "true" ] && FANOUT_CAP=0  # 0 = no cap: all scope-preselected dimensions
 REPLY_MODE="$FLAG_REPLY"
 SEMBLE_ENABLED="$FLAG_SEMBLE"
 WT_ENABLED="$FLAG_WORKTREE"
@@ -543,7 +545,7 @@ echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint-${CSID}"
 Two stages, in order — never collapse them:
 
 1. **Scope preselection** (always): the scope/mode rules above decide which dimensions are *relevant at all*. A dimension with no changed file in its territory is out here and never comes back, at any flag.
-2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what Step 1 pre-classification found, what the structural context flagged — and spawn the top `FANOUT_MAX` (4). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
+2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what Step 1 pre-classification found, what the structural context flagged — and spawn the top `FANOUT_MAX` (3). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
 
 - More work → give each agent more, never add agents.
 - **Spawn the fewest that keep each near `AGENT_CALL_BUDGET`** — not the most the cap allows. Total work under ~73 calls → do it inline and spawn nothing.

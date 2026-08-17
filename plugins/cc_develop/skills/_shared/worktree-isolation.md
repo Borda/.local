@@ -26,6 +26,24 @@ IFS= read -r WORKTREE_ENABLED < "${TMPDIR:-/tmp}/dev-<skill>-worktree-${CSID}" 2
 2. Create + enter (deterministic HEAD base). Slug = first ~4 words of goal, lowercased, non-`[A-Za-z0-9._-]`→`-`, ≤48 chars; empty goal → `dev-<skill>`. Persist `_ORIG_ROOT` (main tree) for §Deliverable + §Exit — must be captured **before** entering:
 
 ```bash
+# timeout: 30000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/heal_git_artifacts.py" worktrees
+```
+
+> Heal before creating, not after — the run that leaks a worktree is by definition the one that never reaches its own cleanup. This call is **report-only**; it deletes nothing.
+>
+> Exit 0 (nothing reclaimable) → say nothing, continue. Exit 1 → print the tool's list verbatim, then `AskUserQuestion`: (a) **Skip** — leave them, continue the run · (b) **Remove them** — run the block below in this turn, then continue · (c) **Abort**. Removing a worktree deletes a directory tree, so it never happens without this answer — never run the `--apply` form unprompted.
+
+```bash
+# timeout: 30000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/heal_git_artifacts.py" worktrees --apply
+```
+
+> Candidates are only clean, registered-or-orphaned, ≥14-day-old `agent-*`/`oss-*` trees — subagent-isolation and oss-skill trees, not yours. **`dev-*` is never a candidate** — §Exit contracts those as deliverables you review and merge yourself. Uncommitted work is reported and kept at any age. Never abort the run because healing was skipped.
+>
+> Scope note: this whole file is gated on `--worktree`, so worktree healing runs only on isolated runs.
+
+```bash
 # timeout: 15000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 git rev-parse --show-toplevel > "${TMPDIR:-/tmp}/dev-<skill>-orig-root-${CSID}"   # main-tree root, read later

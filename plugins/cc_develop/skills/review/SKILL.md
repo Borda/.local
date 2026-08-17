@@ -54,7 +54,9 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 
 <constants>
 
-FANOUT_MAX=4            # default: top-N most relevant of the classification-preselected dimensions
+FANOUT_MAX=3            # default: top-N most relevant of the classification-preselected dimensions
+                        # 3 not 4 — codex:codex-rescue spawns outside this cap, so 3 keeps the
+                        # observed agent count at 4, not 5
                         # --full runs ALL preselected dimensions instead — no numeric cap
 AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
@@ -136,7 +138,7 @@ IFS= read -r CHALLENGE_FORCED < "${TMPDIR:-/tmp}/dev-review-challenge-forced-${C
 IFS= read -r SEMBLE_ENABLED < "${TMPDIR:-/tmp}/dev-review-semble-enabled-${CSID}" 2>/dev/null || SEMBLE_ENABLED="false"
 IFS= read -r CODEMAP_RAW < "${TMPDIR:-/tmp}/dev-review-codemap-enabled-${CSID}" 2>/dev/null || CODEMAP_RAW="auto"
 IFS= read -r FANOUT_FULL < "${TMPDIR:-/tmp}/dev-review-fanout-full-${CSID}" 2>/dev/null || FANOUT_FULL="false"
-FANOUT_CAP=4; [ "$FANOUT_FULL" = "true" ] && FANOUT_CAP=0  # 0 = no cap: all preselected dimensions
+FANOUT_CAP=3; [ "$FANOUT_FULL" = "true" ] && FANOUT_CAP=0  # 0 = no cap: all preselected dimensions
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens not in the supported list below. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--worktree\`, \`--full\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -390,7 +392,7 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 Two stages, in order — never collapse them:
 
 1. **Classification preselection** (always): the FIX / CHORE / small-diff-challenger skips above decide which dimensions are *relevant at all*. A dimension with no changed file in its territory is out here and never comes back, at any flag.
-2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what the classification implies, what the structural context flagged — and spawn the top `FANOUT_MAX` (4). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
+2. **Relevance ranking** (default only): rank the survivors by evidence — changed files and lines in that dimension's territory, what the classification implies, what the structural context flagged — and spawn the top `FANOUT_MAX` (3). With `--full` (`FANOUT_CAP=0`) skip this stage and spawn every survivor of stage 1.
 
 - More work → give each agent more, never add agents.
 - **Spawn the fewest that keep each near `AGENT_CALL_BUDGET`** — not the most the cap allows. Total work under ~73 calls → do it inline and spawn nothing.

@@ -30,21 +30,19 @@ IFS= read -r PR_REF < "${TMPDIR:-/tmp}/resolve-pr-ref-${CSID}" 2>/dev/null || PR
 _GITDIR=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")  # timeout: 3000
 _BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo "detached")  # timeout: 3000
 RESOLVE_LOCK="$_GITDIR/oss-resolve-${_BRANCH}.lock"  # shared across worktrees (git-common-dir)
+python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/heal_git_artifacts.py" locks --pattern 'oss-resolve-*.lock' --apply  # timeout: 30000
 if [ -f "$RESOLVE_LOCK" ]; then
-    if [ -n "$(find "$RESOLVE_LOCK" -mmin +30 2>/dev/null)" ]; then
-        echo "⚠ stale resolve lock (>30 min) — prior run almost certainly dead; overriding: $RESOLVE_LOCK"
-        rm -f "$RESOLVE_LOCK"
-    else
-        echo "⛔ another oss:resolve is active on branch '$_BRANCH' (lock: $RESOLVE_LOCK) — aborting."
-        echo "  Wait for it to finish, or remove the lock if you know that run died."
-        exit 1
-    fi
+    echo "⛔ another oss:resolve is active on branch '$_BRANCH' (lock: $RESOLVE_LOCK) — aborting."
+    echo "  Healer kept it: holder PID is alive and the lock is under the age cap. Wait, or delete it if you know that run died."
+    exit 1
 fi
-echo "$$ $(date -u +%FT%TZ)" > "$RESOLVE_LOCK"  # timeout: 3000
+echo "$PPID $(date -u +%FT%TZ)" > "$RESOLVE_LOCK"  # PPID not $$ — $$ is a fresh shell per Bash call, dead before the next one reads it  # timeout: 3000
 git rev-parse HEAD > "${TMPDIR:-/tmp}/resolve-base-sha-${CSID}" 2>/dev/null || true  # HEAD fingerprint  # timeout: 3000
 ```
 
-The lock is released in Phase 3's cleanup block (and the 30-min staleness override reclaims it if a run crashes before then).
+Lock released in Phase 3's cleanup block. Crash before that leaks it — by design: no `trap` can release it, since trap disposition is per-process and dies with the Bash call that registers it (`research:fortify` documents the same constraint). The healer is the recovery path: it reclaims a lock whose holder PID is provably dead immediately, and any lock past the 30-min age cap regardless. It sweeps **every** `oss-resolve-*.lock` in the common dir, not just this branch's — a leak on a branch never resolved again is otherwise never revisited and survives indefinitely (observed: 27 days).
+
+**Reclaiming here is automatic but never silent** — print the healer's output verbatim whenever it reclaimed anything, naming each lock and why (dead holder / age). No approval gate: a lock file with a provably dead holder carries no user work, and this replaces an override that already fired unattended at 30 minutes. Worktree healing is the opposite case and does gate on approval — see `worktree-isolation.md`.
 
 `change` → `IMPL_AGENT` routing table — drives Phase 2 specialist grouping **unconditionally** (not gated behind `CODEX_AVAILABLE`; Codex only ever handles items via the C1 medium-effort shortcut below, never as a Phase 2 specialist group). Keep in sync with `_shared/review-section-taxonomy.md`'s resolve `change` column:
 
