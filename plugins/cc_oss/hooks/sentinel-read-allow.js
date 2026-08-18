@@ -31,8 +31,11 @@
 //        their bytes literal (content between `"` is data), and both forbid `$(`,
 //        backticks, and backslashes and confine `${...}` to plain parameter
 //        expansions — so no nested command substitution can hide in a span.
-//     2. No `..` traversal anywhere; after removing safe spans, NO other `$(`,
-//        backtick, `<(`, `>(`, or heredoc remains.
+//     2. No `..` traversal anywhere — matched as a path COMPONENT (TRAVERSAL),
+//        not as a bare substring, so `...` and `v1.2..v1.3` stop counting as
+//        traversal while `../x`, `/../`, `a/..`, bare `..` and `${V:-..}` all
+//        still reject. After removing safe spans, NO other `$(`, backtick,
+//        `<(`, `>(`, or heredoc remains.
 //     3. Quoted regions are masked by a state-machine scanner (handles \" and
 //        '...'), so quote tricks cannot smuggle a separator past segmentation.
 //     4. No loader/lookup-poisoning assignment (PATH, LD_PRELOAD, IFS≠empty, …).
@@ -41,11 +44,15 @@
 //        remaining `>` rejects. Input `<` is allowed — the `read < file` idiom
 //        needs it and it is no more capable than a whitelisted token reading the
 //        same path as an argument (`Bash(cat:*)` already reads any file).
-//     6. Every segment (split on newline ; & | && ||), after stripping leading
-//        VAR=... assignments, starts with a strictly non-writing whitelisted
-//        token (see SAFE_TOKENS — find/mkdir/touch/sort/jq/date deliberately
-//        excluded because segment validation does not inspect arguments).
-//        Guarded CLIs (git, gh, rm, curl, ...) are NOT whitelisted → passthrough.
+//     6. Every segment (split on newline ; & | && ||), after skipping whole-line
+//        comments and stripping leading VAR=... assignments, starts with a
+//        strictly non-writing whitelisted token (see SAFE_TOKENS —
+//        find/mkdir/touch/sort/jq/date deliberately excluded because segment
+//        validation does not inspect arguments). Guarded CLIs (git, gh, rm,
+//        curl, ...) are NOT whitelisted → passthrough. The comment skip cannot
+//        hide a live command: segmentation splits on `;|&` as well as newline,
+//        so `# note && rm x` still validates `rm x`, and a `#` inside quotes is
+//        already masked to `Q` before this runs.
 //
 //   False negatives (odd-but-safe commands passing through to a prompt) are
 //   acceptable; false positives (allowing a mutation, a write, a spawned
@@ -53,8 +60,19 @@
 //   passthrough. ACCEPTED residual: a whitelisted read-only token can disclose
 //   an arbitrary readable file it is given as an operand (incl. via an unquoted
 //   `${VAR}` that word-splits) — non-escalating, since `Bash(cat:*)` et al.
-//   already read any file promptless. Reviewed adversarially (Codex) 2026-07-22,
-//   two passes; all confirmed bypasses closed.
+//   already read any file promptless. The TRAVERSAL guard is defence-in-depth
+//   over that residual, not the control itself, and it only sees LITERAL text:
+//   a `..` the shell materialises at runtime is invisible to it — `$'\056\056'`
+//   (ANSI-C quoting), `.?` / `.[.]` (globs that match the `..` entry), `."."`
+//   (quote-split), `D=.; $D$D`. All five are allowed, all five were equally
+//   allowed by the previous `includes("..")` form (verified against HEAD), and
+//   all five land inside the read-only residual above. Closing them needs shell
+//   expansion semantics this hook deliberately does not implement.
+//   Reviewed adversarially (Codex) 2026-07-22, two passes; all confirmed
+//   bypasses closed. Re-reviewed 2026-08-18 for the comment-skip and TRAVERSAL
+//   changes; the traversal PoCs found then (`cat {a,../etc/passwd}` et al.,
+//   from an allow-list neighbour class) are closed and pinned by regression
+//   tests.
 //
 // EXIT CODES
 //   0  always — passthrough (no output) or allow (JSON to stdout)
@@ -133,7 +151,10 @@ const SAFE_TOKENS = new Set([
   "dirname",
   "cut",
   "tr",
-  "uniq",
+  // `uniq` deliberately EXCLUDED: its second positional operand is an OUTPUT
+  // file — `uniq /dev/null victim` truncates `victim` to zero bytes. Same class
+  // as `sort -o`, but positional rather than a flag, so it survived the original
+  // sweep. Segment validation never inspects operands, so it cannot be admitted.
   "test",
   "[",
   "[[",
@@ -156,10 +177,15 @@ function maskQuotes(s) {
     const c = s[i];
     if (state === "plain") {
       if (c === "\\") {
-        out += "QQ";
+        // Escaped char = data, EXCEPT the newline, which must survive as a
+        // newline. Eating it merged a `# comment \` line with the line after,
+        // so the comment skip swallowed a live payload the shell still ran
+        // (bash ends a comment at the physical newline; `\` does not continue
+        // one). That was arbitrary command execution behind a `#`.
+        out += s[i + 1] === "\n" ? "Q\n" : "QQ";
         i++;
         continue;
-      } // escaped char = data
+      }
       if (c === "'") {
         state = "single";
         out += "Q";
@@ -179,7 +205,7 @@ function maskQuotes(s) {
     } else {
       // double
       if (c === "\\") {
-        out += "QQ";
+        out += s[i + 1] === "\n" ? "Q\n" : "QQ";
         i++;
         continue;
       }
@@ -199,6 +225,10 @@ function segmentsAreReadOnly(masked) {
   for (const seg of segments) {
     const t = seg.trim();
     if (!t) continue;
+    // Whole-line comment: inert, and every blueprint block carries `# timeout: N`.
+    // Safe in both directions — quoted `#` is already masked to Q, and segments
+    // split on `;|&` too, so `# x && rm y` still validates `rm y` as if it were live.
+    if (t.startsWith("#")) continue;
     // Strip leading VAR=... assignments (covers `IFS= read`, `RUN_DIR=SREAD`).
     const rest = t.replace(/^(?:[A-Za-z_]\w*=\S*\s*)+/, "");
     if (!rest) continue; // pure assignment segment
@@ -213,38 +243,154 @@ function segmentsAreReadOnly(masked) {
 // "safe" (e.g. `export PATH=/tmp/evil:$PATH; V=$(cat …)` would run a planted
 // `cat`). `IFS=` is allowed ONLY when empty (the `IFS= read` idiom); a non-empty
 // IFS assignment is rejected.
-const SENSITIVE_ASSIGN =
-  /(?:^|[\s;|&(){])(?:export\s+|declare\s+\S+\s+|typeset\s+\S+\s+)?(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|GLOBIGNORE|PS4|CDPATH|BASH_FUNC)=/;
-const NONEMPTY_IFS = /(?:^|[\s;|&(])(?:export\s+)?IFS=[^\s;|&]/;
+// `..` is traversal by DEFAULT; it is exempt when EITHER immediate neighbour is a
+// word character or a dot — `file..txt`, `v1.2..v1.3`, `...` ellipsis, and also
+// one-sided shapes like `a../x`. Either-side, not both-sides: requiring both would
+// re-reject `...`. Written as a default-reject because
+// the inverse — enumerating the separators a traversal may open at — silently
+// misses every character left out of the class: `,` (brace expansion:
+// `cat {a,../etc/passwd}`), `(`, `[` all escaped an earlier allow-list form.
+const TRAVERSAL = /(?<![.\w])\.\.(?![.\w])/;
+
+// `\+?=` catches the append form (`PATH+=:/evil`). Tested against BOTH the raw
+// command and a quote/backslash-stripped copy, because bash removes those from an
+// assignment word before the builtin sees it: `export "PATH"=/evil:$PATH` and
+// `export \PATH=…` both really do set PATH, yet neither matched the raw pattern —
+// a planted `cat` on the hijacked PATH then runs as a "read-only" whitelisted
+// token. Stripping can only over-reject (a quoted literal `PATH=` inside a string),
+// which is the safe direction.
+// `BASH_FUNC` is deliberately absent: the real exported-function form is
+// `BASH_FUNC_name%%=`, so the character after the prefix is `_`, never `=` — the
+// entry could never match and only gave false coverage. `IFS` is handled by
+// NONEMPTY_IFS instead, since the blueprint idiom itself opens with `IFS= read`.
+const SENSITIVE_VARS =
+  "PATH|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|DYLD_FALLBACK_LIBRARY_PATH|DYLD_FRAMEWORK_PATH|DYLD_FALLBACK_FRAMEWORK_PATH|DYLD_VERSIONED_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|GLOBIGNORE|PS4|CDPATH|PROMPT_COMMAND";
+const SENSITIVE_ASSIGN = new RegExp(
+  // `(?:\+|:)?=` covers three operators, not one: plain `NAME=`, the append form
+  // `NAME+=`, and bash's parameter-expansion assignment `${NAME:=word}` — the last
+  // performs a real assignment (and keeps an existing export attribute, so a child
+  // process inherits it) while never producing the literal `NAME=` the plain
+  // pattern looks for.
+  "(?:^|[\\s;|&(){])(?:export\\s+|declare\\s+\\S+\\s+|typeset\\s+\\S+\\s+)?(?:" + SENSITIVE_VARS + ")(?:\\+|:)?=",
+);
+
+// Assignment syntax is only ONE route to setting a variable, and gating it alone
+// is not enough — bash offers three more that never produce a literal `NAME=` for
+// the pattern above to see. Each was a confirmed PATH hijack to arbitrary code
+// execution (a planted binary ran as a whitelisted "read-only" token):
+//   printf -v PATH …        the printf builtin's -v flag writes a shell variable
+//   read PATH < file        `read` writes its target name; input `<` is permitted
+//   export PA${X}H=…        export expands its argument, so no literal PATH= exists
+// The control therefore has to be "can this segment write a shell variable at all",
+// not "does the text contain a sensitive assignment".
+const PRINTF_ASSIGN = /(?:^|[\s;|&(){])printf\s[^\n;|&]*-v\b/;
+const READ_TARGET = new RegExp("(?:^|[\\s;|&(){])read\\s+(?:-\\S+\\s+)*(?:" + SENSITIVE_VARS + "|IFS)(?:\\s|$)");
+// An `export` whose NAME half carries an expansion cannot be read literally, so the
+// name it actually assigns is unknowable here. Blueprint idioms always name the
+// variable outright (`export CSID="${…}"` — expansion in the VALUE only).
+const EXPORT_COMPUTED_NAME = /(?:^|[\s;|&(){])export\s+[^\s=]*[${`]/;
+// `{` in the boundary class and `:?=` for the same reasons as SENSITIVE_ASSIGN —
+// without them `${IFS=x}` and `${IFS:=x}` both slipped, the first because the
+// character before `IFS` is `{`.
+const NONEMPTY_IFS = /(?:^|[\s;|&({])(?:export\s+)?IFS:?=[^\s;|&]/;
+
+/**
+ * Return `cmd` with shell comments removed — an unquoted `#` in word-start
+ * position through to end of line.
+ *
+ * Used ONLY to decide whether a blueprint anchor is present. Skipping comment
+ * segments during validation (see segmentsAreReadOnly) otherwise lets a comment
+ * SUPPLY the anchor: `# IFS= read -r X < "${TMPDIR:-/tmp}/y"` followed by a live
+ * `cat /etc/passwd` would satisfy READ_FORM from text the shell never runs. Every
+ * other check keeps operating on the full command, so a comment can only ever
+ * cost an allow, never grant one.
+ */
+function stripComments(cmd) {
+  const masked = maskQuotes(cmd);
+  let out = "";
+  let i = 0;
+  while (i < cmd.length) {
+    if (masked[i] === "#" && (i === 0 || /[\s;|&(]/.test(masked[i - 1]))) {
+      while (i < cmd.length && masked[i] !== "\n") i++;
+      continue;
+    }
+    out += cmd[i];
+    i++;
+  }
+  return out;
+}
 
 /** Decide whether `cmd` is provably just blueprint sentinel-reads + read-only follow-ups. */
 function isAllowable(cmd) {
   if (cmd.includes("`")) return false;
+  // ANSI-C quoting desyncs maskQuotes: bash unescapes `\'` INSIDE `$'…'`, so the
+  // string ends at a different quote than the masker thinks, and the toggle count
+  // drifts. `echo $'\''; git push --force \'` masked the `;` and the push into one
+  // `echo` segment while bash ran two commands. No blueprint idiom uses `$'…'`,
+  // so fail closed rather than teach the masker a second quoting dialect.
+  if (cmd.includes("$'")) return false;
   // Path traversal has no place in a blueprint sentinel path; reject anywhere.
-  if (cmd.includes("..")) return false;
+  // Anchored to a real path COMPONENT, not any two dots: a bare `..` substring
+  // also fires on `...` ellipsis and `v1.2..v1.3`, which are not traversal. `..`
+  // must open at a separator/quote/start and close at one/end to count.
+  // Also test a backslash-collapsed copy: `cat \.\./etc/passwd` carries no literal
+  // `..` bytes, yet the shell strips the no-op escapes and resolves the parent dir.
+  // Detection-only — the original string is what gets executed, so this can only
+  // add rejections.
+  if (TRAVERSAL.test(cmd) || TRAVERSAL.test(cmd.replace(/\\(.)/g, "$1"))) return false;
   // Loader / lookup-poisoning assignments defeat the read-only-token guarantee.
-  if (SENSITIVE_ASSIGN.test(cmd) || NONEMPTY_IFS.test(cmd)) return false;
+  // NONEMPTY_IFS stays on the raw text only — stripping quotes would turn the
+  // legitimate empty `IFS=""` into a bare `IFS=` and stop rejecting the non-empty
+  // forms it exists to catch.
+  const unquoted = cmd.replace(/["'\\]/g, "");
+  // `""`/`''` collapse to a space first, so a deliberately EMPTY assignment stays
+  // empty in the stripped copy. Without that, the blueprint's own `IFS="" read`
+  // would read as a non-empty IFS; with it, `export "IFS"=,` is still caught.
+  const unquotedKeepEmpty = cmd.replace(/""|''/g, " ").replace(/["'\\]/g, "");
+  if (SENSITIVE_ASSIGN.test(cmd) || SENSITIVE_ASSIGN.test(unquoted)) return false;
+  if (NONEMPTY_IFS.test(cmd) || NONEMPTY_IFS.test(unquotedKeepEmpty)) return false;
+  // Non-assignment routes to setting a variable — see the block comment above.
+  if (PRINTF_ASSIGN.test(cmd) || READ_TARGET.test(cmd) || READ_TARGET.test(unquoted)) return false;
+  if (EXPORT_COMPUTED_NAME.test(cmd)) return false;
   // Replace safe substitution spans (sentinel reads / date stamps); require at
   // least one blueprint anchor: a safe substitution OR the rewritten read-form
   // sentinel idiom. Without an anchor (e.g. plain `ls -la`), passthrough — this
   // hook only fronts for blueprint idioms the prefix matcher cannot express.
-  let spans = 0;
-  const remaining = cmd.replace(SAFE_SUBST, () => {
-    spans++;
+  const remaining = cmd.replace(SAFE_SUBST, () => "SREAD");
+  // The anchor must come from text the shell actually runs — see stripComments.
+  // Everything below still inspects the FULL command, so commented-out text can
+  // only add rejections, never remove them.
+  const live = stripComments(cmd);
+  let liveSpans = 0;
+  live.replace(SAFE_SUBST, () => {
+    liveSpans++;
     return "SREAD";
   });
-  if (spans === 0 && !READ_FORM.test(cmd)) return false;
+  if (liveSpans === 0 && !READ_FORM.test(live)) return false;
   // Any other substitution / process substitution / heredoc → not our idiom.
   if (remaining.includes("$(") || remaining.includes("<(") || remaining.includes(">(")) return false;
   if (remaining.includes("<<")) return false;
   const masked = maskQuotes(remaining);
   if (masked.includes("$(")) return false; // unterminated-quote marker
+  // Bare parens, outside quotes and after safe substitutions became SREAD. A POSIX
+  // function definition with a SUBSHELL body — `cat () ( touch x ); cat` — carries no
+  // top-level separator inside the body, so segmentation sees one segment whose first
+  // token is the safe name `cat` and never vets the body at all. The following `cat`
+  // then runs it: arbitrary command execution. The `$(`/`<(`/`>(` guards above all
+  // require a sigil and so miss bare parens entirely. No blueprint idiom uses them.
+  // Tested on comment-stripped text: prose parens in a `# Reload X (Check 41)` line
+  // are inert, and rejecting those alone cost 14 real blueprint blocks.
+  const liveMasked = maskQuotes(stripComments(remaining));
+  if (liveMasked.includes("(") || liveMasked.includes(")")) return false;
   // Strip stderr-silence / stdout-to-null forms, then reject any remaining WRITE
   // redirect (`>`, `>>`, `>|`, fd-dup `N>&M`). Input `<` is intentionally allowed:
   // the `read` blueprint form (`IFS= read -r VAR < "$F"`) needs it, and it grants
   // nothing beyond what a whitelisted read-only token already does with a path
   // argument (`Bash(cat:*)` etc. already read any file without a prompt).
-  const noRedirects = masked.replace(/(?:\d*>\/dev\/null|\d*>&\d+|2>&1)/g, "");
+  // Each stripped form must END at a token boundary. Without the lookaheads
+  // `>/dev/nullpwned` had its `>/dev/null` prefix consumed, leaving no `>` for
+  // the check below — so a real file write was allowed. Same class for `N>&M`.
+  const noRedirects = masked.replace(/(?:\d*>\/dev\/null(?![^\s;|&])|\d*>&\d+(?![^\s;|&])|2>&1(?![^\s;|&]))/g, "");
   if (noRedirects.includes(">")) return false;
   return segmentsAreReadOnly(noRedirects);
 }

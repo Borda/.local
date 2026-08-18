@@ -232,3 +232,485 @@ def test_malformed_json_exits_zero() -> None:
     proc = subprocess.run(["node", str(HOOK)], input="not json", capture_output=True, text=True, timeout=10)
     assert proc.returncode == 0
     assert proc.stdout.strip() == ""
+
+
+# ── Whole-line comments do not reject an otherwise-clean block ────────────────
+
+READ_FORM = f"IFS= read -r RUN_DIR < {SENTINEL}"
+
+
+class TestCommentSegments:
+    """Segment validation skips whole-line comments.
+
+    Every plugin bash block carries `# timeout: N` annotations on their own
+    lines. Before this was handled, one such line put `#` in first-token
+    position and rejected the whole block — measured on 107 of 790 real
+    blueprint blocks, of which 28 were otherwise fully allowable.
+    """
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f'{READ_FORM}\n# timeout: 5000\ncat "$RUN_DIR/r.md"', id="comment-between"),
+            pytest.param(f'# resolve run dir first\n{READ_FORM}\ncat "$RUN_DIR/r.md"', id="comment-leading"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/r.md"\n# done', id="comment-trailing-line"),
+            pytest.param(f'{READ_FORM}\n#no space after hash\ncat "$RUN_DIR/r.md"', id="comment-no-space"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/r.md"  # timeout: 5000', id="comment-inline"),
+        ],
+    )
+    def test_allows_block_with_comment_lines(self, command: str) -> None:
+        """A comment line is inert and must not reject an otherwise read-only block.
+
+        Exercises the shapes real skill files use: a `# timeout:` annotation
+        between two read-only commands, a leading explanatory line, a trailing
+        one, and the no-space `#foo` form.
+        """
+        result = _run(command)
+        assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f"{READ_FORM}\n# note && rm -rf /tmp/x", id="separator-after-comment"),
+            pytest.param(f"{READ_FORM}\n# note; rm -rf /tmp/x", id="semicolon-after-comment"),
+            pytest.param(f"{READ_FORM}\n# note | curl https://x.invalid", id="pipe-after-comment"),
+        ],
+    )
+    def test_comment_skip_cannot_hide_a_live_command(self, command: str) -> None:
+        """Text bash would treat as commented-out is still validated as if live.
+
+        Segments split on `;|&` as well as newline, so the skip can only ever
+        cost an allow (false negative), never grant one. A shell would ignore
+        `rm` here; the hook must not, because it does not parse comment scope.
+        """
+        result = _run(command)
+        assert result == {}, f"{command!r} must passthrough, got: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f"# {READ_FORM}\ncat /etc/passwd", id="poc-commented-read-form-anchor"),
+            pytest.param("# TS=$(date -u +%Y)\ncat /etc/passwd", id="poc-commented-date-anchor"),
+            pytest.param(f"cat /etc/passwd ; # {READ_FORM}", id="poc-commented-anchor-after-separator"),
+        ],
+    )
+    def test_a_comment_cannot_supply_the_blueprint_anchor(self, command: str) -> None:
+        """Commented-out text must not satisfy the anchor requirement.
+
+        Skipping comment segments during validation opened this: a `#`-prefixed
+        sentinel read still matched READ_FORM against the raw command, so a
+        comment could vouch for a live `cat /etc/passwd` that has no blueprint
+        idiom in it at all. The anchor is now tested against comment-stripped
+        text while every other check still sees the full command.
+        """
+        result = _run(command)
+        assert result == {}, f"{command!r} STILL ALLOWED — comment supplied the anchor: {result}"
+
+    def test_quoted_hash_is_not_treated_as_a_comment(self) -> None:
+        """A `#` inside quotes is masked before the comment check and stays data.
+
+        Guards the inverse mistake: treating `grep "#hdr"` as a comment line
+        would skip validating a segment that really does run a command.
+        """
+        result = _run(f'{READ_FORM}\ngrep -n "#hdr" "$RUN_DIR/r.md"')
+        assert _is_allowed(result)
+
+
+# ── Adversarial-review regressions, 2026-08-18 ───────────────────────────────
+
+
+class TestReviewedBypasses:
+    """PoCs from the 2026-08-18 adversarial review (Codex + challenger).
+
+    Each was observed ALLOWED and, for the execution-class ones, confirmed to
+    actually run under `bash -c`. They are the reason the comment skip and the
+    traversal rewrite are safe to ship.
+    """
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            pytest.param("rm -rf /tmp/pwned", id="rm"),
+            pytest.param("sh -c 'id; touch /tmp/m'", id="nested-shell"),
+            pytest.param("git push --force", id="guarded-cli"),
+            pytest.param("python3 -c 'import os'", id="interpreter"),
+            pytest.param("X=1 touch /tmp/m", id="leading-assignment"),
+        ],
+    )
+    def test_escaped_newline_cannot_extend_a_comment_over_a_payload(self, payload: str) -> None:
+        """A `\\` ending a comment line must not swallow the next line.
+
+        `maskQuotes` treated backslash-newline as a line continuation and ate the
+        newline, merging the payload into the comment segment — which the comment
+        skip then skipped entirely. bash does NOT continue comments that way: it
+        ends the comment at the physical newline and runs the next line. Hook
+        allowed, shell executed: arbitrary command execution behind a `#`.
+        """
+        result = _run(f"{READ_FORM}\n# note \\\n{payload}")
+        assert result == {}, f"payload {payload!r} STILL ALLOWED behind a comment: {result}"
+
+    def test_chained_comment_continuations_cannot_hide_a_payload(self) -> None:
+        """Several stacked `# … \\` lines must not hide the eventual payload either."""
+        result = _run(f"{READ_FORM}\n# a \\\n# b \\\ntouch /tmp/m")
+        assert result == {}, f"chained continuation STILL ALLOWED: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("echo $'\\''; git push --force \\'", id="separator-hidden-by-desync"),
+            pytest.param("cat $'\\056\\056'/etc/passwd", id="octal-dots"),
+            pytest.param("cat $'\\x2e\\x2e'/etc/passwd", id="hex-dots"),
+        ],
+    )
+    def test_ansi_c_quoting_is_refused_outright(self, command: str) -> None:
+        """`$'…'` desyncs the quote masker, so it is rejected rather than parsed.
+
+        bash unescapes `\\'` inside `$'…'`, ending the string at a different quote
+        than the masker believes. The toggle count drifts, a `;` gets masked away,
+        and the hook sees one `echo` segment where bash runs two commands. No
+        blueprint idiom uses ANSI-C quoting, so it fails closed.
+        """
+        result = _run(f"{READ_FORM}\n{command}")
+        assert result == {}, f"{command!r} STILL ALLOWED — ANSI-C desync: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("echo $\\\n'\\''; git push --force \\'", id="split-across-continuation"),
+            pytest.param("cat $\\\n'\\056\\056'/etc/passwd", id="split-then-octal-dots"),
+        ],
+    )
+    def test_ansi_c_split_across_a_line_continuation_rejects(self, command: str) -> None:
+        """ANSI-C quoting assembled across a `\\`+newline must not reach the desync.
+
+        bash joins a line continuation before tokenizing, so `$\\`+newline+`'x'`
+        really does parse as `$'x'` (verified: it printed `A` for `\\x41`) — and the
+        raw command never contains the literal `$'` the guard tests for. It
+        rejects anyway, but only as a side effect of the escaped-newline fix
+        forcing a segment split at the join point. Pinned here because nothing
+        else would catch it if that fix were ever relaxed.
+        """
+        result = _run(f"{READ_FORM}\n{command}")
+        assert result == {}, f"{command!r} STILL ALLOWED — ANSI-C via continuation: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("cat \\.\\./etc/passwd", id="both-dots-escaped"),
+            pytest.param("cat .\\./etc/passwd", id="second-dot-escaped"),
+        ],
+    )
+    def test_backslash_escaped_dots_are_still_traversal(self, command: str) -> None:
+        """`\\.\\.` carries no literal `..` bytes but the shell resolves it as one.
+
+        An unquoted `\\.` is a no-op escape: bash drops the backslash and the path
+        becomes `..`. Confirmed against a real shell reading a file one directory
+        up. The guard therefore also tests a backslash-collapsed copy.
+        """
+        result = _run(f"{READ_FORM}\n{command}")
+        assert result == {}, f"{command!r} STILL ALLOWED — escaped traversal: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("uniq /etc/hosts /tmp/pwned", id="uniq-positional-output-file"),
+            pytest.param("uniq /dev/null /tmp/victim.txt", id="uniq-truncates-target"),
+        ],
+    )
+    def test_uniq_is_not_a_read_only_token(self, command: str) -> None:
+        """`uniq IN OUT` writes OUT — it cannot be a whitelisted segment head.
+
+        Verified against a real shell: `uniq /dev/null victim` truncated a
+        two-line file to zero bytes. Same class the list already excludes
+        `sort -o` for, but the output file is positional rather than a flag, so
+        it survived the original sweep. Segment validation never reads operands.
+        """
+        result = _run(f"{READ_FORM}\n{command}")
+        assert result == {}, f"{command!r} STILL ALLOWED — writes its second operand: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param('export "PATH"=/attacker/bin:$PATH', id="quoted-var-name"),
+            pytest.param("export \\PATH=/attacker/bin:$PATH", id="backslash-escaped-name"),
+            pytest.param("export PATH+=:/attacker/bin", id="append-operator"),
+            pytest.param('export "GLOBIGNORE"=x', id="quoted-non-path-sensitive-var"),
+            pytest.param('export PA"TH"=/evil', id="quote-split-var-name"),
+        ],
+    )
+    def test_quote_and_append_forms_of_sensitive_assignment_reject(self, command: str) -> None:
+        """Quoting or escaping a sensitive variable name must not evade the guard.
+
+        bash strips quotes and backslashes from an assignment word before the
+        builtin sees it, so `export "PATH"=…` really does set PATH — and a
+        planted binary on the hijacked PATH then runs as a "read-only"
+        whitelisted token. Confirmed end to end: a planted `cat` printed
+        attacker output. The guard now also tests a quote-stripped copy.
+        """
+        result = _run(f"{READ_FORM}\n{command}\ncat /etc/hosts")
+        assert result == {}, f"{command!r} STILL ALLOWED — PATH hijack: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("cat () ( touch /tmp/pwned ); cat", id="function-def-subshell-body"),
+            pytest.param('cat () ( sh -c "echo X > ./f" ); cat', id="function-def-nested-shell"),
+            pytest.param("ls () ( touch /tmp/pwned ); ls", id="function-def-shadowing-ls"),
+            pytest.param("( touch /tmp/pwned )", id="bare-subshell"),
+        ],
+    )
+    def test_bare_parens_are_rejected(self, command: str) -> None:
+        """A function definition with a subshell body must not be allowed.
+
+        `cat () ( touch x ); cat` contains no top-level separator inside the
+        body, so segmentation sees one segment whose first token is the safe
+        name `cat` and never vets the body; the following `cat` then runs it.
+        Confirmed creating a marker file under a real shell. The `$(`/`<(`/`>(`
+        guards all require a sigil, so bare parens slipped past every one.
+        """
+        result = _run(f"{READ_FORM}\n{command}")
+        assert result == {}, f"{command!r} STILL ALLOWED — arbitrary execution: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param('printf -v PATH /attacker/bin:%s "$PATH"', id="printf-v-path"),
+            pytest.param("printf -v BASH_ENV /tmp/e", id="printf-v-bash-env"),
+            pytest.param("IFS= read -r PATH < /tmp/attacker", id="read-into-path"),
+            pytest.param("IFS= read -r LD_PRELOAD < /tmp/x", id="read-into-ld-preload"),
+            pytest.param("X=T\nexport PA${X}H=/attacker/bin:$PATH", id="export-computed-name"),
+            pytest.param('export "IFS"=,', id="quoted-ifs"),
+            pytest.param("export \\IFS=,", id="escaped-ifs"),
+            pytest.param("export LD_AUDIT=/tmp/e.so", id="ld-audit"),
+            pytest.param("export DYLD_FRAMEWORK_PATH=/tmp/e", id="dyld-framework-path"),
+            pytest.param("export PROMPT_COMMAND=/tmp/e", id="prompt-command"),
+            pytest.param("echo ${DYLD_INSERT_LIBRARIES:=/tmp/evil.dylib}", id="colon-equals-expansion"),
+            pytest.param("echo ${LD_PRELOAD:=/tmp/evil.so}", id="colon-equals-ld-preload"),
+            pytest.param("echo ${IFS:=X}", id="colon-equals-ifs"),
+            pytest.param("echo ${IFS=X}", id="brace-boundary-ifs"),
+        ],
+    )
+    def test_non_assignment_routes_to_setting_a_variable_reject(self, command: str) -> None:
+        """Gating `NAME=` syntax is not enough — every route that SETS the variable rejects.
+
+        bash offers three ways to set a variable that never produce a literal
+        `NAME=` for a pattern to see: `printf -v NAME`, `read NAME`, and `export`
+        with an expansion in the name half (expansion happens after the text is
+        inspected). Each was confirmed to hijack PATH end to end, with a planted
+        binary running as a whitelisted "read-only" token.
+        """
+        result = _run(f"{READ_FORM}\n{command}\ncat /etc/hosts")
+        assert result == {}, f"{command!r} STILL ALLOWED — sets a sensitive variable: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param("printf '%s\\n' \"$RUN_DIR\"", id="printf-without-v"),
+            pytest.param('export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"', id="export-literal-name"),
+            pytest.param('IFS= read -r OTHER < "${TMPDIR:-/tmp}/y-${CSID}"', id="read-into-ordinary-name"),
+        ],
+    )
+    def test_variable_write_guards_spare_the_blueprint_idioms(self, command: str) -> None:
+        """The write guards must not catch the idioms the hook exists to bless.
+
+        `export CSID="${…}"` carries an expansion in the VALUE, not the name;
+        `read` into an ordinary variable is the core sentinel form; `printf`
+        without `-v` writes to stdout only.
+        """
+        result = _run(f"{READ_FORM}\n{command}")
+        assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
+
+    def test_genuine_line_continuation_still_allows(self) -> None:
+        """A `\\` continuation outside a comment must keep working.
+
+        The fix only changes what happens to the newline; a real continuation
+        joining two read-only segments is still the blueprint idiom it was.
+        """
+        result = _run(f'{READ_FORM}\ngrep -n "H1" "$RUN_DIR/r.md" \\\n| head -5')
+        assert _is_allowed(result), f"legit continuation should allow, got: {result}"
+
+
+# ── Stripped redirect forms must end at a token boundary ─────────────────────
+
+
+class TestRedirectStripping:
+    """Only genuine stderr-silencing / stdout-to-null forms are stripped.
+
+    The stripper removes those forms and then rejects any `>` still standing.
+    A prefix match let `>/dev/nullpwned` lose its `>/dev/null` to the stripper,
+    leaving no `>` to reject — so a real file write was allowed. The forms are
+    now anchored to a token boundary.
+    """
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f"{READ_FORM}\necho pwned >/dev/nullpwned", id="poc-suffix-past-dev-null"),
+            pytest.param(f"{READ_FORM}\necho hi 1>/dev/nullx", id="poc-fd-prefixed-suffix"),
+            pytest.param(f"{READ_FORM}\necho hi >/dev/null2", id="poc-digit-suffix"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/r.md" 2>&1x', id="poc-fd-dup-suffix"),
+        ],
+    )
+    def test_write_through_a_dev_null_prefix_is_rejected(self, command: str) -> None:
+        """A write target that merely starts with `/dev/null` must not be stripped.
+
+        `echo pwned >/dev/nullpwned` writes a real file; the hook's own contract
+        forbids allowing any write, so this has to passthrough to a prompt.
+        """
+        result = _run(command)
+        assert result == {}, f"{command!r} STILL ALLOWED — write redirect: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/r.md" 2>/dev/null', id="stderr-silence"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/r.md" >/dev/null', id="stdout-to-null"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/r.md" 2>&1 | head -5', id="fd-dup-then-pipe"),
+        ],
+    )
+    def test_genuine_silencing_forms_still_allow(self, command: str) -> None:
+        """Anchoring the stripped forms must not break the idioms skills actually use.
+
+        Every blueprint sentinel read carries `2>/dev/null`; if the anchoring
+        were too strict these would start prompting again.
+        """
+        result = _run(command)
+        assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
+
+
+# ── `..` is matched as a path component, not as any two dots ──────────────────
+
+
+class TestTraversalMatching:
+    """Traversal rejection keys on a real path component.
+
+    The check previously tested `cmd.includes("..")`, which also fired on `...`
+    ellipsis and version ranges like `v1.2..v1.3` — neither is traversal.
+    """
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/a...b.md"', id="ellipsis-in-filename"),
+            pytest.param(f'{READ_FORM}\necho "range v1.2..v1.3"', id="version-range"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/file..txt"', id="double-dot-in-filename"),
+        ],
+    )
+    def test_allows_non_traversal_double_dots(self, command: str) -> None:
+        """Two dots that are not a path component must not read as traversal."""
+        result = _run(command)
+        assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param('IFS= read -r V < "${TMPDIR:-/tmp}/../../etc/passwd"', id="traversal-in-sentinel"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/../secrets.md"', id="traversal-mid-path"),
+            pytest.param(f'{READ_FORM}\ncat "../etc/passwd"', id="traversal-leading"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/.."', id="traversal-trailing"),
+            pytest.param(f"{READ_FORM}\ncat ..", id="traversal-bare-arg"),
+            pytest.param(f"{READ_FORM}\ncat ${{V:-..}}", id="traversal-via-default"),
+        ],
+    )
+    def test_rejects_real_traversal(self, command: str) -> None:
+        """Every genuine `..` path component still rejects.
+
+        Covers the forms an escape would actually take: inside the sentinel
+        path, mid-path, leading, trailing, as a bare operand, and smuggled
+        through a parameter-expansion default.
+        """
+        result = _run(command)
+        assert result == {}, f"{command!r} must passthrough, got: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f"{READ_FORM}\ncat {{a,../etc/passwd}}", id="poc-brace-expansion-comma"),
+            pytest.param(f"{READ_FORM}\ncat {{a,..}}", id="poc-brace-comma-trailing"),
+            pytest.param(f"{READ_FORM}\ncat a,../etc/passwd", id="poc-bare-comma"),
+            pytest.param(f"{READ_FORM}\ncat (..)", id="poc-paren-neighbour"),
+            pytest.param(f"{READ_FORM}\ncat [..]/x", id="poc-bracket-neighbour"),
+        ],
+    )
+    def test_traversal_poc_bypasses_are_closed(self, command: str) -> None:
+        """Separators absent from an allow-list neighbour class must not admit traversal.
+
+        A first attempt at this check enumerated the characters a traversal may
+        open at, which let every character omitted from that class through —
+        `cat {a,../etc/passwd}` brace-expands to read `../etc/passwd` and was
+        allowed. The check is now default-reject, exempting only a `..` flanked
+        by word characters, so an unlisted separator fails closed instead.
+        """
+        result = _run(command)
+        assert result == {}, f"{command!r} STILL ALLOWED — traversal bypass: {result}"
+
+
+# ── Verdicts are invariant under runtime value substitution ───────────────────
+
+
+class TestRuntimeInvariance:
+    """The same shape gets the same verdict whatever the runtime values are.
+
+    This is the hook's entire justification for existing alongside
+    `blueprint-allow.js`: provenance matching covers far more committed text but
+    collapses to zero the moment any value differs between runs, while this hook
+    keys on shape and does not.
+    """
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(
+                'IFS= read -r WORK_DIR < "${TMPDIR:-/tmp}/develop-fix-run-dir-${CSID}"\n'
+                'grep -n "CRITICAL" "$WORK_DIR/out.md" | head -200',
+                id="renamed-sentinel-and-var",
+            ),
+            pytest.param(
+                'IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-$CSID"\ncat "$RUN_DIR/r.md"',
+                id="csid-plain-var",
+            ),
+            pytest.param(
+                'IFS= read -r RUN_DIR < "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID:-shared}"\ncat "$RUN_DIR/r.md"',
+                id="csid-with-default",
+            ),
+            pytest.param(
+                f'{READ_FORM}\ncat "$RUN_DIR/my report.md"',
+                id="target-with-space",
+            ),
+            pytest.param(
+                f'{READ_FORM}\ncat "$RUN_DIR/foundry--challenger.md"',
+                id="target-with-double-hyphen",
+            ),
+            pytest.param(
+                'IFS= read -r BRANCH < "${TMPDIR:-/tmp}/release-setup-${CSID}/BRANCH"\necho "$BRANCH"',
+                id="subdir-sentinel-path",
+            ),
+        ],
+    )
+    def test_allows_every_runtime_variant_of_one_shape(self, command: str) -> None:
+        """Varying only runtime values must not change an allow verdict.
+
+        Each case is the same read-then-inspect shape with a different sentinel
+        basename, variable name, CSID form, or target filename — exactly what
+        differs between two runs of the same skill.
+        """
+        result = _run(command)
+        assert _is_allowed(result), f"{command!r} should be allowed, got: {result}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/$(whoami).md"', id="substitution-in-varied-part"),
+            pytest.param(f'{READ_FORM}\ncat "$RUN_DIR/r.md"; rm -rf /tmp/x', id="separator-in-varied-part"),
+            pytest.param(f'{READ_FORM}\necho pwned > "$RUN_DIR/out.txt"', id="redirect-in-varied-part"),
+        ],
+    )
+    def test_rejects_injection_through_the_varied_part(self, command: str) -> None:
+        """Invariance must not extend to values carrying shell metacharacters.
+
+        The same slot that legitimately varies is where an injection would be
+        planted, so a varied value containing a substitution, separator, or
+        redirect has to flip the verdict back to passthrough.
+        """
+        result = _run(command)
+        assert result == {}, f"{command!r} must passthrough, got: {result}"

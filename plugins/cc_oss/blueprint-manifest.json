@@ -4905,6 +4905,6 @@
       "src": "skills/resolve/SKILL.md:121"
     }
   },
-  "plugin": "cc_oss@0.31.0",
+  "plugin": "cc_oss@0.31.1",
   "schema": 1
 }
