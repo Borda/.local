@@ -221,6 +221,47 @@ class TestMainCli:
         assert code == 0
         assert payload["avoidance_count"] == 0
 
+    def test_logs_dir_recursively_reconciles_flat_and_all_runtime_subtrees(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Recursive discovery joins one matching pair from legacy and each runtime once."""
+        log_dir = tmp_path / "logs"
+        for runtime, session in (("", "legacy"), ("claude", "claude"), ("codex", "codex"), ("direct", "direct")):
+            shard_dir = log_dir / runtime if runtime else log_dir
+            shard_dir.mkdir(parents=True, exist_ok=True)
+            (shard_dir / f"cli_{session}.jsonl").write_text(json.dumps(_cli("pkg.auth", 0.0, session=session)) + "\n")
+            (shard_dir / f"tools_{session}.jsonl").write_text(
+                json.dumps(_tool("import pkg.auth", 2.0, session=session)) + "\n"
+            )
+
+        code = ja.main(["--logs", str(log_dir), "--json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["total_complete_answers"] == 4
+        assert payload["total_tool_events"] == 4
+        assert payload["avoidance_count"] == 4
+        assert payload["per_runtime"]["unattributed"]["total_complete_answers"] == 1
+        assert payload["per_runtime"]["unattributed"]["avoidance_count"] == 1
+
+    def test_same_session_in_different_runtime_subtrees_does_not_cross_join(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Runtime scope is part of the join key even when opaque session strings match."""
+        log_dir = tmp_path / "logs"
+        claude = log_dir / "claude"
+        codex = log_dir / "codex"
+        claude.mkdir(parents=True)
+        codex.mkdir()
+        (claude / "cli_same.jsonl").write_text(json.dumps(_cli("pkg.auth", 0.0, session="same")) + "\n")
+        (codex / "tools_same.jsonl").write_text(json.dumps(_tool("import pkg.auth", 2.0, session="same")) + "\n")
+
+        assert ja.main(["--logs", str(log_dir), "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["avoidance_count"] == 0
+        assert payload["per_runtime"]["claude"]["total_complete_answers"] == 1
+        assert payload["per_runtime"]["codex"]["total_tool_events"] == 1
+
     def test_explicit_files_and_window_flag(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """--cli/--tools bypass shard resolution and --window-min tightens the join."""
         cli_path = tmp_path / "cli.jsonl"

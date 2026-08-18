@@ -1,8 +1,8 @@
 <!-- file: integration-contract.md — consumers: plugins/codemap-py/claude-skills/integration/SKILL.md, plugins/codemap-py/codex-skills/integration/SKILL.md, src/codemap_py/integration.py, tests/integration/test_integrate.py -->
 
-# `codemap-py.integration.v1` — integration protocol contract
+# `codemap-py.integration.v2` — integration protocol contract
 
-Reference contract for the `codemap-py integrate <check|plan|apply|sync|demo>` engine
+Reference contract for the `codemap-py integrate <audit|plan|apply|sync|demo>` engine
 (`src/codemap_py/integration.py`) and both runtime `integration` skill adapters. Authoritative
 source: `.plans/active/plan_codemap-py-dual-runtime-package.md` §8.3 (native integration skill),
 §9.3 (consumer-source and native-update ownership), §8.5 (symmetric optionality). This file does
@@ -12,7 +12,7 @@ back to §8.3/§9.3 for anything not restated here.
 
 ## Protocol identity
 
-- Capability-protocol name: `codemap-py.integration.v1`.
+- Capability-protocol name: `codemap-py.integration.v2`.
 - Either host runtime (Claude Code, Codex) can target Claude Code, Codex, or both via
   `--runtime {claude,codex,both}`; neither runtime's adapter invokes the other host's model.
 - `codemap-py integrate` is the single pinned CLI surface both runtime `integration` skills
@@ -23,7 +23,7 @@ back to §8.3/§9.3 for anything not restated here.
 
 | Mode | Args | Mutation | Exit |
 | --- | --- | --- | --- |
-| `check` | `[--runtime {claude,codex,both}] [--json]` | none | 0 ok; 1 runtime/fs fail; 2 bad syntax |
+| `audit` | `[--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD]` | none | 0 pass/warn; 1 fail; 2 bad syntax |
 | `plan` | `[--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>]` | report artifact only | 0; 2 bad syntax |
 | `apply` | `--plan <artifact> --approve <sha256>` | verified source checkout only | 0; 1 drift/fs; 2 bad approve/syntax |
 | `sync` | `--source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...]` | local runtime plugin state | 0; 1 partial-fail/journal; 2 bad approve |
@@ -81,7 +81,7 @@ is consumer-owned and never touched):
 
 `plan` persists (§8.3 step 1):
 
-- schema/protocol version (`codemap-py.integration.v1`);
+- schema/protocol version (`codemap-py.integration.v2`);
 - operation ID;
 - exact targets (consumer + file path + marker hash expected);
 - source/runtime before-state hashes;
@@ -115,7 +115,7 @@ a `2`-class syntax error, not a silently-ignored no-op.
 - Leaves changes unstaged and uncommitted; reports the exact native reinstall/update commands the
   user would run next (§9.3) — `apply` never runs those commands itself.
 - Maintainer/source-checkout operation; an end user installing immutable releases normally uses
-  `check`, `sync`, and `demo` — `sync` never rewrites consumer source (§8.3).
+  `audit`, `sync`, and `demo` — `sync` never rewrites consumer source (§8.3).
 
 ## Sync (`sync --source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...]`)
 
@@ -144,23 +144,45 @@ a `2`-class syntax error, not a silently-ignored no-op.
   cache edits — "push" in this contract means only (1) update allowlisted source-owned consumer
   integration, and (2) install/reinstall those built plugin versions via native runtime CLIs (§8.3).
 
-## Check (`check [--runtime {claude,codex,both}] [--json]`)
+## Audit (`audit [--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD]`)
 
-- Zero-write, always. Reports: installed/active versions, roots, protocol compatibility, Codex
-  Rig-owned global-instruction status when publicly verifiable, fallback state, shared-index
-  identity, runtime-log isolation.
-- Codex Rig global-instructions status: only `absent`, `present`, or `authenticated` from bytes it
-  can verify directly. `stale` is reportable only through a versioned, Codex-Rig-owned read-only
-  status contract; otherwise staleness is `unavailable`, never guessed (§8.3, §8.4).
-- Reports `split_index_roots` when the two runtime environments resolve different index paths —
-  never copies, merges, or silently picks one (plan §4.4).
-- An absent consumer or provider is a successful named state, not an error — `check`/`plan` reject
-  unknown runtimes/consumers as a `2`-class syntax error, but a known, simply-not-installed consumer
-  is reported as `absent`.
+- Zero-write, always. Reads bounded provider, consumer, managed-block, index, runtime-log, and
+  usage evidence; it never runs `plan`, `apply`, `sync`, `index`, query self-heal, plugin-manager
+  mutation, or global-instruction installation.
+- `--runtime` selects `claude`, `codex`, or `both` (default). `--json` emits one schema-versioned
+  report on stdout; diagnostics remain on stderr. `--since YYYY-MM-DD` bounds telemetry evidence;
+  invalid dates and selectors exit `2`.
+- The top-level report contains `schema_version: 2`, `protocol: codemap-py.integration.v2`,
+  `status` (`pass`, `warn`, or `fail`), `requested_runtime`, a `window`, provider/consumer and
+  `shared_index` evidence, `runtime_logs`, `usage`, stable `findings`, and non-executable
+  `remediation` records.
+- Provider evidence includes bounded `source_content` and `native_content` identities when those
+  bytes are readable. A same-version content mismatch is reported as the high-severity
+  `provider_same_version_content_drift` finding and remediates through `plan_sync`; matching
+  versions alone are not proof of byte identity.
+- `session_catalog` is explicitly `unobservable` when the native plugin listing has no session
+  catalog provenance. Audit therefore makes no claim about live fresh-session activation or current
+  session tool discovery.
+- Codex runtime evidence includes runtime-scoped CLI and tool shards from its hook configuration, but
+  it has no skill-start hook, so skill telemetry and some cross-layer joins may be unavailable.
+  Missing host layers remain evidence gaps, not healthy zero usage. Usage reports per-runtime
+  summaries and `token_measurement.status: unavailable` because the host hook contract supplies no
+  token usage.
+- Exit `0` means completed `pass` or `warn`; exit `1` means completed `fail` or a required
+  runtime/filesystem probe failure; exit `2` means invalid syntax, runtime, date, or selection.
+- Stable finding codes include `runtime_log_isolation_bypassed`, `runtime_identity_missing`,
+  `legacy_flat_logs_present`, `runtime_logs_not_observed`, `provider_version_drift`,
+  `provider_same_version_content_drift`, `consumer_version_drift`, `consumer_same_version_content_drift`, `managed_block_invalid`, `split_index_roots`,
+  `skill_telemetry_missing`, `refresh_without_query`, `index_stale_or_unknown`, and
+  `index_degraded`. Findings carry `code`, `severity`, `status`, `evidence`,
+  `affected_runtime`, and `remediation_kind`.
+- A known optional consumer that is absent remains a named successful state. Audit evidence never
+  treats a declared runtime path as observed health, and never infers runtime identity or refresh
+  provenance for legacy records.
 
 ## Demo (`demo [--runtime ...]`)
 
-- Runs `check` plus representative plain-vs-structural-context workflows; records the
+- Runs `audit` plus representative plain-vs-structural-context workflows; records the
   protocol/version/evidence used. Disposable evidence only, unless a separate approval is given for
   anything durable.
 
@@ -199,9 +221,9 @@ succeeded because it exited zero (§8.3 step 6).
 
 ## Symmetric optionality (§8.5 — binding on this contract's own behavior)
 
-- `codemap-py`'s five non-integration skills and the `integration check`/`plan` inspection paths
+- `codemap-py`'s five non-integration skills and the `integration audit`/`plan` inspection paths
   never import, locate, install, or require Codex Rig or a `cc_*` plugin.
-- `integration check` may inspect declared consumers; absence is a successful named state unless
+- `integration audit` may inspect declared consumers; absence is a successful named state unless
   the user explicitly requests a mutation targeting that consumer.
 - Install/update order is unconstrained: provider-first, consumer-first, provider-only, and
   consumer-only are all valid; uninstalling or disabling either side never corrupts the other

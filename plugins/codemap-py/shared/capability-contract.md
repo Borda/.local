@@ -204,25 +204,23 @@ source-wire, locally sync, and demonstrate the supported consumer set. Full cont
 `integration-contract.md` (this directory) — this entry only states the skill-level truth claims
 that must hold identically across both runtime adapters.
 
-**Inputs**: one mode — `check [--runtime {claude,codex,both}] [--json]` / `plan [--runtime ...]
+**Inputs**: one mode — `audit [--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD]` / `plan [--runtime ...]
 [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>]` / `apply --plan
 <artifact> --approve <sha256>` / `sync --source {local-candidate,release} --plan <artifact>
 --approve <sha256> [--runtime ...]` / `demo [--runtime ...]`.
 
-**Outputs**: `check` → health report (installed/active versions, roots, protocol compatibility,
-Codex-Rig global-instruction status when verifiable, shared-index identity, log isolation);
+**Outputs**: `audit` → schema-versioned evidence report (provider/consumer versions, roots,
+managed blocks, shared-index identity, runtime logs, usage, findings, and non-executable remediation);
 `plan` → a report artifact (never mutates); `apply`/`sync` → mutation + verification result +
 journal entry; `demo` → check output + representative plain-vs-structural-context evidence.
 
-**Exit codes**: per §7.5, same table as above; `check`/`plan` are zero-write and always exit `0`
-on a successfully *completed* inspection even when the reported state is unhealthy (unhealthy
-state is data in the report, not a process failure) — `1`/`2` are reserved for the inspection or
-planning process itself failing (fs/runtime error, bad syntax).
+**Exit codes**: `audit` exits `0` for completed `pass` or `warn`, `1` for completed `fail` or a
+required runtime/filesystem probe failure, and `2` for invalid syntax, runtime, date, or selection.
+`plan` remains zero-write and uses `0` for a completed artifact or `2` for bad syntax.
 
-**Completeness metadata**: `check` reports `split_index_roots` when the two runtime environments
-resolve different index paths; reports Codex-Rig global-instruction status as only `absent`,
-`present`, or `authenticated` from verifiable bytes — never `stale` without a versioned Codex-Rig-
-owned read-only status contract, and never guessed.
+**Completeness metadata**: `audit` distinguishes observed, not-observed, and legacy-flat runtime
+logs; reports `split_index_roots`, `index_stale_or_unknown`, and `index_degraded` only from bounded
+read-only evidence; and never infers runtime identity or refresh provenance for legacy records.
 
 **Caveats**: `--approve` is valid only with an explicit mutation mode, a saved plan artifact, and
 the displayed SHA-256; it never authorizes new targets, remote publication, git/marketplace
@@ -237,14 +235,16 @@ side-effect build during `plan`/`sync` bring-up.
 ## Skill: `debrief-coding`
 
 **Purpose**: read-only diagnostic/usage report over local codemap telemetry
-(`.cache/codemap/logs/*.jsonl`) — subcommand distribution, timing, coverage gaps, error patterns,
-skill-invocation counts, session timelines, and avoidance-event (guard-chain leak) rate.
+(`.cache/codemap/logs/` JSONL) — subcommand distribution, timing, coverage gaps, error patterns,
+skill-invocation counts, session timelines, and avoidance-event (guard-chain leak) rate across
+legacy flat and recursive runtime shards.
 
 **Inputs**: `[--since <YYYY-MM-DD>] [--session <id>] [--anonymize] [--output <path>]`.
 
 **Outputs**: a markdown report, default `.reports/codemap/debrief-<YYYY-MM-DD>.md`; with
-`--anonymize`, pseudonymized copies under `.cache/codemap/export/` are read instead of raw logs,
-and the report never includes the reversibility salt.
+`--anonymize`, pseudonymized copies under `.cache/codemap/export/` are read instead of raw logs;
+directory input preserves `claude/`, `codex/`, and `direct/` topology and the report never includes
+the reversibility salt.
 
 **Exit codes**: `0` report written (including a report over zero matching records after a filter
 narrows to nothing); `1` no telemetry found at all (nothing to report), anonymize requested with
@@ -256,13 +256,13 @@ matches zero records in one log layer (expected when that layer never logged the
 data-loss condition); "scripted/polluted records excluded: N" when benchmark/test-suite noise is
 filtered from organic-usage stats.
 
-**Caveats**: telemetry is sharded per-session (`cli_<session>.jsonl`, `skills_<session>.jsonl`,
-`tools_<session>.jsonl`) with a legacy unsuffixed fallback (`cli.jsonl`, etc.) for runs with no
-seeded session ID; a report must aggregate **all** matching shards, never just the legacy file, or
-it silently under-reports. All logs and the anonymization salt stay local to
-`.cache/codemap/logs/` — the salt is never included in shareable output.
+**Caveats**: telemetry is sharded per session (`cli_<session>.jsonl`, `skills_<session>.jsonl`,
+`tools_<session>.jsonl`) below `claude/`, `codex/`, or `direct/`; older flat shards remain readable
+as unattributed legacy evidence. Aggregate every matching shard, never just one glob. Refresh
+provenance is explicit for new records (`missing_index_explicit`, `claude_prompt_background`,
+`query_self_heal`, `explicit_scan`, or `direct_cli`); legacy records remain unknown.
 
-**NOT for**: validating codemap installation health (`integration check`); building/querying the
+**NOT for**: validating codemap installation health (`integration audit`); building/querying the
 structural index (`scan-codebase`/`query-code`).
 
 ---

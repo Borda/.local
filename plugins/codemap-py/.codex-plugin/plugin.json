@@ -5,9 +5,10 @@
   },
   "description": "Static Python structure for Codex: indexing, queries, test impact, reference renames, integration, and session telemetry debriefs",
   "homepage": "https://github.com/Borda/AI-Rig",
+  "hooks": "./hooks/codex-hooks.json",
   "license": "Apache-2.0",
   "name": "codemap-py",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./codex-skills/",
-  "version": "0.30.1"
+  "version": "0.31.0"
 }

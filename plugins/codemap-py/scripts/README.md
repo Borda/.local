@@ -74,7 +74,7 @@ The Codex counterpart stages a disposable package, creates a local Codex marketp
 python probe_codex_install.py [--report PATH]
 ```
 
-Exit meanings match the Claude probe. The Codex manifest intentionally declares no hooks; the probe checks that the Claude roster is not used as the Codex source.
+Exit meanings match the Claude probe. The probe verifies the Codex skill source plus the runtime-scoped `./hooks/codex-hooks.json` declaration; it does not start a live interactive session, so hook activation remains a fresh-session acceptance step.
 
 ### `_probe_runtime.py`
 

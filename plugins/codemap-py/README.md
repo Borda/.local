@@ -89,7 +89,7 @@ Use the smallest route that answers the unresolved question:
 | Which modules have the highest reverse-dependency count?    | `central --top N --exclude-tests`                            |
 | What source slice and imports define a symbol?              | `symbol <name> --with-imports`                               |
 | Which tests are structurally affected?                      | `/codemap-py:test-impact` or `$codemap-py:test-impact`       |
-| Is the integration wiring healthy?                          | `/codemap-py:integration check` or `$codemap-py:integration` |
+| Is the integration wiring and runtime evidence healthy?     | `/codemap-py:integration audit` or `$codemap-py:integration` |
 
 For an explicit request for structural context, query even when an edit looks small. A lifecycle boundary such as a callback, hook, cancellation path, cleanup path, or state transfer also needs source and the named test or oracle; a complete structural result does not prove runtime behavior.
 
@@ -114,7 +114,7 @@ The canonical CLI is:
 codemap-py index [--root PATH] [--incremental] [--with-coverage PATH] [--timeout N]
 codemap-py query [global flags] <subcommand> ...
 codemap-py doctor [--json]
-codemap-py integrate {check,plan,apply,sync,demo} ...
+codemap-py integrate {audit,plan,apply,sync,demo} ...
 ```
 
 `--incremental` requires an existing v3-or-newer index. `--with-coverage` reads a `.coverage` SQLite file when the optional dependency is available. Query help is authoritative for the complete subcommand and flag list; the current groups include module imports (`deps`, `rdeps`, `central`, `coupled`, `path`), symbol lookup (`symbol`, `symbols`, `find-symbol`), call graphs (`fn-deps`, `fn-rdeps`, `fn-central`, `fn-blast`), test/mock/fixture/subprocess relationships, documentation and coverage checks, dead-code checks, `diff-impact`, and `batch`.
@@ -136,7 +136,7 @@ Files that fail to parse are marked degraded rather than silently treated as com
 
 Possible future work includes broader dynamic-behavior evidence, deeper cross-language support, and richer freshness diagnostics. Those are opportunities rather than promises; the current contract remains static Python analysis with explicit coverage metadata.
 
-Claude's optional Python hooks provide ambient index status, session-sharded telemetry, and a narrow redundant-import-grep guard. They fail open and are not required for indexing or querying. Codex ships the same six skills but no codemap-py hook manifest, so Codex has no ambient preamble, hook-seeded session correlation, or redundant-scan guard. This difference is intentional and is a runtime limitation, not a query-engine capability difference.
+Claude's optional Python hooks provide ambient index status, session-sharded telemetry, skill-start records, and a narrow redundant-import-grep guard. Codex ships hooks for session seeding, ambient preamble/guard behavior, and runtime-scoped tool records, while its host does not provide a Codemap skill-start hook. Both runtimes' hooks fail open and are not required for indexing or querying; the difference is an evidence boundary, not a query-engine capability difference.
 
 Performance and token use vary with repository size, model, index freshness, query choice, and whether an agent continues exploring after a result. Historical benchmark runs are exploratory and repository/model-specific; they do not establish universal savings or quality guarantees. See the [benchmark record](https://github.com/Borda/AI-Rig/blob/main/benchmarks/README.md) for methods and caveats.
 
@@ -182,7 +182,7 @@ Relative to `A_plain`, `C_strict` used paired geometric-mean ratios of `0.337×`
 
 ### 🔗 Integration protocol
 
-The integration engine is source-owned and authenticated. `check` reports the declared consumer set, installed versions, roots, protocol compatibility, and managed-block state; `plan` writes an inspectable candidate and SHA-256; `apply` changes only an approved managed block in checked-in consumer source; `sync` installs only an approved local candidate or immutable release through the native runtime CLI; and `demo` records disposable evidence. These routes never edit installed caches directly, write global Codex instructions, publish a release, or push Git.
+The integration engine is source-owned and authenticated. `audit` is the bounded read-only route: it reports observed provider and consumer versions, managed blocks, index identity, runtime-scoped logs, usage, findings, bounded provider content identity, same-version content drift, and an explicit `session_catalog: unobservable` state when the native listing has no session provenance. `plan` writes an inspectable candidate and SHA-256; `apply` changes only an approved managed block in checked-in consumer source; `sync` installs only an approved local candidate or immutable release through the native runtime CLI; and `demo` records disposable evidence. These routes never edit installed caches directly, write global Codex instructions, publish a release, or push Git. Audit cannot claim live fresh-session activation; after a runtime sync, follow the host's fresh-session guidance.
 
 Consumer integrations should treat Codemap as optional structural context. A missing index is a named decision: build it in the foreground, continue without it, or stop and ask for a later scan. A stale index is also explicit: refresh, continue with the stale-data caveat, or skip retrieval. An unavailable launcher degrades to the host's normal source exploration rather than silently claiming that no callers or tests exist.
 
@@ -196,8 +196,8 @@ Both runtime rosters expose the same six capabilities; only invocation syntax an
 | `query-code`     | Read dependencies, callers, symbols, paths, quality flags, tests, or diff impact from an existing index. | Rename symbols, rebuild explicitly requested indexes, or replace source/test verification. |
 | `test-impact`    | Identify structurally affected tests and emit a pytest command; it does not execute that command.        | Prove tests pass or resolve dynamic dispatch invisible to the static graph.                |
 | `rename-refs`    | Apply or preview one Python symbol/module rename with a confirmation and re-scan verification pass.      | Guarantee dynamic, cross-repository, or inheritance references are covered.                |
-| `integration`    | Check, plan, apply, sync, or demo the supported consumer wiring with authenticated managed blocks.       | Mutate remote services, global instructions, or an installed cache directly.               |
-| `debrief-coding` | Summarize anonymized Claude Codemap telemetry, timing, completeness, and repeated-search avoidance.      | Build/query the index or validate installation health.                                     |
+| `integration`    | Audit, plan, apply, sync, or demo the supported consumer wiring with authenticated managed blocks.       | Mutate remote services, global instructions, or an installed cache directly.               |
+| `debrief-coding` | Summarize local cross-runtime Codemap telemetry, timing, completeness, and repeated-search avoidance.    | Build/query the index or validate installation health.                                     |
 
 `rdeps` and `deps` point in opposite directions. For direct production callers use `fn-rdeps <module::symbol> --exclude-tests`; use `fn-blast` only for an explicitly transitive request. For direct test-module importers use `rdeps` and filter test modules; reserve `test-impact` for transitive affected-test selection. A method-name match is only an override candidate: verify ancestry and package boundaries in source.
 
@@ -205,31 +205,31 @@ Both runtime rosters expose the same six capabilities; only invocation syntax an
 
 The default index is `.cache/codemap/<project>.json`; `CODEMAP_INDEX_DIR` changes only the parent directory and keeps the project basename as the filename. A custom `--root` must be used consistently for scan and query. Normal queries may perform a bounded incremental self-heal; `SCAN_NO_AUTOBUILD=1` makes a missing index a hard refusal and prevents implicit writes.
 
-Every query exposes an `index` block. `query_complete` is direction-scoped graph coverage, not a promise that a bounded display list is untruncated; inspect `confidence`, `truncated`, and `total_available`, and use `--limit 0` where supported when the complete list matters. `not_covered` names structural blind spots and should be surfaced, not filled by repeating the same static query. `stale`, degraded modules, untracked files, root mismatches, and collisions lower confidence and require source/test review.
+Every query exposes an `index` block. Query first; do not spend a call on an unconditional pre-scan or freshness probe. `query_complete` is direction-scoped graph coverage, not a promise that a bounded display list is untruncated; inspect `confidence`, `truncated`, and `total_available`, and use `--limit 0` where supported when the complete list matters. After a complete, untruncated result, do not re-query, read, or grep for the same structural fact. Source-body reads remain valid for distinct implementation or runtime details. For an incomplete or degraded result, use only a targeted fallback for the named gap (`stale`, `degraded`, `not_covered`, or similar); use `test-impact` when the open question is test choice. `stale`, degraded modules, untracked files, root mismatches, and collisions lower confidence and require source/test review.
 
 ### 🔍 Troubleshooting checklist
 
-If the dispatcher returns `127`, inspect `CODEMAP_PYTHON` and the eligible CPython range before debugging imports. If a query reports a missing or stale index, run the explicit `codemap-py index --root PATH` route and then repeat the query from the same project root. If a list is capped, inspect its completeness metadata and rerun with a supported larger limit. If an answer concerns hooks, callbacks, dynamic imports, string dispatch, lazy loading, or inheritance, read the source and named test/oracle regardless of a complete static result. For integration drift, run `codemap-py integrate check` and inspect the plan SHA before applying anything.
+If the dispatcher returns `127`, inspect `CODEMAP_PYTHON` and the eligible CPython range before debugging imports. If a query reports a missing or stale index, run the explicit `codemap-py index --root PATH` route and then repeat the query from the same project root. If a list is capped, inspect its completeness metadata and rerun with a supported larger limit. If an answer concerns hooks, callbacks, dynamic imports, string dispatch, lazy loading, or inheritance, read the source and named test/oracle regardless of a complete static result. For integration drift, run `codemap-py integrate audit --json`, inspect observed findings, and create a fresh stage-specific plan before applying or syncing anything.
 
 <details>
 <summary><strong>Complete integration mode reference</strong></summary>
 
 The integration skill is a thin, source-owned adapter over `codemap-py integrate`. It has a closed consumer set: Claude consumers `foundry`, `oss`, `develop`, and `research`, and Codex consumer `codex-rig`. It does not discover arbitrary plugins or invoke another runtime's model.
 
-| Mode    | Supported arguments                                                                                         | Writes or mutates                                                                     |
-| ------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `check` | \[`--runtime {claude,codex,both}`\] \[`--json`\]                                                            | Nothing; reports roots, versions, protocol compatibility, and managed-block state.    |
-| `plan`  | \[`--runtime ...`\] \[`--consumers <csv>`\] \[`--source {local-candidate,release}`\] \[`--out <artifact>`\] | A reviewable plan artifact containing targets, hashes, argv, and rollback identities. |
-| `apply` | `--plan <artifact> --approve <sha256>`                                                                      | Approved managed blocks in checked-in consumer source only.                           |
-| `sync`  | `--source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...]`                   | Approved local runtime plugin state through the native runtime CLI.                   |
-| `demo`  | \[`--runtime {claude,codex,both}`\]                                                                         | Disposable evidence under `.reports/integrate/`; no durable wiring.                   |
+| Mode    | Supported arguments                                                                                         | Writes or mutates                                                                          |
+| ------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `audit` | \[`--runtime {claude,codex,both}`\] \[`--json`\] \[`--since YYYY-MM-DD`\]                                   | Nothing; reports observed provider/consumer/index/log evidence, findings, and remediation. |
+| `plan`  | \[`--runtime ...`\] \[`--consumers <csv>`\] \[`--source {local-candidate,release}`\] \[`--out <artifact>`\] | A reviewable plan artifact containing targets, hashes, argv, and rollback identities.      |
+| `apply` | `--plan <artifact> --approve <sha256>`                                                                      | Approved managed blocks in checked-in consumer source only.                                |
+| `sync`  | `--source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...]`                   | Approved local runtime plugin state through the native runtime CLI.                        |
+| `demo`  | \[`--runtime {claude,codex,both}`\]                                                                         | Disposable evidence under `.reports/integrate/`; no durable wiring.                        |
 
-`--runtime claude` scopes to the four Claude consumers, `--runtime codex` scopes to `codex-rig`, and `--runtime both` covers the complete set. The default is `both`. `--approve` is valid only with `apply` or `sync`, a saved plan, and the exact SHA-256 printed for that plan. It is never guessed, constructed, or used to authorize new targets, remote publication, Git history changes, global instruction edits, cache edits, or deletion. A changed plan invalidates the approval.
+`audit` defaults to `both`, supports `--runtime claude|codex|both`, JSON schema 2 (`codemap-py.integration.v2`), and `--since YYYY-MM-DD`. It reports `pass`, `warn`, or `fail`, exits `0`, `1`, or `2` for completed status/syntax semantics, and records stable findings such as `runtime_log_isolation_bypassed`, `runtime_identity_missing`, `runtime_logs_not_observed`, `managed_block_invalid`, `split_index_roots`, `index_stale_or_unknown`, and `index_degraded`. Remediation values are advisory (`plan_apply`, `plan_sync`, `provider_release_required`, `scan_codebase`, `observe_next_session`, `none`) and are never executable artifacts. `--runtime claude` scopes to the four Claude consumers, `--runtime codex` scopes to `codex-rig`. `--approve` is valid only with `apply` or `sync`, a saved plan, and the exact SHA-256 printed for that plan.
 
 `plan` is non-mutating. `apply` refuses path escapes, symlinks, installed-cache roots, dirty overlap, foreign markers, and body hashes that were not generated by the engine. `sync` uses either a deterministic local candidate or an immutable release identity and reports a journal for partial failure. Both mutation modes leave Git commits and pushes to the maintainer.
 
 ```text
-/codemap-py:integration check --runtime both --json
+/codemap-py:integration audit --runtime both --json
 /codemap-py:integration plan --consumers foundry,oss --out .reports/integrate/plan.json
 /codemap-py:integration apply --plan .reports/integrate/plan.json --approve <printed-sha256>
 /codemap-py:integration sync --source release --plan .reports/integrate/plan.json --approve <printed-sha256> --runtime codex
@@ -342,9 +342,9 @@ The symbol route updates a one-to-one Python definition and statically visible r
 <details>
 <summary><strong>Debrief-coding telemetry and anonymization</strong></summary>
 
-`debrief-coding` reads local JSONL telemetry and writes a diagnostic report; it does not build or query the index. Its flags are `--since YYYY-MM-DD`, `--session ID`, `--anonymize`, and `--output PATH` (default `.reports/codemap/debrief-<date>.md`). Claude records CLI, skill, and tool layers under `.cache/codemap/logs/`; Codex has no Claude hook-seeded session ID, so cross-layer session joins are not available there. Set `CODEMAP_LOGGING=false` to disable logging. Logs rotate at the implementation-defined size limit.
+`debrief-coding` reads local JSONL telemetry and writes a diagnostic report; it does not build or query the index. Its flags are `--since YYYY-MM-DD`, `--session ID`, `--anonymize`, and `--output PATH` (default `.reports/codemap/debrief-<date>.md`). Claude records CLI, skill, and tool layers under `.cache/codemap/logs/`; Codex hooks record runtime-scoped CLI and tool shards but have no skill-start hook, so skill telemetry and some cross-layer joins can be unavailable. Flat legacy records remain unattributed. Reports include overall, per-runtime, and unattributed usage summaries, refresh provenance, timing, completeness, and repeated-search avoidance; `token_measurement` is unavailable because host hooks provide no token usage. Debrief does not measure token savings or verify live fresh-session activation. Set `CODEMAP_LOGGING=false` to disable logging. Logs rotate at the implementation-defined size limit.
 
-The report summarizes command, skill, and search/read activity, timing, result counts, completeness reasons, and repeated-search avoidance. `join_avoidance.py` performs the offline join with a bounded time window; an avoidance event means a search/read names a module that a complete Codemap query already answered, not that the agent's runtime answer is incorrect.
+The report summarizes command, skill, and search/read activity, timing, result counts, completeness reasons, per-runtime usage, and repeated-search avoidance. `join_avoidance.py` performs the offline join with a bounded time window; an avoidance event means a search/read names a module that a complete Codemap query already answered, not that the agent's runtime answer is incorrect.
 
 `--anonymize` pseudonymizes qualified names with a project-local salt at `.cache/codemap/logs/.salt`, scrubs qualified names inside error and stderr text, hashes `not_covered` values, and writes export JSONL separately. Never share the salt with an anonymized export. Anonymization protects names in the supported log fields; it is not a guarantee that arbitrary free text contains no identifying information.
 
@@ -359,7 +359,7 @@ The report summarizes command, skill, and search/read activity, timing, result c
 <details>
 <summary><strong>Scanner, query, and index architecture</strong></summary>
 
-The scanner is dependency-free Python: it walks the selected root, parses `.py` and `.pyi` files with the standard-library AST, resolves imports and selected call edges, computes module/function graph counts, captures supported documentation references, and writes an atomic versioned JSON index. A `.py` implementation takes precedence over a sibling stub; an unpaired stub contributes declarations/imports but no implementation call edges. Parse or encoding failures are retained as degraded module records instead of being silently dropped.
+The scanner is dependency-free Python: it walks the selected root, parses `.py` and `.pyi` files with the standard-library AST, resolves imports and selected call edges, computes module/function graph counts, captures supported documentation references, and writes an atomic versioned JSON index. A `.py` implementation takes precedence over a sibling stub; an unpaired stub contributes declarations/imports but no implementation call edges. Parse or encoding failures are retained as degraded module records instead of being silently dropped. Incremental refreshes still track changed documentation for freshness and documentation references, but only `.py` and `.pyi` entries become module records, so documentation changes no longer contaminate module degradation counts and a subsequent refresh self-heals the index.
 
 The query engine loads the same JSON under a read lease, performs bounded freshness checks or self-heal, dispatches one subcommand, and returns a primary result plus an `index` coverage block. The block includes method, confidence, query completeness, truncation, totals, degraded count, stale/root-mismatch state, and `not_covered` blind spots. The index is a cache, not a daemon or runtime tracer; no static result proves dynamic dispatch, external consumers, inheritance, test pass status, or behavior.
 
@@ -386,18 +386,18 @@ SCAN_NO_AUTOBUILD=1 codemap-py query --index <matching-index> rdeps mypackage.au
 <details>
 <summary><strong>Named troubleshooting cases</strong></summary>
 
-| Symptom                                 | Evidence-led response                                                                                                                                    |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `127` from a launcher                   | Check `CODEMAP_PYTHON`, PATH, and the supported CPython range before inspecting imports.                                                                 |
-| `index not found` or empty results      | Confirm the selected root has Python files, check `CODEMAP_INDEX_DIR`, then run an explicit scan.                                                        |
-| stale or `root_mismatch`                | Re-scan the exact root and query from that root or pass the matching `--index`; do not report the graph as complete.                                     |
-| `query_complete=false`                  | Read `completeness_reason`, `degraded`, `untracked`, `collision`, and `not_covered`; investigate only the named gap.                                     |
-| capped result                           | Inspect `truncated` and `total_available`, then rerun with a supported larger `--limit` or `--limit 0`.                                                  |
-| `upgrade required`                      | Rebuild the index with the current scanner; feature-gated graph data cannot be inferred from an older file.                                              |
-| degraded modules                        | Inspect the recorded path/reason; generated or syntax-invalid files remain outside reliable graph coverage.                                              |
-| `scan-query` not found                  | Use the skill, resolve the installed launcher path, or add the package `bin/` directory to PATH; Codex does not inject it automatically.                 |
-| integration missing/outdated            | Run `integration check`, inspect the source-owned managed block and plan identity, and report a packaging defect rather than editing an installed cache. |
-| dynamic hook/callback/override behavior | Treat static results as candidates; inspect implementation and named tests/oracles because AST edges cannot prove runtime behavior.                      |
+| Symptom                                 | Evidence-led response                                                                                                                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `127` from a launcher                   | Check `CODEMAP_PYTHON`, PATH, and the supported CPython range before inspecting imports.                                                                               |
+| `index not found` or empty results      | Confirm the selected root has Python files, check `CODEMAP_INDEX_DIR`, then run an explicit scan.                                                                      |
+| stale or `root_mismatch`                | Re-scan the exact root and query from that root or pass the matching `--index`; do not report the graph as complete.                                                   |
+| `query_complete=false`                  | Read `completeness_reason`, `degraded`, `untracked`, `collision`, and `not_covered`; investigate only the named gap.                                                   |
+| capped result                           | Inspect `truncated` and `total_available`, then rerun with a supported larger `--limit` or `--limit 0`.                                                                |
+| `upgrade required`                      | Rebuild the index with the current scanner; feature-gated graph data cannot be inferred from an older file.                                                            |
+| degraded modules                        | Inspect the recorded path/reason; generated or syntax-invalid files remain outside reliable graph coverage.                                                            |
+| `scan-query` not found                  | Use the skill, resolve the installed launcher path, or add the package `bin/` directory to PATH; Codex does not inject it automatically.                               |
+| integration missing/outdated            | Run `integration audit`, inspect observed evidence and the source-owned managed block, then create a fresh stage-specific plan rather than editing an installed cache. |
+| dynamic hook/callback/override behavior | Treat static results as candidates; inspect implementation and named tests/oracles because AST edges cannot prove runtime behavior.                                    |
 
 </details>
 
@@ -413,14 +413,14 @@ Both runtimes expose these names:
 | `query-code`     | Select and render a structural query without rebuilding or editing source.                           |
 | `test-impact`    | Identify affected test files and emit a pytest command; it does not run tests.                       |
 | `rename-refs`    | Rename a Python symbol or module using static caller/import evidence, with confirmation and caveats. |
-| `integration`    | Check, plan, apply, sync, or demo the supported consumer wiring.                                     |
-| `debrief-coding` | Analyze Claude codemap telemetry, optionally producing an anonymized report.                         |
+| `integration`    | Audit, plan, apply, sync, or demo the supported consumer wiring and runtime evidence.                |
+| `debrief-coding` | Analyze local cross-runtime Codemap telemetry, optionally producing an anonymized report.            |
 
 Claude uses `/codemap-py:<skill>`. Codex uses `$codemap-py:<skill>`. The Codex skill descriptions are intentionally compact; their runtime notes cover installed-root resolution, lack of PATH injection, and chat-based confirmation where Claude can use `AskUserQuestion`.
 
 ## 🔗 Integration with other plugins
 
-The integration engine has an explicit closed consumer set: Claude consumers `foundry`, `oss`, `develop`, and `research`, plus Codex consumer `codex-rig`. `/codemap-py:integration check` or `$codemap-py:integration` reports installed versions, roots, protocol compatibility, and wiring state without guessing at unavailable runtime facts.
+The integration engine has an explicit closed consumer set: Claude consumers `foundry`, `oss`, `develop`, and `research`, plus Codex consumer `codex-rig`. `/codemap-py:integration audit` or `$codemap-py:integration` reports observed installed versions, roots, protocol compatibility, managed blocks, runtime-scoped telemetry, and wiring state without guessing at unavailable runtime facts.
 
 `plan` writes an inspectable artifact. `apply` updates only approved managed blocks in checked-in consumer source. `sync` installs only the approved local candidate or immutable release through the native runtime CLI. Both mutation modes require the plan SHA-256 and never push Git, publish a release, edit installed caches directly, or write Codex global instructions. `demo` records disposable evidence.
 
@@ -463,7 +463,7 @@ codex plugin add codemap-py@borda-ai-rig
 
 The second command applies to Codex; run only the command for the runtime you use. Consumer wiring is source-owned and managed through the integration contract; an upgrade does not inject files into an installed cache.
 
-The direct successor to the old `codemap` plugin is `codemap-py`. Do not run both identities in one session — the legacy plugin does not implement the shared-index read/write gate and is rejected as a concurrent producer. Before switching, note the installed `codemap` version so a rollback has a known target. Then close old sessions, uninstall or disable the old plugin, install `codemap-py`, start a fresh session, and run the runtime's integration check. The project cache is retained and revalidated; no migration step deletes it.
+The direct successor to the old `codemap` plugin is `codemap-py`. Do not run both identities in one session — the legacy plugin does not implement the shared-index read/write gate and is rejected as a concurrent producer. Before switching, note the installed `codemap` version so a rollback has a known target. Then close old sessions, uninstall or disable the old plugin, install `codemap-py`, start a fresh session, and run the runtime's integration audit. The project cache is retained and revalidated; no migration step deletes it.
 
 ### Rolling back
 

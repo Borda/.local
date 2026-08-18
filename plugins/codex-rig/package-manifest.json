@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "4f98243c7274d2842dbd90070345600f40ff0fa09869a4fcab514eb5e19cc8cc"
+      "sha256": "bc5cbdc0d1e62c5371c4f725de252acce511f9401001bedd7fe81dc56614ca00"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "8203d4db6b7f97fceff8a4654136f5435dd7a78ff19b900b6bf55c753a05979e"
+      "sha256": "f10c064454aed69d442e81cd0e7ab1c7e384f49117b6473ee0b7fa70fe98f535"
     },
     {
       "mode": "0644",
@@ -42,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "f459f6d6cf3aef855cb41b871b9579ec08a8e2bc2c4df0fef136f7d0be8a1a5d"
+      "sha256": "74f102f35f24ee4c42f4c29f9b25e7dfa369926f19f0d4dd3822c75b8cff6407"
     },
     {
       "mode": "0644",
@@ -327,7 +327,7 @@
     {
       "mode": "0644",
       "path": "shared/codemap-py-integration.md",
-      "sha256": "f5d00822bfa5dc4da2ac1592fd2ab1f7a37ae6a6dba3197920ba7a5b672a1e28"
+      "sha256": "85060375d9d334c6e46a8ef78ca6436256d40263958919685722574cd460fd70"
     },
     {
       "mode": "0755",
@@ -1058,5 +1058,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.8.2"
+  "version": "0.8.3"
 }

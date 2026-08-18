@@ -33,6 +33,29 @@ _SALT = b"x" * 32
 _BIN = Path(anonymize.__file__)
 
 
+def test_directory_input_preserves_runtime_topology_and_excludes_salt(tmp_path: Path) -> None:
+    """Directory exports retain runtime subtrees without exporting the local reversal salt."""
+    logs = tmp_path / "logs"
+    (logs / "claude").mkdir(parents=True)
+    (logs / "direct").mkdir()
+    (logs / "claude" / "cli_sensitive-session.jsonl").write_text('{"session":"sensitive-session"}\n')
+    (logs / "direct" / "tools_sensitive-session.jsonl").write_text('{"session":"sensitive-session"}\n')
+    output = tmp_path / "export"
+    salt = logs / ".salt"
+
+    assert anonymize.main(["--input", str(logs), "--out-dir", str(output), "--salt", str(salt)]) == 0
+    exported = sorted(path.relative_to(output).as_posix() for path in output.rglob("*.jsonl"))
+    assert exported == [
+        f"claude/cli_{anonymize._pseudo('sensitive-session', anonymize._load_salt(salt))}-anon.jsonl",
+        f"direct/tools_{anonymize._pseudo('sensitive-session', anonymize._load_salt(salt))}-anon.jsonl",
+    ]
+    # Helper-independent leak check: the raw id must not survive in any exported
+    # name or body even if `_pseudo` degraded to identity.
+    assert all("sensitive-session" not in name for name in exported)
+    assert all("sensitive-session" not in path.read_text() for path in output.rglob("*.jsonl"))
+    assert not list(output.rglob(".salt"))
+
+
 # ---------------------------------------------------------------------------
 # Free-text error / stderr scrubbing
 # ---------------------------------------------------------------------------

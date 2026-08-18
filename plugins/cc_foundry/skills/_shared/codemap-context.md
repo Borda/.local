@@ -29,4 +29,4 @@ Extends the contract core map. Each entry is the dimension that agent's own pre-
 
 ## Managed-block host
 
-This file is `CONSUMER_MANAGED_FILE["foundry"]` — the consumer-owned host for the `codemap-py.integration.v1` managed block. It ships **without** one: `codemap-py integrate plan` records a first-time insert and `integrate apply` appends the `<!-- codemap-py:integration:begin v1 sha256=... -->` … `end` block at EOF, per install. Never hand-author that block — the engine refuses any block whose body hash does not match its marker.
+This file is `CONSUMER_MANAGED_FILE["foundry"]` — the consumer-owned host for the `codemap-py.integration.v2` managed-block body. It ships **without** one: `codemap-py integrate plan` records a first-time insert and `integrate apply` appends the `<!-- codemap-py:integration:begin v1 sha256=... -->` … `end` block at EOF, per install. The sentinel schema remains `v1`; the body declares protocol `codemap-py.integration.v2`. Never hand-author that block — the engine refuses any block whose body hash does not match its marker.

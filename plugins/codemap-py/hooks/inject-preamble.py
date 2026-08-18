@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit Claude index context and trigger a lock-guarded background refresh."""
+"""Emit host-specific index context and trigger a runtime-attributed background refresh."""
 
 from __future__ import annotations
 
@@ -12,6 +12,12 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+_HOOKS_DIR = Path(__file__).resolve().parent
+if str(_HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_DIR))
+
+import _hookutil  # noqa: E402  (needs the sys.path insert above)
 
 MAX_PARSE_BYTES = 10 * 1024 * 1024
 LOCK_TTL_MS = 10 * 60 * 1000
@@ -103,27 +109,46 @@ def handle_missing_index(root: Path, project: str) -> None:
     """Emit the once-per-session Python-project bootstrap directive when needed."""
     if not is_python_project(root):
         return
-    flag = tmp_dir() / f"codemap-noindex-{project}"
+    flag = tmp_dir() / f"codemap-noindex-{project}-{_hookutil.runtime()}"
     if within_ttl(flag, NOINDEX_TTL_MS):
         return
     write_timestamp(flag)
-    print(
+    ask = "call AskUserQuestion - ask the user" if _hookutil.runtime() == "claude" else "ask the user"
+    emit_preamble(
         f'[codemap] No structural index for "{project}" (.cache/codemap/{project}.json missing) - blast-radius / coupling queries unavailable.\n'
-        "ACTION (ask once): call AskUserQuestion - ask the user whether to build the codemap index now.\n"
+        f"ACTION (ask once): {ask} whether to build the codemap index now.\n"
         "  - yes -> run `codemap-py index` in the FOREGROUND and WAIT until it finishes, then continue using `codemap-py query`.\n"
-        "    (bare command resolves through the plugin's bin/ PATH entry; where it is unavailable, invoke ${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py as one standalone command.)\n"
+        "    (bare command resolves through the plugin's bin/ PATH entry; where unavailable, invoke the active plugin root's bin/codemap-py launcher.)\n"
         "  - no -> proceed without codemap; do not raise again this session."
     )
 
 
 def write_session_marker(root: Path, session_id: str) -> None:
-    """Write the live Claude session marker before any possible early return."""
+    """Write the current runtime's session marker before any possible early return."""
     try:
-        marker = root / ".cache" / "codemap" / "current-session"
+        runtime = _hookutil.runtime()
+        marker = root / ".cache" / "codemap" / f"current-session-{runtime}.json"
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps({"session_id": session_id, "ts": now_ms()}) + "\n", encoding="utf-8")
     except OSError:
         pass
+
+
+def emit_preamble(message: str) -> None:
+    """Emit prompt context in the current host's required output envelope."""
+    if _hookutil.runtime() == "codex":
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": message,
+                    }
+                }
+            )
+        )
+        return
+    print(message)
 
 
 def regular_file_stat(path: Path) -> os.stat_result | None:
@@ -235,8 +260,15 @@ def spawn_refresh(scan_bin: Path, scan_root: Path, cwd: Path) -> bool:
     # so both routes reach the identical leased engine, and going direct skips one process
     # layer on the latency-sensitive prompt path.
     scan_args = ["--incremental", "--root", str(scan_root), "--timeout", "300"]
+    runtime = _hookutil.runtime()
     kwargs: dict[str, object] = {
         "cwd": cwd,
+        "env": {
+            **os.environ,
+            "CODEMAP_RUNTIME": runtime,
+            "CODEMAP_REFRESH_TRIGGER": f"{runtime}_prompt_background",
+            "CODEMAP_REFRESH_STALE_BEFORE": "true",
+        },
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
@@ -264,7 +296,8 @@ def start_refresh(project: str, scan_root: Path, cwd: Path) -> str:
         os.write(descriptor, str(now_ms()).encode("ascii"))
     finally:
         os.close(descriptor)
-    scan_bin = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", Path(__file__).parents[1])) / "bin" / "scan-index"
+    plugin_root = os.environ.get("PLUGIN_ROOT") or os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).parents[1]
+    scan_bin = Path(plugin_root) / "bin" / "scan-index"
     if scan_bin.is_file() and spawn_refresh(scan_bin, scan_root, cwd):
         return " - refresh started"
     try:
@@ -276,9 +309,9 @@ def start_refresh(project: str, scan_root: Path, cwd: Path) -> str:
 
 def collapse_stale_notice(project: str, refresh_note: str) -> bool:
     """Print the one-line stale notice when the full one already fired this session."""
-    flag = tmp_dir() / f"codemap-stale-{project}"
+    flag = tmp_dir() / f"codemap-stale-{project}-{_hookutil.runtime()}"
     if within_ttl(flag):
-        print(f"[codemap] index stale{refresh_note or ' - refresh pending'}")
+        emit_preamble(f"[codemap] index stale{refresh_note or ' - refresh pending'}")
         return True
     write_timestamp(flag)
     return False
@@ -299,7 +332,8 @@ def main() -> int:
         cwd = Path.cwd()
         root = Path(git_output(["rev-parse", "--show-toplevel"], cwd) or cwd)
         project = root.name
-        write_session_marker(root, str(stdin_payload().get("session_id", "")))
+        payload = stdin_payload()
+        write_session_marker(root, _hookutil.runtime_session(payload))
         index_dir = Path(os.environ.get("CODEMAP_INDEX_DIR", root / ".cache" / "codemap"))
         index_path = index_dir / f"{project}.json"
         index_stat = regular_file_stat(index_path)
@@ -314,17 +348,17 @@ def main() -> int:
         dirty = git_output(["status", "--porcelain", "--", "*.py"], cwd) if head and git_sha == head else ""
         currency = resolve_currency(head, git_sha, dirty)
         refresh_note = start_refresh(project, scan_root, cwd) if currency == "stale" else ""
-        session_flag = tmp_dir() / f"codemap-preamble-{project}"
+        session_flag = tmp_dir() / f"codemap-preamble-{project}-{_hookutil.runtime()}"
         if currency == "current" and within_ttl(session_flag):
             return 0
         write_timestamp(session_flag)
         if currency == "stale" and collapse_stale_notice(project, refresh_note):
             return 0
         sha_label = f" (git: {git_sha[:7]})" if currency == "current" else ""
-        print(
+        emit_preamble(
             f"[codemap] {os.path.relpath(index_path, cwd)} - {module_count(index_path, index_stat.st_size)} modules"
             f" - {currency}{sha_label}{refresh_note} - scanned: {fields['scanned_at'][:10]}\n"
-            "Prefer scan-query over file reads: rdeps, fn-rdeps, fn-blast, xrefs, symbol."
+            "Prefer `codemap-py query` over file reads: rdeps, fn-rdeps, fn-blast, xrefs, symbol."
         )
     except (OSError, TypeError, ValueError):
         pass

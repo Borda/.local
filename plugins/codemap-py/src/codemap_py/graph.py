@@ -58,6 +58,13 @@ from codemap_py.telemetry import log_cli
 
 _WINDOWS_REPLACE_RETRIES = 8
 _WINDOWS_REPLACE_DELAY_SECONDS = 0.025
+_REFRESH_TRIGGERS = {
+    "missing_index_explicit",
+    "claude_prompt_background",
+    "query_self_heal",
+    "explicit_scan",
+    "direct_cli",
+}
 
 
 def _conftest_depth(path: str) -> int:
@@ -1258,17 +1265,36 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
     changed.discard("__coverage_mtime__")
     deleted.discard("__coverage_mtime__")
 
-    if not changed and not deleted:
+    stored_modules = old_index.get("modules", [])
+    legacy_non_python = {
+        module.get("path")
+        for module in stored_modules
+        if isinstance(module, dict)
+        and isinstance(module.get("path"), str)
+        and not module["path"].endswith((".py", ".pyi"))
+    }
+    if not changed and not deleted and not legacy_non_python:
         print("[codemap] Index already up to date.", file=sys.stderr)
         return old_index
 
-    modules_by_path: dict[str, dict] = {m["path"]: m for m in old_index.get("modules", [])}
+    # Freshness tracks documentation too, but only Python sources belong in the module graph.
+    # Filtering the carried index also repairs indexes produced by the former parse-all path.
+    modules_by_path: dict[str, dict] = {
+        module["path"]: module
+        for module in stored_modules
+        if isinstance(module, dict) and isinstance(module.get("path"), str) and module["path"].endswith((".py", ".pyi"))
+    }
+    for path in sorted(legacy_non_python):
+        print(f"[codemap]   - removed non-Python module {path}", file=sys.stderr)
 
     for path in sorted(deleted):
         modules_by_path.pop(path, None)
         print(f"[codemap]   - removed {path}", file=sys.stderr)
 
     for rel_path_str in sorted(changed):
+        if not rel_path_str.endswith((".py", ".pyi")):
+            print(f"[codemap]   refreshed {rel_path_str}", file=sys.stderr)
+            continue
         filepath = root / rel_path_str
         if not filepath.exists():
             modules_by_path.pop(rel_path_str, None)
@@ -1415,6 +1441,32 @@ def _build_and_publish(args: argparse.Namespace, root: Path, out_path: Path) -> 
     return index
 
 
+def _refresh_result(args: argparse.Namespace) -> dict[str, str | int | bool | None]:
+    """Return bounded refresh provenance for the successful index telemetry record.
+
+    Background and self-heal callers set only facts they observed before spawning
+    this process. A raw CLI invocation has no such probe, so its stale state and
+    changed count remain ``None`` rather than being inferred after the fact.
+    """
+    changed_raw = os.environ.get("CODEMAP_REFRESH_CHANGED_COUNT", "")
+    try:
+        parsed_changed_count = int(changed_raw)
+    except ValueError:
+        changed_count = None
+    else:
+        changed_count = parsed_changed_count if parsed_changed_count >= 0 else None
+    stale_raw = os.environ.get("CODEMAP_REFRESH_STALE_BEFORE", "").lower()
+    stale_before: bool | None = {"true": True, "false": False}.get(stale_raw)
+    trigger = os.environ.get("CODEMAP_REFRESH_TRIGGER") or "direct_cli"
+    return {
+        "trigger": trigger if trigger in _REFRESH_TRIGGERS else "direct_cli",
+        "changed_count": changed_count,
+        "incremental": bool(args.incremental),
+        "stale_before": stale_before,
+        "result_currency": "current",
+    }
+
+
 def _resolve_out_path(root: Path) -> Path:
     """Return the index path to publish for *root*.
 
@@ -1515,12 +1567,7 @@ def main() -> None:
             for m in index["modules"]:
                 if m.get("status") == "degraded":
                     print(f"[codemap]   \u26a0 {m['path']}: {m['reason']}", file=sys.stderr)
-        log_cli(
-            "index",
-            sys.argv[1:],
-            {"modules_indexed": ok, "degraded": degraded, "incremental": bool(args.incremental)},
-            t0,
-        )
+        log_cli("index", sys.argv[1:], {**_refresh_result(args), "modules_indexed": ok, "degraded": degraded}, t0)
     except rwgate.IndexBusy as exc:
         _die_gate("index_busy", str(exc))
     except rwgate.VersionSkewRefused as exc:

@@ -43,6 +43,9 @@ DEFAULT_WINDOW_MIN = 10
 # Per-file cap only — the aggregate across every globbed shard stays uncapped.
 MAX_LOG_SIZE = 50_000_000
 _IDENT = "A-Za-z0-9_"
+_RUNTIMES = ("claude", "codex", "direct")
+_RUNTIME_KEY = "_join_avoidance_runtime"
+_UNATTRIBUTED_RUNTIME = "unattributed"
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,7 @@ class CliAnswer:
     session: str
     ts: datetime
     module: str
+    runtime: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,7 @@ class ToolEvent:
     ts: datetime
     tool: str
     target: str
+    runtime: str | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,7 @@ class AvoidanceEvent:
     answer_ts: datetime
     tool_ts: datetime
     gap_seconds: float
+    runtime: str | None = None
 
 
 @dataclass
@@ -119,6 +125,7 @@ class Summary:
     avoidance_events: list[AvoidanceEvent] = field(default_factory=list)
     per_session: dict[str, int] = field(default_factory=dict)
     per_skill: dict[str, int] = field(default_factory=dict)
+    per_runtime: dict[str, dict[str, int | float | dict[str, int]]] = field(default_factory=dict)
 
     @property
     def rate(self) -> float:
@@ -291,7 +298,10 @@ def parse_cli_records(records: list[dict]) -> list[CliAnswer]:
         ts = _parse_ts(record.get("ts"))
         session = record.get("session")
         if module and ts is not None and isinstance(session, str):
-            answers.append(CliAnswer(session=session, ts=ts, module=module))
+            runtime = record.get(_RUNTIME_KEY)
+            answers.append(
+                CliAnswer(session=session, ts=ts, module=module, runtime=runtime if runtime in _RUNTIMES else None)
+            )
     return answers
 
 
@@ -311,7 +321,12 @@ def parse_tool_records(records: list[dict]) -> list[ToolEvent]:
         session = record.get("session")
         tool = record.get("tool")
         if isinstance(target, str) and target and ts is not None and isinstance(session, str) and isinstance(tool, str):
-            events.append(ToolEvent(session=session, ts=ts, tool=tool, target=target))
+            runtime = record.get(_RUNTIME_KEY)
+            events.append(
+                ToolEvent(
+                    session=session, ts=ts, tool=tool, target=target, runtime=runtime if runtime in _RUNTIMES else None
+                )
+            )
     return events
 
 
@@ -333,7 +348,7 @@ def _find_leaked_answer(event: ToolEvent, answers: list[CliAnswer], window_secon
     """
     best: CliAnswer | None = None
     for answer in answers:
-        if answer.session != event.session:
+        if answer.session != event.session or answer.runtime != event.runtime:
             continue
         gap = (event.ts - answer.ts).total_seconds()
         if gap < 0 or gap > window_seconds:
@@ -377,16 +392,54 @@ def find_avoidance_events(
                 answer_ts=answer.ts,
                 tool_ts=event.ts,
                 gap_seconds=(event.ts - answer.ts).total_seconds(),
+                runtime=event.runtime,
             )
         )
     return flagged
+
+
+def _runtime_label(runtime: str | None) -> str:
+    """Return the report label for a scoped or legacy log source."""
+    return runtime or _UNATTRIBUTED_RUNTIME
+
+
+def _session_label(runtime: str | None, session: str) -> str:
+    """Return an unambiguous report key for one scoped session."""
+    return session if runtime is None else f"{runtime}:{session}"
+
+
+def _runtime_metrics(
+    answers: list[CliAnswer], events: list[ToolEvent], flagged: list[AvoidanceEvent]
+) -> dict[str, dict[str, int | float | dict[str, int]]]:
+    """Return totals, rates, and flagged modules grouped by source runtime."""
+    metrics: dict[str, dict[str, int | float | dict[str, int]]] = {}
+    for answer in answers:
+        label = _runtime_label(answer.runtime)
+        metric = metrics.setdefault(label, {"total_complete_answers": 0, "total_tool_events": 0, "avoidance_count": 0})
+        metric["total_complete_answers"] = int(metric["total_complete_answers"]) + 1
+    for event in events:
+        label = _runtime_label(event.runtime)
+        metric = metrics.setdefault(label, {"total_complete_answers": 0, "total_tool_events": 0, "avoidance_count": 0})
+        metric["total_tool_events"] = int(metric["total_tool_events"]) + 1
+    for event in flagged:
+        label = _runtime_label(event.runtime)
+        metric = metrics.setdefault(label, {"total_complete_answers": 0, "total_tool_events": 0, "avoidance_count": 0})
+        metric["avoidance_count"] = int(metric["avoidance_count"]) + 1
+        modules = metric.setdefault("modules", {})
+        assert isinstance(modules, dict)
+        modules[event.module] = modules.get(event.module, 0) + 1
+    for metric in metrics.values():
+        total = int(metric["total_tool_events"])
+        metric["rate"] = round(int(metric["avoidance_count"]) / total, 4) if total else 0.0
+        metric.setdefault("modules", {})
+    return metrics
 
 
 def summarize(
     answers: list[CliAnswer],
     events: list[ToolEvent],
     window_min: int = DEFAULT_WINDOW_MIN,
-    session_skill: dict[str, str] | None = None,
+    session_skill: dict[tuple[str | None, str] | str, str] | None = None,
 ) -> Summary:
     """Compute the full avoidance summary for a debrief report.
 
@@ -406,8 +459,9 @@ def summarize(
     per_skill: dict[str, int] = {}
     skill_map = session_skill or {}
     for event in flagged:
-        per_session[event.session] = per_session.get(event.session, 0) + 1
-        skill = skill_map.get(event.session)
+        session = _session_label(event.runtime, event.session)
+        per_session[session] = per_session.get(session, 0) + 1
+        skill = skill_map.get((event.runtime, event.session)) or skill_map.get(event.session)
         if skill:
             per_skill[skill] = per_skill.get(skill, 0) + 1
     return Summary(
@@ -417,6 +471,7 @@ def summarize(
         avoidance_events=flagged,
         per_session=per_session,
         per_skill=per_skill,
+        per_runtime=_runtime_metrics(answers, events, flagged),
     )
 
 
@@ -452,11 +507,28 @@ def _read_jsonl(path: Path) -> list[dict]:
     return records
 
 
-def _collect(paths: list[Path]) -> list[dict]:
-    """Read and concatenate records from every path in *paths*."""
+def _path_runtime(log_dir: Path, path: Path) -> str | None:
+    """Return the allowlisted runtime named by *path* below *log_dir*, if any."""
+    try:
+        parts = path.relative_to(log_dir).parts
+    except ValueError:
+        return None
+    return parts[0] if len(parts) > 1 and parts[0] in _RUNTIMES else None
+
+
+def _collect(paths: list[Path], log_dir: Path | None = None) -> list[dict]:
+    """Read paths and attach only their directory-derived runtime scope.
+
+    Any ``_RUNTIME_KEY`` already present in a record on disk is discarded first —
+    runtime scope is trusted only when derived from the shard's directory, never
+    from record content.
+    """
     records: list[dict] = []
     for path in paths:
-        records += _read_jsonl(path)
+        runtime = _path_runtime(log_dir, path) if log_dir is not None else None
+        for record in _read_jsonl(path):
+            record.pop(_RUNTIME_KEY, None)
+            records.append(record if runtime is None else record | {_RUNTIME_KEY: runtime})
     return records
 
 
@@ -470,14 +542,21 @@ def _shard_paths(log_dir: Path, layer: str) -> list[Path]:
     Returns:
         Sorted matching paths (``<layer>_*.jsonl`` and legacy ``<layer>.jsonl``).
     """
-    shards = sorted(log_dir.glob(f"{layer}_*.jsonl"))
+    shards = list(log_dir.glob(f"{layer}_*.jsonl"))
     legacy = log_dir / f"{layer}.jsonl"
     if legacy.exists():
         shards.append(legacy)
-    return shards
+    for runtime in _RUNTIMES:
+        runtime_dir = log_dir / runtime
+        if runtime_dir.is_dir():
+            shards.extend(runtime_dir.rglob(f"{layer}_*.jsonl"))
+            runtime_legacy = runtime_dir / f"{layer}.jsonl"
+            if runtime_legacy.exists():
+                shards.append(runtime_legacy)
+    return sorted(set(shards))
 
 
-def _session_skill_map(skill_records: list[dict]) -> dict[str, str]:
+def _session_skill_map(skill_records: list[dict]) -> dict[tuple[str | None, str], str]:
     """Map each session id to the first skill that started in it.
 
     Args:
@@ -486,16 +565,18 @@ def _session_skill_map(skill_records: list[dict]) -> dict[str, str]:
     Returns:
         session id → skill name; sessions with no skill record are absent.
     """
-    mapping: dict[str, str] = {}
+    mapping: dict[tuple[str | None, str], str] = {}
     for record in skill_records:
         session = record.get("session")
         skill = record.get("skill")
-        if isinstance(session, str) and isinstance(skill, str) and session not in mapping:
-            mapping[session] = skill
+        runtime = record.get(_RUNTIME_KEY)
+        scoped_session = (runtime if runtime in _RUNTIMES else None, session)
+        if isinstance(session, str) and isinstance(skill, str) and scoped_session not in mapping:
+            mapping[scoped_session] = skill
     return mapping
 
 
-def _resolve_inputs(args: argparse.Namespace) -> tuple[list[dict], list[dict], dict[str, str]]:
+def _resolve_inputs(args: argparse.Namespace) -> tuple[list[dict], list[dict], dict[tuple[str | None, str] | str, str]]:
     """Resolve CLI arguments into (cli_records, tool_records, session_skill_map).
 
     Args:
@@ -506,9 +587,9 @@ def _resolve_inputs(args: argparse.Namespace) -> tuple[list[dict], list[dict], d
     """
     if args.logs:
         log_dir = Path(args.logs)
-        cli = _collect(_shard_paths(log_dir, "cli"))
-        tools = _collect(_shard_paths(log_dir, "tools"))
-        skills = _collect(_shard_paths(log_dir, "skills"))
+        cli = _collect(_shard_paths(log_dir, "cli"), log_dir)
+        tools = _collect(_shard_paths(log_dir, "tools"), log_dir)
+        skills = _collect(_shard_paths(log_dir, "skills"), log_dir)
         return cli, tools, _session_skill_map(skills)
     cli = _collect([Path(args.cli)]) if args.cli else []
     tools = _collect([Path(args.tools)]) if args.tools else []
@@ -546,6 +627,13 @@ def render_text(summary: Summary) -> str:
         lines.append("  per skill:")
         for skill, count in sorted(summary.per_skill.items(), key=lambda kv: (-kv[1], kv[0])):
             lines.append(f"    {skill}: {count}")
+    if summary.per_runtime:
+        lines.append("  per runtime:")
+        for runtime, metric in sorted(summary.per_runtime.items()):
+            lines.append(
+                f"    {runtime}: {metric['avoidance_count']}/{metric['total_tool_events']} "
+                f"(rate {float(metric['rate']):.1%}; modules {metric['modules']})"
+            )
     return "\n".join(lines)
 
 
@@ -566,6 +654,7 @@ def render_json(summary: Summary) -> str:
         "rate": round(summary.rate, 4),
         "per_session": summary.per_session,
         "per_skill": summary.per_skill,
+        "per_runtime": summary.per_runtime,
         "events": [
             {
                 "session": e.session,
@@ -575,6 +664,7 @@ def render_json(summary: Summary) -> str:
                 "answer_ts": e.answer_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "tool_ts": e.tool_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "gap_seconds": round(e.gap_seconds, 1),
+                "runtime": e.runtime,
             }
             for e in summary.avoidance_events
         ],

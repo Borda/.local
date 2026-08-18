@@ -3,8 +3,7 @@
 Runs the Claude and Codex install probes as subprocesses against a fresh build.
 Each test skips with a named reason ONLY when its runtime CLI is absent (CI
 runners without ``claude``/``codex``); when the CLI is present it asserts the
-probe exits 0, reports ``verification.ok``, exposes the exact roster (six Claude
-skills; zero Codex skills), installs to a path OUTSIDE the repo checkout
+probe exits 0, reports ``verification.ok``, exposes the exact six-skill rosters and Codex hook config, installs to a path OUTSIDE the repo checkout
 (source-hidden), and — via the probe's source-independent runtime proof — builds
 from a DISPOSABLE source copy, DELETES it (source_checkout_unavailable), then
 executes ``doctor``/``index``/``query`` from the installed bytes under a scrubbed
@@ -82,6 +81,7 @@ def test_codex_probe_installs_and_verifies_exact_roster() -> None:
     verification = result["verification"]
     assert verification["ok"] is True, verification["issues"]
     assert set(verification["skill_dirs"]) == _EXPECTED_CLAUDE_SKILLS
+    assert verification["checks"]["hooks_config_present"] is True
     _assert_source_hidden(result["installed_path"])
     _assert_runtime_proof(result)
 

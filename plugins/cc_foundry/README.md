@@ -167,6 +167,8 @@ What it does:
 
 Hooks (`hooks.json`) register automatically when plugin enabled — `/foundry:setup` never touches them directly.
 
+Codemap integration metadata uses the `codemap-py.integration.v2` managed-block body while retaining the `v1` sentinel format; use `codemap-py integrate audit` for read-only integration evidence.
+
 ______________________________________________________________________
 
 ### `/foundry:audit`

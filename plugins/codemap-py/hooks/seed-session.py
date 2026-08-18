@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed Claude's per-project session marker without blocking a session start."""
+"""Seed Claude's per-project session marker without blocking startup."""
 
 from __future__ import annotations
 
@@ -28,12 +28,14 @@ project_name = _hookutil.project_name
 
 
 def main() -> int:
-    """Persist a non-empty hook session ID, failing open on every error."""
+    """Persist a non-empty Claude session ID, failing open on every error."""
     try:
+        if _hookutil.runtime() != "claude":
+            return 0
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict):
             return 0
-        session_id = str(payload.get("session_id", "")).strip()
+        session_id = _hookutil.runtime_session(payload)
         if not session_id:
             return 0
         tmp_dir = Path(os.environ.get("TMPDIR") or tempfile.gettempdir())

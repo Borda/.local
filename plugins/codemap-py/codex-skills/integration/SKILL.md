@@ -1,6 +1,6 @@
 ---
 name: integration
-description: "Codemap integration: check|plan|apply|sync|demo; skip query/index rebuilds."
+description: "Codemap integration: audit|plan|apply|sync|demo; skip query/index rebuilds."
 ---
 
 NOT for: structural queries (`$codemap-py:query-code`) or index rebuilds (`$codemap-py:scan-codebase`).
@@ -9,11 +9,11 @@ NOT for: structural queries (`$codemap-py:query-code`) or index rebuilds (`$code
 
 Runtime adapter over the `codemap-py integrate` engine (`src/codemap_py/integration.py`). Either host runtime — Claude Code or Codex — can target Claude Code, Codex, or both; this skill never invokes the other runtime's model, only its native plugin-manager CLI.
 
-Five modes, matching the pinned CLI surface exactly (never a legacy `check|init|demo` model):
+Five modes, matching the pinned CLI surface exactly; the legacy `check` mode is removed without an alias:
 
 | Mode | Args | Mutation | Exit |
 | --- | --- | --- | --- |
-| `check` | `[--runtime {claude,codex,both}] [--json]` | none | 0 ok; 1 runtime/fs fail; 2 bad syntax |
+| `audit` | `[--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD]` | none | 0 pass/warn; 1 fail; 2 bad syntax |
 | `plan` | `[--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>]` | report artifact only | 0; 2 bad syntax |
 | `apply` | `--plan <artifact> --approve <sha256>` | verified source checkout only | 0; 1 drift/fs; 2 bad approve/syntax |
 | `sync` | `--source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...]` | local runtime plugin state | 0; 1 partial-fail/journal; 2 bad approve |
@@ -30,7 +30,7 @@ Safety invariants (enforced by the shared engine, not this skill — surfaced he
 - Source writes use before-images and atomic per-file replace; `apply` refuses foreign/modified markers, path escapes, symlinks, installed-cache roots, dirty working-tree overlap, and unverified product identity.
 - `sync` refuses applying a plan whose source isn't actually built into the selected candidate, whose installed bytes don't match the selected hash, or that names a mutable/default-branch source as release/rollback evidence. No implicit "latest".
 - First-target success + second-target failure stops immediately; rollback only performs actions the approved plan already contains. Completion and rollback are both claimed only after a post-state hash verification.
-- "Push" here means two local operations only: (1) updating allowlisted, version-controlled consumer source integration from the `codemap-py.integration.v1` contract, and (2) installing/reinstalling those built plugin versions in the user's local runtime(s) via native CLI operations. It never means `git push`, remote marketplace mutation, release publication, or direct installed-cache edits.
+- "Push" here means two local operations only: (1) updating allowlisted, version-controlled consumer source integration from the `codemap-py.integration.v2` contract, and (2) installing/reinstalling those built plugin versions in the user's local runtime(s) via native CLI operations. It never means `git push`, remote marketplace mutation, release publication, or direct installed-cache edits.
 
 ## Runtime note
 
@@ -51,19 +51,19 @@ Codex-specific fresh-session instruction: Codex requires a fresh app/session bou
 
 ### Step 1: Resolve mode
 
-Parse the invocation text (case-insensitive): starts with `check` or is empty → check mode; `plan` → plan mode; `apply` → apply mode; `sync` → sync mode; `demo` → demo mode. Anything else → ask in chat which of the five modes was intended and wait for the reply.
+Parse the invocation text (case-insensitive): starts with `audit` or is empty → audit mode; `plan` → plan mode; `apply` → apply mode; `sync` → sync mode; `demo` → demo mode. Anything else → ask in chat which of the five modes was intended and wait for the reply.
 
 ### Step 2: Run the mode
 
 ```bash
-PLUGIN_ROOT/bin/codemap-py integrate check [--runtime <r>] [--json]
+PLUGIN_ROOT/bin/codemap-py integrate audit [--runtime <r>] [--json] [--since YYYY-MM-DD]
 PLUGIN_ROOT/bin/codemap-py integrate plan [--runtime <r>] [--consumers <csv>] [--source <s>] [--out <artifact>]
 PLUGIN_ROOT/bin/codemap-py integrate apply --plan <artifact> --approve <sha256>
 PLUGIN_ROOT/bin/codemap-py integrate sync --source <s> --plan <artifact> --approve <sha256> [--runtime <r>]
 PLUGIN_ROOT/bin/codemap-py integrate demo [--runtime <r>]
 ```
 
-**`check`** — reports installed/active versions, roots, protocol compatibility, Codex-Rig-owned global-instruction status when publicly available (`absent|present|authenticated` from verifiable bytes only — `stale` only via a versioned Codex-Rig-owned read-only status contract, otherwise `unavailable`, never guessed), fallback state, shared-index identity, and runtime-log isolation. Never invokes `install_global_agents.py`, never writes `${CODEX_HOME}/AGENTS.md`.
+**`audit`** — performs a bounded read-only inspection of provider/consumer versions, observed provider content identity, managed blocks, index identity, runtime-scoped logs, usage, and findings. It reports `pass`, `warn`, or `fail` and never invokes `plan`, `apply`, `sync`, `index`, query self-heal, native plugin-manager mutation, or global-instruction installation. A same-version content mismatch is a high-severity drift finding; a native listing without session provenance is reported as `session_catalog: unobservable`. Codex contributes runtime-scoped CLI and tool shards but has no skill-start hook, and host hooks expose no token usage, so audit reports evidence limits rather than claiming live fresh-session activation or token savings. `--json` emits schema 2 (`codemap-py.integration.v2`); `--since` filters telemetry by date.
 
 **`plan`** — writes a report artifact only; no mutation. Print the artifact path, the recorded targets, and the plan SHA-256.
 
@@ -71,7 +71,7 @@ PLUGIN_ROOT/bin/codemap-py integrate demo [--runtime <r>]
 
 **`sync`** — same approval gate as `apply`, plus `--source {local-candidate,release}`. After a successful sync, apply the Codex fresh-session instruction above when `codex-rig` or `codemap-py` was among the synced targets.
 
-**`demo`** — runs `check` plus representative plain-vs-structural-context workflows and records the protocol/version/evidence used; disposable unless the user separately approves a mutation.
+**`demo`** — runs `audit` plus representative plain-vs-structural-context workflows and records the protocol/version/evidence used; disposable unless the user separately approves a mutation.
 
 ### Step 3: Report
 

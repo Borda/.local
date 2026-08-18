@@ -44,6 +44,7 @@ LOG_DIR_ENV = "CODEMAP_LOG_DIR"
 
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
 _INVOCATION: tuple[int, str] | None = None
+_PLUGIN_VERSION: str | None = None
 
 
 def resolve_runtime(raw: object) -> tuple[str, Diagnostic | None]:
@@ -91,6 +92,18 @@ def invocation_id() -> str:
     if _INVOCATION is None or _INVOCATION[0] != pid:
         _INVOCATION = (pid, f"{pid}-{time.time_ns()}")
     return _INVOCATION[1]
+
+
+def plugin_version() -> str:
+    """Return the installed plugin version, or ``"?"`` when it cannot be read."""
+    global _PLUGIN_VERSION  # noqa: PLW0603 - read-once telemetry metadata cache
+    if _PLUGIN_VERSION is None:
+        try:
+            manifest = Path(__file__).resolve().parents[2] / ".claude-plugin" / "plugin.json"
+            _PLUGIN_VERSION = str(json.loads(manifest.read_text(encoding="utf-8")).get("version", "?"))
+        except (OSError, TypeError, ValueError, AttributeError):
+            _PLUGIN_VERSION = "?"
+    return _PLUGIN_VERSION
 
 
 def log_root(*, root: Path | None = None, override: str | None = None) -> Path:
@@ -223,9 +236,16 @@ def write_log(
     try:
         path = log_path(resolved, session, root=root, override=override)
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "runtime": resolved}
+        payload = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "runtime": resolved,
+            "v": plugin_version(),
+        }
         if isinstance(record, dict):
             payload.update(record)
+        # The caller may add event metadata but cannot forge the shard identity.
+        payload["runtime"] = resolved
+        payload["v"] = plugin_version()
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, separators=(",", ":")) + "\n")
     except Exception:  # noqa: BLE001 - logging failure must never block index work

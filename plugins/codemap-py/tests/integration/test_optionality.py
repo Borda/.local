@@ -2,7 +2,7 @@
 
 ``-k provider_only``: with every declared consumer hidden/absent, ``codemap-py``'s own six
 skills stay discoverable, the shared-index/logging surface resolves fine, and the
-non-mutating ``integrate check`` inspection path names absent consumers from bytes on disk
+non-mutating ``integrate audit`` inspection path names absent consumers from bytes on disk
 alone — never by importing, locating, or installing a ``cc_*``/``codex-rig`` package.
 """
 
@@ -81,35 +81,39 @@ def test_provider_only_six_skills_discoverable_regardless_of_consumers() -> None
 
 
 # --------------------------------------------------------------------------------------
-# `integrate check` names absent consumers from bytes only — zero-write, no import.
+# `integrate audit` names absent consumers from bytes only — zero-write, no import.
 # --------------------------------------------------------------------------------------
 
 
-def test_provider_only_check_names_absent_consumers_from_bytes(provider_only_repo: Path) -> None:
-    """``check`` with every consumer hidden reports each as a named absent state, not an error."""
-    report = integration.build_check_report("both", provider_only_repo / integration.PROVIDER_DIR)
+def test_provider_only_audit_names_absent_consumers_from_bytes(provider_only_repo: Path) -> None:
+    """``audit`` with every consumer hidden reports each as a named absent state, not an error."""
+    report = integration.build_audit_report("both", provider_only_repo / integration.PROVIDER_DIR)
     for runtime_name in ("claude", "codex"):
-        block = report[runtime_name]
-        assert block["available"] is False
+        block = report["provider"]["runtimes"][runtime_name]
+        assert block["probe_available"] is False
         for consumer_status in block["consumers"].values():
-            assert consumer_status == {
+            assert {
+                key: consumer_status[key]
+                for key in ("manifest_present", "name_matches", "source_version", "installed_version")
+            } == {
                 "manifest_present": False,
                 "name_matches": False,
                 "source_version": None,
                 "installed_version": None,
             }
+            assert consumer_status["managed_block"]["status"] == "absent"
 
 
-def test_provider_only_check_is_zero_write(provider_only_repo: Path) -> None:
-    """``check`` in the provider-only lane still never mutates the fixture tree."""
+def test_provider_only_audit_is_zero_write(provider_only_repo: Path) -> None:
+    """``audit`` in the provider-only lane still never mutates the fixture tree."""
     before = _tree_snapshot(provider_only_repo)
-    integration.build_check_report("both", provider_only_repo / integration.PROVIDER_DIR)
+    integration.build_audit_report("both", provider_only_repo / integration.PROVIDER_DIR)
     assert _tree_snapshot(provider_only_repo) == before
 
 
-def test_provider_only_check_cli_exits_zero(provider_only_repo: Path) -> None:
-    """``integrate check`` at the CLI boundary exits 0 even with every consumer absent."""
-    code = integration.run(["check", "--runtime", "both", "--json"], provider_only_repo / integration.PROVIDER_DIR)
+def test_provider_only_audit_cli_exits_zero(provider_only_repo: Path) -> None:
+    """``integrate audit`` exits 0 with absent optional consumers and evidence warnings."""
+    code = integration.run(["audit", "--runtime", "both", "--json"], provider_only_repo / integration.PROVIDER_DIR)
     assert code == 0
 
 
@@ -129,6 +133,6 @@ def test_provider_only_plan_rejects_unknown_but_reports_known_absent(provider_on
 
 def test_provider_only_shared_index_and_logging_resolve(provider_only_repo: Path) -> None:
     """Shared-index identity and runtime-log isolation resolve with no consumer installed."""
-    report = integration.build_check_report("claude", provider_only_repo / integration.PROVIDER_DIR)
+    report = integration.build_audit_report("claude", provider_only_repo / integration.PROVIDER_DIR)
     assert report["shared_index"]["root"] == str(provider_only_repo.resolve())
-    assert set(report["runtime_log_isolation"]) == {"claude", "codex", "direct"}
+    assert set(report["runtime_logs"]["selected"]) == {"claude"}

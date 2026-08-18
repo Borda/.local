@@ -82,7 +82,7 @@ class TestContextContract:
         """Consumer header names the managed-block contract and wrapper consumers."""
         text = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
         assert "<!-- file: codemap-context.md" in text
-        assert "codemap-py.integration.v1" in text
+        assert "codemap-py.integration.v2" in text
 
     @pytest.mark.parametrize(
         "section",

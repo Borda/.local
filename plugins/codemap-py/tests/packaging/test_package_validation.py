@@ -26,7 +26,9 @@ import validate_package as validator  # noqa: E402  (needs the scripts path inse
 _CLAUDE_MANIFEST = (
     b'{"name": "codemap-py", "version": "0.25.0", "skills": "./claude-skills/", "hooks": "./hooks/claude-hooks.json"}\n'
 )
-_CODEX_MANIFEST = b'{"name": "codemap-py", "version": "0.25.0", "skills": "./codex-skills/"}\n'
+_CODEX_MANIFEST = (
+    b'{"name": "codemap-py", "version": "0.25.0", "skills": "./codex-skills/", "hooks": "./hooks/codex-hooks.json"}\n'
+)
 _HOOKS_WIRING = (
     b'{"hooks": {"SessionStart": [{"hooks": [{"type": "command", '
     b'"command": "python \\"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.py\\""}]}]}}\n'
@@ -44,7 +46,9 @@ _MEMBERS: dict[str, tuple[bytes, bool]] = {
     "claude-skills/_shared/codemap-context.md": (b"shared loader\n", False),
     "codex-skills/scan-codebase/SKILL.md": (b"---\nname: scan-codebase\n---\n", False),
     "hooks/claude-hooks.json": (_HOOKS_WIRING, False),
+    "hooks/codex-hooks.json": (_HOOKS_WIRING, False),
     "hooks/seed-session.py": (b"# seed session\n", False),
+    "hooks/_hookutil.py": (b"# shared hook helpers\n", False),
     "bin/scan-index": (b"#!/usr/bin/env python3\nprint('index')\n", True),
     "bin/_schema.py": (b"SCAN_VERSION = 11\n", False),
 }
@@ -248,6 +252,19 @@ def test_codex_manifest_missing_skills_key_flagged(valid_package: Path) -> None:
     _mutate_manifest(valid_package, lambda m: _sync_hash(m, ".codex-plugin/plugin.json", payload))
     assert any(
         "codex manifest must declare skills: ./codex-skills/" in item for item in validate_findings(valid_package)
+    )
+
+
+def test_codex_manifest_missing_hooks_key_flagged(valid_package: Path) -> None:
+    """A Codex package without its runtime hook pointer is not integration-complete."""
+    codex = valid_package / ".codex-plugin" / "plugin.json"
+    payload = b'{"name": "codemap-py", "version": "0.25.0", "skills": "./codex-skills/"}\n'
+    codex.write_bytes(payload)
+    _mutate_manifest(valid_package, lambda m: _sync_hash(m, ".codex-plugin/plugin.json", payload))
+
+    assert any(
+        "codex manifest must declare hooks: ./hooks/codex-hooks.json" in item
+        for item in validate_findings(valid_package)
     )
 
 

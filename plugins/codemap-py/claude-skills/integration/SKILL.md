@@ -3,10 +3,10 @@ name: integration
 description: |
   Adapter over `codemap-py integrate` — audit, plan, source-wire, locally sync, and demonstrate the
   codemap-py integration with its supported consumers. Trigger with `/codemap-py:integration
-  check|plan|apply|sync|demo [--runtime {claude,codex,both}] ...`. Default (no args) is `check`.
+  audit|plan|apply|sync|demo [--runtime {claude,codex,both}] ...`. Default (no args) is `audit`.
   Skip for: running a structural query (use `/codemap-py:query-code`); explicit standalone index
   rebuild (use `/codemap-py:scan-codebase`).
-argument-hint: "check [--runtime {claude,codex,both}] [--json] | plan [--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>] | apply --plan <artifact> --approve <sha256> | sync --source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...] | demo [--runtime ...]"
+argument-hint: "audit [--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD] | plan [--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>] | apply --plan <artifact> --approve <sha256> | sync --source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...] | demo [--runtime ...]"
 effort: medium
 allowed-tools: Bash, AskUserQuestion
 model: sonnet
@@ -18,11 +18,11 @@ Runtime adapter over the `codemap-py integrate` engine (`src/codemap_py/integrat
 can target Claude Code, Codex, or both; this skill never invokes the other runtime's model, only its
 native plugin-manager CLI.
 
-Five modes, matching the pinned CLI surface exactly (never the retired `check|init|demo` model):
+Five modes, matching the pinned CLI surface exactly (the retired `check` mode is removed):
 
 | Mode | Args | Mutation | Exit |
 | --- | --- | --- | --- |
-| `check` | `[--runtime {claude,codex,both}] [--json]` | none | 0 ok; 1 runtime/fs fail; 2 bad syntax |
+| `audit` | `[--runtime {claude,codex,both}] [--json] [--since YYYY-MM-DD]` | none | 0 pass/warn; 1 fail; 2 bad syntax |
 | `plan` | `[--runtime ...] [--consumers <csv>] [--source {local-candidate,release}] [--out <artifact>]` | report artifact only | 0; 2 bad syntax |
 | `apply` | `--plan <artifact> --approve <sha256>` | verified source checkout only | 0; 1 drift/fs; 2 bad approve/syntax |
 | `sync` | `--source {local-candidate,release} --plan <artifact> --approve <sha256> [--runtime ...]` | local runtime plugin state | 0; 1 partial-fail/journal; 2 bad approve |
@@ -56,7 +56,7 @@ contract):
   approved plan already contains. Completion and rollback are both claimed only after a post-state
   hash verification.
 - "Push" here means two local operations only: (1) updating allowlisted, version-controlled consumer
-  source integration from the `codemap-py.integration.v1` contract, and (2) installing/reinstalling
+  source integration from the `codemap-py.integration.v2` contract, and (2) installing/reinstalling
   those built plugin versions in the user's local runtime(s) via native CLI operations. It never means
   `git push`, remote marketplace mutation, release publication, or direct installed-cache edits.
 
@@ -68,15 +68,15 @@ NOT for: running a structural query (use `/codemap-py:query-code`); explicit sta
 <inputs>
 
 - **$ARGUMENTS**: optional — one of:
-  - Omitted or `check` — audit installed/active versions, roots, protocol compatibility, and
-    Codex-Rig global-instruction status; zero-write.
+  - Omitted or `audit` — inspect provider, consumer, managed-block, index, runtime-log, and usage
+    evidence; zero-write.
   - `plan` — persist a report artifact (targets, argv, hashes, rollback identities, plan SHA-256);
     never mutates.
   - `apply` — atomically update current-version managed blocks in allowlisted consumer source files
     from an approved plan.
   - `sync` — install/reinstall the approved plan's targets in local runtime(s) via native plugin-
     manager CLIs.
-  - `demo` — run `check` plus representative plain-vs-structural-context workflows; disposable evidence only.
+  - `demo` — run `audit` plus representative plain-vs-structural-context workflows; disposable evidence only.
 
 </inputs>
 
@@ -84,23 +84,27 @@ NOT for: running a structural query (use `/codemap-py:query-code`); explicit sta
 
 ## Step 1: Resolve mode
 
-Parse `$ARGUMENTS` (case-insensitive): starts with `check` or empty → check mode; `plan` → plan mode;
+Parse `$ARGUMENTS` (case-insensitive): starts with `audit` or empty → audit mode; `plan` → plan mode;
 `apply` → apply mode; `sync` → sync mode; `demo` → demo mode. Anything else → `AskUserQuestion`:
-"Unrecognized command `$ARGUMENTS`. Which of the five modes did you mean?" Options: (a) `check`, (b)
+"Unrecognized command `$ARGUMENTS`. Which of the five modes did you mean?" Options: (a) `audit`, (b)
 `plan`, (c) `apply`, (d) `sync`, (e) `demo` — wait for the reply before proceeding.
 
 ## Step 2: Run the mode
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" integrate check [--runtime <r>] [--json]  # timeout: 15000
+"${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" integrate audit [--runtime <r>] [--json] [--since YYYY-MM-DD]  # timeout: 15000
 ```
 
-**`check`** — reports installed/active versions, roots, protocol compatibility, Codex-Rig-owned
-global-instruction status when publicly available (`absent|present|authenticated` from verifiable
-bytes only — `stale` only via a versioned Codex-Rig-owned read-only status contract, otherwise
-`unavailable`, never guessed), fallback state, shared-index identity, and runtime-log isolation. Never
-invokes `install_global_agents.py`, never writes `${CODEX_HOME}/AGENTS.md`. Print the human-readable
-form by default; pass `--json` only when the result feeds further reasoning in this session.
+**`audit`** — performs a bounded read-only inspection of provider/consumer versions, observed provider
+content identity, managed blocks, index identity, runtime-scoped logs, usage, and findings. It reports
+`pass`, `warn`, or `fail` and never invokes `plan`, `apply`, `sync`, `index`, query self-heal, native
+plugin-manager mutation, or global-instruction installation. A same-version content mismatch is a
+high-severity drift finding; a native listing without session provenance is reported as
+`session_catalog: unobservable`. Codex contributes runtime-scoped CLI and tool shards but has no
+skill-start hook, and host hooks expose no token usage, so audit reports evidence limits rather than
+claiming live fresh-session activation or token savings. `--json` emits schema 2
+(`codemap-py.integration.v2`); `--since` filters telemetry by date. Print text by default; use JSON
+when the result feeds further reasoning.
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" integrate plan [--runtime <r>] [--consumers <csv>] [--source <s>] [--out <artifact>]  # timeout: 15000
@@ -118,7 +122,7 @@ it, print the plan summary and SHA-256 in chat and call `AskUserQuestion`: "Appl
 <consumers>, plan SHA-256: <sha256>)" — options (a) Approve — run `apply` with this exact SHA-256, (b)
 Cancel. Never construct or pass `--approve` on the user's behalf without this explicit confirmation.
 Maintainer/source-checkout operation — an end user installing immutable releases normally uses
-`check`, `sync`, and `demo`; `apply` never runs the native reinstall commands it reports, and `sync`
+`audit`, `sync`, and `demo`; `apply` never runs the native reinstall commands it reports, and `sync`
 never rewrites consumer source.
 
 ```bash
@@ -136,7 +140,7 @@ Codex-specific note: "Start a new Codex session before relying on the updated pl
 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap-py}/bin/codemap-py" integrate demo [--runtime <r>]  # timeout: 20000
 ```
 
-**`demo`** — runs `check` plus representative plain-vs-structural-context workflows and records the
+**`demo`** — runs `audit` plus representative plain-vs-structural-context workflows and records the
 protocol/version/evidence used; disposable unless the user separately approves a mutation. The
 contrast between the plain and structural runs is the evidence — a single structural query alone does
 not satisfy this mode. Print the report path the CLI returns.

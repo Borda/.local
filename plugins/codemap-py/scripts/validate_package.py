@@ -18,8 +18,8 @@ artifact:
 - declared-component closure: every component the manifests declare exists on
   disk AND in the inventory — the Claude ``skills`` pointer directory, each
   package-manifest roster skill's ``SKILL.md`` (roster matches the on-disk skill
-  dirs exactly), the ``hooks`` pointer file, and every hook helper it references;
-  the Codex manifest declares ``skills: ./codex-skills/`` and ships
+  dirs exactly), both runtime ``hooks`` pointer files, and every hook helper they
+  reference; the Codex manifest declares ``skills: ./codex-skills/`` and ships
   ``codex-skills/`` with the same six-skill roster as Claude (plan §8.2 parity);
 - executable modes: on POSIX, each file's on-disk executable bit matches its
   manifest ``exec`` flag (informational on Windows).
@@ -207,10 +207,16 @@ def _check_claude_roster(package: Path, manifest: dict, inventory: set[str]) -> 
 
 
 def _check_hook_helpers(package: Path, hooks_relative: str, inventory: set[str]) -> list[str]:
-    """Require every hook helper referenced by the wiring file to exist and be inventoried."""
+    """Require every hook helper referenced by the wiring file to exist and be inventoried.
+
+    ``hooks/_hookutil.py`` is checked unconditionally: every hook script imports it,
+    but no wiring file names it, so a package shipping the hooks without it would
+    otherwise validate clean while every hook crashes at import time.
+    """
     findings: list[str] = []
     blob = json.dumps(_load_json(package / hooks_relative))
-    for ref in sorted(set(re.findall(r"hooks/[A-Za-z0-9_.-]+\.py", blob))):
+    referenced = set(re.findall(r"hooks/[A-Za-z0-9_.-]+\.py", blob)) | {"hooks/_hookutil.py"}
+    for ref in sorted(referenced):
         if not (package / ref).is_file():
             findings.append(f"referenced hook helper missing: {ref}")
         elif ref not in inventory:
@@ -219,22 +225,26 @@ def _check_hook_helpers(package: Path, hooks_relative: str, inventory: set[str])
 
 
 def _check_declared_components(package: Path, manifest: dict, inventory: set[str]) -> list[str]:
-    """Require every component both manifests declare (Claude skills/hooks, Codex skills parity) to exist."""
+    """Require every component both runtime manifests declare to exist in the inventory."""
     findings = _check_claude_roster(package, manifest, inventory)
     claude = _load_json(package / ".claude-plugin" / "plugin.json")
     skills_ptr = claude.get("skills")
     if skills_ptr and not (package / _pointer_path(skills_ptr)).is_dir():
         findings.append(f"claude skills pointer dir missing: {_pointer_path(skills_ptr)}")
-    hooks_ptr = claude.get("hooks")
-    if hooks_ptr:
+    codex = _load_json(package / ".codex-plugin" / "plugin.json")
+    if codex.get("hooks") != "./hooks/codex-hooks.json":
+        findings.append(f"codex manifest must declare hooks: ./hooks/codex-hooks.json, got {codex.get('hooks')!r}")
+    for runtime, runtime_manifest in (("claude", claude), ("codex", codex)):
+        hooks_ptr = runtime_manifest.get("hooks")
+        if not hooks_ptr:
+            continue
         hooks_relative = _pointer_path(hooks_ptr)
         if not (package / hooks_relative).is_file():
-            findings.append(f"claude hooks pointer file missing: {hooks_relative}")
+            findings.append(f"{runtime} hooks pointer file missing: {hooks_relative}")
         elif hooks_relative not in inventory:
-            findings.append(f"claude hooks file not in inventory: {hooks_relative}")
+            findings.append(f"{runtime} hooks file not in inventory: {hooks_relative}")
         else:
             findings += _check_hook_helpers(package, hooks_relative, inventory)
-    codex = _load_json(package / ".codex-plugin" / "plugin.json")
     if codex.get("skills") != "./codex-skills/":
         findings.append(f"codex manifest must declare skills: ./codex-skills/, got {codex.get('skills')!r}")
     codex_roster = set(manifest.get("skills", {}).get("codex", []))

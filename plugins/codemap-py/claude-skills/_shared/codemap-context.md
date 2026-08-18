@@ -1,10 +1,10 @@
-<!-- file: codemap-context.md — consumers: develop/oss/foundry/research wrappers (plugins/cc_*/skills/_shared/codemap-context.md) reference this contract by installed-plugin cache path; provider→consumer wiring is the codemap-py.integration.v1 managed-block protocol -->
+<!-- file: codemap-context.md — consumers: develop/oss/foundry/research wrappers (plugins/cc_*/skills/_shared/codemap-context.md) reference this contract by installed-plugin cache path; provider→consumer wiring uses the codemap-py.integration.v2 managed-block body with a v1 sentinel schema -->
 
 # Codemap context contract — v3
 
 Plugin-agnostic structural-context contract. Consumer plugins (develop, oss, any) reference this file — never copy it. Wrappers add only per-agent query maps + flag surfaces + plugin-local batch/cache paths; query mechanics, evidence-line contract, completeness/staleness semantics, batch pre-flight, effort tiers live here once.
 
-> Contract version `v3` is the context-contract doc version — bump it when the query set or evidence contract changes. The provider→consumer wiring itself uses the `codemap-py.integration.v1` managed-block protocol (see `shared/integration-contract.md`), independent of this doc version.
+> Contract version `v3` is the context-contract doc version — bump it when the query set or evidence contract changes. The provider→consumer wiring uses the `codemap-py.integration.v2` managed-block body with a `v1` sentinel schema (see `shared/integration-contract.md`), independent of this doc version.
 
 ## Target derivation — pluggable (consumer supplies)
 

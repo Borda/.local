@@ -285,7 +285,7 @@ def resolve_index(
 def diagnose_split_index_roots(path_a: Path, path_b: Path) -> Diagnostic | None:
     """Return a ``split_index_roots`` diagnostic when two paths disagree.
 
-    ``codemap-py integrate check`` uses this to report — never to reconcile —
+    ``codemap-py integrate audit`` uses this to report — never to reconcile —
     when two runtime environments resolve different index paths.
 
     Args:

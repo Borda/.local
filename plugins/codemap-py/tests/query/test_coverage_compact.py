@@ -11,7 +11,7 @@ contract when a result is incomplete:
   never hides WHY a result is incomplete, alongside the always-present per-query
   honesty signals (``query_complete``, ``stale``, ``root_mismatch``).
 
-The scan-query CLI resolves the marker at ``<git-root>/.cache/codemap/current-session``,
+The scan-query CLI resolves the runtime marker under ``<git-root>/.cache/codemap``,
 so each test tree is a real git repo. The per-session sentinel lives in the OS temp dir
 keyed on the marker's session id; tests clear it around each run so ordering is
 deterministic and isolated.
@@ -61,26 +61,34 @@ def _write_marker(root: Path, session_id: str, *, ts_ms: int | None = None) -> N
     """Write the hook-owned session marker matching the cross-agent contract.
 
     Args:
-        root: git root whose ``.cache/codemap/current-session`` receives the marker.
+        root: git root whose Claude marker receives the session payload.
         session_id: session id to embed.
         ts_ms: epoch-ms timestamp; defaults to now. Pass an old value to simulate a
             marker past the TTL.
     """
     if ts_ms is None:
         ts_ms = int(time.time() * 1000)
-    marker = root / ".cache" / "codemap" / "current-session"
+    marker = root / ".cache" / "codemap" / "current-session-claude.json"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(json.dumps({"session_id": session_id, "ts": ts_ms}))
 
 
-def _run_coverage_query(scan_query: Path, root: Path, index_path: Path, *extra: str) -> dict:
+def _run_coverage_query(
+    scan_query: Path,
+    root: Path,
+    index_path: Path,
+    *extra: str,
+    runtime: str = "claude",
+) -> dict:
     """Run ``central --top 1`` and return its ``index`` coverage block."""
+    env = {**os.environ, "CODEMAP_LOGGING": "false"}
+    env["CODEMAP_RUNTIME"] = runtime
     result = subprocess.run(
         [sys.executable, str(scan_query), "--index", str(index_path), *extra, "central", "--top", "1"],
         capture_output=True,
         text=True,
         cwd=str(root),
-        env={**os.environ, "CODEMAP_LOGGING": "false"},
+        env=env,
     )
     assert result.returncode == 0, result.stderr + result.stdout
     return json.loads(result.stdout)["index"]
@@ -96,7 +104,7 @@ class TestCoverageDietFailVerbose:
     def test_unparsable_marker_stays_verbose(self, tmp_path, scan_index, scan_query):
         """A marker whose body is not valid JSON is treated as absent → always full block."""
         index_path = _build_diet_repo(tmp_path, scan_index)
-        marker = tmp_path / ".cache" / "codemap" / "current-session"
+        marker = tmp_path / ".cache" / "codemap" / "current-session-claude.json"
         marker.write_text("{ this is not json")
 
         first = _run_coverage_query(scan_query, tmp_path, index_path)
@@ -122,6 +130,25 @@ class TestCoverageDietFailVerbose:
 
         assert not first.get("compact")
         assert not second.get("compact"), "a marker past the TTL must never engage the diet"
+
+    def test_each_runtime_reads_only_its_session_marker(self, tmp_path, scan_index, scan_query):
+        """Codex compaction uses its own shard while preserving Claude's live marker."""
+        index_path = _build_diet_repo(tmp_path, scan_index)
+        marker_dir = tmp_path / ".cache" / "codemap"
+        marker_dir.mkdir(parents=True, exist_ok=True)
+        now = int(time.time() * 1000)
+        (marker_dir / "current-session-claude.json").write_text(json.dumps({"session_id": "claude-session", "ts": now}))
+        (marker_dir / "current-session-codex.json").write_text(json.dumps({"session_id": "codex-session", "ts": now}))
+        sentinel = Path(tempfile.gettempdir()) / "codemap-coverage-codex-session"
+        sentinel.unlink(missing_ok=True)
+        try:
+            first = _run_coverage_query(scan_query, tmp_path, index_path, runtime="codex")
+            second = _run_coverage_query(scan_query, tmp_path, index_path, runtime="codex")
+        finally:
+            sentinel.unlink(missing_ok=True)
+
+        assert not first.get("compact")
+        assert second.get("compact") is True
 
 
 class TestCompactBlockHonesty:

@@ -20,11 +20,12 @@ Usage:
     python anonymize.py --input cli.jsonl
     python anonymize.py --input skills.jsonl --out-dir .cache/codemap/export [--salt PATH]
     python anonymize.py --input cli.jsonl --output /explicit/path/cli-anon.jsonl
+    python anonymize.py --input .cache/codemap/logs --out-dir .cache/codemap/export
 
 Exit codes:
-    0 — success
-    1 — input file not found, or larger than MAX_LOG_SIZE
-    2 — refused: output directory contains a salt file
+    0 — success (directory mode counts oversized files as skipped instead of failing)
+    1 — input not found, or a file input larger than MAX_LOG_SIZE
+    2 — refused: output directory contains a salt file, or --output with a directory input
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ MAX_LOG_SIZE = 50_000_000
 
 #: Exit code returned when the resolved output directory holds a salt file.
 _EXIT_UNSAFE_OUT_DIR = 2
+_EXIT_DIRECTORY_OUTPUT = 2
 
 #: Matches a qualified-name token embedded in free text: an identifier followed by
 #: at least one ``.`` or ``::`` separator plus a further identifier (e.g. ``pkg.auth``,
@@ -504,6 +506,87 @@ def _resolve_output(
     return Path(base) / f"{stem}-anon.jsonl"
 
 
+def _directory_output(input_dir: Path, input_path: Path, out_dir: str | None, salt: bytes | None = None) -> Path:
+    """Resolve one directory-input export path while retaining its relative topology.
+
+    Args:
+        input_dir: Root directory supplied through ``--input``.
+        input_path: JSONL file found below ``input_dir``.
+        out_dir: Export root, or ``None`` for :data:`DEFAULT_OUT_DIR`.
+        salt: Per-project salt bytes, or ``None`` before salt-safety validation.
+
+    Returns:
+        The derived export path below the selected export root.
+    """
+    relative = input_path.relative_to(input_dir)
+    stem = _anonymize_stem(relative.stem, salt) if salt is not None else relative.stem
+    base = Path(out_dir) if out_dir is not None else Path(DEFAULT_OUT_DIR)
+    return base / relative.parent / f"{stem}-anon.jsonl"
+
+
+def _directory_inputs(input_dir: Path, exclude_root: Path | None = None) -> list[Path]:
+    """Return every JSONL file below a directory input in deterministic order.
+
+    Files under *exclude_root* (the export destination) are skipped so a re-run
+    whose export root sits inside the input tree never re-ingests its own prior
+    anonymized exports.
+    """
+    paths = (path for path in input_dir.rglob("*.jsonl") if path.is_file())
+    if exclude_root is not None:
+        resolved = exclude_root.resolve()
+        paths = (path for path in paths if not path.resolve().is_relative_to(resolved))
+    return sorted(paths)
+
+
+def _output_paths(
+    input_path: Path, inputs: list[Path], out_dir: str | None, explicit_output: str | None, salt: bytes | None = None
+) -> list[Path]:
+    """Resolve derived exports for a file input or every file below a directory input."""
+    if input_path.is_dir():
+        return [_directory_output(input_path, path, out_dir, salt) for path in inputs]
+    return [_resolve_output(input_path, out_dir, explicit_output, salt)]
+
+
+def _unsafe_output_path(output_paths: list[Path], salt_path: Path) -> Path | None:
+    """Return the first target that would place an export beside a salt file."""
+    return next(
+        (
+            path
+            for path in output_paths
+            if _dir_has_salt(path.parent) or path.parent.resolve() == salt_path.parent.resolve()
+        ),
+        None,
+    )
+
+
+def _process_inputs(inputs: list[Path], output_paths: list[Path], salt: bytes) -> tuple[int, int, int]:
+    """Write bounded anonymized exports and return processed, skipped, and oversized counts."""
+    processed = skipped = oversized = 0
+    for source_path, output_path in zip(inputs, output_paths, strict=True):
+        try:
+            size = source_path.stat().st_size
+        except OSError:
+            skipped += 1
+            continue
+        if size > MAX_LOG_SIZE:
+            oversized += 1
+            print(
+                f"anonymize: skipping oversized input ({size} bytes; max {MAX_LOG_SIZE}): {source_path}",
+                file=sys.stderr,
+            )
+            continue
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            current_processed, current_skipped = process(source_path, output_path, salt)
+        except OSError as exc:
+            skipped += 1
+            print(f"anonymize: skipping unreadable input: {source_path}: {exc}", file=sys.stderr)
+            continue
+        processed += current_processed
+        skipped += current_skipped
+    return processed, skipped, oversized
+
+
 def process(input_path: Path, output_path: Path, salt: bytes) -> tuple[int, int]:
     """Anonymize all records in input_path and write to output_path.
 
@@ -547,16 +630,16 @@ def _build_parser() -> argparse.ArgumentParser:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--input", required=True, help="Source JSONL log file")
+    parser.add_argument("--input", required=True, help="Source JSONL log file or directory tree")
     parser.add_argument(
         "--output",
         default=None,
-        help="Explicit destination path (overrides --out-dir); still refused if its directory holds a salt file",
+        help="Explicit destination file (file input only; overrides --out-dir and is refused beside a salt file)",
     )
     parser.add_argument(
         "--out-dir",
         default=None,
-        help=f"Directory for the '<input>-anon.jsonl' output (default {DEFAULT_OUT_DIR}; never the salt directory)",
+        help=f"Export root for derived outputs (default {DEFAULT_OUT_DIR}; directory input preserves its relative topology)",
     )
     parser.add_argument(
         "--salt",
@@ -573,7 +656,9 @@ def main(argv: list[str] | None = None) -> int:
         argv: Override ``sys.argv[1:]`` (mainly for testing).
 
     Returns:
-        0 on success; 1 if input is missing or oversized; 2 if the output directory holds a salt file.
+        0 on success; 1 if the input is missing, or a file input is oversized (directory
+        mode skips and counts oversized files instead); 2 if the output directory holds a
+        salt file, or ``--output`` is combined with a directory input.
     """
     args = _build_parser().parse_args(argv)
 
@@ -582,29 +667,53 @@ def main(argv: list[str] | None = None) -> int:
         print(f"anonymize: input not found: {input_path}", file=sys.stderr)
         return 1
 
-    size = input_path.stat().st_size
-    if size > MAX_LOG_SIZE:
-        print(f"anonymize: input too large ({size} bytes; max {MAX_LOG_SIZE}): {input_path}", file=sys.stderr)
+    is_directory = input_path.is_dir()
+    if is_directory and args.output is not None:
+        print(
+            "anonymize: --output is only valid for a file --input; use --out-dir for directory input", file=sys.stderr
+        )
+        return _EXIT_DIRECTORY_OUTPUT
+
+    export_root = Path(args.out_dir) if args.out_dir is not None else Path(DEFAULT_OUT_DIR)
+    inputs = _directory_inputs(input_path, export_root) if is_directory else [input_path]
+    if not is_directory and input_path.stat().st_size > MAX_LOG_SIZE:
+        print(
+            f"anonymize: input too large ({input_path.stat().st_size} bytes; max {MAX_LOG_SIZE}): {input_path}",
+            file=sys.stderr,
+        )
         return 1
 
-    output_path = _resolve_output(input_path, args.out_dir, args.output)
-    out_dir = output_path.parent
-    if _dir_has_salt(out_dir):
+    salt_path = Path(args.salt)
+    output_paths = _output_paths(input_path, inputs, args.out_dir, args.output)
+    unsafe_path = _unsafe_output_path(output_paths, salt_path)
+    if unsafe_path is not None:
         print(
-            f"anonymize: refusing to write into {out_dir} — it contains a '{SALT_FILENAME}' file; "
+            f"anonymize: refusing to write into {unsafe_path.parent} — it contains a '{SALT_FILENAME}' file; "
             f"anonymized output beside the salt is reversible. Use --out-dir (default {DEFAULT_OUT_DIR}).",
             file=sys.stderr,
         )
         return _EXIT_UNSAFE_OUT_DIR
 
-    salt = _load_salt(Path(args.salt))
-    # Re-resolved with the salt so a `<layer>_<session-id>` stem is pseudonymized too.
-    # The first resolution had to run salt-free: loading the salt creates the salt file,
-    # which must not happen on the refusal path above.
-    output_path = _resolve_output(input_path, args.out_dir, args.output, salt)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    processed, skipped = process(input_path, output_path, salt)
-    print(f"anonymize: {processed} records → {output_path}" + (f" ({skipped} skipped)" if skipped else ""))
+    salt = _load_salt(salt_path)
+    output_paths = _output_paths(input_path, inputs, args.out_dir, args.output, salt)
+    unsafe_path = _unsafe_output_path(output_paths, salt_path)
+    if unsafe_path is not None:
+        print(
+            f"anonymize: refusing to write into {unsafe_path.parent} — it contains a '{SALT_FILENAME}' file; "
+            f"anonymized output beside the salt is reversible. Use --out-dir (default {DEFAULT_OUT_DIR}).",
+            file=sys.stderr,
+        )
+        return _EXIT_UNSAFE_OUT_DIR
+    processed, skipped, oversized = _process_inputs(inputs, output_paths, salt)
+
+    if is_directory:
+        output_root = export_root
+        details = [f"{skipped} skipped" for _ in [None] if skipped]
+        details.extend(f"{oversized} oversized" for _ in [None] if oversized)
+        detail = f" ({', '.join(details)})" if details else ""
+        print(f"anonymize: {processed} records from {len(inputs)} files → {output_root}{detail}")
+    else:
+        print(f"anonymize: {processed} records → {output_paths[0]}" + (f" ({skipped} skipped)" if skipped else ""))
     return 0
 
 

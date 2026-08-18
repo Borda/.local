@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.3
+
+- Update the live Codemap-py consumer reference to the `codemap-py.integration.v2` managed-block body protocol and `integrate audit` command. The separate structural-context adapter remains `codemap-py.integration.v1`.
+
 ## 0.8.2
 
 - Add a compact, artifact-refreshed PR snapshot to every assessed `code-review` PR report and chat handoff: number/link, author, GitHub check state, verified-intent type, and mapped merge suggestion. The collector now retains `statusCheckRollup`; unavailable check evidence remains explicit rather than being presented as passing.

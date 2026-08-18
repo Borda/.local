@@ -84,7 +84,7 @@ class TestHookLayerAnchoring:
         result = _run_hook(_TOOL_HOOK, {"tool_name": "Grep", "tool_input": {"pattern": "x"}}, subdir)
 
         assert result.returncode == 0, result.stderr
-        assert sorted(p.name for p in (root / _LOGS_REL).glob("tools*.jsonl")) != []
+        assert sorted(p.name for p in (root / _LOGS_REL / "claude").glob("tools*.jsonl")) != []
         assert not (subdir / _LOGS_REL).exists()
 
     def test_skill_hook_writes_at_the_repo_root(self, repo_with_subdir: tuple[Path, Path]) -> None:
@@ -95,7 +95,7 @@ class TestHookLayerAnchoring:
         result = _run_hook(_SKILL_HOOK, payload, subdir)
 
         assert result.returncode == 0, result.stderr
-        assert sorted(p.name for p in (root / _LOGS_REL).glob("skills*.jsonl")) != []
+        assert sorted(p.name for p in (root / _LOGS_REL / "claude").glob("skills*.jsonl")) != []
         assert not (subdir / _LOGS_REL).exists()
 
 
@@ -109,12 +109,37 @@ class TestCliLayerAnchoring:
         root, subdir = repo_with_subdir
         monkeypatch.setenv("CODEMAP_LOGGING", "true")
         monkeypatch.delenv("CODEMAP_LOG_DIR", raising=False)
+        monkeypatch.delenv("CODEMAP_RUNTIME", raising=False)
+        monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        monkeypatch.delenv("CSID", raising=False)
         monkeypatch.chdir(subdir)
 
         telemetry.log_cli("rdeps", ["rdeps", "m"], {"ok": True}, 0.0)
 
-        assert sorted(p.name for p in (root / _LOGS_REL).glob("cli*.jsonl")) != []
+        assert sorted(p.name for p in (root / _LOGS_REL / "direct").glob("cli*.jsonl")) != []
         assert not (subdir / _LOGS_REL).exists()
+
+    def test_codex_cli_uses_thread_id_without_reading_the_claude_marker(
+        self, repo_with_subdir: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Codex uses CODEX_THREAD_ID in ``logs/codex``, never a Claude marker session."""
+        root, subdir = repo_with_subdir
+        marker_dir = root.parent / "markers"
+        marker_dir.mkdir(parents=True)
+        (marker_dir / f"codemap-{root.name}-session").write_text("claude-session")
+        monkeypatch.setenv("CODEMAP_LOGGING", "true")
+        monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread")
+        monkeypatch.setenv("TMPDIR", str(marker_dir))
+        monkeypatch.delenv("CODEMAP_LOG_DIR", raising=False)
+        monkeypatch.chdir(subdir)
+
+        telemetry.log_cli("rdeps", ["rdeps", "pkg.auth"], {"ok": True}, 0.0)
+
+        shard = root / _LOGS_REL / "codex" / "cli_codex-thread.jsonl"
+        record = json.loads(shard.read_text().strip())
+        assert record["runtime"] == "codex"
+        assert record["session"] == "codex-thread"
 
     def test_query_engine_has_no_import_time_log_dir(self) -> None:
         """``query`` must not re-freeze a CWD-relative log dir at import time.
@@ -140,13 +165,17 @@ class TestLayersAgree:
         assert _run_hook(_TOOL_HOOK, {"tool_name": "Glob", "tool_input": {"pattern": "*"}}, subdir).returncode == 0
         monkeypatch.setenv("CODEMAP_LOGGING", "true")
         monkeypatch.delenv("CODEMAP_LOG_DIR", raising=False)
+        monkeypatch.delenv("CODEMAP_RUNTIME", raising=False)
+        monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        monkeypatch.delenv("CSID", raising=False)
         monkeypatch.chdir(subdir)
 
         telemetry.log_cli("central", ["central"], {"ok": True}, 0.0)
 
-        shards = {p.parent for p in (root / _LOGS_REL).glob("*.jsonl")}
-        assert shards == {root / _LOGS_REL}
-        assert len(list((root / _LOGS_REL).glob("*.jsonl"))) == 2
+        shards = {p.parent for p in (root / _LOGS_REL).rglob("*.jsonl")}
+        assert shards == {root / _LOGS_REL / "claude", root / _LOGS_REL / "direct"}
+        assert len(list((root / _LOGS_REL).rglob("*.jsonl"))) == 2
 
     def test_hookutil_and_runtime_log_agree_from_a_subdir(
         self, repo_with_subdir: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
@@ -156,7 +185,7 @@ class TestLayersAgree:
         monkeypatch.delenv("CODEMAP_LOG_DIR", raising=False)
         monkeypatch.chdir(subdir)
 
-        assert _load_hookutil().log_dir() == rl.log_root() == root / _LOGS_REL
+        assert _load_hookutil().log_dir() == rl.log_dir_for("claude") == root / _LOGS_REL / "claude"
 
 
 class TestOverrideAnchoring:
@@ -172,7 +201,7 @@ class TestOverrideAnchoring:
         monkeypatch.chdir(subdir)
 
         assert rl.log_root() == elsewhere
-        assert _load_hookutil().log_dir() == elsewhere
+        assert _load_hookutil().log_dir() == elsewhere / "claude"
 
     def test_relative_override_anchors_to_the_repo_root(
         self, repo_with_subdir: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
@@ -183,7 +212,7 @@ class TestOverrideAnchoring:
         monkeypatch.chdir(subdir)
 
         assert rl.log_root() == root / "build" / "logs"
-        assert _load_hookutil().log_dir() == root / "build" / "logs"
+        assert _load_hookutil().log_dir() == root / "build" / "logs" / "claude"
 
     def test_runtime_component_survives_the_anchoring(self, repo_with_subdir: tuple[Path, Path]) -> None:
         """``log_dir_for`` still appends ``<runtime>/`` on top of the anchored root."""

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""_hookutil.py — helpers shared by the codemap-py Claude hooks.
+"""_hookutil.py — helpers shared by the codemap-py Claude and Codex hooks.
 
 Every hook here is launched as ``python "<plugin-root>/hooks/<name>.py"``, so
 ``hooks/`` is already ``sys.path[0]`` and a bare ``import _hookutil`` resolves with
@@ -8,7 +8,7 @@ the hooks deliberately do NOT import :mod:`codemap_py`, because they fire on eve
 Grep/Read/Glob/Bash call and must stay free of package imports and subprocesses.
 
 What lives here is exactly the logic that MUST agree across hooks — the project
-anchor, the telemetry log directory, the session/sentinel key sanitizer. Each was
+anchor, runtime identity, the telemetry log directory, and session/sentinel sanitizer. Each was
 previously copy-pasted per hook, and every divergence between copies was a silent
 join failure rather than an error: shards written under two different keys, or into
 two different directories, still look like perfectly healthy telemetry.
@@ -18,6 +18,7 @@ consumers: hooks/{seed-session,log-tool-use,log-skill-start,guard-redundant-scan
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -36,6 +37,35 @@ LOG_SUBDIR = Path(".cache", "codemap", "logs")
 #: (``codemap_py.runtime_log.LOG_DIR_ENV``) — a shard that ignored it would land
 #: outside the directory ``debrief-coding`` reads.
 LOG_DIR_ENV = "CODEMAP_LOG_DIR"
+RUNTIME_ALLOWLIST = frozenset({"claude", "codex"})
+DEFAULT_RUNTIME = "claude"
+
+
+def runtime() -> str:
+    """Return the allowlisted hook runtime, defaulting safely to Claude."""
+    value = os.environ.get("CODEMAP_RUNTIME", "").strip().lower()
+    return value if value in RUNTIME_ALLOWLIST else DEFAULT_RUNTIME
+
+
+def runtime_session(payload: dict | None = None) -> str:
+    """Return the host session identity without crossing runtime marker boundaries.
+
+    Codex events must never inherit Claude's persisted marker: a Codex thread is
+    supplied by ``CODEX_THREAD_ID`` or the hook payload. Claude retains its native
+    event ``session_id`` so its marker writer and readers keep their established key.
+    """
+    event = payload or {}
+    if runtime() == "codex":
+        for value in (
+            os.environ.get("CODEX_THREAD_ID"),
+            event.get("thread_id"),
+            event.get("session_id"),
+        ):
+            session = str(value or "").strip()
+            if session:
+                return session
+        return ""
+    return str(event.get("session_id", "")).strip()
 
 
 def project_root(cwd: Path | None = None) -> Path:
@@ -75,8 +105,8 @@ def project_root(cwd: Path | None = None) -> Path:
 def project_name(cwd: Path | None = None) -> str:
     """Return the project key: the basename of the nearest enclosing git root.
 
-    ``seed-session.py`` writes the session marker under this key and every reader —
-    the logging hooks and ``codemap_py.telemetry`` — must reproduce it exactly. Keying
+    Claude's ``seed-session.py`` writes the session marker under this key and every
+    Claude reader — the logging hooks and ``codemap_py.telemetry`` — must reproduce it exactly. Keying
     on ``Path.cwd().name`` instead, as three hooks each used to do in their own copy,
     meant a session started in a subdirectory looked for a marker nobody had written:
     records landed in an unsuffixed shard and the cross-layer join returned nothing,
@@ -124,7 +154,10 @@ def session_key(session_id: object) -> str:
     key = UNSAFE_KEY.sub("-", str(session_id or "").strip())
     if key:
         return key
-    csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
+    if runtime() == "codex":
+        csid = os.environ.get("CODEX_THREAD_ID") or "shared"
+    else:
+        csid = os.environ.get("CSID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "shared"
     return f"{UNSAFE_KEY.sub('-', Path.cwd().name)}-{UNSAFE_KEY.sub('-', csid)}"
 
 
@@ -146,7 +179,8 @@ def log_dir(cwd: Path | None = None) -> Path:
         cwd: Directory to resolve the project anchor from; defaults to the process CWD.
 
     Returns:
-        The log directory path (not created — callers ``mkdir(parents=True)``).
+        The runtime-scoped log directory path (not created — callers
+        ``mkdir(parents=True)``).
 
     Examples:
         >>> import tempfile
@@ -154,15 +188,26 @@ def log_dir(cwd: Path | None = None) -> Path:
         ...     nested = Path(d) / "proj" / "sub"
         ...     nested.mkdir(parents=True)
         ...     (Path(d) / "proj" / ".git").mkdir()
-        ...     log_dir(nested) == Path(d).resolve() / "proj" / ".cache" / "codemap" / "logs"
+        ...     log_dir(nested) == Path(d).resolve() / "proj" / ".cache" / "codemap" / "logs" / "claude"
         True
     """
     anchor = project_root(cwd)
     raw = os.environ.get(LOG_DIR_ENV)
     if not raw:
-        return anchor / LOG_SUBDIR
-    override = Path(raw).expanduser()
-    return override if override.is_absolute() else anchor / override
+        root = anchor / LOG_SUBDIR
+    else:
+        override = Path(raw).expanduser()
+        root = override if override.is_absolute() else anchor / override
+    return root / runtime()
+
+
+def plugin_version() -> str:
+    """Return the hook package version, degrading to ``"?"`` when unavailable."""
+    try:
+        manifest = Path(__file__).parents[1] / ".claude-plugin" / "plugin.json"
+        return str(json.loads(manifest.read_text(encoding="utf-8")).get("version") or "?")
+    except (OSError, TypeError, ValueError):
+        return "?"
 
 
 def tmp_dir() -> Path:

@@ -14,9 +14,10 @@ Flow (all inside the disposable home):
    entry points at the candidate with a ``./``-relative ``source.path``.
 3. ``codex plugin marketplace add <root>`` then ``codex plugin add codemap-py@<mkt> --json``.
 4. Statically verify the installed bytes: ``.codex-plugin/plugin.json`` has the expected
-   name/version and a Codex skill source referencing ``codex-skills`` (never a bundled
-   ``claude-skills``), with a non-empty installed Codex skill directory. The package validator
-   separately requires the shipped ``./codex-skills/`` source and its six-skill Claude parity.
+   name/version, a Codex skill source referencing ``codex-skills`` (never a bundled
+   ``claude-skills``), a non-empty installed Codex skill directory, and the packaged
+   runtime-scoped ``./hooks/codex-hooks.json`` declaration. The package validator separately
+   requires the shipped skill source and its six-skill Claude parity.
 5. Source-independent runtime proof (``_probe_runtime.runtime_proof``): DELETE the whole disposable
    source tree (copy checkout + candidate + marketplace) BEFORE any execution — the source the
    installed bytes came from is now literally unavailable (§9.4 step 03) — then run
@@ -140,6 +141,13 @@ def verify_codex_install(installed_path: Path) -> dict:
     checks["version_present"] = bool(manifest.get("version"))
     if not checks["version_present"]:
         issues.append("manifest version missing")
+    hooks_field = manifest.get("hooks")
+    checks["hooks_field_is_codex"] = hooks_field == "./hooks/codex-hooks.json"
+    issues.extend(
+        [] if checks["hooks_field_is_codex"] else [f"manifest hooks {hooks_field!r} != './hooks/codex-hooks.json'"]
+    )
+    checks["hooks_config_present"] = (installed_path / "hooks" / "codex-hooks.json").is_file()
+    issues.extend([] if checks["hooks_config_present"] else ["installed hooks/codex-hooks.json missing"])
 
     skills_field = manifest.get("skills")
     skills_dir = installed_path / "codex-skills"
@@ -167,7 +175,12 @@ def verify_codex_install(installed_path: Path) -> dict:
         "checks": checks,
         "issues": issues,
         "skill_dirs": skill_dirs,
-        "manifest": {"name": manifest.get("name"), "version": manifest.get("version"), "skills": skills_field},
+        "manifest": {
+            "name": manifest.get("name"),
+            "version": manifest.get("version"),
+            "skills": skills_field,
+            "hooks": hooks_field,
+        },
     }
 
 

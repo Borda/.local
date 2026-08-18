@@ -36,6 +36,28 @@ import pytest
 from codemap_py import query
 
 
+def test_incremental_self_heal_propagates_refresh_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The child scan receives self-heal facts while preserving unrelated runtime state."""
+    scan_bin = tmp_path / "scan-index"
+    scan_bin.write_text("placeholder")
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setenv("CODEMAP_RUNTIME", "codex")
+    monkeypatch.setattr(query.subprocess, "run", fake_run)
+
+    assert query._run_incremental_scan(scan_bin, tmp_path, 3) is True
+    env = captured["kwargs"]["env"]  # type: ignore[index]
+    assert env["CODEMAP_RUNTIME"] == "codex"  # type: ignore[index]
+    assert env["CODEMAP_REFRESH_TRIGGER"] == "query_self_heal"  # type: ignore[index]
+    assert env["CODEMAP_REFRESH_CHANGED_COUNT"] == "3"  # type: ignore[index]
+    assert env["CODEMAP_REFRESH_STALE_BEFORE"] == "true"  # type: ignore[index]
+
+
 def _literal_cap(source: str, name: str) -> int:
     """Return the integer *name* is assigned to at module level in *source*.
 

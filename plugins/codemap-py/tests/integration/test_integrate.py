@@ -2,7 +2,7 @@
 
 Black-box against the public API in ``src/codemap_py/integration.py``: ``run``,
 ``build_plan``, ``compute_plan_sha256``, ``load_plan``, ``verify_approval``,
-``apply_plan``, ``sync_plan``, ``build_check_report``, ``run_demo``, ``resolve_targets``,
+``apply_plan``, ``sync_plan``, ``build_audit_report``, ``run_demo``, ``resolve_targets``,
 ``Journal``, ``IntegrationError``/``RefusalError``/``ApprovalError``, and the module's own
 named internal helpers (``_render_managed_block``, ``_managed_block_status``,
 ``_unsafe_windows_batch_argv``, ``_resolve_native_command``) that w-engine.md calls out as
@@ -95,24 +95,764 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_class: str) -> Pa
 
 
 # --------------------------------------------------------------------------------------
-# check — zero-write.
+# audit — zero-write.
 # --------------------------------------------------------------------------------------
 
 
-def test_check_is_zero_write(repo: Path) -> None:
-    """``build_check_report`` never mutates the fixture tree."""
+def test_audit_json_v2_fails_current_flat_runtime_logs(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Current flat telemetry must fail audit instead of inheriting declared-path health."""
+    log_dir = repo / ".cache" / "codemap" / "logs"
+    log_dir.mkdir(parents=True)
+    _seed(
+        log_dir / "cli_current.jsonl",
+        json.dumps({"ts": "2026-08-18T11:00:00Z", "layer": "cli", "v": integration.__version__}) + "\n",
+    )
+
+    code = integration.run(["audit", "--runtime", "claude", "--json"], repo / integration.PROVIDER_DIR)
+    assert code == integration._EXIT_RUNTIME
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["schema_version"] == 2
+    assert payload["protocol"] == "codemap-py.integration.v2"
+    assert payload["status"] == "fail"
+    assert {finding["code"] for finding in payload["findings"]} >= {
+        "runtime_identity_missing",
+        "runtime_log_isolation_bypassed",
+    }
+
+
+@pytest.mark.parametrize(
+    ("runtime", "claude_index", "codex_index", "expects_split"),
+    [
+        ("both", "/indexes/claude.json", "/indexes/codex.json", True),
+        ("both", "/indexes/shared.json", "/indexes/shared.json", False),
+        ("claude", "/indexes/claude.json", None, False),
+    ],
+    ids=["both-diverge", "both-share", "one-runtime"],
+)
+def test_audit_index_paths_report_only_selected_runtime_divergence(
+    repo: Path,
+    runtime: str,
+    claude_index: str,
+    codex_index: str | None,
+    expects_split: bool,
+) -> None:
+    """Nested and top-level telemetry paths fail only when selected runtimes disagree."""
+    claude_log = repo / ".cache" / "codemap" / "logs" / "claude" / "nested"
+    claude_log.mkdir(parents=True)
+    _seed(
+        claude_log / "cli.jsonl",
+        json.dumps(
+            {
+                "ts": "2026-08-18T11:00:00Z",
+                "layer": "cli",
+                "runtime": "claude",
+                "v": integration.__version__,
+                "result": {"index": {"index_path": claude_index}},
+            }
+        )
+        + "\n",
+    )
+    if codex_index is not None:
+        codex_log = repo / ".cache" / "codemap" / "logs" / "codex"
+        codex_log.mkdir(parents=True)
+        _seed(
+            codex_log / "cli.jsonl",
+            json.dumps(
+                {
+                    "ts": "2026-08-18T11:00:01Z",
+                    "layer": "cli",
+                    "runtime": "codex",
+                    "v": integration.__version__,
+                    "result": {"index_path": codex_index},
+                }
+            )
+            + "\n",
+        )
+
+    report = integration.build_audit_report(runtime, repo / integration.PROVIDER_DIR)
+    codes = {finding["code"] for finding in report["findings"]}
+
+    assert ("split_index_roots" in codes) is expects_split
+    if expects_split:
+        split = next(finding for finding in report["findings"] if finding["code"] == "split_index_roots")
+        assert split["evidence"]["observed_runtime_paths"] == {
+            "claude": [claude_index],
+            "codex": [codex_index],
+        }
+
+
+@pytest.mark.parametrize(
+    ("indexed_sha", "expected_stale_state"),
+    [("current", None), ("stale", "stale")],
+    ids=["matching-sha", "stale-sha"],
+)
+def test_audit_index_evidence_reports_degraded_and_stale_state_without_query(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, indexed_sha: str, expected_stale_state: str | None
+) -> None:
+    """Audit reads bounded index evidence: degraded modules persist, SHA drift is explicit, query stays forbidden."""
+    identity = integration.index_paths.resolve_index(root=repo)
+    identity.index_path.parent.mkdir(parents=True, exist_ok=True)
+    _seed(
+        identity.index_path,
+        json.dumps(
+            {
+                "git_sha": indexed_sha,
+                "modules": [{"path": "pkg/broken.py", "status": "degraded", "reason": "parse error"}],
+            }
+        ),
+    )
+    monkeypatch.setattr(integration.scanner, "get_git_sha", lambda root: "current")
+    monkeypatch.setattr(
+        integration.query,
+        "main",
+        lambda *args, **kwargs: pytest.fail("audit must not invoke query while inspecting index evidence"),
+    )
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+    findings = {finding["code"]: finding for finding in report["findings"]}
+
+    assert findings["index_degraded"]["evidence"] == {
+        "count": 1,
+        "modules": [{"path": "pkg/broken.py", "reason": "parse error"}],
+    }
+    assert ("index_stale_or_unknown" in findings) is (expected_stale_state is not None)
+    if expected_stale_state is not None:
+        assert findings["index_stale_or_unknown"]["evidence"]["state"] == expected_stale_state
+
+
+def test_audit_direct_records_are_reported_separately_and_do_not_observe_claude(repo: Path) -> None:
+    """Per-invocation direct telemetry remains visible without satisfying selected-runtime evidence."""
+    log_dir = repo / ".cache" / "codemap" / "logs" / "direct"
+    log_dir.mkdir(parents=True)
+    direct_index = "/indexes/direct.json"
+    _seed(
+        log_dir / "cli.jsonl",
+        json.dumps(
+            {
+                "ts": "2026-08-18T11:00:00Z",
+                "layer": "cli",
+                "runtime": "direct",
+                "v": integration.__version__,
+                "result": {"index_path": direct_index},
+            }
+        )
+        + "\n",
+    )
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+    codes = {finding["code"] for finding in report["findings"]}
+
+    assert report["runtime_logs"]["direct"] == {
+        "files": 1,
+        "records": 1,
+        "current_records": 1,
+        "state": "observed",
+        "truncated": False,
+    }
+    assert report["runtime_logs"]["selected"]["claude"]["state"] == "not_observed"
+    assert report["shared_index"]["observed_runtime_paths"] == {"claude": [], "direct": [direct_index]}
+    assert report["usage"]["telemetry_records"] == 0
+    assert "runtime_logs_not_observed" in codes
+
+
+def test_audit_exposes_monkeypatched_codex_rig_global_status(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex audits surface the read-only global-instructions status instead of silently omitting it."""
+    monkeypatch.setattr(integration, "codex_rig_global_status", lambda: "authenticated")
+
+    report = integration.build_audit_report("codex", repo / integration.PROVIDER_DIR)
+
+    assert report["provider"]["codex_rig_global_instructions"] == "authenticated"
+
+
+def test_audit_observes_same_version_native_content_divergence_and_session_catalog_limit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Audit must fail same-version provider bytes while naming the native session-catalog boundary."""
+    _write_manifest(
+        repo / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, integration.__version__
+    )
+    (repo / integration.PROVIDER_DIR / "README.md").write_text("source bytes\n")
+    native = tmp_path / "native-codemap"
+    _write_manifest(native, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, integration.__version__)
+    _write_manifest(native, integration.Runtime.CODEX, integration.PROVIDER_NAME, integration.__version__)
+    (native / "README.md").write_text("installed bytes\n")
+    monkeypatch.setattr(
+        integration,
+        "_native_json_probe",
+        lambda argv: [
+            {
+                "id": "codemap-py@borda-ai-rig",
+                "version": integration.__version__,
+                "enabled": True,
+                "installPath": str(native),
+            }
+        ],
+    )
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+    provider = report["provider"]["runtimes"]["claude"]["provider"]
+    findings = {finding["code"]: finding for finding in report["findings"]}
+
+    assert report["provider"]["runtimes"]["claude"]["session_catalog"] == {
+        "state": "unobservable",
+        "reason": "native_plugin_list_has_no_session_catalog_provenance",
+    }
+    assert provider["native_plugin"] == {
+        "state": "observed",
+        "name": integration.PROVIDER_NAME,
+        "version": integration.__version__,
+        "enabled": True,
+        "source_path": str(native),
+    }
+    for key in ("source_content", "native_content"):
+        content = provider[key]
+        assert content["state"] == "observed"
+        assert content["schema_version"] == 1
+        assert len(content["sha256"]) == 64
+        assert content["file_count"] >= 2
+        assert content["bytes_hashed"] > 0
+    assert provider["source_content"]["sha256"] != provider["native_content"]["sha256"]
+    assert findings["provider_same_version_content_drift"] == {
+        "code": "provider_same_version_content_drift",
+        "severity": "high",
+        "status": "fail",
+        "evidence": {
+            "source_version": integration.__version__,
+            "installed_version": integration.__version__,
+            "source_sha256": provider["source_content"]["sha256"],
+            "native_sha256": provider["native_content"]["sha256"],
+        },
+        "affected_runtime": ["claude"],
+        "remediation_kind": "plan_sync",
+    }
+
+
+@pytest.mark.parametrize("native_path", ["same-source", "unreadable-native"], ids=["same-digest", "unreadable"])
+def test_audit_content_identity_equal_or_unknown_never_claims_drift(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, native_path: str
+) -> None:
+    """Equal bytes and unreadable native roots are distinct evidence states, neither a false drift finding."""
+    _write_manifest(
+        repo / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, integration.__version__
+    )
+    path = repo / integration.PROVIDER_DIR if native_path == "same-source" else repo / "missing-native-root"
+    monkeypatch.setattr(
+        integration,
+        "_native_json_probe",
+        lambda argv: [
+            {
+                "id": "codemap-py@borda-ai-rig",
+                "version": integration.__version__,
+                "enabled": True,
+                "installPath": str(path),
+            }
+        ],
+    )
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+    provider = report["provider"]["runtimes"]["claude"]["provider"]
+    codes = {finding["code"] for finding in report["findings"]}
+
+    assert "provider_same_version_content_drift" not in codes
+    if native_path == "same-source":
+        assert provider["native_content"]["state"] == "observed"
+        assert provider["native_content"]["sha256"] == provider["source_content"]["sha256"]
+    else:
+        assert provider["native_content"] == {"state": "unknown", "reason": "native_plugin_root_unreadable"}
+
+
+def test_audit_observes_codex_native_source_path(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex native evidence uses the configured source path without assuming a cache root."""
+    source = repo / integration.PROVIDER_DIR
+    _write_manifest(source, integration.Runtime.CODEX, integration.PROVIDER_NAME, integration.__version__)
+    monkeypatch.setattr(
+        integration,
+        "_native_json_probe",
+        lambda argv: {
+            "installed": [
+                {
+                    "name": integration.PROVIDER_NAME,
+                    "version": integration.__version__,
+                    "enabled": True,
+                    "source": {"type": "local", "path": str(source)},
+                }
+            ]
+        },
+    )
+
+    provider = integration.build_audit_report("codex", source)["provider"]["runtimes"]["codex"]["provider"]
+
+    assert provider["native_plugin"] == {
+        "state": "observed",
+        "name": integration.PROVIDER_NAME,
+        "version": integration.__version__,
+        "enabled": True,
+        "source_path": str(source),
+    }
+    assert provider["native_content"]["sha256"] == provider["source_content"]["sha256"]
+
+
+@pytest.mark.parametrize(
+    ("runtime", "payload", "consumer"),
+    [
+        pytest.param(integration.Runtime.CLAUDE, None, integration.PROVIDER_NAME, id="claude-provider"),
+        pytest.param(integration.Runtime.CODEX, {"installed": []}, "foundry", id="codex-consumer"),
+    ],
+)
+def test_audit_native_record_schema_is_stable_when_not_observed(
+    runtime: integration.Runtime,
+    payload: object,
+    consumer: str,
+) -> None:
+    """Unavailable native discovery retains the normalized provider/consumer schema."""
+    assert integration._native_plugin_record(runtime, payload, consumer) == {
+        "state": "not_observed",
+        "name": consumer,
+        "version": None,
+        "enabled": None,
+        "source_path": None,
+    }
+
+
+def test_audit_warns_on_same_version_consumer_content_drift(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A selected consumer with equal versions but unequal observed bytes is a factual warning."""
+    provider_source = repo / integration.PROVIDER_DIR
+    _write_manifest(provider_source, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, integration.__version__)
+    consumer_source = repo / "plugins/cc_foundry"
+    (consumer_source / "README.md").write_text("source consumer\n")
+    native_consumer = tmp_path / "native-foundry"
+    _write_manifest(native_consumer, integration.Runtime.CLAUDE, "foundry", "1.0.0")
+    (native_consumer / "README.md").write_text("native consumer\n")
+    monkeypatch.setattr(
+        integration,
+        "_native_json_probe",
+        lambda argv: [
+            {
+                "id": "codemap-py@borda-ai-rig",
+                "version": integration.__version__,
+                "enabled": True,
+                "installPath": str(provider_source),
+            },
+            {
+                "id": "foundry@borda-ai-rig",
+                "version": "1.0.0",
+                "enabled": True,
+                "installPath": str(native_consumer),
+            },
+        ],
+    )
+
+    report = integration.build_audit_report("claude", provider_source)
+    foundry = report["consumers"]["claude"]["foundry"]
+    finding = next(item for item in report["findings"] if item["code"] == "consumer_same_version_content_drift")
+
+    assert foundry["native_plugin"]["source_path"] == str(native_consumer)
+    assert foundry["source_content"]["sha256"] != foundry["native_content"]["sha256"]
+    assert finding["severity"] == "medium"
+    assert finding["status"] == "warn"
+    assert finding["evidence"]["consumer"] == "foundry"
+
+
+def test_audit_usage_reports_runtime_aggregates_without_raw_telemetry_payloads(repo: Path) -> None:
+    """Audit exposes only per-runtime counts/timing and declares tokens unavailable instead of leaking record payloads."""
+    log_dir = repo / ".cache" / "codemap" / "logs" / "claude"
+    log_dir.mkdir(parents=True)
+    _seed(
+        log_dir / "activity.jsonl",
+        "".join(
+            json.dumps(record) + "\n"
+            for record in (
+                {
+                    "ts": "2026-08-18T11:00:00Z",
+                    "layer": "cli",
+                    "runtime": "claude",
+                    "v": integration.__version__,
+                    "timing_ms": 7,
+                    "argv": ["query", "--secret-argv"],
+                    "result": {"target": "raw-result-secret"},
+                },
+                {
+                    "ts": "2026-08-18T11:00:01Z",
+                    "layer": "tool",
+                    "runtime": "claude",
+                    "v": integration.__version__,
+                    "tool": "Read",
+                    "target": "/private/raw-target.py",
+                    "timing_ms": 11,
+                },
+                {
+                    "ts": "2026-08-18T11:00:02Z",
+                    "layer": "skill",
+                    "event": "start",
+                    "runtime": "claude",
+                    "v": integration.__version__,
+                    "skill": "codemap-py:query-code",
+                    "intent": "raw-intent-secret",
+                },
+            )
+        ),
+    )
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+    usage = report["usage"]
+    rendered_usage = json.dumps(usage, sort_keys=True)
+
+    assert usage["activity_by_runtime"] == {"claude": {"records": 3, "layers": {"cli": 1, "skill": 1, "tool": 1}}}
+    assert usage["cli_timing_by_runtime"] == {"claude": {"count": 1, "total_ms": 7, "median_ms": 7, "p95_ms": 7}}
+    assert usage["tool_counts_by_runtime"] == {"claude": {"Read": 1}}
+    assert usage["skill_counts_by_runtime"] == {"claude": {"codemap-py:query-code": 1}}
+    assert usage["token_measurement"] == {
+        "status": "unavailable",
+        "reason": "host_hook_contract_has_no_token_usage",
+    }
+    for raw_value in ("--secret-argv", "raw-result-secret", "/private/raw-target.py", "raw-intent-secret"):
+        assert raw_value not in rendered_usage
+
+
+def test_audit_usage_scopes_completion_refresh_and_avoidance_by_runtime_session(repo: Path) -> None:
+    """Usage evidence joins nested/top-level completions only within each runtime/session and 600-second window."""
+    logs = repo / ".cache" / "codemap" / "logs"
+    claude_records = [
+        {
+            "ts": "2026-08-18T11:00:00Z",
+            "layer": "cli",
+            "cmd": "index",
+            "runtime": "claude",
+            "session": "same",
+            "v": integration.__version__,
+            "result": {"trigger": "query_self_heal"},
+        },
+        {
+            "ts": "2026-08-18T11:00:02Z",
+            "layer": "cli",
+            "runtime": "claude",
+            "session": "same",
+            "v": integration.__version__,
+            "result": {"module": "pkg.claude", "index": {"query_complete": True}},
+        },
+        {
+            "ts": "2026-08-18T11:00:05Z",
+            "layer": "tool",
+            "tool": "Read",
+            "target": "pkg/claude.py",
+            "runtime": "claude",
+            "session": "same",
+            "v": integration.__version__,
+        },
+        {
+            "ts": "2026-08-18T11:11:00Z",
+            "layer": "tool",
+            "tool": "Read",
+            "target": "pkg/claude.py",
+            "runtime": "claude",
+            "session": "same",
+            "v": integration.__version__,
+        },
+        {
+            "ts": "2026-08-18T11:00:00Z",
+            "layer": "cli",
+            "cmd": "index",
+            "runtime": "claude",
+            "session": "refresh-only",
+            "v": integration.__version__,
+            "result": {"trigger": "claude_prompt_background"},
+        },
+    ]
+    codex_records = [
+        {
+            "ts": "2026-08-18T11:00:00Z",
+            "layer": "cli",
+            "cmd": "index",
+            "runtime": "codex",
+            "session": "same",
+            "v": integration.__version__,
+            "result": {"trigger": "direct_cli"},
+        },
+        {
+            "ts": "2026-08-18T11:00:03Z",
+            "layer": "tool",
+            "tool": "Read",
+            "target": "pkg/claude.py",
+            "runtime": "codex",
+            "session": "same",
+            "v": integration.__version__,
+        },
+        {
+            "ts": "2026-08-18T11:00:00Z",
+            "layer": "cli",
+            "runtime": "codex",
+            "session": "top-level",
+            "v": integration.__version__,
+            "result": {"module": "pkg.codex", "query_complete": True},
+        },
+        {
+            "ts": "2026-08-18T11:00:04Z",
+            "layer": "tool",
+            "tool": "Grep",
+            "target": "pkg/codex.py",
+            "runtime": "codex",
+            "session": "top-level",
+            "v": integration.__version__,
+        },
+    ]
+    for runtime, records in (("claude", claude_records), ("codex", codex_records)):
+        log_dir = logs / runtime
+        log_dir.mkdir(parents=True)
+        _seed(log_dir / "usage.jsonl", "".join(json.dumps(record) + "\n" for record in records))
+    _seed(
+        logs / "legacy.jsonl",
+        json.dumps(
+            {
+                "ts": "2026-08-18T11:00:05Z",
+                "layer": "tool",
+                "tool": "Read",
+                "target": "pkg/claude.py",
+                "session": "same",
+                "v": "legacy",
+            }
+        )
+        + "\n",
+    )
+
+    report = integration.build_audit_report("both", repo / integration.PROVIDER_DIR)
+    findings = {finding["code"]: finding for finding in report["findings"]}
+
+    assert {key: report["usage"][key] for key in ("telemetry_records", "cli_records", "skill_start_records")} == {
+        "telemetry_records": 9,
+        "cli_records": 5,
+        "skill_start_records": 0,
+    }
+    assert findings["refresh_without_query"]["evidence"] == {"refresh_count": 2, "session_count": 2}
+    assert findings["avoidance_after_complete_query"]["evidence"] == {
+        "event_count": 2,
+        "per_runtime": {"claude": 1, "codex": 1},
+        "window_seconds": 600,
+    }
+
+
+def test_audit_codex_cli_without_skill_event_is_not_missing_telemetry(repo: Path) -> None:
+    """Codex has no Skill hook, so its CLI records alone must not imply broken telemetry."""
+    log_dir = repo / ".cache" / "codemap" / "logs" / "codex"
+    log_dir.mkdir(parents=True)
+    _seed(
+        log_dir / "cli.jsonl",
+        json.dumps(
+            {
+                "ts": "2026-08-18T11:00:00Z",
+                "layer": "cli",
+                "runtime": "codex",
+                "session": "thread-1",
+                "v": integration.__version__,
+            }
+        )
+        + "\n",
+    )
+
+    report = integration.build_audit_report("codex", repo / integration.PROVIDER_DIR)
+
+    assert "skill_telemetry_missing" not in {finding["code"] for finding in report["findings"]}
+
+
+def test_audit_isolated_current_record_is_not_reported_as_isolation_bypass(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A matching runtime directory/field is not an isolation failure."""
+    log_dir = repo / ".cache" / "codemap" / "logs" / "claude"
+    log_dir.mkdir(parents=True)
+    _seed(
+        log_dir / "cli_current.jsonl",
+        json.dumps(
+            {
+                "ts": "2026-08-18T11:00:00Z",
+                "layer": "cli",
+                "runtime": "claude",
+                "v": integration.__version__,
+            }
+        )
+        + "\n",
+    )
+
+    code = integration.run(["audit", "--runtime", "claude", "--json"], repo / integration.PROVIDER_DIR)
+    assert code in {integration._EXIT_OK, integration._EXIT_RUNTIME}
+    payload = json.loads(capsys.readouterr().out)
+
+    assert {finding["code"] for finding in payload["findings"]}.isdisjoint(
+        {"runtime_log_isolation_bypassed", "runtime_identity_missing"}
+    )
+
+
+def test_audit_empty_logs_warns_that_runtime_evidence_was_not_observed(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No selected-runtime records must be a warning, never a declared-path pass."""
+    code = integration.run(["audit", "--runtime", "claude", "--json"], repo / integration.PROVIDER_DIR)
+    assert code == integration._EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["status"] == "warn"
+    assert {finding["code"] for finding in payload["findings"]} >= {"runtime_logs_not_observed"}
+
+
+def test_check_is_rejected_without_a_compatibility_alias(repo: Path) -> None:
+    """The removed ``check`` subcommand is a usage error, not an audit forwarding alias."""
+    assert integration.run(["check", "--runtime", "claude"], repo / integration.PROVIDER_DIR) == integration._EXIT_USAGE
+
+
+def test_sentinel_schema_stays_v1_while_body_protocol_is_v2() -> None:
+    """The managed sentinel schema stays pinned at v1 while the block body speaks protocol v2.
+
+    The 0.31.0 compat promise is exactly this split: existing v1 sentinels stay
+    authenticable while the body protocol advances. A silent bump of either
+    constant would pass every round-trip test yet break installed consumers, so
+    the literals are pinned side by side here.
+    """
+    assert integration.BLOCK_SCHEMA_VERSION == 1
+    assert integration.PROTOCOL_VERSION == "codemap-py.integration.v2"
+    assert integration._render_managed_block("x\n").startswith("<!-- codemap-py:integration:begin v1 sha256=")
+
+
+@pytest.mark.parametrize(("since", "expected_records"), [("2026-08-18", 1), ("2026-08-19", 0)])
+def test_audit_since_bounds_runtime_evidence(
+    repo: Path, capsys: pytest.CaptureFixture[str], since: str, expected_records: int
+) -> None:
+    """``--since`` includes records on its date and excludes earlier telemetry."""
+    log_dir = repo / ".cache" / "codemap" / "logs" / "claude"
+    log_dir.mkdir(parents=True)
+    _seed(
+        log_dir / "cli.jsonl",
+        json.dumps({"ts": "2026-08-18T00:00:00Z", "runtime": "claude", "v": integration.__version__}) + "\n",
+    )
+
+    assert (
+        integration.run(["audit", "--runtime", "claude", "--since", since, "--json"], repo / integration.PROVIDER_DIR)
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["window"]["since"] == since
+    assert payload["runtime_logs"]["selected"]["claude"]["records"] == expected_records
+
+
+def test_audit_invalid_since_is_usage_error(repo: Path) -> None:
+    """An invalid date never falls through as an unbounded audit request."""
+    assert (
+        integration.run(["audit", "--since", "2026-13-40"], repo / integration.PROVIDER_DIR) == integration._EXIT_USAGE
+    )
+
+
+def test_audit_skips_malformed_jsonl_without_claiming_a_record(repo: Path) -> None:
+    """A malformed telemetry line is bounded input noise, not a false observation."""
+    log_dir = repo / ".cache" / "codemap" / "logs" / "claude"
+    log_dir.mkdir(parents=True)
+    _seed(log_dir / "cli.jsonl", "not-json\n")
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+    assert report["runtime_logs"]["selected"]["claude"]["records"] == 0
+    assert {finding["code"] for finding in report["findings"]} >= {"runtime_logs_not_observed"}
+
+
+def test_audit_reports_invalid_managed_block_without_mutating_it(repo: Path) -> None:
+    """A tampered managed block is a failure and audit leaves its bytes unchanged."""
+    target = next(item for item in integration.CLAUDE_TARGETS if item.consumer == "oss")
+    path = repo / target.plugin_dir / integration.CONSUMER_MANAGED_FILE[target.consumer]
+    path.parent.mkdir(parents=True)
+    _seed(
+        path,
+        "<!-- codemap-py:integration:begin v1 sha256="
+        + "0" * 64
+        + " -->\ntampered\n<!-- codemap-py:integration:end -->\n",
+    )
+    before = path.read_bytes()
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+
+    assert {finding["code"] for finding in report["findings"]} >= {"managed_block_invalid"}
+    assert path.read_bytes() == before
+
+
+def test_audit_reports_provider_and_consumer_drift_only_when_source_provider_is_trusted(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Installed-version comparisons activate after the source provider matches this runtime."""
+    _write_manifest(
+        repo / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, integration.__version__
+    )
+    monkeypatch.setattr(
+        integration,
+        "_native_json_probe",
+        lambda argv: [
+            {"id": "codemap-py@borda-ai-rig", "version": "older", "enabled": True},
+            {"id": "oss@borda-ai-rig", "version": "other", "enabled": True},
+        ],
+    )
+
+    report = integration.build_audit_report("claude", repo / integration.PROVIDER_DIR)
+    codes = {finding["code"] for finding in report["findings"]}
+
+    assert {"provider_version_drift", "consumer_version_drift"} <= codes
+
+
+def test_audit_never_calls_query_or_mutation_paths(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Audit reads evidence only; a query, plan mutation, or native write is a test failure."""
     before = _tree_snapshot(repo)
-    report = integration.build_check_report("both", repo / integration.PROVIDER_DIR)
-    assert report["protocol"] == integration.PROTOCOL_VERSION
+
+    def _forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("audit invoked a forbidden mutation/query path")
+
+    monkeypatch.setattr(integration.query, "main", _forbidden)
+    monkeypatch.setattr(integration, "apply_plan", _forbidden)
+    monkeypatch.setattr(integration, "sync_plan", _forbidden)
+    monkeypatch.setattr(integration, "_run_native_required", _forbidden)
+    monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
+
+    report = integration.build_audit_report("both", repo / integration.PROVIDER_DIR)
+
+    assert report["status"] == "warn"
     assert _tree_snapshot(repo) == before
 
 
-def test_check_cli_json_exits_zero(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """``integrate check --json`` exits 0 and prints the check report as parseable JSON."""
-    code = integration.run(["check", "--runtime", "both", "--json"], repo / integration.PROVIDER_DIR)
+def test_audit_runtime_directory_record_mismatch_is_a_failure(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A record claiming Codex inside the Claude directory is a stable identity failure."""
+    log_dir = repo / ".cache" / "codemap" / "logs" / "claude"
+    log_dir.mkdir(parents=True)
+    _seed(
+        log_dir / "cli_current.jsonl",
+        json.dumps(
+            {
+                "ts": "2026-08-18T11:00:00Z",
+                "layer": "cli",
+                "runtime": "codex",
+                "v": integration.__version__,
+            }
+        )
+        + "\n",
+    )
+
+    code = integration.run(["audit", "--runtime", "claude", "--json"], repo / integration.PROVIDER_DIR)
+    assert code == integration._EXIT_RUNTIME
+    payload = json.loads(capsys.readouterr().out)
+    assert {finding["code"] for finding in payload["findings"]} >= {"runtime_identity_missing"}
+
+
+def test_audit_is_zero_write(repo: Path) -> None:
+    """``build_audit_report`` never mutates the fixture tree."""
+    before = _tree_snapshot(repo)
+    report = integration.build_audit_report("both", repo / integration.PROVIDER_DIR)
+    assert report["protocol"] == integration.PROTOCOL_VERSION
+    assert report["status"] == "warn"
+    assert _tree_snapshot(repo) == before
+
+
+def test_audit_cli_json_exits_zero(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """``integrate audit --json`` emits a parseable v2 warning report for empty evidence."""
+    code = integration.run(["audit", "--runtime", "both", "--json"], repo / integration.PROVIDER_DIR)
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["protocol"] == integration.PROTOCOL_VERSION
+    assert payload["schema_version"] == 2
+    assert payload["status"] == "warn"
 
 
 @pytest.mark.skipif(not _SOURCE_CHECKOUT, reason="not running from a source checkout")
@@ -135,7 +875,7 @@ def test_every_managed_file_target_exists_in_this_source_tree() -> None:
     assert missing == [], f"CONSUMER_MANAGED_FILE targets absent from the source tree: {missing}"
 
 
-def test_check_reports_absent_consumer_as_named_state_not_error(
+def test_audit_reports_absent_consumer_as_named_state_not_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A closed-set consumer with no manifest on disk is reported ``absent``, not raised as an error."""
@@ -147,14 +887,17 @@ def test_check_reports_absent_consumer_as_named_state_not_error(
     _write_manifest(root / integration.PROVIDER_DIR, integration.Runtime.CLAUDE, integration.PROVIDER_NAME, "9.9.9")
     monkeypatch.chdir(root)
     monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
-    report = integration.build_check_report("claude", root / integration.PROVIDER_DIR)
-    oss_status = report["claude"]["consumers"]["oss"]
-    assert oss_status == {
+    report = integration.build_audit_report("claude", root / integration.PROVIDER_DIR)
+    oss_status = report["consumers"]["claude"]["oss"]
+    assert {
+        key: oss_status[key] for key in ("manifest_present", "name_matches", "source_version", "installed_version")
+    } == {
         "manifest_present": False,
         "name_matches": False,
         "source_version": None,
         "installed_version": None,
     }
+    assert oss_status["managed_block"]["status"] == "absent"
 
 
 def test_runtime_and_source_members_preserve_plan_json_values(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -538,6 +1281,28 @@ def test_sync_approve_source_mismatch_is_approval_error(repo: Path, monkeypatch:
     assert exc.value.code == "source_mismatch"
 
 
+def test_apply_and_sync_ignore_each_others_operation_kind(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mixed plan keeps source edits in apply and native runtime work in sync."""
+    monkeypatch.setattr(integration, "_native_json_probe", lambda argv: None)
+    plan = integration.build_plan("claude", ["oss"], "local-candidate", repo / integration.PROVIDER_DIR)
+    source_op = next(op for op in plan["ops"] if op["kind"] == "source_write")
+    marketplace_op = next(op for op in plan["ops"] if op["kind"] == "runtime_sync" and op["role"] == "marketplace")
+    plan["ops"] = [source_op, marketplace_op]
+    plan["plan_sha256"] = integration.compute_plan_sha256(plan)
+    native_calls: list[list[str]] = []
+    monkeypatch.setattr(integration, "_run_native_required", lambda argv: native_calls.append(list(argv)))
+
+    integration.apply_plan(plan, plan["plan_sha256"], repo / integration.PROVIDER_DIR)
+    source_path = repo / source_op["path"]
+    assert "codemap-py:integration:begin" in source_path.read_text()
+    assert native_calls == []
+
+    source_bytes_after_apply = source_path.read_bytes()
+    integration.sync_plan(plan, plan["plan_sha256"], "local-candidate", repo / integration.PROVIDER_DIR)
+    assert native_calls == marketplace_op["argv"]
+    assert source_path.read_bytes() == source_bytes_after_apply
+
+
 # --------------------------------------------------------------------------------------
 # win_quoting — Windows batch-quoting guard (pure logic; runs on every OS via windows=True).
 # --------------------------------------------------------------------------------------
@@ -590,7 +1355,7 @@ def test_demo_returns_evidence_confined_to_its_own_report(repo: Path) -> None:
     before = _tree_snapshot(repo)
     demo = integration.run_demo("claude", repo / integration.PROVIDER_DIR)
     assert demo["protocol"] == integration.PROTOCOL_VERSION
-    assert "check" in demo
+    assert "audit" in demo
     assert "query_evidence" in demo
     assert Path(demo["report_path"]).is_file()
 

@@ -76,6 +76,8 @@ def main() -> int:
         record = {
             "ts": iso_now(),
             "layer": "skill",
+            "runtime": _hookutil.runtime(),
+            "v": _hookutil.plugin_version(),
             "session": session,
             "skill": skill,
             "event": "start",

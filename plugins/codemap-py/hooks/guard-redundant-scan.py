@@ -84,7 +84,7 @@ def main() -> int:
         command = str(payload.get("tool_input", {}).get("command", ""))
         if not _IMPORT_GREP.search(command):
             return 0
-        modules = fresh_modules(sentinel_path(payload.get("session_id")))
+        modules = fresh_modules(sentinel_path(_hookutil.runtime_session(payload)))
         hit = next((item for item in modules if module_matches(item, command)), None)
         if hit is None:
             return 0

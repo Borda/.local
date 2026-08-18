@@ -121,6 +121,7 @@ def _run_inject(
     tmpdir: Path,
     *,
     prompt: str = "hello",
+    runtime: str = "claude",
 ) -> subprocess.CompletedProcess:
     """Drive inject-preamble.py with all three seams pinned to controlled dirs."""
     env = {
@@ -132,6 +133,8 @@ def _run_inject(
         "TEMP": str(tmpdir),
         "TMP": str(tmpdir),
     }
+    env["CODEMAP_RUNTIME"] = runtime
+    env.pop("CODEX_THREAD_ID", None)
     return subprocess.run(
         [sys.executable, str(_INJECT)],
         input=json.dumps({"prompt": prompt}),
@@ -146,17 +149,17 @@ def _lock_file(tmpdir: Path, proj: str) -> Path:
     return tmpdir / f"codemap-refresh-{proj}"
 
 
-def _session_flag(tmpdir: Path, proj: str) -> Path:
-    return tmpdir / f"codemap-preamble-{proj}"
+def _session_flag(tmpdir: Path, proj: str, runtime: str = "claude") -> Path:
+    return tmpdir / f"codemap-preamble-{proj}-{runtime}"
 
 
-def _stale_flag(tmpdir: Path, proj: str) -> Path:
-    return tmpdir / f"codemap-stale-{proj}"
+def _stale_flag(tmpdir: Path, proj: str, runtime: str = "claude") -> Path:
+    return tmpdir / f"codemap-stale-{proj}-{runtime}"
 
 
-def _session_marker(repo: Path) -> Path:
-    """The session marker path — always under <git-root>/.cache/codemap, never TMPDIR."""
-    return repo / ".cache" / "codemap" / "current-session"
+def _session_marker(repo: Path, runtime: str = "claude") -> Path:
+    """Return one runtime's repository-local session marker path."""
+    return repo / ".cache" / "codemap" / f"current-session-{runtime}.json"
 
 
 def _await_marker(marker: Path, timeout_s: float = 8.0) -> bool:
@@ -183,6 +186,8 @@ def _run_inject_with_event(
     plugin_root: Path,
     tmpdir: Path,
     event: dict,
+    *,
+    runtime: str = "claude",
 ) -> subprocess.CompletedProcess:
     """Drive inject-preamble.py piping a full UserPromptSubmit *event* dict on stdin.
 
@@ -197,7 +202,9 @@ def _run_inject_with_event(
         "TMPDIR": str(tmpdir),
         "TEMP": str(tmpdir),
         "TMP": str(tmpdir),
+        "CODEMAP_RUNTIME": runtime,
     }
+    env.pop("CODEX_THREAD_ID", None)
     return subprocess.run(
         [sys.executable, str(_INJECT)],
         input=json.dumps(event),
@@ -478,19 +485,40 @@ class TestInjectPreambleRefreshLock:
 
         monkeypatch.setattr(_INJECT_MODULE.subprocess, "Popen", fake_popen)
         monkeypatch.setattr(_INJECT_MODULE.os, "name", "nt")
+        monkeypatch.setenv("SystemRoot", "C:\\Windows")
 
         assert _INJECT_MODULE.spawn_refresh(scan_bin, tmp_path, tmp_path)
         command, kwargs = calls.pop()
+        child_env = {key.upper(): value for key, value in kwargs["env"].items()}
         assert command[:2] == [sys.executable, str(scan_bin)]
         assert kwargs["creationflags"] == getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
         assert "start_new_session" not in kwargs
+        assert kwargs["env"]["CODEMAP_RUNTIME"] == "claude"
+        assert kwargs["env"]["CODEMAP_REFRESH_TRIGGER"] == "claude_prompt_background"
+        assert kwargs["env"]["CODEMAP_REFRESH_STALE_BEFORE"] == "true"
+        assert child_env["SYSTEMROOT"] == "C:\\Windows"
+
+    def test_codex_refresh_records_codex_prompt_trigger(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """A Codex prompt refresh must not be attributed to the Claude hook path."""
+        calls: list[dict] = []
+
+        def fake_popen(command: list[str], **kwargs: object) -> object:
+            calls.append(kwargs)
+            return object()
+
+        monkeypatch.setattr(_INJECT_MODULE.subprocess, "Popen", fake_popen)
+        monkeypatch.setenv("CODEMAP_RUNTIME", "codex")
+
+        assert _INJECT_MODULE.spawn_refresh(tmp_path / "scan-index", tmp_path, tmp_path)
+        assert calls[0]["env"]["CODEMAP_RUNTIME"] == "codex"
+        assert calls[0]["env"]["CODEMAP_REFRESH_TRIGGER"] == "codex_prompt_background"
 
 
 # ── inject-preamble: session marker (cross-agent scan-query contract) ─────────────
 
 
 class TestInjectPreambleSessionMarker:
-    """The <git-root>/.cache/codemap/current-session marker written every invocation.
+    """The runtime-sharded repository session marker written every invocation.
 
     scan-query reads this marker to correlate queries with the session that triggered
     a refresh (the coverage-diet dedup). The hook must write it UNCONDITIONALLY after
@@ -584,6 +612,7 @@ class TestInjectPreambleSessionMarker:
             "TMPDIR": str(tmpdir),
             "TEMP": str(tmpdir),
             "TMP": str(tmpdir),
+            "CODEMAP_RUNTIME": "claude",
         }
         result = subprocess.run(
             [sys.executable, str(_INJECT)],
@@ -597,6 +626,37 @@ class TestInjectPreambleSessionMarker:
         assert result.returncode == 0, result.stderr
         payload = json.loads(_session_marker(repo).read_text())
         assert payload["session_id"] == ""
+
+    def test_markers_are_isolated_across_claude_and_codex_turns(self, tmp_path: Path) -> None:
+        """A Codex prompt must not replace the current Claude coverage session."""
+        repo = tmp_path / "proj"
+        head = _init_repo(repo)
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha=head)
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=False, marker=tmp_path / "unused")
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+
+        claude = _run_inject_with_event(
+            repo,
+            idx_dir,
+            plugin_root,
+            tmpdir,
+            {"prompt": "claude", "session_id": "claude-session"},
+            runtime="claude",
+        )
+        codex = _run_inject_with_event(
+            repo,
+            idx_dir,
+            plugin_root,
+            tmpdir,
+            {"prompt": "codex", "thread_id": "codex-thread"},
+            runtime="codex",
+        )
+
+        assert claude.returncode == 0 and codex.returncode == 0
+        assert json.loads(_session_marker(repo, "claude").read_text())["session_id"] == "claude-session"
+        assert json.loads(_session_marker(repo, "codex").read_text())["session_id"] == "codex-thread"
 
 
 # ── inject-preamble: stale-reminder collapse ──────────────────────────────────────
@@ -631,8 +691,8 @@ class TestInjectPreambleStaleCollapse:
         result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
 
         assert result.returncode == 0, result.stderr
-        # Full form carries the second "Prefer scan-query" line and a module count.
-        assert "Prefer scan-query" in result.stdout
+        # Full form carries the canonical query hint and a module count.
+        assert "Prefer `codemap-py query`" in result.stdout
         assert "modules" in result.stdout
         assert _stale_flag(tmpdir, proj).exists(), "the stale sentinel must be written on the full notice"
 
@@ -654,7 +714,7 @@ class TestInjectPreambleStaleCollapse:
         lines = [ln for ln in result.stdout.splitlines() if ln]
         assert lines == ["[codemap] index stale - refresh in progress"]
         # Collapsed form exits before the module-count parse — no second "Prefer" line.
-        assert "Prefer scan-query" not in result.stdout
+        assert "Prefer `codemap-py query`" not in result.stdout
 
     def test_collapsed_line_refresh_pending_when_no_note(self, tmp_path: Path) -> None:
         """When neither spawn nor lock produced a note, the collapsed line reads 'refresh pending'.
@@ -696,7 +756,9 @@ class TestInjectPreambleStaleCollapse:
         result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
 
         assert result.returncode == 0, result.stderr
-        assert "Prefer scan-query" in result.stdout, "stale full notice must not be suppressed by the preamble flag"
+        assert "Prefer `codemap-py query`" in result.stdout, (
+            "stale full notice must not be suppressed by the preamble flag"
+        )
         assert _stale_flag(tmpdir, proj).exists()
 
 
@@ -921,9 +983,22 @@ class TestGuardMissingSessionKey:
 # ── seed-session ─────────────────────────────────────────────────────────────────
 
 
-def _run_seed(payload: dict, cwd: Path, tmpdir: Path) -> subprocess.CompletedProcess:
+def _run_seed(
+    payload: dict,
+    cwd: Path,
+    tmpdir: Path,
+    *,
+    runtime: str = "claude",
+) -> subprocess.CompletedProcess:
     """Drive seed-session.py with cwd + TMPDIR pinned so the session tmpfile is observable."""
-    env = {**os.environ, "TMPDIR": str(tmpdir), "TEMP": str(tmpdir), "TMP": str(tmpdir)}
+    env = {
+        **os.environ,
+        "TMPDIR": str(tmpdir),
+        "TEMP": str(tmpdir),
+        "TMP": str(tmpdir),
+        "CODEMAP_RUNTIME": runtime,
+    }
+    env.pop("CODEX_THREAD_ID", None)
     return subprocess.run(
         [sys.executable, str(_SEED)],
         input=json.dumps(payload),
@@ -978,6 +1053,20 @@ class TestSeedSession:
         )
         assert result.returncode == 0, result.stderr
 
+    def test_codex_start_does_not_overwrite_claude_marker(self, tmp_path: Path) -> None:
+        """Codex owns no shared temp marker and cannot relabel later Claude logs."""
+        repo = tmp_path / "proj"
+        _init_repo(repo)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        sidfile = tmpdir / f"codemap-{repo.name}-session"
+
+        claude = _run_seed({"session_id": "claude-session"}, repo, tmpdir)
+        codex = _run_seed({"thread_id": "codex-thread"}, repo, tmpdir, runtime="codex")
+
+        assert claude.returncode == 0 and codex.returncode == 0
+        assert sidfile.read_text() == "claude-session"
+
 
 # ── log-skill-start ──────────────────────────────────────────────────────────────
 
@@ -999,10 +1088,10 @@ def _run_skill(payload: dict, cwd: Path, tmpdir: Path) -> subprocess.CompletedPr
 
 
 def _skill_records(cwd: Path) -> list[dict]:
-    """Return all records across every skills*.jsonl shard under the cwd log dir."""
+    """Return all records across flat legacy and runtime-scoped skill shards."""
     log_dir = cwd / ".cache" / "codemap" / "logs"
     records: list[dict] = []
-    for shard in sorted(log_dir.glob("skills*.jsonl")):
+    for shard in sorted(log_dir.rglob("skills*.jsonl")):
         records += [json.loads(line) for line in shard.read_text().splitlines() if line.strip()]
     return records
 
@@ -1029,6 +1118,8 @@ class TestLogSkillStart:
         assert records[0]["event"] == "start"
         assert records[0]["intent"] == "who calls foo"
         assert records[0]["layer"] == "skill"
+        assert records[0]["runtime"] == "claude"
+        assert records[0]["v"] not in ("", "?")
 
     def test_non_codemap_skill_ignored(self, tmp_path: Path) -> None:
         """A non-codemap skill is ignored — no record written."""
@@ -1063,7 +1154,7 @@ class TestLogSkillStart:
         result = _run_skill(payload, tmp_path, tmpdir)
 
         assert result.returncode == 0, result.stderr
-        shard = tmp_path / ".cache" / "codemap" / "logs" / "skills_seeded-sid.jsonl"
+        shard = tmp_path / ".cache" / "codemap" / "logs" / "claude" / "skills_seeded-sid.jsonl"
         assert shard.exists(), "record not routed to the seeded per-session shard"
         assert json.loads(shard.read_text().strip())["session"] == "seeded-sid"
 
@@ -1146,9 +1237,12 @@ class TestSessionKeyAgreement:
         # log dir to the project root, so a subdirectory invocation joins the same shard
         # the cli layer writes. Asserting `nested/.cache/...` here pinned the split-log
         # defect itself — two halves of one session in two directories, neither an error.
-        shard = repo / ".cache" / "codemap" / "logs" / "tools_sid-sub.jsonl"
+        shard = repo / ".cache" / "codemap" / "logs" / "claude" / "tools_sid-sub.jsonl"
         assert shard.exists(), "subdirectory tool record did not join the seeded session shard"
-        assert json.loads(shard.read_text().strip())["session"] == "sid-sub"
+        record = json.loads(shard.read_text().strip())
+        assert record["session"] == "sid-sub"
+        assert record["runtime"] == "claude"
+        assert record["v"] not in ("", "?")
 
     def test_skill_hook_from_subdir_joins_the_seeded_session(self, tmp_path: Path) -> None:
         """A skill record written from a subdirectory carries the same seeded session id."""
@@ -1159,9 +1253,12 @@ class TestSessionKeyAgreement:
         result = self._run(_SKILL, payload, nested, tmpdir)
 
         assert result.returncode == 0, result.stderr
-        shard = repo / ".cache" / "codemap" / "logs" / "skills_sid-sub.jsonl"
+        shard = repo / ".cache" / "codemap" / "logs" / "claude" / "skills_sid-sub.jsonl"
         assert shard.exists(), "subdirectory skill record did not join the seeded session shard"
-        assert json.loads(shard.read_text().strip())["session"] == "sid-sub"
+        record = json.loads(shard.read_text().strip())
+        assert record["session"] == "sid-sub"
+        assert record["runtime"] == "claude"
+        assert record["v"] not in ("", "?")
 
     def test_skill_hook_does_not_mint_a_second_session(self, tmp_path: Path) -> None:
         """Reading the marker from a subdirectory must not look absent and mint a rival id."""
@@ -1171,3 +1268,89 @@ class TestSessionKeyAgreement:
         self._run(_SKILL, {"tool_name": "Skill", "tool_input": {"skill": "codemap-py:scan-codebase"}}, nested, tmpdir)
 
         assert [p.name for p in tmpdir.glob("codemap-*-session")] == [f"codemap-{repo.name}-session"]
+
+
+class TestPromptRuntimeOutput:
+    """UserPromptSubmit output remains host-specific while index state stays shared."""
+
+    def test_codex_prompt_uses_hook_specific_output(self, tmp_path: Path) -> None:
+        """A Codex prompt emits the documented hookSpecificOutput envelope."""
+        repo = tmp_path / "project"
+        head = _init_repo(repo)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=False, marker=tmp_path / "unused")
+        _write_index(repo / ".cache" / "codemap", repo.name, git_sha=head)
+
+        result = _run_inject(
+            repo,
+            repo / ".cache" / "codemap",
+            plugin_root,
+            tmpdir,
+            runtime="codex",
+        )
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert "[codemap]" in payload["hookSpecificOutput"]["additionalContext"]
+
+    def test_claude_prompt_remains_plain_text(self, tmp_path: Path) -> None:
+        """Adding Codex output support must not wrap Claude's existing plain preamble."""
+        repo = tmp_path / "project"
+        head = _init_repo(repo)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=False, marker=tmp_path / "unused")
+        _write_index(repo / ".cache" / "codemap", repo.name, git_sha=head)
+
+        result = _run_inject(
+            repo,
+            repo / ".cache" / "codemap",
+            plugin_root,
+            tmpdir,
+            runtime="claude",
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.startswith("[codemap]")
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(result.stdout)
+
+
+class TestCodexRuntimeTelemetry:
+    """Codex hook calls must not inherit Claude's marker or runtime directory."""
+
+    def test_codex_tool_record_uses_thread_id_and_codex_shard(self, tmp_path: Path) -> None:
+        """A Codex Read uses CODEX_THREAD_ID even when a Claude marker is present."""
+        repo = tmp_path / "project"
+        _init_repo(repo)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        (tmpdir / f"codemap-{repo.name}-session").write_text("claude-session")
+        env = {
+            **os.environ,
+            "TMPDIR": str(tmpdir),
+            "TEMP": str(tmpdir),
+            "TMP": str(tmpdir),
+            "CODEMAP_RUNTIME": "codex",
+            "CODEX_THREAD_ID": "codex-thread",
+            "CODEMAP_LOGGING": "true",
+        }
+        env.pop("CODEMAP_LOG_DIR", None)
+
+        result = subprocess.run(
+            [sys.executable, str(TestSessionKeyAgreement._TOOL_HOOK)],
+            input=json.dumps({"tool_name": "Read", "tool_input": {"file_path": "src/module.py"}}),
+            text=True,
+            capture_output=True,
+            cwd=str(repo),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        shard = repo / ".cache" / "codemap" / "logs" / "codex" / "tools_codex-thread.jsonl"
+        record = json.loads(shard.read_text().strip())
+        assert record["runtime"] == "codex"
+        assert record["session"] == "codex-thread"
+        assert not (repo / ".cache" / "codemap" / "logs" / "claude" / "tools_claude-session.jsonl").exists()

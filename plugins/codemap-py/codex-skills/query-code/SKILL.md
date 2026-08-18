@@ -4,11 +4,11 @@ description: "Query Codemap."
 ---
 NOT for: $codemap-py:scan-codebase, $codemap-py:rename-refs, $codemap-py:test-impact.
 
-Test-impact split: one-off structural fact → `test-impact <target>` subcommand here; full workflow (index ensure, parse, pytest cmd, caveat) → $codemap-py:test-impact.
+Test-impact split: one-off structural fact → `test-impact <target>` here; full workflow → $codemap-py:test-impact.
 
 ## Runtime note
 
-No `bin/` PATH entry, no `$CLAUDE_PLUGIN_ROOT` equivalent. Resolve the installed plugin root once, substitute for `PLUGIN_ROOT` below, keep in reasoning — shell state dies between tool calls.
+Codex exposes no plugin-root variable. Resolve the installed root as `PLUGIN_ROOT` once; shell state does not persist.
 
 ## Workflow
 
@@ -26,18 +26,20 @@ Choose the smallest complete query set.
 | transitive callers / function blast | `fn-blast <module::symbol>` |
 | broken Sphinx cross-references | `xrefs --broken <module>` |
 
-Routing shortlist, not the parser's full surface — `PLUGIN_ROOT/bin/codemap-py query --help` lists every subcommand; read it, never guess a name.
+Routing shortlist, not the parser's full surface; read `PLUGIN_ROOT/bin/codemap-py query --help`, never guess.
 
 Direct/every/all/production/blast-radius callers → `fn-rdeps <module::symbol> --exclude-tests`; `fn-blast <module::symbol>` only for explicit transitive, closure, hops, or all-levels requests.
 
-Direct test-module imports: `rdeps <module>`; filter/report tests. `test-impact <target>` only selects transitive affected tests.
+Query first; no unconditional pre-scan/freshness probe. Use `test-impact` for test choice, not direct test-module imports.
 
-`symbol <name>` accepts bare `authenticate` or `MyClass.method`; imports use `symbol <name> --with-imports`; `module::symbol` belongs to `fn-*` call-graph queries. Chain `module`+`qualified_name` → `<module>::<qualified_name>` (`mypackage.module::MyClass.method`). For scaffolding, query the requested qualified extension method (`symbol MyClass.add_feature`), not nearby `symbol MyClass`/`symbols <module>` listing.
+Direct test-module imports: `rdeps <module>`; filter/report tests. `test-impact <target>` selects transitive affected tests.
+
+`symbol <name>` accepts `authenticate` or `MyClass.method`; imports use `symbol <name> --with-imports`. `module::symbol` belongs to `fn-*` call-graph queries. Chain returned `module`+`qualified_name` → `<module>::<qualified_name>` (`mypackage.module::MyClass.method`). For a requested qualified extension method, query `symbol MyClass.add_feature`, not nearby `symbol MyClass`/`symbols <module>` listing.
 
 `find-symbol '<ClassSuffix>\.<method>$' --exclude-tests --limit 0` finds same-name override candidates; names are candidates, not inheritance proof—verify ancestry/package boundaries in source.
 
 Run each compact query alone: `PLUGIN_ROOT/bin/codemap-py query --compact <subcommand> [arguments]`.
 
-`fn-blast`: never `--depth`; never invent flags. `query_complete: true`: complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep that graph fact. Otherwise name gaps. Ordinary repository reads remain allowed only for a distinct independent AST/oracle view. Missing index: request $codemap-py:scan-codebase.
+`fn-blast`: never `--depth`; never invent flags. A complete, untruncated result settles its graph fact: do not re-query/read/grep it. Complete-query paths are caller-repo-relative, never Skill-relative. Ordinary repository reads remain allowed for a distinct independent AST/oracle view or source-body implementation/runtime detail. Otherwise name the gap and target only it. Missing index: request $codemap-py:scan-codebase.
 
-Truncation at 20 items is a real cap, not an exhaustive list, unless `--limit 0` is passed (`symbol`/`find-symbol` default). `query_complete` scores graph coverage only, never the cap — `query_complete: true` on a capped list is still 20-of-N. `index.confidence`: `exact` = whole set, `partial` = capped/stale; `index.truncated`+`index.total_available` give the real total. Re-run with `--limit 0` before calling a capped list complete.
+Truncation at 20 items is a real cap unless `--limit 0` is passed (`symbol`/`find-symbol` default). `query_complete` scores graph coverage only: true may mean 20-of-N. `index.confidence` is `exact` for the whole set and `partial` when capped/stale; `index.truncated`+`index.total_available` give N. Re-run capped lists with `--limit 0` before applying the stop rule.

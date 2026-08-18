@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Append low-cost Claude search/read telemetry and one repeated-read nudge."""
+"""Append low-cost runtime-scoped search/read telemetry and one repeated-read nudge."""
 
 from __future__ import annotations
 
@@ -37,22 +37,15 @@ def iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def plugin_version() -> str:
-    """Return the package version without failing telemetry when the manifest is absent."""
-    try:
-        manifest = Path(__file__).parents[1] / ".claude-plugin" / "plugin.json"
-        return str(json.loads(manifest.read_text(encoding="utf-8")).get("version") or "?")
-    except (OSError, TypeError, ValueError):
-        return "?"
-
-
 # Re-exported from the shared helper so this hook and ``seed-session.py`` — the marker's
 # reader and its writer — cannot key on different names.
 project_name = _hookutil.project_name
 
 
-def session_id() -> str:
-    """Return the session marker seeded once per project, without running git."""
+def session_id(payload: dict | None = None) -> str:
+    """Return the host session, avoiding Claude's marker for Codex events."""
+    if _hookutil.runtime() == "codex":
+        return _hookutil.runtime_session(payload)
     marker = Path(os.environ.get("TMPDIR") or tempfile.gettempdir()) / f"codemap-{project_name()}-session"
     try:
         return marker.read_text(encoding="utf-8").strip()
@@ -71,7 +64,7 @@ def rotate(log_file: Path) -> None:
 
 
 def target_for(tool_name: str, tool_input: dict) -> str:
-    """Return the one telemetry target field appropriate for the Claude tool."""
+    """Return the one telemetry target field appropriate for the host tool."""
     if tool_name == "Read":
         return str(tool_input.get("file_path", ""))
     if tool_name == "Bash":
@@ -117,7 +110,7 @@ def maybe_nudge_repeated_read(record: dict, log_file: Path) -> None:
         base = Path(record["target"]).stem
         print(
             f"[codemap] {base}.py read 3x this session — structural queries may be cheaper: "
-            "scan-query symbol --with-imports <name>, rdeps <module>, fn-rdeps <module::fn>"
+            "codemap-py query symbol --with-imports <name>, rdeps <module>, fn-rdeps <module::fn>"
         )
 
 
@@ -137,12 +130,13 @@ def main() -> int:
             command = str(tool_input.get("command", ""))
             if not _BASH_SEARCH.search(command) or "scan-query" in command:
                 return 0
-        session = session_id()
+        session = session_id(payload)
         safe_session = _UNSAFE_KEY.sub("-", session)
         record = {
             "ts": iso_now(),
             "layer": "tool",
-            "v": plugin_version(),
+            "runtime": _hookutil.runtime(),
+            "v": _hookutil.plugin_version(),
             "tool": tool_name,
             "session": session,
             "target": target_for(tool_name, tool_input),

@@ -3401,7 +3401,7 @@ class TestListLimit:
 def _build_diet_repo(root: Path, scan_index: Path) -> Path:
     """Git-init *root*, write one module, scan it, return the index path.
 
-    The diet reader resolves the marker at ``<git-root>/.cache/codemap/current-session``,
+    The diet reader resolves Claude's marker under ``<git-root>/.cache/codemap``,
     so the test tree must be a real git repo for the marker path to match.
     """
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
@@ -3419,7 +3419,7 @@ def _write_marker(root: Path, session_id: str) -> None:
     """Write the hook-owned session marker matching the cross-agent contract."""
     import time
 
-    marker = root / ".cache" / "codemap" / "current-session"
+    marker = root / ".cache" / "codemap" / "current-session-claude.json"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(json.dumps({"session_id": session_id, "ts": int(time.time() * 1000)}))
 
@@ -3431,7 +3431,7 @@ def _run_coverage_query(scan_query: Path, root: Path, index_path: Path, *extra: 
         capture_output=True,
         text=True,
         cwd=str(root),
-        env={**os.environ, "CODEMAP_LOGGING": "false"},
+        env={**os.environ, "CODEMAP_LOGGING": "false", "CODEMAP_RUNTIME": "claude"},
     )
     assert result.returncode == 0, result.stderr + result.stdout
     return json.loads(result.stdout)["index"]

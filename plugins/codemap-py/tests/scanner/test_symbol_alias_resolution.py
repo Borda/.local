@@ -277,6 +277,51 @@ def test_incremental_submodule_add_and_remove_matches_fresh_scan(tmp_path: Path)
     assert removed_consumer["direct_imports"] == ["pkg"]
 
 
+def test_incremental_markdown_change_refreshes_xrefs_without_creating_a_module(tmp_path: Path) -> None:
+    """A docs-only xref update must not enter the Python module/degradation set."""
+    (tmp_path / "pkg.py").write_text("def public() -> int:\n    return 1\n")
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    reference = docs / "reference.md"
+    reference.write_text("# Reference\n\n[`pkg.public`][]\n")
+    initial = scan(tmp_path)
+
+    reference.write_text("# Reference\n\n[`pkg.public`][]\n\nA plain-language — update.\n")
+    incremental = incremental_scan(tmp_path, initial)
+
+    assert incremental["file_shas"]["docs/reference.md"] != initial["file_shas"]["docs/reference.md"]
+    assert incremental["doc_xrefs"] == [
+        {"role": "mkdocs", "target": "pkg::public", "file": "docs/reference.md", "line": 3, "source": "mkdocs"}
+    ]
+    assert {module["path"] for module in incremental["modules"]} == {"pkg.py"}
+    assert all(module["status"] == "ok" for module in incremental["modules"])
+
+
+def test_incremental_scan_removes_legacy_markdown_entry_but_preserves_python_degradation(tmp_path: Path) -> None:
+    """An incremental repair drops impossible docs modules without hiding a real broken Python source."""
+    (tmp_path / "healthy.py").write_text("VALUE = 1\n")
+    (tmp_path / "broken.py").write_text("def broken(:\n")
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "guide.md").write_text("# Guide\n\nNormal Markdown.\n")
+    contaminated = scan(tmp_path)
+    contaminated["modules"].append(
+        {
+            "name": "docs.guide",
+            "path": "docs/guide.md",
+            "status": "degraded",
+            "reason": "legacy Markdown parsed as Python",
+        }
+    )
+    (tmp_path / "healthy.py").write_text("VALUE = 2\n")
+
+    repaired = incremental_scan(tmp_path, contaminated)
+
+    assert {module["path"] for module in repaired["modules"]} == {"broken.py", "healthy.py"}
+    assert next(module for module in repaired["modules"] if module["path"] == "broken.py")["status"] == "degraded"
+    assert not any(module["path"].endswith(".md") for module in repaired["modules"])
+
+
 def test_incremental_cli_rebuilds_v11_alias_index_to_v13(tmp_path: Path) -> None:
     """The scan-index entrypoint fully rebuilds persisted v11 data before serving aliases."""
     _write_project(tmp_path, ambiguous=True)

@@ -75,6 +75,7 @@ def _drive(payload: dict, tmp_path: Path, cwd: Path | None = None, **env_extra: 
         pytest.param('scan-query rdeps "mypackage.auth"', "sess-rdeps-quoted", id="rdeps-quoted"),
         pytest.param("scan-query rdeps mypackage.auth", "sess-rdeps-bare", id="rdeps-bare"),
         pytest.param('$SQ rdeps "mypackage.auth"', "sess-sq-fallback", id="sq-fallback"),
+        pytest.param("codemap-py query rdeps mypackage.auth", "sess-codemap-query", id="codemap-query-rdeps"),
     ],
 )
 def test_sentinel_written_for_real_commands(command: str, session: str, tmp_path: Path) -> None:
@@ -200,6 +201,7 @@ class TestEditInvalidation:
         [
             pytest.param("Edit", id="edit"),
             pytest.param("Write", id="write"),
+            pytest.param("apply_patch", id="apply-patch"),
             pytest.param("MultiEdit", id="multi-edit"),
             pytest.param("NotebookEdit", id="notebook-edit"),
         ],

@@ -67,7 +67,7 @@ That table is a routing shortlist, not the parser's full surface — `codemap-py
 
 ## Index and completeness contract
 
-Run the selected query set first; do not spend a call on an unconditional freshness probe. Run independently required queries as separate commands rather than `batch`.
+Run the selected query set first; do not spend a call on an unconditional pre-scan or freshness probe. Run independently required queries as separate commands rather than `batch`. Use `test-impact` when the open question is test choice rather than a direct test-module import.
 
 - Normal mode may perform the CLI's bounded incremental self-heal.
 - With `SCAN_NO_AUTOBUILD=1`, do not run a freshness query, incremental
@@ -79,10 +79,9 @@ Run the selected query set first; do not spend a call on an unconditional freshn
 
 Interpret `index`:
 
-- `query_complete: true`: the structural fact is complete. Answer immediately only when it settles the request. Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep for that graph fact.
-- Ordinary repository reads remain allowed only for a task-requested distinct independent AST/oracle view; label it separately, never as rechecking a complete Codemap result.
-- `query_complete: false`: name `completeness_reason`; search only gaps named
-  by `degraded`, `not_covered`, `root_mismatch`, or `stale`.
+- A complete, untruncated `query_complete: true` result settles the structural fact when it answers the request. Complete-query paths are caller-repo-relative, never Skill-relative; do not re-query/read/grep for that same graph fact.
+- Ordinary repository reads remain allowed for a task-requested distinct independent AST/oracle view; source-body implementation/runtime reads are also allowed. Label either separately, never as rechecking a complete Codemap result.
+- `query_complete: false`: name `completeness_reason`; use only a targeted fallback for gaps named by `degraded`, `not_covered`, `root_mismatch`, or `stale`.
 - `compact: true` changes coverage metadata only; findings and counts remain
   complete.
 

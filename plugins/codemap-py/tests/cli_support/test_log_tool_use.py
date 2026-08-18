@@ -1,12 +1,12 @@
-"""Contract test: log-tool-use.py appends one tools.jsonl record per Grep/Read/Glob call.
+"""Contract test: log-tool-use.py appends Claude-scoped tool telemetry records.
 
 The PostToolUse hook (`log-tool-use.py`) is the raw grep/read-volume signal codemap's
 index-hygiene fixes aim to reduce. It must:
 
 - write one JSON line to `tools_<session>.jsonl` for each Grep/Read/Glob call, carrying
   `tool` + the right `target` field (Grep/Glob pattern-or-path, Read file_path);
-- join on the same session key as the cli shard (`tools_<session>.jsonl` when a session
-  tmpfile is seeded, unsuffixed `tools.jsonl` otherwise);
+- write beneath the `claude/` runtime directory and join on the same session key as the
+  CLI shard (`tools_<session>.jsonl` when seeded, unsuffixed `tools.jsonl` otherwise);
 - never read `tool_response` — parsing search/read output is the exact cost the hook must
   not pay (accept criterion + <5ms budget), so a hostile non-JSON tool_response must not
   change behaviour;
@@ -54,7 +54,7 @@ def _run(payload: dict, cwd: Path, *, logging: str | None = None) -> subprocess.
 
 def _read_records(cwd: Path) -> list[dict]:
     """Return all records across every tools*.jsonl shard under the cwd log dir."""
-    log_dir = cwd / ".cache" / "codemap" / "logs"
+    log_dir = cwd / ".cache" / "codemap" / "logs" / "claude"
     records: list[dict] = []
     for shard in sorted(log_dir.glob("tools*.jsonl")):
         records += [json.loads(line) for line in shard.read_text().splitlines() if line.strip()]
@@ -99,7 +99,7 @@ def test_session_shard_uses_seeded_session_id(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    shard = tmp_path / ".cache" / "codemap" / "logs" / f"tools_{session}.jsonl"
+    shard = tmp_path / ".cache" / "codemap" / "logs" / "claude" / f"tools_{session}.jsonl"
     assert shard.exists(), "record not routed to the seeded per-session shard"
     assert json.loads(shard.read_text().strip())["session"] == session
 
@@ -198,7 +198,7 @@ class TestReadRedundancyNudge:
         Counting used to mean decoding and splitting the whole shard — up to the 10 MB
         rotation budget — on every matched Read, to decide one advisory.
         """
-        log_dir = tmp_path / ".cache" / "codemap" / "logs"
+        log_dir = tmp_path / ".cache" / "codemap" / "logs" / "claude"
         log_dir.mkdir(parents=True)
         filler = json.dumps({"ts": "2026-01-01T00:00:00Z", "tool": "Grep", "target": "x" * 200}) + "\n"
         (log_dir / "tools.jsonl").write_text(filler * 5_000)

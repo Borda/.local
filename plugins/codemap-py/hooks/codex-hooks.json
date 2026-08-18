@@ -1,0 +1,64 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "env CODEMAP_RUNTIME=codex python3 \"$PLUGIN_ROOT/hooks/record-exhausted.py\"",
+            "commandWindows": "$env:CODEMAP_RUNTIME='codex'; python \"$env:PLUGIN_ROOT\\hooks\\record-exhausted.py\"",
+            "type": "command"
+          },
+          {
+            "command": "env CODEMAP_RUNTIME=codex python3 \"$PLUGIN_ROOT/hooks/log-tool-use.py\"",
+            "commandWindows": "$env:CODEMAP_RUNTIME='codex'; python \"$env:PLUGIN_ROOT\\hooks\\log-tool-use.py\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "env CODEMAP_RUNTIME=codex python3 \"$PLUGIN_ROOT/hooks/log-tool-use.py\"",
+            "commandWindows": "$env:CODEMAP_RUNTIME='codex'; python \"$env:PLUGIN_ROOT\\hooks\\log-tool-use.py\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Grep|Read|Glob"
+      },
+      {
+        "hooks": [
+          {
+            "command": "env CODEMAP_RUNTIME=codex python3 \"$PLUGIN_ROOT/hooks/record-exhausted.py\"",
+            "commandWindows": "$env:CODEMAP_RUNTIME='codex'; python \"$env:PLUGIN_ROOT\\hooks\\record-exhausted.py\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|apply_patch"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "env CODEMAP_RUNTIME=codex python3 \"$PLUGIN_ROOT/hooks/guard-redundant-scan.py\"",
+            "commandWindows": "$env:CODEMAP_RUNTIME='codex'; python \"$env:PLUGIN_ROOT\\hooks\\guard-redundant-scan.py\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "env CODEMAP_RUNTIME=codex python3 \"$PLUGIN_ROOT/hooks/inject-preamble.py\"",
+            "commandWindows": "$env:CODEMAP_RUNTIME='codex'; python \"$env:PLUGIN_ROOT\\hooks\\inject-preamble.py\"",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

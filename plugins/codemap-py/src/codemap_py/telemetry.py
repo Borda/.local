@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""telemetry.py — shared cli.jsonl logging for codemap core CLI tools.
+"""telemetry.py — runtime-scoped CLI logging for codemap core tools.
 
-Used by scan-query and scan-index (the two core CLI entry points). Each
-invocation appends one JSON record to ``.cache/codemap/logs/cli_<session>.jsonl``,
-falling back to ``cli.jsonl`` when no session id has been seeded. Per-session
-filenames keep concurrent sessions from interleaving appends into one file.
+Used by scan-query and scan-index (the two core CLI entry points). Production
+invocations append one JSON record under
+``.cache/codemap/logs/<runtime>/cli_<session-or-invocation>.jsonl``. Runtime
+selection is explicit first, then host detection, then direct; the runtime
+component and a non-empty correlation token prevent cross-host writes and bare
+``cli.jsonl`` collisions.
 
-The session id is seeded once per Claude Code session by the SessionStart hook
-(seed-session.js) into ``$TMPDIR/codemap-<project>-session``; this module reads
-it back so CLI records carry the same join key as the skill layer.
+Only Claude reads the SessionStart marker
+(``$TMPDIR/codemap-<project>-session``). Codex uses ``CODEX_THREAD_ID`` and a
+direct CLI may opt into ``CODEMAP_TELEMETRY_SESSION``; every other invocation
+uses a process-local correlation token.
 
 ``bin/_telemetry.py`` is a compatibility shim that aliases this module in
 ``sys.modules``. This module lives at ``src/codemap_py/telemetry.py`` — one
@@ -26,11 +29,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from codemap_py.runtime_log import log_root
+from codemap_py.runtime_log import invocation_id, log_dir_for, plugin_version as runtime_plugin_version, resolve_runtime
 
 LOG_MAX_BYTES = 10 * 1024 * 1024
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
-_PLUGIN_VERSION: str | None = None
+_SAFE_SESSION = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def plugin_version() -> str:
@@ -43,14 +46,7 @@ def plugin_version() -> str:
         >>> isinstance(plugin_version(), str)
         True
     """
-    global _PLUGIN_VERSION  # noqa: PLW0603 — read-once cache; one file read per process
-    if _PLUGIN_VERSION is None:
-        try:
-            manifest = Path(__file__).resolve().parents[2] / ".claude-plugin" / "plugin.json"
-            _PLUGIN_VERSION = str(json.loads(manifest.read_text()).get("version", "?"))
-        except Exception:  # noqa: BLE001 — telemetry must never break the CLI
-            _PLUGIN_VERSION = "?"
-    return _PLUGIN_VERSION
+    return runtime_plugin_version()
 
 
 def session_id() -> str:
@@ -72,6 +68,42 @@ def session_id() -> str:
         return ""
 
 
+def runtime_id() -> str:
+    """Return the explicit or host-detected runtime for this CLI invocation.
+
+    ``CODEMAP_RUNTIME`` is an explicit selection: an invalid non-empty value
+    deliberately falls back to ``direct`` rather than being replaced by host
+    detection, while an empty or whitespace-only value counts as unset (the hook
+    layer normalizes the same way, so both layers shard one session identically). Without
+    it, a Codex thread wins over any inherited Claude marker so one process cannot
+    append into the wrong runtime's shard.
+    """
+    explicit = (os.environ.get("CODEMAP_RUNTIME") or "").strip().lower()
+    if explicit:
+        return resolve_runtime(explicit)[0]
+    if os.environ.get("CODEX_THREAD_ID"):
+        return "codex"
+    if os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CSID"):
+        return "claude"
+    return "direct"
+
+
+def runtime_session(runtime: str) -> str:
+    """Return the safe correlation token for one resolved runtime.
+
+    Only Claude reads the seed marker. Codex exposes its own thread identifier,
+    while direct invocations may opt into a stable token with
+    ``CODEMAP_TELEMETRY_SESSION``; all other cases use a process-local invocation
+    token so concurrent direct calls never merge into one bare ``cli.jsonl``.
+    """
+    if runtime == "codex":
+        return os.environ.get("CODEX_THREAD_ID") or invocation_id()
+    if runtime == "claude":
+        return session_id() or invocation_id()
+    explicit = os.environ.get("CODEMAP_TELEMETRY_SESSION", "")
+    return explicit if _SAFE_SESSION.fullmatch(explicit) else invocation_id()
+
+
 def log_path_for(session: str, log_dir: Path) -> Path:
     """Resolve the per-session log file path (``cli.jsonl`` when session empty)."""
     name = f"cli_{_SAFE.sub('-', session)}.jsonl" if session else "cli.jsonl"
@@ -88,22 +120,30 @@ def _rotate(path: Path) -> None:
 
 
 def log_cli(cmd: str, argv: list[str], result: object, t0: float, *, log_dir: Path | None = None) -> None:
-    """Append one cli-layer telemetry record. Best-effort — never raises."""
+    """Append one CLI telemetry record; ``log_dir`` is a test-only final-dir seam.
+
+    Production callers must omit ``log_dir`` so :func:`log_dir_for` applies the
+    runtime component beneath the ``CODEMAP_LOG_DIR`` root. The only in-repository
+    callers that inject it are telemetry tests, where it intentionally denotes the
+    already-resolved final directory.
+    """
     if os.environ.get("CODEMAP_LOGGING", "true").lower() == "false":
         return
     try:
-        # Resolved through runtime_log rather than a local relative default: the shard
-        # this appends to must land in the SAME directory the hook layers write to, and
-        # a CWD-relative default splits them the moment a session starts in a subdir.
-        log_dir = log_dir or log_root()
-        sid = session_id()
-        log_file = log_path_for(sid, log_dir)
+        runtime = runtime_id()
+        # ``log_dir`` remains a final-directory test seam. Production callers omit it,
+        # then every invocation receives its required runtime component under the shared
+        # log root instead of writing flat records that bypass isolation.
+        scoped_log_dir = log_dir if log_dir is not None else log_dir_for(runtime)
+        sid = session_id() if log_dir is not None else runtime_session(runtime)
+        log_file = log_path_for(sid, scoped_log_dir)
         log_file.parent.mkdir(parents=True, exist_ok=True)
         if log_file.exists() and log_file.stat().st_size > LOG_MAX_BYTES:
             _rotate(log_file)
         record = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "layer": "cli",
+            "runtime": runtime,
             "v": plugin_version(),
             "cmd": cmd,
             "session": sid,

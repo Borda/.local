@@ -113,11 +113,11 @@ def test_manifest_pair_shares_identity(package: Path) -> None:
     assert claude["version"] == codex["version"]
 
 
-def test_codex_manifest_ships_six_skill_roster_and_no_hooks(package: Path) -> None:
-    """The Codex manifest advertises the ``codex-skills/`` roster and still no hooks (Phase 4)."""
+def test_codex_manifest_ships_skill_roster_and_runtime_hooks(package: Path) -> None:
+    """The Codex manifest advertises its skill roster and runtime-scoped hook configuration."""
     codex = json.loads((package / ".codex-plugin" / "plugin.json").read_text())
     assert codex["skills"] == "./codex-skills/"
-    assert "hooks" not in codex
+    assert codex["hooks"] == "./hooks/codex-hooks.json"
 
 
 def test_manifest_skill_rosters(package: Path) -> None:
@@ -158,6 +158,7 @@ def test_package_omits_paths(package: Path, absent_rel: str) -> None:
         pytest.param("claude-skills/_shared/codemap-context.md", id="shared-doc"),
         pytest.param("codex-skills/query-code/SKILL.md", id="codex-skill"),
         pytest.param("hooks/claude-hooks.json", id="hook-manifest"),
+        pytest.param("hooks/codex-hooks.json", id="codex-hook-manifest"),
         pytest.param("hooks/inject-preamble.py", id="hook-python"),
         pytest.param("bin/scan-index", id="cli-alias"),
         pytest.param("bin/codemap-py", id="launcher"),

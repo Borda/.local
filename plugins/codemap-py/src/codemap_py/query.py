@@ -121,7 +121,7 @@ from codemap_py.schema import (  # noqa: E402
     Symbol,
     validate_index,
 )
-from codemap_py.telemetry import log_cli  # noqa: E402
+from codemap_py.telemetry import log_cli, runtime_id  # noqa: E402
 
 # v5.1: MODULE_ALIASES_MIN_VER is imported for downstream feature gating; no
 # command consumes it directly today — module_aliases is applied internally by
@@ -842,7 +842,7 @@ def maybe_self_heal(index: dict, index_path: Path, scan_root: Path | None) -> di
     # The caller's read lease is already released by the time we get here — the scan
     # below is a writer that takes its own exclusive lease, and a reader token still
     # held by this process would block it until its deadline expired, every time.
-    if not _run_incremental_scan(_BIN / "scan-index", scan_root):
+    if not _run_incremental_scan(_BIN / "scan-index", scan_root, len(changed)):
         return index
     try:
         healed = _load_index_leased(index_path)
@@ -854,12 +854,13 @@ def maybe_self_heal(index: dict, index_path: Path, scan_root: Path | None) -> di
     return healed
 
 
-def _run_incremental_scan(scan_index_bin: Path, scan_root: Path | None) -> bool:
+def _run_incremental_scan(scan_index_bin: Path, scan_root: Path | None, changed_count: int) -> bool:
     """Run ``scan-index --incremental`` bounded by :data:`_HEAL_TIMEOUT_S`; return whether it succeeded.
 
     Args:
         scan_index_bin: path to the ``scan-index`` executable.
         scan_root: project root to hand via ``--root``; None omits it.
+        changed_count: Number of source files known stale before this refresh.
     """
     if not scan_index_bin.exists():
         return False
@@ -873,6 +874,12 @@ def _run_incremental_scan(scan_index_bin: Path, scan_root: Path | None) -> bool:
             text=True,
             timeout=_HEAL_TIMEOUT_S,
             cwd=str(scan_root) if scan_root is not None else None,
+            env={
+                **os.environ,
+                "CODEMAP_REFRESH_TRIGGER": "query_self_heal",
+                "CODEMAP_REFRESH_CHANGED_COUNT": str(changed_count),
+                "CODEMAP_REFRESH_STALE_BEFORE": "true",
+            },
         )
     except (subprocess.TimeoutExpired, OSError):
         _print("⚠ codemap: incremental self-heal timed out — answering from the stale index.", file=sys.stderr)
@@ -1591,8 +1598,8 @@ _coverage_full_keys = (
 def _read_session_marker() -> str | None:
     """Return the current session id from the hook-written marker, or None if absent.
 
-    Cross-agent contract (the hook writes, scan-query reads): the marker lives at
-    ``<git-root>/.cache/codemap/current-session`` and holds single-line JSON
+    Cross-layer contract (the hook writes, scan-query reads): each host marker lives at
+    ``<git-root>/.cache/codemap/current-session-<runtime>.json`` and holds single-line JSON
     ``{"session_id": "<id>", "ts": <epoch-ms>}``. Any of missing file, unparsable
     JSON, missing/empty ``session_id``, or a ``ts`` older than
     :data:`_SESSION_MARKER_TTL_MS` is treated as "no marker" so the caller falls back
@@ -1604,7 +1611,10 @@ def _read_session_marker() -> str | None:
     git_root = _get_git_root_cached()
     if git_root is None:
         return None
-    marker = git_root / ".cache" / "codemap" / "current-session"
+    runtime = runtime_id()
+    if runtime not in {"claude", "codex"}:
+        return None
+    marker = git_root / ".cache" / "codemap" / f"current-session-{runtime}.json"
     try:
         raw = marker.read_text(encoding="utf-8", errors="replace").strip()
         data = json.loads(raw)

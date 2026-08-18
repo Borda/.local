@@ -3,10 +3,10 @@
 
 Two PostToolUse roles, dispatched on ``tool_name``:
 
-- ``Bash`` — when the command is a ``scan-query rdeps`` / ``fn-rdeps`` whose OWN result came
-  back complete, append the queried module so ``guard-redundant-scan.py`` can deny a
+- ``Bash`` — when a ``scan-query`` or ``codemap-py query`` rdeps/fn-rdeps command's OWN result
+  comes back complete, append the queried module so ``guard-redundant-scan.py`` can deny a
   redundant import grep for it.
-- ``Edit`` / ``Write`` / ``MultiEdit`` / ``NotebookEdit`` — drop the sentinel. It asserts
+- ``Edit`` / ``Write`` / ``MultiEdit`` / ``NotebookEdit`` / ``apply_patch`` — drop the sentinel. It asserts
   "codemap already returned the EXHAUSTIVE caller set", an authority any source edit can
   invalidate (a new import changes the caller set), so it must not outlive the tree it was
   computed from. Both roles live here because the sentinel has exactly one lifecycle owner.
@@ -23,10 +23,10 @@ import re
 import sys
 from pathlib import Path
 
-_QUERY = re.compile(r"\bscan-query\b|\$SQ\b")
+_QUERY = re.compile(r"\b(?:scan-query|codemap-py\s+query)\b|\$SQ\b")
 _TARGET = re.compile(r"\b(?:fn-)?rdeps\s+[\"']?([A-Za-z0-9_.]+(?:::[A-Za-z0-9_.]+)?)[\"']?")
 #: Tool names whose side effect can invalidate a recorded exhaustive caller set.
-_EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+_EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"})
 #: Suffixes whose edit can change the import graph. An edit whose path cannot be read
 #: invalidates anyway — dropping a still-valid sentinel costs one re-query, while keeping
 #: a stale one denies a grep the model actually needed.
@@ -154,7 +154,7 @@ def main() -> int:
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict):
             return 0
-        sentinel = sentinel_path(payload.get("session_id"))
+        sentinel = sentinel_path(_hookutil.runtime_session(payload))
         if str(payload.get("tool_name", "")) in _EDIT_TOOLS:
             invalidate(sentinel, payload)
         else:
