@@ -291,7 +291,23 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
 fi
 ```
 
-**CI STATUS** (PR mode only): parse `gh pr checks` output → extract failing required check names into `CI_FAILING_CHECKS`. Any failing: set `CI_RED=true`, print `⚠ CI is red: [list failing check names] — review proceeds; status noted in report header.` Continue to Steps 2–8 regardless. Expand `$CI_RED` and `$CI_FAILING_CHECKS` to literal values in the consolidator spawn prompt (Step 5).
+**CI STATUS** (PR mode only): run this block verbatim — never hand-compose a `gh pr checks` parse. `--json`/`--jq` beats grepping the table: no tab-literal quoting, no `grep -P` (absent on BSD/macOS), and the `bucket` field is gh's own pass/fail/pending classification.
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CLEAN_ARGS < "${TMPDIR:-/tmp}/oss-review-pr-tag-${CSID}" 2>/dev/null || CLEAN_ARGS=""
+# --required scopes the gate to merge-blocking checks; exits 1 when repo has none
+CI_FAILING_CHECKS=$(gh pr checks $CLEAN_ARGS --required --json name,bucket --jq '[.[]|select(.bucket=="fail")|.name]|join(", ")' 2>/dev/null) || CI_FAILING_CHECKS=""  # timeout: 15000
+CI_COUNTS=$(gh pr checks $CLEAN_ARGS --json bucket --jq '"\([.[]|select(.bucket=="pass")]|length)/\(length)"' 2>/dev/null) || CI_COUNTS=""  # timeout: 15000
+if [ -n "$CI_FAILING_CHECKS" ]; then CI_RED=true; else CI_RED=false; fi
+# Stage-2 gate + consolidator run in fresh shells — w/o sentinels CI_RED reads unset, red CI never blocks
+printf '%s\n' "$CI_RED" > "${TMPDIR:-/tmp}/oss-review-ci-red-${CSID}"
+printf '%s\n' "$CI_FAILING_CHECKS" > "${TMPDIR:-/tmp}/oss-review-ci-failing-${CSID}"
+printf '%s\n' "$CI_COUNTS" > "${TMPDIR:-/tmp}/oss-review-ci-counts-${CSID}"
+echo "CI_RED=$CI_RED FAILING=[$CI_FAILING_CHECKS] COUNTS=$CI_COUNTS"
+```
+
+`CI_RED=true`: print `⚠ CI is red: [list failing check names] — review proceeds; status noted in report header.` Continue to Steps 2–8 regardless. Expand `$CI_RED`, `$CI_FAILING_CHECKS` and `$CI_COUNTS` to literal values in the consolidator spawn prompt (Step 5).
 
 ### File scope detection
 
@@ -446,10 +462,12 @@ Skip Step 2–4 entirely. Orchestrator writes `$REPORT_DIR/review-report.md` its
 
 No ground confirmed → proceed to Stage 2.
 
-**Stage 2 — Block (non-terminal).** Reuses `CI_RED`/`CI_FAILING_CHECKS` already computed in the CI STATUS check above — no new fetch. Red CI is the only mechanically-cheap block signal available pre-fanout; a typo or a flaky test can't be told apart from a real regression without actually reading the diff or a rerun, so those stay classification guidance for the full-review agents (below), not a pre-fanout check.
+**Stage 2 — Block (non-terminal).** Reloads `CI_RED`/`CI_FAILING_CHECKS` from the CI STATUS sentinels — no new fetch. Red CI is the only mechanically-cheap block signal available pre-fanout; a typo or a flaky test can't be told apart from a real regression without actually reading the diff or a rerun, so those stay classification guidance for the full-review agents (below), not a pre-fanout check.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r CI_RED < "${TMPDIR:-/tmp}/oss-review-ci-red-${CSID}" 2>/dev/null || CI_RED=false
+IFS= read -r CI_FAILING_CHECKS < "${TMPDIR:-/tmp}/oss-review-ci-failing-${CSID}" 2>/dev/null || CI_FAILING_CHECKS=""
 if [ "${CI_RED:-false}" = "true" ]; then
     { echo "GATE=BLOCK"; echo "GATE_REASON=ci-red: ${CI_FAILING_CHECKS}"; } > "${TMPDIR:-/tmp}/oss-review-gate-${CSID}"
 else
@@ -693,7 +711,7 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 ```
 
-**IMPORTANT**: expand `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt. Un-expanded variables create wrong paths. The `## Source Files` footnote `Glob(... path="<EXPANDED_RUN_DIR>")` path must also be expanded to the literal `$RUN_DIR` value.
+**IMPORTANT**: expand `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, `$CI_FAILING_CHECKS`, and `$CI_COUNTS` to literal values before inserting into the spawn prompt. Un-expanded variables create wrong paths. The `## Source Files` footnote `Glob(... path="<EXPANDED_RUN_DIR>")` path must also be expanded to the literal `$RUN_DIR` value.
 
 Reload the Stage-2 gate verdict (Check 41: fresh shell — set by the acceptance gate in Step 1, must survive to here):
 ```bash
@@ -726,7 +744,7 @@ export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
 IFS= read -r REVIEW_SKILL_DIR < "${TMPDIR:-/tmp}/review-skill-dir-${CSID}" 2>/dev/null || REVIEW_SKILL_DIR=""
 cat "$REVIEW_SKILL_DIR/templates/consolidator-prompt.md"  # timeout: 5000
 ```
-Template (loaded above). Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>`, `<GATE>` with literal expanded values (`<GATE>` = `$GATE` reloaded above, `PASS` or `BLOCK`); leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
+Template (loaded above). Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir-${CSID}"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>`, `<CI_COUNTS>`, `<GATE>` with literal expanded values (`<GATE>` = `$GATE` reloaded above, `PASS` or `BLOCK`); leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
 
 Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded:
 Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.`

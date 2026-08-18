@@ -20,70 +20,78 @@ Contains: foundry check + fallback table. If foundry not installed: use table to
 
 **Cache check first**: if `$CACHE_FILE` exists — set by parent `analyse/SKILL.md` Cache layer; see that file for keying convention — read `item` and `comments` from it — skip primary fetch. Still run wide-net searches (never cached). For PRs: `gh pr checks` and `gh pr diff` never cached — always live.
 
-On cache miss, run all fetches in parallel:
+On cache miss, run the block matching `$TYPE`; commands inside it run in parallel. Each block reloads `NUMBER` itself — mode files execute in fresh shells, so `NUMBER`/`TYPE` set by `SKILL.md` are gone (Check 41).
+
+`TYPE=issue` — both complete: write cache (SKILL.md Cache layer write pattern):
 
 ```bash
-# --- run these in parallel ---
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r NUMBER < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || NUMBER=""
+gh issue view $NUMBER --json number,title,body,labels,comments,createdAt,author,state  # timeout: 6000
+gh issue view $NUMBER --comments  # timeout: 6000
+```
 
-if [ "$TYPE" = "issue" ]; then
+`TYPE=pr` — `pr view` completes: write cache:
 
-    gh issue view $NUMBER --json number,title,body,labels,comments,createdAt,author,state  # timeout: 6000
-    gh issue view $NUMBER --comments  # timeout: 6000
-    # After both complete: write cache (see SKILL.md Cache layer write pattern)
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r NUMBER < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || NUMBER=""
+gh pr view $NUMBER --json number,title,body,labels,reviews,statusCheckRollup,files,additions,deletions,commits,author  # timeout: 6000
+gh pr checks $NUMBER  # never cached — always live  # timeout: 15000
+gh pr diff $NUMBER --name-only  # never cached — always live  # timeout: 6000
+```
 
-elif [ "$TYPE" = "pr" ]; then
+`TYPE=discussion` — resolve the repo slug first: `gh api graphql` does **not** expand `{owner}`/`{repo}` in `-f` values (template substitution is REST-path-only), so the literal form returns `Could not resolve to a Repository with the name '{owner}/{repo}'`. Null result: print `⚠ Discussions not enabled or #N not found`, stop. Paginate with `after: "<endCursor>"` while `pageInfo.hasNextPage=true`; cap 200 comments and note in Summary when exceeded: `⚠ Thread has >200 comments — analysis based on first 200.` After complete: write cache.
 
-    gh pr view $NUMBER --json number,title,body,labels,reviews,statusCheckRollup,files,additions,deletions,commits,author  # timeout: 6000
-    gh pr checks $NUMBER           # never cached — always live  # timeout: 15000
-    gh pr diff $NUMBER --name-only # never cached — always live  # timeout: 6000
-    # After pr view completes: write cache (see SKILL.md Cache layer write pattern)
-
-else # discussion
-
-    gh api graphql -f query='
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        discussion(number: $number) {
-          title body createdAt closed closedAt
-          author { login }
-          category { name }
-          answer { body author { login } createdAt }
-          comments(first: 50) {
-            pageInfo { hasNextPage endCursor }
-            nodes { body author { login } createdAt }
-          }
-          labels(first: 10) { nodes { name } }
-        }
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r NUMBER < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || NUMBER=""
+GH_SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || GH_SLUG=""  # timeout: 10000
+gh api graphql -f query='
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    discussion(number: $number) {
+      title body createdAt closed closedAt
+      author { login }
+      category { name }
+      answer { body author { login } createdAt }
+      comments(first: 50) {
+        pageInfo { hasNextPage endCursor }
+        nodes { body author { login } createdAt }
       }
-    }' -f owner='{owner}' -f repo='{repo}' -F number=$NUMBER
-    # null result → print "⚠ Discussions not enabled or #N not found", stop
-    # paginate: `after: "<endCursor>"` while pageInfo.hasNextPage=true
-    # cap 200 comments; if exceeded, note in Summary: "⚠ Thread has >200 comments — analysis based on first 200."
-    # After complete: write cache (see SKILL.md Cache layer write pattern)
-
-fi
-
-TITLE=$(...)
-
-gh issue list --state all --search "$TITLE" --json number,title,state,labels --limit 50 |  # timeout: 15000
-jq --argjson self $NUMBER '[.[] | select(.number != $self)]'
-
-gh pr list --state all --search "$TITLE" --json number,title,state --limit 30 |  # timeout: 15000
-jq --argjson self $NUMBER '[.[] | select(.number != $self)]'
-
-gh api graphql -f query='  # timeout: 15000
-  query($owner:String!,$repo:String!){
-    repository(owner:$owner,name:$repo){
-      discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){
-        nodes { number title closed }
-      }
+      labels(first: 10) { nodes { name } }
     }
-  }' -f owner='{owner}' -f repo='{repo}' 2>/dev/null |
-jq --arg q "$TITLE" --argjson self $NUMBER '
-      .data.repository.discussions.nodes // [] |
-      map(select(.number != $self) |
-          select(.title | ascii_downcase | contains(($q | ascii_downcase | split(" ") | .[0]))))
-    '
+  }
+}' -f owner="${GH_SLUG%%/*}" -f repo="${GH_SLUG##*/}" -F number=$NUMBER  # timeout: 15000
+```
+
+Wide-net duplicate search (all three types) — re-fetching the title beats pasting the literal: keeps this block's text invariant, so it stays a manifest match instead of prompting:
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r NUMBER < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || NUMBER=""
+IFS= read -r TYPE < "${TMPDIR:-/tmp}/oss-detect-type-${CSID}" 2>/dev/null || TYPE="unknown"
+if [ "$TYPE" = "pr" ]; then TITLE=$(gh pr view $NUMBER --json title --jq .title 2>/dev/null); else TITLE=$(gh issue view $NUMBER --json title --jq .title 2>/dev/null); fi  # timeout: 15000
+printf '%s\n' "$TITLE" > "${TMPDIR:-/tmp}/analyse-thread-title-${CSID}"
+gh issue list --state all --search "$TITLE" --json number,title,state,labels --limit 50 | jq --argjson self "${NUMBER:-0}" '[.[] | select(.number != $self)]'  # timeout: 15000
+gh pr list --state all --search "$TITLE" --json number,title,state --limit 30 | jq --argjson self "${NUMBER:-0}" '[.[] | select(.number != $self)]'  # timeout: 15000
+```
+
+Discussion wide-net (own block — the multi-line query would otherwise suppress per-command entries for the searches above):
+
+```bash
+export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
+IFS= read -r NUMBER < "${TMPDIR:-/tmp}/analyse-clean-args-${CSID}" 2>/dev/null || NUMBER=""
+IFS= read -r TITLE < "${TMPDIR:-/tmp}/analyse-thread-title-${CSID}" 2>/dev/null || TITLE=""
+GH_SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || GH_SLUG=""  # timeout: 10000
+gh api graphql -f query='
+query($owner:String!,$repo:String!){
+  repository(owner:$owner,name:$repo){
+    discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){
+      nodes { number title closed }
+    }
+  }
+}' -f owner="${GH_SLUG%%/*}" -f repo="${GH_SLUG##*/}" 2>/dev/null | jq --arg q "$TITLE" --argjson self "${NUMBER:-0}" '.data.repository.discussions.nodes // [] | map(select(.number != $self) | select(.title | ascii_downcase | contains(($q | ascii_downcase | split(" ") | .[0]))))'  # timeout: 15000
 ```
 
 ## Reproduction Check

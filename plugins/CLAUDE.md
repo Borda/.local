@@ -80,6 +80,14 @@ Load `_shared/*.md` (+ `modes/`, `templates/`) via `cat "$VAR/foo.md"` in bash �
 
 Single-line sentinel read-back: `IFS= read -r VAR < "${TMPDIR:-/tmp}/<name>-${CSID}" 2>/dev/null || VAR=<default>` — never `VAR=$(cat ...)`. Command substitution `$(...)` triggers "Contains expansion" permission prompt in subagents regardless of allow list. Bare `cat "$VAR/foo.md"` (section above) unaffected — no substitution. Full rule + newline caveat: `cc_foundry/rules/claude-config.md` §TMPDIR Sentinel Scoping. Every plugin ships `hooks/sentinel-read-allow.js` (canonical: cc_foundry; propagated via `propagate_shared.py`) auto-allowing the legacy idiom, `$(date -u +FMT)` stamps, and the read-form itself (its first token `IFS=` matches no prefix allow-rule) in read-only compounds. For capture-substitutions that hook cannot shape-match (`$(python …)`, `$(git rev-parse …)`, `$(jq …)`), `hooks/blueprint-allow.js` is the general-purpose complement: it exact-matches the normalized command against the plugin's committed `blueprint-manifest.json` — full detail in `cc_foundry/permissions-guide.md` §"Contains expansion" gate.
 
+## Blueprint Blocks — Keep the Text Invariant
+
+`blueprint-allow.js` matches exact normalized text. Anything the model rewrites before running misses the manifest and prompts, so authoring choices decide coverage:
+
+- **Runtime values arrive through shell variables, never `<placeholder>` text.** `gh api "repos/$SLUG/commits/$TAG"` is invariant; `gh api repos/<org>/<repo>/commits/<tag>` forces substitution and can never match.
+- **Isolate any command carrying a multi-line quote or heredoc into its own fenced block.** The generator bails out of per-command extraction for such a block — every *other* command in it silently loses its entry and prompts individually. One GraphQL query cost 8 sibling commands theirs.
+- **Never ask prose for a derived value without shipping the command that produces it.** "parse `gh pr checks` output → extract failing names", with no block, yields an improvised pipeline: different text every run, always a prompt, and unreviewed — the observed one used `grep -P`, absent on BSD/macOS.
+
 ## Installability
 
 - Every file installable via `claude plugin install <name>@borda-ai-rig`; no dependency on source tree — installed path only; no hardcoded paths to sibling plugins or `plugins/<name>/` dirs
