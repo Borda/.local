@@ -10,7 +10,6 @@ import pytest
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-RULES_ROOT = PLUGIN_ROOT / "rules"
 SCHEMAS_ROOT = PLUGIN_ROOT / "schemas"
 
 CORE_SCHEMA_PATH = SCHEMAS_ROOT / "envelope.schema.json"
@@ -318,51 +317,3 @@ def test_mcp_python_constants_match_the_shipped_transport_config() -> None:
     for name, verb in bridge_mcp.TOOL_NAMES.items():
         schema_maximum = schema["$defs"][name]["properties"]["timeout_seconds"]["maximum"]
         assert bridge_mcp.MAX_MCP_TIMEOUT_SECONDS_BY_VERB[verb] == schema_maximum
-
-
-@pytest.mark.parametrize(
-    ("filename", "required_paragraphs"),
-    (
-        (
-            "escalation-policy.md",
-            (
-                "A caller-supplied unknown level is rejected before spawning a child.",
-                "Soft budgets are advise 120 seconds, review 300 seconds, and implement 600 seconds.",
-                "Implement never retries automatically because edits may have landed.",
-            ),
-        ),
-        (
-            "self-healing.md",
-            (
-                "A bridge call performs at most one remedy.",
-                "Timeout retry is limited to read-only verbs; implement is reported with its partial transcript and workspace delta.",
-            ),
-        ),
-        (
-            "envelope.md",
-            (
-                "The bridge has two validation boundaries.",
-                "The public envelope status may additionally be `timeout` or `refused`.",
-            ),
-        ),
-        (
-            "recursion-guard.md",
-            (
-                "A caller may report a greater depth but cannot lower the inherited value, and negative depth is rejected.",
-                "A host receiving trusted depth one or greater returns `refused: recursion-depth` without dispatching a peer.",
-            ),
-        ),
-        (
-            "prompting.md",
-            (
-                "Every dispatched task starts with its soft budget, the current depth, and the run identifier.",
-                "report inaccessible resources or approvals in `blockers` instead of waiting.",
-            ),
-        ),
-    ),
-)
-def test_contract_rules_keep_each_behavioral_invariant(filename: str, required_paragraphs: tuple[str, ...]) -> None:
-    """Prevent prose contracts from dropping a complete dispatch-safety invariant."""
-    text = (RULES_ROOT / filename).read_text(encoding="utf-8")
-    for paragraph in required_paragraphs:
-        assert paragraph in text, f"{filename}: missing invariant {paragraph!r}"

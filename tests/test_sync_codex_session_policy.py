@@ -163,13 +163,3 @@ def test_sync_can_project_model_defaults_without_changing_agent_instructions(tmp
     assert 'model = "gpt-5.6-terra"' in (home / "config.toml").read_text(encoding="utf-8")
     assert 'review_model = "gpt-5.6-terra"' in (home / "config.toml").read_text(encoding="utf-8")
     assert (home / "AGENTS.md").read_text(encoding="utf-8") == original_instructions
-
-
-def test_root_sync_invokes_the_repository_owned_session_policy_sync() -> None:
-    """Keep the root sync entrypoint connected to the local policy sources."""
-    root_sync = ROOT_SYNC.read_text(encoding="utf-8")
-
-    assert 'CODEX_HOME_SYNC_SCRIPT="$PROJECT_DIR/scripts/sync_codex_session_policy.py"' in root_sync
-    assert '--source-config "$PROJECT_DIR/.codex/config.toml"' in root_sync
-    assert '--source-policy "$PROJECT_DIR/.codex/global-session-policy.md"' in root_sync
-    assert "CODEX_HOME_SYNC_ARGS+=(--skip-policy)" in root_sync

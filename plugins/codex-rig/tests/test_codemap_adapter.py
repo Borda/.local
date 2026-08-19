@@ -278,7 +278,7 @@ def test_probe_incompatible_when_doctor_exits_nonzero(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize("extension", [".BAT", ".Cmd", ".EXE", ".com"])
-def test_windows_configured_launchers_are_accepted_case_insensitively(
+def test_simulated_windows_configured_launchers_are_accepted_case_insensitively(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extension: str
 ) -> None:
     """Accept Windows executable filename conventions without requiring a POSIX execute bit."""

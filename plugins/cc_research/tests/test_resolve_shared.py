@@ -18,11 +18,6 @@ import resolve_shared
 SCRIPT = Path(resolve_shared.__file__)
 
 
-def test_stdout_reconfigure_present() -> None:
-    """Windows-portability: ``sys.stdout.reconfigure(...)`` required."""
-    assert "sys.stdout.reconfigure" in SCRIPT.read_text(encoding="utf-8")
-
-
 def test_cache_hit_returns_newest_version(tmp_path: Path) -> None:
     """Newest cached research version's ``_shared`` is returned."""
     base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research"

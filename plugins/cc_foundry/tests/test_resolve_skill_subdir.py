@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 
-import resolve_skill_subdir  # noqa: E402
 from resolve_skill_subdir import main, resolve  # noqa: E402
 
 
@@ -223,9 +222,3 @@ class TestMain:
         assert rc == 0
         out = capsys.readouterr().out.strip()
         assert out == "plugins/cc_foundry/skills/manage/templates"
-
-
-def test_module_exposes_expected_helpers() -> None:
-    """Smoke check: module surface includes the documented entry points."""
-    assert callable(resolve_skill_subdir.resolve)
-    assert callable(resolve_skill_subdir.main)

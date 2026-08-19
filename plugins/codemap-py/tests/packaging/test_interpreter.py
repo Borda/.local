@@ -67,7 +67,7 @@ def test_posix_candidate_order() -> None:
     assert cli.candidate_interpreters({}, "darwin") == [["python3"], ["python"]]
 
 
-def test_windows_candidate_order() -> None:
+def test_simulated_windows_candidate_order() -> None:
     assert cli.candidate_interpreters({}, "win32") == [["py", "-3"], ["python.exe"], ["python3.exe"]]
 
 

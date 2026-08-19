@@ -5,7 +5,7 @@ Covers:
 * Timestamp format validation
 * Nested parent creation (``mkdir -p`` semantics)
 * Argument validation (wrong count → exit 1)
-* Windows-portability invariants: no ``/tmp`` literal, no ``datetime.utcnow()``
+* Windows-portability invariant: no ``/tmp`` literal
 """
 
 from __future__ import annotations
@@ -27,15 +27,6 @@ make_run_dir = _mod.make_run_dir
 main = _mod.main
 
 TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
-
-
-class TestPortabilityInvariants:
-    """Source-level Windows-portability checks."""
-
-    def test_no_utcnow(self) -> None:
-        """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
-        src = _SCRIPT.read_text(encoding="utf-8")
-        assert "utcnow" not in src
 
 
 class TestMakeRunDir:

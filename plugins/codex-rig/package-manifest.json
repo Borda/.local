@@ -677,7 +677,7 @@
     {
       "mode": "0644",
       "path": "tests/test_code_remediate_session_review_contract.py",
-      "sha256": "79864cb1eb81ea762b9d488b0fabc8995f61bc9634376e8e5b8429e0b957890b"
+      "sha256": "4d42777f3b1eb4bab15972d2b91b4de0377f7b57e99eeff79884cd880ba444b0"
     },
     {
       "mode": "0644",
@@ -712,7 +712,7 @@
     {
       "mode": "0644",
       "path": "tests/test_codemap_adapter.py",
-      "sha256": "334de8f97ae517fc8529ecf18b9f65b1b310de52254105bbe76f6d473f688fe5"
+      "sha256": "0b7d48e6061a5185c2e3a8073ed81dec02f22bea48ba0db4892b5900f3257308"
     },
     {
       "mode": "0644",
@@ -727,7 +727,7 @@
     {
       "mode": "0644",
       "path": "tests/test_collection_policy.py",
-      "sha256": "256d8535da292ca7227d984f4f7c185409677b050fc9d6eeea65fa42a38f2643"
+      "sha256": "db158bd46291631fa5c84175e373b7cdeb935da9d5134d43ce5c426d0543c500"
     },
     {
       "mode": "0644",
@@ -762,7 +762,7 @@
     {
       "mode": "0644",
       "path": "tests/test_installed_cache_scaffold.py",
-      "sha256": "ed52f50a582decdf0187aa4408e3fed863064d1152398fdf1a0d7c708d36fb52"
+      "sha256": "6a19a8e66d20453afa92d03f3ba6086466edda7d1a579ba5429982986ee2b0c8"
     },
     {
       "mode": "0644",
@@ -777,32 +777,27 @@
     {
       "mode": "0644",
       "path": "tests/test_manage_role_agents_windows.py",
-      "sha256": "5f19a95cec6da2c5c073e6af25601698a88598ea9c845fae609bf3571d10f857"
-    },
-    {
-      "mode": "0644",
-      "path": "tests/test_module_docstring_contract.py",
-      "sha256": "131e141cf2312ff721e51a3bc9dca4479fcf314a4820ac7da69e1a155dd9da93"
+      "sha256": "6a3a035b82d9c9ab266543788c2fa5f2116c98dd7289a8d68e6128bfba53e30d"
     },
     {
       "mode": "0644",
       "path": "tests/test_networked_cli_approval_contract.py",
-      "sha256": "719314f488921518b71cb8b4dfde67fbf70248afdaeda61418387e73b1934615"
+      "sha256": "9d2d87ae6f8151db503d6ed4ad298e2a337fc7fa0972a218338100d8198198bf"
     },
     {
       "mode": "0644",
       "path": "tests/test_package_identity.py",
-      "sha256": "12c03fdbb7e5a41b7dfb97761f3e8f6776ac104dcc158324905444eba085fe03"
+      "sha256": "8bbf334f42ca31a8fdc868a670ae7bcaccd686fd374c0dd71486d02944b1c5d4"
     },
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "9d731e2553d69934fec209df6498e3ed9d14992d30315fecbc5f9bf8ff13baa0"
+      "sha256": "6995a286c7f1217eb38b58032ba3f0a35244d72983201c32463bf4f394bc2b73"
     },
     {
       "mode": "0644",
       "path": "tests/test_portable_workflow_helpers.py",
-      "sha256": "b0843f17f26955654b7fcdf282278aab8332b2667b23f0f01e9588fe59f3b3e5"
+      "sha256": "b9d4acb9d0dad8549407b895e8934ad07921941af1480a5c829197d02933f841"
     },
     {
       "mode": "0644",
@@ -812,17 +807,12 @@
     {
       "mode": "0644",
       "path": "tests/test_sync_codex.py",
-      "sha256": "a5787e916cdd2be7d90d94658789f9a98f8b0181a4acaee716289f2c4918bbbf"
+      "sha256": "26c256342e11a294e5bd6cd29250335d620206e2b2ac2353bb1c69facbf0897f"
     },
     {
       "mode": "0644",
       "path": "tests/test_sync_setup_dispatch.py",
       "sha256": "d399f6c0be6f70ab2de90274ae2ad17b252561a42cb2dc3a43de1829ebddf0ba"
-    },
-    {
-      "mode": "0644",
-      "path": "tests/test_windows_skip_budget.py",
-      "sha256": "6d36159746ae6ca1b613841a5466cd963091cb6237c2f70d8ed850ce7a80f5c8"
     }
   ],
   "generator": {

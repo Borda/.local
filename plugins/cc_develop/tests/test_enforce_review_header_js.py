@@ -198,7 +198,7 @@ def test_sentinel_resolved_from_payload_session_id(tmp_path: Path, review_run: t
     assert _denial_reason(result) is not None
 
 
-def test_windows_report_dir_validation_accepts_contained_paths_and_rejects_traversal() -> None:
+def test_simulated_windows_report_dir_validation_accepts_contained_paths_and_rejects_traversal() -> None:
     """Recognise Windows separators and casing without trusting escaped sentinel paths."""
     assert _call_export("isReviewReportDir", r"C:\Repo\.REPORTS\REVIEW\run-1") is True
     assert _call_export("isReviewReportDir", r"C:\Repo\.reports\review\..\private") is False

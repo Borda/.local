@@ -306,7 +306,7 @@ def test_native_sync_clear_removes_managed_block_when_codex_is_missing(tmp_path:
     )
 
 
-def test_system_runner_resolves_windows_batch_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_system_runner_resolves_simulated_windows_batch_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
     """Launch a resolved Codex batch shim through the Windows command processor."""
     module = load_sync()
 
@@ -336,7 +336,9 @@ def test_system_runner_resolves_windows_batch_launcher(monkeypatch: pytest.Monke
         "main x",
     ),
 )
-def test_system_runner_rejects_windows_batch_shell_syntax(monkeypatch: pytest.MonkeyPatch, argument: str) -> None:
+def test_system_runner_rejects_simulated_windows_batch_shell_syntax(
+    monkeypatch: pytest.MonkeyPatch, argument: str
+) -> None:
     """Reject user-controlled values that cmd.exe could reinterpret."""
     module = load_sync()
     monkeypatch.setattr(module.shutil, "which", lambda _command: r"C:\fixture\codex.cmd")

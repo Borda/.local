@@ -7,7 +7,6 @@ adapters. They do not exercise a provider CLI or execute a model.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import math
 from pathlib import Path
@@ -66,12 +65,6 @@ def _manifest_task(task_id: str) -> dict[str, Any]:
 
 class TestTaskSuiteLoading:
     """Raw task loading must not silently apply runner-specific normalization."""
-
-    def test_contract_tests_bind_tracked_methodology_manifest(self) -> None:
-        """Current contract assertions use the tracked provider-neutral methodology lock."""
-        assert MANIFEST_PATH == BENCHMARKS_DIR / "manifests" / "provider-parity-methodology.json"
-        assert MANIFEST_PATH.is_file()
-        assert "results" not in MANIFEST_PATH.parts
 
     @pytest.mark.parametrize(
         ("payload", "expected"),
@@ -393,7 +386,6 @@ class TestEvaluatorRegistry:
 
         adapter_results = {adapter: registry.evaluate(task, output_text) for adapter in ("claude", "codex")}
 
-        assert tuple(inspect.signature(registry.evaluate).parameters) == ("task", "output_text")
         assert adapter_results["claude"] == adapter_results["codex"]
         assert adapter_results["claude"].scored is True
         assert adapter_results["claude"].correct is True

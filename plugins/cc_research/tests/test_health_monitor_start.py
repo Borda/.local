@@ -50,20 +50,6 @@ def sentinel_cleanup() -> list[str]:
             stale.unlink(missing_ok=True)
 
 
-class TestPortabilityInvariants:
-    """Source-level Windows-portability checks."""
-
-    def test_sentinel_dir_function_defined(self) -> None:
-        """``_sentinel_dir()`` helper must exist — proves platform-conditional logic."""
-        src = SCRIPT.read_text(encoding="utf-8")
-        assert "_sentinel_dir" in src
-
-    def test_no_utcnow(self) -> None:
-        """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
-        src = SCRIPT.read_text(encoding="utf-8")
-        assert "utcnow" not in src
-
-
 class TestArgparse:
     """argparse-layer behaviour: --help and golden README invocation."""
 

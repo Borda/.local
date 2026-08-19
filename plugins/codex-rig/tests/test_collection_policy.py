@@ -24,7 +24,9 @@ def load_conftest() -> ModuleType:
     return module
 
 
-def test_windows_ignores_only_unsupported_posix_lifecycle_files(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_simulated_windows_ignores_only_unsupported_posix_lifecycle_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Keep native Windows away from exact POSIX files without hiding portable coverage."""
     monkeypatch.setattr(sys, "platform", "win32")
     module = load_conftest()

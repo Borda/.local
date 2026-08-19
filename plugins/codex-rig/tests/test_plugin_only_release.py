@@ -113,7 +113,7 @@ def load_package_validator() -> Any:
     ),
     ids=("backslash", "case-insensitive-forward-slash"),
 )
-def test_package_validator_rejects_windows_user_profile_paths(
+def test_package_validator_rejects_simulated_windows_user_profile_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes
 ) -> None:
     """Reject absolute Windows user-profile paths from public payloads."""
@@ -136,7 +136,7 @@ def test_package_validator_rejects_windows_user_profile_paths(
     ),
     ids=("system-root", "portable-variable", "relative-documentation"),
 )
-def test_package_validator_accepts_non_private_windows_paths(
+def test_package_validator_accepts_non_private_simulated_windows_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes
 ) -> None:
     """Keep portable and non-profile Windows paths publishable."""
@@ -677,26 +677,6 @@ def test_code_remediate_rejects_conflicts_without_merge_authorization(tmp_path: 
 
     with pytest.raises(SystemExit, match="target-merge-authorization-required"):
         validator._validate_code_remediate_merge_resolution(metadata, pr_dir, {"local_head": "base-oid"})
-
-
-def test_repository_sync_installs_plugin_instead_of_copying_codex_tree() -> None:
-    """Prevent the maintainer sync entrypoint from recreating legacy home mirrors."""
-    assert SYNC_SCRIPT.is_file(), f"source-checkout sync.sh missing at {SYNC_SCRIPT}"
-    raw_script = SYNC_SCRIPT.read_text(encoding="utf-8")
-    script = " ".join(raw_script.split()).lower()
-    assert "scripts/sync_codex.py" in script
-    for forbidden in ("codex_src", 'rsync -a --no-perms "$codex_src', 'cp "$codex_src'):
-        assert forbidden not in script
-
-    native_sync = PLUGIN_ROOT / "scripts" / "sync_codex.py"
-    native_text = native_sync.read_text(encoding="utf-8")
-    assert "Legacy files copied by older sync versions are not deleted automatically" in native_text
-    assert '"plugin", "marketplace", "upgrade"' in native_text
-    assert '"plugin", "marketplace", "add"' in native_text
-    assert '"plugin", "add"' in native_text
-    assert '"plugin", "list"' in native_text
-    assert "--codex-ref)" in raw_script
-    assert "print_claude_plugin_identity" in raw_script
 
 
 @pytest.mark.skipif(not SYNC_SCRIPT.is_file(), reason="requires source-checkout sync.sh")

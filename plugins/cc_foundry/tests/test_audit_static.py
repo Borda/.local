@@ -22,7 +22,14 @@ aud = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(aud)
 
 # Checks whose scope is honoured via --scan-dir / globbed files (testable in isolation).
-SCOPE_AWARE = {"tag-symmetry", "fence-symmetry", "readme-drift", "mode-dispatch", "bash-persistence"}
+SCOPE_AWARE = {
+    "tag-symmetry",
+    "fence-symmetry",
+    "readme-drift",
+    "mode-dispatch",
+    "bash-persistence",
+    "plugin-module-docs",
+}
 
 _FENCE = "```"
 
@@ -36,6 +43,10 @@ def _seed_defective_plugin(root: Path) -> Path:
 
     # readme-drift: marker (0.0.1) disagrees with plugin.json (1.0.0)
     (plugin / "README.md").write_text("Current version: `0.0.1`.\n", encoding="utf-8")
+
+    # plugin-module-docs: a shipped module without its maintainer-facing overview.
+    (plugin / "bin").mkdir()
+    (plugin / "bin" / "missing_docs.py").write_text("print('missing docs')\n", encoding="utf-8")
 
     # tag-symmetry: unbalanced <role> (open, never closed)
     (plugin / "agents").mkdir()
@@ -65,6 +76,7 @@ def _seed_defective_plugin(root: Path) -> Path:
         ("readme-drift", "README.md", "0.0.1"),
         ("mode-dispatch", "skills/persist/SKILL.md", "Mode: Ghost"),
         ("bash-persistence", "skills/persist/SKILL.md", "$RUN_ID assigned"),
+        ("plugin-module-docs", "bin/missing_docs.py", "missing module docstring"),
     ],
 )
 def test_layer1_catches_seeded_defect(tmp_path: Path, check: str, expected_file: str, expected_text: str) -> None:

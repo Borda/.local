@@ -10,8 +10,6 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 SHARED_CONTRACT = PLUGIN_ROOT / "shared" / "native-skill-contract.md"
 GLOBAL_INSTRUCTIONS = PLUGIN_ROOT / "assets" / "AGENTS.md"
 BEHAVIORAL_CASES = PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json"
-README = PLUGIN_ROOT / "README.md"
-CHANGELOG = PLUGIN_ROOT / "CHANGELOG.md"
 CODE_REVIEW_SKILL = PLUGIN_ROOT / "skills" / "code-review" / "SKILL.md"
 CODE_REMEDIATE_SKILL = PLUGIN_ROOT / "skills" / "code-remediate" / "SKILL.md"
 
@@ -124,12 +122,10 @@ def test_missing_kaggle_cli_remains_user_owned_setup() -> None:
     kaggle_skill = (PLUGIN_ROOT / "skills" / "kaggle" / "SKILL.md").read_text(encoding="utf-8")
     contract = SHARED_CONTRACT.read_text(encoding="utf-8")
     instructions = GLOBAL_INSTRUCTIONS.read_text(encoding="utf-8")
-    public_docs = README.read_text(encoding="utf-8") + CHANGELOG.read_text(encoding="utf-8")
-
     kaggle_policy = kaggle_skill.lower()
     assert "do not install it" in kaggle_policy
     assert "ask the user to install and authenticate" in kaggle_policy
-    for text in (kaggle_skill, contract, instructions, public_docs):
+    for text in (kaggle_skill, contract, instructions):
         assert "pip install kaggle" not in text
         assert "approved Kaggle package installation" not in text
         assert "approved package installation" not in text

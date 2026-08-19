@@ -416,7 +416,7 @@ def test_fix_single_oracle_verdict_survives_candidate_stdout_noise(tmp_path: Pat
     assert run_fix_single_oracle(tmp_path, contract, timeout_s=30.0) is True
 
 
-def test_oracle_child_environment_keeps_windows_interpreter_startup_variables() -> None:
+def test_oracle_child_environment_keeps_simulated_windows_interpreter_startup_variables() -> None:
     """The oracle's pruned environment still lets a Windows child interpreter start.
 
     Regression: the worker was spawned with ``PATH`` alone. A Windows CPython reads
@@ -440,7 +440,7 @@ def test_oracle_child_environment_keeps_windows_interpreter_startup_variables() 
     assert "ANTHROPIC_API_KEY" not in env
 
 
-def test_oracle_child_environment_stays_pruned_to_path_off_windows() -> None:
+def test_oracle_child_environment_stays_pruned_to_path_off_simulated_windows() -> None:
     """No POSIX host inherits more than the search path from the scoring process."""
     env = minimal_child_env({"PATH": "/usr/bin", "SystemRoot": "/ignored", "HOME": "/home/bench"}, platform="linux")
 

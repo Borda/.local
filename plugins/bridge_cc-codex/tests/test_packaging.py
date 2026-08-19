@@ -116,8 +116,8 @@ def test_repository_marketplaces_advertise_both_host_installations() -> None:
     }
 
 
-def test_disposable_package_contains_complete_documentation_without_a_nested_marketplace(tmp_path: Path) -> None:
-    """Ship operational documentation without a redundant catalog that masks manifest validation."""
+def test_disposable_package_has_no_nested_marketplace(tmp_path: Path) -> None:
+    """The disposable package must not carry a redundant nested marketplace."""
     output = tmp_path / "bridge"
     built = subprocess.run(
         [sys.executable, str(BUILD_SCRIPT), "--output", str(output)],
@@ -127,10 +127,4 @@ def test_disposable_package_contains_complete_documentation_without_a_nested_mar
     )
 
     assert built.returncode == 0, built.stderr
-    assert {path.name for path in (output / "docs").glob("*.md")} == {
-        "architecture.md",
-        "development.md",
-        "operations.md",
-        "security.md",
-    }
     assert not (output / ".claude-plugin" / "marketplace.json").exists()

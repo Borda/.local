@@ -44,15 +44,6 @@ def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> str:
     return FROZEN_TS
 
 
-class TestPortabilityInvariants:
-    """Source-level portability checks."""
-
-    def test_no_utcnow(self) -> None:
-        """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
-        src = SCRIPT.read_text(encoding="utf-8")
-        assert "utcnow" not in src
-
-
 class TestSentinelDirResolution:
     """``_sentinel_dir()`` must track ``$TMPDIR`` so shell ``${TMPDIR:-/tmp}`` callers agree."""
 

@@ -209,7 +209,7 @@ def test_sentinel_resolved_from_payload_session_id(tmp_path: Path, topic_run: tu
     assert _denial_reason(result) is not None
 
 
-def test_windows_topic_report_validation_accepts_contained_paths_and_rejects_traversal() -> None:
+def test_simulated_windows_topic_report_validation_accepts_contained_paths_and_rejects_traversal() -> None:
     """Recognise Windows separators and casing without trusting escaped sentinel paths."""
     assert _call_export("isTopicReportFile", r"C:\Repo\.REPORTS\RESEARCH\TOPIC-main.md") is True
     assert _call_export("isTopicReportFile", r"C:\Repo\.reports\research\topic-dir\..\private.md") is False

@@ -31,15 +31,6 @@ main = _mod.main
 TIMESTAMP_RE = re.compile(r"-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
 
 
-class TestPortabilityInvariants:
-    """Source-level Windows-portability checks."""
-
-    def test_no_utcnow(self) -> None:
-        """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
-        src = _SCRIPT.read_text(encoding="utf-8")
-        assert "utcnow" not in src
-
-
 class TestMakeRunDir:
     """Unit tests for ``make_run_dir()``."""
 

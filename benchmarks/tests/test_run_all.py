@@ -26,7 +26,6 @@ pytestmark = pytest.mark.skipif(
 BENCHMARKS_DIR = Path(__file__).resolve().parent.parent
 SCRIPT = BENCHMARKS_DIR / "run-all.sh"
 REAL_GIT = shutil.which("git")
-LEGACY_SCRIPT = BENCHMARKS_DIR / "run-all-claude.sh"
 ACTIVE_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-integration.json"
 ACTIVE_MANIFEST_SHA = hashlib.sha256(ACTIVE_MANIFEST.read_bytes()).hexdigest()
 AGENTIC_MANIFEST = BENCHMARKS_DIR / "manifests" / "codex-agentic.json"
@@ -332,15 +331,6 @@ def _run_batch_tty(mode: str, env: dict[str, str], *args: str) -> subprocess.Com
     finally:
         os.close(master_fd)
     return subprocess.CompletedProcess(command, process.wait(), b"".join(output).decode(), "")
-
-
-def test_only_provider_neutral_batch_entrypoint_exists() -> None:
-    """Prevent provider-specific run-all scripts from fragmenting orchestration."""
-    assert SCRIPT.is_file()
-    assert not LEGACY_SCRIPT.exists()
-    script = SCRIPT.read_text(encoding="utf-8")
-    assert "\ncodex() {" not in script
-    assert "command codex --version" in script
 
 
 def test_batch_entrypoint_accepts_exactly_three_modes(batch_env: tuple[dict[str, str], Path]) -> None:

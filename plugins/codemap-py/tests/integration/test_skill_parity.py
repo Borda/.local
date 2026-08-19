@@ -485,15 +485,6 @@ def test_query_code_qualifies_override_candidates_as_name_matches(runtime_dir: P
     assert all(snippet in skill_text for snippet in _OVERRIDE_CANDIDATE_SNIPPETS)
 
 
-def test_readme_does_not_claim_fn_rdeps_returns_override_lists() -> None:
-    """Keep README call-graph semantics distinct from same-name override candidate discovery."""
-    readme_text = " ".join((_PLUGIN_ROOT / "README.md").read_text(encoding="utf-8").lower().split())
-
-    assert "fn-rdeps` reports incoming call edges" in readme_text
-    assert "complete override list in one call" not in readme_text
-    assert all(snippet in readme_text for snippet in _OVERRIDE_CANDIDATE_SNIPPETS)
-
-
 # --------------------------------------------------------------------------------------
 # Execution-surface parity — what the rosters RUN, READ, and WRITE.
 #

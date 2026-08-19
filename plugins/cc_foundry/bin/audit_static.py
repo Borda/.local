@@ -46,6 +46,7 @@ CHECKS: list[dict[str, object]] = [
     {"id": "mode-dispatch", "kind": "scan", "script": "check_mode_dispatch.py"},
     {"id": "bash-persistence", "kind": "scan", "script": "check_bash_persistence.py"},
     {"id": "spawn-prompt-vars", "kind": "scan", "script": "check_spawn_prompt_vars.py"},
+    {"id": "plugin-module-docs", "kind": "scan", "script": "check_plugin_module_docs.py"},
     {"id": "routing-links", "kind": "whole", "script": "check_routing_links.py"},
     {"id": "orphaned-bin", "kind": "whole", "script": "check_orphaned_bin.py"},
     {"id": "cli-flag-drift", "kind": "whole", "script": "check_cli_flag_drift.py"},

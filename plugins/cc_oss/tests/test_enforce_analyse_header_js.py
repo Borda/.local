@@ -211,7 +211,7 @@ def test_absolute_sentinel_path_ignores_cwd(tmp_path: Path, repo: Path) -> None:
     assert _denial_reason(_run(tmp_path, _ask_payload(cwd="/nonexistent"))) is not None
 
 
-def test_windows_report_file_resolution_is_canonical_and_contained() -> None:
+def test_simulated_windows_report_file_resolution_is_canonical_and_contained() -> None:
     """Resolve Windows report paths case-insensitively and reject traversal outside analyse."""
     resolved = _call_export("resolveReportFile", r".REPORTS\ANALYSE\THREAD\output-analyse-thread-1.md", r"C:\Repo")
 

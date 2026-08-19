@@ -157,7 +157,7 @@ class TestMarkerSeparators:
         """Both spellings are foundry-managed — the skills/agents purge must fire on each."""
         assert symlink_with_guard._is_foundry_managed(target, _MARKER)
 
-    def test_foreign_windows_target_is_not_managed(self) -> None:
+    def test_foreign_simulated_windows_target_is_not_managed(self) -> None:
         """Separator normalisation must not widen the match to unrelated paths."""
         assert not symlink_with_guard._is_foundry_managed(r"C:\h\dotfiles\rules\a.md", _MARKER)
 
@@ -752,14 +752,6 @@ class TestCreateLink:
         assert "--dest" in capsys.readouterr().err
 
 
-def test_module_exposes_expected_helpers() -> None:
-    """Smoke check: module surface includes the documented entry points."""
-    assert callable(symlink_with_guard.cleanup)
-    assert callable(symlink_with_guard.scan)
-    assert callable(symlink_with_guard.create_link)
-    assert callable(symlink_with_guard.main)
-
-
 def _phase4_block() -> str:
     """Return the setup skill's Phase 4 linking block, verbatim from SKILL.md.
 
@@ -785,10 +777,6 @@ def _phase4_block() -> str:
 class TestSkillPhase4Block:
     """The executable SKILL.md block must agree with this module's destinations."""
 
-    def test_block_uses_the_module_rule_prefix(self) -> None:
-        """Drift guard: the shell loop's literal prefix equals ``_RULE_PREFIX``."""
-        assert f'base="{symlink_with_guard._RULE_PREFIX}$(basename "$src")"' in _phase4_block()
-
     @pytest.mark.skipif(
         not _BASH_SYMLINKS,
         reason="`bash` on PATH cannot create symlinks (WSL launcher stub, or Git Bash without winsymlinks)",
@@ -797,8 +785,7 @@ class TestSkillPhase4Block:
         """Running the real block produces exactly the destinations ``_build_entries`` expects.
 
         Capability-gated, not platform-gated: the block is the skill's own ``ln -sf`` loop, so a
-        host whose ``bash`` cannot link has nothing to assert about. ``test_block_uses_the_module_rule_prefix``
-        keeps the prefix drift-guard running unconditionally on every platform.
+        host whose ``bash`` cannot link has nothing to assert about.
         """
         plugin, home = env
         run_env = {

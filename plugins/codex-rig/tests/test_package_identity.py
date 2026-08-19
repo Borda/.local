@@ -83,7 +83,7 @@ def test_verify_package_checks_hashes_without_path_read_bytes(tmp_path: Path, mo
     assert result.mode_status == "pass"
 
 
-def test_verify_package_reports_windows_mode_check_not_applicable(tmp_path: Path) -> None:
+def test_verify_package_reports_simulated_windows_mode_check_not_applicable(tmp_path: Path) -> None:
     """Ignore only POSIX mode comparison when native Windows cannot retain it."""
     identity = load_identity()
     write_fixture(tmp_path, recorded_mode=0)

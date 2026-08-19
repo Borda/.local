@@ -825,22 +825,23 @@ These Python helpers are installed workflow support and maintainer surfaces, not
 
 #### Audit, consistency, and document checks
 
-| Helper                       | Purpose                                                            |
-| ---------------------------- | ------------------------------------------------------------------ |
-| `audit_churn.py`             | Emit git-history recurrence signals for `/foundry:audit`.          |
-| `audit_static.py`            | Run and aggregate the deterministic Layer-1 audit checks.          |
-| `check_bash_persistence.py`  | Detect shell variables referenced across separate Bash tool calls. |
-| `check_cli_flag_drift.py`    | Detect drift between documented flags and `argparse` options.      |
-| `check_codemap_guard.py`     | Detect unmanaged codemap index-guard copies.                       |
-| `check_bridge.py`            | Detect whether the bridge plugin is installed and enabled.         |
-| `check_fence_symmetry.py`    | Validate Markdown code-fence pairing and nesting.                  |
-| `check_mode_dispatch.py`     | Detect dangling mode-dispatch references in skill files.           |
-| `check_orphaned_bin.py`      | Find bin scripts not referenced by plugin Markdown.                |
-| `check_readme_drift.py`      | Detect README version and bin-reference drift from disk.           |
-| `check_routing_links.py`     | Validate computed paths in skills and agent files.                 |
-| `check_spawn_prompt_vars.py` | Detect unresolved variables in Markdown spawn prompts.             |
-| `check_tag_symmetry.py`      | Check XML-tag symmetry in agent and skill Markdown.                |
-| `classify_resolver_sites.py` | Classify resolver call sites as inline-required or cat-only.       |
+| Helper                        | Purpose                                                            |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `audit_churn.py`              | Emit git-history recurrence signals for `/foundry:audit`.          |
+| `audit_static.py`             | Run and aggregate the deterministic Layer-1 audit checks.          |
+| `check_bash_persistence.py`   | Detect shell variables referenced across separate Bash tool calls. |
+| `check_cli_flag_drift.py`     | Detect drift between documented flags and `argparse` options.      |
+| `check_codemap_guard.py`      | Detect unmanaged codemap index-guard copies.                       |
+| `check_bridge.py`             | Detect whether the bridge plugin is installed and enabled.         |
+| `check_fence_symmetry.py`     | Validate Markdown code-fence pairing and nesting.                  |
+| `check_mode_dispatch.py`      | Detect dangling mode-dispatch references in skill files.           |
+| `check_orphaned_bin.py`       | Find bin scripts not referenced by plugin Markdown.                |
+| `check_plugin_module_docs.py` | Require a module docstring on every shipped plugin module.         |
+| `check_readme_drift.py`       | Detect README version and bin-reference drift from disk.           |
+| `check_routing_links.py`      | Validate computed paths in skills and agent files.                 |
+| `check_spawn_prompt_vars.py`  | Detect unresolved variables in Markdown spawn prompts.             |
+| `check_tag_symmetry.py`       | Check XML-tag symmetry in agent and skill Markdown.                |
+| `classify_resolver_sites.py`  | Classify resolver call sites as inline-required or cat-only.       |
 
 #### Session, install, and state helpers
 
@@ -865,16 +866,17 @@ These Python helpers are installed workflow support and maintainer surfaces, not
 
 #### Reporting, synchronization, and transforms
 
-| Helper                        | Purpose                                                               |
-| ----------------------------- | --------------------------------------------------------------------- |
-| `build_blueprint_manifest.py` | Hash shipped bash blueprints into the per-plugin allow manifest.      |
-| `cost_analyzer.py`            | Bucket Claude session token usage and estimated cost.                 |
-| `extract_code_blocks.py`      | Extract and classify fenced Markdown code blocks.                     |
-| `propagate_shared.py`         | Keep byte-identical cross-plugin shared files synchronized.           |
-| `resolve_centrality.py`       | Convert codemap centrality output into a resolver map.                |
-| `timing_analyzer.py`          | Bucket Claude session clock time into a Markdown report.              |
-| `trim_plugin_tables.py`       | Normalize Markdown table padding outside code fences.                 |
-| `verify_perm.py`              | Verify permission presence across settings and the permissions guide. |
+| Helper                        | Purpose                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `audit_hook_coverage.py`      | Measure how often the auto-allow hooks fire across session transcripts. |
+| `build_blueprint_manifest.py` | Hash shipped bash blueprints into the per-plugin allow manifest.        |
+| `cost_analyzer.py`            | Bucket Claude session token usage and estimated cost.                   |
+| `extract_code_blocks.py`      | Extract and classify fenced Markdown code blocks.                       |
+| `propagate_shared.py`         | Keep byte-identical cross-plugin shared files synchronized.             |
+| `resolve_centrality.py`       | Convert codemap centrality output into a resolver map.                  |
+| `timing_analyzer.py`          | Bucket Claude session clock time into a Markdown report.                |
+| `trim_plugin_tables.py`       | Normalize Markdown table padding outside code fences.                   |
+| `verify_perm.py`              | Verify permission presence across settings and the permissions guide.   |
 
 </details>
 
@@ -967,6 +969,7 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 | `test_check_bash_persistence.py`   | `check_bash_persistence.py`   | 28    | Cross-block variable reference detection, env-var filtering, multi-block files                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `test_find_polluter.py`            | `find_polluter.py`            | 30    | Safe/unsafe node-id validation, isolation test runner, bisect loop, path-traversal + report guidance                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `test_check_cli_flag_drift.py`     | `check_cli_flag_drift.py`     | 35    | AST flag extraction, invocation-scoped matching, docstring `Usage:`-block scan vs own argparse surface, REMAINDER passthrough, no-exec guarantee                                                                                                                                                                                                                                                                                                                                                                                          |
+| `test_audit_hook_coverage.py`      | `audit_hook_coverage.py`      | 22    | Manifest union across plugins (single-plugin probe under-reports), newest-version selection by numeric key at any nesting depth, mechanism attribution with blueprint winning over shape, memoization, shape-hook argv/payload dispatch, transcript parsing (Bash-only, malformed-line and vanished-file tolerance), `--since`/`--project`/`--skills-only` filters                                                                                                                                                                        |
 | `test_verify_perm.py`              | `verify_perm.py`              | 21    | Settings allow-entry detection, missing/malformed JSON, CLI exit codes                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `test_check_orphaned_bin.py`       | `check_orphaned_bin.py`       | 21    | Orphaned bin/ script detection, consumer-reference parsing, multi-plugin scan                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `test_cost_analyzer.py`            | `cost_analyzer.py`            | 21    | Message-id dedupe (3x-inflation guard), tier/cost pricing, main/sidechain bucketing, subagent-transcript merge, session discovery no-double-count, CLI session-id + window modes                                                                                                                                                                                                                                                                                                                                                          |

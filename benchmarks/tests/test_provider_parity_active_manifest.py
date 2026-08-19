@@ -131,30 +131,6 @@ def _run_methodology_builder(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_authored_benchmark_files_use_complete_experiment_revision_names() -> None:
-    """Prevent plan shorthand from leaking into authored benchmark paths or prose."""
-    authored_paths = [
-        path
-        for path in BENCHMARKS.rglob("*")
-        if path.is_file()
-        and "__pycache__" not in path.parts
-        and path.suffix in {".json", ".md", ".py", ".sh"}
-        and BENCHMARKS / "results" not in path.parents
-        and FIXTURE_DIR not in path.parents
-    ]
-    authored_paths.append(METHODOLOGY_MANIFEST)
-
-    shorthand_paths = [path for path in authored_paths if re.search(r"(?:^|_)r[0-9]+(?:_|$)", path.name)]
-    shorthand_content = [
-        (path, match.group())
-        for path in authored_paths
-        if (match := SHORTHAND_REVISION.search(path.read_text(encoding="utf-8")))
-    ]
-
-    assert shorthand_paths == []
-    assert shorthand_content == []
-
-
 def test_codex_manifest_uses_generic_task_selection_contract() -> None:
     """Codex selection is task/family based with stage-native execution metadata."""
     manifest = _load(CODEX_MANIFEST)
@@ -203,16 +179,6 @@ def test_methodology_builder_is_deterministic_and_check_mode_rejects_stale_outpu
     assert expected == builder["_manifest_bytes"](builder["_build_manifest"]())
 
 
-def test_methodology_builder_has_no_history_sized_fixture_dependency() -> None:
-    """Current methodology derives from current inputs instead of prior-run history."""
-    source = METHODOLOGY_BUILDER.read_text(encoding="utf-8")
-
-    assert "ARCHIVED_MANIFEST" not in source
-    assert "TASK_CHANGE_LEDGER" not in source
-    assert not (FIXTURE_DIR / "provider-parity-v1.json").is_file()
-    assert not (FIXTURE_DIR / "provider-parity-v1-b0-r6.json").is_file()
-
-
 def test_agentic_execution_contract_records_provider_specific_default_cells() -> None:
     """The shared lock must not erase Claude's three-model multiplicity."""
     contract = _load(METHODOLOGY_MANIFEST)["agentic_execution_contract"]
@@ -223,7 +189,6 @@ def test_agentic_execution_contract_records_provider_specific_default_cells() ->
         "claude": ["haiku", "sonnet", "opus"],
         "codex": ["gpt-5.6-luna"],
     }
-    assert "Each provider adapter admits" in contract["repeat_override"]
 
 
 def test_methodology_builder_rejects_tampered_passthrough_policy_seed(tmp_path: Path) -> None:

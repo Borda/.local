@@ -27,7 +27,7 @@ def load_windows_manager(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
-def test_windows_doctor_verifies_package_and_inventories_shims(
+def test_simulated_windows_doctor_verifies_package_and_inventories_shims(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -68,7 +68,7 @@ def test_windows_doctor_verifies_package_and_inventories_shims(
 
 
 @pytest.mark.parametrize("action", ("install", "remove"))
-def test_windows_mutation_remains_explicitly_blocked_without_writes(
+def test_simulated_windows_mutation_remains_explicitly_blocked_without_writes(
     action: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

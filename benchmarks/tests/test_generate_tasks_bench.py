@@ -19,58 +19,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-# ===========================================================================
-# TASKS_FILE constant
-# ===========================================================================
-
-
-class TestTasksFile:
-    """Contract: TASKS_FILE must resolve relative to the script, not cwd."""
-
-    def test_tasks_file_points_to_suites_dir(self, script_gen_bench: Any) -> None:
-        """TASKS_FILE is inside benchmarks/suites/ regardless of working directory.
-
-        Scenario: script is loaded from any cwd; TASKS_FILE must always name
-        the same file within the project tree.
-        """
-        assert script_gen_bench.TASKS_FILE.parent.name == "suites"
-        assert script_gen_bench.TASKS_FILE.name == "tasks-bench.json"
-
-    def test_tasks_file_parent_is_under_benchmarks(self, script_gen_bench: Any) -> None:
-        """TASKS_FILE's grandparent directory is the benchmarks/ directory.
-
-        Scenario: confirms the two-level path structure
-        benchmarks/suites/tasks-bench.json is always resolved.
-        """
-        assert script_gen_bench.TASKS_FILE.parent.parent.name == "benchmarks"
-
-    def test_tasks_file_exists(self, script_gen_bench: Any) -> None:
-        """TASKS_FILE points at an actual file on disk.
-
-        Scenario: suite file is present; generator can open it without error.
-        """
-        assert script_gen_bench.TASKS_FILE.exists(), f"{script_gen_bench.TASKS_FILE} must exist"
-
-    def test_tasks_file_is_valid_json(self, script_gen_bench: Any) -> None:
-        """tasks-bench.json can be parsed without error.
-
-        Scenario: file has not been corrupted; basic sanity for all downstream
-        tasks that read it.
-        """
-        content = script_gen_bench.TASKS_FILE.read_text(encoding="utf-8")
-        data = json.loads(content)
-        assert isinstance(data, (dict, list))
-
-    def test_tasks_file_contains_task_list(self, script_gen_bench: Any) -> None:
-        """tasks-bench.json contains a non-empty 'tasks' list.
-
-        Scenario: file is a dict wrapper with a 'tasks' key (the format the
-        script documents); at least one task must be present.
-        """
-        data = json.loads(script_gen_bench.TASKS_FILE.read_text(encoding="utf-8"))
-        assert isinstance(data, dict)
-        tasks = data.get("tasks", [])
-        assert len(tasks) > 0
+class TestTaskContractValidation:
+    """Validate executable query contracts declared by the active task suite."""
 
     def test_every_execution_task_has_a_supported_structured_expected_query(self, script_gen_bench: Any) -> None:
         """Every benchmark coordinate has a machine-checkable Codemap query contract.

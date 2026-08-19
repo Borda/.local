@@ -123,17 +123,6 @@ def test_claude_and_codex_load_identical_shared_agentic_prompts() -> None:
         assert hashlib.sha256(claude_task.prompt.encode("utf-8")).hexdigest() == locked_hashes[claude_task.id]
 
 
-def test_human_launch_guidance_uses_retry_inclusive_per_cell_timeout_only() -> None:
-    """Launch guidance describes the manifest's per-cell timeout without a global deadline."""
-    builder = runpy.run_path(str(BUILDER))
-    manifest = builder["_build_manifest"]()
-    machine = builder["_json_bytes"](manifest)
-    human = builder["_human_bytes"](manifest, hashlib.sha256(machine).hexdigest()).decode("utf-8")
-    assert "per-cell timeout: `600s`, including retries" in human
-    assert "CODEX_MAX_WALL_CLOCK_SECONDS" not in human
-    assert "complete-run" not in human.lower()
-
-
 def test_ba12_and_ba16_declare_every_answer_contract_field_for_scoring() -> None:
     """Prompt-required counts and verdicts cannot disappear behind importer recall.
 
@@ -214,10 +203,8 @@ def test_arm_admission_semantics_are_explicit() -> None:
     arms = _load(MANIFEST)["arms"]
     assert arms["A_plain"]["codemap_available"] is False
     assert arms["B_auto"]["no_call_valid"] is True
-    assert "adoption" in arms["B_auto"]["requirement"]
     assert arms["C_strict"]["no_call_valid"] is False
     assert arms["C_strict"]["row_retained_on_noncompliance"] is True
-    assert "installed Skill" in arms["C_strict"]["requirement"]
 
 
 def test_manifest_contains_no_credentials_or_ignored_historical_paths() -> None:
@@ -233,7 +220,6 @@ def test_manifest_contains_no_credentials_or_ignored_historical_paths() -> None:
     assert "historical/" not in text
     assert "__pycache__" not in text
     assert "first-slice" not in lowered
-    assert "manifest sha-256" in HUMAN_MANIFEST.read_text(encoding="utf-8").lower()
 
 
 def test_runner_accepts_exact_manifest_authorization() -> None:

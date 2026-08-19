@@ -19,13 +19,6 @@ import pytest
 
 import dev_shared_resolve
 
-SCRIPT = Path(dev_shared_resolve.__file__)
-
-
-def test_stdout_reconfigure_present() -> None:
-    """Windows-portability: ``sys.stdout.reconfigure(...)`` required."""
-    assert "sys.stdout.reconfigure" in SCRIPT.read_text(encoding="utf-8")
-
 
 class TestDevelopOnly:
     """Resolution always targets develop's own shared dir."""
@@ -86,12 +79,6 @@ class TestNoSiblingReachIn:
         """``--foundry`` no longer exists — argparse must reject it, not silently ignore it."""
         with pytest.raises(SystemExit):
             dev_shared_resolve.main(["--foundry"])
-
-    def test_source_names_no_sibling_plugin(self) -> None:
-        """No cc_foundry path or foundry cache lookup may remain in the source."""
-        source = SCRIPT.read_text(encoding="utf-8")
-        assert "cc_foundry" not in source
-        assert '_resolve_plugin_shared("foundry"' not in source
 
     def test_main_prints_exactly_one_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

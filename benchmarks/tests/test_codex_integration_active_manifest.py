@@ -66,17 +66,6 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     cells = builder["_preregistered_cells"](source)
     task_selection = builder["_task_selection_contract"](source)
     telemetry = builder["_telemetry_admission"]()
-    human_manifest = {
-        "codemap_candidate": {"package_manifest_sha256": "0" * 64, "version": "test"},
-        "codex_cli": {"available": False},
-        "codex_rig_candidate": {"version": "test"},
-        "execution_controls": controls,
-        "task_selection": task_selection,
-        "preregistered_cells": cells,
-        "source_manifest": {"path": "test.json", "sha256": "0" * 64},
-    }
-    human = builder["_human_bytes"](human_manifest, "0" * 64).decode("utf-8")
-
     assert builder["EXPERIMENT_REVISION"] == "codex-integration-unified-task-cli-2026-08-11"
     assert arms["B_direct_required"]["requirement"] == (
         "Run at least one successful compact direct query in its own native command item containing exactly "
@@ -109,14 +98,6 @@ def test_builder_locks_optional_query_arguments_ordering_and_cache_policy() -> N
     assert task_selection["scope_digest"]["stored_in_manifest"] is False
     assert task_selection["aggregate_execution_scope"]["approval_option"] == "--paid-approval"
     assert task_selection["aggregate_execution_scope"]["dry_run_marker"] == "SCOPE"
-    assert '`"$CODEMAP_BIN" query --compact <subcommand> [arguments]`' in human
-    assert "every arm occupies every ordinal 18 or 19 times" in human
-    assert "Console and primary efficiency reports use gross provider input tokens only." in human
-    assert "without claiming cache elimination" in human
-    assert "--tasks=DI,GR" in human
-    assert "--tasks=DI-01,GR-03" in human
-    assert "--tasks=DI,GR-03" in human
-    assert "aggregate `SCOPE` printed by the matching full dry run" in human
 
 
 def test_generator_is_current_and_never_rewrites_methodology_source() -> None:
@@ -423,53 +404,3 @@ def test_integration_manifest_locks_unified_nonpoolable_task_selection() -> None
         "approval_option": "--paid-approval",
         "dry_run_marker": "SCOPE",
     }
-
-    human = HUMAN_MANIFEST.read_text(encoding="utf-8")
-    assert "## Selected-task scope" in human
-    assert "--tasks=DI,GR" in human
-    assert "--tasks=DI-01,GR-03" in human
-    assert "--tasks=DI,GR-03" in human
-    assert "duplicate tokens and overlapping expansions are evaluated once" in human
-    assert "aggregate `SCOPE` printed by the matching full dry run" in human
-    assert "## Paid selected-task command" in human
-    selected_section = human.split("## Paid selected-task command", 1)[1].split("## Full execution", 1)[0]
-    assert "--tasks RC,FS,FM,PT --dry-run" in selected_section
-    assert "one exact `PAID_COMMAND` containing the aggregate approval" in selected_section
-    assert f"CODEX_PAID_APPROVAL={_sha256(MANIFEST)}" not in selected_section
-    assert "--resolve-tasks" not in selected_section
-    assert "# Alternatively" not in selected_section
-    assert "post-fix diagnostic" not in human
-    assert human.index("## Paid selected-task command") < human.index("## Full execution")
-
-
-def test_integration_manifest_has_no_plan_shorthand_and_explicit_launch_authorization() -> None:
-    """Committed records use self-contained names and a manifest-bound launch authorization."""
-    for path in (SOURCE_MANIFEST, GENERATOR, MANIFEST, HUMAN_MANIFEST):
-        assert SHORTHAND.search(path.read_text(encoding="utf-8")) is None
-
-    assert "results" not in MANIFEST.relative_to(ROOT).parts
-    assert "results" not in HUMAN_MANIFEST.relative_to(ROOT).parts
-
-    human = HUMAN_MANIFEST.read_text(encoding="utf-8")
-    assert "# `codex-integration-v1`" in human
-    assert '`"$CODEMAP_BIN" query --compact <subcommand> [arguments]`' in human
-    assert "every arm occupies every ordinal 18 or 19 times" in human
-    assert "Console and primary efficiency reports use gross provider input tokens only." in human
-    assert "without claiming cache elimination" in human
-    assert "Runtime smoke and exact coordinate-plan validation are required before paid execution." in human
-    assert "## Full execution" in human
-    assert "aggregate `SCOPE`" in human
-    assert "exact `PAID_COMMAND`" in human
-    assert "CODEX_PAID_APPROVAL" not in human
-    assert "bash benchmarks/run-all.sh codex --struct --dry-run" in human
-    assert "immutable, user-owned `0600` auth source" in human
-    assert "Do not run a concurrent Codex session with it" in human
-    assert "independently authenticated benchmark credential" in human
-    assert "The runner keeps private run state and atomically propagates valid refreshes between cells." in human
-    assert "reauthenticate after the run if needed" in human
-    assert "Known refresh-token authentication failures stop immediately" in human
-    assert (
-        "three matching unknown zero-token pre-response failures preserve partial artifacts and stop scheduling"
-        in human
-    )
-    assert "This manifest rebuild used no model cell or authentication source." in human

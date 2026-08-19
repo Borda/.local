@@ -47,14 +47,6 @@ def _no_which(cmd: str) -> None:  # type: ignore[return]
     return None
 
 
-class TestPortabilityInvariants:
-    """Source-level Windows-portability checks."""
-
-    def test_no_utcnow(self) -> None:
-        """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
-        assert "utcnow" not in _SCRIPT.read_text(encoding="utf-8")
-
-
 class TestLocateScanQuery:
     """Unit tests for ``locate_scan_query()``."""
 

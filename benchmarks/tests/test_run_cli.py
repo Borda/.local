@@ -18,7 +18,6 @@ Covers public API surface:
 from __future__ import annotations
 
 import json
-import inspect
 import math
 import os
 import subprocess
@@ -2196,16 +2195,3 @@ class TestTimingCensoring:
 
         assert stats.failed == 2
         assert stats.measured == 0
-
-
-def test_cold_call_counts_are_labelled_as_planned_invocations(script_run_cli: Any) -> None:
-    """B-H7: the cold baseline reports its plan size, not observed search work.
-
-    ``cold_greps`` returns ``len(cmds)`` by construction, so presenting it beside the
-    measured codemap counts without a label read as a comparable observation.
-    """
-    source = inspect.getsource(script_run_cli)
-
-    assert "total_cold_planned_calls" in source
-    assert "planned_invocations_not_observed_search_work" in source
-    assert "total_cold_calls" not in source

@@ -187,6 +187,15 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-plugin-module-docs
+        name: 📚 shipped plugin module documentation
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_plugin_module_docs.py
+        # One whole-repository checker: every plugin needs a module overview; Codex
+        # Rig's published richer module contract is enforced in the same pass.
+        files: ^plugins/[^/]+/.*\.py$
+        pass_filenames: false
+
       - id: check-readme-drift-version
         name: 🔢 README version marker drift
         language: system

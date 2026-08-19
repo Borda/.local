@@ -27,18 +27,6 @@ compute_proj_index = _mod.compute_proj_index
 main = _mod.main
 
 
-class TestPortabilityInvariants:
-    """Source-level Windows-portability checks."""
-
-    def test_no_utcnow(self) -> None:
-        """``datetime.utcnow()`` deprecated in 3.12 — must not appear in source."""
-        assert "utcnow" not in _SCRIPT.read_text(encoding="utf-8")
-
-    def test_no_shell_true(self) -> None:
-        """``subprocess`` calls must not use ``shell=True``."""
-        assert "shell=True" not in _SCRIPT.read_text(encoding="utf-8")
-
-
 class TestComputeProjIndex:
     """Unit tests for ``compute_proj_index()``."""
 

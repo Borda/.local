@@ -479,7 +479,7 @@ def test_extended_length_prefix_defeats_the_ownership_comparison() -> None:
     assert PureWindowsPath(sync_rules.strip_extended_prefix(raw)).is_relative_to(root)
 
 
-def test_stripping_does_not_adopt_a_foreign_windows_target() -> None:
+def test_stripping_does_not_adopt_a_foreign_simulated_windows_target() -> None:
     """Normalising the spelling must not widen ownership — a dotfiles link stays foreign."""
     root = PureWindowsPath(r"C:\h\.claude\plugins\cache\borda-ai-rig\develop\0.19.0")
     foreign = sync_rules.strip_extended_prefix(r"\\?\C:\h\dotfiles\rules\quality-gates.md")

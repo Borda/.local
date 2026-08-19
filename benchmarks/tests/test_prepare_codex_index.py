@@ -327,7 +327,7 @@ def test_replace_root_rewrites_path_prefixes_without_touching_content(tmp_path: 
     }
 
 
-def test_replace_root_relocates_a_windows_spelled_scan_under_either_separator() -> None:
+def test_replace_root_relocates_a_simulated_windows_spelled_scan_under_either_separator() -> None:
     """A Windows-rooted scan relocates on any host, whichever separator spells its children.
 
     Windows accepts both separators, so a scan taken there may carry either below the same

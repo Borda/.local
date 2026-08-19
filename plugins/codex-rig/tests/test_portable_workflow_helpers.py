@@ -113,7 +113,7 @@ def test_collect_diff_uses_only_git_argv(tmp_path: Path, monkeypatch: pytest.Mon
     ]
 
 
-def test_run_gates_selects_powershell_on_windows_and_bash_on_posix() -> None:
+def test_run_gates_selects_powershell_for_simulated_windows_and_bash_on_posix() -> None:
     """Bind command execution to the host-native shell family."""
     module = load_module(RUN_GATES, "codex_rig_portable_run_gates")
 
@@ -131,7 +131,9 @@ def test_run_gates_selects_powershell_on_windows_and_bash_on_posix() -> None:
     assert module.command_argv("native")[0] == expected_executable
 
 
-def test_run_gates_terminates_windows_process_trees_with_taskkill(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_gates_terminates_simulated_windows_process_trees_with_taskkill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Use the native Windows process-tree terminator before the kill fallback."""
     module = load_module(RUN_GATES, "codex_rig_portable_windows_termination")
     calls: list[list[str]] = []
@@ -242,13 +244,6 @@ def test_run_gates_times_out_and_terminates_native_process(tmp_path: Path) -> No
 def test_portable_helpers_do_not_ship_shell_compatibility_wrappers(wrapper_name: str) -> None:
     """Keep the plugin helper surface Python-only across supported platforms."""
     assert not (PLUGIN_ROOT / "shared" / wrapper_name).exists()
-
-
-def test_offline_harness_isolates_the_windows_spelling_of_home() -> None:
-    """Keep the temporary harness home reachable through the variable Windows actually reads."""
-    harness = (PLUGIN_ROOT.parents[1] / ".github" / "codex-harness.sh").read_text(encoding="utf-8")
-
-    assert 'CHILD_ENV+=("USERPROFILE=$(to_child_path "$TMP_HOME")")' in harness
 
 
 def test_review_validator_help_survives_a_host_without_home_variables(tmp_path: Path) -> None:

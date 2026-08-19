@@ -471,7 +471,7 @@ class TestInjectPreambleRefreshLock:
         # The lock the hook briefly acquired must be released so a later hook can retry.
         assert not _lock_file(tmpdir, proj).exists(), "lock must be released when scan bin absent"
 
-    def test_windows_refresh_uses_python_and_new_process_group(
+    def test_simulated_windows_refresh_uses_python_and_new_process_group(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         """Windows branch starts the script through Python in an isolated process group."""

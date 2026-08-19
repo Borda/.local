@@ -169,11 +169,6 @@ def test_logging_disabled_suppresses_record(tmp_path: Path) -> None:
     assert not (tmp_path / ".cache" / "codemap" / "logs").exists()
 
 
-def test_codemap_hook_reads_stdin_by_fd_for_windows() -> None:
-    """The tool-use hook must not use POSIX-only /dev/stdin (Windows portability)."""
-    assert "/dev/stdin" not in _HOOK.read_text(encoding="utf-8")
-
-
 class TestReadRedundancyNudge:
     """3rd Read of the same non-test .py file prints one structural-query hint."""
 

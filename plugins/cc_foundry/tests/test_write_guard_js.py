@@ -110,7 +110,7 @@ class TestProtectedPaths:
         """
         assert _asks(run_guard("/abs/repo/.github/workflows/x.yml"))
 
-    def test_windows_separators(self, run_guard: Callable[..., dict]) -> None:
+    def test_simulated_windows_separators(self, run_guard: Callable[..., dict]) -> None:
         """A Windows-style path with backslashes still matches.
 
         Patterns are written for ``/`` and the input is normalized first. Without

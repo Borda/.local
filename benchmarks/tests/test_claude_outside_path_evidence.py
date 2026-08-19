@@ -92,7 +92,7 @@ def _read_events(file_path: str) -> list[dict[str, Any]]:
     ]
 
 
-def test_external_path_evidence_records_the_observed_path_under_a_windows_workspace(
+def test_external_path_evidence_records_the_observed_path_under_a_simulated_windows_workspace(
     script_run_agentic: Any,
 ) -> None:
     """Recorded evidence is the path the agent named, never one re-rooted on the scoring host.
@@ -142,7 +142,9 @@ def test_containment_roots_are_separator_free(script_run_agentic: Any, workspace
         pytest.param("/host/source.py", False, id="foreign_root"),
     ],
 )
-def test_windows_rooted_containment_is_decided_lexically(script_run_agentic: Any, observed: str, inside: bool) -> None:
+def test_simulated_windows_rooted_containment_is_decided_lexically(
+    script_run_agentic: Any, observed: str, inside: bool
+) -> None:
     """A drive-qualified checkout classifies observed paths without touching this filesystem."""
     roots = script_run_agentic._workspace_containment_roots(PureWindowsPath(r"D:\agent\repo"))
 

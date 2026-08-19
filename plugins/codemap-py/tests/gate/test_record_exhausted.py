@@ -129,7 +129,7 @@ def test_unrelated_command_ignored(tmp_path: Path) -> None:
     assert not (tmp_path / "codemap-exhausted-sess-grep").exists()
 
 
-def test_codemap_hooks_read_stdin_by_fd_for_windows() -> None:
+def test_codemap_hooks_read_stdin_by_fd_for_simulated_windows() -> None:
     """Codemap hooks must not use POSIX-only /dev/stdin."""
     hooks_dir = _HOOK.parent
     offenders = [

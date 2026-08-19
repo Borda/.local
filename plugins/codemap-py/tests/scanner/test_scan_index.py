@@ -493,7 +493,9 @@ class TestAtomicIndexWrite:
         index = json.loads((tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json").read_text())
         assert any(m["name"] == "gamma" for m in index["modules"])
 
-    def test_windows_replace_retries_transient_sharing_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_simulated_windows_replace_retries_transient_sharing_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """WinError 5 retries without replacing the destination non-atomically."""
         temp = tmp_path / "index.tmp"
         target = tmp_path / "index.json"

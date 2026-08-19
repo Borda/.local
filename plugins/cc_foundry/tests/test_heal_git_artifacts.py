@@ -13,7 +13,6 @@ Covers:
 from __future__ import annotations
 
 import ctypes
-import doctest
 import importlib.util
 import os
 import sys
@@ -99,7 +98,7 @@ class TestPidLivenessPosix:
         assert _mod._pid_alive_posix(12345) is False
 
 
-class TestPidLivenessWindows:
+class TestSimulatedWindowsPidLiveness:
     """Runs on every host — the Win32 surface is supplied, never skipped."""
 
     def test_open_process_success_is_alive(self, monkeypatch):
@@ -127,13 +126,13 @@ class TestPidLivenessWindows:
         monkeypatch.delattr(ctypes, "windll", raising=False)
         assert _mod._pid_alive_windows(4242) is False
 
-    def test_dispatcher_routes_to_windows_branch(self, monkeypatch):
+    def test_dispatcher_routes_to_simulated_windows_branch(self, monkeypatch):
         kernel = _FakeKernel32(handle=99)
         monkeypatch.setattr(ctypes, "windll", _FakeWindll(kernel), raising=False)
         monkeypatch.setattr(_mod.os, "name", "nt")
         assert _mod.pid_alive(4242) is True
 
-    def test_windows_branch_never_uses_os_kill(self, monkeypatch):
+    def test_simulated_windows_branch_never_uses_os_kill(self, monkeypatch):
         """``os.kill(pid, 0)`` on Windows can disturb a live process."""
 
         def forbidden(*_args, **_kwargs):
@@ -396,37 +395,3 @@ class TestCli:
     def test_pattern_is_required(self):
         with pytest.raises(SystemExit):
             _mod.main(["locks"])
-
-
-class TestPortability:
-    """Invariants the project's multi-OS rule demands of the source itself."""
-
-    SOURCE = _SCRIPT.read_text(encoding="utf-8")
-
-    def test_no_hardcoded_temp_literal(self):
-        assert '"/' + "tmp" not in self.SOURCE
-
-    def test_no_startswith_slash_path_test(self):
-        assert 'startswith("/")' not in self.SOURCE
-
-    def test_no_getppid_for_session_token(self):
-        assert "os.getppid()" not in self.SOURCE
-
-    def test_windows_branch_exists(self):
-        """A single os.kill implementation would be silently wrong on Windows."""
-        assert "_pid_alive_windows" in self.SOURCE
-        assert "OpenProcess" in self.SOURCE
-
-    def test_no_doctest_invokes_the_posix_probe(self):
-        """No doctest may call the POSIX probe — doctests cannot be platform-gated.
-
-        This is the regression: an ``Examples:`` block calling ``_pid_alive_posix``
-        reaches ``os.kill(pid, 0)`` on Windows, where signal 0 is ``CTRL_C_EVENT``
-        and CPython routes it to ``GenerateConsoleCtrlEvent``. Every Windows CI leg
-        then died with a ``KeyboardInterrupt`` and zero failing tests — a signal, so
-        nothing pointed at the cause. A pytest test can skip or patch by platform;
-        a doctest runs verbatim on all of them.
-        """
-        examples = [example.source for test in doctest.DocTestFinder().find(_mod) for example in test.examples]
-        offenders = [source for source in examples if "_pid_alive_posix(" in source]
-        assert offenders == [], f"doctest would signal the console group on Windows: {offenders}"

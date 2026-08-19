@@ -241,11 +241,11 @@ class TestHashing:
 class TestPosixSrc:
     """posix_src: provenance paths are forward-slashed on every host."""
 
-    def test_windows_path_normalized(self) -> None:
+    def test_simulated_windows_path_normalized(self) -> None:
         """A Windows-flavoured path emits forward slashes."""
         assert bbm.posix_src(PureWindowsPath(r"skills\demo\SKILL.md"), 7) == "skills/demo/SKILL.md:7"
 
-    def test_windows_src_is_forward_slashed_in_emitted_json(self) -> None:
+    def test_simulated_windows_src_is_forward_slashed_in_emitted_json(self) -> None:
         """The encoded manifest contains no backslash in a Windows-derived src."""
         src = bbm.posix_src(PureWindowsPath(r"rules\_full\claude-config.md"), 42)
         payload = bbm.encode_manifest({"schema": 1, "entries": {"deadbeef": {"kind": "block", "src": src}}})

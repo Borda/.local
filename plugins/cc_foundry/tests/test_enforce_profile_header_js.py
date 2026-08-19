@@ -212,7 +212,7 @@ def test_absolute_sentinel_path_resolves(tmp_path: Path, profile_run: tuple[Path
     assert _denial_reason(_run(tmp_path, _ask_payload(cwd="/nonexistent"))) is not None
 
 
-def test_windows_report_dir_resolution_is_canonical_and_contained() -> None:
+def test_simulated_windows_report_dir_resolution_is_canonical_and_contained() -> None:
     """Resolve Windows report paths case-insensitively and reject traversal outside profile."""
     resolved = _call_export("resolveReportDir", r".REPORTS\PROFILE\run-1", r"C:\Repo")
 

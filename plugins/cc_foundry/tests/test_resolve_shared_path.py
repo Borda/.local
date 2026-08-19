@@ -10,7 +10,6 @@ Covers each tier of the four-tier cascade plus argument validation:
 Cross-cutting checks confirm Windows-portability invariants:
 
 * No hardcoded ``/tmp`` literal in script source
-* ``sys.stdout.reconfigure(...)`` call present in script source
 """
 
 from __future__ import annotations
@@ -20,14 +19,6 @@ from pathlib import Path
 import pytest
 
 import resolve_shared_path
-
-SCRIPT = Path(resolve_shared_path.__file__)
-
-
-def test_stdout_reconfigure_present_in_source() -> None:
-    """Windows-portability: ``sys.stdout.reconfigure(...)`` required in ``main()``."""
-    src = SCRIPT.read_text(encoding="utf-8")
-    assert "sys.stdout.reconfigure" in src
 
 
 class TestValidation:

@@ -722,7 +722,9 @@ def test_dead_supervisor_running_record_is_reported_stalled(tmp_path: Path) -> N
     assert bridge_call.job_status(tmp_path, live_id)["status"] == "running"
 
 
-def test_windows_stalled_probe_uses_tasklist_and_never_signals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_simulated_windows_stalled_probe_uses_tasklist_and_never_signals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Prevent the Windows liveness probe from using os.kill termination semantics."""
     paths = bridge_call.BridgePaths(tmp_path)
     paths.prepare()
@@ -1636,7 +1638,7 @@ def test_child_receives_incremented_trusted_depth(tmp_path: Path, monkeypatch: p
     assert environments == [{**os.environ, bridge_call.DEPTH_ENVIRONMENT_VARIABLE: "3"}]
 
 
-def test_windows_child_launch_uses_a_new_process_group_without_posix_session(
+def test_simulated_windows_child_launch_uses_a_new_process_group_without_posix_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prevent the portable Windows branch from passing POSIX-only process-launch options."""
@@ -1759,7 +1761,9 @@ def test_posix_termination_falls_back_when_killpg_is_unavailable(monkeypatch: py
     assert killed == [True]
 
 
-def test_windows_termination_uses_ctrl_break_then_tree_kill_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_simulated_windows_termination_uses_ctrl_break_then_tree_kill_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Prevent a failed Windows Ctrl-Break from leaving descendants behind."""
     sent: list[int] = []
     killed: list[bool] = []
@@ -1791,7 +1795,7 @@ def test_windows_termination_uses_ctrl_break_then_tree_kill_fallback(monkeypatch
     assert killed == []
 
 
-def test_windows_cancel_is_cooperative_without_posix_process_apis(
+def test_simulated_windows_cancel_is_cooperative_without_posix_process_apis(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prevent Windows cancellation from signalling a PID stored in a job record."""
@@ -1814,7 +1818,7 @@ def test_windows_cancel_is_cooperative_without_posix_process_apis(
     assert bridge_call.job_status(tmp_path, job_id)["status"] == "cancel_requested"
 
 
-def test_windows_cancel_never_uses_taskkill_for_a_persisted_pid(
+def test_simulated_windows_cancel_never_uses_taskkill_for_a_persisted_pid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Prevent a stale Windows record from escalating cooperative cancellation into tree termination."""
