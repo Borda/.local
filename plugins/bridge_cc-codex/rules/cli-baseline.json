@@ -1,0 +1,29 @@
+{
+  "claude": {
+    "required": [
+      "--print",
+      "--model",
+      "--effort",
+      "--output-format",
+      "--json-schema",
+      "--setting-sources",
+      "--strict-mcp-config",
+      "--disable-slash-commands",
+      "--no-session-persistence",
+      "--permission-mode",
+      "--disallowed-tools"
+    ]
+  },
+  "codex": {
+    "required": [
+      "exec",
+      "resume",
+      "review",
+      "--json",
+      "--output-schema",
+      "--skip-git-repo-check",
+      "--ignore-user-config",
+      "--ephemeral"
+    ]
+  }
+}

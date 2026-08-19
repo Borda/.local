@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Claude Code and Codex bridge</title>
+  <desc id="description">Two linked brackets forming a bidirectional bridge.</desc>
+  <rect width="128" height="128" rx="24" fill="#1F2937"/>
+  <path d="M47 34H34v60h13M81 34h13v60H81" fill="none" stroke="#F9FAFB" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M45 53h38l-9-9m9 31H45l9 9" fill="none" stroke="#60A5FA" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

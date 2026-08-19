@@ -27,6 +27,18 @@
         "path": "./plugins/codemap-py",
         "source": "local"
       }
+    },
+    {
+      "category": "Productivity",
+      "name": "bridge",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./plugins/bridge_cc-codex",
+        "source": "local"
+      }
     }
   ]
 }

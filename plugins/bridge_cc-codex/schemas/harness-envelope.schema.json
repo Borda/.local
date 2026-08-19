@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blockers": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "cost": {
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "depth": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "direction": {
+      "enum": [
+        "claude_to_codex",
+        "codex_to_claude"
+      ],
+      "type": "string"
+    },
+    "duration_seconds": {
+      "minimum": 0,
+      "type": "number"
+    },
+    "effort": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "effort_substituted": {
+      "additionalProperties": false,
+      "properties": {
+        "applied": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "requested": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requested",
+        "applied",
+        "reason"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "files_touched": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "incident": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "remaining": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "run_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial",
+        "blocked",
+        "timeout",
+        "refused"
+      ],
+      "type": "string"
+    },
+    "tokens": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "number"
+      },
+      "type": "object"
+    },
+    "transcript_path": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "verb": {
+      "enum": [
+        "implement",
+        "advise",
+        "review"
+      ],
+      "type": "string"
+    },
+    "verdict": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "verdict",
+    "findings",
+    "files_touched",
+    "remaining",
+    "blockers",
+    "model",
+    "effort",
+    "effort_substituted",
+    "cost",
+    "tokens",
+    "duration_seconds",
+    "depth",
+    "run_id",
+    "incident",
+    "session_id",
+    "transcript_path",
+    "verb",
+    "direction"
+  ],
+  "title": "Bridge public result envelope",
+  "type": "object"
+}

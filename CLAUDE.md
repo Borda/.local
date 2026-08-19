@@ -2,6 +2,10 @@
 
 Any policy change in one listed instruction file must trigger a relevance review of every other listed file before completion. Synchronize applicable shared policy in either direction; preserve intentional agent-specific differences and record when no counterpart change is needed.
 
+## Instruction Layering
+
+Repository-wide policy belongs in this top-level file. Lower-scope instruction files inherit it and must add only narrower rules or explicit exceptions, never repeat the same policy; when a top-level policy changes, review lower layers for conflicts or obsolete duplication rather than copying the new text into them.
+
 ## Edit Scope — Hard Constraint
 
 **ALL edits must stay within this project directory.** Never directly edit `~/.claude/` or `$CODEX_HOME` (cache, settings, hooks, or any file under the user home).
@@ -60,6 +64,10 @@ Scripts, hooks, `bin/`, CI steps all run Linux + macOS + native Windows. Fix at 
 ## Benchmark Isolation
 
 Benchmark task IDs, target repositories, prompt wording, expected answers, and task-specific source or symbol examples are test evidence, not production content. Never copy them into shipped plugins, skills, templates, or user-facing docs; use neutral generic examples and encode the generalized contract in a regression test instead.
+
+## Plan Isolation
+
+Plans, reports, scratch artifacts, and private implementation notes are evidence, not production content. Never copy plan-only notation, section references, task IDs, private source or code examples, plan-only placeholder names, or private shorthand into shipped code, plugins, skills, templates, schemas, or user-facing docs, and never make a shipped artifact depend on access to its originating `.plans/` or `.reports/` context. Re-express every adopted requirement as a self-contained contract with complete or sufficiently descriptive names, neutral examples, and all context needed to understand and verify it without the originating plan.
 
 ## Memory Policy
 

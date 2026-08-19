@@ -76,9 +76,11 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - CC_foundry: cc_foundry.md
-  - CC_oss: cc_oss.md
-  - CC_develop: cc_develop.md
-  - CC_research: cc_research.md
-  - Codemap-py: codemap-py.md
+  - Claude Code Rig:
+      - Foundry: cc_foundry.md
+      - OSS: cc_oss.md
+      - Develop: cc_develop.md
+      - Research: cc_research.md
   - Codex Rig: codex-rig.md
+  - Codemap-py: codemap-py.md
+  - Bridge CC-Codex: bridge_cc-codex.md

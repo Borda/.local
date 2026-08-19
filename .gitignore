@@ -66,3 +66,5 @@ __pycache__/
 
 .coverage
 uv.lock
+
+.DS_Store

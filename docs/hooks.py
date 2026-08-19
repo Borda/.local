@@ -9,7 +9,7 @@ _SCHEMA_JSON_LD = """\
         "@type": "Organization",
         "name": "AI-Rig by Borda",
         "url": "https://borda.github.io/AI-Rig/",
-        "description": "Five Claude Code plugins and Codex Rig for Python/ML OSS development.",
+        "description": "Six Claude Code plugins and Codex Rig for Python/ML OSS development.",
         "sameAs": ["https://github.com/Borda/AI-Rig"]
       },
       {
@@ -31,7 +31,7 @@ _SCHEMA_JSON_LD = """\
         "name": "Borda's AI-Rig",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows",
-        "description": "Five Claude Code plugins plus Codex Rig for Python/ML OSS development. Specialist roles, calibrated workflows, and validate-first discipline.",
+        "description": "Six Claude Code plugins plus Codex Rig for Python/ML OSS development. Specialist roles, calibrated workflows, and validate-first discipline.",
         "url": "https://borda.github.io/AI-Rig/",
         "downloadUrl": "https://github.com/Borda/AI-Rig",
         "offers": {
@@ -50,7 +50,8 @@ _SCHEMA_JSON_LD = """\
           "Evidence-backed issue, pull request, feedback-resolution, and release-readiness workflows",
           "Reviewable ML research planning, execution, verification, ablation, and retrospective workflows",
           "Static Python indexing, structural queries, test-impact analysis, and reference renames",
-          "13 Codex workflows, one lifecycle manager, 15 role cards, and shared artifact gates"
+          "13 Codex workflows, one lifecycle manager, 15 role cards, and shared artifact gates",
+          "Bidirectional Claude Code and Codex bridge for bounded implement, advise, and review calls"
         ],
         "hasPart": [
           {
@@ -88,6 +89,12 @@ _SCHEMA_JSON_LD = """\
             "name": "Codex Rig",
             "description": "Thirteen evidence-first Codex workflows, one legacy-shim lifecycle manager, fifteen role cards, shared gates, and reviewable artifacts.",
             "url": "https://borda.github.io/AI-Rig/codex-rig/"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "bridge",
+            "description": "Bidirectional Claude Code and Codex bridge: bounded implement, advise, and review calls with explicit models, budgets, compact envelopes, and recursion safety.",
+            "url": "https://borda.github.io/AI-Rig/bridge_cc-codex/"
           }
         ]
       }

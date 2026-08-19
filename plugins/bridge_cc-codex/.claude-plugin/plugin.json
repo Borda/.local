@@ -1,0 +1,20 @@
+{
+  "author": {
+    "name": "Jiri Borovec",
+    "url": "https://github.com/Borda/AI-Rig"
+  },
+  "description": "Bidirectional Claude Code and Codex implementation, advice, and review with explicit models, budgets, compact results, and recursion safety.",
+  "homepage": "https://github.com/Borda/AI-Rig",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "advice",
+    "implementation",
+    "review"
+  ],
+  "license": "Apache-2.0",
+  "name": "bridge",
+  "repository": "https://github.com/Borda/AI-Rig",
+  "skills": "./claude-skills/",
+  "version": "0.1.0"
+}

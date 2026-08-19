@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "bridge": {
+      "args": [
+        "${PLUGIN_ROOT}/bin/bridge_mcp.py",
+        "--stdio"
+      ],
+      "command": "python",
+      "env_vars": [
+        "HOME",
+        "PATH",
+        "CODEX_HOME",
+        "CC_CODEX_BRIDGE_DEPTH"
+      ],
+      "tool_timeout_sec": 900
+    }
+  }
+}

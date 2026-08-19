@@ -180,6 +180,7 @@ def test_repository_marketplace_remains_the_installable_source_root() -> None:
 
     assert marketplace["name"] == "borda-ai-rig"
     assert sources == {
+        "bridge": {"path": "./plugins/bridge_cc-codex", "source": "local"},
         "codemap-py": {"path": "./plugins/codemap-py", "source": "local"},
         "codex-rig": {"path": "./plugins/codex-rig", "source": "local"},
     }

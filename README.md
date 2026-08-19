@@ -4,7 +4,7 @@
 
 Practical agent workflows for Python, ML, and open-source maintenance. AI-Rig turns recurring work—scoping a change, reproducing a bug, reviewing a pull request, running an experiment, or checking release readiness—into explicit workflows with specialist ownership, evidence gates, and reviewable artifacts.
 
-Six packages serve two runtimes: five marketplace plugins for Claude Code, two for Codex, with `codemap-py` shared by both.
+Seven packages serve two runtimes: six marketplace plugins for Claude Code, three for Codex, with `codemap-py` and `bridge` shared by both.
 
 <details>
 <summary><strong>Contents</strong></summary>
@@ -33,14 +33,15 @@ Six packages serve two runtimes: five marketplace plugins for Claude Code, two f
 
 Choose the smallest plugin that solves the job in front of you. Every package installs independently; optional integrations add specialist depth or structural context without becoming hidden prerequisites.
 
-| Need                                                                    | Start with                                   | What it gives you                                                                                                         |
-| ----------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Keep Claude agent configuration, routing, and reusable guidance healthy | [`foundry`](plugins/cc_foundry/README.md)    | 10 specialist agents, 11 configuration/content skills, rules, hooks, audit, and calibration                               |
-| Triage GitHub work, review PRs, resolve feedback, and prepare releases  | [`oss`](plugins/cc_oss/README.md)            | 4 agents and 5 maintainer skills with human-reviewed replies and no automatic publish step                                |
-| Plan, build, fix, refactor, debug, or review Python changes             | [`develop`](plugins/cc_develop/README.md)    | 6 validate-first development workflows plus setup, with reproduction/demo/safety-net gates                                |
-| Plan and run literature-grounded ML experiments                         | [`research`](plugins/cc_research/README.md)  | 2 research agents and 10 skills for planning, judging, running, verifying, ablation, retrospectives, and Kaggle notebooks |
-| Answer import, caller, coupling, rename, and affected-test questions    | [`codemap-py`](plugins/codemap-py/README.md) | The same 6 structural-analysis skills for Claude Code and Codex, backed by a local static Python index                    |
-| Use evidence-first workflows and specialist role cards in Codex         | [`Codex Rig`](plugins/codex-rig/README.md)   | 13 workflow skills, 1 lifecycle manager, 15 role cards, shared gates, calibration, and artifact contracts                 |
+| Need                                                                    | Start with                                    | What it gives you                                                                                                         |
+| ----------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Keep Claude agent configuration, routing, and reusable guidance healthy | [`foundry`](plugins/cc_foundry/README.md)     | 10 specialist agents, 11 configuration/content skills, rules, hooks, audit, and calibration                               |
+| Triage GitHub work, review PRs, resolve feedback, and prepare releases  | [`oss`](plugins/cc_oss/README.md)             | 4 agents and 5 maintainer skills with human-reviewed replies and no automatic publish step                                |
+| Plan, build, fix, refactor, debug, or review Python changes             | [`develop`](plugins/cc_develop/README.md)     | 6 validate-first development workflows plus setup, with reproduction/demo/safety-net gates                                |
+| Plan and run literature-grounded ML experiments                         | [`research`](plugins/cc_research/README.md)   | 2 research agents and 10 skills for planning, judging, running, verifying, ablation, retrospectives, and Kaggle notebooks |
+| Answer import, caller, coupling, rename, and affected-test questions    | [`codemap-py`](plugins/codemap-py/README.md)  | The same 6 structural-analysis skills for Claude Code and Codex, backed by a local static Python index                    |
+| Use evidence-first workflows and specialist role cards in Codex         | [`Codex Rig`](plugins/codex-rig/README.md)    | 13 workflow skills, 1 lifecycle manager, 15 role cards, shared gates, calibration, and artifact contracts                 |
+| Hand bounded implement, advise, and review calls between the two hosts  | [`bridge`](plugins/bridge_cc-codex/README.md) | 3 bridge verbs in both directions with explicit models, effort, budgets, compact envelopes, and recursion safety          |
 
 If you use Claude Code, read the [Claude guide](.claude/README.md). If you use Codex, read the [Codex guide](.codex/README.md).
 
@@ -75,6 +76,7 @@ This is the literal shipped skill inventory. The host guides list every agent, r
 | Research   | `/research:topic`, `/research:plan`, `/research:judge`, `/research:run`, `/research:sweep`, `/research:verify`, `/research:fortify`, `/research:retro`, `/research:kaggle`, `/research:setup`                                                                                                                                                |
 | Codemap-py | `scan-codebase`, `query-code`, `test-impact`, `rename-refs`, `integration`, `debrief-coding`, namespaced as `/codemap-py:...` in Claude Code and `$codemap-py:...` in Codex                                                                                                                                                                  |
 | Codex Rig  | `$codex-rig:change-analysis`, `$codex-rig:audit`, `$codex-rig:calibrate`, `$codex-rig:code-remediate`, `$codex-rig:code-review`, `$codex-rig:implement`, `$codex-rig:investigate`, `$codex-rig:kaggle`, `$codex-rig:manage`, `$codex-rig:optimize`, `$codex-rig:release`, `$codex-rig:research`, `$codex-rig:sync`, `$codex-rig:agent-shims` |
+| Bridge     | `implement`, `advise`, `review`, `setup`, plus Claude-side detached-job `status`, `result`, `cancel`; namespaced as `/bridge:...` in Claude Code and `$bridge:...` in Codex                                                                                                                                                                  |
 
 </details>
 
@@ -83,7 +85,7 @@ This is the literal shipped skill inventory. The host guides list every agent, r
 <details>
 <summary><strong>Show the complete two-runtime inventory and design boundary</strong></summary>
 
-The installed-all Claude surface is 16 agents across Foundry (10), OSS (4), and Research (2), plus 39 skills across Foundry (11), OSS (5), Develop (7), Research (10), and Codemap-py (6). It also includes 16 namespaced rules (13 Foundry rules plus one quality-gates rule for each companion that ships rules) and host hooks whose exact active-module counts are maintained in the [Claude guide](.claude/README.md). Codex Rig adds 14 skills, 15 role cards, shared gates, calibration, and one optional read-only health hook; Codemap-py contributes six skills to both runtimes and no Codex hook manifest.
+The installed-all Claude surface is 16 agents across Foundry (10), OSS (4), and Research (2), plus 46 skills across Foundry (11), OSS (5), Develop (7), Research (10), Codemap-py (6), and Bridge (7). It also includes 16 namespaced rules (13 Foundry rules plus one quality-gates rule for each companion that ships rules) and host hooks whose exact active-module counts are maintained in the [Claude guide](.claude/README.md). Codex Rig adds 14 skills, 15 role cards, shared gates, calibration, and one optional read-only health hook; Codemap-py contributes six skills to both runtimes and no Codex hook manifest; the Bridge CC-Codex plugin contributes four Codex-side skills and the reverse MCP transport.
 
 Specialist roles are requested by name or auto-selected. Claude agents dispatch as `<plugin>:<agent>`; the Codex column marks roles that also ship as a Codex Rig role card.
 
@@ -112,8 +114,8 @@ Sixteen Claude agents, fifteen Codex role cards. `delegation-lead` and `security
 
 | Runtime         | Source inventory                                                                           | Distribution and trust boundary                                                                                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code     | Five peer plugins: Foundry, OSS, Develop, Research, and Codemap-py.                        | Marketplace packages expose plugin-loader agents, skills, hooks, and `CLAUDE.md`; setup projects only documented rules/settings and does not install credentials or remote authority. |
-| Codex           | Codex Rig plus optional Codemap-py.                                                        | Marketplace packages expose namespaced skills and role cards; blank-agent injection or inline fallback is disclosed, while persistent named-agent selection remains unverified.       |
+| Claude Code     | Six peer plugins: Foundry, OSS, Develop, Research, Codemap-py, and Bridge CC-Codex.        | Marketplace packages expose plugin-loader agents, skills, hooks, and `CLAUDE.md`; setup projects only documented rules/settings and does not install credentials or remote authority. |
+| Codex           | Codex Rig plus optional Codemap-py and Bridge CC-Codex.                                    | Marketplace packages expose namespaced skills and role cards; blank-agent injection or inline fallback is disclosed, while persistent named-agent selection remains unverified.       |
 | Source checkout | `plugins/` is the source of truth; `.claude/` and `.codex/` are host guides/configuration. | Direct marketplace install uses published bytes; `sync.sh` is a deliberate restore path that consumes the pushed remote and may project selected local policy.                        |
 
 The design principle is simple: make uncertainty, ownership, evidence, and recovery visible while keeping packages independently installable. A workflow may route to a specialist, but a role card, task name, artifact, or green gate is not proof that a model followed it or that the resulting change is correct. Human review remains the acceptance boundary for consequential work.
@@ -133,6 +135,7 @@ claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
 claude plugin install codemap-py@borda-ai-rig
+claude plugin install bridge@borda-ai-rig
 ```
 
 Start a fresh Claude session or run `/reload-plugins`. For each installed plugin that ships rules, run its setup skill once and again after an upgrade:
@@ -144,7 +147,7 @@ Start a fresh Claude session or run `/reload-plugins`. For each installed plugin
 /research:setup
 ```
 
-The setup skills create namespaced rule links. Only Foundry performs the broader documented settings merge and installs `TEAM_PROTOCOL.md`; the other setup skills deliver their own rules. Codemap-py needs no setup skill—build its first project index with `/codemap-py:scan-codebase`.
+The setup skills create namespaced rule links. Only Foundry performs the broader documented settings merge and installs `TEAM_PROTOCOL.md`; the other setup skills deliver their own rules. Codemap-py needs no setup skill—build its first project index with `/codemap-py:scan-codebase`. Bridge CC-Codex ships no rules either; `/bridge:setup` is a free static check of the local `codex` and `claude` CLIs.
 
 First useful commands:
 
@@ -164,6 +167,7 @@ Prerequisite: a current Codex release with stable plugin commands. The commands 
 codex plugin marketplace add Borda/AI-Rig
 codex plugin add codex-rig@borda-ai-rig
 codex plugin add codemap-py@borda-ai-rig
+codex plugin add bridge@borda-ai-rig
 codex plugin list
 ```
 

@@ -78,8 +78,9 @@ lint.mccabe.max-complexity = 12
 lint.pylint = { max-returns = 6, max-branches = 12, max-statements = 50 }
 
 [tool.codespell]
-# ignore-words-list: real words codespell misflags — "derails" (not "details")
-ignore-words-list = "derails"
+# ignore-words-list: real words/tokens codespell misflags — "derails" (not "details"),
+# "fo" (Windows tasklist's real /FO format flag, not a typo for "for"/"of")
+ignore-words-list = "derails,fo"
 skip = "./site,./.git"  # MkDocs build output + git internals — generated, not source
 
 [tool.pytest]

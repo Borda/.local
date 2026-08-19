@@ -29,6 +29,11 @@
       "description": "Static Python structure for Claude Code: indexing, queries, test impact, reference renames, integration, and session telemetry debriefs",
       "name": "codemap-py",
       "source": "./plugins/codemap-py"
+    },
+    {
+      "description": "Implement, advise, and review across Claude Code and Codex with bounded execution and compact results.",
+      "name": "bridge",
+      "source": "./plugins/bridge_cc-codex"
     }
   ]
 }

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blockers": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "details": {
+      "items": {
+        "maxLength": 2000,
+        "type": "string"
+      },
+      "maxItems": 32,
+      "type": "array"
+    },
+    "files_touched": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "remaining": {
+      "items": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial",
+        "blocked"
+      ],
+      "type": "string"
+    },
+    "verdict": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "verdict",
+    "findings",
+    "files_touched",
+    "remaining",
+    "blockers",
+    "details"
+  ],
+  "title": "Bridge model-authored result",
+  "type": "object"
+}
