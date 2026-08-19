@@ -111,7 +111,8 @@ Every finding needs explicit location, severity, action — matches structured o
 Checklist checks above (version/docs/CVE/deprecation) are static and can't catch semantic gaps — e.g. a public example contradicting the release's own behavior change, or a migration note describing the wrong version. When Codex is installed, dispatch it as an independent adversarial pass over the same `RANGE` before declaring a verdict.
 
 ```bash
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=1 && echo "codex (openai-codex) available" || { CODEX_AVAILABLE=0; echo "⚠ codex (openai-codex) not found — skipping adversarial audit pass"; } # timeout: 15000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+if [ "$CODEX_STATUS" = "available" ]; then CODEX_AVAILABLE=1; echo "bridge@borda-ai-rig available"; else CODEX_AVAILABLE=0; echo "⚠ bridge@borda-ai-rig is ${CODEX_STATUS} — skipping adversarial audit pass"; fi
 ```
 
 `CODEX_AVAILABLE=0` → skip this phase entirely, no finding added.
@@ -119,7 +120,7 @@ claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE
 `CODEX_AVAILABLE=1` →
 
 ```text
-Agent(subagent_type="codex:codex-rescue", prompt="Adversarial release-readiness audit. Working directory: <REPO_ROOT>. Range: <RANGE>. Target version: <TARGET or 'next'>. Treat every user-facing claim as wrong until proven correct by reading the actual source at HEAD.
+Skill(skill="bridge:review", args="Read-only adversarial release-readiness audit. Working directory: <REPO_ROOT>. Range: <RANGE>. Target version: <TARGET or 'next'>. Treat every user-facing claim as wrong until proven correct by reading the actual source at HEAD.
 
 Check specifically: (1) do public docs/examples touched or implied by this range still match current default behavior — not just changed files, but examples elsewhere in docs/ that call the same code path; (2) does the migration guide (if any) place new behavior under the correct version step, not backported into an earlier historical entry; (3) does the changelog/PR narrative account for every commit in range, including ones bundled into another PR; (4) any new or changed optional dependency reaching a platform without a recorded review/disposition.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -1511,6 +1512,69 @@ def test_cli_invalid_input_has_one_json_error_and_nonzero_exit(tmp_path: Path) -
     assert result.returncode != 0
     assert len(lines) == 1
     assert json.loads(lines[0])["status"] == "error"
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "expected_fragment"),
+    [
+        pytest.param(["--task", "inline"], "not both", id="both-sources"),
+        pytest.param([], "one of --task or --task-file", id="neither-source"),
+    ],
+)
+def test_cli_task_source_conflicts_return_a_json_error(
+    tmp_path: Path, extra_args: list[str], expected_fragment: str
+) -> None:
+    """Ambiguous or missing task sources fail as parseable envelopes, not argparse exits.
+
+    Every caller — skill, MCP tool, lifecycle supervisor — reads exactly one JSON object
+    from stdout. An argparse usage error would print to stderr and exit 2 with nothing to
+    parse, so the two task flags are validated in request construction instead.
+    """
+    task_file = tmp_path / "task.md"
+    task_file.write_text("Summarize the change.", encoding="utf-8")
+    command = [sys.executable, str(BIN_ROOT / "bridge_call.py"), "advise", "--workspace", str(tmp_path), *extra_args]
+    if expected_fragment == "not both":
+        command += ["--task-file", str(task_file)]
+
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+
+    lines = result.stdout.splitlines()
+    assert result.returncode != 0
+    assert len(lines) == 1
+    payload = json.loads(lines[0])
+    assert payload["status"] == "error"
+    assert expected_fragment in payload["error"]
+
+
+def test_cli_reads_a_task_containing_shell_metacharacters_from_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task text that would be hostile on a command line survives verbatim through a file.
+
+    Consumer skills forward text they did not author — review comments, issue bodies — and
+    a brief carrying backticks, ``$(...)`` or embedded quotes is ordinary, not an attack.
+    Reading it from a file keeps correctness independent of the caller's quoting.
+    """
+    hostile = 'Fix `rm -rf /` in "quoted" text; $(whoami) && echo done\n'
+    task_file = tmp_path / "brief.md"
+    task_file.write_text(hostile, encoding="utf-8")
+    namespace = argparse.Namespace(
+        verb="advise",
+        task=None,
+        task_file=str(task_file),
+        model=None,
+        effort=None,
+        timeout_seconds=None,
+        background=False,
+        session_id=None,
+        depth=0,
+        run_id=None,
+        workspace=str(tmp_path),
+    )
+
+    request = bridge_call._request_from_args(namespace)
+
+    assert request.task == hostile
 
 
 def test_cli_rejects_negative_depth_before_dispatch(tmp_path: Path) -> None:

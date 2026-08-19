@@ -133,17 +133,18 @@ Spawn **foundry:web-explorer**:
 
 > "Fetch current Claude Code docs for `[agent|skill|hook]` schema — navigate from `https://code.claude.com/docs/en/` to the `[sub-agents|skills|hooks]` page. Verify that findings about frontmatter fields or documented behavior in `<RUN_DIR>/<slug>-rerun.md` are accurate against current docs. List any corrections. Write to `<RUN_DIR>/docs-recheck-<slug>.md`. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"corrections\":N,\"confidence\":0.N}`"
 
-**C — Codex adversarial pass** (requires `codex` plugin):
+**C — Codex adversarial pass** (requires `bridge@borda-ai-rig`):
 
 ```bash
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=true || CODEX_AVAILABLE=false  # timeout: 15000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")
+[ "$CODEX_STATUS" = "available" ] && CODEX_AVAILABLE=true || CODEX_AVAILABLE=false  # timeout: 5000
 ```
 
-If `CODEX_AVAILABLE=true`: spawn `Agent(subagent_type="codex:codex-rescue")`:
+If `CODEX_AVAILABLE=true`, resolve every placeholder in the following review brief, then pass that entire rendered brief to `Skill(skill="bridge:review", args="...")`:
 
 > "Adversarial review of low-confidence findings for `<original-source-file>`. Prior foundry:curator pass scored confidence=<N> — gaps: `<Gaps>`. Challenge each finding: real? severity correct? missed issues? Read source file + prior report `<RUN_DIR>/<slug>-rerun.md`. Write to `<RUN_DIR>/codex-recheck-<slug>.md`. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}`"
 
-If `CODEX_AVAILABLE=false`: log `[Step 5b] Codex unavailable — adversarial pass skipped; install codex plugin for full low-confidence remediation.` Include note in final report `## Confidence` section.
+If `CODEX_AVAILABLE=false`: log `[Step 5b] bridge@borda-ai-rig is ${CODEX_STATUS} — adversarial pass skipped.` Include note in final report `## Confidence` section.
 
 **After all three passes complete** for a slug: spawn **foundry:curator** mini-consolidator to merge `<slug>-rerun.md`, `docs-recheck-<slug>.md`, `codex-recheck-<slug>.md` → append `### Low-Confidence Remediation — <slug>` section to `aggregate.md` with reconciled findings (promoted corrections, confirmed findings, refuted findings). Update `summary.jsonl` with any net-new findings.
 

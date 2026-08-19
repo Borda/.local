@@ -2,7 +2,7 @@
 
 This module sits beside ``test_global_agents_installer.py`` instead of extending it: that module owns Codex Rig's
 global-instruction installer and only pins sync.sh through static substring assertions, which cannot observe dispatch
-order, skip decisions, or failure propagation. Here the real loop is executed.
+order, setup-layout discovery, skip decisions, or failure propagation. Here the real loop is executed.
 
 Extraction approach: sync.sh is sliced between two stable anchors — the ``Initializing installed plugin setup
 skills...`` echo and the first unindented ``done`` that closes the for-loop — and that verbatim slice is wrapped in the
@@ -34,6 +34,7 @@ from _platform import POSIX_BASH
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 SYNC_SCRIPT = PLUGIN_ROOT.parents[1] / "sync.sh"
 SETUP_ANCHOR = 'echo "Initializing installed plugin setup skills..."'
+INSTALL_ANCHOR = 'echo "Installing plugins..."'
 END_SENTINEL = "SETUP-DISPATCH-COMPLETE"
 MARKETPLACE = "fake-marketplace"
 # Non-empty so the fake CLI's glob cannot degenerate into a match-everything pattern, and absent from any invocation.
@@ -64,6 +65,7 @@ MANAGED_RECORDS: dict[str, tuple[Record, ...]] = {
     # research is absent for the managed marketplace; the foreign-marketplace record is a keying near-miss.
     "research@other-marketplace": (("2026-01-01T00:00:00Z", True),),
     "codemap-py@fake-marketplace": (("2026-01-01T00:00:00Z", True),),
+    "bridge@fake-marketplace": (("2026-01-01T00:00:00Z", True),),
     "codex@openai-codex": (("2026-01-01T00:00:00Z", True),),
     "caveman@caveman": (("2026-01-01T00:00:00Z", True),),
     "ponytail@ponytail": (("2026-01-01T00:00:00Z", True),),
@@ -110,6 +112,15 @@ def extract_setup_dispatch(lines: list[str]) -> str:
     return "\n".join(lines[starts[0] : ends[0] + 1])
 
 
+def extract_install_dispatch(lines: list[str]) -> str:
+    """Return the managed install block through replacement cleanup."""
+    starts = [index for index, line in enumerate(lines) if line.strip() == INSTALL_ANCHOR]
+    ends = [index for index, line in enumerate(lines) if line.strip() == SETUP_ANCHOR]
+    if len(starts) != 1 or len(ends) != 1 or starts[0] >= ends[0]:
+        pytest.fail("sync.sh must keep one managed install block before setup dispatch")
+    return "\n".join(lines[starts[0] : ends[0]])
+
+
 def extract_array(lines: list[str], name: str) -> tuple[str, tuple[str, ...]]:
     """Return one sync.sh array assignment verbatim together with its parsed entries."""
     prefix = f"{name}=("
@@ -149,7 +160,8 @@ def build_registry(root: Path, records: dict[str, tuple[Record, ...]]) -> Path:
             install_path = root / "installs" / f"{key.replace('@', '-at-')}-{index}"
             install_path.mkdir(parents=True, exist_ok=True)
             if ships_setup:
-                skill = install_path / "skills" / "setup" / "SKILL.md"
+                setup_root = "claude-skills" if key.startswith("bridge@") else "skills"
+                skill = install_path / setup_root / "setup" / "SKILL.md"
                 skill.parent.mkdir(parents=True, exist_ok=True)
                 skill.write_text("# setup\n", encoding="utf-8")
             rendered.append({"installPath": install_path.as_posix(), "installedAt": installed_at})
@@ -218,12 +230,116 @@ def run_setup_dispatch(
     )
 
 
+def run_install_dispatch(root: Path, posix_bash: str, *, fail_on: str = NEVER_MATCHED) -> DispatchRun:
+    """Execute the managed install and replacement-cleanup block with a fake Claude CLI."""
+    lines = read_sync_lines()
+    fake_bin = root / "bin"
+    fake_bin.mkdir()
+    fake_claude = fake_bin / "claude"
+    fake_claude.write_text(FAKE_CLAUDE_SOURCE, encoding="utf-8")
+    fake_claude.chmod(0o755)
+    log = root / "claude-calls.log"
+    home = root / "home"
+    home.mkdir()
+    registry = build_registry(root, MANAGED_RECORDS)
+    plugins_line, _ = extract_array(lines, "PLUGINS")
+    harness = "\n".join(
+        (
+            "set -e",
+            plugins_line,
+            f'MARKETPLACE="{MARKETPLACE}"',
+            "print_claude_plugin_identity() { :; }",
+            extract_install_dispatch(lines),
+            "",
+        )
+    )
+    harness_path = root / "install-dispatch.sh"
+    harness_path.write_text(harness, encoding="utf-8")
+    env = os.environ.copy()
+    path = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env.update(
+        {
+            "FAKE_CLAUDE_FAIL_ON": fail_on,
+            "FAKE_CLAUDE_LOG": log.as_posix(),
+            "HOME": str(home),
+            "PATH": path,
+        }
+    )
+    process = subprocess.run(
+        [posix_bash, str(harness_path)],
+        capture_output=True,
+        env=env,
+        text=True,
+        check=False,
+    )
+    transcript = log.read_text(encoding="utf-8") if log.exists() else ""
+    invocations = tuple(tuple(line.split("\t")[:-1]) for line in transcript.splitlines())
+    return DispatchRun(process, invocations, transcript, harness, home, registry, str(fake_bin))
+
+
 def test_managed_plugin_roster_leads_with_foundry() -> None:
     """Pin the dispatch order contract to sync.sh's own PLUGINS array rather than to fixture expectations."""
     _, plugins = extract_array(read_sync_lines(), "PLUGINS")
 
     assert plugins[0] == "foundry"
     assert len(plugins) == len(set(plugins))
+
+
+def test_external_plugin_roster_retains_only_caveman() -> None:
+    """Keep the retired external Codex rescue plugin out of repository sync."""
+    _, external_plugins = extract_array(read_sync_lines(), "EXTERNAL_PLUGINS")
+
+    assert external_plugins == ("caveman@caveman",)
+
+
+def test_successful_bridge_install_retires_replaced_plugin(tmp_path: Path, posix_bash: str) -> None:
+    """Remove the replaced plugin only after the bridge installation succeeds."""
+    run = run_install_dispatch(tmp_path, posix_bash)
+    bridge_install = ("plugin", "install", "bridge@fake-marketplace")
+    retired_uninstall = ("plugin", "uninstall", "codex@openai-codex")
+
+    assert run.process.returncode == 0, run.process.stderr
+    assert bridge_install in run.invocations
+    assert retired_uninstall in run.invocations
+    assert run.invocations.index(bridge_install) < run.invocations.index(retired_uninstall)
+
+
+def test_failed_bridge_install_preserves_replaced_plugin(tmp_path: Path, posix_bash: str) -> None:
+    """Keep the working legacy install when its replacement could not be installed."""
+    run = run_install_dispatch(tmp_path, posix_bash, fail_on="bridge@fake-marketplace")
+
+    assert run.process.returncode == 0, run.process.stderr
+    assert ("plugin", "install", "bridge@fake-marketplace") in run.invocations
+    assert ("plugin", "uninstall", "codex@openai-codex") not in run.invocations
+
+
+def test_unconditional_purge_entries_run_even_when_the_bridge_install_fails(tmp_path: Path, posix_bash: str) -> None:
+    """Purge plugins with no replacement relationship regardless of the bridge outcome.
+
+    Only ``codex@openai-codex`` is conditional, because the bridge is what replaces it.
+    Every other retired entry is simply no longer part of the rig, so gating it on an
+    unrelated install would leave it installed forever on any machine that hit a network
+    blip during that one install.
+    """
+    run = run_install_dispatch(tmp_path, posix_bash, fail_on="bridge@fake-marketplace")
+
+    assert run.process.returncode == 0, run.process.stderr
+    assert ("plugin", "uninstall", "ponytail@ponytail") in run.invocations
+    assert ("plugin", "uninstall", "codex@openai-codex") not in run.invocations
+
+
+def test_a_failed_purge_uninstall_does_not_fail_the_sync(tmp_path: Path, posix_bash: str) -> None:
+    """An uninstall that errors must not abort a run whose installs all succeeded.
+
+    The ordinary cause is the plugin already being absent, and nothing downstream depends
+    on it having been there. Under ``set -e`` an unguarded uninstall would end the script
+    before setup dispatch ever ran.
+    """
+    run = run_install_dispatch(tmp_path, posix_bash, fail_on="ponytail@ponytail")
+
+    assert run.process.returncode == 0, run.process.stderr
+    assert ("plugin", "uninstall", "ponytail@ponytail") in run.invocations
+    assert ("plugin", "uninstall", "codex@openai-codex") in run.invocations
 
 
 def test_setup_dispatch_runs_once_per_installed_managed_plugin_in_roster_order(tmp_path: Path, posix_bash: str) -> None:
@@ -235,6 +351,7 @@ def test_setup_dispatch_runs_once_per_installed_managed_plugin_in_roster_order(t
         ("--print", "/foundry:setup --approve"),
         ("--print", "/oss:setup --approve"),
         ("--print", "/codemap-py:setup --approve"),
+        ("--print", "/bridge:setup --approve"),
     )
     # The dash in sync.sh's skip lines is U+2013, so match dash-free substrings only.
     assert "develop has no setup skill, skipping" in run.process.stdout
@@ -248,13 +365,13 @@ def test_setup_dispatch_never_reaches_external_or_foreign_marketplace_plugins(tm
 
     assert "EXTERNAL_PLUGINS=(" in run.harness
     assert run.process.returncode == 0, run.process.stderr
-    assert "codex" not in run.transcript
+    assert "/codex:setup" not in run.transcript
     assert "caveman" not in run.transcript
     assert "ponytail" not in run.transcript
     assert "unrelated" not in run.transcript
     assert "research" not in run.transcript
     # Third-party names must not even reach a skip line; "research" is exempt because it owns a managed skip line.
-    assert "codex" not in run.process.stdout
+    assert "codex@openai-codex" not in run.process.stdout
     assert "caveman" not in run.process.stdout
     assert "ponytail" not in run.process.stdout
     assert "unrelated" not in run.process.stdout

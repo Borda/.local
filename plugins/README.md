@@ -1,8 +1,8 @@
 # 🧩 plugins/ — Plugin Authoring & Behavior Reference
 
-This document covers the five Claude Code plugins and their permission model. Codex Rig is a separate peer product with Codex-native packaging, lifecycle, and trust rules; see [`codex-rig/README.md`](codex-rig/README.md).
+This document covers the six Claude Code plugins and their permission model. Codex Rig is a separate peer product with Codex-native packaging, lifecycle, and trust rules; see [`codex-rig/README.md`](codex-rig/README.md).
 
-Authoritative reference: critical behaviors, permission model, known limitations, user expectations across all 5 plugins. Read before editing plugin files or diagnosing unexpected behavior.
+Authoritative reference: critical behaviors, permission model, known limitations, and user expectations across all six plugins. Read before editing plugin files or diagnosing unexpected behavior.
 
 > Plugin inventory, install instructions, versioning policy, cross-plugin dependency rules: see root `README.md` + `plugins/CLAUDE.md`. This file covers trust model, bin/ execution, operational guarantees only.
 
@@ -154,18 +154,19 @@ Each plugin ships pytest coverage for its deterministic helpers and workflow con
 <details>
 <summary><strong>Show coverage table</strong></summary>
 
-| Plugin     | Test modules with test functions | Literal test functions |
-| ---------- | -------------------------------: | ---------------------: |
-| Foundry    |                               46 |                    814 |
-| OSS        |                               34 |                    476 |
-| Develop    |                               16 |                    275 |
-| Research   |                               14 |                    179 |
-| Codemap-py |                               52 |                   1076 |
-| Codex Rig  |                               38 |                    410 |
+| Plugin          | Test modules with test functions | Literal test functions |
+| --------------- | -------------------------------: | ---------------------: |
+| Foundry         |                               46 |                    814 |
+| OSS             |                               34 |                    476 |
+| Develop         |                               16 |                    275 |
+| Research        |                               14 |                    179 |
+| Codemap-py      |                               52 |                   1076 |
+| Codex Rig       |                               38 |                    410 |
+| bridge_CC-Codex |                                3 |                     80 |
 
 </details>
 
-Snapshot measured from the checked-in tree on 2026-08-14 with `rg '^[[:space:]]*def test_'`; parametrization can produce more executed cases than literal functions. These counts are maintenance evidence, not a claim that every path or runtime environment is covered.
+Snapshot measured from the checked-in tree on 2026-08-19 with `rg '^[[:space:]]*def test_'`; parametrization can produce more executed cases than literal functions. These counts are maintenance evidence, not a claim that every path or runtime environment is covered.
 
 `/audit` Check 23a and Check C32 continuously verify SKILL.md files don't introduce inline Python or bare `plugins/` path references — structural violations caught before reaching users.
 

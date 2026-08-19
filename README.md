@@ -4,7 +4,7 @@
 
 Practical agent workflows for Python, ML, and open-source maintenance. AI-Rig turns recurring work—scoping a change, reproducing a bug, reviewing a pull request, running an experiment, or checking release readiness—into explicit workflows with specialist ownership, evidence gates, and reviewable artifacts.
 
-Seven packages serve two runtimes: six marketplace plugins for Claude Code, three for Codex, with `codemap-py` and `bridge` shared by both.
+Seven packages serve two runtimes: six marketplace plugins for Claude Code, three for Codex, with `codemap-py` and `bridge_CC-Codex` shared by both.
 
 <details>
 <summary><strong>Contents</strong></summary>
@@ -33,15 +33,15 @@ Seven packages serve two runtimes: six marketplace plugins for Claude Code, thre
 
 Choose the smallest plugin that solves the job in front of you. Every package installs independently; optional integrations add specialist depth or structural context without becoming hidden prerequisites.
 
-| Need                                                                    | Start with                                    | What it gives you                                                                                                         |
-| ----------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Keep Claude agent configuration, routing, and reusable guidance healthy | [`foundry`](plugins/cc_foundry/README.md)     | 10 specialist agents, 11 configuration/content skills, rules, hooks, audit, and calibration                               |
-| Triage GitHub work, review PRs, resolve feedback, and prepare releases  | [`oss`](plugins/cc_oss/README.md)             | 4 agents and 5 maintainer skills with human-reviewed replies and no automatic publish step                                |
-| Plan, build, fix, refactor, debug, or review Python changes             | [`develop`](plugins/cc_develop/README.md)     | 6 validate-first development workflows plus setup, with reproduction/demo/safety-net gates                                |
-| Plan and run literature-grounded ML experiments                         | [`research`](plugins/cc_research/README.md)   | 2 research agents and 10 skills for planning, judging, running, verifying, ablation, retrospectives, and Kaggle notebooks |
-| Answer import, caller, coupling, rename, and affected-test questions    | [`codemap-py`](plugins/codemap-py/README.md)  | The same 6 structural-analysis skills for Claude Code and Codex, backed by a local static Python index                    |
-| Use evidence-first workflows and specialist role cards in Codex         | [`Codex Rig`](plugins/codex-rig/README.md)    | 13 workflow skills, 1 lifecycle manager, 15 role cards, shared gates, calibration, and artifact contracts                 |
-| Hand bounded implement, advise, and review calls between the two hosts  | [`bridge`](plugins/bridge_cc-codex/README.md) | 3 bridge verbs in both directions with explicit models, effort, budgets, compact envelopes, and recursion safety          |
+| Need                                                                    | Start with                                                | What it gives you                                                                                                         |
+| ----------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Keep Claude agent configuration, routing, and reusable guidance healthy | [🏭 `foundry`](plugins/cc_foundry/README.md)              | 10 specialist agents, 11 configuration/content skills, rules, hooks, audit, and calibration                               |
+| Triage GitHub work, review PRs, resolve feedback, and prepare releases  | [🌱 `oss`](plugins/cc_oss/README.md)                      | 4 agents and 5 maintainer skills with human-reviewed replies and no automatic publish step                                |
+| Plan, build, fix, refactor, debug, or review Python changes             | [🛠️ `develop`](plugins/cc_develop/README.md)              | 6 validate-first development workflows plus setup, with reproduction/demo/safety-net gates                                |
+| Plan and run literature-grounded ML experiments                         | [🔬 `research`](plugins/cc_research/README.md)            | 2 research agents and 10 skills for planning, judging, running, verifying, ablation, retrospectives, and Kaggle notebooks |
+| Answer import, caller, coupling, rename, and affected-test questions    | [🗂️ `codemap-py`](plugins/codemap-py/README.md)           | The same 6 structural-analysis skills for Claude Code and Codex, backed by a local static Python index                    |
+| Use evidence-first workflows and specialist role cards in Codex         | [🤖 `Codex Rig`](plugins/codex-rig/README.md)             | 13 workflow skills, 1 lifecycle manager, 15 role cards, shared gates, calibration, and artifact contracts                 |
+| Hand bounded implement, advise, and review calls between the two hosts  | [🌉 `bridge_CC-Codex`](plugins/bridge_cc-codex/README.md) | 3 bridge verbs in both directions with explicit models, effort, budgets, compact envelopes, and recursion safety          |
 
 If you use Claude Code, read the [Claude guide](.claude/README.md). If you use Codex, read the [Codex guide](.codex/README.md).
 
@@ -68,15 +68,15 @@ This is the literal shipped skill inventory. The host guides list every agent, r
 <details>
 <summary><strong>Show complete capability map</strong></summary>
 
-| Package    | Complete skill roster                                                                                                                                                                                                                                                                                                                        |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Foundry    | `/foundry:setup`, `/foundry:audit`, `/foundry:calibrate`, `/foundry:manage`, `/foundry:brainstorm`, `/foundry:investigate`, `/foundry:profile`, `/foundry:distill`, `/foundry:session`, `/foundry:create`, `/foundry:humanizer`                                                                                                              |
-| OSS        | `/oss:analyse`, `/oss:review`, `/oss:resolve`, `/oss:release`, `/oss:setup`                                                                                                                                                                                                                                                                  |
-| Develop    | `/develop:plan`, `/develop:feature`, `/develop:fix`, `/develop:refactor`, `/develop:debug`, `/develop:review`, `/develop:setup`                                                                                                                                                                                                              |
-| Research   | `/research:topic`, `/research:plan`, `/research:judge`, `/research:run`, `/research:sweep`, `/research:verify`, `/research:fortify`, `/research:retro`, `/research:kaggle`, `/research:setup`                                                                                                                                                |
-| Codemap-py | `scan-codebase`, `query-code`, `test-impact`, `rename-refs`, `integration`, `debrief-coding`, namespaced as `/codemap-py:...` in Claude Code and `$codemap-py:...` in Codex                                                                                                                                                                  |
-| Codex Rig  | `$codex-rig:change-analysis`, `$codex-rig:audit`, `$codex-rig:calibrate`, `$codex-rig:code-remediate`, `$codex-rig:code-review`, `$codex-rig:implement`, `$codex-rig:investigate`, `$codex-rig:kaggle`, `$codex-rig:manage`, `$codex-rig:optimize`, `$codex-rig:release`, `$codex-rig:research`, `$codex-rig:sync`, `$codex-rig:agent-shims` |
-| Bridge     | `implement`, `advise`, `review`, `setup`, plus Claude-side detached-job `status`, `result`, `cancel`; namespaced as `/bridge:...` in Claude Code and `$bridge:...` in Codex                                                                                                                                                                  |
+| Package            | Complete skill roster                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🏭 Foundry         | `/foundry:setup`, `/foundry:audit`, `/foundry:calibrate`, `/foundry:manage`, `/foundry:brainstorm`, `/foundry:investigate`, `/foundry:profile`, `/foundry:distill`, `/foundry:session`, `/foundry:create`, `/foundry:humanizer`                                                                                                              |
+| 🌱 OSS             | `/oss:analyse`, `/oss:review`, `/oss:resolve`, `/oss:release`, `/oss:setup`                                                                                                                                                                                                                                                                  |
+| 🛠️ Develop         | `/develop:plan`, `/develop:feature`, `/develop:fix`, `/develop:refactor`, `/develop:debug`, `/develop:review`, `/develop:setup`                                                                                                                                                                                                              |
+| 🔬 Research        | `/research:topic`, `/research:plan`, `/research:judge`, `/research:run`, `/research:sweep`, `/research:verify`, `/research:fortify`, `/research:retro`, `/research:kaggle`, `/research:setup`                                                                                                                                                |
+| 🗂️ Codemap-py      | `scan-codebase`, `query-code`, `test-impact`, `rename-refs`, `integration`, `debrief-coding`, namespaced as `/codemap-py:...` in Claude Code and `$codemap-py:...` in Codex                                                                                                                                                                  |
+| 🤖 Codex Rig       | `$codex-rig:change-analysis`, `$codex-rig:audit`, `$codex-rig:calibrate`, `$codex-rig:code-remediate`, `$codex-rig:code-review`, `$codex-rig:implement`, `$codex-rig:investigate`, `$codex-rig:kaggle`, `$codex-rig:manage`, `$codex-rig:optimize`, `$codex-rig:release`, `$codex-rig:research`, `$codex-rig:sync`, `$codex-rig:agent-shims` |
+| 🌉 bridge_CC-Codex | `implement`, `advise`, `review`, `setup`, plus Claude-side detached-job `status`, `result`, `cancel`; namespaced as `/bridge:...` in Claude Code and `$bridge:...` in Codex                                                                                                                                                                  |
 
 </details>
 
@@ -85,7 +85,7 @@ This is the literal shipped skill inventory. The host guides list every agent, r
 <details>
 <summary><strong>Show the complete two-runtime inventory and design boundary</strong></summary>
 
-The installed-all Claude surface is 16 agents across Foundry (10), OSS (4), and Research (2), plus 46 skills across Foundry (11), OSS (5), Develop (7), Research (10), Codemap-py (6), and Bridge (7). It also includes 16 namespaced rules (13 Foundry rules plus one quality-gates rule for each companion that ships rules) and host hooks whose exact active-module counts are maintained in the [Claude guide](.claude/README.md). Codex Rig adds 14 skills, 15 role cards, shared gates, calibration, and one optional read-only health hook; Codemap-py contributes six skills to both runtimes and no Codex hook manifest; the Bridge CC-Codex plugin contributes four Codex-side skills and the reverse MCP transport.
+The installed-all Claude surface is 16 agents across Foundry (10), OSS (4), and Research (2), plus 46 skills across Foundry (11), OSS (5), Develop (7), Research (10), Codemap-py (6), and bridge_CC-Codex (7). It also includes 16 namespaced rules (13 Foundry rules plus one quality-gates rule for each companion that ships rules) and host hooks whose exact active-module counts are maintained in the [Claude guide](.claude/README.md). Codex Rig adds 14 skills, 15 role cards, shared gates, calibration, and one optional read-only health hook; Codemap-py contributes six skills to both runtimes and no Codex hook manifest; the bridge_CC-Codex plugin contributes four Codex-side skills and the reverse MCP transport.
 
 Specialist roles are requested by name or auto-selected. Claude agents dispatch as `<plugin>:<agent>`; the Codex column marks roles that also ship as a Codex Rig role card.
 
@@ -114,8 +114,8 @@ Sixteen Claude agents, fifteen Codex role cards. `delegation-lead` and `security
 
 | Runtime         | Source inventory                                                                           | Distribution and trust boundary                                                                                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code     | Six peer plugins: Foundry, OSS, Develop, Research, Codemap-py, and Bridge CC-Codex.        | Marketplace packages expose plugin-loader agents, skills, hooks, and `CLAUDE.md`; setup projects only documented rules/settings and does not install credentials or remote authority. |
-| Codex           | Codex Rig plus optional Codemap-py and Bridge CC-Codex.                                    | Marketplace packages expose namespaced skills and role cards; blank-agent injection or inline fallback is disclosed, while persistent named-agent selection remains unverified.       |
+| Claude Code     | Six peer plugins: Foundry, OSS, Develop, Research, Codemap-py, and bridge_CC-Codex.        | Marketplace packages expose plugin-loader agents, skills, hooks, and `CLAUDE.md`; setup projects only documented rules/settings and does not install credentials or remote authority. |
+| Codex           | Codex Rig plus optional Codemap-py and bridge_CC-Codex.                                    | Marketplace packages expose namespaced skills and role cards; blank-agent injection or inline fallback is disclosed, while persistent named-agent selection remains unverified.       |
 | Source checkout | `plugins/` is the source of truth; `.claude/` and `.codex/` are host guides/configuration. | Direct marketplace install uses published bytes; `sync.sh` is a deliberate restore path that consumes the pushed remote and may project selected local policy.                        |
 
 The design principle is simple: make uncertainty, ownership, evidence, and recovery visible while keeping packages independently installable. A workflow may route to a specialist, but a role card, task name, artifact, or green gate is not proof that a model followed it or that the resulting change is correct. Human review remains the acceptance boundary for consequential work.
@@ -147,7 +147,7 @@ Start a fresh Claude session or run `/reload-plugins`. For each installed plugin
 /research:setup
 ```
 
-The setup skills create namespaced rule links. Only Foundry performs the broader documented settings merge and installs `TEAM_PROTOCOL.md`; the other setup skills deliver their own rules. Codemap-py needs no setup skill—build its first project index with `/codemap-py:scan-codebase`. Bridge CC-Codex ships no rules either; `/bridge:setup` is a free static check of the local `codex` and `claude` CLIs.
+The setup skills create namespaced rule links. Only Foundry performs the broader documented settings merge and installs `TEAM_PROTOCOL.md`; the other setup skills deliver their own rules. Codemap-py needs no setup skill—build its first project index with `/codemap-py:scan-codebase`. bridge_CC-Codex ships no rules either; `/bridge:setup` is a free static check of the local `codex` and `claude` CLIs.
 
 First useful commands:
 
@@ -188,37 +188,37 @@ From a shell, quote `$codex-rig:...` and `$codemap-py:...` invocations so the sh
 
 ## 🎯 What each plugin solves
 
-### Foundry: keep the agent system maintainable
+### 🏭 Foundry: keep the agent system maintainable
 
 Foundry addresses workflow and configuration drift. Its named agents separate architecture, implementation, testing, documentation, performance, research, and configuration review; its audit and calibration skills make routing gaps and stale instructions visible.
 
 Install it when you want the full Claude specialist roster. Companion plugins can fall back to general-purpose role prompts when Foundry is absent, but those fallbacks are less specialized. Calibration is a synthetic instruction-quality signal, not a guarantee of production correctness. [Read the Foundry reference.](plugins/cc_foundry/README.md)
 
-### OSS: keep contributor and release work traceable
+### 🌱 OSS: keep contributor and release work traceable
 
 OSS turns GitHub threads and PR evidence into structured maintainer work. It can draft contributor-facing replies, but the maintainer reviews and posts them. It can prepare and audit release artifacts, but it does not change package versions, create tags, or publish releases.
 
-GitHub-backed workflows require an authenticated `gh` CLI. Foundry, Codex-in-Claude, and codemap-py are optional integrations. [Read the OSS reference.](plugins/cc_oss/README.md)
+GitHub-backed workflows require an authenticated `gh` CLI. Foundry, bridge_CC-Codex, and codemap-py are optional integrations. [Read the OSS reference.](plugins/cc_oss/README.md)
 
-### Develop: prove the change before trusting the edit
+### 🛠️ Develop: prove the change before trusting the edit
 
 Develop gives Python work a validate-first path: plan uncertain scope, require a failing demo for features, reproduce bugs before fixing them, lock behavior before refactoring, investigate before implementing, and review local Python changes across scope-selected dimensions.
 
 The code-changing workflows assume Python 3.10+ and pytest-style project verification. They are not general migration, onboarding, or non-Python workflows. [Read the Develop reference.](plugins/cc_develop/README.md)
 
-### Research: make ML iteration reviewable
+### 🔬 Research: make ML iteration reviewable
 
 Research links literature, a measurable `program.md`, methodology review, bounded experiment campaigns, paper-to-code verification, ablations, and post-run analysis. State and reports stay in the project so another maintainer can understand what was tried.
 
 Metrics, guards, datasets, compute, credentials, and experimental validity remain user-owned. Optional Colab, Docker, Codex, Kaggle, Foundry, and Codemap paths stop or degrade according to the specific skill contract. [Read the Research reference.](plugins/cc_research/README.md)
 
-### Codemap-py: answer structural questions without pretending they are runtime proof
+### 🗂️ Codemap-py: answer structural questions without pretending they are runtime proof
 
 Codemap-py indexes Python imports, symbols, call edges, test relationships, and selected documentation references. Use the smallest query that resolves the open structural question; skip the tool when the edit surface is already known.
 
 The index is static AST evidence. Dynamic dispatch, callbacks, string imports, inheritance relationships, external consumers, and test outcomes still require source inspection or execution. The dispatcher currently requires CPython `>=3.11,<3.15`; Codex receives the six skills but not Claude's optional ambient hooks. [Read the Codemap-py reference.](plugins/codemap-py/README.md)
 
-### Codex Rig: make Codex workflows comparable and auditable
+### 🤖 Codex Rig: make Codex workflows comparable and auditable
 
 Codex Rig provides investigation, development, review, remediation, research, optimization, release-readiness, management, audit, calibration, sync, and Kaggle workflows that share gate and artifact contracts. Specialist role cards can be injected into runtime blank agents when that route exists; otherwise the parent performs a disclosed inline pass.
 
@@ -319,7 +319,7 @@ For a daily maintainer pass, start with `/oss:analyse vitality` or the Codex Rig
 | Kaggle CLI             | Research and Codex Rig grounded Kaggle notebook workflows                  | Install and authenticate the CLI; missing credentials stop the requested online grounding path.                                                                           |
 | Docker                 | Isolated Research metric and guard execution via `--compute=docker`        | A reachable Docker daemon and valid commands inside the configured image are required.                                                                                    |
 | Colab MCP              | Research GPU metric verification via `--colab`                             | Enable [`colab-mcp`](https://github.com/googlecolab/colab-mcp), connect a Colab runtime, and use it instead of Docker; unavailable capability stops the explicit request. |
-| Claude–Codex co-review | Optional adversarial or mechanical Codex pass from Claude workflows        | Install the [Codex Claude plugin](https://github.com/openai/codex-plugin-cc) and keep the `claude`/`codex` CLIs available; the request is never silently replaced.        |
+| Claude–Codex co-review | Optional adversarial or mechanical Codex pass from Claude workflows        | Install `bridge@borda-ai-rig` and keep the `claude`/`codex` CLIs available; the request is never silently replaced.                                                       |
 | Foundry RTK hook       | Optional shell-output compression for supported Claude commands            | Install/configure [RTK](https://github.com/rtk-ai/rtk) if desired; the hook is a Foundry convenience and is not a correctness or security boundary.                       |
 | cc-Lens                | Optional local Claude Code token, cost, and tool-use analytics             | Install [cc-Lens](https://github.com/Arindam200/cc-lens) separately; it reads local Claude state and is not part of AI-Rig's workflow or correctness evidence.            |
 | Caveman                | Optional compressed response mode for Claude conversations                 | Install [Caveman](https://github.com/JuliusBrussee/caveman) separately; it changes presentation, not plugin behavior, validation, or safety guarantees.                   |
@@ -441,17 +441,18 @@ If a cleanup check blocks, do not force-delete files. Reinstall the relevant plu
 
 ## 📚 Documentation map
 
-| Document                                              | Audience                                                                                  |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [Documentation site](https://borda.github.io/AI-Rig/) | Public overview and rendered plugin pages                                                 |
-| [Claude guide](.claude/README.md)                     | Claude installation, plugin selection, setup, architecture, hooks, and runtime boundaries |
-| [Codex guide](.codex/README.md)                       | Codex installation, product selection, first workflows, artifacts, and runtime boundaries |
-| [Foundry README](plugins/cc_foundry/README.md)        | Complete Foundry skill, agent, rule, hook, and setup reference                            |
-| [OSS README](plugins/cc_oss/README.md)                | Complete maintainer workflow and agent reference                                          |
-| [Develop README](plugins/cc_develop/README.md)        | Complete validate-first development reference                                             |
-| [Research README](plugins/cc_research/README.md)      | Complete ML research workflow reference                                                   |
-| [Codemap-py README](plugins/codemap-py/README.md)     | Complete dual-runtime structural-analysis reference                                       |
-| [Codex Rig README](plugins/codex-rig/README.md)       | Complete Codex workflow, role, lifecycle, and calibration reference                       |
+| Document                                                      | Audience                                                                                  |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [Documentation site](https://borda.github.io/AI-Rig/)         | Public overview and rendered plugin pages                                                 |
+| [Claude guide](.claude/README.md)                             | Claude installation, plugin selection, setup, architecture, hooks, and runtime boundaries |
+| [Codex guide](.codex/README.md)                               | Codex installation, product selection, first workflows, artifacts, and runtime boundaries |
+| [Foundry - README](plugins/cc_foundry/README.md)              | Complete Foundry skill, agent, rule, hook, and setup reference                            |
+| [OSS - README](plugins/cc_oss/README.md)                      | Complete maintainer workflow and agent reference                                          |
+| [Develop - README](plugins/cc_develop/README.md)              | Complete validate-first development reference                                             |
+| [Research - README](plugins/cc_research/README.md)            | Complete ML research workflow reference                                                   |
+| [Codemap-py - README](plugins/codemap-py/README.md)           | Complete dual-runtime structural-analysis reference                                       |
+| [Codex Rig - README](plugins/codex-rig/README.md)             | Complete Codex workflow, role, lifecycle, and calibration reference                       |
+| [Bridge_CC-Codex - README](plugins/bridge_cc-codex/README.md) | Complete bidirectional bridge verb, budget, and envelope reference                        |
 
 ## 🙏 Contributing
 

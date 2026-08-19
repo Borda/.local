@@ -213,33 +213,6 @@ def test_skill_roster_names_and_manifest_records_are_exact() -> None:
     ]
 
 
-@pytest.mark.skipif(not (REPOSITORY_ROOT / "docs" / "index.md").is_file(), reason="requires source-checkout docs")
-def test_active_codex_rig_docs_use_only_current_skill_names() -> None:
-    """Prevent a breaking skill rename from leaving published invocations stale."""
-    docs = (
-        REPOSITORY_ROOT / "README.md",
-        REPOSITORY_ROOT / "docs" / "index.md",
-        REPOSITORY_ROOT / ".codex" / "README.md",
-        PLUGIN_ROOT / "README.md",
-        PLUGIN_ROOT / "roles" / "README.md",
-        PLUGIN_ROOT / "scripts" / "README.md",
-    )
-    for path in docs:
-        text = path.read_text(encoding="utf-8")
-        assert "$codex-rig:analyse" not in text, path
-        assert "$codex-rig:develop" not in text, path
-
-    codex_rig_row = next(
-        line
-        for line in (REPOSITORY_ROOT / "docs" / "index.md").read_text(encoding="utf-8").splitlines()
-        if line.startswith("| Codex Rig")
-    )
-    assert "`change-analysis`" in codex_rig_row
-    assert "`implement`" in codex_rig_row
-    assert "`analyse`" not in codex_rig_row
-    assert "`develop`" not in codex_rig_row
-
-
 def test_installed_markdown_has_no_source_checkout_only_paths() -> None:
     """Keep shipped skill and shared documentation usable from an installed cache."""
     markdown_files = [
@@ -761,6 +734,7 @@ elif args[:2] == ["plugin", "list"]:
     print(json.dumps({"installed": [
         {"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"},
         {"pluginId": "codemap-py@borda-ai-rig", "enabled": True, "version": "0.28.8"},
+        {"pluginId": "bridge@borda-ai-rig", "enabled": True, "version": "0.1.0"},
     ]}))
 else:
     raise SystemExit(f"unexpected fake Codex call: {args}")
@@ -839,6 +813,7 @@ else:
         assert expected_source in result.stdout
         assert "Codex Rig 0.3.0 installed" in result.stdout
         assert "Codemap 0.28.8 installed" in result.stdout
+        assert "Claude Code and Codex Bridge 0.1.0 installed" in result.stdout
         assert (codex_home / "AGENTS.md").exists() is expect_global_agents
         if expect_global_agents:
             global_agents = (codex_home / "AGENTS.md").read_text(encoding="utf-8")

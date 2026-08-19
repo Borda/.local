@@ -9,7 +9,7 @@ Three behavioural areas are covered:
 
 * **Agent lifecycle** — ``PreToolUse`` / ``PostToolUse`` for ``Agent()``
   plus ``SubagentStart`` / ``SubagentStop`` events.
-* **Codex tracking** — ``Skill(codex:*)`` creates a codex file consumed
+* **Codex tracking** — ``Skill(bridge:*)`` creates a codex file consumed
   by the status line and cleaned up on ``PostToolUse``.
 * **Tool counting** — non-Agent ``PreToolUse`` increments a per-tool
   counter file used by the status line's tool-activity segment.
@@ -421,15 +421,15 @@ class TestAgentLifecycle:
 
 
 class TestCodexTracking:
-    """task-log.js: Skill(codex:*) tracking under state/codex/."""
+    """task-log.js: bridge Skill tracking under state/codex/."""
 
     def test_codex_skill_pre_creates_codex_file(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
-        """PreToolUse for Skill(codex:rescue) writes codex/<tool_use_id>.json."""
+        """PreToolUse for bridge Skill writes codex/<tool_use_id>.json."""
         tool_use_id = "tu-cdx-pre"
 
         result = run_hook(
             "task-log.js",
-            _pre_skill(sid, tool_use_id, skill="codex:rescue"),
+            _pre_skill(sid, tool_use_id, skill="bridge:review"),
             home=tmp_home,
         )
 
@@ -437,14 +437,14 @@ class TestCodexTracking:
         assert (state_dir(sid) / "codex" / f"{tool_use_id}.json").exists()
 
     def test_codex_skill_post_removes_codex_file(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
-        """PostToolUse for Skill(codex:rescue) removes the codex tracking file."""
+        """PostToolUse for bridge Skill removes the codex tracking file."""
         tool_use_id = "tu-cdx-post"
-        run_hook("task-log.js", _pre_skill(sid, tool_use_id, skill="codex:rescue"), home=tmp_home)
+        run_hook("task-log.js", _pre_skill(sid, tool_use_id, skill="bridge:review"), home=tmp_home)
         assert (state_dir(sid) / "codex" / f"{tool_use_id}.json").exists()
 
         result = run_hook(
             "task-log.js",
-            _post_skill(sid, tool_use_id, skill="codex:rescue"),
+            _post_skill(sid, tool_use_id, skill="bridge:review"),
             home=tmp_home,
         )
 

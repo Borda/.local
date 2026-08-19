@@ -113,7 +113,7 @@ def handle_message(message: dict[str, Any], *, trusted_workspace: Path | None = 
             {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "bridge-cc-codex", "version": "0.1.0"},
+                "serverInfo": {"name": "bridge", "version": "0.2.0"},
             },
         )
     if method == "tools/list":

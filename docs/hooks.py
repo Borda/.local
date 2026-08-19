@@ -92,7 +92,7 @@ _SCHEMA_JSON_LD = """\
           },
           {
             "@type": "SoftwareApplication",
-            "name": "bridge",
+            "name": "bridge_CC-Codex",
             "description": "Bidirectional Claude Code and Codex bridge: bounded implement, advise, and review calls with explicit models, budgets, compact envelopes, and recursion safety.",
             "url": "https://borda.github.io/AI-Rig/bridge_cc-codex/"
           }

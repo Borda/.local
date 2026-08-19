@@ -628,7 +628,7 @@ ______________________________________________________________________
 
 **Use for**: red-teaming plan before committing, challenging architectural decisions before ship, adversarial code review on security-sensitive or irreversible ops. Every claim unproven until backed by evidence. Attacks across 6 dimensions (Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep, Root Cause) — drills to bedrock per standing challenge (keeps asking "why?" until root cause, not surface symptom). Mandatory refutation step keeps it objective: accepts refutation when evidence warrants.
 
-When `codex@openai-codex` plugin installed, challenger auto-launches parallel Codex adversarial review track (same target, `--scope auto`), aggregates results — findings from both tracks reported together with convergence callouts where both flagged same area. Pass `--no-codex` in prompt to skip. Codex installed but parallel run fails: failure surfaced in report; results never silently dropped to Claude-only.
+When `bridge@borda-ai-rig` is installed and enabled, challenger calls the read-only Codex adversarial review track for the same target and aggregates its findings. Pass `--no-codex` to skip. An absent or disabled bridge is surfaced rather than silently falling back.
 
 **Model**: `opus`
 
@@ -701,13 +701,13 @@ ______________________________________________________________________
 
 ### settings.json keys merged by `/foundry:setup`
 
-| Key                                    | What it does                                                                             |
-| -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `statusLine.command`                   | Runs `statusline.js` — active agent count in Claude Code status bar                      |
-| `permissions.allow`                    | Adds pre-approved Bash commands, git operations, WebFetch domains                        |
-| `permissions.deny`                     | Adds permanently denied write operations (public GitHub mutations, destructive git)      |
-| `enabledPlugins["codex@openai-codex"]` | Enables Codex plugin for adversarial review in `/foundry:calibrate` and `/foundry:audit` |
-| `advisorModel`                         | Copied from project `.claude/settings.json` when pinned — advisor tool uses chosen model |
+| Key                                     | What it does                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `statusLine.command`                    | Runs `statusline.js` — active agent count in Claude Code status bar                      |
+| `permissions.allow`                     | Adds pre-approved Bash commands, git operations, WebFetch domains                        |
+| `permissions.deny`                      | Adds permanently denied write operations (public GitHub mutations, destructive git)      |
+| `enabledPlugins["bridge@borda-ai-rig"]` | Enables bridge-backed Codex review in `/foundry:calibrate` and `/foundry:audit`          |
+| `advisorModel`                          | Copied from project `.claude/settings.json` when pinned — advisor tool uses chosen model |
 
 ### Optional flags and knobs
 
@@ -832,7 +832,7 @@ These Python helpers are installed workflow support and maintainer surfaces, not
 | `check_bash_persistence.py`  | Detect shell variables referenced across separate Bash tool calls. |
 | `check_cli_flag_drift.py`    | Detect drift between documented flags and `argparse` options.      |
 | `check_codemap_guard.py`     | Detect unmanaged codemap index-guard copies.                       |
-| `check_codex.py`             | Detect whether the Codex plugin is installed and enabled.          |
+| `check_bridge.py`            | Detect whether the bridge plugin is installed and enabled.         |
 | `check_fence_symmetry.py`    | Validate Markdown code-fence pairing and nesting.                  |
 | `check_mode_dispatch.py`     | Detect dangling mode-dispatch references in skill files.           |
 | `check_orphaned_bin.py`      | Find bin scripts not referenced by plugin Markdown.                |
@@ -975,7 +975,7 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 | `test_heal_git_artifacts.py`       | `heal_git_artifacts.py`       | 67    | PID liveness on both platform branches (Windows simulated on every host, POSIX probe patched so signal 0 is asserted rather than sent), lock verdicts, worktree tiering, CLI exit codes, and a guard that no doctest calls the POSIX probe — signal 0 is `CTRL_C_EVENT` on Windows, so one did abort every Windows CI leg with a `KeyboardInterrupt`                                                                                                                                                                                      |
 | `test_health_sentinel.py`          | `health_sentinel.py`          | 18    | Sentinel creation, age computation, stale detection, new-file polling                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `test_check_fence_symmetry.py`     | `check_fence_symmetry.py`     | 17    | Unclosed fences, nested/interleaved fences, multi-file scan                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `test_check_codex.py`              | `check_codex.py`              | 17    | `installed_plugins.json` manifest parsing, codex key presence, malformed JSON                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `test_check_bridge.py`             | `check_bridge.py`             | 9     | nested registry parsing, `installPath` requirement, stale-cache rejection, settings opt-out                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `test_make_run_dir.py`             | `make_run_dir.py`             | 16    | Portability invariants (no `/tmp` literals, no `utcnow`), timestamp format                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `test_check_spawn_prompt_vars.py`  | `check_spawn_prompt_vars.py`  | 16    | `$VAR` in markdown code blocks, caller-substituted-var whitelist, multi-file scan                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `test_trim_plugin_tables.py`       | `trim_plugin_tables.py`       | 15    | Cell padding normalization, separator-row alignment colons, fenced-code-block skip, multi-file CLI                                                                                                                                                                                                                                                                                                                                                                                                                                        |

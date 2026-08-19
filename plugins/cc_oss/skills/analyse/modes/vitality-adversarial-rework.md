@@ -22,7 +22,7 @@ REWORK_SECTIONS=""
 
 Spawn reviewers simultaneously in single response — each writes to own iter-indexed file. No shared input between reviewers.
 
-**When CODEX_AVAILABLE=1**: spawn `foundry:challenger` AND `codex:codex-rescue` simultaneously:
+**When CODEX_AVAILABLE=1**: spawn `foundry:challenger` and call the bridge review simultaneously:
 
 1. `foundry:challenger` — reads `$REPORT_FILE`; stress-tests scoring thresholds, flags weak evidence, challenges causality claims, verifies limit-hit detection, checks coverage gate logic; flags shared blind spots between main analysis and Codex independent review, or unconvincing divergence resolution; assesses all 9 axes including Axis 9 Trajectory. Writes findings to `$REVIEW_DIR/challenger-iter${REWORK_ITER}.md` (Write tool). Writes sentinel `$REVIEW_DIR/challenger-iter${REWORK_ITER}.done`. After narrative findings, writes machine-readable block on own line:
    ```
@@ -34,7 +34,7 @@ Spawn reviewers simultaneously in single response — each writes to own iter-in
    ```
    Only flag `verdict=needs_rework` when finding is factually wrong or unsupported by evidence — not style/emphasis differences. Returns compact JSON envelope only.
 
-2. `codex:codex-rescue` — reads `$REPORT_FILE` independently (do NOT read challenger output — independent assessment eliminates anchoring bias); adversarial pass from fresh perspective; focus on evidence quality, threshold calibration, data-gap risks, scoring edge cases not in main analysis; assesses all 9 axes. Writes findings to `$REVIEW_DIR/codex-iter${REWORK_ITER}.md` (Write tool). Writes sentinel `$REVIEW_DIR/codex-iter${REWORK_ITER}.done`. Returns compact JSON envelope only.
+2. `Skill(skill="bridge:review", args="Read $REPORT_FILE independently for repository $GH_OWNER/$GH_REPO. Do not read challenger output and do not edit source files. Review evidence quality, threshold calibration, data gaps, scoring edges, divergence resolution, and the nine named axes: responsiveness, maintenance activity, contributor health, issue and pull-request health, CI/CD and code quality, documentation, governance, security posture, and trajectory. Write actionable findings to $REVIEW_DIR/codex-iter${REWORK_ITER}.md, then write $REVIEW_DIR/codex-iter${REWORK_ITER}.done. Return a compact envelope naming the output file, finding count, blockers, and confidence.")`
 
 **When CODEX_AVAILABLE=0**: spawn `foundry:challenger` only (step 1 above; skip step 2).
 

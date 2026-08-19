@@ -38,13 +38,14 @@ Use `ADVERSARIAL_BATCH_SIZE` grouping. Phase C deduplicates Phase A-prime findin
 **Phase B — Codex adversarial pass** (parallel with Phase A):
 
 ```bash
-CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+[ "$CODEX_STATUS" = "available" ] && CODEX_AVAILABLE=true || CODEX_AVAILABLE=""  # timeout: 5000
 _SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 [ -n "$CODEX_AVAILABLE" ] && cat "$_SHARED/codex-prepass.md"
 ```
 
-If `$CODEX_AVAILABLE` non-empty: apply the codex-prepass.md instructions above, run Codex pass on all in-scope files. Focus Codex on: cross-file inconsistencies, circular dispatch chains, agent description ambiguities causing routing failures, workflow steps assuming capabilities declared tools don't provide. Else: `echo "⚠ codex plugin not available — skipping codex adversarial pass"`.
+If `$CODEX_AVAILABLE` non-empty: apply the codex-prepass.md instructions above, run Codex pass on all in-scope files. Focus Codex on: cross-file inconsistencies, circular dispatch chains, agent description ambiguities causing routing failures, workflow steps assuming capabilities declared tools don't provide. Else: `echo "⚠ bridge@borda-ai-rig is ${CODEX_STATUS} — skipping codex adversarial pass"`.
 
 Codex writes per-file findings to `<RUN_DIR>/codex-adversarial-<file-slug>.md` using the same `<file-slug>` convention as Phase A. Return compact JSON envelope per file.
 

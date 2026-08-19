@@ -22,12 +22,12 @@
     {
       "mode": "0644",
       "path": ".codex-plugin/plugin.json",
-      "sha256": "bc5cbdc0d1e62c5371c4f725de252acce511f9401001bedd7fe81dc56614ca00"
+      "sha256": "e4faacb1846417ee67cc9c1f353e6f9c0800697042ae51187e939fa1dd445cd6"
     },
     {
       "mode": "0644",
       "path": "CHANGELOG.md",
-      "sha256": "f10c064454aed69d442e81cd0e7ab1c7e384f49117b6473ee0b7fa70fe98f535"
+      "sha256": "e4d149c676e4d13ffb4fee0dd9cc8f421759ee9827c6d6e6b3bc20687f404926"
     },
     {
       "mode": "0644",
@@ -42,7 +42,7 @@
     {
       "mode": "0644",
       "path": "README.md",
-      "sha256": "74f102f35f24ee4c42f4c29f9b25e7dfa369926f19f0d4dd3822c75b8cff6407"
+      "sha256": "f29f7be1cc9ef1cae61ec8d50f5d92c841b2244e0f0ff1613a3eb273298fb87e"
     },
     {
       "mode": "0644",
@@ -307,7 +307,7 @@
     {
       "mode": "0755",
       "path": "scripts/sync_codex.py",
-      "sha256": "a87001e4c36df1a22e7dc4dc0ab7835be2f5ad39738151b18d8a2f245ad26aca"
+      "sha256": "a9424229c22ea5d4098f59a5e285a85d569ff56c6babfa20c180ad2845ba85da"
     },
     {
       "mode": "0755",
@@ -757,7 +757,7 @@
     {
       "mode": "0644",
       "path": "tests/test_global_agents_installer.py",
-      "sha256": "03addd5e58daa09bd43dee7bafe4a4a8daf3a9952cb5d50fb3788e6829509027"
+      "sha256": "ce179405a081d2aef2a5d47795ccd6b8636c961010104e8e3e80b4e2aec24c04"
     },
     {
       "mode": "0644",
@@ -797,7 +797,7 @@
     {
       "mode": "0644",
       "path": "tests/test_plugin_only_release.py",
-      "sha256": "b2cc69711c42daed94fae6769fb05d4d955cbdadb6a5eeee6a8403c81398dff2"
+      "sha256": "9d731e2553d69934fec209df6498e3ed9d14992d30315fecbc5f9bf8ff13baa0"
     },
     {
       "mode": "0644",
@@ -812,17 +812,17 @@
     {
       "mode": "0644",
       "path": "tests/test_sync_codex.py",
-      "sha256": "d2a1b25dac5b855d698b2d0c3e84797e9df0bbe515434377f3068d1fc34a6d5f"
+      "sha256": "a5787e916cdd2be7d90d94658789f9a98f8b0181a4acaee716289f2c4918bbbf"
     },
     {
       "mode": "0644",
       "path": "tests/test_sync_setup_dispatch.py",
-      "sha256": "b4cce6699af1505b38d0dc3981d810cf87ee85ee2bbe7fec719c952d3b1be1b1"
+      "sha256": "d399f6c0be6f70ab2de90274ae2ad17b252561a42cb2dc3a43de1829ebddf0ba"
     },
     {
       "mode": "0644",
       "path": "tests/test_windows_skip_budget.py",
-      "sha256": "fcf77a47b7d34fa6cebf5eb48b1f90cb04619b92cafb8f8fe51ae1edd64d60a9"
+      "sha256": "6d36159746ae6ca1b613841a5466cd963091cb6237c2f70d8ed850ce7a80f5c8"
     }
   ],
   "generator": {
@@ -1058,5 +1058,5 @@
       "path": "skills/sync/SKILL.md"
     }
   ],
-  "version": "0.8.3"
+  "version": "0.9.0"
 }

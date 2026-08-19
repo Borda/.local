@@ -1,0 +1,108 @@
+/* Vendor-neutral palette. The site documents both Claude Code and Codex packages,
+   so it deliberately uses neither runtime's brand color: slate carries the chrome,
+   cyan carries interaction. */
+
+/* Shared: accent used in both modes */
+:root {
+  --md-primary-fg-color:        #334155;
+  --md-primary-fg-color--light: #475569;
+  --md-primary-fg-color--dark:  #1e293b;
+  --md-accent-fg-color:         #06b6d4;
+  --md-accent-fg-color--transparent: #06b6d420;
+}
+
+/* Light mode (scheme: default) */
+[data-md-color-scheme="default"] {
+  --md-primary-bg-color:        #ffffff;
+  --md-default-bg-color:        #f8fafc;   /* cool off-white — neutral light bg */
+  --md-default-fg-color:        #0f172a;
+}
+
+/* Dark mode (scheme: slate) */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color:        #0b1120;   /* midnight — deeper than stock slate */
+  /* Stock cyan loses contrast on the darker background above. */
+  --md-accent-fg-color:         #22d3ee;
+  --md-accent-fg-color--transparent: #22d3ee20;
+}
+
+/* Hide left navigation sidebar on wide screens — top tabs cover navigation there.
+   On mobile/tablet (< 76.25em) keep sidebar visible: it IS the drawer menu. */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary {
+    display: none;
+  }
+
+  .md-content {
+    margin-left: 0;
+  }
+
+  /* Grouped-section tabs (see overrides/partials/tabs-item.html) open their children
+     on hover or keyboard focus. Only needed on wide screens: below this breakpoint the
+     drawer above already lists every child. */
+  .md-tabs,
+  .md-tabs__list,
+  .md-tabs__item--nested {
+    overflow: visible;
+  }
+
+  /* The theme sets `contain: content` on the tab list, which implies paint
+     containment: descendants are clipped to the list box no matter what
+     `overflow` says. The submenu hangs below that box, so without this the
+     markup renders and stays invisible. Only paint containment is dropped —
+     the theme's layout and style containment are kept. */
+  .md-tabs__list {
+    contain: layout style;
+  }
+
+  .md-tabs__item--nested {
+    position: relative;
+  }
+
+  .md-tabs__submenu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 10;
+    min-width: 100%;
+    margin: 0;
+    padding: 0.3rem 0;
+    list-style: none;
+    background-color: var(--md-default-bg-color);
+    border-radius: 0.1rem;
+    box-shadow: 0 0.2rem 0.5rem rgba(0, 0, 0, 0.25);
+    /* Collapsed by default; visibility (not display) keeps the open/close transition. */
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-0.2rem);
+    transition: opacity 125ms, transform 125ms, visibility 125ms;
+  }
+
+  .md-tabs__item--nested:hover .md-tabs__submenu,
+  .md-tabs__item--nested:focus-within .md-tabs__submenu {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .md-tabs__submenu-link {
+    display: block;
+    padding: 0.35rem 0.9rem;
+    color: var(--md-default-fg-color);
+    font-size: 0.7rem;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background-color 125ms, color 125ms;
+  }
+
+  .md-tabs__submenu-link:hover,
+  .md-tabs__submenu-link:focus {
+    background-color: var(--md-accent-fg-color--transparent);
+    color: var(--md-accent-fg-color);
+  }
+
+  .md-tabs__submenu-link--active {
+    color: var(--md-accent-fg-color);
+    font-weight: 700;
+  }
+}

@@ -185,6 +185,20 @@ MANIFEST: list[dict[str, object]] = [
         ],
     },
     {
+        # Bridge availability detector. Every consumer gates its bridge dispatch on this,
+        # so every consumer must ship it: a shared file resolved through
+        # ${CLAUDE_PLUGIN_ROOT} points at the *calling* plugin's bin/, and the caller is
+        # not always foundry. cc_develop previously reached for foundry's copy and got a
+        # missing path swallowed by the `|| echo absent` fallback, which silently disabled
+        # the Codex pre-pass in every /develop skill.
+        "canonical": "plugins/cc_foundry/bin/check_bridge.py",
+        "copies": [
+            "plugins/cc_oss/bin/check_bridge.py",
+            "plugins/cc_develop/bin/check_bridge.py",
+            "plugins/cc_research/bin/check_bridge.py",
+        ],
+    },
+    {
         # Same rule applies to bin/ scripts: cc_develop/skills/debug used to invoke
         # this out of foundry's bin/ via a $_FOUNDRY_BIN path derived by stripping
         # `/skills/_shared` off the resolver output. Flaky-test isolation silently

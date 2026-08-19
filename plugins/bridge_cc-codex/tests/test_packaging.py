@@ -68,6 +68,10 @@ def test_host_manifests_select_disjoint_skill_surfaces() -> None:
     claude = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     codex = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
 
+    assert claude["name"] == "bridge"
+    assert codex["name"] == "bridge"
+    assert claude["version"] == codex["version"] == "0.2.0"
+    assert codex["interface"]["displayName"] == "bridge_CC-Codex"
     assert claude["skills"] == "./claude-skills/"
     assert codex["skills"] == "./codex-skills/"
     assert {path.parent.name for path in (PLUGIN_ROOT / "claude-skills").glob("*/SKILL.md")} == {
@@ -100,7 +104,7 @@ def test_repository_marketplaces_advertise_both_host_installations() -> None:
     codex_entry = next(entry for entry in codex_marketplace["plugins"] if entry["name"] == "bridge")
 
     assert claude_entry == {
-        "description": "Implement, advise, and review across Claude Code and Codex with bounded execution and compact results.",
+        "description": "bridge_CC-Codex: implement, advise, and review across Claude Code and Codex with bounded execution and compact results.",
         "name": "bridge",
         "source": "./plugins/bridge_cc-codex",
     }

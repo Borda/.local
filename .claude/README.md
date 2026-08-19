@@ -141,15 +141,16 @@ OSS, Develop, and Research follow the same plugin-loader pattern and link only t
 
 ## 📦 Plugin Architecture
 
-The five Claude plugins are peers with closed, documented responsibilities:
+The six Claude plugins are peers with closed, documented responsibilities:
 
-| Plugin     | Owns                                                                                                                                             | Optional relationship                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| Foundry    | 11 configuration, calibration, routing, session, profile, content, and maintenance skills; 10 specialist agents; 13 rules; 15 JavaScript modules | Supplies named specialists to sibling workflows when installed; absent specialists use the owning skill's fallback or stop rule |
-| OSS        | 5 maintainer and release skills; 4 agents; one quality-gates rule; 4 active hook handlers plus a shared helper                                   | Uses Foundry reviewers, Codex, and gh only when available and required by the selected mode                                     |
-| Develop    | 7 validate-first Python workflow skills; one quality-gates rule; 3 active hook handlers plus a shared helper                                     | Can use Foundry agents, Codemap-py structural context, Codex, and optional Semble MCP                                           |
-| Research   | 10 experiment and evidence skills; 2 agents; one quality-gates rule; 3 active hook handlers plus a shared helper                                 | Requires explicit compute/Colab/Docker/Codex/Kaggle prerequisites for those paths; Foundry is required by Kaggle                |
-| Codemap-py | 6 shared Claude/Codex structural skills; 6 registered Python hooks plus one helper                                                               | Supplies static structure to Foundry, OSS, Develop, Research, and Codex Rig; it does not prove runtime behavior                 |
+| Plugin          | Owns                                                                                                                                             | Optional relationship                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Foundry         | 11 configuration, calibration, routing, session, profile, content, and maintenance skills; 10 specialist agents; 13 rules; 15 JavaScript modules | Supplies named specialists to sibling workflows when installed; absent specialists use the owning skill's fallback or stop rule    |
+| OSS             | 5 maintainer and release skills; 4 agents; one quality-gates rule; 4 active hook handlers plus a shared helper                                   | Uses Foundry reviewers, bridge_CC-Codex, and gh only when available and required by the selected mode                              |
+| Develop         | 7 validate-first Python workflow skills; one quality-gates rule; 3 active hook handlers plus a shared helper                                     | Can use Foundry agents, Codemap-py structural context, bridge_CC-Codex, and optional Semble MCP                                    |
+| Research        | 10 experiment and evidence skills; 2 agents; one quality-gates rule; 3 active hook handlers plus a shared helper                                 | Requires explicit compute, Colab, Docker, bridge_CC-Codex, and Kaggle prerequisites for those paths; Foundry is required by Kaggle |
+| Codemap-py      | 6 shared Claude/Codex structural skills; 6 registered Python hooks plus one helper                                                               | Supplies static structure to Foundry, OSS, Develop, Research, and Codex Rig; it does not prove runtime behavior                    |
+| bridge_CC-Codex | 7 Claude-side bridge skills for implement, advice, review, setup, and detached-job lifecycle; no hooks or loaded rules                           | Calls Codex directly with explicit model, effort, budget, compact-envelope, and recursion contracts                                |
 
 Install independently. Foundry is a quality upgrade, not a prerequisite for the other plugins unless a specific skill says so. No plugin silently installs credentials, enables network access, publishes releases, or mutates remote GitHub state.
 
@@ -157,17 +158,16 @@ Install independently. Foundry is a quality upgrade, not a prerequisite for the 
 
 Optional integrations are disabled or absent unless the user installs and enables their own toolchain. Each consuming workflow checks its own preconditions.
 
-### Codex plugin
+### bridge_CC-Codex
 
-The optional Codex Claude plugin can provide review pre-passes and bounded mechanical follow-up for selected Develop, OSS, Foundry, and Research workflows. Install it in Claude Code only when those paths are useful:
+bridge_CC-Codex replaces the retired external rescue plugin for review pre-passes, bounded mechanical work, and read-only advice in selected Develop, OSS, Foundry, and Research workflows. Install it from this repository's marketplace when those paths are useful:
 
-```text
-/plugin marketplace add openai/codex-plugin-cc
-/plugin install codex@openai-codex
-/reload-plugins
+```bash
+claude plugin marketplace add Borda/AI-Rig
+claude plugin install bridge@borda-ai-rig
 ```
 
-Foundry setup may add the plugin to enabledPlugins; it does not install the external plugin or credentials. Missing Codex is generally a graceful fallback, while a requested Research --codex path stops if its explicit requirement is unavailable.
+Start a fresh session or run `/reload-plugins`, then run `/bridge:setup`. Foundry setup may enable an installed bridge but does not install it or either provider credential. Missing bridge support is generally an explicit graceful skip, while a user-requested bridge path stops and reports the missing prerequisite.
 
 ### Colab, Docker, Kaggle, and Codemap
 
@@ -176,7 +176,7 @@ Foundry setup may add the plugin to enabledPlugins; it does not install the exte
 ## ⚡ Skills
 
 <details>
-<summary><strong>Complete 39-skill roster</strong></summary>
+<summary><strong>Complete 46-skill roster</strong></summary>
 
 ### Foundry: configuration and reusable practice
 
@@ -251,6 +251,20 @@ Research keeps plans, evidence, and state reviewable; it cannot guarantee a metr
 | `/codemap-py:debrief-coding` | Report coding-session telemetry without running integration, indexing, or queries.                                   |
 
 Codemap is static AST evidence, not runtime proof. Dynamic dispatch, callbacks, string imports, inheritance, generated code, external consumers, and test outcomes still require source inspection or execution. [The Codemap-py README](../plugins/codemap-py/README.md) documents query grammar, index freshness, platform behavior, and safe fallbacks.
+
+### bridge_CC-Codex: bounded cross-host work
+
+| Skill               | What it does                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `/bridge:implement` | Ask Codex to make one bounded write-capable change and return a compact result envelope.                           |
+| `/bridge:advise`    | Ask Codex a bounded read-only question with explicit model, effort, and timeout controls.                          |
+| `/bridge:review`    | Ask Codex for an independent read-only adversarial review of named evidence.                                       |
+| `/bridge:setup`     | Check both local CLIs and bridge configuration without spending provider credits unless a live probe is requested. |
+| `/bridge:status`    | Read the state of one detached bridge implementation job.                                                          |
+| `/bridge:result`    | Retrieve one completed detached job's compact result and transcript reference.                                     |
+| `/bridge:cancel`    | Request cooperative cancellation of one detached job and preserve any work already reported.                       |
+
+The bridge invokes the installed `codex` CLI directly; it does not require the retired rescue plugin. [The bridge_CC-Codex README](../plugins/bridge_cc-codex/README.md) documents envelopes, lifecycle records, model and budget controls, and cross-host recursion safety.
 
 </details>
 
@@ -622,28 +636,29 @@ Native research harness for questions needing real sourcing rather than single a
 <details>
 <summary><strong>Install and capability matrix</strong></summary>
 
-| Consumer   | Standalone install | Setup projection | Optional companion                                               | Hard prerequisite called out by source                                                  |
-| ---------- | ------------------ | ---------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| foundry    | Yes                | /foundry:setup   | Codex for selected audits/calibration; Node.js, Python, jq       | Claude Code plugin support; project repository for setup                                |
-| oss        | Yes                | /oss:setup       | Foundry agents, Codex, Codemap-py, authenticated gh              | gh only for GitHub-backed modes                                                         |
-| develop    | Yes                | /develop:setup   | Foundry agents, Codemap-py, Codex, optional Semble MCP           | Python project and executable verification for code workflows                           |
-| research   | Yes                | /research:setup  | Foundry agents, Codex, Colab MCP, Docker, Kaggle CLI, Codemap-py | Clean Git worktree for /research:run; explicit runtime/credential requirements per flag |
-| codemap-py | Yes                | None             | Claude or Codex host                                             | CPython >=3.11,\<3.15 for its dispatcher; optional coverage>=7.4 for coverage indexing  |
+| Consumer   | Standalone install | Setup projection | Optional companion                                                         | Hard prerequisite called out by source                                                  |
+| ---------- | ------------------ | ---------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| foundry    | Yes                | /foundry:setup   | bridge_CC-Codex for selected audits/calibration; Node.js, Python, jq       | Claude Code plugin support; project repository for setup                                |
+| oss        | Yes                | /oss:setup       | Foundry agents, bridge_CC-Codex, Codemap-py, authenticated gh              | gh only for GitHub-backed modes                                                         |
+| develop    | Yes                | /develop:setup   | Foundry agents, Codemap-py, bridge_CC-Codex, optional Semble MCP           | Python project and executable verification for code workflows                           |
+| research   | Yes                | /research:setup  | Foundry agents, bridge_CC-Codex, Colab MCP, Docker, Kaggle CLI, Codemap-py | Clean Git worktree for /research:run; explicit runtime/credential requirements per flag |
+| codemap-py | Yes                | None             | Claude or Codex host                                                       | CPython >=3.11,\<3.15 for its dispatcher; optional coverage>=7.4 for coverage indexing  |
+| bridge     | Yes                | /bridge:setup    | Installed Codex and Claude Code CLIs                                       | Provider authentication, permission, budget, and workspace authority remain user-owned  |
 
 </details>
 
 <details>
 <summary><strong>Routing and fallback matrix</strong></summary>
 
-| Workflow                                | Primary roles                                              | Optional roles/tools             | Fallback or stop behavior                                                                      |
-| --------------------------------------- | ---------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------- |
-| /foundry:calibrate                      | Foundry specialists plus curator                           | Codex                            | Reports missing optional routes; calibration measures instruction behavior, not correctness    |
-| /oss:review                             | Foundry review roles when installed                        | Codex, gh for PR scope           | Uses general-purpose fallback for absent specialists; GitHub operations remain user-owned      |
-| /oss:analyse vitality                   | gh-scraper → three repo-warden scorers → shepherd assembly | gh                               | Only vitality mode uses this internal pipeline; no direct user invocation                      |
-| /develop:feature, fix, refactor, review | sw-engineer, QA, linting, plus scope-selected roles        | Codex, Codemap-py, Semble        | Missing optional context is reported or skipped; executable verification remains decisive      |
-| /research:topic, run, judge, sweep      | scientist and scope-selected Foundry roles                 | Codex, Codemap-py, Colab, Docker | Requested unavailable integrations stop; absent optional specialists follow the skill contract |
-| /research:kaggle                        | foundry:sw-engineer                                        | Authenticated Kaggle CLI         | Stops without Foundry or required Kaggle grounding                                             |
-| /codemap-py:\*                          | Static index/query engine                                  | Six optional Python hooks        | Dynamic behavior and runtime correctness require source/tests/execution                        |
+| Workflow                                | Primary roles                                              | Optional roles/tools                       | Fallback or stop behavior                                                                      |
+| --------------------------------------- | ---------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| /foundry:calibrate                      | Foundry specialists plus curator                           | bridge_CC-Codex                            | Reports missing optional routes; calibration measures instruction behavior, not correctness    |
+| /oss:review                             | Foundry review roles when installed                        | bridge_CC-Codex, gh for PR scope           | Uses general-purpose fallback for absent specialists; GitHub operations remain user-owned      |
+| /oss:analyse vitality                   | gh-scraper → three repo-warden scorers → shepherd assembly | gh                                         | Only vitality mode uses this internal pipeline; no direct user invocation                      |
+| /develop:feature, fix, refactor, review | sw-engineer, QA, linting, plus scope-selected roles        | bridge_CC-Codex, Codemap-py, Semble        | Missing optional context is reported or skipped; executable verification remains decisive      |
+| /research:topic, run, judge, sweep      | scientist and scope-selected Foundry roles                 | bridge_CC-Codex, Codemap-py, Colab, Docker | Requested unavailable integrations stop; absent optional specialists follow the skill contract |
+| /research:kaggle                        | foundry:sw-engineer                                        | Authenticated Kaggle CLI                   | Stops without Foundry or required Kaggle grounding                                             |
+| /codemap-py:\*                          | Static index/query engine                                  | Six optional Python hooks                  | Dynamic behavior and runtime correctness require source/tests/execution                        |
 
 </details>
 
@@ -864,25 +879,21 @@ Billing is presentation only: API-key mode shows actual token-rate spend from th
 
 → Full architecture: [root README → How the packages compose](../README.md#how-the-packages-compose)
 
-→ Install: see [Recommended Add-ons → Codex plugin](#-recommended-add-ons)
+→ Install: see [Recommended Add-ons → bridge_CC-Codex](#-recommended-add-ons)
 
 ### Skills digestion
 
-Skills check availability at runtime: `claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'`. If plugin absent, each skill skips its Codex step gracefully rather than failing.
+Skills check availability at runtime using the exact installed selector `bridge@borda-ai-rig` and honor an explicit disabled entry. If the bridge is absent or disabled, optional calls are skipped and reported rather than silently falling back to the removed original plugin.
 
-**Invocation map** — every place Claude dispatches to Codex and why:
+**Invocation contract:**
 
-| Skill                              | Site                          | Purpose                                                                              | Plugin command                            |
-| ---------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- |
-| `/develop:fix`, `/develop:feature` | `_shared/codex-prepass.md`    | Tier 1 pre-pass: review staged diff for bugs before Claude's review cycle            | `codex:review --wait`                     |
-| `/oss:review`                      | Step 2 co-review              | Adversarial diff review seeding agent prompts with pre-flagged issues                | `codex:adversarial-review --wait <focus>` |
-| `/oss:review`, `/research:run`     | `_shared/codex-delegation.md` | Delegate mechanical follow-up: docstrings, type annotations, test stubs              | `codex:codex-rescue` (agent)              |
-| `/oss:resolve`                     | Step 8 action items           | Apply PR review feedback to codebase                                                 | `codex:codex-rescue` (agent)              |
-| `/oss:resolve`                     | Step 12a comment dispatch     | Apply a specific review comment                                                      | `codex:codex-rescue` (agent)              |
-| `/oss:resolve`                     | Step 12 review loop           | Review applied changes for issues before committing                                  | `codex:review --wait`                     |
-| `/research:run --codex`            | Phase 2b ideation             | Fallback: generate + apply one atomic optimization when Claude's change was reverted | `codex:codex-rescue` (agent)              |
-| `/foundry:calibrate`               | Phase 1a problem gen          | Generate synthetic calibration problems (JSON array written to run dir)              | `codex:codex-rescue` (agent)              |
-| `/foundry:calibrate`               | Phase 2 scoring               | Score calibration responses against ground truth (JSON written to run dir)           | `codex:codex-rescue` (agent)              |
+| Operation   | Use                                                                                                                         | Invocation                                                           |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `implement` | One bounded write-capable change whose task, files, evidence, stopping condition, and required checks are stated completely | `Skill(skill="bridge:implement", args="<self-contained task>")`      |
+| `advise`    | A read-only question or decision that must not edit the workspace                                                           | `Skill(skill="bridge:advise", args="<self-contained question>")`     |
+| `review`    | An independent read-only adversarial pass over named files, artifacts, or the current diff                                  | `Skill(skill="bridge:review", args="<self-contained review brief>")` |
+
+The task argument must stand alone: name the objective, relevant paths or evidence, permission boundary, expected result, and stop condition. Do not pass internal plan labels, step numbers, private shorthand, or references that require the callee to read unavailable context.
 
 **What Claude retains:**
 
@@ -925,7 +936,7 @@ The packages are peers, not a hidden dependency chain:
 - Foundry adds the richest Claude specialist roster and configuration lifecycle. OSS, Develop, and Research can use those specialists when available and disclose a general-purpose fallback when they are not.
 - Codemap-py adds structural evidence when the affected Python surface is uncertain. A complete Codemap query still needs runtime or test evidence for behavior.
 - OSS owns maintainer and release-readiness work; Develop owns implementation discipline; Research owns the experiment lifecycle. A handoff should preserve evidence rather than silently changing ownership.
-- Optional Codex-in-Claude, Colab, Docker, and Kaggle routes require their own installed tools, credentials, runtime permissions, and task-specific preconditions.
+- Optional bridge_CC-Codex, Colab, Docker, and Kaggle routes require their own installed tools, credentials, runtime permissions, and task-specific preconditions.
 
 A practical feature path is `/develop:plan` → `/develop:feature` → `/develop:review`. A public contribution can continue with `/oss:review` → `/oss:resolve`. An ML path can start with `/research:topic` → `/research:plan` → `/research:judge` → `/research:run` → `/research:retro`. Use fewer steps when the evidence is already available.
 

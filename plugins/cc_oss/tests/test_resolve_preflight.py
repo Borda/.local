@@ -7,6 +7,7 @@ under ``tmp_path`` (the script uses a relative path).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -97,26 +98,57 @@ def test_gh_ok_codex_absent_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert (tmp_path / "resolve-preflight-GH_OK-shared").read_text() == "true"
 
 
-def test_gh_ok_codex_present_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Authenticated gh, codex present in plugin list → CODEX_AVAILABLE file=true."""
+def _install_bridge(home: Path, *, enabled: bool = True) -> None:
+    """Write a plugin registry (and optional opt-out) describing an installed bridge."""
+    registry = home / ".claude" / "plugins" / "installed_plugins.json"
+    registry.parent.mkdir(parents=True)
+    entry = {"scope": "user", "installPath": str(home / "cache" / "bridge" / "0.2.0"), "version": "0.2.0"}
+    registry.write_text(json.dumps({"plugins": {rp.check_bridge.TARGET_SELECTOR: [entry]}}), encoding="utf-8")
+    if not enabled:
+        settings = home / ".claude" / "settings.json"
+        settings.write_text(json.dumps({"enabledPlugins": {rp.check_bridge.TARGET_SELECTOR: False}}), encoding="utf-8")
+
+
+def _preflight_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path) -> None:
+    """Point the preflight at a fake home and stub every subprocess it shells out to."""
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(rp, "which", lambda cmd: "/fake/" + cmd)
+    monkeypatch.setattr(rp.Path, "home", classmethod(lambda _cls: home))
     monkeypatch.setattr(
         rp.subprocess,
         "run",
-        _dispatch(
-            {
-                "gh auth": (0, ""),
-                "claude plugin": (0, "codex@openai-codex\n"),
-                "git remote": (0, ""),
-                "git rev-parse": (1, ""),
-            }
-        ),
+        _dispatch({"gh auth": (0, ""), "git remote": (0, ""), "git rev-parse": (1, "")}),
     )
+
+
+def test_gh_ok_bridge_enabled_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Authenticated gh, bridge installed and enabled → CODEX_AVAILABLE file=true.
+
+    Availability is resolved from the plugin registry through the shared detector rather
+    than from ``claude plugin list`` text, so the fixture is a registry, not a listing.
+    """
+    home = tmp_path / "home"
+    _install_bridge(home)
+    _preflight_env(monkeypatch, tmp_path, home)
     monkeypatch.chdir(tmp_path)
     rc = rp.main([])
     assert rc == 0
     assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE-shared").read_text() == "true"
+
+
+def test_gh_ok_bridge_disabled_is_unavailable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A bridge the user opted out of must not be handed to callers as available.
+
+    The registry lists it as installed, so a presence-only check would report it usable
+    and every downstream dispatch would fail against a plugin the host refuses to load.
+    """
+    home = tmp_path / "home"
+    _install_bridge(home, enabled=False)
+    _preflight_env(monkeypatch, tmp_path, home)
+    monkeypatch.chdir(tmp_path)
+    rc = rp.main([])
+    assert rc == 0
+    assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE-shared").read_text() == "false"
 
 
 def test_gh_cache_hit_skips_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

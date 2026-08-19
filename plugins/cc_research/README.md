@@ -4,7 +4,7 @@
 
 > Value at a glance: research connects literature, code, metrics, guards, commits, ablations, and retrospective evidence in one namespaced plugin while leaving datasets, compute, credentials, and scientific judgment with the project owner.
 
-> Current limits at a glance: the plugin does not provide data, GPUs, credentials, Codex, or companion plugins; `/research:run` requires Git and a clean worktree; unavailable explicit integrations stop the requested path rather than silently degrading; metric proxies still require human validation.
+> Current limits at a glance: the plugin does not provide data, GPUs, credentials, or companion plugins; `/research:run --codex` requires the installed and enabled `bridge@borda-ai-rig` plugin; unavailable explicit integrations stop the requested path rather than silently degrading; metric proxies still require human validation.
 
 <details open>
 <summary><strong>Contents</strong></summary>
@@ -231,7 +231,7 @@ Supported flags are `--resume`, `--team`, `--compute=local|colab|docker`, `--col
 | `arch`   | `foundry:solution-architect` | modularity, cohesion              |
 | `auto`   | inferred from keywords       | default when no explicit strategy |
 
-The default execution is local. `--compute=docker` requires a reachable Docker daemon and routes metric/guard verification through the sandbox. `--colab` requires the `colab-mcp` runtime tool and a connected runtime; an optional hardware value is checked against the requested GPU. `--codex` requires the Codex plugin (requires `codex` plugin) and a working `claude` CLI. Explicit integrations stop when unavailable rather than silently degrading.
+The default execution is local. `--compute=docker` requires a reachable Docker daemon and routes metric/guard verification through the sandbox. `--colab` requires the `colab-mcp` runtime tool and a connected runtime; an optional hardware value is checked against the requested GPU. `--codex` requires `bridge@borda-ai-rig` installed and enabled plus a working `claude` CLI. Explicit integrations stop when unavailable rather than silently degrading.
 
 `--researcher` generates hypotheses with `research:scientist`; `--architect` adds feasibility filtering; both can run together. `--hypothesis <path>` consumes a pre-built JSONL queue, and `--journal` requires one of the hypothesis flags and records every outcome. `--team` uses the team mode for parallel hypothesis exploration. `--keep "<items>"` preserves named context through compaction.
 
@@ -549,7 +549,7 @@ Optional integrations are capability-gated:
 
 - `foundry` (requires `foundry` plugin) supplies software, performance, architecture, and web-research agents. Most skills fall back to `general-purpose` role prompts when it is absent; Kaggle stops.
 - `codemap-py` (requires `codemap-py` plugin) supplies structural context to `run` and `verify` when enabled and indexed. `--no-codemap` opts out; `--codemap` makes a usable index mandatory.
-- The Codex plugin (requires `codex` plugin) enables `/research:run --codex`; it is never silently substituted when requested.
+- `bridge@borda-ai-rig` enables `/research:run --codex`; it is never silently substituted when requested.
 - A connected `colab-mcp` runtime enables `--colab` for `run` and `sweep`.
 - `scipy` enables Wilcoxon significance in `retro`; without it, the report uses descriptive statistics.
 - The authenticated Kaggle CLI is required for online competition grounding.
@@ -638,7 +638,7 @@ Potential future work includes richer native agent selection, broader compute ba
 
 **`--compute=docker` stops**: verify that a Docker daemon is reachable and that the metric/guard commands are valid inside the configured image.
 
-**`--codex` stops**: put the `claude` executable on `PATH` and install the Codex plugin; the requested co-pilot is not silently replaced.
+**`--codex` stops**: put the `claude` executable on `PATH` and install and enable `bridge@borda-ai-rig`; the requested co-pilot is not silently replaced.
 
 **Run stops after five consecutive discards**: inspect `.experiments/state/<run-id>/diary.md`, then adjust the goal, scope, strategy, or hypothesis queue before retrying. The stop prevents blind looping.
 
@@ -656,7 +656,7 @@ Potential future work includes richer native agent selection, broader compute ba
 
 The canonical sources are the ten `skills/*/SKILL.md` files, the two `agents/*.md` files, `rules/*.md`, registered hooks, sidecar references, and `bin/*`. Keep this README synchronized when a public skill, flag, trigger, prerequisite, output path, hook, or boundary changes.
 
-The plugin version is currently `0.15.3`; do not bump it for this README-only task. Repository policy classifies wording and documentation fixes as patch changes and new capabilities as minor changes; version bumps are handled by the owning release workflow.
+The plugin version is currently `0.19.0`. This bridge integration is a designed capability change and therefore uses a minor version bump.
 
 When editing a skill, update its README entry, flags, NOT-for boundaries, output paths, fallback behavior, and relevant troubleshooting guidance. Verify that references loaded from `skills/_shared/`, `skills/*/modes/`, agent sidecars, or `bin/` remain installed-path safe and do not assume a source checkout.
 

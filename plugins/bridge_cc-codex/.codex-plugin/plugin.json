@@ -3,7 +3,7 @@
     "name": "Jiri Borovec",
     "url": "https://github.com/Borda/AI-Rig"
   },
-  "description": "Bidirectional Claude Code and Codex implementation, advice, and review with explicit models, budgets, compact results, and recursion safety.",
+  "description": "bridge_CC-Codex provides bidirectional Claude Code and Codex implementation, advice, and review with explicit models, budgets, compact results, and recursion safety.",
   "homepage": "https://github.com/Borda/AI-Rig",
   "interface": {
     "brandColor": "#1F2937",
@@ -15,15 +15,15 @@
     "category": "Productivity",
     "composerIcon": "./assets/bridge.svg",
     "defaultPrompt": [
-      "Use bridge to implement a bounded change with Claude Code.",
-      "Use bridge to request read-only advice from Claude Code.",
-      "Use bridge to request an adversarial review from Claude Code."
+      "Use bridge_CC-Codex to implement a bounded change with Claude Code.",
+      "Use bridge_CC-Codex to request read-only advice from Claude Code.",
+      "Use bridge_CC-Codex to request an adversarial review from Claude Code."
     ],
     "developerName": "Borda",
-    "displayName": "Claude Code and Codex Bridge",
+    "displayName": "bridge_CC-Codex",
     "logo": "./assets/bridge.svg",
     "longDescription": "Connect Codex to Claude Code through a sandbox-external MCP server for bounded implementation, advice, and review with explicit model selection, compact results, and a cross-host recursion guard.",
-    "shortDescription": "Two-way implementation, advice, and review",
+    "shortDescription": "bridge_CC-Codex: two-way implementation, advice, and review",
     "websiteURL": "https://github.com/Borda/AI-Rig"
   },
   "keywords": [
@@ -37,5 +37,5 @@
   "name": "bridge",
   "repository": "https://github.com/Borda/AI-Rig",
   "skills": "./codex-skills/",
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

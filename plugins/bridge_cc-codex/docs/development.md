@@ -1,6 +1,6 @@
 # Development and release verification
 
-`bridge` is a standalone Python 3.10+ plugin package. Its Claude Code manifest is `.claude-plugin/plugin.json`; its Codex manifest is `.codex-plugin/plugin.json`; its reverse transport declaration is `.mcp.json`. The two manifests must keep the same plugin name and version, and the current release starts at `0.1.0`.
+`bridge_CC-Codex` is a standalone Python 3.10+ plugin package. Its normalized plugin identifier is `bridge`; both manifests must keep that name and the same version. Its Claude Code manifest is `.claude-plugin/plugin.json`; its Codex manifest is `.codex-plugin/plugin.json`; its reverse transport declaration is `.mcp.json`. The current release is `0.2.0`.
 
 ## Source layout
 
@@ -9,7 +9,7 @@
 - `bin/bridge_diagnose.py` owns static host-surface checks and optional live diagnosis. The baseline is deliberately flag-only — it pins no CLI version number, because a depended-on flag disappearing from `--help` is the failure that actually breaks dispatch — and the free static check reports without appending health records; only completed bridge requests write `health.jsonl` lines.
 - `schemas/` contains the model-core, harness-envelope, and MCP input contracts.
 - `rules/` contains the effort, prompting, recursion, envelope, and recovery policies used by both host integrations.
-- `claude-skills/` contains Claude Code commands; `skills/` contains Codex commands. Both host trees expose `implement`, `advise`, and `review`.
+- `claude-skills/` contains Claude Code commands; `codex-skills/` contains Codex commands. Both host trees expose `implement`, `advise`, and `review`.
 - `tests/` proves runtime, contract, cross-platform, and install-shaped package behavior.
 
 Keep public names, schemas, manifests, skills, and README examples synchronized when a user-facing behavior changes. Do not make the package depend on a source checkout, another plugin, or a private workspace path.

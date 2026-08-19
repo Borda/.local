@@ -75,6 +75,11 @@ def fake_runner(
                         "enabled": True,
                         "version": "0.28.8",
                     },
+                    {
+                        "pluginId": "bridge@borda-ai-rig",
+                        "enabled": True,
+                        "version": "0.1.0",
+                    },
                 ]
             }
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
@@ -103,6 +108,7 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
     assert ("codex", "plugin", "marketplace", "upgrade", "borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "codex-rig@borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "codemap-py@borda-ai-rig") in calls
+    assert ("codex", "plugin", "add", "bridge@borda-ai-rig") in calls
     installer = root / "plugins" / "codex-rig" / "scripts" / "install_global_agents.py"
     template = root / "plugins" / "codex-rig" / "assets" / "AGENTS.md"
     assert any(
@@ -111,6 +117,7 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
     )
     assert "Codex Rig 0.3.0 installed" in output.getvalue()
     assert "Codemap 0.28.8 installed" in output.getvalue()
+    assert "Claude Code and Codex Bridge 0.1.0 installed" in output.getvalue()
 
 
 def test_native_sync_preserves_local_marketplace_without_upgrade(tmp_path: Path) -> None:
@@ -131,6 +138,7 @@ def test_native_sync_preserves_local_marketplace_without_upgrade(tmp_path: Path)
     assert ("codex", "plugin", "marketplace", "upgrade", "borda-ai-rig") not in calls
     assert ("codex", "plugin", "add", "codex-rig@borda-ai-rig") in calls
     assert ("codex", "plugin", "add", "codemap-py@borda-ai-rig") in calls
+    assert ("codex", "plugin", "add", "bridge@borda-ai-rig") in calls
     assert "marketplace refresh: configured local source" in output.getvalue()
 
 
@@ -154,6 +162,7 @@ def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None
                 "installed": [
                     {"pluginId": "codex-rig@borda-ai-rig", "enabled": True, "version": "0.3.0"},
                     {"pluginId": "codemap-py@borda-ai-rig", "enabled": True, "version": "0.28.8"},
+                    {"pluginId": "bridge@borda-ai-rig", "enabled": True, "version": "0.1.0"},
                 ]
             }
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
@@ -247,6 +256,7 @@ def test_native_sync_clear_removes_plugin_and_managed_block(tmp_path: Path) -> N
     assert result == 0
     assert ("codex", "plugin", "remove", "codex-rig@borda-ai-rig") in calls
     assert ("codex", "plugin", "remove", "codemap-py@borda-ai-rig") in calls
+    assert ("codex", "plugin", "remove", "bridge@borda-ai-rig") in calls
     assert any(
         call[1:]
         == (
@@ -283,6 +293,7 @@ def test_native_sync_clear_removes_managed_block_when_codex_is_missing(tmp_path:
     assert "managed block removed" in output.getvalue()
     assert ("codex", "plugin", "remove", "codex-rig@borda-ai-rig") in calls
     assert ("codex", "plugin", "remove", "codemap-py@borda-ai-rig") in calls
+    assert ("codex", "plugin", "remove", "bridge@borda-ai-rig") in calls
     assert any(
         call[1:]
         == (

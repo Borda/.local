@@ -451,7 +451,7 @@ ______________________________________________________________________
 **Workflow**:
 
 1. **Identify scope**: collects Python files from path or `git diff HEAD`. Classifies diff FIX / REFACTOR / FEATURE / CHORE / MIXED — skips optional agents for smaller diffs (FIX skips `foundry:perf-optimizer` + `foundry:solution-architect`; CHORE skips `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:solution-architect`). Small diff (single file, \<50 lines, no new public API) also auto-skips `foundry:challenger` gate unless `--challenge` passed.
-2. **Codex co-review** (if `codex` plugin installed): adversarial diff review seeds pre-flagged issues list for specialist agents.
+2. **Codex co-review** (if `bridge@borda-ai-rig` is installed and enabled): adversarial diff review seeds pre-flagged issues list for specialist agents.
 3. **Selected parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`; the default cap is four, `--full` removes that cap):
    - `foundry:sw-engineer`: architecture, SOLID, type safety, error handling, Python anti-patterns, security for touched auth/input/data paths
    - `foundry:qa-specialist`: test coverage gaps, missing edge cases, ML non-determinism, seed pinning, boundary conditions
@@ -490,7 +490,7 @@ git add src/mypackage/trainer.py tests/test_trainer.py
 - Blocking bugs or regressions → `/develop:fix`
 - Structural or quality issues → `/develop:refactor`
 - Security findings → `/develop:fix`; run `pip-audit` if dependency files changed
-- Mechanical issues (docstrings, missing tests) → `/codex:codex-rescue <task>` (requires `codex` plugin) if available
+- Mechanical issues (docstrings, missing tests) → when `bridge@borda-ai-rig` is available, construct an `implement` brief that states the exact finding, target paths, current evidence, permitted edits, required result, stop condition, and verification command.
 - GitHub PR review for contributor → `/oss:review <PR#>` (requires `oss` plugin) instead
 
 ______________________________________________________________________
@@ -605,14 +605,14 @@ ______________________________________________________________________
 
 ### Dependencies by capability
 
-| Dependency       | Required    | Unlocks                                                                                                                                                                                      |
-| ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry` plugin | recommended | Named specialist agents. Without it, agent-router falls back to `general-purpose` with role-description prompts; develop's own quality-stack files still load.                               |
-| `oss` plugin     | optional    | Severity checklist for local review when available; use `/oss:review <PR#>` for contributor-facing GitHub PR review (requires `oss`).                                                        |
-| `codex` plugin   | optional    | Read-only adversarial pre-pass and bounded mechanical follow-up when available; skipped gracefully when absent.                                                                              |
-| `codemap-py`     | optional    | Structural context such as callers, imports, test impact, and blast radius. Auto mode uses an available index; absent/stale indexes follow the Codemap gate, and `--no-codemap` disables it. |
-| `semble` MCP     | optional    | Semantic-search companion enabled explicitly with `--semble`; preflight stops if the MCP server is not configured.                                                                           |
-| `gh` CLI         | optional    | Fetches issue bodies for numeric issue arguments and GitHub Actions logs for `/develop:debug --ci-run`; required only for those paths.                                                       |
+| Dependency            | Required    | Unlocks                                                                                                                                                                                      |
+| --------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry` plugin      | recommended | Named specialist agents. Without it, agent-router falls back to `general-purpose` with role-description prompts; develop's own quality-stack files still load.                               |
+| `oss` plugin          | optional    | Severity checklist for local review when available; use `/oss:review <PR#>` for contributor-facing GitHub PR review (requires `oss`).                                                        |
+| `bridge@borda-ai-rig` | optional    | Read-only adversarial pre-pass and bounded mechanical follow-up when installed and enabled; skipped with an explicit status when absent or disabled.                                         |
+| `codemap-py`          | optional    | Structural context such as callers, imports, test impact, and blast radius. Auto mode uses an available index; absent/stale indexes follow the Codemap gate, and `--no-codemap` disables it. |
+| `semble` MCP          | optional    | Semantic-search companion enabled explicitly with `--semble`; preflight stops if the MCP server is not configured.                                                                           |
+| `gh` CLI              | optional    | Fetches issue bodies for numeric issue arguments and GitHub Actions logs for `/develop:debug --ci-run`; required only for those paths.                                                       |
 
 ### Codemap-py behavior
 

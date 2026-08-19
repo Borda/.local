@@ -141,7 +141,7 @@ IFS= read -r _OSS_SHARED < "${TMPDIR:-/tmp}/resolve-oss-shared-${CSID}" 2>/dev/n
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
-2. Complex/multi-file → skip with: `⚠ codex not found — skipping item #<id>. Install: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`
+2. Complex/multi-file → skip with: `⚠ bridge@borda-ai-rig is absent or disabled — skipping item #<id>. Install or enable the bridge and reload plugins.`
 
 ### Review-handoff auto-detect (when $ARGUMENTS is empty)
 
@@ -557,19 +557,19 @@ TaskUpdate(task_id=TASK_IMPL, status="deleted")
 TaskUpdate(task_id=TASK_IMPL, status="in_progress")
 ```
 
-**Soft cap: 8 Codex dispatches per session** — Codex-specific. Skip this cap entirely when `--agent <name>` is set and the resolved agent is not `codex:codex-rescue` (other implementation agents have no per-session dispatch ceiling here):
+**Soft cap: 8 bridge implementation calls per session** — skip this cap when `--agent <name>` selects a non-bridge implementation agent:
 
 ```bash
 # computed here for cap-threshold branch (full resolve in action-item-dispatch.md)
-_RESOLVE_IMPL_AGENT="codex:codex-rescue"
+_RESOLVE_IMPL_AGENT="bridge:implement"
 [[ "$ARGUMENTS" == *"--agent "* ]] && _RESOLVE_IMPL_AGENT=$(echo "$ARGUMENTS" | sed -n 's/.*--agent \([^ ]*\).*/\1/p')
-if [ "$_RESOLVE_IMPL_AGENT" = "codex:codex-rescue" ] && [ "$(echo "$SELECTED_ITEMS" | wc -w)" -gt 8 ]; then
+if [ "$_RESOLVE_IMPL_AGENT" = "bridge:implement" ] && [ "$(echo "$SELECTED_ITEMS" | wc -w)" -gt 8 ]; then
     :
 fi
 ```
 
 <!-- branch: codex-cap — only when codex agent AND N>8 items; adds 1 call (max 5 if user proceeds; worst case = item-select + commit-mode + codex-cap + push-auth + post-pr) -->
-If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
+If `_RESOLVE_IMPL_AGENT = bridge:implement` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — bridge implementation cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-bridge agents, skip this gate.
 
 **Codemap index identity (if `CODEMAP_ENABLED=true`)**: resolve the index path the next block reuses. No query runs here — per-item blast radius is action-item-dispatch.md's **Pre-loop blast-radius scan**, which resolves each item's canonical module first and passes it as `rdeps`' positional argument.
 
@@ -839,11 +839,11 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **`[question]` items** — answer inline in resolve report only; reclassify before implementing; never silently implement unanswered question.
 - **Push verification** — confirm via `gh pr view --json commits`; exit 0 from `git push` necessary but not sufficient (branch protection can silently reject).
 - **Merge-push sequencing + escape hatch** — not atomic; concurrent push → non-fast-forward rejection; retry push only (don't re-run full merge). `git merge --abort` = undo conflict state; `git push --force-with-lease` on explicit user request only.
-- **Impl agent health + effort**: IMPL_AGENT defaults to `codex:codex-rescue` (CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout). Effort: never `low`; minimum `medium`; typo/doc → `medium`; multi-file/new-feature → `xhigh`; default `high`. `--agent foundry:*`: foreground only, no health monitoring.
+- **Impl agent health + effort**: bridge implementation calls use `bridge:implement`; effort is never `low`, minimum `medium`, typo/doc `medium`, multi-file/new-feature `xhigh`, default `high`. `--agent foundry:*` stays foreground only.
 - **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
 - **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), (c), or unanswered — skipped only when Q4=(d) skip-all — distinct from Q4 (sets item scope, not commit strategy). Item scope never implies commit mode. Don't merge these two questions.
 - **AskUserQuestion usage**: calls spread across independent branch-paths — no single sequential path exceeds 4-call limit (worst case: codex-cap adds one call when N>8 items and codex available). Compliant with sequential-call limit.
-- **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be implementation agent (not curator); omit Codex trailer when IMPL_AGENT ≠ `codex:codex-rescue`.
+- **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be an implementation agent (not curator); omit the bridge trailer when another agent is selected.
 - **Thread resolution via GraphQL** — `isResolved` on `PullRequestReviewThread` (GraphQL only); REST doesn't expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId`; GraphQL failure → `[]`.
 - **Discussion vs inline**: `gh pr view --comments` = discussion (`location: discussion`; no Resolve button); `gh api .../pulls/<N>/comments` = inline (`location: inline`; resolvable). `location: discussion` + `[report]` items: implement-only, no GitHub close action. Surface `Loc` column in Step 11 report.
 - **Commit attribution** — `[gh]`: `[resolve No.<id>] <reviewer> (gh):`; `[report]`: `[resolve No.<id>] /review finding by <agent> (report: <path>):`.

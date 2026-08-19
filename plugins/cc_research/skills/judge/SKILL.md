@@ -262,7 +262,7 @@ Check Codex availability. Distinguish two failure modes — CLI missing vs plugi
 ```bash
 if ! command -v claude >/dev/null 2>&1; then
     CODEX_STATUS="cli-missing"
-elif claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'; then
+elif [ "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/check_bridge.py" --status 2>/dev/null || echo absent)" = "available" ]; then
     CODEX_STATUS="available"
 else
     CODEX_STATUS="plugin-missing"
@@ -272,8 +272,7 @@ fi
 **`CODEX_STATUS=available`**: invoke adversarial review on top 3 critical/high gaps from J2 and J3. Example (replace `<top finding N>` with actual findings):
 
 ```text
-# codex:codex-rescue = dispatchable adversarial agent; codex:adversarial-review is user-only (/codex:adversarial-review)
-Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of run program: check <top finding 1>, <top finding 2>, and <top finding 3> in the program.md. Read-only: do not apply fixes.")
+Skill(skill="bridge:review", args="Read-only adversarial review of run program. Check <top finding 1>, <top finding 2>, and <top finding 3> in program.md; do not apply fixes.")
 ```
 
 Incorporate Codex findings into overall findings list with `source: "codex"`.
@@ -281,7 +280,7 @@ Incorporate Codex findings into overall findings list with `source: "codex"`.
 **`CODEX_STATUS=plugin-missing`**: print one line and continue:
 
 ```text
-note: codex plugin not installed — skipping adversarial review (Claude-only judge)
+note: bridge@borda-ai-rig not installed or disabled — skipping adversarial review (Claude-only judge)
 ```
 
 **`CODEX_STATUS=cli-missing`**: print diagnostic and continue (distinguish from plugin-absent so user with Codex installed but `claude` CLI not in PATH isn't silently denied review):

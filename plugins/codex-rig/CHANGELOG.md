@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0
+
+- Replace the legacy external Claude Codex plugin lifecycle with the managed `bridge` plugin, including install, enabled-version verification, teardown, one-time setup dispatch from its `claude-skills/setup/SKILL.md` entrypoint, and success-gated cleanup of the retired plugin.
+
 ## 0.8.3
 
 - Update the live Codemap-py consumer reference to the `codemap-py.integration.v2` managed-block body protocol and `integrate audit` command. The separate structural-context adapter remains `codemap-py.integration.v1`.

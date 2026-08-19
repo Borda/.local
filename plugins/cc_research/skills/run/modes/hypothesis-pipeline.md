@@ -39,11 +39,11 @@ Contains oracle agent orchestration, feasibility annotation, queue filtering, ch
 
 4. Store active queue in memory as `RESEARCH_QUEUE`.
 
-5. **Codex availability re-check** — downstream review skill dispatched after this pipeline (Step 6+) → re-verify codex reachable before invoking. Silent stalls happen when codex absent at dispatch time despite present at run start.
+5. **Bridge availability re-check** — downstream review skill dispatched after this pipeline (Step 6+) → re-verify the bridge is reachable before invoking. Silent stalls happen when it is absent at dispatch time despite being present at run start. Probe the exact installed selector, not the Codex CLI: the CLI on `PATH` says nothing about whether `bridge@borda-ai-rig` is installed and enabled.
 
    ```bash
-   CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
-   [ -z "$CODEX_AVAILABLE" ] && { echo "⚠ codex unavailable — skipping codex review step"; }
+   CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_research}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+   [ "$CODEX_STATUS" = "available" ] && CODEX_AVAILABLE=1 || { CODEX_AVAILABLE=""; echo "⚠ bridge@borda-ai-rig is ${CODEX_STATUS} — skipping bridge review step"; }
    ```
 
    On empty `CODEX_AVAILABLE`: skip review dispatch, continue with claude-only pipeline. Never block — fall back to single-source review.

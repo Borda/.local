@@ -1,0 +1,29 @@
+{#- Overrides the stock Material partial, which renders a section tab as a bare link to its first child and drops the
+remaining siblings. That is unusable here because docs/stylesheets/theme.css hides the primary sidebar on wide screens,
+leaving the tab bar as the only desktop navigation: every child after the first would be unreachable. Sections therefore
+also emit a submenu that opens on hover or focus. -#} {% macro render_content(nav_item, ref) %} {% set ref = ref or
+nav_item %} {% if nav_item == ref or "navigation.indexes" in features %} {% if nav_item.is_index and nav_item.meta.icon
+%} {% include ".icons/" ~ nav_item.meta.icon ~ ".svg" %} {% endif %} {% endif %} {{ ref.title }} {% endmacro %} {% macro
+render(nav_item, ref) %} {% set ref = ref or nav_item %} {% set class = "md-tabs__item" %} {% if ref.active %} {% set
+class = class ~ " md-tabs__item--active" %} {% endif %} {% if nav_item.children %} {% set first = nav_item.children |
+first %} {% if first.children %} {{ render(first, ref) }} {% else %}
+<li class="{{ class }} md-tabs__item--nested">
+  <a href="{{ first.url | url }}" class="md-tabs__link"> {{ render_content(first, ref) }} </a>
+  <ul class="md-tabs__submenu">
+    {% for child in nav_item.children %} {% if child.url %}
+    <li class="md-tabs__submenu-item">
+      <a
+        href="{{ child.url | url }}"
+        class="md-tabs__submenu-link{% if child.active %} md-tabs__submenu-link--active{% endif %}"
+      >
+        {{ child.title }}
+      </a>
+    </li>
+    {% endif %} {% endfor %}
+  </ul>
+</li>
+{% endif %} {% else %}
+<li class="{{ class }}">
+  <a href="{{ nav_item.url | url }}" class="md-tabs__link"> {{ render_content(nav_item) }} </a>
+</li>
+{% endif %} {% endmacro %}

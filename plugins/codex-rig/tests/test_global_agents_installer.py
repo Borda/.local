@@ -361,12 +361,14 @@ def test_sync_runs_setup_from_each_managed_plugin_install() -> None:
     sync_path = PLUGIN_ROOT.parents[1] / "sync.sh"
     script = sync_path.read_text(encoding="utf-8")
     setup_section = script.split('echo "Initializing installed plugin setup skills..."', maxsplit=1)[1]
-    setup_section = setup_section.split("done", maxsplit=1)[0]
+    setup_section = setup_section.rsplit("\ndone", maxsplit=1)[0]
 
     assert 'for p in "${PLUGINS[@]}"; do' in setup_section
     assert "(.plugins[$plugin] // [])" in setup_section
     assert '| sort_by(.installedAt // "")' in setup_section
     assert "$install_path/skills/setup/SKILL.md" in setup_section
+    assert "$install_path/claude-skills/setup/SKILL.md" in setup_section
+    assert 'setup_skill="$candidate"' in setup_section
     assert 'claude --print "/${p}:setup --approve"' in setup_section
     assert "EXTERNAL_PLUGINS" not in setup_section
     assert 'claude --print "/foundry:setup --approve"' not in script

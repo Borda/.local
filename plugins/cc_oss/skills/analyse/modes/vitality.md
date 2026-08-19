@@ -125,8 +125,9 @@ SKILL_VERSION=$(jq -r '.version // "unknown"' "$_VER_FILE" 2>/dev/null || echo "
 
 REPORT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")  # timeout: 5000
 
-# codex check — frontmatter agents list must be accurate at write time
-find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
+# bridge check — frontmatter agents list must be accurate at write time
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+[ "$CODEX_STATUS" = "available" ] && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
 
 # --quick: reload from Step1 flag parse (Check 41) — skips Steps 5+6 (codex review, adversarial loop)
 IFS= read -r QUICK_MODE < "${TMPDIR:-/tmp}/analyse-quick-mode-${CSID}" 2>/dev/null || QUICK_MODE="false"
@@ -138,7 +139,7 @@ else
     REPORT_AGENTS_YAML="  - oss:analyse (orchestrator)
   - foundry:challenger (adversarial review)"
     [ "$CODEX_AVAILABLE" = "1" ] && REPORT_AGENTS_YAML="$REPORT_AGENTS_YAML
-  - codex:codex-rescue (independent repo review + adversarial review)"
+  - bridge:review (independent repo review + adversarial review)"
 fi
 ```
 
@@ -196,7 +197,8 @@ IFS= read -r _OSS_ANALYSE < "${TMPDIR:-/tmp}/analyse-oss-analyse-${CSID}" 2>/dev
 REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
 REWORK_ITER=0
 REWORK_MAX=2
-find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+[ "$CODEX_STATUS" = "available" ] && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
 echo "$REVIEW_DIR" > "${TMPDIR:-/tmp}/vitality-review-dir-${CSID}"
 echo "$REWORK_ITER" > "${TMPDIR:-/tmp}/vitality-rework-iter-${CSID}"
 echo "$REWORK_MAX" > "${TMPDIR:-/tmp}/vitality-rework-max-${CSID}"
@@ -289,7 +291,7 @@ Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close
 - **Parallel scoring**: Group A (Axes 1,2,5,6), Group B (Axes 4,7,8), Group C (Axes 3→9) run simultaneously. Each reads DATA_FILE independently — no shared state between scorer agents. Assembler merges after all 3 complete.
 - **Rework loop**: max 2 iterations. Rework agents get MINIMAL context — only section content + raw data + rubric + reviewer issue. No full report history passed. Prevents anchoring on prior flawed reasoning.
 - **Fresh adversarial agents each iteration**: spawn new Agent() each rework cycle — prior iteration's reviewer findings must NOT be in new reviewer's context. Independent assessment is the point.
-- **Adversarial review mandatory in full mode** — Step 6 always runs; `foundry:challenger` always spawned; `codex:codex-rescue` spawned when `CODEX_AVAILABLE=1`. Only skip path is `--quick` (QUICK_MODE=true), which bypasses Steps 5 and 6 for fast daily scorecard at lower confidence.
+- **Adversarial review mandatory in full mode** — Step 6 always runs; `foundry:challenger` always spawned; the complete repository, report path, nine-axis review criteria, output path, permission boundary, and return contract from `vitality-adversarial-rework.md` are passed to `bridge:review` when `CODEX_AVAILABLE=1`. Only skip path is `--quick` (QUICK_MODE=true), which bypasses Steps 5 and 6 for fast daily scorecard at lower confidence.
 - **Parallel group discipline**: Group 2 data fetches in gh-scraper only after Group 1 resolves (needs root file list and default_branch); scoring Groups A/B/C have no such dependency — all read from DATA_FILE independently
 - **Data reuse**: root-contents fetch shared by Axes 6 and 7; releases fetch shared by Axis 2 and security signals; contributor stats weeks[] shared by Axis 3 and sub-signal 9A — all written to DATA_FILE, each scorer reads what it needs
 - **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501` for open issues targeting 500); if response length == limit, truncation occurred — JSONL record has `"partial": true`; scorer degrades confidence accordingly
@@ -303,7 +305,7 @@ Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close
 - **Package registry 404**: skip sub-signal C silently — not all repos publish to PyPI/npm
 - **Axis independence**: failure of one axis (API unavailable, access denied, computing) → ⚪ row in scorecard, continue with remaining axes; never block report on single axis failure
 - **Codex independent review (Step 5)**: runs before adversarial review — codex assesses raw data independently, not main report; produces parallel scorecard and divergence notes; aggregate health score = mean(main, codex); when CODEX_AVAILABLE=0, note "codex unavailable — single-pass analysis only" in report section
-- **codex availability check**: `find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q .` — run before spawn; do not assume codex installed
+- **bridge availability check**: `bin/check_bridge.py --status` — run before spawn; only `available` qualifies, `disabled` and `absent` both mean no bridge, and never assume the bridge is present
 - **Health Score footer row**: Score column shows weighted %; Weight column shows "100%"; Status/Key Signal/Risk left blank
 - **Rework loop exit conditions**: exits when `$REWORK_VERDICT = "pass"` OR `$REWORK_ITER >= $REWORK_MAX`; always exits after 2 iterations max regardless of verdict
 - **SCORES_FILE**: assembled in Step 3 by orchestrator from 3 partial files — not written by gh-scraper; gh-scraper prompt in Step 1 does NOT include SCORES_FILE

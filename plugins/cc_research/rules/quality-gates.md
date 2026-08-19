@@ -38,7 +38,7 @@ Before returning, self-review:
 
 ## Pre-Handover Check
 
-Confidence < 0.9 → push back on analysis before handover: demand proof per uncertain claim (read source code, read docs, trace examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → spawn `Agent(subagent_type="codex:codex-rescue")` naming low-confidence area for adversarial review — incorporate findings before handover. After re-examination (+ codex review if available): confidence still < 0.9 → state specific gap explicitly so user can decide to re-run.
+Confidence < 0.9 → push back on analysis before handover: demand proof per uncertain claim (read source code, read docs, trace examples), re-examine assumptions, rethink conclusions from first principles. If `bridge@borda-ai-rig` is available, render and call `Skill(skill="bridge:review", args="Read-only adversarial review of <exact area and target paths>. Uncertain claims: <complete claim list>. Current evidence: <source paths or observations>. Challenge each claim, identify missing evidence and alternatives, and return actionable findings with locations; do not apply fixes.")`; never pass the placeholders or a workflow step label. Incorporate findings before handover. After re-examination: confidence still < 0.9 → state specific gap explicitly so user can decide to re-run.
 
 ## Link Verification
 

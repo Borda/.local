@@ -40,9 +40,10 @@ For each headline feature, read actual diff or changed source file to understand
 1. **Document each failed attempt**: output `## Demo attempts` block to terminal listing every approach tried and specific reason rejected (e.g. "test fixtures require database connection", "example script imports non-installable C extension"). Minimum one entry per attempt.
 2. **Ask Codex (if available)**:
    ```bash
-   CODEX_OK=$(claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "available" || echo "")  # timeout: 5000
+   CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+   [ "$CODEX_STATUS" = "available" ] && CODEX_OK="available" || CODEX_OK=""
    ```
-   If `$CODEX_OK` non-empty, spawn `Agent(subagent_type="codex:codex-rescue")` with `## Demo attempts` log and ask it to locate or construct real-world demo from project artifacts. If Codex returns viable approach, use it — stop, skip steps 3–4.
+   If `$CODEX_OK` non-empty, call `Skill(skill="bridge:advise", args="Read the complete ## Demo attempts log printed above and inspect <REPO_ROOT>. Locate a real-world demo using existing project artifacts, tests, examples, or documented APIs. Return one viable approach with exact source paths and commands; do not modify files.")`. If Codex returns a viable approach, use it — stop, skip steps 3–4.
 3. **Ask user**: invoke `AskUserQuestion` with `## Demo attempts` log (and Codex outcome if attempted), asking user to either provide real-world assets or explicitly approve synthetic demo.
 4. **Synthetic demo only on explicit approval**: proceed with synthetic/fabricated demo content only if step 3 `AskUserQuestion` response explicitly authorises it.
 

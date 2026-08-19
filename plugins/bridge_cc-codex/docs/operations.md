@@ -1,6 +1,6 @@
 # Operations and troubleshooting
 
-This document covers local setup, routine invocation, detached-job lifecycle, and the failure signals emitted by `bridge`. The bridge never repairs host authentication or CLI configuration automatically; use the host's own login and permission workflow when setup reports a prerequisite failure.
+This document covers local setup, routine invocation, detached-job lifecycle, and the failure signals emitted by `bridge_CC-Codex`. The normalized plugin identifier is `bridge`. The bridge never repairs host authentication or CLI configuration automatically; use the host's own login and permission workflow when setup reports a prerequisite failure.
 
 ## Prerequisites
 

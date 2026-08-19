@@ -9,10 +9,12 @@
 
 Determine implementation agent, set up file-handoff dir, and authorize commits before the loop:
 
+`IMPL_AGENT`'s default is a routing marker, not a value passed to `Agent(subagent_type=)`. It records that unrouted work belongs to the bridge, and is read by the C1 medium-effort shortcut (which dispatches `Skill(skill="bridge:implement")`) and by the >8-item batching gate in `SKILL.md`. Phase 2 never uses it: it groups by the `change` → specialist table below, whose values are all real subagent types. Only `--agent <name>` puts a caller-supplied value in this variable, and that value does reach `Agent(subagent_type=)`.
+
 ```bash
-IMPL_AGENT="codex:codex-rescue"
+IMPL_AGENT="bridge:implement"
 [[ "$ARGUMENTS" == *"--agent "* ]] && {
-    IMPL_AGENT=$(echo "$ARGUMENTS" | grep -oP '(?<=--agent )\S+')
+    IMPL_AGENT=$(echo "$ARGUMENTS" | sed -n 's/.*--agent \([^ ]*\).*/\1/p')
     echo "→ Using --agent: $IMPL_AGENT"
 }
 
@@ -55,7 +57,7 @@ Lock released in Phase 3's cleanup block. Crash before that leaks it — by desi
 | `perf` | `foundry:perf-optimizer` |
 | `architecture` | `foundry:solution-architect` |
 
-`CODEX_AVAILABLE=false`: C1 (medium-effort Codex shortcut, below) is skipped entirely — medium-effort items fall through to Phase 1+2 like any other item, routed by this same table. `xhigh`-effort, multi-file items still skip, unchanged from before (`⚠ codex not found — skipping item #<id> (xhigh effort). Install: /plugin marketplace add openai/codex-plugin-cc`) — too much surface for a single specialist without Codex's broader context; never blanket-skip anything below `xhigh`.
+`CODEX_AVAILABLE=false`: C1 (medium-effort Codex shortcut, below) is skipped entirely — medium-effort items fall through to Phase 1+2 like any other item, routed by this same table. `xhigh`-effort, multi-file items still skip (`⚠ bridge@borda-ai-rig is absent or disabled — skipping item #<id> (xhigh effort)`) — too much surface for a single specialist without the bridge's broader Codex context; never blanket-skip anything below `xhigh`.
 
 `--agent <name>` overrides this routing table unconditionally — every Phase 2 group uses `<name>` regardless of `change`.
 
@@ -147,7 +149,7 @@ Include non-empty `$ITEM_CALLERS` in impl agent prompt — see Phase 2.
 When `ITEM_EFFORT=medium` AND `CODEX_AVAILABLE=true`: dispatch Codex for evidence check + implementation in one call.
 
 ```text
-Agent(subagent_type="codex:codex-rescue", prompt="Effort level: medium. Review and implement this action item if valid.
+Skill(skill="bridge:implement", args="Effort level: medium. Review and implement this action item if valid.
 Item: <full_comment_text>
 File: <file>  Line: <line>
 The reviewer's assertion is itself an unproven claim — if it asserts a fact the file alone can't settle (name/identifier/version/count wrong or non-standard), verify against the actual authoritative source before treating it as valid; can't verify → UNCERTAIN, not DONE.

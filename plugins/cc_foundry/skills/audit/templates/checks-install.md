@@ -64,13 +64,13 @@ else
         printf "✓: Check I2b — permissions.allow populated\n"
     fi
 
-    # I2c — enabledPlugins: codex@openai-codex must be true
-    if ! jq -e '.enabledPlugins["codex@openai-codex"] == true' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
-        printf "⚠ MEDIUM: Check I2c — enabledPlugins.codex@openai-codex not set to true\n"
+    # I2c — enabledPlugins: bridge target must be true
+    if ! jq -e '.enabledPlugins["bridge@borda-ai-rig"] == true' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
+        printf "⚠ MEDIUM: Check I2c — enabledPlugins.bridge@borda-ai-rig not set to true\n"
         printf "  Fix: run /foundry:setup\n"
         FAIL=$((FAIL + 1))
     else
-        printf "✓: Check I2c — enabledPlugins.codex@openai-codex enabled\n"
+        printf "✓: Check I2c — enabledPlugins.bridge@borda-ai-rig enabled\n"
     fi
 
     # I2d — stale hooks block (double-fires with plugin hooks.json)

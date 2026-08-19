@@ -20,11 +20,12 @@ Safety net — Phase 4 always overwrites this with full results when it runs suc
 Check Codex availability once at pipeline start; set `CODEX_AVAILABLE` for all phases:
 
 ```bash
-if [ -n "$CLAUDE_PLUGIN_DATA" ] && echo "$CLAUDE_PLUGIN_DATA" | grep -q 'codex-openai-codex'; then CODEX_AVAILABLE=true; else CODEX_AVAILABLE=false; fi
-echo "Codex plugin: $CODEX_AVAILABLE"
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")
+if [ "$CODEX_STATUS" = "available" ]; then CODEX_AVAILABLE=true; else CODEX_AVAILABLE=false; fi
+echo "bridge@borda-ai-rig: $CODEX_STATUS"
 ```
 
-Uses `CLAUDE_PLUGIN_DATA` env var (inherited by all subagents) not `claude plugin list` — that requires CLI allow entry and fails silently in background agents when not pre-approved.
+The helper reads Claude's installed-plugin registry, marketplace cache, and enabled-plugin settings directly; it does not require a nested `claude plugin list` call from a background agent.
 
 Codex integration active only for `agents` and `skills` modes. If pipeline spawned for `routing`, `communication`, or `rules`, treat `CODEX_AVAILABLE=false` — those modes test Claude-specific internals Codex lacks context for.
 
@@ -81,9 +82,9 @@ Split `<N>` in-scope problems between two generators. Claude always owns 1 out-o
 | fast (N=3) | 1 | 2 | 1 | 4 |
 | full (N=10) | 5 | 5 | 1 | 11 |
 
-**Step 1 — Codex generates N_CODEX in-scope problems** (runs first; writes directly to file — requires `codex` plugin):
+**Step 1 — Codex generates N_CODEX in-scope problems** (runs first; writes directly to file — requires `bridge@borda-ai-rig`):
 
-Agent(subagent_type="codex:codex-rescue", prompt="Generate \<N_CODEX> synthetic calibration problems for domain: '<DOMAIN>'.
+Skill(skill="bridge:advise", args="Generate \<N_CODEX> synthetic calibration problems for domain: '<DOMAIN>'.
 
 Each problem must be JSON object with these exact fields:
 
@@ -232,11 +233,11 @@ Each scorer receives this prompt (substitute `<PROBLEM_ID>`, `<GROUND_TRUTH_JSON
 
 **Context discipline**: scorers write results to `score-<PROBLEM_ID>-claude.json` and return single-line acknowledgment (`Scored: <PROBLEM_ID>`). Do NOT accumulate inline JSON in pipeline context — Phase 3c reads from disk.
 
-### Phase 3b — Score responses via Codex (skip when CODEX_AVAILABLE=false — requires `codex` plugin)
+### Phase 3b — Score responses via Codex (skip when CODEX_AVAILABLE=false — requires `bridge@borda-ai-rig`)
 
-For each problem, spawn one Codex scoring subagent using **Agent tool** — never via Bash or CLI. Run **sequentially** (not parallel — Codex subagents share filesystem state; parallel invocations risk write conflicts).
+For each problem, call the read-only Codex bridge skill. Run **sequentially** (not parallel — scoring writes shared result files).
 
-Agent(subagent_type="codex:codex-rescue", prompt="Scoring a calibration response against ground truth.
+Skill(skill="bridge:review", args="Score a calibration response against ground truth.
 
 ```text
 Problem ID: \<PROBLEM_ID>

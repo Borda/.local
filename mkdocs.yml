@@ -19,6 +19,7 @@ hooks:
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     - scheme: default
       primary: custom
@@ -44,7 +45,7 @@ theme:
     - search.suggest
 
 extra_css:
-  - stylesheets/anthropic.css
+  - stylesheets/theme.css
 
 extra:
   social:
@@ -83,4 +84,4 @@ nav:
       - Research: cc_research.md
   - Codex Rig: codex-rig.md
   - Codemap-py: codemap-py.md
-  - Bridge CC-Codex: bridge_cc-codex.md
+  - bridge_CC-Codex: bridge_cc-codex.md

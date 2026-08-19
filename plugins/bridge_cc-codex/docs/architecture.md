@@ -1,6 +1,6 @@
 # Architecture and transport
 
-`bridge` is a self-contained package with two host integrations. The Claude Code integration starts the Codex command-line interface through `bin/bridge_call.py`; the Codex integration exposes three tools through the stdio MCP server declared in `.mcp.json` and starts Claude Code through that server.
+`bridge_CC-Codex` is a self-contained package with the normalized plugin identifier `bridge` and two host integrations. The Claude Code integration starts the Codex command-line interface through `bin/bridge_call.py`; the Codex integration exposes three tools through the stdio MCP server declared in `.mcp.json` and starts Claude Code through that server.
 
 ## Request directions
 

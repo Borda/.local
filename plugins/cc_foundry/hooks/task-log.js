@@ -239,12 +239,11 @@ process.stdin.on("end", () => {
         const skill = tool_input?.skill || "unknown";
         const args = tool_input?.args || "";
         appendLog(logFile, globalLogsDir, { ts, project: projectSlug, event: "invoked", tool: "Skill", skill, args });
-        // Track codex plugin sessions for statusline display (tool_use_id is the stable key)
-        // Matches any codex: plugin command (codex:review, codex:adversarial-review, codex:rescue, etc.)
-        if (skill && skill.startsWith("codex:") && data.tool_use_id) {
+        // Track bridge-backed Codex skills for statusline display (tool_use_id is the stable key).
+        if (skill && skill.startsWith("bridge:") && data.tool_use_id) {
           try {
             fs.mkdirSync(codexDir, { recursive: true });
-            const shortName = skill.slice("codex:".length);
+            const shortName = skill.slice("bridge:".length);
             fs.writeFileSync(
               path.join(codexDir, `${data.tool_use_id}.json`),
               JSON.stringify({ id: data.tool_use_id, since: ts, type: shortName }),
@@ -312,9 +311,9 @@ process.stdin.on("end", () => {
         } catch (_) {}
       }
     } else if (hook_event_name === "PostToolUse") {
-      // Remove codex plugin session tracking when any Skill(codex:*) completes.
+      // Remove bridge-backed Codex session tracking when the Skill call completes.
       if (data.tool_use_id) {
-        const isCodexSkill = tool_name === "Skill" && tool_input?.skill?.startsWith("codex:");
+        const isCodexSkill = tool_name === "Skill" && tool_input?.skill?.startsWith("bridge:");
         if (isCodexSkill) {
           try {
             fs.unlinkSync(path.join(codexDir, `${data.tool_use_id}.json`));
@@ -432,12 +431,7 @@ process.stdin.on("end", () => {
             JSON.stringify({ id, type: resolvedType || "unknown", model, color, since: ts }),
           );
         }
-        // Always track codex:* agents in state/codex/ so statusline shows them in the 🤖 section
-        if (resolvedType && resolvedType.startsWith("codex:")) {
-          fs.mkdirSync(codexDir, { recursive: true });
-          const shortName = resolvedType.slice("codex:".length);
-          fs.writeFileSync(path.join(codexDir, `${id}.json`), JSON.stringify({ id, since: ts, type: shortName }));
-        }
+        // Bridge-backed Codex execution uses Skill calls, not Agent events.
       } catch (_) {}
     } else if (hook_event_name === "SubagentStop") {
       // Delete the per-agent file; read stored type first for accurate completion logging
@@ -450,7 +444,7 @@ process.stdin.on("end", () => {
       } catch (_) {}
       try {
         fs.unlinkSync(path.join(agentsDir, `${id}.json`));
-        // Also clean up codex tracking entry if this was a codex:* agent
+        // Also clean up any bridge skill entry keyed by this lifecycle id.
         try {
           fs.unlinkSync(path.join(codexDir, `${id}.json`));
         } catch (_) {}

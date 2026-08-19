@@ -1277,10 +1277,31 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
         raise
 
 
+def _resolve_task(args: argparse.Namespace) -> str:
+    """Return the task text, reading ``--task-file`` when the task is not inline.
+
+    ``--task-file`` exists so a caller holding text it did not author — a pull-request
+    comment, an issue body, a reviewer finding — never has to embed that text in the
+    command line it composes. Quoting is then not a property of how carefully the caller
+    escaped the text.
+    """
+    if args.task is not None and args.task_file is not None:
+        raise ValueError("pass either --task or --task-file, not both")
+    if args.task is not None:
+        return args.task
+    if args.task_file is None:
+        raise ValueError("one of --task or --task-file is required")
+    try:
+        return Path(args.task_file).read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"--task-file could not be read: {error}") from error
+
+
 def _request_from_args(args: argparse.Namespace) -> Request:
     """Build a validated public request from one command-line namespace."""
     workspace = Path(args.workspace).resolve()
-    if not args.task.strip():
+    task = _resolve_task(args)
+    if not task.strip():
         raise ValueError("--task must not be empty")
     if args.verb not in DEFAULT_TIMEOUTS:
         raise ValueError("unknown bridge verb")
@@ -1297,7 +1318,7 @@ def _request_from_args(args: argparse.Namespace) -> Request:
         normalize_effort(args.effort, "codex")
     return Request(
         args.verb,
-        args.task,
+        task,
         args.model or DEFAULT_MODEL,
         args.effort or DEFAULT_EFFORT,
         float(timeout),
@@ -1318,7 +1339,11 @@ def _parser() -> argparse.ArgumentParser:
     for verb in DEFAULT_TIMEOUTS:
         child = commands.add_parser(verb)
         child.set_defaults(verb=verb)
-        child.add_argument("--task", required=True)
+        # Not argparse-mutually-exclusive: _resolve_task raises a ValueError that reaches
+        # the caller inside the JSON error envelope, whereas argparse would exit 2 with a
+        # bare usage string that no skill or MCP caller can parse.
+        child.add_argument("--task")
+        child.add_argument("--task-file", help="read the task from this file instead of the command line")
         child.add_argument("--model")
         child.add_argument("--effort")
         child.add_argument("--timeout-seconds", type=float)

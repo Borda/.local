@@ -45,7 +45,7 @@ Infer `INTEL_AGENT` from `PR_LABELS` + `PR_TITLE` (lowercase, first match wins) 
 | `lint`, `style`, `format`, `ruff`, `mypy`, `typing`, `type hint`, `annotation`, `annotate`, `docstring`, `comments` | `foundry:linting-expert` |
 | (no match / mixed) | `foundry:sw-engineer` |
 
-**`--agent` override applies to `INTEL_AGENT`**: when caller passes `--agent <name>`, resolved (auto-prefixed) agent overrides routing table for `INTEL_AGENT` as well as Step 8 implementation agent — caller's explicit agent choice always wins. Exception: when resolved agent is `codex:codex-rescue` (Codex is implementation default; not classification agent), fall back to routing table for `INTEL_AGENT`.
+**`--agent` override applies to `INTEL_AGENT`**: when caller passes `--agent <name>`, the resolved agent overrides the routing table for `INTEL_AGENT` as well as Step 8 implementation. The bridge implementation skill is never a classification agent, so fall back to the routing table for `INTEL_AGENT`.
 
 Apply `agent-resolution.md` fallback to `INTEL_AGENT` (foundry absent → substitute with `general-purpose` + role prefix).
 

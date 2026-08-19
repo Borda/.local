@@ -6,7 +6,7 @@ Calibration measures instruction quality against synthetic cases. It is not evid
 
 The package covers the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected when that route is available; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.8.3`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.9.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 <details open>
 <summary><strong>Navigation</strong></summary>
@@ -101,7 +101,7 @@ python plugins/codex-rig/scripts/sync_codex.py --codex-ref codex-rig-v0.4.0
 python plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
-`bash sync.sh claude` changes only Claude scope. `--codex-ref REF` selects a Codex source revision; it does not change product scope. A configured local marketplace is retained and its snapshot is used directly; only configured Git marketplaces are refreshed.
+`bash sync.sh claude` changes only Claude scope. Claude sync manages foundry, oss, develop, research, codemap-py, and `bridge`; it refreshes only the retained external caveman plugin. After the bridge installs successfully, sync removes any installed copy of the retired external Codex rescue plugin; a failed bridge install preserves it for recovery. The retired plugin and its marketplace are never installed or refreshed. `--codex-ref REF` selects a Codex source revision; it does not change product scope. A configured local marketplace is retained and its snapshot is used directly; only configured Git marketplaces are refreshed.
 
 The direct `sync_codex.py clear` action removes the managed Codex plugins and strips only the authenticated Codex Rig block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`; it leaves repository-projected model defaults and personal policy untouched. Root `bash sync.sh clear` reverses the selected Claude/Codex installation: it also uninstalls this marketplace's Claude plugins when Claude scope is active, strips the Codex Rig block, and leaves repository model defaults and personal-policy state in place. Both commands keep a timestamped backup and preserve user-owned content byte-for-byte, honor `claude`/`codex` scoping where applicable, and leave marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
@@ -327,6 +327,7 @@ Use the bundled `$codex-rig:sync` workflow for a dry-run state report and an app
 ```bash
 codex plugin marketplace upgrade borda-ai-rig
 codex plugin add codex-rig@borda-ai-rig
+codex plugin add bridge@borda-ai-rig
 ```
 
 Then start a fresh Codex session. Plugin reinstall does not update external user-agent files automatically. Use the manager's authenticated `remove` action to clean prior development shims; new installation remains platform-blocked.

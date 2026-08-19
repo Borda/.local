@@ -28,7 +28,7 @@ If `CODEX_AVAILABLE=false`: degrade gracefully — match `action-item-dispatch.m
 | `style` | `foundry:linting-expert` |
 | ambiguous / config-only changes | `foundry:sw-engineer` |
 
-Print `⚠ codex plugin not found — falling back to <agent> for this comment. For broader Codex support: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`. Set `IMPL_AGENT=<fallback agent>`; proceed to Step 12a with fallback agent in place of `codex:codex-rescue`. Skip Codex review loop (Step 12b) when no Codex available — single dispatch only.
+Print `⚠ bridge@borda-ai-rig is absent or disabled — falling back to <agent> for this comment.` Set `IMPL_AGENT=<fallback agent>`; proceed to Step 12a with the fallback. Skip the Codex review loop (Step 12b) when the bridge is unavailable — single dispatch only.
 
 ### 12a: Dispatch
 
@@ -42,9 +42,14 @@ touch "$SENTINEL"  # timeout: 3000
 trap 'rm -f "$SENTINEL"' EXIT INT TERM
 ```
 
-```bash
-# IMPL_AGENT: codex:codex-rescue default; falls back per table above when CODEX_AVAILABLE=false
-Agent(subagent_type="${IMPL_AGENT:-codex:codex-rescue}", prompt="Apply this review comment to the codebase. If the change is already present, or the comment has no actionable code change, make no changes and briefly explain why. Comment: $ARGUMENTS")
+Two dispatch forms, not one call with a swappable name: the bridge is a Skill and every fallback in the Step 12 table is a subagent type, so the branch picks the tool as well as the target. These are Claude Code tool calls, not shell commands.
+
+```text
+When CODEX_AVAILABLE=true:
+Skill(skill="bridge:implement", args="Apply this review comment to the codebase. If the change is already present, or the comment has no actionable code change, make no changes and briefly explain why. Comment: $ARGUMENTS")
+
+When CODEX_AVAILABLE=false — $IMPL_AGENT holds the fallback subagent chosen from the Step 12 table:
+Agent(subagent_type="$IMPL_AGENT", prompt="Apply this review comment to the codebase. If the change is already present, or the comment has no actionable code change, make no changes and briefly explain why. Comment: $ARGUMENTS")
 ```
 
 Record initial dispatch outcome (code changed or no change + reason).
@@ -65,15 +70,15 @@ Otherwise:
 for REVIEW_PASS in 1 2 3 4 5; do  # pseudocode — not shell
 
   # Review phase — Agent() is a Claude Code tool call, not a shell command
-  CODEX_OUT = Agent(subagent_type="codex:codex-rescue",
-                    prompt="Review working-tree changes. End output with ISSUES_FOUND=N.")
+  CODEX_OUT = Skill(skill="bridge:review",
+                    args="Read-only review of the working-tree changes made for this original review comment: $ARGUMENTS. Inspect the exact diff, identify only correctness or contract issues introduced by those changes, and return every issue with its full description and exact file:line location. End output with ISSUES_FOUND=N. Do not apply fixes.")
   ISSUES_FOUND = parse CODEX_OUT for ISSUES_FOUND=N (default 0)
 
   if ISSUES_FOUND == 0: break
 
-  # Fix phase
-  Agent(subagent_type="codex:codex-rescue",
-        prompt="Apply this fix: <issue description from review>")
+  # Fix phase — render the complete issue description and paths from CODEX_OUT; no placeholders survive dispatch.
+  Skill(skill="bridge:implement",
+        args="Original review comment: $ARGUMENTS. Apply this validated follow-up issue from the read-only bridge review: ${ISSUE_DESCRIPTION}. Affected paths and locations: ${ISSUE_LOCATIONS}. Make only the edits required for this issue, preserve unrelated working-tree changes, run ${FOCUSED_VERIFICATION}, and stop after the focused check passes or reports a blocker. Return files changed, verification result, and remaining work.")
 
 done
 

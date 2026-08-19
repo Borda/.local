@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """resolve_preflight.py — preflight checks for /oss:resolve Step 1.
 
-Verifies tool availability (codex optional, gh required), authentication,
+Verifies tool availability (bridge@borda-ai-rig optional, gh required), authentication,
 and remote state. Pulls latest if remote is ahead. Caches positive
 results under ``.temp/state/preflight/`` with a 4-hour TTL so repeat
 invocations short-circuit.
@@ -11,7 +11,7 @@ Output:
     stderr — human-readable status (echoed to terminal)
 
 Exit codes:
-    0 — all required checks passed (codex absence is non-fatal)
+    0 — all required checks passed (bridge absence or opt-out is non-fatal)
     1 — required check failed (gh missing, gh unauthenticated, git pull
         conflict, or other hard error)
     2 — bad/missing required argument (argparse default)
@@ -34,6 +34,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from shutil import which
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import check_bridge  # noqa: E402 — sibling script in this plugin's bin/, not an installed module
+
 _PREFLIGHT_TTL = 14400  # 4 hours in seconds
 _PREFLIGHT_DIR = Path(".temp/state/preflight")
 
@@ -42,7 +46,7 @@ def _preflight_ok(name: str, state_dir: Path = _PREFLIGHT_DIR) -> bool:
     """Return True if ``name`` has a valid (non-expired) preflight cache entry.
 
     Args:
-        name: Cache key (e.g. ``"gh"``, ``"codex"``).
+        name: Cache key (e.g. ``"gh"``, ``"bridge"``).
         state_dir: Directory containing ``<name>.ok`` timestamp files.
 
     Returns:
@@ -98,36 +102,24 @@ def main(argv: list[str] | None = None) -> int:
 
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
 
-    # --- codex (optional) -------------------------------------------------------
+    # --- bridge (optional) ------------------------------------------------------
+    # Cache key is "bridge", not "codex": the previous build cached "codex" to mean the
+    # retired Codex rescue plugin, and reusing that key would let a pre-migration entry
+    # answer a question about a different plugin for the rest of its TTL.
     codex_available = False
-    if _preflight_ok("codex"):
+    if _preflight_ok("bridge"):
         codex_available = True
-        print("codex (openai-codex): ok (cached)", file=sys.stderr)
+        print(f"{check_bridge.TARGET_SELECTOR}: ok (cached)", file=sys.stderr)
     else:
-        claude = which("claude")
-        if claude:
-            proc = subprocess.run(  # noqa: S603
-                [claude, "plugin", "list"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10,
-            )
-            if "codex@openai-codex" in proc.stdout:
-                _preflight_pass("codex")
-                codex_available = True
-                print("codex (openai-codex): ok", file=sys.stderr)
-            else:
-                print(
-                    "codex (openai-codex): missing — complex multi-file action items will be"
-                    " skipped; simple items implemented via foundry:sw-engineer"
-                    " (see Step 8 degradation)",
-                    file=sys.stderr,
-                )
+        status = check_bridge.bridge_status(Path.home(), Path("."))
+        if status == "available":
+            _preflight_pass("bridge")
+            codex_available = True
+            print(f"{check_bridge.TARGET_SELECTOR}: ok (installed and enabled)", file=sys.stderr)
         else:
             print(
-                "codex (openai-codex): missing — complex multi-file action items will be"
-                " skipped; simple items implemented via foundry:sw-engineer"
+                f"{check_bridge.TARGET_SELECTOR}: {status} — complex multi-file action items"
+                " will be skipped; simple items implemented via foundry:sw-engineer"
                 " (see Step 8 degradation)",
                 file=sys.stderr,
             )

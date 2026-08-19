@@ -1,13 +1,14 @@
 # 🤖 Codex plugins in Borda's AI-Rig
 
-← [Back to the project overview](../README.md) · [Codex Rig reference](../plugins/codex-rig/README.md) · [Codemap-py reference](../plugins/codemap-py/README.md)
+← [Back to the project overview](../README.md) · [Codex Rig reference](../plugins/codex-rig/README.md) · [Codemap-py reference](../plugins/codemap-py/README.md) · [bridge_CC-Codex reference](../plugins/bridge_cc-codex/README.md)
 
-AI-Rig gives Codex two independently installable products:
+AI-Rig gives Codex three independently installable products:
 
 - **Codex Rig** turns common engineering work into evidence-first workflows with shared gates, specialist role cards, and comparable reports.
 - **Codemap-py** answers unresolved structural questions about Python imports, callers, coupling, renames, and affected tests from a local static index.
+- **bridge_CC-Codex** sends bounded implementation, advice, and review requests from Codex to Claude Code through a host-launched MCP transport.
 
-Install Codex Rig when you want a disciplined workflow. Add Codemap-py when Python structure is part of the uncertainty; skip it when the task already names a sufficient edit surface.
+Install Codex Rig when you want a disciplined workflow. Add Codemap-py when Python structure is part of the uncertainty. Add bridge_CC-Codex when a task benefits from an independent Claude Code implementation, answer, or adversarial review.
 
 <details>
 <summary><strong>Contents</strong></summary>
@@ -36,10 +37,11 @@ Prerequisite: a current Codex release with plugin support. The commands below ma
 codex plugin marketplace add Borda/AI-Rig
 codex plugin add codex-rig@borda-ai-rig
 codex plugin add codemap-py@borda-ai-rig
+codex plugin add bridge@borda-ai-rig
 codex plugin list
 ```
 
-`codemap-py` is optional. Start a fresh Codex session after installation. To pin an immutable marketplace revision, add it with `--ref <release-tag>` rather than relying on a copied "latest" tag.
+`codemap-py` and `bridge` are optional for direct installation. The repository synchronization path manages all three Codex plugins. Start a fresh Codex session after installation. To pin an immutable marketplace revision, add it with `--ref <release-tag>` rather than relying on a copied "latest" tag.
 
 Direct plugin installation changes only Codex's plugin configuration and cache. It does not copy this repository's `.codex/config.toml`, personal policy, or global `AGENTS.md` into your Codex home.
 
@@ -69,6 +71,14 @@ $codemap-py:query-code rdeps mypackage.auth
 $codemap-py:test-impact mypackage.auth::validate_token
 ```
 
+Check the reverse bridge before sending a request:
+
+```text
+$bridge:setup
+$bridge:advise explain the smallest safe next step without editing files
+$bridge:review review the current diff for correctness and missing tests
+```
+
 When passing an invocation from a shell, quote it so `$` is not expanded:
 
 ```bash
@@ -81,13 +91,15 @@ codex '$codemap-py:query-code rdeps mypackage.auth'
 <details>
 <summary><strong>Show package identity, architecture, and health behavior</strong></summary>
 
-Codex Rig is the independently packaged `codex-rig` product. The current manifest identifies version `0.8.0`, fourteen capabilities (thirteen workflow skills plus `agent-shims`), fifteen role cards, parallel blank-agent injection, inline fallback, quality gates, optional Codemap-py context, authenticated cleanup for prior shims, and an optional SessionStart diagnostic. The manifest does not register native persistent agents or an MCP server.
+Codex Rig is the independently packaged `codex-rig` product. The current manifest identifies version `0.9.0`, fourteen capabilities (thirteen workflow skills plus `agent-shims`), fifteen role cards, parallel blank-agent injection, inline fallback, quality gates, optional Codemap-py context, authenticated cleanup for prior shims, and an optional SessionStart diagnostic. The manifest does not register native persistent agents or an MCP server.
 
 Its shipped tree is organized as `.codex-plugin/plugin.json`, `skills/`, `roles/`, `shared/`, `runtime/calibration/`, `hooks/`, `scripts/`, `tests/`, and `package-manifest.json`. The installed cache is immutable input: workflows resolve their own installed root and do not patch the cache or copy repository source into it.
 
 `hooks/hooks.json` declares a read-only `SessionStart` command for `startup|resume`. It invokes the package's shim-health diagnostic with `python3` on POSIX and `python` on Windows, and does not install, update, or remove files. Declining hook trust leaves the diagnostic inactive without disabling skills.
 
 Codemap-py is a separate `codemap-py` package. Its current Codex manifest identifies version `0.30.1`, the `codex-skills/` entry point, and six structural-analysis capabilities. Codex receives those skills but no Codemap hook manifest: there is no ambient preamble, hook-seeded session correlation, or redundant-scan guard. Codemap remains optional and Codex Rig starts without it.
+
+bridge_CC-Codex is a separate `bridge` package shared by Claude Code and Codex. Its Codex half contributes four skills and a stdio MCP declaration. The MCP server is mandatory for Codex → Claude Code because it runs in the host context that owns normal Claude authentication; it does not accept model-controlled workspace, background, or session authority.
 
 </details>
 
@@ -198,6 +210,19 @@ Codemap-py exposes the same six capabilities in Codex and Claude Code:
 
 Codex does not add the plugin's `bin/` directory to PATH and does not receive the optional Claude hook manifest. Use the `$codemap-py:*` skills unless you deliberately resolve the installed plugin root.
 
+### bridge_CC-Codex skills
+
+bridge_CC-Codex exposes four Codex skills:
+
+| Skill               | Capability                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `$bridge:implement` | Ask Claude Code to make one bounded write-capable change and return a compact envelope.  |
+| `$bridge:advise`    | Ask Claude Code for a read-only answer with explicit model, effort, and budget controls. |
+| `$bridge:review`    | Ask Claude Code for a read-only adversarial review with actionable findings.             |
+| `$bridge:setup`     | Check the local Claude CLI and bridge transport; paid live probing remains opt-in.       |
+
+The reverse bridge keeps detailed provider output in a workspace-relative transcript. Decision-critical verdicts, findings, files touched, remaining work, and blockers stay in the compact response.
+
 ## 🗺️ Choosing the right workflow
 
 | Situation                                                      | Route                                                            |
@@ -301,16 +326,16 @@ Codex Rig's `implement`, `investigate`, and `optimize` routes may probe the publ
 
 Direct marketplace installation is the public path and leaves global/project instructions alone.
 
-From this source checkout, `bash sync.sh codex` performs a broader managed restore: it installs or updates Codex Rig and Codemap, projects selected repository model defaults and personal policy, and manages one authenticated Codex Rig block in `CODEX_HOME/AGENTS.md` unless `--no-codex-global-agents` is supplied. Read the [Codex Rig managed-instructions section](../plugins/codex-rig/README.md#managed-global-instructions) before using it.
+From this source checkout, `bash sync.sh codex` performs a broader managed restore: it installs or updates Codex Rig, Codemap-py, and bridge_CC-Codex, projects selected repository model defaults and personal policy, and manages one authenticated Codex Rig block in `CODEX_HOME/AGENTS.md` unless `--no-codex-global-agents` is supplied. Read the [Codex Rig managed-instructions section](../plugins/codex-rig/README.md#managed-global-instructions) before using it.
 
 `sync.sh` installs from the pushed GitHub remote, not a dirty local tree. Commit and push first when you intentionally want a checkout change to become installable.
 
 <details>
 <summary><strong>Show sync scope and cleanup boundaries</strong></summary>
 
-Direct installation changes only the Codex plugin configuration/cache. Repository sync additionally installs or updates both managed plugins, projects the root `model` and `review_model` defaults plus the authenticated personal policy, and manages one marked Codex Rig global-instructions block unless opted out. It does not overwrite project-owned `AGENTS.md` files or unrelated user configuration.
+Direct installation changes only the Codex plugin configuration/cache. Repository sync additionally installs or updates all three managed plugins, projects the root `model` and `review_model` defaults plus the authenticated personal policy, and manages one marked Codex Rig global-instructions block unless opted out. It does not overwrite project-owned `AGENTS.md` files or unrelated user configuration.
 
-`bash sync.sh codex --no-codex-global-agents` leaves the global file unchanged while still projecting model defaults. `bash sync.sh clear codex` removes this marketplace's Codex plugins and the managed block while preserving user-owned bytes; marketplace registrations and external plugins remain. The native `plugins/codex-rig/scripts/sync_codex.py` path manages the Codex plugins and block but does not project repository model defaults or personal policy.
+`bash sync.sh codex --no-codex-global-agents` leaves the global file unchanged while still projecting model defaults. `bash sync.sh clear codex` removes Codex Rig, Codemap-py, bridge_CC-Codex, and the managed block while preserving user-owned bytes; marketplace registrations remain. The native `plugins/codex-rig/scripts/sync_codex.py` path manages the Codex plugins and block but does not project repository model defaults or personal policy.
 
 </details>
 
@@ -322,6 +347,7 @@ Direct installation changes only the Codex plugin configuration/cache. Repositor
 codex plugin marketplace upgrade borda-ai-rig
 codex plugin add codex-rig@borda-ai-rig
 codex plugin add codemap-py@borda-ai-rig
+codex plugin add bridge@borda-ai-rig
 ```
 
 Use `codex plugin remove <plugin>@borda-ai-rig` to remove a plugin. If old Codex Rig shims exist, run `$codex-rig:agent-shims remove` before removing Codex Rig; removing the plugin first can make authenticated cleanup unavailable.
@@ -360,5 +386,7 @@ For Codex Rig, remove authenticated legacy shims first, then remove the plugin. 
 - [Codemap-py runtime executables](../plugins/codemap-py/bin/README.md)
 - [Codemap-py packaging and install probes](../plugins/codemap-py/scripts/README.md)
 - [Codemap-py manifest](../plugins/codemap-py/.codex-plugin/plugin.json)
+- [bridge_CC-Codex product and transport reference](../plugins/bridge_cc-codex/README.md)
+- [bridge_CC-Codex manifest](../plugins/bridge_cc-codex/.codex-plugin/plugin.json)
 
 License: [Apache-2.0](../LICENSE).

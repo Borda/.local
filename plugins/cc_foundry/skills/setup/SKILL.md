@@ -233,16 +233,16 @@ fi
 ## Step 7: Merge enabledPlugins
 
 ```bash
-jq -e '.enabledPlugins["codex@openai-codex"] == true' ~/.claude/settings.json >/dev/null 2>&1  # timeout: 5000
+jq -e '.enabledPlugins["bridge@borda-ai-rig"] == true' ~/.claude/settings.json >/dev/null 2>&1  # timeout: 5000
 ```
 
 If already `true`: report "enabledPlugins already set — skipping." Otherwise:
 
-Writes `enabledPlugins["codex@openai-codex"]` key:
+Writes `enabledPlugins["bridge@borda-ai-rig"]` key:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-_jq_result=$(jq '.enabledPlugins["codex@openai-codex"] = true' \
+_jq_result=$(jq '.enabledPlugins["bridge@borda-ai-rig"] = true' \
     ~/.claude/settings.json)  # timeout: 5000
 [ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json-${CSID}" ~/.claude/settings.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
 ```

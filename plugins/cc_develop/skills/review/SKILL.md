@@ -55,7 +55,7 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 <constants>
 
 FANOUT_MAX=3            # default: top-N most relevant of the classification-preselected dimensions
-                        # 3 not 4 — codex:codex-rescue spawns outside this cap, so 3 keeps the
+                        # 3 not 4 — bridge review runs outside this cap, so 3 keeps the
                         # observed agent count at 4, not 5
                         # --full runs ALL preselected dimensions instead — no numeric cap
 AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
@@ -348,7 +348,8 @@ REPORT_DIR_LITERAL="$REPORT_DIR"
 Check availability:
 
 ```bash
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "codex (openai-codex) available" || echo "⚠ codex (openai-codex) not found — skipping co-review"  # timeout: 15000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_develop}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+[ "$CODEX_STATUS" = "available" ] && echo "bridge@borda-ai-rig available" || echo "⚠ bridge@borda-ai-rig is ${CODEX_STATUS} — skipping co-review"
 ```
 
 Materialize codemap context into run directory (`$RUN_DIR` now exists):
@@ -371,7 +372,7 @@ echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out-${CSID}  # Step 6 re-re
 
 Read `$_DEV_SHARED/codex-prepass.md` for Codex pass instructions and use them as the spawn prompt — it ships in this plugin's own `_shared`. The inline prompt below is a fallback for a broken install only.
 
-Spawn `codex:codex-rescue` agent (requires `codex` plugin): "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
+Call `Skill(skill="bridge:review", args="Read-only adversarial review of $TARGET. Look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Write findings to $RUN_DIR/codex.md; do not apply fixes.")` (requires `bridge@borda-ai-rig`).
 
 Note: Agent spawns are synchronous and cannot be timeout-wrapped via Bash `timeout:`. If hang risk unacceptable, spawn with `run_in_background=true` — when doing so, implement health-monitoring per CLAUDE.md §6: create sentinel file, poll every 5 min for file activity in `$RUN_DIR`, hard cutoff 15 min. Without background spawning, move on after reasonable wait (observe if Codex output file grows; no growth after ~2 min → treat as timed out).
 
@@ -668,7 +669,7 @@ rm -f .temp/state/skill-contract.md  # clear contract — skill complete (compac
   - `[blocking]` bugs or regressions → `/develop:fix` to reproduce with test and apply targeted fix
   - Structural or quality issues → `/develop:refactor` for test-first improvements
   - Security findings in auth/input/deps → run `pip-audit` for dependency CVEs; address OWASP issues inline via `/develop:fix`
-  - Mechanical issues beyond Step 5 findings → `/codex:codex-rescue <task>` to delegate (requires `codex` plugin)
+  - Mechanical issues beyond Step 5 findings → when `bridge@borda-ai-rig` is available, call its `implement` skill with a brief that states the exact finding, target paths, current evidence, permitted edits, required result, stop condition, and verification command.
   - Contributor-facing review of GitHub PR → use `/oss:review <PR#>` (requires oss plugin) instead
 - **Parallel agent cleanup**: after all 7 agents complete, review `TaskList` — delete any tasks created by sub-agents (not by lead orchestrator). Sub-agent task creation unintended, can leave zombie tasks.
 

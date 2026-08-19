@@ -55,6 +55,7 @@ MARKETPLACE_SOURCE = "Borda/AI-Rig"
 MANAGED_PLUGINS = (
     ("Codex Rig", f"codex-rig@{MARKETPLACE}"),
     ("Codemap", f"codemap-py@{MARKETPLACE}"),
+    ("Claude Code and Codex Bridge", f"bridge@{MARKETPLACE}"),
 )
 MAX_JSON_BYTES = 1_048_576
 WINDOWS_BATCH_METACHARACTERS = frozenset('&|<>^()%!"')

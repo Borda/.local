@@ -79,19 +79,18 @@ claude plugin install foundry@borda-ai-rig   # specialized agents; optional
 
 **Optional integrations** (unlock extra capabilities inside `oss` skills):
 
-| Plugin               | What it unlocks                                                                                                                                                                                      |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry`            | Specialized review and implementation agents instead of `general-purpose` fallbacks                                                                                                                  |
-| `codex@openai-codex` | Optional Codex co-review in `/oss:review` and Codex action-item dispatch in `/oss:resolve`                                                                                                           |
-| `codemap-py`         | Reverse-dependency count (`rdep_count`) in `/oss:review` risk assessment; stale-symbol detection in `/oss:analyse` issue triage, Open-PR Overlap + Structural Constraints in `/oss:analyse vitality` |
+| Plugin                | What it unlocks                                                                                                                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry`             | Specialized review and implementation agents instead of `general-purpose` fallbacks                                                                                                                  |
+| `bridge@borda-ai-rig` | Optional Codex co-review in `/oss:review` and Codex action-item dispatch in `/oss:resolve`                                                                                                           |
+| `codemap-py`          | Reverse-dependency count (`rdep_count`) in `/oss:review` risk assessment; stale-symbol detection in `/oss:analyse` issue triage, Open-PR Overlap + Structural Constraints in `/oss:analyse vitality` |
 
 All `oss` skills degrade gracefully when optional plugins absent — reduced capability, not broken commands.
 
 Install the optional Codex integration only if you need those paths:
 
 ```text
-/plugin marketplace add openai/codex-plugin-cc
-/plugin install codex@openai-codex
+/plugin install bridge@borda-ai-rig
 /reload-plugins
 ```
 
@@ -247,7 +246,7 @@ Tier 0  git diff --stat
         agent spawns. Full criteria: "Review stages" below.
 
 Optional Codex co-review
-        Runs when `codex@openai-codex` is installed; otherwise skipped
+        Runs when `bridge@borda-ai-rig` is installed and enabled; otherwise skipped
 
 Tier 2  Parallel review dimensions
         Scope selects relevant dimensions; default runs at most four
@@ -756,7 +755,7 @@ These helpers are installed workflow support and maintainer surfaces, not additi
 
 **`/oss:review` skips Tier 2 agents**
 
-Review dimensions are scope-selected and the default fan-out is capped at four. Install `foundry` for specialized agents; otherwise the selected work uses `general-purpose` fallbacks. Install `codex@openai-codex` only if you want the optional Codex co-review.
+Review dimensions are scope-selected and the default fan-out is capped at four. Install `foundry` for specialized agents; otherwise the selected work uses `general-purpose` fallbacks. Install `bridge@borda-ai-rig` only if you want optional Codex co-review.
 
 **A question is blocked with "oss:review report gate"**
 

@@ -61,7 +61,7 @@ Narrate phase boundaries: `"Phase 1: N parallel-safe fixes launched"` → `"Phas
 
 Gate applies at every severity level. Skip only for inline-exception cases (settings.json, CLAUDE.md, dead loops, model tier).
 
-**Trivial-finding fast path** (see `agent-spawn-protocol.md` §Delegation cost discipline): findings whose category is in `PARALLEL_SAFE_CATEGORIES` (criterion 2 above) skip the two-agent challenger+curator gate entirely — a typo or hardcoded-path substitution carries no ambiguity worth a second opinion. Batch all such findings across the whole fix run (not just one file) into as few fix-agent spawns as reasonably group by file-adjacency, and prefer the cheapest capable path (`codex:codex-rescue --write` when available, else the normal per-file-type agent) over the standard curator/sw-engineer default. When codex is unavailable, spawn the per-file-type agent below with an explicit `model: haiku` override on the `Agent()` call — same tiering rubric as `audit-fix-prompt.md` §Model tiering: a `PARALLEL_SAFE_CATEGORIES` finding is pure transcription (the finding already states the exact replacement), not judgment, so it needs the cheapest capable tier, not the agent's own opus-class default (curator.md/sw-engineer.md frontmatter stays opus for their normal judgment-bearing role; this overrides per-call only, for this category of finding). Reserve the full adversarial gate, top-tier agent, and default model tier for CRITICAL/HIGH findings and anything cross-file-dependent, where a wrong fix has real cost.
+**Trivial-finding fast path** (see `agent-spawn-protocol.md` §Delegation cost discipline): batch parallel-safe findings by file adjacency and prefer `bridge:implement` when `bridge@borda-ai-rig` is available. Each call must state the exact finding, target paths, current evidence, permitted edits, required result, stop condition, and verification command. When the bridge is absent or disabled, use the normal per-file-type agent with `model: haiku`. Reserve the full adversarial gate and top-tier agents for CRITICAL/HIGH or cross-file-dependent findings.
 
 Fix agent by file type:
 
@@ -123,7 +123,8 @@ After subagents complete, collect results and proceed to Step 10.
 After Step 8 fix agents complete, before foundry:curator re-audit:
 
 ```bash
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=true || CODEX_AVAILABLE=""  # timeout: 15000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")
+[ "$CODEX_STATUS" = "available" ] && CODEX_AVAILABLE=true || CODEX_AVAILABLE=""  # timeout: 5000
 _SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/cc_foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 [ -n "$CODEX_AVAILABLE" ] && cat "$_SHARED/codex-prepass.md"

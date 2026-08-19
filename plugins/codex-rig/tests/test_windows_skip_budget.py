@@ -47,7 +47,7 @@ APPROVED_CAPABILITY_SKIPS = {
     "test_global_agents_installer.py": 2,
     "test_installed_cache_scaffold.py": 1,
     "test_package_identity.py": 1,
-    "test_plugin_only_release.py": 3,
+    "test_plugin_only_release.py": 2,
     "test_sync_setup_dispatch.py": 2,
 }
 

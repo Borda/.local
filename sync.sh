@@ -5,12 +5,14 @@
 # Run from the project root: bash sync.sh [claude] [codex] [clear] [--no-clean] [--codex-ref REF] [--no-codex-global-agents]
 #
 # Arguments (order-independent):
-#   claude   — sync Claude plugins + their installed setup skills (default: both)
-#   codex    — install or update the Codex Rig and Codemap plugins, then mirror this checkout's Codex session policy (default: both)
+#   claude   — sync Claude plugins + their installed setup skills (default: both).
+#              Also purges plugins this rig has retired (see PURGE_PLUGINS below);
+#              codex@openai-codex is purged only once bridge installs in the same run.
+#   codex    — install or update Codex Rig, Codemap, and bridge, then mirror this checkout's Codex session policy (default: both)
 #   clear    — teardown instead of install: uninstall this marketplace's Claude plugins
-#              + the Codex Rig and Codemap plugins, and strip the managed block from $CODEX_HOME/AGENTS.md
+#              + Codex Rig, Codemap, and bridge, and strip the managed block from $CODEX_HOME/AGENTS.md
 #              (a timestamped backup is kept). Honors claude/codex scoping (default: both sides).
-#              Leaves marketplace registrations and external plugins (caveman/openai-codex) in place.
+#              Leaves marketplace registrations and the external caveman plugin in place.
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
 #   --no-codex-global-agents — leave $CODEX_HOME/AGENTS.md unchanged; model defaults still mirror
@@ -67,8 +69,8 @@ if [[ -n "$CODEX_REF" ]] && ! $SYNC_CODEX; then
     exit 2
 fi
 
-PLUGINS=(foundry oss develop research codemap-py)
-EXTERNAL_PLUGINS=(codex@openai-codex caveman@caveman)
+PLUGINS=(foundry oss develop research codemap-py bridge)
+EXTERNAL_PLUGINS=(caveman@caveman)
 MARKETPLACE=$(jq -r '.name' .claude-plugin/marketplace.json)
 SETTINGS="$HOME/.claude/settings.json"
 KNOWN_MARKETPLACES="$HOME/.claude/plugins/known_marketplaces.json"
@@ -90,7 +92,7 @@ if $CLEAR; then
         echo "Clearing Codex plugins..."
         python3 "$CODEX_SYNC_SCRIPT" clear
     fi
-    echo "✓ Cleared (Standard: plugins uninstalled; marketplace registrations + external plugins left in place)"
+    echo "✓ Cleared (managed plugins uninstalled; marketplace registrations + caveman left in place)"
     exit 0
 fi
 
@@ -170,13 +172,6 @@ if $CLEAN; then
 fi
 
 echo "Refreshing external plugin marketplaces..."
-# `add` alone is idempotent and does not refresh an already-registered marketplace's
-# manifest — installed plugin versions stayed pinned to first-registration state
-# (openai-codex sat on v1.0.1 for months while upstream shipped 1.0.4/1.0.5). `add`
-# first only bootstraps a fresh machine; `update` performs the actual refresh.
-claude plugin marketplace add openai/codex-plugin-cc 2>/dev/null || true
-OPENAI_CODEX_OK=false
-claude plugin marketplace update openai-codex 2>/dev/null && { echo "  ✓ openai-codex refreshed"; OPENAI_CODEX_OK=true; } || echo "  ⚠ openai-codex refresh failed (offline?)"
 claude plugin marketplace add JuliusBrussee/caveman 2>/dev/null || true
 CAVEMAN_OK=false
 claude plugin marketplace update caveman 2>/dev/null && { echo "  ✓ caveman refreshed"; CAVEMAN_OK=true; } || echo "  ⚠ caveman refresh failed (offline?)"
@@ -186,7 +181,6 @@ echo "Updating external plugins..."
 # otherwise a network blip uninstalls a working plugin and leaves it uninstalled.
 for p in "${EXTERNAL_PLUGINS[@]}"; do
     case "$p" in
-        codex@openai-codex)  mkt_ok=$OPENAI_CODEX_OK ;;
         caveman@caveman)     mkt_ok=$CAVEMAN_OK ;;
         *)                   mkt_ok=false ;;
     esac
@@ -223,9 +217,37 @@ claude plugin marketplace remove "$MARKETPLACE" 2>/dev/null || true  # drop any 
 claude plugin marketplace add "$MARKETPLACE_REMOTE"
 
 echo "Installing plugins..."
+BRIDGE_INSTALLED=false
+FAILED_INSTALLS=0
 for p in "${PLUGINS[@]}"; do
     if claude plugin install "${p}@${MARKETPLACE}"; then
         print_claude_plugin_identity "${p}@${MARKETPLACE}"
+        if [[ "$p" == "bridge" ]]; then
+            BRIDGE_INSTALLED=true
+        fi
+    else
+        echo "  ✗ ${p}@${MARKETPLACE} install failed"
+        FAILED_INSTALLS=$((FAILED_INSTALLS + 1))
+    fi
+done
+
+# Purge step — retire plugins this rig no longer uses. A failed uninstall is not an error
+# here: the ordinary cause is the plugin already being absent, and nothing downstream
+# depends on it having been present. Add an entry to retire it from every synced machine.
+PURGE_PLUGINS=(ponytail@ponytail)
+# codex@openai-codex is the one conditional entry — it is the integration the bridge
+# replaces, so it is retired only once its replacement actually installed in this same run.
+# A failed bridge install leaves the working legacy plugin in place for recovery.
+if $BRIDGE_INSTALLED; then
+    PURGE_PLUGINS+=(codex@openai-codex)
+fi
+
+echo "Purging retired plugins..."
+for p in "${PURGE_PLUGINS[@]}"; do
+    if claude plugin uninstall "$p" 2>/dev/null; then
+        echo "  ✓ purged ${p}"
+    else
+        echo "  – ${p} not installed, nothing to purge"
     fi
 done
 
@@ -242,7 +264,14 @@ for p in "${PLUGINS[@]}"; do
         echo "  – ${p} not installed, skipping setup"
         continue
     fi
-    if [[ ! -f "$install_path/skills/setup/SKILL.md" ]]; then
+    setup_skill=""
+    for candidate in "$install_path/skills/setup/SKILL.md" "$install_path/claude-skills/setup/SKILL.md"; do
+        if [[ -f "$candidate" ]]; then
+            setup_skill="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$setup_skill" ]]; then
         echo "  – ${p} has no setup skill, skipping"
         continue
     fi
@@ -273,4 +302,11 @@ python3 "$CODEX_HOME_SYNC_SCRIPT" "${CODEX_HOME_SYNC_ARGS[@]}"
 
 fi  # SYNC_CODEX
 
+# A per-plugin install failure is survivable — the other plugins installed and the retired
+# ones were left alone — but the run did not do what it was asked to, so it must not exit 0
+# and report success. Callers and CI branch on this; the summary line names the count.
+if [[ ${FAILED_INSTALLS:-0} -gt 0 ]]; then
+    echo "⚠ Done with ${FAILED_INSTALLS} failed install(s) — rerun after checking network and marketplace access"
+    exit 1
+fi
 echo "✓ Done"

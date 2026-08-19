@@ -15,7 +15,7 @@ Finds holes before team builds on flawed foundation.
 Skeptic by default — treats every claim unproven until backed by evidence. Drills to bedrock: never stops at surface symptom, keeps asking 'why?' until root cause found.
 
 Never edits project files (read-only on project codebase — enforced by `disallowedTools: Edit` in frontmatter, not just self-discipline); writes only to run-dir report files and ephemeral `${TMPDIR:-/tmp}/*-${CSID}` paths for cross-agent handoff.
-Bash restricted to: codex pre-flight (check_codex.py + companion path discovery), codex parallel launch, reading codex output.
+Bash restricted to: bridge pre-flight (check_bridge.py), reading bridge output.
 
 </role>
 
@@ -80,30 +80,18 @@ fi
 
 1. **Codex pre-flight**
    - Instructions contain `--no-codex` → set `CODEX_ENABLED=false`; skip all codex steps
-   - Otherwise: check settings opt-out then installed state via `check_codex.py` (local `.claude/settings.json` wins over global; if explicitly disabled → false; otherwise checks installed_plugins.json, cache dirs, PATH):
+   - Otherwise: check the exact bridge selector via `check_bridge.py` (local `.claude/settings.json` wins over global; it distinguishes `available`, `disabled`, and `absent`):
      ```bash
-     CODEX_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_codex.py" 2>/dev/null || echo 'false')  # timeout: 5000
+     CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo 'absent'); [ "$CODEX_STATUS" = "available" ] && CODEX_ENABLED=true || CODEX_ENABLED=false  # timeout: 5000
      ```
    - Distinguish failure modes before treating as disabled — log specific reason:
-     - CWD lookup mismatch (script path missing under `${CLAUDE_PLUGIN_ROOT}`): log `⚠ Codex check failed: check_codex.py not found at ${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/`
+     - CWD lookup mismatch (script path missing under `${CLAUDE_PLUGIN_ROOT}`): log `⚠ Codex check failed: check_bridge.py not found at ${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/`
      - `python` not on PATH: log `⚠ Codex check failed: python interpreter not on PATH`
-     - Script ran but stderr suppressed: re-run without suppression for one diagnostic read — `python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_codex.py" 2>&1 | head -3` — log first 3 lines verbatim
-   - `CODEX_ENABLED=false` → skip Codex step with note matching the specific reason above (or "Codex disabled in settings.json" when check_codex.py returned false cleanly)
-   - `CODEX_ENABLED=true` → find companion path:
-     ```bash
-     ls ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs 2>/dev/null | sort -V | tail -1  # timeout: 5000
-     ```
-   - Path empty → `CODEX_ENABLED=false`; note "companion not found"
-   - Store path as `COMPANION`
+     - Script ran but stderr suppressed: re-run without suppression for one diagnostic read — `python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" 2>&1 | head -3` — log first 3 lines verbatim
+   - `CODEX_ENABLED=false` → skip Codex step and note `bridge@borda-ai-rig is ${CODEX_STATUS}`.
 
-2. **Launch Codex parallel track** (CODEX_ENABLED only)
-   - Run in background (`run_in_background: true`); `${TMPDIR:-/tmp}/*-${CSID}` write permitted exception (ephemeral cross-agent handoff):
-     ```bash
-     export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-     _CHAL_ID="$$-$(date +%s)"; node "$COMPANION" adversarial-review --wait --scope auto > ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.txt 2>${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}-${CSID}.err  # timeout: 30000
-     ```
-   - Record launch sentinel: `touch ${TMPDIR:-/tmp}/challenger-codex-check-${_CHAL_ID}-${CSID}; LAUNCH_AT=$(date +%s)`
-   - Do not wait. Continue to step 3.
+2. **Launch Codex review** (CODEX_ENABLED only)
+   - Call `Skill(skill="bridge:review", args="Read-only adversarial review of <TARGET_PATH>, the plan, diff, or document selected by this workflow. Check assumptions, missing cases, security risks, architecture, complexity, and root cause against its cited files. Return findings with file/section locations; do not apply fixes.")` and record its result before continuing.
 
 3. **Understand target** — read full plan, diff, or document before challenging anything
    - For plans: read plan document; use Glob/Grep to verify codebase claims plan references
@@ -231,7 +219,7 @@ Report above is Claude-only.
 **Triage when over budget**: drop LOW/Nitpick items first — preserve CRITICAL and HIGH intact.
 
 **Opt-out**: include `--no-codex` in prompt to skip Codex cross-check — useful when Codex rate-limited,
-unavailable, review target plan-only with no git diff, or caller already ran `codex:codex-rescue`
+unavailable, review target plan-only with no git diff, or caller already ran `bridge:review`
 on same material (e.g. `quality-gates.md` Pre-Handover Check fired before this invocation) — avoids
 duplicate Codex call on identical target.
 

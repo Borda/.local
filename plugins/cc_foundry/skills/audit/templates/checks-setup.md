@@ -81,23 +81,23 @@ fi
 **Severity**: **low** per stale entry. Fix: remove stale entry from `settings.json` (report only — `settings.json` never auto-edited per audit policy).
 
 **Important**: some allow entries intentionally grant broad patterns (e.g., `Bash(mkdir -p .reports/audit/*)`) not appearing verbatim in config files — exercised at runtime. Flag only entries whose command fragment appears nowhere in any `.claude/` file.
-## Check 7 — codex plugin integration check
+## Check 7 — bridge-to-Codex plugin integration check
 
-Skip if codex (openai-codex) plugin not installed.
+Skip when `bridge@borda-ai-rig` is absent.
 
 ```bash
-CODEX_LINE=$(claude plugin list 2>/dev/null | grep 'codex@openai-codex') # timeout: 5000
-if [ -z "$CODEX_LINE" ]; then
-    printf "⚠ SKIPPED: Check 7 — codex (openai-codex) plugin not installed\n"
-elif echo "$CODEX_LINE" | grep -q 'disabled'; then
-    printf "⚠ WARN: Check 7 — codex (openai-codex) plugin installed but DISABLED\n"
-    printf "  Fix: run \`claude plugin enable codex@openai-codex\` then \`/reload-plugins\`\n"
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent") # timeout: 5000
+if [ "$CODEX_STATUS" = "absent" ]; then
+    printf "⚠ SKIPPED: Check 7 — bridge@borda-ai-rig not installed\n"
+elif [ "$CODEX_STATUS" = "disabled" ]; then
+    printf "⚠ WARN: Check 7 — bridge@borda-ai-rig installed but DISABLED\n"
+    printf "  Fix: run \`claude plugin enable bridge@borda-ai-rig\` then \`/reload-plugins\`\n"
 else
-    printf "✓ OK: Check 7 — codex (openai-codex) plugin present and enabled\n"
+    printf "✓ OK: Check 7 — bridge@borda-ai-rig present and enabled\n"
 fi
 ```
 
-- Plugin installed but **disabled** → **medium** (fix: `claude plugin enable codex@openai-codex` + `/reload-plugins`)
+- Plugin installed but **disabled** → **medium** (fix: `claude plugin enable bridge@borda-ai-rig` + `/reload-plugins`)
 - Plugin present but dispatches fail → **high** (verify with `/calibrate skills`)
 
 ## Check 8 — foundry plugin correctness
@@ -266,7 +266,7 @@ else
             printf "⚠ MEDIUM: Check 8g — .claude/skills/setup/ exists; setup skill should live only in the plugin\n"
         fi
         MISSING_COVERAGE=0
-        for KEYWORD in "statusLine" "permissions.allow" "codex@openai-codex" "link"; do
+        for KEYWORD in "statusLine" "permissions.allow" "bridge@borda-ai-rig" "link"; do
             if ! grep -qF "$KEYWORD" "$SF_SKILL"; then # timeout: 5000
                 printf "⚠ MEDIUM: Check 8g — setup SKILL.md does not mention '%s'\n" "$KEYWORD"
                 MISSING_COVERAGE=$((MISSING_COVERAGE + 1))

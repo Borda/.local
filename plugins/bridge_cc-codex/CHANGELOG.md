@@ -1,6 +1,12 @@
 # Changelog
 
-All notable changes to `bridge` are documented here.
+All notable changes to `bridge_CC-Codex` are documented here.
+
+## 0.2.0
+
+- Set the user-facing brand to `bridge_CC-Codex` across both host manifest descriptions and the Codex display metadata, while the installed plugin name, skill namespaces, and marketplace registrations stay `bridge` for consistency with the other plugins.
+- Advertise the MCP server under the same `bridge` name the plugin already installs as, so the transport identifier no longer differs from the plugin identifier.
+- Accept the task from a file via `--task-file`, mutually exclusive with `--task`, so a caller forwarding text it did not author never has to embed that text in a command line; both a missing and an ambiguous task source fail as the same parseable JSON error envelope every other failure uses.
 
 ## 0.1.0
 

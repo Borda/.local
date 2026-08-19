@@ -1,10 +1,10 @@
-# 🌉 bridge — Claude Code ↔ Codex
+# 🌉 bridge_CC-Codex — Claude Code ↔ Codex
 
-`bridge` lets Claude Code and OpenAI Codex hand one another bounded implementation, advice, and review requests. It is one repository with two independently installable host integrations: the Claude Code half calls the `codex` CLI, and the Codex half calls Claude through the bridge's host-launched MCP server.
+`bridge_CC-Codex` lets Claude Code and OpenAI Codex hand one another bounded implementation, advice, and review requests. Its normalized plugin identifier is `bridge`. It is one repository with two independently installable host integrations: the Claude Code half calls the `codex` CLI, and the Codex half calls Claude through the bridge's host-launched MCP server.
 
 The bridge is useful with either host integration installed and has no dependency on another plugin from this repository. Existing-plugin replacement and consumer migration are deliberately outside this standalone package.
 
-> Release: `0.1.0`.
+> Release: `0.2.0`.
 
 ______________________________________________________________________
 
@@ -66,7 +66,7 @@ If you install only the Claude Code half to call Codex, MCP is not required. If 
 
 The Codex-facing MCP surface has three tools: `bridge_implement`, `bridge_advise`, and `bridge_review`. MCP is required for Codex → Claude Code and full bidirectional use, but not for Claude Code → Codex-only use.
 
-Add the AI-Rig marketplace and install the `bridge` plugin:
+Add the AI-Rig marketplace and install `bridge_CC-Codex`:
 
 ```bash
 claude plugin marketplace add Borda/AI-Rig

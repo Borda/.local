@@ -127,7 +127,7 @@ Include `### Codex Pre-pass` section in final report:
 
 - Available + findings: list what Codex flagged (become `CODEX_FINDINGS` seed)
 - Available + no issues: "Codex pre-pass: no issues found"
-- Skipped (unavailable): "codex plugin (openai-codex) not installed — pre-pass skipped"
+- Skipped (unavailable): "bridge@borda-ai-rig absent or disabled — pre-pass skipped"
 
 ## Progressive Review Loop
 

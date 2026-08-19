@@ -18,7 +18,7 @@ NOT for: known Python test failures with traceback (use `/develop:debug` (requir
 
 - **$ARGUMENTS**: required — symptom, question, or failing command, e.g.:
   - `"hooks not firing on Save"`
-  - `"codex:codex-rescue agent exits 127 on this machine"`
+  - `"bridge review is unavailable on this machine"`
   - `"/calibrate times out every run"`
   - `"CI fails but passes locally"`
   - `"uv run pytest can't find conftest.py"`
@@ -88,7 +88,7 @@ Collect evidence in parallel — do NOT form hypotheses yet.
 which python && python --version                                                                   # timeout: 5000
 which uv 2>/dev/null && uv --version 2>/dev/null || echo "uv: not found"                             # timeout: 5000
 node --version 2>/dev/null || echo "node: not found"                                                 # timeout: 5000
-CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_codex.py" 2>/dev/null || echo "false"); echo "codex (openai-codex): $CODEX_STATUS"  # timeout: 5000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent"); echo "bridge@borda-ai-rig: $CODEX_STATUS"  # timeout: 5000
 ```
 
 ```bash
@@ -213,24 +213,22 @@ echo "CODEX_OUT=$CODEX_OUT"  # spawn-prompt reads both stdout lines
 Re-check Codex availability at point of use (bash vars don't persist across tool calls) and **echo result so next prose decision can read it**:
 
 ```bash
-CODEX_AVAILABLE=false
-jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && CODEX_AVAILABLE=true  # timeout: 5000
-# honor user opt-out — false in enabledPlugins overrides installed state
-if [ "$CODEX_AVAILABLE" = "true" ] && jq -e '.enabledPlugins["codex@openai-codex"] == false' ~/.claude/settings.json >/dev/null 2>&1; then
-    CODEX_AVAILABLE=false
-    printf "  codex plugin installed but disabled in ~/.claude/settings.json — skipping codex review\n"
-fi
+# check_bridge.py resolves the installed-and-enabled state in one call and already honors a
+# project-local .claude/settings.json opt-out, which an inline registry read does not.
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+[ "$CODEX_STATUS" = "available" ] && CODEX_AVAILABLE=true || CODEX_AVAILABLE=false
+[ "$CODEX_AVAILABLE" = "false" ] && printf "  bridge@borda-ai-rig is %s — skipping bridge review\n" "$CODEX_STATUS"
 echo "CODEX_AVAILABLE=$CODEX_AVAILABLE"  # bash vars don't persist; branch below MUST read this value from stdout
 ```
 
 **Read `CODEX_AVAILABLE=…` from bash stdout above** (NOT shell state). Printed `true`: spawn Codex; else spawn `foundry:challenger`. Spawn prompts below instruct subagent to Read persisted symptom/signals/hypotheses files (written in Steps 2 and 3) — more reliable than inlining values, which the LLM can paraphrase under context pressure.
 
-If Codex available (requires `codex` plugin) — substitute concrete path strings for `<INVESTIGATE_RUN>` and `<CODEX_OUT>` before constructing the prompt:
+If the bridge is available (requires `bridge@borda-ai-rig` installed and enabled) — substitute concrete path strings for `<INVESTIGATE_RUN>` and `<CODEX_OUT>` before constructing the prompt:
 
 > **Agent budget** — each spawn costs ~120,851 tok of fixed overhead (~73 tool-calls' worth) plus ~12.0 s/call, so work under ~73 calls is cheaper done inline: spawn nothing. Keep each agent near ~55 tool-calls; past ~60 they stall without returning an envelope, forcing reconstruction from disk. Every spawn prompt must require an envelope even on exhaustion — `partial: true` plus what was finished.
 
 ```text
-Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality. Read these files for full context: <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to <CODEX_OUT> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<one-line>\"}")
+Skill(skill="bridge:review", args="Read-only adversarial review of hypothesis quality. Read <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, and <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blind spots, and surface alternative root causes. Write full findings to <CODEX_OUT> and return a compact result envelope.")
 ```
 
 Else (Codex unavailable) — substitute `<INVESTIGATE_RUN>` with the printed run-dir path:

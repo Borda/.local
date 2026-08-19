@@ -32,7 +32,7 @@ NOT for local file review or current git diff — use `/develop:review` (require
 <constants>
 
 FANOUT_MAX=3            # default: top-N most relevant of the scope-preselected dimensions
-                        # 3 not 4 — codex:codex-rescue spawns outside this cap, so 3 keeps the
+                        # 3 not 4 — bridge review runs outside this cap, so 3 keeps the
                         # observed agent count at 4, not 5
                         # --full runs ALL scope-preselected dimensions instead — no numeric cap
 AGENT_CALL_BUDGET=55    # target tool-calls per agent; past ~60 they stall without returning an envelope
@@ -521,7 +521,8 @@ Check Codex availability:
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=1 && echo "codex (openai-codex) available" || { CODEX_AVAILABLE=0; echo "⚠ codex (openai-codex) not found — skipping co-review"; } # timeout: 15000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_oss}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")  # timeout: 5000
+if [ "$CODEX_STATUS" = "available" ]; then CODEX_AVAILABLE=1; echo "bridge@borda-ai-rig available"; else CODEX_AVAILABLE=0; echo "⚠ bridge@borda-ai-rig is ${CODEX_STATUS} — skipping co-review"; fi
 echo "$CODEX_AVAILABLE" > "${TMPDIR:-/tmp}/oss-review-codex-available-${CSID}"
 ```
 
@@ -571,7 +572,7 @@ Two stages, in order — never collapse them:
 - Every spawn prompt states the budget and requires an envelope even on exhaustion — `partial: true` plus what was finished. An agent that stalls past ~60 calls without an envelope forces full disk reconstruction.
 - Dimensions dropped by the cap are listed in the report; never silently skipped.
 
-Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents. All `Agent()` calls issue in a SINGLE response turn — substitute `$RUN_DIR` (literal) and issue numbers before spawning. Agent lineup: `codex:codex-rescue` (if `CODEX_AVAILABLE=1` **and** DOCS_TYPING_MODE/TESTS_CI_MODE both false) · per-issue `foundry:sw-engineer` (skip if `DOCS_CICD_MODE=true`) · Agents 1–8 per scope/mode rules above — that is stage 1. Then stage 2: unless `--full` was passed, rank the survivors and spawn only the top `FANOUT_MAX`, merging adjacent dimensions into shared agents where their files overlap; name every dropped or merged dimension in the report.
+Launch the bridge review, issue agents, and all review agents in one message batch. Call `Skill(skill="bridge:review", args="Read-only adversarial review of <REVIEW_TARGET>, using changed files and <RUN_DIR>/codemap-context.md when present. Identify bugs, missed edge cases, and inconsistencies with exact file:line evidence; write findings to <RUN_DIR>/bridge-codex.md and do not apply fixes.")` when `CODEX_AVAILABLE=1` and DOCS_TYPING_MODE/TESTS_CI_MODE are false. Then launch the selected Foundry agents and rank survivors under `FANOUT_MAX` as before.
 
 Poll for expected output files per `$MONITOR_INTERVAL` / `$HARD_CUTOFF` until all present or each hits hard cutoff.
 
@@ -902,8 +903,8 @@ Scenarios:
   - `[blocking]` bugs or regressions → `/develop:fix` (requires `develop` plugin) to reproduce with test, apply targeted fix
   - Structural or quality issues → `/develop:refactor` (requires `develop` plugin) for test-first improvements
   - Security findings in auth/input/deps → run `pip-audit` for dep CVEs; address OWASP issues via `/develop:fix` (requires `develop` plugin)
-  - Mechanical issues beyond Step 5 → dispatch internally: `Agent(subagent_type="codex:codex-rescue", prompt="<task>")`
-  - Docstrings, type annotations, renames → dispatch `Agent(subagent_type="codex:codex-rescue", prompt="<task description>")` per finding
+  - Mechanical issues beyond Step 5 → call `bridge:implement` with the exact finding, target paths, current evidence, permitted edits, required result, stop condition, and verification command.
+  - Docstrings, type annotations, renames → construct that complete `bridge:implement` brief separately for each finding; never pass a workflow step number or an unresolved shorthand reference.
   - PR feedback for contributor → `--reply` to auto-draft via oss:shepherd, or invoke oss:shepherd manually for custom framing
 
 </notes>

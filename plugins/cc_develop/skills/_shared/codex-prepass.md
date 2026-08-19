@@ -1,28 +1,28 @@
 Before cycle 1 of review loop, run Codex pre-pass if diff meaningful:
 
 ```bash
-# canonical check — sync: develop:review:190, vitality.md:97
+# canonical check — target selector must be installed and enabled
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/cc_foundry}/bin/check_bridge.py" --status 2>/dev/null || echo "absent")
 CODEX_AVAILABLE=false
-if jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q .; then
-    if ! jq -e '.enabledPlugins["codex@openai-codex"] == false' ~/.claude/settings.json >/dev/null 2>&1; then
-        CODEX_AVAILABLE=true
-    fi
+if [ "$CODEX_STATUS" = "available" ]; then
+    CODEX_AVAILABLE=true
+else
+    echo "bridge@borda-ai-rig is $CODEX_STATUS — skipping pre-pass"
 fi
-[ "$CODEX_AVAILABLE" = "true" ] || echo "codex (openai-codex) not available or disabled — skipping pre-pass"
 git diff HEAD --stat
 ```
 
 **Skip** if:
 
-- `codex@openai-codex` plugin not installed, OR explicitly disabled via `enabledPlugins["codex@openai-codex"] = false` in `~/.claude/settings.json` (i.e. `CODEX_AVAILABLE` resolved to `false` above)
+- `bridge@borda-ai-rig` is absent or disabled (i.e. `CODEX_AVAILABLE` resolved to `false` above)
 - `git diff HEAD --stat` shows only 1–3 lines changed, or changes are formatting, comments, whitespace, or variable renames only
 
-**Run** when changes include new logic, functions, conditionals, error paths, or restructured code (requires `codex` plugin):
+**Run** when changes include new logic, functions, conditionals, error paths, or restructured code (requires `bridge@borda-ai-rig`):
 
 ```text
-Agent(subagent_type="codex:codex-rescue", prompt="Review the current working-tree changes for bugs, missed edge cases, and inconsistencies. Read-only: do not apply fixes.")
+Skill(skill="bridge:review", args="Read-only adversarial review of the current working-tree changes. Identify bugs, missed edge cases, and inconsistencies; do not apply fixes.")
 ```
 
-**Inline fallback**: bash check printed "not available or disabled" → skip Agent dispatch entirely. No codex spawn. Go to cycle 1 from scratch.
+**Inline fallback**: status is `absent` or `disabled` → skip bridge dispatch entirely. Go to cycle 1 from scratch.
 
 Codex findings = pre-flagged issues entering cycle 1. Codex found nothing or skipped → start cycle 1 from scratch.

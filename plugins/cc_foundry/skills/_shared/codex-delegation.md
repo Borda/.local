@@ -5,16 +5,16 @@ Delegate only small, bounded tasks needing code read — not single-command task
 - **Complex linting**: ruff or mypy violations needing non-trivial code changes (not auto-fixable with `--fix`)
 - **Typing/mypy resolution**: type annotation fixes needing function contract understanding
 
-For each qualifying task, read target code, form accurate brief, spawn (requires `codex` plugin):
+For each qualifying task, read target code, form an accurate self-contained brief, then use the installed bridge (requires `bridge@borda-ai-rig`):
 
 ```text
-Agent(
-  subagent_type="codex:codex-rescue",
-  prompt="<specific task with accurate description of what the code does>. Target: <file>."
+Skill(
+  skill="bridge:implement",
+  args="Implement this bounded change after reading <file>: <specific task with an accurate description of the current behavior and required outcome>. Verify the focused behavior before returning."
 )
 ```
 
-Plugin agent writes direct to working tree. Inspect via `git diff HEAD` after return. Plugin unavailable → reports gracefully, don't block.
+The bridge implementation writes direct to the working tree. Inspect via `git diff HEAD` after return. If the bridge is absent or disabled, report that status and continue without a legacy fallback.
 
 **Don't delegate to Codex:**
 

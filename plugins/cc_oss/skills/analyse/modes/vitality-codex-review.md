@@ -2,7 +2,7 @@
 
 ## Step 5 — Codex Independent Repo Review
 
-When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 9 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation, divergence detection.
+When `CODEX_AVAILABLE=1`: call `Skill(skill="bridge:review", args="Read <DATA_FILE> and independently assess <REPOSITORY> on activity, maintainer responsiveness, release hygiene, CI health, security, dependency health, documentation, community signals, and governance. Write the nine-axis verdict to <REVIEW_DIR>/bridge-codex-review.md with source evidence; do not read the main analysis report or apply fixes.")` to produce a parallel verdict for aggregation and divergence detection.
 
 ```bash
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -12,7 +12,7 @@ CODEX_REVIEW_OUT="$REVIEW_DIR/codex-repo-review.md"
 mkdir -p "$REVIEW_DIR"  # timeout: 5000
 ```
 
-**Spawn instruction for `codex:codex-rescue`** (only when CODEX_AVAILABLE=1):
+**Bridge review instruction** (only when CODEX_AVAILABLE=1):
 
 ```text
 You are performing an independent vitality assessment of {GH_OWNER}/{GH_REPO}.
