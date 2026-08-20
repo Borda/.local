@@ -5,74 +5,53 @@ description: "`$codemap-py:test-impact <qname> [--no-mocks]`: affected tests; sk
 
 # Test Impact
 
-Identifies the minimal test set affected by changing a function or module, using codemap-py static analysis — no test execution needed. Result: a ready-to-run `pytest` command covering only impacted tests.
+Find the minimum static-analysis test set for one changed function or module; do not run tests. Output a ready-to-run `pytest` command.
 
-Two input modes:
+- Function (`module::symbol`): BFS reverse calls, direct/transitive tests, plus `mock_patches`.
+- Module (bare `module`): BFS reverse imports, plus mocks of any module symbol.
 
-- **Function-level** (`module::symbol`) — BFS over the reverse call graph; finds every test calling the changed function, directly or transitively. Includes tests mocking the symbol (`mock_patches`).
-- **Module-level** (bare `module`) — BFS over the reverse import graph; finds every test importing the module through any chain. Includes tests mocking any symbol in the module.
+`not_covered` includes dynamic dispatch, hooks, and string dispatch, as with `fn-blast`; surface it, never silently omit it.
 
-`not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers — same blind spot as `fn-blast`. Surface as a caveat, do not silently drop it.
-
-NOT for: finding all callers of a function (use `$codemap-py:query-code fn-rdeps <module::symbol> --exclude-tests`); querying module deps or blast radius (use `$codemap-py:query-code`); running/executing tests (identified here, not executed).
+NOT for: all function callers (use `$codemap-py:query-code fn-rdeps <module::symbol> --exclude-tests`); module deps/blast radius (use `$codemap-py:query-code`); test execution.
 
 ## Runtime note
 
-Codex has no `bin/` PATH entry and no `$CLAUDE_PLUGIN_ROOT`-equivalent environment variable. Resolve this skill's installed plugin-root path once, substitute it for `PLUGIN_ROOT` below, and keep it in reasoning — shell state does not persist across tool calls.
+Codex has no `bin/` PATH entry or plugin-root variable. Resolve its installed root once, substitute `PLUGIN_ROOT`, and retain it in reasoning; shell state does not persist.
 
 ## Inputs
 
-`<qname> [--no-mocks]`:
-
-- `qname` — `module::symbol` (function-level) or a bare dotted module (module-level)
-- `--no-mocks` — exclude mock-only test files (no call/import path)
-- Omitted → ask in chat which function or module changed, offering: (a) enter `module::symbol` for function-level, (b) enter a bare module name for module-level, (c) cancel. Wait for the reply before proceeding.
-
-Multi-symbol guard: the invocation text may contain multiple space-separated tokens. Use only the first token as `qname`; if more than one remains after stripping `--no-mocks`, warn that test-impact accepts one symbol at a time and that the remaining tokens need a separate invocation each.
+`<qname> [--no-mocks]`: `qname` is `module::symbol` or a bare dotted module; `--no-mocks` removes mock-only tests. If omitted, ask which changed: (a) `module::symbol`, (b) bare module, or (c) cancel; wait. Use the first non-flag token only. If tokens remain after `--no-mocks`, warn that one symbol is accepted per invocation and each remainder needs another invocation.
 
 ## Workflow
 
-### Step 0 — Ensure index
+### 1. Query (and build only when allowed)
 
 ```bash
 PLUGIN_ROOT/bin/codemap-py query test-impact "<qname>" [--no-mocks]
 ```
 
-If the index is missing:
+If index missing and `SCAN_NO_AUTOBUILD=1`, report `codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: $codemap-py:scan-codebase` and stop. Otherwise run `PLUGIN_ROOT/bin/codemap-py index --incremental` in the foreground, then retry once.
 
-- `SCAN_NO_AUTOBUILD=1` set → report `codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: $codemap-py:scan-codebase` and stop.
-- otherwise → run `PLUGIN_ROOT/bin/codemap-py index --incremental` in the foreground first, then retry the query above once.
+### 2. Parse
 
-### Step 1 — Parse the JSON result
+Read JSON from CLI stdout; do not assume its first line is JSON because logs can surround it. Use `test_files`, `pytest_cmd`, `via_call`, `via_mock`, `index.not_covered`, and `index.hint`.
 
-- `test_files` — list of test file paths
-- `pytest_cmd` — ready-to-run command
-- `via_call` / `via_mock` — breakdown of how tests were found
-- `index.not_covered` — surface as a caveat if non-empty
-- `index.hint` — include as a suggestion
+### 3. Output
 
-Parse JSON explicitly from the CLI's stdout — do not assume the first line of output is the JSON body; log lines may precede or follow it.
+For `total == 0`, report: "No tests found via static analysis. Try the full suite or search for the symbol name directly under `tests/`."
 
-### Step 2 — Output
+For `total > 0`, print:
 
-**`total == 0`**: report "No tests found via static analysis. Try the full suite or search for the symbol name directly under `tests/`."
-
-**`total > 0`**:
-
-```
+```text
 ## Test impact: <qname>
 
 **Affected tests** (<total> files, <via_call> via call/import graph, <via_mock> via mocks):
 <test_files as bullet list>
 
 **Run:**
-```
 <pytest_cmd>
-```
 
-<if not_covered non-empty>
 **Caveat:** dynamic-dispatch / hook-callback callers are not in the static graph — <hint>.
-</if>
 ```
 
-Output routing: if `total >= 5`, write the same content to `.reports/codex/codemap-py/test-impact-<branch>-<YYYY-MM-DD>.md` and print the path. Derive `<branch>` from `git branch --show-current | tr '/' '-'` (empty/detached → `main`), and never overwrite: if that path exists, append a counter (`…-2.md`, `…-3.md`) until the name is free — a same-day re-run on another target would otherwise replace an unrelated report.
+Include Caveat only for non-empty `not_covered`. With `total >= 5`, write the same content to `.reports/codex/codemap-py/test-impact-<branch>-<YYYY-MM-DD>.md` and print it. `<branch>` is `git branch --show-current | tr '/' '-'` (`main` if empty/detached). Never overwrite: append `-2`, `-3`, … until free.

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1
+
+- Add a recurring `audit` value-per-token axis with matched cost measurement, loaded-reference accounting, obligation mapping, deterministic and paired-live value guards, adversarial review, and fail-closed acceptance when evidence or material savings are missing.
+- Validate the existing audit ledger plus the new prompt-efficiency artifact, calibrate four overcompression/cost-evidence failure modes, and make specialist-policy loading explicit only on triggered non-PR paths.
+- Artifact validation now fails closed for audit run directories missing `audit-ledger.md` or `prompt-efficiency.md` with their named sections; run directories produced before this release no longer re-validate.
+- Package-manifest generation excludes runtime `.reports/` artifacts, so a local calibration run followed by a manifest refresh can no longer sweep machine-local report paths into the tracked manifest.
+- Deduplicate run-directory boilerplate against the existing helper contract without changing literal commands, artifact paths, PR terminal workflows, or fail-fast vocabularies.
+- Separate detailed pre-briefs from compact runtime reasons for every intentional approval request: ask only about the outcome or material effect, never duplicate command syntax or detailed context, use only short categorical safe prefixes when justified, and omit persistent prefixes for one-time or high-risk commands. Multiline commits apply the rule with a reviewed private temporary message file and `rtk git commit --cleanup=verbatim -F <file>`.
+- Run Bridge's installed free static doctor during Codex sync, failing closed when the MCP `python` launcher is older than 3.10 or the Claude CLI help contract is incompatible; never invoke a model, authenticate, or treat the check as per-session MCP inventory proof.
+
 ## 0.9.0
 
 - Replace the legacy external Claude Codex plugin lifecycle with the managed `bridge` plugin, including install, enabled-version verification, teardown, one-time setup dispatch from its `claude-skills/setup/SKILL.md` entrypoint, and success-gated cleanup of the retired plugin.

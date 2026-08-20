@@ -1,10 +1,10 @@
 ---
 name: status
-description: Read the current state of a detached Codex bridge job.
+description: Read a detached Codex bridge job's current state.
 argument-hint: "JOB_ID"
 allowed-tools: Bash
 ---
 
 # Read Bridge Job Status
 
-Require one job identifier, then run `python "${CLAUDE_PLUGIN_ROOT}/bin/bridge_call.py" status --job-id "<job-id>"`. Pass `--workspace` only when explicitly supplied. Return the JSON status unchanged.
+Require one job identifier. Run `python "${CLAUDE_PLUGIN_ROOT}/bin/bridge_call.py" status --job-id "<job-id>"`; pass `--workspace` only when explicitly supplied. Return JSON status unchanged.

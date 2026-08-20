@@ -41,8 +41,7 @@ Stats 202 after all retries WITH successful fallback: ⚪ NOT used; fallback sco
 (momentum direction: accelerating or decelerating?)
 
 Four sub-signals, each scored 0–10; overall axis score = mean of available sub-signals.
-Requires: merged PRs last 90d (Group 1 new fetch), last 50 commits (Group 1 new fetch),
-open issues (reused from Axis 4), contributor stats weeks[] (reused from Axis 3).
+Requires: merged PRs last 90d (Group 1 new fetch), last 50 commits (Group 1 new fetch), open issues (reused from Axis 4), contributor stats weeks[] (reused from Axis 3).
 
 **Sub-signal 9A — Reviewer pool drift** (uses Axis 3 contributor stats weeks[])
 

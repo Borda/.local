@@ -5,39 +5,31 @@ description: "`$codemap-py:scan-codebase [flags]` only: Python index; never auto
 
 # Scan Codebase
 
-Python only — `ast.parse` extracts import graph + symbol metadata (classes, functions, methods with line ranges) across every `.py` file; non-Python files are not indexed. Writes `.cache/codemap/<project>.json`. No external dependencies. Zero-Python project (no `.py` files): index writes but empty — downstream queries return no results.
+Python only: `ast.parse` records imports plus classes/functions/methods and line ranges for every `.py`; non-Python files are excluded. Writes `.cache/codemap/<project>.json` without external dependencies. A zero-Python project writes a valid empty index; downstream queries return no results. Symbol data lets `$codemap-py:query-code symbol`/`find-symbol` return target source instead of full-file reads (~70–94% fewer `Read` tokens).
 
-Symbol data lets `$codemap-py:query-code symbol`/`find-symbol` return target function source instead of a full file read (~70–94% token reduction vs `Read`).
+NOT for: existing-index query (use `$codemap-py:query-code`); integration health (use `$codemap-py:integration`).
 
-NOT for: querying an existing index (use `$codemap-py:query-code`); integration health checks (use `$codemap-py:integration`).
-
-**Explicit invocation only** — Codex has no `disable-model-invocation` frontmatter field, so this constraint is enforced by convention, not schema: never call this skill from autonomous reasoning; run it only in direct response to the user's literal `$codemap-py:scan-codebase` trigger.
+**Explicit invocation only** — Codex cannot declare `disable-model-invocation`; never call this skill autonomously, only for the user's literal `$codemap-py:scan-codebase` trigger.
 
 ## Runtime note
 
-Codex has no `bin/` PATH entry and no `$CLAUDE_PLUGIN_ROOT`-equivalent environment variable. Resolve this skill's installed plugin-root path once, then substitute that literal path for `PLUGIN_ROOT` in every command below. Shell state (including exported variables) does not persist across tool calls — keep the resolved path in reasoning and paste it in literally rather than caching it in a shell variable or tmpfile.
+Codex has no `bin/` PATH entry or plugin-root variable. Resolve the installed root once, replace `PLUGIN_ROOT` literally in commands, and retain it in reasoning; shell state does not persist.
 
 ## Workflow
 
-### Step 1: Run the scanner
+### 1. Scan
 
-Parse the invocation text for `--root <path>` and `--incremental`. Any other `--`-prefixed token is rejected: report `! Unknown flag(s): <tokens>` followed by `Supported: --root <path>, --incremental`, then stop — do not guess at intent. Both rosters use the same `Unknown flag(s)` wording — never a second synonym.
+Parse only `--root <path>` and `--incremental`. For any other `--` token, report `! Unknown flag(s): <tokens>` then `Supported: --root <path>, --incremental` and stop; do not guess. Use this exact `Unknown flag(s)` wording.
 
 ```bash
 PLUGIN_ROOT/bin/codemap-py index [--root <path>] [--incremental]
 ```
 
-On Windows, use `PLUGIN_ROOT\bin\codemap-py.cmd index ...` instead (native fallback launcher, plan §7.4).
+On Windows use `PLUGIN_ROOT\bin\codemap-py.cmd index ...`. `--root` names the index from `basename(<path>)`, unlike the default git-root basename; use the same `--root` on every later scan/query. The scanner writes `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json`) and prints indexed/degraded counts. On non-zero exit, report it and stop; do not retry silently (`1` index/filesystem failure, `2` syntax).
 
-`--root <path>` note: the index is named after `basename(<path>)` — this differs from the default project index (named after the git root's basename). Queries against the default index will not see a `--root` index unless the same `--root` is used consistently on every subsequent scan/query.
+### 2. Report
 
-Scanner writes to `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json` when set) and prints a summary line with modules indexed and degraded count. Non-zero exit → report the exit code and stop; do not retry silently (exit 1 = index/filesystem failure, 2 = bad syntax — plan §7.5).
-
-### Step 2: Report and suggest next step
-
-Report the printed module count and degraded count. Degraded count is informational, not failure — the index is still usable. Zero-Python project: report the index as valid but empty.
-
-Suggest:
+Report module and degraded counts; degraded is informational and the index remains usable. For zero Python, report valid but empty. Then suggest:
 
 ```text
 Index ready. Query it with $codemap-py:query-code — central --top 10, deps/rdeps <module>, coupled --top 10.

@@ -104,6 +104,11 @@ repos:
         name: 📝 mdformat (general)
         # Coverage: general Markdown plus plugin README.md and CHANGELOG.md files.
         # Excludes generated benchmark manifests, plugin agent/skill sources, and docs handled below.
+        # Plugin sources are excluded because mdformat corrupts them (measured 2026-08-20): its core
+        # paragraph normalization fuses bare lines inside XML-ish tag blocks (<constants>, compaction
+        # boundaries) into one line, it pads tables against trim_plugin_tables.py, and beautysh
+        # rewrites fenced bash out from under the blueprint manifest. Their no-wrap convention is
+        # prose discipline (plugins/CLAUDE.md §Markdown No-Wrap), not hook-enforced.
         exclude: ^(benchmarks/manifests/|plugins/(?!.*(?:README|CHANGELOG)\.md$)|docs/)
         args: ["--number", "--wrap=no"]
         additional_dependencies:
@@ -268,6 +273,12 @@ repos:
         entry: python3 plugins/cc_foundry/bin/check_mode_dispatch.py --scan-dir plugins
         pass_filenames: false
         always_run: true
+
+      - id: check-gitignored-refs
+        name: 🙈 No refs to repo-private gitignored files
+        language: system
+        entry: python3 plugins/cc_foundry/bin/check_gitignored_refs.py
+        types: [text]
 
       - id: check-shared-drift
         name: 🔁 cross-plugin shared-file drift

@@ -27,9 +27,7 @@ this general-purpose skill.
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill manage` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill manage` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Parse intent and target
 
@@ -144,6 +142,6 @@ Co-authored-by: Codex <codex@openai.com>
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Minimum artifact payload template: `result-template.json`.

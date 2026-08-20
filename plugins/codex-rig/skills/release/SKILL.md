@@ -22,9 +22,7 @@ SemVer-aware release readiness/communication. Prepares release evidence/docs; ne
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill release` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill release` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Determine mode, range, and target version
 
@@ -71,7 +69,7 @@ Write `<run-directory>/release-readiness.md` with:
 - `Checks`
 - `Blockers`
 
-For `prepare`/`audit`, apply `../../shared/specialist-orchestration.md` for public API changes, CI/release automation, security/dependency changes, docs/migration work, or broad verification risk. Write `<run-directory>/specialist-release-plan.md` with narrow context packs for:
+For `prepare`/`audit`, read and apply `../../shared/specialist-orchestration.md` only for public API changes, CI/release automation, security/dependency changes, docs/migration work, or broad verification risk; otherwise do not load it. Write `<run-directory>/specialist-release-plan.md` with narrow context packs for:
 
 - `oss-shepherd`: SemVer, deprecation policy, maintainer readiness.
 - `cicd-steward`: release workflow, publishing, CI status, artifact gates.
@@ -121,6 +119,6 @@ On SemVer, deprecation, changelog, or release-blocker policy change, update cali
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Minimum artifact payload template: `result-template.json`.

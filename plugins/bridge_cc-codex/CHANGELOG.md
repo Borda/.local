@@ -2,6 +2,11 @@
 
 All notable changes to `bridge_CC-Codex` are documented here.
 
+## 0.2.1
+
+- Compress Claude- and Codex-side skill instructions while preserving explicit effort selection, caller-selected arguments, host-bound workspace/session authority, recursion refusal, detached-job lifecycle, compact-envelope/transcript boundaries, and paid live-probe consent.
+- Retain Codex-side characterization coverage and validate Claude-side compression through exact executable-literal preservation plus full plugin and packaged-shape gates.
+
 ## 0.2.0
 
 - Set the user-facing brand to `bridge_CC-Codex` across both host manifest descriptions and the Codex display metadata, while the installed plugin name, skill namespaces, and marketplace registrations stay `bridge` for consistency with the other plugins.

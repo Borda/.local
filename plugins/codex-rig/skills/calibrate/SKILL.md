@@ -145,6 +145,6 @@ Behavioral coverage includes networked CLI owning-command approval for paid live
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Minimum artifact payload template: `result-template.json`.

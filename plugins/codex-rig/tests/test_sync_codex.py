@@ -30,10 +30,13 @@ def marketplace_fixture(tmp_path: Path) -> Path:
     """Create the installed marketplace files consumed by global setup."""
     root = tmp_path / "marketplace"
     plugin = root / "plugins" / "codex-rig"
+    bridge_doctor = root / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
     (plugin / "assets").mkdir(parents=True)
     (plugin / "scripts").mkdir()
+    bridge_doctor.parent.mkdir(parents=True)
     (plugin / "assets" / "AGENTS.md").write_text("# fixture\n", encoding="utf-8")
     (plugin / "scripts" / "install_global_agents.py").write_text("# fixture\n", encoding="utf-8")
+    bridge_doctor.write_text("# fixture\n", encoding="utf-8")
     return root
 
 
@@ -85,6 +88,10 @@ def fake_runner(
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
         if rendered[:3] == ("git", "-C", str(marketplace_root)):
             return subprocess.CompletedProcess(command, 0, "0123456789abcdef\n", "")
+        if rendered == ("python", "--version"):
+            return subprocess.CompletedProcess(command, 0, "Python 3.12.0\n", "")
+        if rendered[0] == "python" and rendered[-2:] == ("--direction", "claude"):
+            return subprocess.CompletedProcess(command, 0, json.dumps({"ok": True, "live": False}), "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
     return run
@@ -118,6 +125,87 @@ def test_native_sync_refreshes_latest_and_installs_global_instructions(tmp_path:
     assert "Codex Rig 0.3.0 installed" in output.getvalue()
     assert "Codemap 0.28.8 installed" in output.getvalue()
     assert "Claude Code and Codex Bridge 0.1.0 installed" in output.getvalue()
+
+
+def test_native_sync_runs_free_installed_bridge_diagnosis(tmp_path: Path) -> None:
+    """Verify machine-wide Bridge prerequisites without paid model inference."""
+    module = load_sync()
+    root = marketplace_fixture(tmp_path)
+    doctor = root / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
+    calls: list[tuple[str, ...]] = []
+    base_run = fake_runner(root, calls)
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        rendered = tuple(str(item) for item in command)
+        if rendered == ("python", "--version"):
+            calls.append(rendered)
+            return subprocess.CompletedProcess(command, 0, "Python 3.12.0\n", "")
+        if rendered == ("python", str(doctor), "--direction", "claude"):
+            calls.append(rendered)
+            return subprocess.CompletedProcess(command, 0, json.dumps({"ok": True, "live": False}), "")
+        return base_run(command, **kwargs)
+
+    output = io.StringIO()
+    result = module.sync_codex(
+        module.parse_args(["--no-codex-global-agents"]),
+        run=run,
+        environ={},
+        stdout=output,
+    )
+
+    assert result == 0
+    assert ("python", "--version") in calls
+    assert ("python", str(doctor), "--direction", "claude") in calls
+    assert "Bridge static diagnosis passed; no provider call made" in output.getvalue()
+
+
+def test_native_sync_rejects_bridge_python_below_minimum(tmp_path: Path) -> None:
+    """Prevent a green sync when the MCP launcher cannot run Bridge."""
+    module = load_sync()
+    root = marketplace_fixture(tmp_path)
+    calls: list[tuple[str, ...]] = []
+    base_run = fake_runner(root, calls)
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command == ["python", "--version"]:
+            calls.append(tuple(command))
+            return subprocess.CompletedProcess(command, 0, "Python 3.9.19\n", "")
+        return base_run(command, **kwargs)
+
+    with pytest.raises(module.SyncError, match="found Python 3.9.19"):
+        module.sync_codex(
+            module.parse_args(["--no-codex-global-agents"]),
+            run=run,
+            environ={},
+            stdout=io.StringIO(),
+        )
+
+    assert not any(call[-2:] == ("--direction", "claude") for call in calls)
+
+
+def test_native_sync_rejects_failed_bridge_static_diagnosis(tmp_path: Path) -> None:
+    """Keep missing Claude CLI compatibility visible after installation."""
+    module = load_sync()
+    root = marketplace_fixture(tmp_path)
+    doctor = root / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
+    calls: list[tuple[str, ...]] = []
+    base_run = fake_runner(root, calls)
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        rendered = tuple(str(item) for item in command)
+        if rendered == ("python", str(doctor), "--direction", "claude"):
+            calls.append(rendered)
+            payload = {"ok": False, "live": False, "findings": [{"target": "claude", "ok": False}]}
+            return subprocess.CompletedProcess(command, 2, json.dumps(payload), "")
+        return base_run(command, **kwargs)
+
+    with pytest.raises(module.SyncError, match="Bridge static diagnosis failed"):
+        module.sync_codex(
+            module.parse_args(["--no-codex-global-agents"]),
+            run=run,
+            environ={},
+            stdout=io.StringIO(),
+        )
 
 
 def test_native_sync_preserves_local_marketplace_without_upgrade(tmp_path: Path) -> None:
@@ -168,6 +256,10 @@ def test_native_sync_adds_pinned_marketplace_when_absent(tmp_path: Path) -> None
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
         if rendered[:3] == ("git", "-C", str(root)):
             return subprocess.CompletedProcess(command, 0, "0123456789abcdef\n", "")
+        if rendered == ("python", "--version"):
+            return subprocess.CompletedProcess(command, 0, "Python 3.12.0\n", "")
+        if rendered[0] == "python" and rendered[-2:] == ("--direction", "claude"):
+            return subprocess.CompletedProcess(command, 0, json.dumps({"ok": True, "live": False}), "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
     result = module.sync_codex(

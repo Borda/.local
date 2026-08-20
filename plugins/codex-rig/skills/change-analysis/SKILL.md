@@ -26,9 +26,7 @@ guess a cache version or fall back to a source checkout.
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill change-analysis` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill change-analysis` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Normalize the analysis mode
 
@@ -67,7 +65,7 @@ Evidence rules:
 
 ### 05: Orchestrate specialist analysis when the question has independent axes
 
-Use `../../shared/specialist-orchestration.md` for broad/multi-risk PR/issue, ecosystem, or independently challenged conclusions. Stay single-agent when narrow local fan-out duplicates context.
+Read and apply `../../shared/specialist-orchestration.md` only for broad/multi-risk PR/issue, ecosystem, or independently challenged conclusions; do not load it when narrow local fan-out would duplicate context.
 
 Write `<run-directory>/orchestration.md` when fan-out is used or intentionally skipped for a broad scope. Include:
 
@@ -148,6 +146,6 @@ Update calibration when routing or evidence expectations change:
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Minimum artifact payload template: `result-template.json`.

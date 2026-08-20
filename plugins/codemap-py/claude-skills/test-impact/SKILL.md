@@ -9,14 +9,14 @@ effort: low
 
 <objective>
 
-Identifies minimal test set affected by changing a function or module. Uses codemap static analysis — no test execution needed. Result: ready-to-run `pytest` command covering only impacted tests.
+Find minimal tests affected by function/module change via Codemap static analysis; run no tests. Return ready `pytest` command for impacted tests only.
 
 Two input modes:
 
-- **Function-level** (`module::symbol`) — BFS over reverse call graph; finds every test calling changed function, directly or transitively. Includes tests mocking the symbol (`mock_patches`).
-- **Module-level** (bare `module`) — BFS over reverse import graph; finds every test importing module through any chain. Includes tests mocking any symbol in module.
+- **Function-level** (`module::symbol`) — reverse-call-graph BFS; all direct/transitive test callers + symbol mocks (`mock_patches`).
+- **Module-level** (bare `module`) — reverse-import-graph BFS; all tests importing through any chain + any module-symbol mocks.
 
-`not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers — same blind spot as `fn-blast`. Surface caveat, log gap.
+`not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers; same blind spot as `fn-blast`. Surface caveat; log gap.
 
 NOT for: finding all callers of a function (use `/codemap-py:query-code fn-rdeps <module::symbol> --exclude-tests`); querying module deps or blast radius (use `/codemap-py:query-code`); running/executing tests (identified here, not executed).
 
@@ -49,11 +49,11 @@ command -v codemap-py >/dev/null 2>&1 || { echo "codemap-py not on PATH — inst
 [ ! -f "$INDEX" ] && echo "No index found — will build via codemap-py index"
 ```
 
-Auto-build opt-out via `SCAN_NO_AUTOBUILD=1` (index used exactly as-is — no refresh, no full build); build wall-time echoed when it runs, keeps build cost separable from query cost.
+`SCAN_NO_AUTOBUILD=1` opts out: use index unchanged; no refresh/full build. Echo build wall-time when run, separating build/query cost.
 
-If `$INDEX` not found:
-- `SCAN_NO_AUTOBUILD=1` set → print `! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: /codemap-py:scan-codebase` and exit 1.
-- otherwise → run `codemap-py index` in the foreground (wait until it finishes) then continue. (Not the `codemap-py:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; build via the gated `codemap-py index` dispatcher.)
+If `$INDEX` missing:
+- With `SCAN_NO_AUTOBUILD=1`: print `! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: /codemap-py:scan-codebase`; exit 1.
+- Otherwise run foreground `codemap-py index`; wait, then continue. Never invoke `codemap-py:scan-codebase`: `disable-model-invocation:true`, user-slash-only. Build through gated `codemap-py index` dispatcher.
 
 If index already exists:
 
@@ -73,7 +73,7 @@ else
 fi
 ```
 
-After the build or incremental refresh, re-verify index still present:
+After build/refresh, re-verify index:
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
@@ -84,7 +84,7 @@ INDEX="${_IDX}/${_CM_PROJ}.json"
 
 ## Step 1 — Parse arguments
 
-Extract `QNAME` and `NO_MOCKS` flag from `$ARGUMENTS`.
+Extract `QNAME` + `NO_MOCKS` from `$ARGUMENTS`.
 
 ```bash
 # timeout: 5000
@@ -97,7 +97,7 @@ echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname-${CSID}"
 echo "$MOCKS_FLAG" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks-${CSID}"
 ```
 
-If `$ARGUMENTS` empty → `AskUserQuestion`: "Which function or module changed?" Options: (a) Enter `module::symbol` for function-level · (b) Enter bare module name for module-level · (c) Cancel — exit without running test-impact analysis. After the user answers, set `QNAME` from the answer and write it to the tmpfile before proceeding to Step 2:
+If `$ARGUMENTS` empty, use `AskUserQuestion`: "Which function or module changed?" Options: (a) Enter `module::symbol` for function-level; (b) Enter bare module for module-level; (c) Cancel, exit without analysis. After answer, set `QNAME`; write tmpfile before Step 2:
 ```bash
 # timeout: 5000
 export CSID="${CLAUDE_CODE_SESSION_ID:-$PPID}"
@@ -106,7 +106,7 @@ QNAME="<answer from AskUserQuestion>"
 echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname-${CSID}"
 ```
 
-**Multi-symbol guard**: `$ARGUMENTS` may contain multiple space-separated tokens (e.g. `mypackage.auth::validate mypackage.auth::parse`). `awk '{print $1}'` silently truncates to first. If `$ARGUMENTS` has more than one token after stripping `--no-mocks`, print `⚠ test-impact accepts one symbol at a time — using first token only: $QNAME. Run separately for each remaining symbol.`
+**Multi-symbol guard**: `$ARGUMENTS` may contain multiple tokens (for example `mypackage.auth::validate mypackage.auth::parse`); `awk '{print $1}'` silently keeps first. If more than one after removing `--no-mocks`, print `⚠ test-impact accepts one symbol at a time — using first token only: $QNAME. Run separately for each remaining symbol.`
 
 ## Step 2 — Run test-impact query
 
@@ -148,20 +148,20 @@ for name, value in fields.items():
 " "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-" "-${CSID}" || exit 1
 ```
 
-Parse JSON output from `$RESULT`:
+Parse `$RESULT` JSON:
 - `test_files` — list of test file paths
 - `pytest_cmd` — ready-to-run command
 - `via_call` / `via_mock` — breakdown of how tests were found
 - `index.not_covered` — surface as caveat if non-empty
 - `index.hint` — include as suggestion
 
-**Loud-failure contract**: query failure and empty result are different outcomes and must never collapse into one another. The block above enforces both halves in shell, not prose — a non-zero exit code stops the skill (exit 1) before any field is read, and an unparsable payload exits 1 from the parser. Neither path may be reported as "no affected tests". A false empty test set on a broken index is the worst output this skill can emit.
+**Loud-failure contract**: query failure ≠ empty result. Shell enforces it: nonzero exits skill `1` before field reads; unparsable payload exits parser `1`. Neither may become "no affected tests". False empty set from broken index is worst possible output.
 
-**haiku JSON parse guard**: `codemap-py query` JSON output may be prefixed/suffixed with log/warning lines under the haiku model. Always extract JSON by piping stdin into `python3 -c "import json, sys; ..."` — never assume raw output is valid JSON, and never add a per-field `|| echo "0"` / `|| echo "[]"` fallback, which manufactures a benign-looking default out of a failed parse.
+**haiku JSON guard**: output may include log/warning prefix/suffix. Always pipe stdin into `python3 -c "import json, sys; ..."`; never assume raw valid JSON. Never add per-field `|| echo "0"` / `|| echo "[]"`: failed parse must not manufacture benign defaults.
 
 ## Step 3 — Output
 
-**When `total == 0`**: this branch is reachable only after the Step 2 query exited `0` and its payload parsed — a genuine empty result. Report "No tests found via static analysis. Try full suite or check with `grep -rn <symbol_name> tests/`."
+**When `total == 0`**: reachable only after Step 2 exit `0` + parsed payload: genuine empty. Report "No tests found via static analysis. Try full suite or check with `grep -rn <symbol_name> tests/`."
 
 **When `total > 0`**:
 
@@ -181,7 +181,7 @@ Parse JSON output from `$RESULT`:
 </if>
 ```
 
-Output routing: if `total >= 5`, derive a free (non-colliding) path first, then write the report to the printed path:
+Output routing: if `total >= 5`, derive free non-colliding path; write report there:
 
 ```bash
 # timeout: 3000

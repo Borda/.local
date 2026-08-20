@@ -6,7 +6,7 @@ Calibration measures instruction quality against synthetic cases. It is not evid
 
 The package covers the capabilities Codex can currently install and verify. It contains no MCP server and no native bundled agent registrations. Parallel work uses a runtime blank agent with the exact role card injected when that route is available; an inline role pass is the serial fallback. Persistent named-agent routing remains platform-blocked until Codex exposes a verifiable custom-agent selector.
 
-> Current release: `0.9.0`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
+> Current release: `0.9.1`. Codex Rig is a peer product to foundry, oss, develop, research, and codemap-py—not a copy of the repository's `.codex/` configuration.
 
 <details open>
 <summary><strong>Navigation</strong></summary>
@@ -74,7 +74,7 @@ $codex-rig:agent-shims doctor
 $codex-rig:audit
 ```
 
-`doctor` verifies the active package, manifest, helpers, role cards, and legacy shim state without writing. The audit workflow checks the consuming repository and reports concrete gaps.
+`doctor` verifies the active package, manifest, helpers, role cards, and legacy shim state without writing. The audit workflow checks the consuming repository and reports concrete gaps. Skill/all audits also emit prompt-efficiency evidence: matched instruction cost, loaded-reference cost, obligation preservation, behavioral/calibration guards, and adversarial review. `axis=value-per-token` accepts a candidate only with matched native/tokenizer evidence, no hard-guard regression, and the declared material cost reduction; length or byte count alone cannot establish quality.
 
 ## 🌍 Managed global instructions
 
@@ -101,7 +101,7 @@ python plugins/codex-rig/scripts/sync_codex.py --codex-ref codex-rig-v0.4.0
 python plugins/codex-rig/scripts/sync_codex.py clear
 ```
 
-`bash sync.sh claude` changes only Claude scope. Claude sync manages foundry, oss, develop, research, codemap-py, and `bridge`; it refreshes only the retained external caveman plugin. After the bridge installs successfully, sync removes any installed copy of the retired external Codex rescue plugin; a failed bridge install preserves it for recovery. The retired plugin and its marketplace are never installed or refreshed. `--codex-ref REF` selects a Codex source revision; it does not change product scope. A configured local marketplace is retained and its snapshot is used directly; only configured Git marketplaces are refreshed.
+`bash sync.sh claude` changes only Claude scope. Claude sync manages foundry, oss, develop, research, codemap-py, and `bridge`; it refreshes only the retained external caveman plugin. After the bridge installs successfully, sync removes any installed copy of the retired external Codex rescue plugin; a failed bridge install preserves it for recovery. The retired plugin and its marketplace are never installed or refreshed. Codex sync runs the installed Bridge static doctor after installation: it requires the `python` launcher used by MCP to report Python 3.10 or newer and checks the Claude CLI help contract without model inference, authentication changes, or provider cost. MCP inventory and workspace binding remain per fresh Codex project session. `--codex-ref REF` selects a Codex source revision; it does not change product scope. A configured local marketplace is retained and its snapshot is used directly; only configured Git marketplaces are refreshed.
 
 The direct `sync_codex.py clear` action removes the managed Codex plugins and strips only the authenticated Codex Rig block from `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`; it leaves repository-projected model defaults and personal policy untouched. Root `bash sync.sh clear` reverses the selected Claude/Codex installation: it also uninstalls this marketplace's Claude plugins when Claude scope is active, strips the Codex Rig block, and leaves repository model defaults and personal-policy state in place. Both commands keep a timestamped backup and preserve user-owned content byte-for-byte, honor `claude`/`codex` scoping where applicable, and leave marketplace registrations plus external plugins in place. A tampered managed block makes the strip fail without writing, exactly like install.
 
@@ -155,7 +155,7 @@ Codex Rig installs 14 skills: 13 workflows plus the legacy shim manager.
 | Skill             | Purpose                                                                                                             |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `change-analysis` | Inspect an issue, PR, module, or problem before implementation; emit ranked findings and gates.                     |
-| `audit`           | Detect configuration, workflow, routing, documentation, and quality-gate drift.                                     |
+| `audit`           | Detect configuration, workflow, routing, documentation, prompt-efficiency, and quality-gate drift.                  |
 | `calibrate`       | Run fixed and behavioral checks across packaged skills and roles; score recall, precision, and confidence accuracy. |
 | `code-remediate`  | Triage review findings, select valid work, assign owners/verifiers, apply fixes, and prove closure.                 |
 | `code-review`     | Close a PR at an evidence-backed proposal gate or review its local diff across mandatory and risk-triggered axes.   |
@@ -305,9 +305,11 @@ Paid live A/B calibration is separate, explicit, and never implied by the offlin
 
 </details>
 
-## 🧾 Commit handoffs
+## 🧾 Approval prompts and commit handoffs
 
-Codex-created commit handoffs identify every commit by hash and title, summarize behavior and affected surfaces, list exact verification evidence, disclose residual limits, and explain boundaries between multiple commits. The Git message remains concise; the user-facing handoff carries the fuller impact and evidence record.
+For every intentional approval request, Codex keeps the detailed safety and effects pre-brief separate from the runtime prompt. The prompt reason is a short plain-English question about the outcome or material effect; it never duplicates command syntax, arguments, flags, paths, multiline content, or the full pre-brief. Reusable approval uses only a justified short categorical safe prefix, while one-time or high-risk commands omit the persistent prefix.
+
+Codex-created commit handoffs identify every commit by hash and title, summarize behavior and affected surfaces, list exact verification evidence, disclose residual limits, and explain boundaries between multiple commits. As one application of the approval rule, multiline messages remain complete but stay out of the approval argv: Codex shows the exact message, stores it in a private temporary file outside the worktree, and requests one-time approval for `rtk git commit --cleanup=verbatim -F <file>` without a persistent prefix rule.
 
 ## 🩺 Optional SessionStart diagnostic
 

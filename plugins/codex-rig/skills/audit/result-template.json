@@ -16,6 +16,23 @@
     "medium": 0
   },
   "follow_up": [],
+  "metadata": {
+    "value_per_token": {
+      "baseline_sha256": "",
+      "behavioral_comparison": {},
+      "candidate_sha256": "",
+      "conditional_load_trace": [],
+      "decision": "",
+      "live_comparison": {},
+      "obligation_map_path": "",
+      "residual_limits": [],
+      "schema_version": 1,
+      "scope_roots": [],
+      "static_gates": [],
+      "static_measurements": [],
+      "status": "not-run|insufficient-evidence|rejected|accepted"
+    }
+  },
   "recommendations": [],
   "status": "pass|fail|timeout"
 }

@@ -56,18 +56,10 @@ MAX_BATCHES_FAST=10    # only when --fast: trades ~120K tok/agent for wall-clock
 ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention
 AGENT_CALL_BUDGET=55   # target tool-calls per spawned agent; above ~60 agents stall mid-task without returning an envelope
 
-<!-- Fan-out cost model — measured 2026-08-07 over 10 subagent runs; full data in
-     .plans/active/todo_agent-cost-model-and-fanout-design.md
-
-     fixed cost  ~120,851 tok per agent spawned
-     marginal    ~1,647 tok per tool call  ->  one agent costs ~73 calls of work to exist
-     stall       agents <=57 calls returned a clean envelope 5/5;
-                 agents 87-142 calls stalled mid-task 3/5, losing their envelope
-
-     Consequence: fan-out buys WALL-CLOCK, not tokens. At MAX_BATCHES=10 the fixed
-     cost alone is ~1.2M tok before any auditing happens. Default to the minimum
-     number of batches that keeps each agent near AGENT_CALL_BUDGET; use --fast
-     only when latency matters more than cost. -->
+<!-- Fan-out buys WALL-CLOCK, not tokens: ~120K tok fixed cost per agent spawned;
+     agents past ~60 calls stall without returning an envelope. Default to the
+     fewest batches keeping each agent near AGENT_CALL_BUDGET; --fast only when
+     latency outweighs cost. -->
 
 </constants>
 

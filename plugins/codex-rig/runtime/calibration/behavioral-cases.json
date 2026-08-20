@@ -518,6 +518,44 @@
     },
     {
       "expected_findings": [
+        "length-only-optimization",
+        "semantic-value-guard-missing",
+        "loaded-reference-cost-omitted",
+        "adversarial-review-missing"
+      ],
+      "id": "audit-prompt-efficiency-overcompression",
+      "prompt": "Audit a shorter skill candidate that moves approval, force-operation, and terminal-state rules into a shared file, reports only the smaller primary file, provides no obligation map or behavior/calibration comparison, omits the loaded shared-file cost, and skips adversarial review.",
+      "target": "audit"
+    },
+    {
+      "expected_findings": [
+        "paired-live-evidence-missing",
+        "insufficient-evidence-required"
+      ],
+      "id": "audit-prompt-efficiency-live-evidence",
+      "prompt": "Audit a compressed skill candidate whose static obligation map and deterministic tests pass but whose material quality and cost claim has no paired live comparison using identical tasks, model, effort, task contract, and prompt identity.",
+      "target": "audit"
+    },
+    {
+      "expected_findings": [
+        "critical-behavior-regression",
+        "candidate-rejection-required"
+      ],
+      "id": "audit-prompt-efficiency-critical-regression",
+      "prompt": "Audit a candidate with lower native token cost that fails one critical approval-denial behavior while aggregate precision and completion remain high, yet is accepted because its combined value-per-token score improved.",
+      "target": "audit"
+    },
+    {
+      "expected_findings": [
+        "cost-threshold-not-met",
+        "candidate-rejection-required"
+      ],
+      "id": "audit-prompt-efficiency-materiality",
+      "prompt": "Audit a candidate with equal quality and complete obligation preservation whose normalized native cost falls below the declared minimum reduction, yet is accepted as a meaningful efficiency improvement.",
+      "target": "audit"
+    },
+    {
+      "expected_findings": [
         "pr-scope-missing",
         "online-review-triage-missing",
         "pr-review-artifacts-missing"

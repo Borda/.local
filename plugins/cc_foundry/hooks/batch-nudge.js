@@ -10,8 +10,7 @@
 //   plugins/CLAUDE.md 749 solo Bash calls across logged sessions, restated in
 //   prose only). Informational only — never blocks a tool call.
 //
-// HEURISTIC (see plugins/.plans/active/todo_agent-cost-model-and-fanout-design.md
-// item 4 for the empirical basis)
+// HEURISTIC (empirical basis measured from PostToolUse timestamps)
 //   Two Read calls issued in the SAME assistant message (genuinely parallel
 //   dispatch) landed ~300ms apart in PostToolUse timestamps — far under a model
 //   round-trip (multi-second: read result, reason, decide next call). So: track

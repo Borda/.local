@@ -26,9 +26,7 @@ Run linear implementation with strict gates.
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill implement` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill implement` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Record baseline diff and branch
 
@@ -78,7 +76,7 @@ While implementing, keep the code understandable from the code itself:
 
 ### 06: Orchestrate specialists when the change crosses a domain boundary
 
-Apply `../../shared/specialist-orchestration.md`. Stay single-agent for narrow implementation that fits in one to three files and one domain. Use specialist orchestration when the task crosses domains, benefits from independent verification, or can split into parallel context packs.
+Read and apply `../../shared/specialist-orchestration.md` only when the task crosses domains, benefits from independent verification, or splits into parallel context packs; do not load it for narrow one-domain implementation in one to three files.
 
 Before spawning or substituting specialists, write `<run-directory>/specialist-plan.md` with one row per planned pass:
 
@@ -185,7 +183,7 @@ Update calibration when implementation routing or output expectations change:
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Final chat output must include the confidence score, confidence band status, recovery actions, remaining limits, and the concrete confidence gaps or degradation reasons plus closure status from `metadata.confidence_gaps` and `metadata.confidence_gap_closures`.
 

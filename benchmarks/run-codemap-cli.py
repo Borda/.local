@@ -145,7 +145,7 @@ Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-inde
   real: A's AST oracle can mark codemap wrong, L3 fails on large repos, and a correctness suite fails on
   any CLI-contract regression against its fixture.
 
-Full scenario definitions and pass criteria: .plans/blueprint/2026-04-15-codemap-benchmark-spec.md
+Full scenario definitions live in benchmarks/suites/*.json; pass criteria in compute_verdict below.
 """
 
 from __future__ import annotations

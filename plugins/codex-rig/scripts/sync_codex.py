@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,6 +59,7 @@ MANAGED_PLUGINS = (
     ("Claude Code and Codex Bridge", f"bridge@{MARKETPLACE}"),
 )
 MAX_JSON_BYTES = 1_048_576
+MINIMUM_BRIDGE_PYTHON = (3, 10)
 WINDOWS_BATCH_METACHARACTERS = frozenset('&|<>^()%!"')
 RunCommand = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -216,6 +218,28 @@ def _codex_home(environ: Mapping[str, str]) -> Path:
     return Path(configured) if configured else Path.home() / ".codex"
 
 
+def _run_bridge_static_diagnosis(root: Path, run: RunCommand, stdout: TextIO) -> None:
+    """Check the installed Bridge runtime without starting either provider."""
+    doctor = root / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
+    if doctor.is_symlink() or not doctor.is_file():
+        raise SyncError("installed Bridge static doctor is incomplete or linked")
+
+    version_result = _run(run, ["python", "--version"], required=False)
+    version_text = f"{version_result.stdout}\n{version_result.stderr}".strip()
+    match = re.search(r"\bPython\s+(\d+)\.(\d+)(?:\.\d+)?\b", version_text)
+    if version_result.returncode != 0 or match is None:
+        raise SyncError("Bridge requires a `python` command reporting Python 3.10 or newer")
+    if (int(match.group(1)), int(match.group(2))) < MINIMUM_BRIDGE_PYTHON:
+        raise SyncError(f"Bridge requires Python 3.10 or newer; found {match.group(0)}")
+
+    diagnosis = _run(run, ["python", str(doctor), "--direction", "claude"], required=False)
+    payload = _json_output(diagnosis, "Bridge static diagnosis")
+    if diagnosis.returncode != 0 or payload.get("ok") is not True or payload.get("live") is not False:
+        detail = json.dumps(payload, sort_keys=True)[:512]
+        raise SyncError(f"Bridge static diagnosis failed: {detail}")
+    print("  [ok] Bridge static diagnosis passed; no provider call made", file=stdout)
+
+
 def _clear(run: RunCommand, environ: Mapping[str, str], stdout: TextIO) -> int:
     """Remove managed plugins and the authenticated global-instruction block."""
     for _display_name, plugin_id in MANAGED_PLUGINS:
@@ -280,6 +304,8 @@ def sync_codex(
     versions = _installed_versions(run)
     for display_name, plugin_id in MANAGED_PLUGINS:
         print(f"  [ok] {display_name} {versions[plugin_id]} installed", file=stdout)
+
+    _run_bridge_static_diagnosis(root, run, stdout)
 
     if args.no_codex_global_agents:
         print("  [skip] global instructions unchanged", file=stdout)

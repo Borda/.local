@@ -825,23 +825,24 @@ These Python helpers are installed workflow support and maintainer surfaces, not
 
 #### Audit, consistency, and document checks
 
-| Helper                        | Purpose                                                            |
-| ----------------------------- | ------------------------------------------------------------------ |
-| `audit_churn.py`              | Emit git-history recurrence signals for `/foundry:audit`.          |
-| `audit_static.py`             | Run and aggregate the deterministic Layer-1 audit checks.          |
-| `check_bash_persistence.py`   | Detect shell variables referenced across separate Bash tool calls. |
-| `check_cli_flag_drift.py`     | Detect drift between documented flags and `argparse` options.      |
-| `check_codemap_guard.py`      | Detect unmanaged codemap index-guard copies.                       |
-| `check_bridge.py`             | Detect whether the bridge plugin is installed and enabled.         |
-| `check_fence_symmetry.py`     | Validate Markdown code-fence pairing and nesting.                  |
-| `check_mode_dispatch.py`      | Detect dangling mode-dispatch references in skill files.           |
-| `check_orphaned_bin.py`       | Find bin scripts not referenced by plugin Markdown.                |
-| `check_plugin_module_docs.py` | Require a module docstring on every shipped plugin module.         |
-| `check_readme_drift.py`       | Detect README version and bin-reference drift from disk.           |
-| `check_routing_links.py`      | Validate computed paths in skills and agent files.                 |
-| `check_spawn_prompt_vars.py`  | Detect unresolved variables in Markdown spawn prompts.             |
-| `check_tag_symmetry.py`       | Check XML-tag symmetry in agent and skill Markdown.                |
-| `classify_resolver_sites.py`  | Classify resolver call sites as inline-required or cat-only.       |
+| Helper                        | Purpose                                                             |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `audit_churn.py`              | Emit git-history recurrence signals for `/foundry:audit`.           |
+| `audit_static.py`             | Run and aggregate the deterministic Layer-1 audit checks.           |
+| `check_bash_persistence.py`   | Detect shell variables referenced across separate Bash tool calls.  |
+| `check_cli_flag_drift.py`     | Detect drift between documented flags and `argparse` options.       |
+| `check_codemap_guard.py`      | Detect unmanaged codemap index-guard copies.                        |
+| `check_bridge.py`             | Detect whether the bridge plugin is installed and enabled.          |
+| `check_fence_symmetry.py`     | Validate Markdown code-fence pairing and nesting.                   |
+| `check_gitignored_refs.py`    | Reject tracked-file references to this repo's gitignored documents. |
+| `check_mode_dispatch.py`      | Detect dangling mode-dispatch references in skill files.            |
+| `check_orphaned_bin.py`       | Find bin scripts not referenced by plugin Markdown.                 |
+| `check_plugin_module_docs.py` | Require a module docstring on every shipped plugin module.          |
+| `check_readme_drift.py`       | Detect README version and bin-reference drift from disk.            |
+| `check_routing_links.py`      | Validate computed paths in skills and agent files.                  |
+| `check_spawn_prompt_vars.py`  | Detect unresolved variables in Markdown spawn prompts.              |
+| `check_tag_symmetry.py`       | Check XML-tag symmetry in agent and skill Markdown.                 |
+| `classify_resolver_sites.py`  | Classify resolver call sites as inline-required or cat-only.        |
 
 #### Session, install, and state helpers
 
@@ -978,6 +979,7 @@ Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem
 | `test_heal_git_artifacts.py`       | `heal_git_artifacts.py`       | 67    | PID liveness on both platform branches (Windows simulated on every host, POSIX probe patched so signal 0 is asserted rather than sent), lock verdicts, worktree tiering, CLI exit codes, and a guard that no doctest calls the POSIX probe — signal 0 is `CTRL_C_EVENT` on Windows, so one did abort every Windows CI leg with a `KeyboardInterrupt`                                                                                                                                                                                      |
 | `test_health_sentinel.py`          | `health_sentinel.py`          | 18    | Sentinel creation, age computation, stale detection, new-file polling                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `test_check_fence_symmetry.py`     | `check_fence_symmetry.py`     | 17    | Unclosed fences, nested/interleaved fences, multi-file scan                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `test_check_gitignored_refs.py`    | `check_gitignored_refs.py`    | 12    | Token extraction, existence+check-ignore classification in a real tmp checkout, waiver marker, placeholder templates, CLI exit codes                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `test_check_bridge.py`             | `check_bridge.py`             | 9     | nested registry parsing, `installPath` requirement, stale-cache rejection, settings opt-out                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `test_make_run_dir.py`             | `make_run_dir.py`             | 16    | Portability invariants (no `/tmp` literals, no `utcnow`), timestamp format                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `test_check_spawn_prompt_vars.py`  | `check_spawn_prompt_vars.py`  | 16    | `$VAR` in markdown code blocks, caller-substituted-var whitelist, multi-file scan                                                                                                                                                                                                                                                                                                                                                                                                                                                         |

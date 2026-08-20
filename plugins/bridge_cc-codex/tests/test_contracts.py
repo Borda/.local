@@ -35,6 +35,114 @@ HARNESS_ONLY_FIELDS = {
     "direction",
 }
 
+CODEX_SKILL_CONTRACTS = {
+    "advise": (
+        "bridge_advise",
+        "required `task`",
+        "`model`, `effort`, `timeout_seconds`, `depth`, and `run_id`",
+        "Never replace supplied effort",
+        "launch workspace",
+        "compact envelope",
+        "`transcript_path`",
+        "`incident`",
+        "never copy transcript-only peer `details`",
+        "fresh call, never session resumption",
+    ),
+    "implement": (
+        "bridge_implement",
+        "required `task`",
+        "`model`, `effort`, `timeout_seconds`, `depth`, and `run_id`",
+        "Never replace supplied choices",
+        "launch workspace",
+        "model-controlled workspace, background, and session fields",
+        "`verdict`, `findings`, `files_touched`, `remaining`, and `blockers`",
+        "`transcript_path`",
+        "never inline `details`",
+        "reread reported files and run relevant project checks",
+        "trusted inherited depth one",
+    ),
+    "review": (
+        "bridge_review",
+        "required `task`",
+        "`model`, `effort`, `timeout_seconds`, `depth`, and `run_id`",
+        "Never replace supplied effort",
+        "launch workspace",
+        "compact envelope",
+        "workspace-relative transcript",
+        "`incident`",
+        "never inline peer `details`",
+    ),
+    "setup": (
+        "MCP inventory",
+        "`python --version` >= 3.10",
+        '`python "${PLUGIN_ROOT}/bin/bridge_diagnose.py" --direction claude`',
+        "command help and retained health records",
+        "provider authentication",
+        "structured-output schema compatibility",
+        "paid authenticated inference",
+        "explicit user request",
+        "Never repair authentication or edit CLI configuration",
+    ),
+}
+
+CLAUDE_SKILL_CONTRACTS = {
+    "advise": (
+        'bridge_call.py" advise --task "<question>"',
+        "`--task-file <path>`",
+        "mutually exclusive",
+        "120 seconds",
+        "Never resume advice",
+        "`transcript_path`",
+        "`incident`",
+        "Preserve caller-supplied level",
+    ),
+    "implement": (
+        'bridge_call.py" implement --task "<task>"',
+        "Never interpolate task shell syntax",
+        "`--task-file <path>`",
+        "600 seconds",
+        "hard cutoff",
+        "write-capable",
+        "Never auto-retry after timeout",
+        "`verdict`, `findings`, `files_touched`, `remaining`, and `blockers`",
+        "`transcript_path`",
+        "do not edit task-named paths",
+        "re-read every `files_touched` path",
+    ),
+    "review": (
+        'bridge_call.py" review --task "<instructions>"',
+        "`--task-file <path>`",
+        "adversarial-review prompt",
+        "300 seconds",
+        "Never resume review",
+        "Preserve caller-supplied level",
+    ),
+    "cancel": (
+        'bridge_call.py" cancel --job-id "<job-id>"',
+        "`--workspace` only when explicitly supplied",
+        "do not claim termination complete",
+        "`/bridge:status` or `/bridge:result`",
+    ),
+    "result": (
+        'bridge_call.py" result --job-id "<job-id>"',
+        "`--workspace` only when explicitly supplied",
+        "never inline raw transcript",
+    ),
+    "status": (
+        'bridge_call.py" status --job-id "<job-id>"',
+        "`--workspace` only when explicitly supplied",
+        "Return JSON status unchanged",
+    ),
+    "setup": (
+        "bridge_diagnose.py",
+        "Python 3.10",
+        "`--live` only on explicit user request",
+        "paid inference",
+        "point-in-time evidence",
+        "Never repair authentication or modify CLI configuration",
+    ),
+}
+
 
 def _read_json(path: Path) -> dict[str, object]:
     """Read one JSON contract object with an exact top-level object assertion."""
@@ -94,6 +202,22 @@ def _assert_value_matches_contract(schema: Mapping[str, object], value: object) 
             _assert_value_matches_contract(properties[key], item)
         elif isinstance(schema.get("additionalProperties"), Mapping):
             _assert_value_matches_contract(schema["additionalProperties"], item)
+
+
+def test_codex_skills_retain_the_runtime_safety_contract() -> None:
+    """Prevent prompt compression from dropping Bridge's caller and safety boundaries."""
+    skills_root = PLUGIN_ROOT / "codex-skills"
+    for name, requirements in CODEX_SKILL_CONTRACTS.items():
+        skill = (skills_root / name / "SKILL.md").read_text(encoding="utf-8")
+        assert not [requirement for requirement in requirements if requirement not in skill], name
+
+
+def test_claude_skills_retain_the_runtime_safety_contract() -> None:
+    """Prevent prompt compression from dropping Bridge's caller and safety boundaries."""
+    skills_root = PLUGIN_ROOT / "claude-skills"
+    for name, requirements in CLAUDE_SKILL_CONTRACTS.items():
+        skill = (skills_root / name / "SKILL.md").read_text(encoding="utf-8")
+        assert not [requirement for requirement in requirements if requirement not in skill], name
 
 
 @pytest.mark.parametrize(

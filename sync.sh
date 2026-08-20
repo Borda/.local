@@ -8,7 +8,7 @@
 #   claude   — sync Claude plugins + their installed setup skills (default: both).
 #              Also purges plugins this rig has retired (see PURGE_PLUGINS below);
 #              codex@openai-codex is purged only once bridge installs in the same run.
-#   codex    — install or update Codex Rig, Codemap, and bridge, then mirror this checkout's Codex session policy (default: both)
+#   codex    — install or update Codex Rig, Codemap, and bridge, run Bridge's free static host check, then mirror this checkout's Codex session policy (default: both)
 #   clear    — teardown instead of install: uninstall this marketplace's Claude plugins
 #              + Codex Rig, Codemap, and bridge, and strip the managed block from $CODEX_HOME/AGENTS.md
 #              (a timestamped backup is kept). Honors claude/codex scoping (default: both sides).
@@ -17,8 +17,7 @@
 #   --codex-ref REF — pin Codex Rig to one Git ref (default: latest default branch)
 #   --no-codex-global-agents — leave $CODEX_HOME/AGENTS.md unchanged; model defaults still mirror
 #
-# Setup skills shipped by installed managed plugins run headlessly at the end of
-# Claude sync — no manual step needed.
+# Setup skills shipped by installed managed plugins run headlessly at the end of Claude sync. Codex sync runs Bridge's installed static doctor directly without model inference; MCP inventory still requires a fresh project session.
 
 set -e
 

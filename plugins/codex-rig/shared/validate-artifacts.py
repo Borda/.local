@@ -104,7 +104,28 @@ PR_PUBLIC_FALLBACK_MAX_CONFIDENCE = 0.89
 
 SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
     "change-analysis": {"files": {}},
-    "audit": {"files": {}},
+    "audit": {
+        "files": {
+            "audit-ledger.md": [
+                "Inventory",
+                "Broken References",
+                "Runtime Leaks",
+                "Coverage",
+                "Overlap",
+                "Prompt Efficiency",
+                "Recommendations",
+            ],
+            "prompt-efficiency.md": [
+                "Measurement",
+                "Cost Baseline",
+                "Loaded Context",
+                "Obligation Map",
+                "Value Guards",
+                "Adversarial Review",
+                "Recommendations",
+            ],
+        },
+    },
     "calibrate": {"files": {}},
     "research": {"files": {}},
     "code-review": {"files": {}},

@@ -9,11 +9,11 @@ effort: low
 
 <objective>
 
-**Python only** — uses `ast.parse` to extract import graph + symbol metadata across all `.py` files; non-Python files not indexed. Writes `.cache/codemap/<project>.json`. No external deps. Zero-Python project (no `.py` files): index writes but empty — downstream queries return no results.
+**Python only**: `ast.parse` extracts import graph + symbol metadata from all `.py`; non-Python excluded. Writes `.cache/codemap/<project>.json`; no external deps. Zero-Python project still writes empty index; queries return nothing.
 
-Index captures per module: import graph, blast-radius metrics, **symbol list** (classes, functions, methods with line ranges). Symbol data enables `scan-query symbol` / `find-symbol` to return target function source instead of full file reads.
+Per module: import graph, blast-radius metrics, **symbol list** (classes/functions/methods + line ranges). Symbols let `scan-query symbol` / `find-symbol` return target source, avoiding full-file reads.
 
-Agents + develop skills query index via `scan-query` for module deps, blast radius, coupling, symbol source before editing.
+Agents/develop skills query via `scan-query` for deps, blast radius, coupling, symbol source before edits.
 
 NOT for: querying existing index (use `/codemap-py:query-code`); integration health checks or wiring consumer integration (use `/codemap-py:integration` — `check`/`plan`/`apply`).
 
@@ -23,9 +23,9 @@ NOT for: querying existing index (use `/codemap-py:query-code`); integration hea
 
 ## Step 1: Run the scanner
 
-Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `--incremental` if provided. Construct args conditionally — never pass literal placeholder strings:
+Build invocation from `$ARGUMENTS`. Pass supplied `--root <path>` and/or `--incremental`; never literal placeholders.
 
-**Unknown-flag check** — scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): <tokens>` followed by `Supported: --root <path>, --incremental`, then exit 1 — do not invoke AskUserQuestion (disable-model-invocation:true makes AskUserQuestion structurally unreachable). Run this check BEFORE invoking `parse_scan_args.py`. Both rosters and the shell below use the same `Unknown flag(s)` wording — never a second synonym. This pre-flight exits `1`, a skill-local shortcut recorded as accepted in `shared/capability-contract.md`; it does not redefine §7.5's `2` for the CLI's own syntax errors.
+**Unknown-flag check**: before `parse_scan_args.py`, find `$ARGUMENTS` `--` tokens except `--root`, `--incremental`. If any, print `! Unknown flag(s): <tokens>` then `Supported: --root <path>, --incremental`; exit 1. Never AskUserQuestion: disable-model-invocation:true makes it unreachable. Rosters + shell must use exact `Unknown flag(s)` wording, no synonym. Preflight exit `1` is skill-local shortcut accepted in `shared/capability-contract.md`; CLI syntax errors remain §7.5 exit `2`.
 
 ```bash
 # timeout: 10000
@@ -78,9 +78,9 @@ if [ "$_SCAN_RC" -ne 0 ]; then
 fi
 ```
 
-**`--root` naming note**: when `--root <path>` given, index named after `basename(<path>)` — differs from default project index (uses git root's basename). Prior queries/edits against default index: `--root` index separate, queries won't see it unless same `--root` used consistently. Run `resolve_index_env.py` to verify index path after custom-root scan.
+**`--root` naming**: index uses `basename(<path>)`, unlike default git-root basename. Custom-root index is separate; queries miss it unless same `--root` is used consistently. After custom-root scan, verify path via `resolve_index_env.py`.
 
-Scanner writes to `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json` when set) and prints summary line:
+Writes `<root>/.cache/codemap/<project>.json`, or `$CODEMAP_INDEX_DIR/<project>.json` when set; prints:
 
 ```text
 [codemap] ✓ .cache/codemap/<project>.json
@@ -115,13 +115,13 @@ else
 fi
 ```
 
-Degraded count reported — `scan-stats.py` reports module counts only, no per-file list. Not failure — index still useful.
+Degraded count is informational. `scan-stats.py` reports module counts, no per-file list; index remains useful.
 
-If `--incremental` passed and no prior index existed, Step 1 sets sentinel file (`codemap-incremental-noop-${PROJ_SLUG}-${CSID}`) before scan starts. Step 2 detects + removes it after stats, logging: `--incremental had no prior index — full scan ran instead`. If scan fails, Step 1 removes sentinel to avoid misleading state next run.
+If `--incremental` has no prior index, Step 1 sets `codemap-incremental-noop-${PROJ_SLUG}-${CSID}` before scan. Step 2 detects/removes after stats; logs `--incremental had no prior index — full scan ran instead`. On scan failure, Step 1 removes sentinel to prevent false next-run state.
 
-**Sentinel hostname limitation**: `PROJ_SLUG` includes machine hostname short-name. Docker containers/cloud instances with dynamic/random hostnames: sentinel key changes between runs — incremental-noop detection won't fire even with stale sentinel present. Known limitation; affects only Step 2 informational message, not scan correctness.
+**Sentinel hostname limit**: `PROJ_SLUG` includes hostname short-name. Dynamic container/cloud hostnames change sentinel key; incremental-noop detection may miss stale sentinel. Only Step 2 message affected, not scan correctness.
 
-Zero-Python project: Step 3 suggestions return no results — index valid but empty.
+Zero-Python project: Step 3 suggestions return nothing; index valid but empty.
 
 ## Step 3: Suggest next step
 

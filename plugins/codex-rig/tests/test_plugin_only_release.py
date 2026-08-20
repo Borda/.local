@@ -360,6 +360,61 @@ def test_manage_and_sync_preserve_installed_plugin_state() -> None:
         assert required in sync
 
 
+def test_audit_prompt_efficiency_requires_cost_and_value_evidence() -> None:
+    """Prevent recurring skill audits from rewarding shorter but weaker instructions."""
+    audit = normalized_text(PLUGIN_ROOT / "skills" / "audit" / "SKILL.md")
+    for required in (
+        "Prompt Efficiency",
+        "prompt-efficiency.md",
+        "provider-native token counts",
+        "o200k_base",
+        "UTF-8 bytes and words",
+        "cost evidence, never quality evidence",
+        "loaded referenced instructions",
+        "behavioral and calibration",
+        "adversarial review",
+        "shorter candidate fails",
+    ):
+        assert required in audit
+
+    validator = load_shared_artifact_validator()
+    assert validator.SKILL_REQUIREMENTS["audit"] == {
+        "files": {
+            "audit-ledger.md": [
+                "Inventory",
+                "Broken References",
+                "Runtime Leaks",
+                "Coverage",
+                "Overlap",
+                "Prompt Efficiency",
+                "Recommendations",
+            ],
+            "prompt-efficiency.md": [
+                "Measurement",
+                "Cost Baseline",
+                "Loaded Context",
+                "Obligation Map",
+                "Value Guards",
+                "Adversarial Review",
+                "Recommendations",
+            ],
+        }
+    }
+
+
+def test_audit_calibration_rejects_length_only_prompt_compression() -> None:
+    """Keep a scored adversarial case for prompt-cost optimization regressions."""
+    cases = load_json(PLUGIN_ROOT / "runtime" / "calibration" / "behavioral-cases.json")["cases"]
+    case = next(item for item in cases if item["id"] == "audit-prompt-efficiency-overcompression")
+    assert case["target"] == "audit"
+    assert case["expected_findings"] == [
+        "length-only-optimization",
+        "semantic-value-guard-missing",
+        "loaded-reference-cost-omitted",
+        "adversarial-review-missing",
+    ]
+
+
 def test_commit_contract_requires_exact_history_rewrite_authorization() -> None:
     """Prevent ordinary commit requests from authorizing edits to existing history."""
     contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
@@ -407,6 +462,30 @@ def test_commit_contract_requires_detailed_changes_and_impacts() -> None:
         "generic impact claims",
     ):
         assert required in contract
+
+
+def test_approval_contract_keeps_runtime_reason_short_and_prefix_safe() -> None:
+    """Prevent approval UI prompts from duplicating commands or detailed pre-briefs."""
+    native_contract = normalized_text(PLUGIN_ROOT / "shared" / "native-skill-contract.md").lower()
+    agent_contract = normalized_text(PLUGIN_ROOT / "assets" / "AGENTS.md").lower()
+    for contract in (native_contract, agent_contract):
+        for required in (
+            "all intentional approval requests",
+            "short plain-english question",
+            "outcome or material effect",
+            "must not repeat the command, argv, flags, paths, multiline content, or full approval brief",
+            "short categorical safe prefix",
+            "omit `prefix_rule` for one-time or high-risk commands",
+        ):
+            assert required in contract
+
+    commit_contract = normalized_text(PLUGIN_ROOT / "shared" / "commit-response-template.md").lower()
+    assert "application of the general approval contract" in commit_contract
+    assert "mode 0700" in commit_contract
+    assert "reject symlink" in commit_contract
+    assert (
+        "must not repeat the command, flags, message-file path, message body, or full approval brief" in commit_contract
+    )
 
 
 def test_calibration_recurrence_cases_cover_each_escalation_stage() -> None:
@@ -759,13 +838,16 @@ else:
         case.mkdir()
         log = case / "calls.log"
         installed_plugin = case / "marketplace" / "plugins" / "codex-rig"
+        bridge_doctor = case / "marketplace" / "plugins" / "bridge_cc-codex" / "bin" / "bridge_diagnose.py"
         (installed_plugin / "assets").mkdir(parents=True)
         (installed_plugin / "scripts").mkdir()
+        bridge_doctor.parent.mkdir(parents=True)
         shutil.copy2(PLUGIN_ROOT / "assets" / "AGENTS.md", installed_plugin / "assets" / "AGENTS.md")
         shutil.copy2(
             PLUGIN_ROOT / "scripts" / "install_global_agents.py",
             installed_plugin / "scripts" / "install_global_agents.py",
         )
+        bridge_doctor.write_text('import json\nprint(json.dumps({"ok": True, "live": False}))\n', encoding="utf-8")
         codex_home = case / "codex-home"
         env = os.environ.copy()
         env.update(
@@ -794,6 +876,7 @@ else:
         assert "Codex Rig 0.3.0 installed" in result.stdout
         assert "Codemap 0.28.8 installed" in result.stdout
         assert "Claude Code and Codex Bridge 0.1.0 installed" in result.stdout
+        assert "Bridge static diagnosis passed; no provider call made" in result.stdout
         assert (codex_home / "AGENTS.md").exists() is expect_global_agents
         if expect_global_agents:
             global_agents = (codex_home / "AGENTS.md").read_text(encoding="utf-8")

@@ -1,6 +1,6 @@
 # Development and release verification
 
-`bridge_CC-Codex` is a standalone Python 3.10+ plugin package. Its normalized plugin identifier is `bridge`; both manifests must keep that name and the same version. Its Claude Code manifest is `.claude-plugin/plugin.json`; its Codex manifest is `.codex-plugin/plugin.json`; its reverse transport declaration is `.mcp.json`. The current release is `0.2.0`.
+`bridge_CC-Codex` is a standalone Python 3.10+ plugin package. Its normalized plugin identifier is `bridge`; both manifests must keep that name and the same version. Its Claude Code manifest is `.claude-plugin/plugin.json`; its Codex manifest is `.codex-plugin/plugin.json`; its reverse transport declaration is `.mcp.json`. The current release is `0.2.1`.
 
 ## Source layout
 

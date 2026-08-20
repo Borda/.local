@@ -77,7 +77,7 @@ ROLE_IDS = (
     "web-explorer",
 )
 RUNTIME_KEYS = ("model", "model_reasoning_effort", "approval_policy", "sandbox_mode")
-EXCLUDED_PARTS = frozenset({"__pycache__", ".pytest_cache"})
+EXCLUDED_PARTS = frozenset({"__pycache__", ".pytest_cache", ".reports"})
 EXCLUDED_FILES = frozenset({".coverage", "package-manifest.json"})
 
 
@@ -206,7 +206,15 @@ def build_manifest() -> dict[str, Any]:
             "sha256": sha256(generator.read_bytes()),
         },
         "files": [file_record(path) for path in payload_files],
-        "excluded": ["__pycache__", ".pytest_cache", ".coverage", ".mcp.json", "hooks", "skills/agent-shims"],
+        "excluded": [
+            "__pycache__",
+            ".pytest_cache",
+            ".reports",
+            ".coverage",
+            ".mcp.json",
+            "hooks",
+            "skills/agent-shims",
+        ],
     }
 
 

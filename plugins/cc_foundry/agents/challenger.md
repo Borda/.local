@@ -219,9 +219,7 @@ Report above is Claude-only.
 **Triage when over budget**: drop LOW/Nitpick items first — preserve CRITICAL and HIGH intact.
 
 **Opt-out**: include `--no-codex` in prompt to skip Codex cross-check — useful when Codex rate-limited,
-unavailable, review target plan-only with no git diff, or caller already ran `bridge:review`
-on same material (e.g. `quality-gates.md` Pre-Handover Check fired before this invocation) — avoids
-duplicate Codex call on identical target.
+unavailable, review target plan-only with no git diff, or caller already ran `bridge:review` on same material (e.g. `quality-gates.md` Pre-Handover Check fired before this invocation) — avoids duplicate Codex call on identical target.
 
 Complementary agents:
 

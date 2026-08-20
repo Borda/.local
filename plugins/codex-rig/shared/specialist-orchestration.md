@@ -28,9 +28,7 @@ Stay single-agent when:
 
 ## Delegation Lead And Model Routing
 
-Use `delegation-lead` for 2+ separable workstreams when delegation beats context/consolidation cost. Request nested
-specialists only when the active runtime proves the required depth; otherwise keep delegation at the parent. The lead
-returns one consolidated handover, never final ownership.
+Use `delegation-lead` for 2+ separable workstreams when delegation beats context/consolidation cost. Request nested specialists only when the active runtime proves the required depth; otherwise keep delegation at the parent. The lead returns one consolidated handover, never final ownership.
 
 Classify each workstream from current task evidence before selecting a role; a task label, file count, or a cheaper available model is not evidence of capability:
 
@@ -69,38 +67,23 @@ Do not default to full repo/PR thread/report. Specialist may request more; paren
 
 ## Portable Role Routing
 
-Resolve the requested role card at `../roles/<role-id>/ROLE.md` relative to this policy. Treat those exact bytes as
-the behavioral authority. Plugin-only installs do not create custom-agent files.
+Resolve the requested role card at `../roles/<role-id>/ROLE.md` relative to this policy. Treat those exact bytes as the behavioral authority. Plugin-only installs do not create custom-agent files.
 
-Before routing, classify each requested model, sandbox, approval, and nesting setting as `mandatory` or `preferred`
-from the task's actual risk. Use this route order:
+Before routing, classify each requested model, sandbox, approval, and nesting setting as `mandatory` or `preferred` from the task's actual risk. Use this route order:
 
-1. A runtime-provided blank/default subagent with the complete exact role-card bytes injected before the narrow
-   context pack.
+1. A runtime-provided blank/default subagent with the complete exact role-card bytes injected before the narrow context pack.
 2. An inline pass in the parent context with the exact role card applied and independence reported as false.
 3. `unavailable` when the runtime cannot provide any safe route or cannot prove a mandatory profile setting.
 
-Fallback only for route absence or rejection before substantive role work. Never retry another
-route because the specialist disagreed, returned a finding, or failed an acceptance gate. Built-in injection may
-retain parallel independence but cannot claim the role card's model, sandbox, approval, or nesting profile unless
-the runtime independently proves each setting. Preferred settings that are unproved are recorded as requested-only
-and lower fidelity; mandatory settings that are unproved stop at `unavailable`. Inline fallback is serial and
-non-independent.
+Fallback only for route absence or rejection before substantive role work. Never retry another route because the specialist disagreed, returned a finding, or failed an acceptance gate. Built-in injection may retain parallel independence but cannot claim the role card's model, sandbox, approval, or nesting profile unless the runtime independently proves each setting. Preferred settings that are unproved are recorded as requested-only and lower fidelity; mandatory settings that are unproved stop at `unavailable`. Inline fallback is serial and non-independent.
 
-For injection, the parent reads and hashes the canonical card, then places its full text before the narrow task
-context. Passing only a role ID or path, or asking the child to search for the card, is not injection. A sanitized
-`task_name` is provenance only; it neither selects a custom profile nor proves agent activation.
+For injection, the parent reads and hashes the canonical card, then places its full text before the narrow task context. Passing only a role ID or path, or asking the child to search for the card, is not injection. A sanitized `task_name` is provenance only; it neither selects a custom profile nor proves agent activation.
 
-Persistent named shims are platform-blocked for routing until Codex exposes a verifiable custom-agent selector and
-a fresh-session probe proves the child consumed the selected TOML. Their lifecycle manager remains available for
-diagnosis and authenticated cleanup of prior development installations.
+Persistent named shims are platform-blocked for routing until Codex exposes a verifiable custom-agent selector and a fresh-session probe proves the child consumed the selected TOML. Their lifecycle manager remains available for diagnosis and authenticated cleanup of prior development installations.
 
 Recurrence, root-cause, and reasoning-progress handling are authoritative in [`native-skill-contract.md`](native-skill-contract.md#recurrence-and-root-cause-policy); this orchestration policy does not duplicate or override them.
 
-For every routed pass record: `role_id`, role-card SHA-256, route, attempted routes, fallback reason, actual model and
-reasoning effort when observable, requested and observed sandbox/approval controls, independence, nesting depth, and
-material fidelity limits. Also record the observed `agent_role` when available; a null value cannot support a custom
-profile claim.
+For every routed pass record: `role_id`, role-card SHA-256, route, attempted routes, fallback reason, actual model and reasoning effort when observable, requested and observed sandbox/approval controls, independence, nesting depth, and material fidelity limits. Also record the observed `agent_role` when available; a null value cannot support a custom profile claim.
 
 Write human-readable context packs in Caveman Ultra. Preserve exact evidence, questions, output contract, stop rule, risks, and ownership. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
 
@@ -134,9 +117,7 @@ Reject/re-scope handovers lacking evidence, crossing ownership, hiding failures,
 
 ## Substitution Rules
 
-Use runtime-provided subagents when policy allows and parallelism or independence helps, following the portable route
-order above. If no safe subagent route exists, label an in-main substitute. Substitution lowers independence and
-confidence, especially for broad, high-risk, release, security, or no-finding conclusions.
+Use runtime-provided subagents when policy allows and parallelism or independence helps, following the portable route order above. If no safe subagent route exists, label an in-main substitute. Substitution lowers independence and confidence, especially for broad, high-risk, release, security, or no-finding conclusions.
 
 Claim "specialist fan-out" only with separate outputs/runtime provenance. Record only triggered axes as `spawned`/`substituted`; keep non-triggers in compact routing artifact.
 

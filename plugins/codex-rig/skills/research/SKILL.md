@@ -24,9 +24,7 @@ Source-backed research for documentation, API migration, paper, or state-of-the-
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill research` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill research` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Define research question, mode, and constraints
 
@@ -54,7 +52,7 @@ Source rules:
 - Mark stale/unavailable source explicitly.
 - Do not cite secondary summaries for high-impact claims unless independently corroborated.
 
-For `sota`, `paper`, `methodology`, `code-fidelity`, apply `../../shared/specialist-orchestration.md` when independent expertise improves correctness. Write `<run-directory>/specialist-research-plan.md` with context packs for:
+For `sota`, `paper`, `methodology`, or `code-fidelity`, read and apply `../../shared/specialist-orchestration.md` only when independent expertise improves correctness; otherwise do not load it. Write `<run-directory>/specialist-research-plan.md` with context packs for:
 
 - `web-explorer`: current docs, release notes, API and dependency changes.
 - `scientist`: formulas, methodology, metrics, ablations, benchmark claims.
@@ -133,6 +131,6 @@ On source-protocol/recommendation-policy change, update calibration:
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Minimum artifact payload template: `result-template.json`.

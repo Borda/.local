@@ -52,6 +52,8 @@ Before every intentional approval request, give one short plugin-owned brief wit
 4. `Filesystem and worktree effects`: expected local artifacts, checkout, or cache changes.
 5. `Retry policy and safe denial outcome`: the bounded retry rule and what safely stops or degrades.
 
+For all intentional approval requests, keep the runtime `justification` or reason separate from the detailed pre-brief. It must be a short plain-English question about the requested outcome or material effect and must not repeat the command, argv, flags, paths, multiline content, or full approval brief. When reusable approval is justified, `prefix_rule` must be a short categorical safe prefix that grants only the intended command family, never the entire command. Omit `prefix_rule` for one-time or high-risk commands. The runtime command field remains the authoritative command display; the pre-brief remains the authoritative safety and effects explanation.
+
 Denial aborts the active tool call and may end the assistant turn. Do not issue an equivalent approval request in the current turn. Do not switch to a broader command, enable persistent network access, or report completion. Ask the user to send a new message to resume; that new request starts a fresh decision under the documented command boundary.
 
 ## Recurrence And Root-Cause Policy

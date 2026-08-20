@@ -197,6 +197,24 @@ def test_generation_rejects_incomplete_public_roster(
         builder.build_manifest()
 
 
+def test_generation_excludes_runtime_report_debris(tmp_path: Path) -> None:
+    """Runtime `.reports/` artifacts never enter or invalidate the package manifest.
+
+    A calibration run writes gitignored, machine-local artifacts under `.reports/`
+    inside the plugin tree; a later manifest refresh must neither sweep those
+    paths into the tracked manifest nor report the manifest stale because of them.
+    """
+    installed = copied_plugin(tmp_path)
+    debris = installed / ".reports" / "codex" / "calibration" / "run" / "debris.txt"
+    debris.parent.mkdir(parents=True)
+    debris.write_text("machine-local runtime artifact\n", encoding="utf-8")
+
+    result = run_builder(installed, "--check")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Package manifest is current.\n"
+
+
 @POSIX_ONLY
 def test_generation_rejects_symlinked_payload(tmp_path: Path) -> None:
     """Prevent a generated manifest from blessing a payload symlink."""

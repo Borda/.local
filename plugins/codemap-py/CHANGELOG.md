@@ -2,6 +2,10 @@
 
 `codemap-py` is the renamed, direct successor to the `codemap` plugin. The maintained product and its SemVer history continue across the rename; only the plugin identity, repository directory, and skill namespace change. Pre-`0.25.0` history was recorded as `codemap` under `plugins/codemap/` — see the repository git history for that line; it is not reproduced here.
 
+## 0.31.1
+
+- Compress all six Codex and six Claude skill contracts without changing command syntax, routing, stop rules, safety gates, installed-root requirements, output guarantees, or Claude executable fences. Replace stale private-plan section references with self-contained constraints, including the shared contract documents' authority framing; the § labels remain as stable in-file anchors.
+
 ## 0.31.0
 
 - **BREAKING:** replace `codemap-py integrate check` with the read-only `codemap-py integrate audit`; there is no compatibility alias. Update `/codemap-py:integration check` and `$codemap-py:integration check` invocations to `audit`, and consume `schema_version: 2` / `codemap-py.integration.v2` reports. `check` now exits `2` as an unknown subcommand. Unlike `check` (always exit `0`), `audit` exits `1` when any finding fails — and an existing v1 managed block reports `managed_block_invalid` until `plan` + `apply` rewrite it, so scripts treating nonzero as an error must be updated together with the invocation.

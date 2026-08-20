@@ -416,7 +416,7 @@ Both runtimes expose these names:
 | `integration`    | Audit, plan, apply, sync, or demo the supported consumer wiring and runtime evidence.                |
 | `debrief-coding` | Analyze local cross-runtime Codemap telemetry, optionally producing an anonymized report.            |
 
-Claude uses `/codemap-py:<skill>`. Codex uses `$codemap-py:<skill>`. The Codex skill descriptions are intentionally compact; their runtime notes cover installed-root resolution, lack of PATH injection, and chat-based confirmation where Claude can use `AskUserQuestion`.
+Claude uses `/codemap-py:<skill>`. Codex uses `$codemap-py:<skill>`. Both skill rosters use concise, instruction-first prose while retaining command syntax, routing, stop rules, safety gates, and runtime notes for installed-root resolution, PATH behavior, and each host's confirmation mechanism. Claude executable fences remain byte-identical so compression cannot change shell behavior.
 
 ## 🔗 Integration with other plugins
 

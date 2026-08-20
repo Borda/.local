@@ -24,9 +24,7 @@ Diagnosis-first loop for unclear failures: failing tests, tracebacks, regression
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill investigate` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill investigate` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Capture symptom and reproduction context
 
@@ -61,7 +59,7 @@ Include ≥3 plausible hypotheses unless failing command + code/log directly pro
 
 ### 05: Orchestrate specialist probes when hypotheses split by domain
 
-Apply `../../shared/specialist-orchestration.md` for multi-domain symptoms or useful parallel evidence. Stay single-agent for narrow deterministic failure with one obvious hypothesis.
+Read and apply `../../shared/specialist-orchestration.md` only for multi-domain symptoms or useful parallel evidence; do not load it for a narrow deterministic failure with one obvious hypothesis.
 
 Write `<run-directory>/specialist-probes.md` before fan-out: role, hypothesis, context path, expected falsification signal, mode (`spawned`, `substituted`, `not_triggered`).
 
@@ -149,6 +147,6 @@ Update calibration when root-cause routing or workaround rejection changes:
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Minimum artifact payload template: `result-template.json`.

@@ -29,9 +29,7 @@ Metric-driven optimization with explicit guards, rollback criteria, experiment l
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill optimize` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill optimize` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Validate metric and guard commands
 
@@ -60,7 +58,7 @@ Write `<run-directory>/hypothesis.md`:
 - guard risk
 - rollback condition
 
-For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code, apply `../../shared/specialist-orchestration.md`. Write `<run-directory>/specialist-optimization-plan.md` with narrow context packs for:
+For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code, read and apply `../../shared/specialist-orchestration.md`; otherwise do not load it. Write `<run-directory>/specialist-optimization-plan.md` with narrow context packs for:
 
 - `squeezer`: profiling mechanism, bottleneck hypothesis, measurement plan.
 - `qa-specialist`: guard coverage and regression risk.
@@ -160,6 +158,6 @@ On metric/guard-policy change, update calibration:
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Minimum artifact payload template: `result-template.json`.

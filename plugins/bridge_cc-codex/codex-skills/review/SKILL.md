@@ -5,4 +5,6 @@ description: Request a read-only adversarial review from Claude Code through the
 
 # Ask Claude Code to Review
 
-Call the `bridge_review` MCP tool with a required `task` and any caller-supplied `model`, `effort`, `timeout_seconds`, `depth`, or `run_id` values. When effort is omitted, classify the complete review scope and pass the selected level explicitly; never replace a caller-supplied level. Tiers: `low` = narrow mechanical change or settled factual question; `medium` = bounded implementation, diagnosis, or review; `high` = cross-file, adversarial, architectural, or security judgment; `xhigh` = unusually broad and consequential; `max` = explicit caller request only. The MCP server binds the request to its host-provided launch workspace. Return only the compact envelope and preserve the reported workspace-relative transcript and incident references for detailed inspection; do not inline verbose peer `details`.
+Call `bridge_review` with required `task`; preserve caller-supplied `model`, `effort`, `timeout_seconds`, `depth`, and `run_id`. If effort is absent, select and pass it: `low` for narrow mechanical or settled factual work; `medium` for bounded implementation, diagnosis, or review; `high` for cross-file, adversarial, architectural, or security judgment; `xhigh` for unusually broad consequential work; `max` only on explicit request. Never replace supplied effort.
+
+The MCP host binds its launch workspace. Return only the compact envelope; retain workspace-relative transcript and `incident` references for detail, never inline peer `details`.

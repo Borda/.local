@@ -37,9 +37,7 @@ Never write to remote. PR scope may update local checkout to PR head; otherwise 
 
 ### 01: Create run directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill code-review` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill code-review` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: T0 mechanical scope gate: resolve scope, collect diff, and classify review risk before any model-level judgment
 
@@ -319,7 +317,7 @@ Update calibration when review routing, severity discipline, decision vocabulary
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Final chat starts compact `Review Decision Summary` for assessed reviews: recommendation, blockers, required next work, confidence/material limits, artifact path. For every assessed PR review, reproduce its freshly rebuilt `PR Snapshot` table immediately after that summary and before any findings. For every assessed non-`accept-as-is` PR decision, and every `needs-more-work` decision in another scope, reproduce the canonical `Review Findings and Merge Blocks` table in the chat output; it is the decision handoff, not optional detail. A terminal core T0 PR collection failure instead starts `PR Review Availability: unavailable` and uses plain prose for classified process diagnostic, recovery, source findings `not assessed`, merge decision `not made`, confidence/material limits, evidence, and artifact path. A terminal close starts `Review Decision: close`, names the code, says source findings were not assessed and detailed review was skipped, lists decisive evidence and counterevidence checked, states `GitHub mutation: not performed`, and provides confidence/material limits plus the artifact path. Neither terminal result uses a table or normal recommendation. Keep full routing, recovery, closure evidence in artifact, not chat. Assessed recommendations remain `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 

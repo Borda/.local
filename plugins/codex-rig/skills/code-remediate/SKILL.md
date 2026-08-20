@@ -27,9 +27,7 @@ Run linear code remediation to close findings.
 
 ### 01: Create Run Directory
 
-Run `python PLUGIN_ROOT/shared/create_run.py --skill code-remediate` once. Retain its single printed path as
-`<run-directory>` and substitute that literal path into every later artifact path and helper argument. Never store or
-reuse the path through a shell variable; shell variables do not persist across tool calls.
+Per `../../shared/helper-cli-contract.md`, run `python PLUGIN_ROOT/shared/create_run.py --skill code-remediate` once; stdout is literal `<run-directory>`; never store it in a shell variable.
 
 ### 02: Normalize Shorthand Input And Copy Findings Source
 
@@ -459,7 +457,7 @@ Update calibration when resolution policy/output shape changes:
 
 ## Output Contract
 
-Use shared gate schema from `../../shared/quality-gates.md`.
+Use `../../shared/quality-gates.md`.
 
 Apply shared confidence band policy from `../../shared/quality-gates.md` for score, recovery, confidence-gap closure output.
 
